@@ -6,7 +6,23 @@ Product behaviour is [PRODUCT.md](PRODUCT.md). The schemas being measured are [C
 
 ---
 
-## The number that matters
+## Two regimes, two numbers
+
+The metric depends on corpus size, and getting this wrong makes the harness report success while measuring nothing.
+
+| Corpus | The number | What it actually tests |
+|---|---|---|
+| Under ~500 artifacts | **`hard-hit@15`** after rerank | judgment. The candidate pool is the whole corpus, so retrieval is not being exercised at all |
+| 1,000 and above | **`recall@150`** at the candidate stage | retrieval. This is where the abstraction layer starts having to work |
+
+**Below roughly 500 artifacts, recall is trivially 1.0** because the candidate pool is everything. Reporting it is worse than reporting nothing, because it looks like a passing score.
+
+In the small regime the corpus is brute-forced through rerank and the question becomes whether the *judgment* ranks the hard analogies into the top fifteen when every artifact is a candidate. That is a genuine test of facet quality and of the rerank prompt, and it is arguably harder than the retrieval case since nothing has been filtered for it.
+
+Milestone 0 runs entirely in the small regime.
+It measures curation quality, not retrieval, and the harness must say so rather than quietly reporting a recall figure that means nothing.
+
+## The number that matters at scale
 
 **Recall at the candidate stage.** Target `recall@150`.
 
@@ -117,6 +133,29 @@ A near-synonym pair that returns substantially different rooms means retrieval i
 | precision of kept set | after rerank | secondary | `should_not_surface` artifacts appearing in a saved room. |
 | lens-pair agreement | candidates | high | Overlap between near-synonymous lenses. Low means phrase-keying. |
 | thin honesty | synthesis | no false confidence | Run a lens with almost nothing behind it. The room must return `thin: true`. |
+
+## The scaling experiment
+
+The claim that Enqueue improves with volume is currently **untested**, and there is a real chance volume hurts precision faster than the growth mechanisms help.
+
+Run the golden set at three corpus sizes: roughly 76, 500, and 5,000 artifacts. Watch whether `hard-hit` **holds or degrades**.
+
+- **Holds or improves**: the abstraction layer is doing its job and the growth mechanisms in AGENTS.md are optional polish.
+- **Degrades**: volume is hurting, and facet trust, vocabulary convergence, and exhibit co-occurrence are load-bearing rather than nice to have.
+
+Either answer is worth knowing before building any of them. This is the single most informative experiment in this file after the first measurement.
+
+## Diagnosing a miss
+
+When a `hard: true` artifact does not surface, there are three causes and they have nothing in common. Always determine which before changing anything.
+
+| Cause | How to tell | Fix |
+|---|---|---|
+| **Eligibility** | the artifact has no facets at all | the gate in CURATION.md skipped it. Not a quality problem |
+| **Facet** | it has facets, but none above level 2 that match the lens | facet generation never climbed. Prompt or model |
+| **Judgment** | a matching facet exists and rerank still said no | the rerank prompt, or the model reading it |
+
+Reporting an aggregate score without this breakdown is close to useless, because the three fixes point in opposite directions.
 
 ## Ablations to run
 

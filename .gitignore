@@ -216,3 +216,24 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Enqueue ---
+
+# macOS
+.DS_Store
+
+# Agent and tooling scratch. Local state, not shared decisions.
+.serena/
+.impeccable/
+
+# Evaluation output. Every run is written to disk so regressions can be traced,
+# but the runs are results rather than source.
+eval/runs/
+
+# The POC store lives at ~/.enqueue-poc, outside the repo. If that ever moves
+# in-tree, it is throwaway data and must not be committed.
+.enqueue-poc/
+*.db
+*.db-wal
+*.db-shm
+qdrant-local/

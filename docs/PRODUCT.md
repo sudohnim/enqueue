@@ -55,6 +55,23 @@ Anything that makes Enqueue feel like a task manager or a file tree is off-conce
 9. **Privacy is the premise, not a feature.** Proton's Lumo is the default AI backend and the reason the promise holds. See [Privacy](#privacy).
 10. **Every outside boundary is pluggable, and every plug is labelled.** AI backend and storage backend are both swappable, because a lifetime tool must outlive any single vendor. Swappable does not mean silent: each backend states what leaves the device, at the moment you choose it.
 
+### It should get smarter as it gets bigger
+
+Hoarding is only a virtue if the pile repays it.
+
+More artifacts must mean better connections, not merely more of them, and that does not happen for free. Volume by itself hurts: more material means more near-misses to sift.
+
+Four things make accumulation pay, and none of them ask anything of you beyond ordinary use.
+
+- **The curator learns from your corrections.** Every ejection is a targeted judgment about what does not belong, and the abstraction that produced it quietly demotes itself. Nothing you have to teach.
+- **Your vocabulary emerges.** After enough material the same underlying ideas recur across unrelated artifacts. Those recurring abstractions are your conceptual vocabulary, discovered rather than authored.
+- **Rooms teach the museum.** Artifacts that repeatedly hang together in exhibits you saved become related, which is a set of backlinks nobody maintained.
+- **Themes you never named surface.** The honest answer to "what do I keep saving without knowing why" is the largest cluster of recurring ideas that has no exhibit. A thing you keep producing instances of and have never once named.
+
+That last one is only possible at volume, and it is the clearest argument for hoarding.
+
+Mechanisms, thresholds, and sequencing are in [AGENTS.md](../AGENTS.md).
+
 ### Anti-goal
 
 Not "Obsidian with AI search."
@@ -101,8 +118,11 @@ Success is a number: recall at the candidate stage on lenses that require analog
 This comes first because the retrieval design is the single thing that, if mediocre, makes Enqueue a worse Fabric.
 Everything downstream assumes it works. Nothing else should be built until it does.
 
-**M0 runs on a scratch corpus you are willing to throw away.**
-Encryption at rest lands in M1, and a store that accumulated real material before then would be a plaintext archive forever.
+**M0 has no encryption, and its corpus is genuinely disposable.**
+
+The store lives at `~/.enqueue-poc`, holds junk loaded for development plus a constructed evaluation set, and is **deleted rather than migrated** when M1 begins. Nothing in it exists only there.
+
+Encryption at rest arrives with M1, which is the first moment the store holds material worth keeping.
 
 ### Milestone 1 - the museum
 
@@ -110,6 +130,7 @@ The macOS app. Encryption at rest, because this is where real material starts ac
 
 Hotkey capture, home, exhibit view, artifact detail, reading view, search.
 Curate with save, refresh, edit, and eject.
+**Export**, because a store with no recovery path needs a second copy that plain files can hold.
 
 ### Milestone 2 - the hoard grows
 
@@ -682,14 +703,15 @@ The aggregate is the sensitive object.
 2. **Sync stores ciphertext.** Whoever holds the bytes - Proton Drive, S3, GCS - cannot read them.
 3. **Nothing you save is ever used to train a model.**
 4. **You choose the AI backend, and the app tells you what each one costs you.** See [Backends](#backends).
-5. **Any artifact can be marked local-only.** It is never sent to a network model, whatever the default is set to.
+5. **Any artifact can be marked local-only.** It is never sent to a network model and never leaves the machine that captured it, whatever the defaults are set to.
 6. **Enqueue never fetches your saved links without telling you.** The browser extension captures the page you already loaded, so no publisher and no ISP learns your reading list from us. Fetching exists only for what the extension cannot cover - bulk-importing old bookmarks, a link you were sent but never opened - and the app says so before it happens.
+7. **You can always get everything out, as plain files.** `enq export` writes the whole museum as markdown plus original documents in an ordinary folder. No database, no encryption, nothing of ours required to read it. Your hoard is readable without this application, forever.
 
 ### What Enqueue does not promise
 
 Stated plainly, because a privacy promise with unstated holes is worse than none.
 
-- **Lose the password, lose the museum.** There is no recovery, because any recovery path is a copy of your key held by somebody else.
+- **Lose the password, lose the museum.** There is no recovery, because any recovery path is a copy of your key held by somebody else. This is exactly why promise 7 exists: keep an export somewhere the password cannot lock you out of.
 - **Metadata leaks to whoever stores the blobs.** An object store sees how many objects exist, how big they are, and when they change. It never sees what they are.
 - **Choosing a third-party backend means third-party terms.** OpenRouter and similar providers may log and may train. That is your call to make, and the app says so at the moment you make it.
 
@@ -720,11 +742,16 @@ Detailed architecture - key derivation, envelope encryption, what the local mode
 
 | Platform | Role |
 |---|---|
-| macOS | the engine. Ingest, index, curate, read |
+| macOS | full peer. Ingest, index, curate, read. Any number of machines |
 | Browser extension | primary capture surface |
-| Android | capture-and-read satellite. Captures artifacts, syncs, reads an index the Mac built |
+| Android | capture-and-read satellite. Captures artifacts, syncs, reads an index a Mac built |
 
-Local-first: the engine runs on your machine, and sync moves ciphertext between machines rather than centralising anything.
+Local-first: every peer holds the whole museum, and sync moves ciphertext through an object store rather than centralising anything.
+There is no primary machine and no device that has to be awake for another to work.
+
+**Local-only artifacts do not sync.**
+The flag that keeps an artifact away from network models also keeps it off every other machine.
+That matters most on a work-managed computer, where the relevant risk is not a stolen laptop but an administered endpoint, and encryption at rest is not the defence against it.
 
 Engineering detail lives in [AGENTS.md](../AGENTS.md).
 

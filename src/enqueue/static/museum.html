@@ -1,0 +1,204 @@
+<meta charset="utf-8">
+<title>Enqueue</title>
+<style>
+:root {
+  --base:#E5E8EB; --s1:#EFF2F3; --s2:#FAFBFC;
+  --ink:#181E23; --subtext:#565C61; --muted:#61666A;
+  --border:#D0D4D7; --border-strong:#B7BDC1;
+  --mount:#1C1D1A; --gold:#C9A961; --vellum:#EDE9E0; --vellum-sub:#B9AE9D;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;
+  --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+}
+:root[data-theme="dark"] {
+  --base:#0D1115; --s1:#171C1F; --s2:#23282C;
+  --ink:#E4E8EB; --subtext:#A2A8AC; --muted:#949A9E;
+  --border:#2D3136; --border-strong:#44494D;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--base); color:var(--ink); font-family:var(--sans);
+       font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+header { background:var(--s1); border-bottom:1px solid var(--border);
+         padding:14px 22px; display:flex; gap:14px; align-items:center;
+         position:sticky; top:0; z-index:10; }
+.brand { font-family:var(--serif); font-size:19px; letter-spacing:-0.01em; }
+.grow { flex:1; }
+input, select { font:inherit; font-family:var(--sans); background:var(--s2); color:var(--ink);
+        border:1px solid var(--border); border-radius:8px; padding:7px 11px; min-width:280px; }
+input:focus { outline:none; border-color:var(--gold); }
+button { font:inherit; background:transparent; color:var(--ink); border:1px solid var(--border-strong);
+         border-radius:8px; padding:6px 13px; cursor:pointer; }
+button:hover { background:var(--s2); }
+button.primary { background:var(--ink); color:var(--s2); border-color:var(--ink); }
+:root[data-theme="dark"] button.primary { background:var(--gold); color:var(--base); border-color:var(--gold); }
+main { max-width:860px; margin:0 auto; padding:26px 22px 80px; }
+h2 { font-family:var(--sans); font-size:15px; font-weight:500; letter-spacing:-0.01em;
+     margin:32px 0 12px; color:var(--subtext); }
+h2:first-child { margin-top:0; }
+.row { display:flex; gap:14px; padding:16px 0; border-bottom:1px solid var(--border); }
+.row:hover { background:var(--s2); }
+.thumb { width:46px; height:46px; border-radius:3px; background:var(--s2);
+         border:1px solid var(--border); flex-shrink:0; }
+.src { font-family:var(--mono); font-size:11px; color:var(--muted); }
+.placard { font-family:var(--serif); font-size:13px; line-height:1.6; margin-top:5px; }
+.mine { font-size:13px; margin-top:7px; }
+.mount { background:var(--mount); border-top:1px solid var(--gold); border-bottom:1px solid var(--gold);
+         padding:18px 22px; margin:0 -22px; display:flex; gap:14px; }
+.mount .src { color:var(--vellum-sub); }
+.mount .placard { color:var(--vellum); font-size:14px; }
+.mount .thumb { background:#2A2B26; border-color:#3A3B33; }
+.chip { display:inline-block; font-size:12px; padding:5px 11px; margin:0 7px 7px 0;
+        border:1px solid var(--border); border-radius:8px; cursor:pointer; background:var(--s2); }
+.chip:hover { border-color:var(--gold); }
+.meta { font-family:var(--mono); font-size:11px; color:var(--muted); }
+.thin { color:var(--gold); font-size:12px; margin:10px 0; }
+.tension { font-family:var(--serif); font-size:13px; margin:8px 0 0 0; padding-left:12px;
+           border-left:1px solid var(--gold); }
+.group-name { font-weight:500; font-size:13px; margin-top:14px; }
+.facet { font-family:var(--serif); font-size:12.5px; color:var(--subtext); padding:3px 0; }
+.lvl { font-family:var(--mono); font-size:10px; color:var(--gold); margin-right:7px; }
+.blocks { font-family:var(--serif); font-size:15px; line-height:1.65; }
+.blocks div { margin:7px 0; }
+.spin { color:var(--muted); font-size:13px; padding:20px 0; }
+a { color:inherit; text-decoration:none; cursor:pointer; }
+a:hover { text-decoration:underline; text-decoration-color:var(--gold); }
+</style>
+
+<header>
+  <span class="brand">Enqueue</span>
+  <input id="q" placeholder="search, or a theme to curate" autocomplete="off">
+  <button onclick="doSearch()">Search</button>
+  <button class="primary" onclick="doCurate()">Curate</button>
+  <span class="grow"></span>
+  <button onclick="toggleTheme()" id="themeBtn">Dark</button>
+</header>
+
+<main id="view"><div class="spin">loading the museum...</div></main>
+
+<script>
+const view = document.getElementById("view");
+const esc = s => (s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function toggleTheme() {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  document.getElementById("themeBtn").textContent = dark ? "Dark" : "Light";
+  localStorage.setItem("enq-theme", dark ? "light" : "dark");
+}
+if (localStorage.getItem("enq-theme") === "dark") toggleTheme();
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function home() {
+  view.innerHTML = '<div class="spin">loading...</div>';
+  const [arts, exs] = await Promise.all([api("/artifacts?limit=40"), api("/exhibits")]);
+  let html = "";
+
+  if (exs.items.length) {
+    html += "<h2>Exhibits</h2>";
+    html += exs.items.map(e => `<span class="chip" onclick="showExhibit('${e.id}')">${esc(e.name)}</span>`).join("");
+  }
+
+  html += `<h2>Recent artifacts</h2>`;
+  html += arts.items.map(a => `
+    <div class="row">
+      <div class="thumb"></div>
+      <div style="flex:1;min-width:0">
+        <div class="src">${esc(a.imported_from || "")} &middot; ${esc((a.captured_at||"").slice(0,10))}${a.local_only ? " &middot; local only" : ""}</div>
+        <div class="placard"><a onclick="showArtifact('${a.id}')">${esc(a.title)}</a></div>
+      </div>
+    </div>`).join("");
+  view.innerHTML = html;
+}
+
+async function showArtifact(id) {
+  view.innerHTML = '<div class="spin">loading...</div>';
+  const d = await api("/artifacts/" + id);
+  const a = d.artifact;
+  let html = `<a onclick="home()" class="meta">&larr; museum</a>
+    <h2 style="margin-top:18px">${esc(a.title)}</h2>
+    <div class="src">${esc(a.imported_from||"")} &middot; ${esc((a.captured_at||"").slice(0,10))} &middot; ${esc(a.provenance)} &middot; ${esc(a.status)}</div>`;
+
+  if (d.facet_skip_reason)
+    html += `<div class="thin">no facets: ${esc(d.facet_skip_reason)} &middot; searchable, never curatable</div>`;
+
+  html += `<div class="blocks" style="margin-top:20px">` +
+    d.blocks.map(b => `<div style="margin-left:${b.depth*20}px;${b.depth?'color:var(--subtext);font-size:13.5px':''}">${esc(b.text)}</div>`).join("") +
+    `</div>`;
+
+  if (d.facets.length) {
+    html += `<h2>What the curator made of it</h2>`;
+    html += d.facets.map(f => `<div class="facet"><span class="lvl">L${f.level}</span>${esc(f.statement)}</div>`).join("");
+  }
+  view.innerHTML = html;
+}
+
+async function showExhibit(id) {
+  const exs = await api("/exhibits");
+  const e = exs.items.find(x => x.id === id);
+  view.innerHTML = `<a onclick="home()" class="meta">&larr; museum</a>
+    <h2 style="margin-top:18px">${esc(e.name)}</h2>
+    <div class="placard">${esc(e.through_line)}</div>`;
+}
+
+async function doSearch() {
+  const q = document.getElementById("q").value.trim();
+  if (!q) return;
+  view.innerHTML = '<div class="spin">searching...</div>';
+  const r = await api("/search?limit=20&q=" + encodeURIComponent(q));
+  view.innerHTML = `<a onclick="home()" class="meta">&larr; museum</a><h2 style="margin-top:18px">${r.hits.length} results</h2>` +
+    r.hits.map(h => `
+      <div class="row">
+        <div class="thumb"></div>
+        <div style="flex:1;min-width:0">
+          <div class="src">${h.score.toFixed(3)}</div>
+          <div class="placard"><a onclick="showArtifact('${h.artifact_id}')">${esc(h.title)}</a></div>
+          <div class="mine" style="color:var(--subtext)">${esc(h.snippet)}</div>
+        </div>
+      </div>`).join("");
+}
+
+async function doCurate() {
+  const lens = document.getElementById("q").value.trim();
+  if (!lens) return;
+  view.innerHTML = `<div class="spin">hanging the room. this takes minutes on a local model...</div>`;
+  let r;
+  try { r = await api("/curate", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({lens, keep:8, pool:10})}); }
+  catch (err) { view.innerHTML = `<div class="thin">curate failed: ${esc(String(err))}</div>`; return; }
+
+  const ex = r.exhibit || {};
+  let html = `<a onclick="home()" class="meta">&larr; museum</a>
+    <h2 style="margin-top:18px;font-family:var(--serif);font-size:21px;color:var(--ink)">${esc(ex.suggested_name || lens)}</h2>
+    <div class="meta">${r.kept.length} on view &middot; ${r.rejected} rejected &middot; ${r.failed} failed &middot; ${r.considered} considered</div>`;
+
+  if (ex.through_line) html += `<div class="placard" style="margin:16px 0;font-size:14px">${esc(ex.through_line)}</div>`;
+  if (ex.thin) html += `<div class="thin">thin: ${esc(ex.thin_reason)}</div>`;
+
+  r.kept.forEach((k, i) => {
+    const cls = i === 0 ? "mount" : "row";
+    html += `<div class="${cls}">
+      <div class="thumb"></div>
+      <div style="flex:1;min-width:0">
+        <div class="src">${esc(k.title)} &middot; strength ${k.strength}</div>
+        <div class="placard">${esc(k.placard)}</div>
+      </div></div>`;
+  });
+
+  (ex.groupings||[]).forEach(g => {
+    html += `<div class="group-name">${esc(g.name)}</div><div class="facet">${esc(g.claim)}</div>`;
+  });
+  (ex.tensions||[]).forEach(t => {
+    html += `<div class="tension"><strong>${esc(t.between.join(" vs "))}</strong><br>${esc(t.claim)}</div>`;
+  });
+
+  view.innerHTML = html;
+}
+
+document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+home();
+</script>

@@ -2,6 +2,8 @@
 
 Project-specific instructions for agents working on Enqueue.
 Inherits global guidelines from ~/boxer/AGENTS.md.
+**If you are here to write code, your work queue is [docs/PROGRESS.md](docs/PROGRESS.md).** Do one task per turn, in order, and verify each with the command in its "Done when" before checking the box. This file is reference: read the section a task points you at, not the whole thing.
+
 This file covers engineering decisions and gotchas, not product behaviour.
 
 | Document | Owns |
@@ -108,14 +110,66 @@ The engine never leaks into the shell. The shell speaks to localhost and does no
 
 | Platform | Role |
 |---|---|
-| macOS | the engine. Ingest, index, curate, read. |
+| macOS | **full peer.** Ingests, indexes, curates, reads. Any number of them. |
 | Browser extension | primary capture surface |
-| Android | capture-and-read satellite. Captures artifacts, syncs ciphertext, reads an index the Mac built. Does not ingest or curate. |
+| Android | capture-and-read satellite. Captures artifacts, syncs, reads an index a Mac built. Does not ingest or curate. |
+
+Peers do not talk to each other. They all read and append to a shared encrypted log, so there is no primary, no pairing, and no device that has to be awake for another to work. See [Sync](#sync).
 
 Two independent constraints landed on this split: Python does not cross-compile to Android, and local Whisper transcription of a two-hour lecture is not something a phone should attempt.
 When two unrelated constraints agree, take the hint.
 
 ---
+
+## Processes and API surface
+
+### Processes on one machine
+
+| Process | What it is | Bound to |
+|---|---|---|
+| `enqueue-shell` | Tauri. Native window, global hotkey, tray. M1 onward | nothing |
+| `enqueue-engine` | Python. FastAPI plus a background worker, one process | `127.0.0.1:8787` |
+| `qdrant` | vector store, Docker | `127.0.0.1:6333` |
+| `ollama` | local models | `127.0.0.1:11434` |
+
+**Everything binds to loopback.** Nothing listens on a network interface, ever, on any milestone.
+
+The engine serves HTTP and drains the ingest queue in the same process.
+No broker, no Redis, no second container. This is the same call Dequeue made with in-process APScheduler, and for the same reason: a single-user local tool does not need a job infrastructure.
+
+### Endpoints
+
+```
+POST   /capture                       202 {artifact_id}, returns before processing
+POST   /capture/upload                multipart
+
+GET    /artifacts?since=&limit=       newest first, the home feed
+GET    /artifacts/{id}                detail, blocks, notes, exhibits it hangs in
+GET    /artifacts/{id}/content        readable rendering
+GET    /artifacts/{id}/blob           original bytes
+POST   /artifacts/{id}/notes          user-authored note
+PATCH  /artifacts/{id}                local_only, pinned. Flags only, never content
+
+GET    /search?q=                     artifacts. No model calls, fully local
+POST   /ask                           {scope, id?, question} to answer plus citations
+POST   /curate                        {lens}, SSE
+GET    /exhibits
+GET    /exhibits/{id}
+POST   /exhibits                      save a curated room
+POST   /exhibits/{id}/refresh         SSE
+PATCH  /exhibits/{id}/members/{aid}   edit placard, eject
+POST   /exhibits/{id}/notes           pinned wall text
+
+GET    /health
+GET    /jobs                          queue depth, failures
+GET    /settings
+PATCH  /settings
+```
+
+`/curate` and `/refresh` are **Server-Sent Events**, not request-response.
+The budget is 90 seconds and PRODUCT.md requires the room to fill artifact by artifact rather than showing a spinner, so judgments stream as they return.
+
+`PATCH /artifacts/{id}` accepts flags only. Artifact content is immutable after ingest, which is data model invariant 2.
 
 ## Data model
 
@@ -129,9 +183,9 @@ SQLCipher for everything textual and relational. Qdrant for vectors only.
 | `artifact_blobs` | original bytes | encrypted at rest, referenced by path |
 | `artifact_text` | extracted text | per artifact, with extractor name and version |
 | `capture_context` | silent capture-time context | source app, page title, selection, nearby captures |
-| `notes` | user-authored notes on artifacts | **user-authored, never regenerated** |
+| `note_entries` | user-authored notes on artifacts | **append-only. One row per writing session, never updated in place.** See below |
 | `chunks` | literal layer | text, ordinal, token count, chunker name and version |
-| `facets` | conceptual layer | statement, abstraction level, generator model and version |
+| `facets` | conceptual layer | statement, abstraction level, generator model and version, **`trust` REAL default 0.5** |
 | `exhibits` | saved formations | `theme` is immutable after creation |
 | `exhibit_members` | artifact in exhibit | placard, rank, `origin` (generated/manual), `ejected_at` |
 | `exhibit_notes` | pinned wall text | **user-authored, never regenerated** |
@@ -147,7 +201,19 @@ Break these and the product's promises stop being true.
 2. **Artifacts are immutable after ingest.** Every derived row carries the model or tool version that produced it, so anything derived can be regenerated. Nothing derived is ever the only copy of anything.
 3. **User-authored rows are never overwritten by regeneration.** `notes`, `exhibit_notes`, manual `exhibit_members`, and `ejected_at` survive every refresh and every re-index. This is product principle 7 as a schema rule.
 4. **Every vector is stamped with its embedding model version.** Query and corpus must share a vector space, so a model change means re-embedding. Stamping makes that an incremental background job instead of a migration crisis.
-5. **`exhibits.theme` is immutable.** Reshaping means a new exhibit. See the decision log in PRODUCT.md.
+5. **`exhibits.theme` is immutable.** Reshaping means a new exhibit.
+6. **Notes are append-only entries, never a mutable text field.** A note is a list of `note_entries` rendered in order, and editing appends a new entry that supersedes an earlier one by id. There is nothing to merge, so there is nothing to lose.
+
+### Why notes are entries rather than a field
+
+Last-write-wins on a mutable text field is silent data loss, and it is the one place the sync model would violate the product's first principle.
+
+Write a note on one machine, extend it on another before the pull lands, and last-write-wins discards one version with no conflict marker and no copy.
+Dequeue can resolve this with server timestamps because it has a server. Enqueue has no authoritative clock, only a hybrid logical clock, which orders events but does not make discarding one of them safe.
+
+Append-only entries remove the merge entirely. It is also the same paradigm as the sync log rather than a second one sitting beside it.
+
+Last-write-wins stays correct for scalars and flags, where discarding the loser is what the user meant. See the decision log in PRODUCT.md.
 
 ### Qdrant collections
 
@@ -243,6 +309,83 @@ Never pad an exhibit to look full. See PRODUCT.md principle 8.
 
 ---
 
+## How the museum improves with volume
+
+Without these, Enqueue gets **bigger** with more artifacts, not smarter. The machinery would be identical at 76 and at 50,000, and volume would actively hurt precision by adding near-misses.
+
+Five mechanisms make the claim true. None require the user to do anything extra, and all of them emerge from ordinary use.
+
+### 1. Facet trust, from your own corrections
+
+Adapted from Hermes Agent's holographic memory provider, which scores facts 0.0 to 1.0 with asymmetric feedback.
+
+`facets.trust` starts at 0.5. Every `Judgment` already records `matched_facet_id`, so:
+
+| Event | Delta |
+|---|---|
+| The artifact it matched enters a saved exhibit | **+0.05** |
+| The artifact it matched is ejected | **-0.10** |
+
+Retrieval scales facet similarity by trust. Below a floor a facet is excluded from matching but **never deleted**.
+
+**Negative evidence is weighted double on purpose.** A save is ambient, since a room gets saved for many reasons. An ejection is targeted: this artifact, this room, no. Far more information per event.
+
+This is also the read-time half of quality control. The validators in [docs/CURATION.md](docs/CURATION.md) prevent junk at write time; trust demotes whatever got through, based on use.
+
+It does not violate the memory-rot rule under [Corrections are scoped to the exhibit](#corrections-are-scoped-to-the-exhibit). One ejection moves trust by 0.10 and killing a facet takes five, so a repeated pattern is still what produces a global effect. The rule is expressed as a gradient rather than a threshold.
+
+**Cheapest mechanism here by a wide margin.** One column, two update rules, and it starts working the first time the user ejects something.
+
+### 2. Facet vocabulary convergence
+
+At a few hundred artifacts every facet is bespoke. At several thousand, level 3 and 4 statements recur.
+
+Cluster the level-3-and-above facet embeddings. Clusters above a size threshold are the user's conceptual vocabulary, discovered rather than authored.
+
+- New artifacts get scored against known concepts instead of generating free-form, which is cheaper and far more consistent
+- Lens expansion snaps to concepts the user actually holds rather than doing blind HyDE
+- The vocabulary is browsable, and it is the honest answer to "what am I actually interested in"
+
+Needs roughly 500 artifacts before it means anything.
+
+### 3. Exhibit co-occurrence
+
+Every saved exhibit is a human-validated cluster, produced for free by ordinary use.
+
+Build an artifact-to-artifact affinity graph from co-membership across saved rooms, and at retrieval boost candidates that repeatedly co-hang with already-strong candidates.
+
+That is a backlink structure nobody maintained, learned from the user's own judgment. Needs roughly 25 saved exhibits.
+
+### 4. Contradiction detection across the facet corpus
+
+Hermes runs a `contradict` operation continuously over stored facts. Enqueue has `tensions`, but only per query at synthesis time.
+
+Running contradiction detection across the whole facet corpus finds the user's own disagreements without being asked. "Reversibility is strength" sitting against "commitment is strength" is a real tension in a person's thinking, and it is invisible until there is enough material for it to repeat.
+
+### 5. The concept instantiated but never named
+
+Falls out of mechanism 2 for free, and it is the best of the five.
+
+The answer to "what I keep saving without knowing why" is **the largest facet clusters that have no saved exhibit**. A theme the user keeps producing instances of and has never once named.
+
+This does not violate "silent until asked". The user asked.
+
+### Sequencing
+
+| Mechanism | Needs | Milestone |
+|---|---|---|
+| Facet trust | one column, two rules | **M1** |
+| Exhibit co-occurrence | ~25 saved exhibits | M2 |
+| Facet vocabulary | ~500 artifacts | M2 |
+| Contradiction detection | the vocabulary | M2 |
+| Unnamed themes | the vocabulary | M2 |
+
+### What not to build
+
+**No GraphRAG-style entity extraction, and no knowledge graph.** Hindsight builds one and it works for them, but entity extraction is brittle and a graph pre-commits to a structure, which is wrong for a product whose premise is that structure is a query. All five mechanisms above are cheaper and better aligned.
+
+**No Holographic Reduced Representations.** Hermes uses them for compositional algebraic queries over entities. Enqueue's problem is analogy, not composition.
+
 ## Ingest pipeline
 
 Always asynchronous. Capture never blocks, never spins, never asks a question.
@@ -313,10 +456,22 @@ Instructor defaults to `TOOLS` mode, which requires function calling. **Do not t
 |---|---|---|
 | Embeddings | **always local** | Lumo has no embeddings endpoint. Strictly more private, not a compromise |
 | Transcription | **always local** (whisper.cpp) | Lumo has no ASR |
-| Facet generation | local by default | high volume: every artifact, several calls. Burning an unknown rate limit on bulk ingest is the wrong trade |
-| Rerank | Lumo | low volume, high value |
-| Synthesis | Lumo | this is where exhibit quality is decided |
-| Ask | Lumo | |
+| **Facet generation** | **the good model** | see below |
+| Rerank | the good model | low volume, high value |
+| Synthesis | the good model | this is where exhibit quality is decided |
+| Ask | the good model | |
+
+**Facet generation used to run locally, and that was wrong.**
+
+The old reasoning was throughput: it is the high-volume path, and Lumo's rate limits are unknown. That optimises cost at the expense of the one stage that cannot be cheap.
+
+The facet layer is the moat, and bad facets are not merely a weak result. **They are permanent pollution.** A placard is transient, read once and gone. A facet is embedded, indexed, and votes on every future retrieval. Junk there degrades the museum quietly and forever.
+
+So the rule is now one line instead of a per-stage matrix:
+
+> **The good model by default. Local only when the artifact says so.**
+
+The cost is real and accepted: bulk import of ten thousand artifacts is ten thousand calls against unknown rate limits, and it may take days. It is a resumable queue, it happens once per artifact, and steady state is a handful of calls a day.
 
 Local-only artifacts never route to a network adapter, whatever the default is set to.
 With no local model configured they keep plain text search and lose facets and placards. They are never silently sent to the network instead.
@@ -347,11 +502,130 @@ Raw embeddings are partially invertible. Inversion attacks can reconstruct appro
 Far weaker than plaintext, not nothing.
 Keeping the Qdrant data directory encrypted at rest is the mitigation, and it is why invariant 1 (no text in payloads) is not the whole answer on its own.
 
-### Sync
+---
 
-Ciphertext objects to the configured backend: Proton Drive, S3, GCS, or none.
-The backend sees object count, sizes, and timing. It never sees content.
-Mac is the engine. Android reads a synced index.
+## Sync
+
+Every Mac is a full peer. Each one captures, ingests, curates, and reads.
+
+### The log is the source of truth
+
+SQLite is not the data. It is a materialised view.
+
+The truth is an **encrypted, append-only log of immutable objects** in the configured store: Proton Drive, S3, GCS, or none.
+Each peer appends its own events and replays everybody's to rebuild its local SQLite and Qdrant.
+
+This is the "derived data is disposable" principle applied one level up, and it collapses three separate problems into one operation.
+Adding a second machine, restoring from backup, and recovering a corrupted index all become the same thing: point a peer at the log and let it rebuild.
+
+**Do not reach for a database server here.** A server that cannot read the data cannot index it either, so a managed Postgres or Turso would be an expensive blob store with extra failure modes. The privacy promise makes a dumb object store the correct choice rather than a compromise.
+
+### What syncs, and what each peer rebuilds
+
+| Syncs | Rebuilt locally |
+|---|---|
+| artifacts and blobs, content-addressed | chunks |
+| extracted text | **all embeddings** |
+| capture context | the Qdrant index |
+| your notes | |
+| **facets, as text** | |
+| saved exhibits: membership, placards, your edits | |
+
+Embeddings are the bulk, roughly forty vectors per artifact, so ten thousand artifacts is well over a gigabyte. None of it crosses the wire.
+
+**Facets sync even though they are derived.** This is a deliberate exception to the rule above. If each peer generates its own, two local models quietly disagree and retrieval stops being comparable between machines. They are cheap as text, about 10MB at ten thousand artifacts, and their embeddings still stay local.
+
+**Saved exhibits publish their membership rather than re-deriving it per peer.** Otherwise the work laptop shows nine artifacts and the home machine shows eleven, which is indefensible even under "eighty percent is a good day." Unsaved exhibits are ephemeral and never sync.
+
+### It is an event log, not a data lake
+
+The distinction changes what gets built, so it is worth stating plainly.
+
+A data lake is queried in place with schema-on-read. This log is **never queried, only replayed**. Events are typed, ordered by a hybrid logical clock, and idempotent, and every device's SQLite is a read model rebuilt from them.
+
+**The working analogy is git.**
+Each clone is a full replica built from an immutable object log. The remote is dumb storage that understands nothing about the contents. `git gc` is exactly the compaction problem in the open items.
+
+There is no sync server. The service is a bucket.
+
+### Object layout
+
+```
+enqueue/
+  log/{device_id}/{hlc}-{ulid}.evt    one encrypted event
+  blobs/{sha256}                       encrypted original bytes, content addressed
+  snapshots/{hlc}.snap                 periodic compaction, see open items
+```
+
+**Per-device prefixes are what make a dumb object store viable as a multi-writer log.**
+Each device only ever writes under its own `device_id`, so there is no write contention, no locking, and no compare-and-swap. Two peers appending at the same moment cannot collide because they are not writing to the same place.
+
+Blobs are content addressed by sha256, so the same artifact captured on two machines uploads once.
+
+### Event types
+
+| Event | Payload |
+|---|---|
+| `artifact.created` | id, kind, title, source_url, content_hash, captured_at, provenance |
+| `block.added` | artifact_id, parent_id, ordinal, depth, text |
+| `note.appended` | artifact_id, entry_id, supersedes_id, text |
+| `facet.generated` | artifact_id, level, statement, model_version |
+| `exhibit.saved` | id, name, theme, through_line, members with placards |
+| `member.placard_edited` | exhibit_id, artifact_id, text |
+| `member.ejected` | exhibit_id, artifact_id |
+| `artifact.flagged` | artifact_id, local_only, pinned |
+
+Every event carries `{event_id, hlc, device_id, type, payload}` and is encrypted with the DEK before upload.
+
+**Local-only artifacts emit no events at all.** They never enter the log, which is what makes the flag mean what PRODUCT.md says it means.
+
+### The two loops
+
+- **Push** appends new events under this device's own prefix.
+- **Pull** lists objects newer than this device's watermark, fetches, decrypts, and applies them in HLC order. Application is idempotent by `event_id`, so a partial pull is safe to redo.
+
+Transport is plain S3, GCS, or WebDAV for Proton Drive.
+There is no custom protocol and no server-side code to operate or secure.
+
+### Conflicts
+
+- **Artifacts cannot conflict.** Content-addressed and immutable. The same URL captured on two machines is one artifact with two capture events.
+- **Notes cannot conflict either.** They are append-only entries, so two peers writing at once produce two entries and both survive. See [Why notes are entries rather than a field](#why-notes-are-entries-rather-than-a-field).
+- **Placards and flags** resolve by field-level last-write-wins. A placard is machine-generated with a rare manual override, and a flag is a scalar where discarding the loser is what the user meant.
+- **Ejections are tombstones**, resolved by the same rule, so an ejection made on either peer sticks.
+
+**There is no server, therefore no authoritative clock.**
+Dequeue resolves last-write-wins with server timestamps. Here two peers can drift, and a laptop can simply have the wrong time.
+Use a **hybrid logical clock with a device-id tiebreak**, never wall time. It is a small amount of code and a genuinely nasty class of bug if skipped.
+
+Duplicate ingest work is possible when two peers process the same artifact. It is idempotent, so it is waste rather than corruption, and it is not worth a locking scheme.
+
+### What the backend sees
+
+Object count, object sizes, and timing. Never content.
+
+### Export is the second copy
+
+The sync log is not a backup. It is one copy in one place, behind a password with **no recovery path by design**.
+
+Lose the password or lose the bucket and a lifetime hoard is gone. Two single points of failure in a store whose first principle is that captures are sacred.
+
+`enq export` writes the museum as **plain markdown plus original files** in an ordinary directory tree: one file per artifact, notes inline, exhibits as their own files listing members and placards. No database, no encryption, nothing Enqueue-specific required to read it.
+
+It serves two purposes at once, which is why it is one feature and not two:
+
+- **The escape hatch.** The hoard is readable without this application, forever, which is the minimum honest commitment for something meant to hold decades of a person's thinking.
+- **The second copy.** Somewhere the password cannot lock you out of.
+
+M1. It is not optional, and it is not a nice-to-have to defer under pressure.
+
+### Local-only means local
+
+The per-artifact `local-only` flag keeps an artifact away from network models. It also keeps it out of the log.
+
+An artifact marked local-only exists on the machine that captured it and nowhere else.
+This is the escape hatch for a hoard that spans a personal machine and a work-managed one, where encryption at rest is not the relevant defence: an MDM-managed endpoint has an agent, disk access, remote wipe, and possibly TLS interception on the network sync traffic crosses.
+Full peering is the default because it is what makes the museum whole. The flag is there for the material that should never have been on that machine in the first place.
 
 ---
 
@@ -365,7 +639,7 @@ That splits the problem cleanly:
 
 | Class | Tables | Policy |
 |---|---|---|
-| Sacred | `artifacts`, `artifact_blobs`, `capture_context`, `notes`, `exhibits`, `exhibit_members`, `exhibit_notes` | Real migrations. **Additive only.** Never a destructive change, never a drop that loses user-authored content. |
+| Sacred | `artifacts`, `artifact_blobs`, `capture_context`, `note_entries`, `exhibits`, `exhibit_members`, `exhibit_notes` | Real migrations. **Additive only.** Never a destructive change, never a drop that loses user-authored content. |
 | Disposable | `artifact_text`, `chunks`, `facets`, both Qdrant collections | No migrations at all. On a version bump, truncate and rebuild from originals in the background. |
 
 Consequences to respect:
@@ -470,6 +744,32 @@ It is the high-volume path, and Lumo's rate limits are unknown. Quality is spent
 
 Running a VLM on a born-digital PDF is minutes of compute replacing milliseconds.
 
+### The sync log is the source of truth, and SQLite is a view
+
+An earlier design made the local SQLite store the data, with sync as an afterthought.
+
+Two Macs as full peers forces the inversion, and the inversion is better on its own merits.
+Adding a machine, restoring a backup, and rebuilding a corrupted index become one operation instead of three.
+It also extends the "derived data is disposable" rule to cover the entire local database rather than only the index.
+
+A database server was considered and rejected. The privacy promise says the sync target only ever sees ciphertext, and a server that cannot read the data cannot index it, so Postgres or Turso would be a costly blob store with more failure modes than an object store.
+
+### The in-process worker is about blast radius, not about avoiding a broker
+
+This was previously justified as "no Redis, no broker, no second container", which is development cost wearing a disguise.
+
+The real reason is robustness. A broker introduces a failure mode where **capture breaks because infrastructure is down**, and capture is the one thing in this product that must never fail. A SQLite table has no such mode: if the process is running at all, the enqueue succeeded.
+
+Stated as cost, the next person under different pressure reverses it. Stated as blast radius, it holds.
+
+### Python was chosen to avoid owning a PDF parser
+
+The record previously leaned partly on library availability, which is cost-adjacent reasoning.
+
+The deciding value is narrower and stronger: **a Rust engine would mean maintaining a document parser.** Scanned pages, two-column layouts, tables, ligatures, and broken producers are a swamp, and marker exists because a team grinds on it full time. Owning that for a decade is a far worse maintenance liability than bundling an interpreter.
+
+Speed was never the argument. Over 95 percent of wall clock is model inference, and Qdrant, the embedding runtime, and pymupdf are already native.
+
 ### Corrections are scoped to the exhibit
 
 Ejecting an artifact from an exhibit teaches the curator about *that exhibit*, not about global taste. Only a repeated pattern across unrelated exhibits earns a global write, and it happens as a background write rather than in the hot path.
@@ -485,4 +785,7 @@ The failure being avoided is memory rot: a one-off correction becoming a permane
 - Whether Qdrant ships as a bundled sidecar binary or is required as a separate install.
 - Android index format. What exactly a satellite reads, and how much of it syncs.
 - Fabric export format, for cold-start import of existing hand-written book annotations.
+- **Log compaction.** An append-only log grows forever. It needs periodic snapshotting so a new peer does not replay a decade of events, and the snapshot must not become a second source of truth.
+- **Log object granularity.** One object per event is simple and produces a great many small objects; batching is cheaper and complicates partial failure.
+- **New-peer bootstrap time.** A fresh machine must replay the log and re-embed the entire corpus locally. At ten thousand artifacts that is hours, not minutes. It needs to be resumable and to make the museum usable before it finishes rather than after.
 - Everything under Open in [docs/CURATION.md](docs/CURATION.md) and [docs/EVAL.md](docs/EVAL.md), all of which the golden set answers rather than argument.

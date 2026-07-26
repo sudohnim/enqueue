@@ -1,0 +1,260 @@
+"""The contracts for every model call. Transcribed from docs/CURATION.md.
+
+The validators are the product's quality floor, not defensive plumbing. Instructor
+re-prompts on a validation error, so a failing validator is the system working.
+
+Do not soften one because a model keeps failing it. Report it instead.
+"""
+
+from __future__ import annotations
+
+from enum import IntEnum, StrEnum
+
+from pydantic import BaseModel, Field, ValidationInfo, model_validator
+
+HEDGES = {"may", "might", "perhaps", "arguably", "possibly", "seems", "suggests"}
+
+# A level-2-or-above facet that talks *about* the artifact has not climbed, it has
+# only paraphrased. "This writing demonstrates that adversity builds character" is a
+# summary wearing a level-3 badge; "Character forms under sustained difficulty" is
+# the claim itself, and only the second one can match a lens it shares no words with.
+#
+# Found by running the real generator: llama3.1:8b passed every other validator and
+# opened all six of its level-2-plus facets this way.
+SELF_REFERENCE = (
+    "this writing",
+    "this text",
+    "this collection",
+    "this artifact",
+    "this document",
+    "this note",
+    "this piece",
+    "this article",
+    "the text",
+    "the author",
+    "the writing",
+    "the writings",
+    "the book",
+    "the article",
+    "it shows that",
+    "it demonstrates",
+    "it argues",
+    "it illustrates",
+    "the passage",
+)
+
+
+class AbstractionLevel(IntEnum):
+    LITERAL = 0  # what it is
+    SUBJECT = 1  # what it is about
+    MECHANISM = 2  # what it demonstrates
+    PRINCIPLE = 3  # what it is an instance of
+    STANCE = 4  # what it argues for
+
+
+class Facet(BaseModel):
+    level: AbstractionLevel
+    statement: str = Field(description="One complete sentence, 8 to 30 words.")
+
+    @model_validator(mode="after")
+    def check_statement(self, info: ValidationInfo):
+        words = self.statement.split()
+        if not 8 <= len(words) <= 30:
+            raise ValueError(
+                f"statement is {len(words)} words, must be 8 to 30: {self.statement!r}"
+            )
+        if not self.statement.rstrip().endswith("."):
+            raise ValueError("statement must be one complete sentence ending in a period")
+
+        # The climb check, part one. Above level 1, a facet that still names the
+        # artifact's own subject has not generalised, whatever level it claims.
+        if self.level >= AbstractionLevel.MECHANISM:
+            banned = (info.context or {}).get("proper_nouns", set())
+            hit = {w.strip(".,;:'\"()").lower() for w in words} & banned
+            if hit:
+                raise ValueError(
+                    f"level {int(self.level)} facet still names {sorted(hit)}; "
+                    "restate it so it would apply to something unrelated"
+                )
+
+            # Part two. Talking about the artifact is paraphrase, not abstraction.
+            lowered = self.statement.lower()
+            for phrase in SELF_REFERENCE:
+                if phrase in lowered:
+                    raise ValueError(
+                        f"level {int(self.level)} facet refers to the artifact "
+                        f"({phrase!r}); state the claim itself, as though it were true "
+                        "independently of anything you were given"
+                    )
+        return self
+
+
+class FacetSet(BaseModel):
+    facets: list[Facet]
+
+    @model_validator(mode="after")
+    def check_set(self):
+        if not 5 <= len(self.facets) <= 15:
+            raise ValueError(f"{len(self.facets)} facets, must be 5 to 15")
+        high = [f for f in self.facets if f.level >= AbstractionLevel.PRINCIPLE]
+        if len(high) < 2:
+            raise ValueError(
+                f"only {len(high)} facets at level 3 or above, need at least 2; "
+                "the set has not climbed"
+            )
+        return self
+
+
+class Verdict(StrEnum):
+    BELONGS = "belongs"
+    ADJACENT = "adjacent"
+    NO = "no"
+
+
+class Judgment(BaseModel):
+    artifact_id: str
+    verdict: Verdict
+    strength: int = Field(ge=1, le=5)
+    matched_facet_id: str | None = None
+    evidence: str = Field(default="", description="Verbatim span from the artifact.")
+    placard: str = Field(default="", description="Why this is in this room. 8 to 25 words.")
+
+    @model_validator(mode="after")
+    def check(self, info: ValidationInfo):
+        if self.verdict is Verdict.NO:
+            return self
+
+        source = (info.context or {}).get("artifact_text", "")
+        if source and self.evidence not in source:
+            raise ValueError("evidence is not a verbatim span of the artifact; quote exactly")
+
+        words = self.placard.split()
+        if not 8 <= len(words) <= 25:
+            raise ValueError(f"placard is {len(words)} words, must be 8 to 25")
+        hedged = {w.lower().strip(".,") for w in words} & HEDGES
+        if hedged:
+            raise ValueError(f"placard hedges with {sorted(hedged)}; state it or drop the artifact")
+
+        # Same disease the facets had. A placard is wall text about the idea, not a
+        # note about the filing decision. "This artifact belongs in the antifragility
+        # theme because it describes X" is the machine narrating its own reasoning.
+        lowered = self.placard.lower()
+        for phrase in (*SELF_REFERENCE, "belongs in", "is in the room", "this is included"):
+            if phrase in lowered:
+                raise ValueError(
+                    f"placard refers to the artifact or to the filing decision ({phrase!r}); "
+                    "write the wall text a visitor would read, about the idea itself"
+                )
+
+        # A placard naming the lens is circular. "Routines promote antifragility" only
+        # asserts membership; the room is already about antifragility. Say the thing
+        # the artifact actually says and let the reader see why it hangs here.
+        lens_words = {w for w in (info.context or {}).get("lens", "").lower().split() if len(w) > 3}
+        placard_words = {w.strip(".,;:'\"()-").lower() for w in words}
+        overlap = lens_words & placard_words
+        if overlap:
+            raise ValueError(
+                f"placard uses the theme's own words {sorted(overlap)}; that only restates "
+                "membership. Say what the artifact claims, not that it fits."
+            )
+        if not self.placard.rstrip().endswith((".", "!", "?")):
+            raise ValueError("placard must be a complete sentence")
+        return self
+
+
+class Grouping(BaseModel):
+    name: str
+    artifact_ids: list[str] = Field(min_length=2)
+    claim: str = Field(description="What these hold in common. One sentence.")
+
+    @model_validator(mode="after")
+    def check(self):
+        # A grouping of one is a rename, not a grouping. The whole value of the
+        # cluster is that several artifacts turn out to share something.
+        if len(set(self.artifact_ids)) < 2:
+            raise ValueError(
+                f"grouping {self.name!r} holds one artifact; a grouping needs at least two "
+                "that genuinely share something, or it should not exist"
+            )
+        return self
+
+
+class Tension(BaseModel):
+    between: tuple[str, str] = Field(description="Two grouping names.")
+    claim: str = Field(description="What they disagree about. One sentence.")
+
+    @model_validator(mode="after")
+    def check(self):
+        # A question is not a tension. It is the model filling a slot it could not
+        # fill with a finding.
+        if "?" in self.claim:
+            raise ValueError(
+                "tension claim is a question; state the disagreement as a claim, "
+                "or return no tension"
+            )
+        return self
+
+
+class Exhibit(BaseModel):
+    suggested_name: str = Field(min_length=2)
+    through_line: str = Field(description="One or two sentences. The finding.")
+    groupings: list[Grouping] = Field(default_factory=list)
+    tensions: list[Tension] = Field(default_factory=list, max_length=3)
+    thin: bool = False
+    thin_reason: str | None = None
+
+    @model_validator(mode="after")
+    def check(self, info: ValidationInfo):
+        ctx = info.context or {}
+        kept = set(ctx.get("kept_artifact_ids", []))
+        lens = (ctx.get("lens") or "").strip().lower()
+
+        if kept:
+            for g in self.groupings:
+                unknown = set(g.artifact_ids) - kept
+                if unknown:
+                    raise ValueError(
+                        f"grouping {g.name!r} cites artifacts not in the room: {sorted(unknown)}"
+                    )
+
+        names = {g.name for g in self.groupings}
+        seen_pairs = set()
+        for t in self.tensions:
+            unknown = set(t.between) - names
+            if unknown:
+                raise ValueError(f"tension cites groupings that do not exist: {sorted(unknown)}")
+            if t.between[0] == t.between[1]:
+                raise ValueError("a tension needs two different groupings")
+            pair = frozenset(t.between)
+            if pair in seen_pairs:
+                raise ValueError(
+                    f"two tensions between the same pair {sorted(pair)}; "
+                    "state one disagreement per pair, or find a different pair"
+                )
+            seen_pairs.add(pair)
+
+        # The report guard. An exhibit that restates the question has told the
+        # director what they already own instead of what they think.
+        if lens and lens in self.through_line.strip().lower().rstrip("."):
+            raise ValueError(
+                "through_line restates the lens; say what the artifacts revealed, "
+                "not what was asked"
+            )
+        if self.thin and not self.thin_reason:
+            raise ValueError("a thin room must say why it is thin")
+        return self
+
+
+class LensExpansion(BaseModel):
+    """Query-side move: bring the concept down toward how documents actually talk."""
+
+    restatements: list[str] = Field(description="5 facet-style restatements of the lens.")
+    passages: list[str] = Field(description="3 hypothetical passages exemplifying it.")
+
+    @model_validator(mode="after")
+    def check(self):
+        if not 3 <= len(self.restatements) <= 8:
+            raise ValueError(f"{len(self.restatements)} restatements, want 5")
+        if not 2 <= len(self.passages) <= 5:
+            raise ValueError(f"{len(self.passages)} passages, want 3")
+        return self
