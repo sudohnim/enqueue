@@ -1,723 +1,512 @@
 # Enqueue POC - task list
 
-Status: **23 of 35 tasks.** Phases A to G are built; the pipeline runs end to end. Phase H, the evaluation harness, is the remainder.
+Status: **chats shipped, on migrations.** 15 of 21 tasks.
 
-This builds Milestone 0 from [PRODUCT.md](PRODUCT.md): a CLI that captures, ingests, indexes, curates, and measures itself. No user interface. No encryption. No sync. No Android.
+Asking is now a conversation rather than a single shot, the schema is under Alembic, a saved link can be made to say what it is, and a PDF is read inside the app.
+
+Remaining: V2 facet generation is still unrun, Phase H was never built, and curate is now measured and in trouble. See [Open questions](#open-questions).
 
 ```bash
-enq serve                     # engine on 127.0.0.1:8787, CLI is a client of it
-enq import-fabric PATH        # or whatever loader exists
-enq chunk && enq facet-gate
-enq facets                    # slow, resumable, commits per artifact
-enq index                     # dense plus sparse
-enq search "..."              # no model calls
-enq curate "antifragility"    # a room
+cd desktop && ENQUEUE_REPO=/Users/minhmai/enqueue ./target/debug/enqueue-desktop
 ```
 
-### Four things that only showed up by building
+The shell spawns the engine, waits for it, and kills it on close. If an engine is already listening it attaches instead.
 
-Each was invisible in the spec and would have shipped broken.
+Work through the tasks **in order, one at a time**. Check a box only after its "Done when" is verified by actually running the command shown.
 
-1. **Facets were paraphrase, not abstraction.** Every level-2-plus statement opened "This writing demonstrates...", describing the artifact rather than making a claim, and passed every validator. A self-reference ban in the schema and the prompt fixed it. This is the moat, and it was silently dead.
-2. **instructor renamed `validation_context` to `context`.** The wrong keyword does not error, it silently disables every context-dependent validator, including the proper-noun ban.
-3. **Titles were never indexed.** A note whose title is the only place a name appears was unfindable by that name. The author's Epictetus note is his own paraphrase and never contains the word. Prepending the title at index time fixed it.
-4. **Dense retrieval alone cannot find names.** Measured, not assumed: "what did Epictetus say about control" returned The Prince. Hybrid dense plus sparse with RRF is load-bearing, not an optimisation.
+---
 
-### Reference numbers from one real run
+## What went wrong, and what it costs
 
-Evidence the parser and chunker handle real input. Not a baseline to reproduce.
+The first build treated **every** artifact as an immutable capture with an editable note bolted on underneath.
 
-| | Value |
+That is correct for a web page, a PDF, or an image: those came from the world, and the promise is that what you saved is what the source actually said. It is wrong for a note you wrote. Your own markdown is not a capture. It is the artifact, and its body has to be editable like any other text you own.
+
+The symptom was a note whose content could not be changed, only appended to. The cause was a data model that had no concept of authorship.
+
+**The rule now:**
+
+| Kind | Body | Why |
+|---|---|---|
+| `note` | **markdown, fully editable, versioned** | You wrote it. It is yours. |
+| `link`, `pdf`, `image`, `file` | **immutable** | It came from the world. Fidelity is the point. |
+
+A note attached to a captured artifact is an annotation and stays append-only. A note that *is* the artifact is just a document.
+
+### Torn out
+
+- `src/enqueue/ingest/fabric.py` (110 lines) - a TipTap HTML parser for a format nothing will produce again.
+- `src/enqueue/ingest/importer.py` (325 lines) - Fabric-shaped import, folder-to-`local_only` conflation, blob-only markdown.
+- `blocks` as the storage for authored content. A note is one markdown document, not a tree of immutable rows.
+- 11 tests covering the above.
+
+### Kept
+
+`db`, `config`, `providers/*`, `schemas.py`, `prompts.py`, `secrets.py`, `index/*`, `retrieve/*`, and the API and CLI shells. The retrieval half of the system was never the problem.
+
+`chunk.py` survives with its rule inverted: it chunked a block tree, and now chunks markdown. The claim-plus-elaboration insight still applies, it just reads headings and list nesting instead of `parent_id`.
+
+### Honest state of the previous build
+
+23 of 35 tasks were checked. All of phases A through G existed and ran end to end. Phase H, the evaluation harness, was never built. Facet generation completed on 6 of 52 artifacts before the corpus was discarded.
+
+Four findings from that build are load-bearing and carry forward. They are recorded under [Carried findings](#carried-findings) rather than being rediscovered.
+
+---
+
+## Design brief: the capture control
+
+Confirmed with the human before writing this.
+
+**What it is.** One floating control, bottom centre, present on every surface. It replaces the top bar entirely. Three actions: `+` to capture, magnifier to search, question mark to ask.
+
+**Primary action.** Capture. It is the precondition for everything else in the product, and the one interaction whose latency is non-negotiable.
+
+**Direction.** Restrained, per PRODUCT.md. Existing tokens, no new palette. The scene is unchanged: a museum after hours, the walls receding so the objects fill the screen. Anchor reference is Fabric's floating pill, named by the human.
+
+**Why the pill replaces the chrome.** A persistent top bar is a wall. Removing it is the same argument as removing the empty thumbnail: everything that is not an artifact should get out of the way.
+
+### The `+` menu
+
+Four items. Canvas and voice note are deliberately out of scope.
+
+| Item | Produces | Editable |
+|---|---|---|
+| Note | a markdown document | yes, it is yours |
+| Upload | a file, stored whole | no |
+| Link | a URL, fetched later | no |
+| Image | a file, stored whole | no |
+
+### Ask follows context
+
+The question mark asks about **whatever is on screen**: this artifact, this exhibit, or the whole museum from home. A visible control widens the scope. This makes "ask about this PDF" a cheap action instead of always paying for the full pipeline.
+
+### States
+
+| State | Behaviour |
 |---|---|
-| Artifacts | 122 (76 notes, 8 blobs, 38 bookmarks) |
-| Blocks | 2,319 |
-| Chunks | 633, median 38 words |
-| Facet-eligible | 52 of 76 notes |
-| Facet generation | about 96s per artifact on `llama3.1:8b` |
-| Chunk indexing | 633 points in about 170s, dense plus sparse |
+| Rest | three glyphs, no labels |
+| `+` open | four items rise; Escape or outside click dismisses |
+| Search open | the pill becomes a field in place, results replace the view |
+| Ask open | same, with the current scope named |
+| Capturing | the control returns immediately; ingest is asynchronous and never blocks |
+| Offline model | search and capture still work; ask and curate say what is unavailable |
 
-The chunk count is the load-bearing one. A first version produced 1,421 chunks at a median of 17 words, because pasted model output shreds into headings. Merging childless paragraphs while leaving claim-plus-elaboration units intact fixed it.
+### Anti-goals
 
-Work through the tasks **in order, one at a time**. Check a box only after its "Done when" is verified by actually running the command shown. Do not start a task until the previous one is checked.
+Not a command palette. Not a dock with a growing row of icons. It never grows a fourth action without something else leaving.
+
+---
+
+## Carried findings
+
+From the previous build. Each was invisible in the spec and cost real time to find.
+
+1. **Facets came back as paraphrase, not abstraction.** Every level-2-plus statement opened "This writing demonstrates...", describing the artifact rather than making a claim, and passed every validator. Fixed by a self-reference ban in `schemas.py` and the prompt. This is the moat, and it was silently dead.
+2. **`instructor` renamed `validation_context` to `context`** in 1.9. The wrong keyword does not raise, it silently disables every context-dependent validator including the proper-noun ban.
+3. **Titles were never indexed.** A note whose title is the only place a name appears was unfindable by that name. Prepend the title at index time.
+4. **Dense retrieval alone cannot find proper nouns.** Measured: "what did Epictetus say about control" returned The Prince. Hybrid dense-plus-sparse with RRF is load-bearing, not an optimisation.
+
+Also carried: **strict validators plus a weak local model is pathological.** Four of ten rerank calls failed on `evidence is not a verbatim span`, each burning its retries. The validators are right and `llama3.1:8b` cannot satisfy them. See [OPEN.md](OPEN.md) item 0. Re-measured this session at 3 of 4; it is getting worse, not better.
+
+Added this session:
+
+5. **A prompt that only warns produces refusal.** The first chat prompt named the hallucination failure three times and never said what to do when the passages did answer, so the model refused a question whose answer was the top passage at a retrieval score of 1.0. A validator catches a wrong answer; nothing catches an answer that was never attempted. State the ordinary case first.
+6. **Write the question and its answer together.** Appending the question first reads as natural and leaves an orphan when the model call fails, which the retry then duplicates. Found on the second turn of the first real conversation.
+7. **Measure layout when you use it, not when you mount.** `clientWidth` at mount is 0 whenever the pane has not laid out, and a zero-width render is a blank screen with no error anywhere.
+
+---
 
 ## Rules for the implementing agent
 
-- **Do exactly one task per turn.** Report what changed and how you verified it. Do not batch tasks.
+- **Do exactly one task per turn.** Report what changed and how you verified it.
 - **Never commit.** The human commits.
 - **If a task and a spec document disagree, the spec wins.** Specs are [PRODUCT.md](PRODUCT.md), [AGENTS.md](../AGENTS.md), [CURATION.md](CURATION.md), [EVAL.md](EVAL.md).
-- **Do not invent libraries or model names.** Every dependency and model id you need is written in this file. If something seems missing, stop and say so rather than substituting.
-- **Do not refactor code from earlier tasks** unless a task tells you to.
-- **Never use an em dash** in code, comments, docs, or commit messages. Use a plain dash.
-- Format Python with `black`. Run it before reporting a task done.
+- **Do not invent libraries or model names.** Everything you need is written here.
+- **Never use an em dash.** Plain dash.
+- Format with `black` before reporting done.
 
-## Hard rules that are easy to break
+## Hard rules
 
-These come from the specs. Violating any of them silently breaks the product. Re-read this list before each task.
-
-1. **Never put text in a Qdrant payload.** Payloads hold `artifact_id`, `chunk_id` or `facet_id`, and `embed_version`. No titles, no URLs, no excerpts. Text lives in SQLite and is fetched by id after retrieval.
-2. **Never use instructor's default `TOOLS` mode.** Pass the mode explicitly, per adapter.
-3. **Never flatten the bullet nesting** when parsing Fabric HTML. The nesting is the author's thinking structure.
-4. **Never modify or delete a row in `artifacts`, `blocks`, or `note_entries` after insert.** They are append-only. Editing a note **appends a new entry** with `supersedes_id` set. There is no `UPDATE` on user-authored text anywhere in this codebase.
-5. **Never use retrieval inside the proposal pass** in Phase H. That would score the system against its own blind spots.
-6. **Never report `recall@150` on this corpus.** It has 76 artifacts, so recall is trivially 1.0. See [EVAL.md](EVAL.md) for the two regimes.
-7. **Run the secret scan before any text is sent to a model.** The source corpus is known to contain a plaintext password.
+0. **Schema changes are migrations.** Never edit a table by hand and never add a `CREATE TABLE` to application code. A new revision in `src/enqueue/migrations/versions/`, or it does not happen.
+1. **A note's body is editable. A capture's body is not.** This is the correction the rebuild exists for.
+2. **Never put text in a Qdrant payload.** Ids only. Text lives in SQLite and is fetched after retrieval.
+3. **Never use instructor's default `TOOLS` mode.** Pass the mode explicitly.
+4. **Pass `context=`, not `validation_context=`.** The wrong keyword silently disables validators.
+5. **Prepend the title when indexing.** Otherwise names in titles are unfindable.
+6. **Run the secret scan before any text reaches a model.**
+7. **Capture returns before processing.** Always. Ingest is a queue.
 
 ---
 
-## Context (read once before starting)
+## Phase R - Rebuild the artifact model
 
-### What this POC is proving
+### R1. Schema
 
-That a hand-built furniture article can surface under "antifragility" when the two share no vocabulary. Everything in this task list exists to make that testable.
+- [x] **Files:** `src/enqueue/migrations/`, `src/enqueue/db.py`
 
-At 76 artifacts the candidate pool is the whole corpus, so **this POC measures judgment, not retrieval**. The metric is `hard-hit@15`: do the hard analogies rank into the top fifteen after reranking.
+Superseded by [M1](#m1-migrations). `schema.sql` is gone; revision `0001` is the same shape.
 
-### The corpus
-
-**Throwaway. The store gets deleted and rebuilt freely.**
-
-A Fabric export was used once to learn the shape of real input, and the parser is built and tested against that shape. It is **not** the working corpus and is not imported during development.
-
-What the format taught us, and what the parser therefore handles:
-
-- TipTap HTML, with `data-uuid` and `data-created-at` on every node.
-- Nesting is semantic: a top-level `<li>` is a claim, nested `<li>` elements elaborate on it. Flattening destroys the signal.
-- Real notes range from one word to 2,600. Many are under 50.
-- Pasted model output is mixed in with authored notes, and it shreds into headings and single list items unless childless paragraphs are merged.
-- Netscape bookmark files carry URL, title, and `ADD_DATE` only, with no content.
-- Credentials turn up in snippets, which is why the secret scan runs before any model call.
-
-For development, load junk. When there is something worth keeping, delete the store and start clean.
-
-**The eval corpus is a separate problem.** Junk data has no genuine analogies, and the whole point of the golden set is measuring whether hard analogies surface. See Phase H.
-
-### Models and the privacy decision
-
-**The human must choose before task A1. Do not choose for them.**
-
-Facet generation is the moat, and bad facets are permanent pollution rather than a weak result: a placard is read once and forgotten, a facet is embedded and votes on every future retrieval. A 7B running locally may never climb past level 2, which would make the whole evaluation measure the model rather than the architecture.
-
-But the Lumo API has not shipped, so "the good model" means a hosted one, and the corpus is the human's real notes.
-
-| Path | What happens |
-|---|---|
-| **A. Hosted, pre-scrubbed** (recommended) | Mark `biz_` and `snippets` as `local_only` before the first facet run, then use OpenRouter. Books and mental models, which are the interesting material, go to a strong model. Nothing sensitive leaves the machine |
-| B. Fully local | Ollama for everything. Nothing leaves the machine at all. Accept that a poor result may be the model rather than the design |
-
-Under either path, `local_only` artifacts route to Ollama. That mechanism is the same.
-
-Whichever is chosen, record it at the top of every eval run, because a score is meaningless without knowing which model produced the facets.
-
-| Purpose | Model |
-|---|---|
-| Embeddings | `BAAI/bge-base-en-v1.5` via `fastembed`, 768 dimensions, ONNX, no PyTorch |
-| Facets, rerank, synthesis, path A | an OpenRouter model the human names |
-| Facets, rerank, synthesis, path B | `qwen2.5:7b-instruct` via Ollama |
-| Anything marked `local_only` | `qwen2.5:7b-instruct` via Ollama, always |
-
-`qwen2.5:7b-instruct` is chosen for a 16GB M1. **Do not substitute a larger local model.**
-
-### The Ollama endpoint is `127.0.0.1`, not `localhost`
-
-**This machine has two Ollama instances.**
-
-A native one listening on `127.0.0.1:11434`, and a Docker container from an unrelated project listening on the IPv6 wildcard `*:11434`. `localhost` resolves to IPv6 first, so any client using `http://localhost:11434` reaches the **Docker** instance, which has different models.
-
-**Always use `http://127.0.0.1:11434/v1`.** If a model you pulled is reported as missing, this is why. Verify with:
-
-```bash
-curl -s http://127.0.0.1:11434/api/tags | grep -o '"name":"[^"]*"'
-```
-
-That must list `qwen2.5:7b-instruct` before you start Phase A3.
-
-### Layout
-
-```
-enqueue/
-  pyproject.toml
-  src/enqueue/
-    __init__.py
-    cli.py              typer entry point
-    config.py           paths, model ids, constants
-    db.py               sqlite3 connection, schema application
-    schema.sql
-    providers/
-      base.py           the Provider protocol
-      ollama.py         the only adapter in the POC
-    ingest/
-      fabric.py         TipTap HTML parser
-      secrets.py        secret scanning
-      importer.py       files to artifacts
-      chunk.py
-      facets.py
-    index/
-      embed.py
-      qdrant.py
-    retrieve/
-      expand.py
-      search.py
-      rerank.py
-      synthesize.py
-    schemas.py          all pydantic models from CURATION.md
-  eval/
-    golden.yaml
-    harness.py
-  tests/
-```
-
----
-
-## Phase A - Skeleton
-
-### A1. Project skeleton and CLI
-
-- [x] **Files:** `pyproject.toml`, `src/enqueue/__init__.py`, `src/enqueue/cli.py`, `src/enqueue/config.py`
-
-Steps:
-1. `uv init` in the repo root. Set `requires-python = ">=3.11"`.
-2. `uv add typer pydantic instructor chonkie fastembed qdrant-client beautifulsoup4 lxml pyyaml fastapi uvicorn httpx`
-3. `uv add --dev black pytest`
-4. `config.py` holds constants only, no logic:
-
-```python
-DATA_DIR      = Path.home() / ".enqueue-poc"
-DB_PATH       = DATA_DIR / "enqueue.db"
-BLOB_DIR      = DATA_DIR / "blobs"
-EMBED_MODEL   = "BAAI/bge-base-en-v1.5"
-EMBED_DIM     = 768
-EMBED_VERSION = "bge-base-en-v1.5"
-LLM_MODEL     = "qwen2.5:7b-instruct"
-OLLAMA_URL    = "http://127.0.0.1:11434/v1"   # 127.0.0.1, never localhost. See Context.
-QDRANT_URL    = "http://127.0.0.1:6333"
-```
-5. `cli.py` defines a typer app with one command, `enq version`, that prints the package version.
-
-**Done when:** `uv run enq version` prints a version string.
-
-### A2. Database
-
-- [x] **Files:** `src/enqueue/schema.sql`, `src/enqueue/db.py`
-
-Write `schema.sql` with exactly these tables. Use `TEXT` for all ids and timestamps. Timestamps are ISO 8601 strings in UTC.
+Replace `blocks` with a body on the artifact, and keep note history as versions.
 
 ```sql
-CREATE TABLE IF NOT EXISTS artifacts (
-  id            TEXT PRIMARY KEY,
-  kind          TEXT NOT NULL,          -- note | bookmark | pdf | image
-  title         TEXT NOT NULL,
-  source_url    TEXT,
-  content_hash  TEXT NOT NULL UNIQUE,   -- dedupe key
-  captured_at   TEXT NOT NULL,
-  imported_from TEXT,                   -- 'fabric:books' etc
-  provenance    TEXT NOT NULL,          -- authored | pasted | unknown
-  local_only    INTEGER NOT NULL DEFAULT 0,
-  status        TEXT NOT NULL           -- ok | text_only | failed
-);
-
-CREATE TABLE IF NOT EXISTS blocks (
+CREATE TABLE artifacts (
   id           TEXT PRIMARY KEY,
-  artifact_id  TEXT NOT NULL REFERENCES artifacts(id),
-  parent_id    TEXT REFERENCES blocks(id),   -- NULL for top level. THIS IS THE NESTING.
-  ordinal      INTEGER NOT NULL,
-  depth        INTEGER NOT NULL,
-  text         TEXT NOT NULL,
-  created_at   TEXT
+  kind         TEXT NOT NULL,        -- note | link | pdf | image | file
+  title        TEXT NOT NULL,
+  body         TEXT,                 -- markdown. NOTES ONLY. NULL for captures.
+  source_url   TEXT,
+  content_hash TEXT NOT NULL UNIQUE,
+  mime         TEXT,
+  filename     TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  local_only   INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL         -- ok | pending | text_only | failed
 );
 
-CREATE TABLE IF NOT EXISTS note_entries (
+-- Every saved state of a note's body. The note itself is mutable; this is the log
+-- that makes two machines editing it lossless.
+CREATE TABLE artifact_versions (
+  id          TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+  body        TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+
+-- Annotations on a CAPTURED artifact. Append-only, because they comment on
+-- something immutable. A note's own body is not stored here.
+CREATE TABLE annotations (
   id            TEXT PRIMARY KEY,
   artifact_id   TEXT NOT NULL REFERENCES artifacts(id),
-  supersedes_id TEXT REFERENCES note_entries(id),   -- an edit appends, never updates
+  supersedes_id TEXT REFERENCES annotations(id),
   text          TEXT NOT NULL,
   created_at    TEXT NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS chunks (
-  id            TEXT PRIMARY KEY,
-  artifact_id   TEXT NOT NULL REFERENCES artifacts(id),
-  ordinal       INTEGER NOT NULL,
-  text          TEXT NOT NULL,
-  chunker       TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS facets (
-  id            TEXT PRIMARY KEY,
-  artifact_id   TEXT NOT NULL REFERENCES artifacts(id),
-  level         INTEGER NOT NULL,       -- 0..4
-  statement     TEXT NOT NULL,
-  model_version TEXT NOT NULL,
-  trust         REAL NOT NULL DEFAULT 0.5   -- see below
-);
-
-CREATE TABLE IF NOT EXISTS exhibits (
-  id            TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  theme         TEXT NOT NULL,          -- IMMUTABLE after insert
-  through_line  TEXT,
-  thin          INTEGER NOT NULL DEFAULT 0,
-  thin_reason   TEXT,
-  created_at    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS exhibit_members (
-  exhibit_id    TEXT NOT NULL REFERENCES exhibits(id),
-  artifact_id   TEXT NOT NULL REFERENCES artifacts(id),
-  placard       TEXT NOT NULL,
-  evidence      TEXT NOT NULL,
-  strength      INTEGER NOT NULL,
-  rank          INTEGER NOT NULL,
-  origin        TEXT NOT NULL,          -- generated | manual
-  PRIMARY KEY (exhibit_id, artifact_id)
-);
-
-CREATE TABLE IF NOT EXISTS facet_skips (
-  artifact_id  TEXT PRIMARY KEY REFERENCES artifacts(id),
-  reason       TEXT NOT NULL           -- too_short | kind | text_only
-);
-
-CREATE INDEX IF NOT EXISTS idx_blocks_artifact ON blocks(artifact_id);
-CREATE INDEX IF NOT EXISTS idx_chunks_artifact ON chunks(artifact_id);
-CREATE INDEX IF NOT EXISTS idx_facets_artifact ON facets(artifact_id);
 ```
 
-`db.py` exposes `get_conn() -> sqlite3.Connection` which creates `DATA_DIR`, opens `DB_PATH`, sets `row_factory = sqlite3.Row`, enables `PRAGMA foreign_keys = ON`, and applies `schema.sql`.
+Keep `chunks`, `facets`, `facet_skips`, `secret_hits`, `exhibits`, `exhibit_members` as they are.
 
-Add `enq init` to the CLI, which calls `get_conn()` and prints the database path.
+**Done when:** `enq init` applies cleanly twice and `.tables` lists the new set with no `blocks`.
 
-**Done when:** `uv run enq init` runs twice with no error, and `sqlite3 ~/.enqueue-poc/enqueue.db ".tables"` lists all six tables.
+### R2. Delete the Fabric layer
 
-### A3. HTTP API, and the CLI becomes a client of it
+- [x] Remove `ingest/fabric.py`, `ingest/importer.py`, and the 11 tests that cover them. Remove the `import-fabric` and `import-bookmarks` commands and endpoints.
 
-- [x] **Files:** `src/enqueue/api.py`, rework `cli.py`
+**Done when:** `uv run pytest` is green and `rg -i fabric src/` returns nothing.
 
-AGENTS.md says the engine sits behind a narrow localhost API and clients never know what is behind it. If the POC ships CLI-only, M1 inherits **two ways to drive the engine** and has to retrofit the boundary. Build it now.
+### R3. Notes are documents
 
-1. `api.py` defines a FastAPI app bound to `127.0.0.1:8787` only. Never `0.0.0.0`.
-2. `enq serve` runs it with uvicorn.
-3. Every CLI command calls the API over HTTP. **No CLI command touches the database directly.**
-4. Start with `GET /health` returning `{"status": "ok", "artifacts": <count>}`.
+- [x] **Files:** `src/enqueue/notes.py`, endpoints on `api.py`
 
-Add endpoints as later tasks need them. The rule is what matters: **business logic lives behind the API, and the CLI is a thin client.**
-
-**Done when:** `uv run enq serve` starts, `curl -s http://127.0.0.1:8787/health` returns the JSON, `uv run enq health` prints the same, and `lsof -nP -iTCP:8787` shows it bound to `127.0.0.1` and not `*`.
-
-### A4. Provider interface and Ollama adapter
-
-- [x] **Files:** `src/enqueue/providers/base.py`, `src/enqueue/providers/ollama.py`
-
-`base.py`:
-
-```python
-from typing import Protocol, TypeVar
-from pydantic import BaseModel
-
-T = TypeVar("T", bound=BaseModel)
-
-
-class Provider(Protocol):
-    name: str
-
-    def complete(
-        self,
-        system: str,
-        user: str,
-        response_model: type[T],
-        context: dict | None = None,
-        max_retries: int = 3,
-    ) -> T: ...
+```
+POST   /notes                {title?, body}      create, returns artifact
+PATCH  /artifacts/{id}/body  {body}              edit. UPDATE the artifact,
+                                                 append to artifact_versions
+GET    /artifacts/{id}/versions
 ```
 
-`ollama.py` implements it using `instructor` against Ollama's OpenAI-compatible endpoint at `config.OLLAMA_URL`, which is `http://127.0.0.1:11434/v1`. **Do not hardcode `localhost` here.** See the Context section for why.
+Editing a note **updates** `artifacts.body` and **appends** to `artifact_versions`. That is not a contradiction with append-only: the log is the history, the artifact is the current state.
 
-**Pass `mode=instructor.Mode.JSON` explicitly.** Do not rely on the default.
+Title defaults to the first heading or first line of the body.
 
-Pass `context` through to `validation_context` so the validators in Phase E can read it.
+**Done when:** create a note, edit it three times, read it back with the latest body and three versions.
 
-**Done when:** a throwaway script asks for a two-field pydantic model and gets a valid instance back. Delete the script after verifying.
+### R4. Captures
+
+- [x] **Files:** `src/enqueue/capture.py`
+
+```
+POST /capture/link    {url}              status pending, no fetch yet
+POST /capture/upload  multipart          file, image, or pdf
+```
+
+Content-addressed by sha256. Dedupe on hash. Secret scan before anything is stored as text. `mime` and `filename` recorded. PDFs get page count via pymupdf.
+
+**Done when:** upload a PDF and an image, post a link; all three appear with correct kinds, and re-posting any of them adds nothing.
+
+### R5. Chunking, inverted
+
+- [x] **File:** `src/enqueue/ingest/chunk.py`
+
+Chunk markdown instead of a block tree. A heading plus its content is one chunk. Consecutive short paragraphs merge to a floor of 120 words. Oversized chunks split at 600.
+
+The reasoning is unchanged from the previous build, where merging fixed a median chunk size of 17 words caused by paragraph-per-block shredding.
+
+**Done when:** a 2,000-word markdown note produces chunks with a median above 80 words and none under 20.
 
 ---
 
-## Phase B - Import
+## Phase U - The capture control
 
-### B1. Fabric HTML parser
+### U1. The pill
 
-- [x] **File:** `src/enqueue/ingest/fabric.py`
+- [x] **File:** `src/enqueue/static/museum.html`
 
-Parse one TipTap HTML file into a flat list of blocks that preserves the tree via `parent_id`.
+Three glyphs, bottom centre, fixed. Removes the top bar. Uses existing tokens and the 4pt scale already in the file.
 
-```python
-@dataclass
-class ParsedBlock:
-    uuid: str
-    parent_uuid: str | None
-    ordinal: int
-    depth: int
-    text: str
-    created_at: str | None
+**Done when:** it renders in both themes, is keyboard reachable, and the top bar is gone.
 
+### U2. The `+` menu
 
-def parse_fabric_html(html: str) -> list[ParsedBlock]: ...
-```
+- [x] Four items: note, upload, link, image. Escape and outside-click dismiss. Motion respects `prefers-reduced-motion`.
 
-Rules:
-- Walk `<ul>` and `<li>` recursively with BeautifulSoup and the `lxml` parser.
-- A block's text is the text of its own direct `<p>` child, not its descendants' text.
-- `depth` is nesting level, top level is 0.
-- Read `data-uuid` and `data-created-at` from the `<li>` when present, otherwise from the `<p>`. Generate a uuid4 if neither exists.
-- Handle files with no list at all: a bare `<p>`, `<h2>`, or `<pre>` becomes a single depth-0 block.
-- Preserve `<pre><code>` content verbatim, including newlines.
-- Unescape HTML entities.
+**Done when:** each item opens its capture path and the menu closes on Escape.
 
-**Do not flatten the tree. Do not concatenate a parent with its children.**
+### U3. Note editor
 
-**Done when:** parsing `books/Discourses_by_Epictetus.html` returns 19 blocks, 8 at depth 0 and 11 at depth 1, and the block containing "boxer derives their greatest advantage" is at depth 0 with three children. Every block has a `created_at`.
+- [x] Markdown source with live render, using the renderer already written. Saves on blur and Cmd+S. Editing the body of a note, not appending underneath it.
 
-Those numbers are ground truth from the file: it contains 19 `<li>` elements, 8 top level and 11 nested, plus one empty `<p>` that must be skipped.
+**Done when:** create a note, type markdown, watch it render, reload, and find the same text in the field.
 
-### B2. Secret scanning
+### U4. Search and ask in the pill
 
-- [x] **File:** `src/enqueue/ingest/secrets.py`
+- [x] Magnifier expands the pill into a field in place. Question mark does the same and names the current scope.
 
-```python
-@dataclass
-class SecretHit:
-    kind: str
-    line: int
-    excerpt: str  # the matched line with the secret value replaced by ***
-
-
-def scan(text: str) -> list[SecretHit]: ...
-```
-
-Detect at minimum: assignments to `password`, `passwd`, `secret`, `token`, `api_key`, `apikey`; AWS access key ids (`AKIA` followed by 16 uppercase alphanumerics); private key headers (`-----BEGIN`); and `Bearer` followed by a long token.
-
-**Never put the secret value itself in `excerpt`.**
-
-**Done when:** `scan()` on the text of `snippets/sftp_command.html` returns at least one hit of kind `password`, and the excerpt does not contain the actual password.
-
-### B3. Importer
-
-- [x] **File:** `src/enqueue/ingest/importer.py`, plus `enq import-fabric PATH` in the CLI
-
-For each `*.html` under each folder:
-1. Read, parse with `parse_fabric_html`.
-2. Compute `content_hash` as the sha256 of the concatenated block texts. **Skip the file if the hash already exists** in `artifacts`.
-3. Title comes from the filename: underscores to spaces, `.html` stripped, whitespace collapsed.
-4. `captured_at` is the earliest `data-created-at` across the file's blocks, falling back to file mtime.
-5. `imported_from` is `fabric:<folder>`.
-6. `provenance` is `unknown` for now. Task B5 fills it in.
-7. `local_only` is 1 for anything under `biz_`, 0 otherwise.
-8. Run `scan()` on the joined text. If it returns hits, set `status = 'text_only'` and print a loud warning naming the file and the hit kinds. **Import it anyway** and do not print the secret.
-9. Insert the artifact, then all blocks with `parent_id` resolved from `parent_uuid`.
-
-PDFs, PNG, GIF, and the one `.md` file: insert an artifact row with `status = 'text_only'` and no blocks. They are handled later.
-
-**Done when:** `uv run enq import-fabric "<copy of the export>"` reports 76 notes imported, running it a second time reports 0 new, `SELECT COUNT(*) FROM blocks` returns more than 400, and the `sftp_command` warning appeared exactly once.
-
-### B4. Bookmarks
-
-- [x] **File:** extend `importer.py`, add `enq import-bookmarks PATH`
-
-Parse `Bookmarks.html` (Netscape format) with BeautifulSoup. Each `<A HREF>` becomes an artifact with `kind = 'bookmark'`, title from the link text, `source_url` from the href, `captured_at` from `ADD_DATE` (a millisecond epoch), `content_hash` of the URL, `status = 'text_only'`, no blocks.
-
-**Do not fetch the URLs.** Fetching is out of scope for the POC.
-
-**Done when:** 39 bookmark artifacts exist and re-running adds none.
-
-### B5. Provenance
-
-- [x] **File:** extend `importer.py`, add `enq mark-provenance`
-
-Classify each note artifact as `authored` or `pasted` using a heuristic, not a model:
-
-Mark `pasted` if the joined text matches two or more of:
-- contains an emoji in a heading
-- contains "Let's break", "Let me know if", "Here's a", "That's an excellent", "In summary"
-- contains three or more `<h2>`-level headings converted to blocks
-- exceeds 800 words with fewer than 3 blocks at depth 1
-
-Everything else is `authored`.
-
-**Done when:** `hideas/PKMS.html` is `pasted`, `books/Discourses_by_Epictetus.html` is `authored`, and a printed summary shows counts per class for the human to sanity check.
+**Done when:** both work from home and from an artifact, and ask reports the scope it used.
 
 ---
 
-## Phase C - Chunks
+## Phase V - Reconnect the engine
 
-### C1. Chunking
+### V1. Index notes and captures
 
-- [x] **File:** `src/enqueue/ingest/chunk.py`, plus `enq chunk`
+- [x] Chunk and embed on save. Title prepended at index time, per hard rule 5.
 
-Rules, in order:
-1. If an artifact has blocks, **each depth-0 block plus all of its descendants becomes one chunk**, joined with newlines. This preserves claim-plus-elaboration as a unit.
-2. If a resulting chunk exceeds 800 tokens, split it further with chonkie's `RecursiveChunker` at 500 tokens with 80 overlap.
-3. If an artifact has no blocks, skip it.
+This was checked before it was true. Nothing called `chunk_artifact` on save and nothing indexed, so a note stayed invisible until someone ran `enq chunk && enq index` by hand. Found while building chats, which cannot retrieve anything from an index that is never written.
 
-Record `chunker` as `blocks-v1` or `blocks-v1+recursive` accordingly.
+Now `ingest/queue.py` owns it: one worker thread, fed by `notes.create`, `notes.edit`, and `preview.fetch`. Capture still returns first, per hard rule 7. `qdrant.index_artifact` replaces one artifact's points instead of resetting the collection, because the full pass would drop the whole index on every keystroke that triggers a save.
 
-**Done when:** `uv run enq chunk` produces chunks for all 76 notes, `Discourses_by_Epictetus` yields exactly 8 chunks, and no chunk is empty.
+**Done when:** a note is searchable within seconds of being written. Verified: a note written through the API was returned by `/search` about four seconds later with no manual step.
 
----
+### V2. Facets
 
-## Phase D - Index
+- [ ] Eligibility gate: skip under 40 words, skip captures with no extracted text, skip `text_only`.
+- [ ] Generation on save, asynchronously.
 
-### D1. Embeddings
+**Done when:** a substantial note gets 5 to 15 facets, at least two at level 3 or above.
 
-- [x] **File:** `src/enqueue/index/embed.py`
+### V3. Curate
 
-Wrap `fastembed.TextEmbedding` with `BAAI/bge-base-en-v1.5`. Expose `embed(texts: list[str]) -> list[list[float]]`. Load the model once at module level, not per call.
+- [x] Unchanged from the previous build. Verify it still runs against the new model.
 
-**Done when:** embedding two strings returns two 768-length vectors, and the same string twice returns identical vectors.
+**Run, and the result is bad.** Four candidates, `keep=3`, on `llama3.1:8b`:
 
-### D2. Qdrant
+| | |
+|---|---|
+| wall clock | 4 minutes 4 seconds |
+| judgments failed validation | 3 of 4 |
+| kept | 1 |
+| synthesis | failed, and the error was being swallowed |
 
-- [x] **File:** `src/enqueue/index/qdrant.py`, plus `enq index`
+The one surviving placard was good: "Antifragility through embracing potential harm and reversing its outcomes." The pipeline is correct. The model cannot drive it.
 
-Start Qdrant with:
+Two things were fixed rather than hidden: `_synthesise` now returns its error instead of `None`, and the curate view reports both the failure count and the synthesis error, so a thin room says whether the collection was thin or the model was.
 
-```bash
-docker run -d --name enqueue-qdrant -p 127.0.0.1:6333:6333 -v ~/.enqueue-poc/qdrant:/qdrant/storage qdrant/qdrant
-```
-
-Binding to `127.0.0.1` rather than all interfaces is deliberate. Qdrant has no authentication and this one holds the human's personal corpus.
-
-Create two collections, `chunks` and `facets`, both with a 768-dimension dense vector using cosine distance.
-
-**Payloads contain only `artifact_id`, `chunk_id` or `facet_id`, and `embed_version`. No text. This is hard rule 1.**
-
-`enq index` embeds every chunk and upserts it into `chunks`.
-
-**Done when:** the `chunks` collection point count equals `SELECT COUNT(*) FROM chunks`, and a scroll of any point shows a payload with no text field.
+Concurrency is not the lever. `RERANK_CONCURRENCY` is 4 and is used, but Ollama serves one request at a time by default, so the four judgments ran nose to tail. See [Open questions](#open-questions), question 1.
 
 ---
 
-## Phase E - Facets
+## Phase M - Migrations
 
-This is the moat. Read [CURATION.md](CURATION.md) fully before starting E2.
+### M1. Migrations
 
-### E1. Proper noun extraction
+- [x] **Files:** `src/enqueue/migrations/`, `alembic.ini`, `src/enqueue/db.py`
 
-- [x] **File:** `src/enqueue/ingest/facets.py`
+Alembic, with SQLAlchemy present only to drive it. The runtime still talks to SQLite through `sqlite3`; there are no ORM models and autogenerate is deliberately unavailable, so every revision is written by hand.
 
-```python
-def proper_nouns(text: str, title: str) -> set[str]: ...
-```
+`env.py` reads the database path from `enqueue.config` rather than from `alembic.ini`, so the CLI and the running engine can never disagree about which file they are migrating. `db._alembic_config` builds the config in code, so nothing depends on the process's working directory - the desktop shell starts the engine from wherever it happens to be, and a bundled app has no repo to find an ini file in.
 
-Return capitalised words that are not sentence-initial, plus every word in the title, lowercased for comparison. No spaCy, no model. A regex and a stopword list are enough.
+The case worth caring about is a database that predates all this. It already has the baseline shape, so replaying `0001` would fail and recreating it would destroy everything the person ever saved. `db.migrate` stamps it at `0001` and upgrades from there. Verified against the real development database: 5 artifacts in, 5 artifacts out, four new tables added.
 
-**Done when:** for the Epictetus note the set contains `epictetus`, `diogenes`, and `socrates`.
+| Revision | What |
+|---|---|
+| `0001` | baseline, identical to the old `schema.sql` |
+| `0002` | `link_previews` |
+| `0003` | `chats`, `chat_messages`, `chat_citations`, `chat_topics` |
 
-### E2. Schemas
+**Done when:** a fresh database reaches head, migrating twice is a no-op, and a pre-Alembic database keeps its rows. All three are tests in `tests/test_migrations.py`.
+
+---
+
+## Phase L - Links and files
+
+### L1. Link previews
+
+- [x] **Files:** `src/enqueue/preview.py`, `0002`, the link view
+
+Saving a link still fetches nothing. A preview is opt-in, one request, because the person pressed the button. Only text is stored: an `og:image` kept as a URL would fetch from the publisher on every view forever, which is worse than the single request the default was avoiding.
+
+The link view lost both blocks of prose that were on it. One was an implementation detail wearing the clothes of content ("Nothing was requested from the publisher, so nobody learned you read it"), and the other was a placeholder restating the label directly above it. What is left is the page's own description, and, when there is no preview yet, a button whose cost is written under it.
+
+**Not every page will resolve.** Wikipedia refuses a client that does not carry a contact URL, and returns 403. That is their published policy working as intended, and the answer is to identify yourself, not to disguise the request, so `ENQ_USER_AGENT` exists and the default does not fabricate a URL. See [Open questions](#open-questions), question 3.
+
+A previewed link is chunked and indexed like anything else, so it is findable by what the page says rather than only by its address.
+
+**Done when:** a link resolves to a real title and description, the artifact's placeholder title is replaced, and the failure says something a person can act on. Verified on `fastapi.tiangolo.com` (resolved, title replaced, indexed) and `en.wikipedia.org` (refused, with the remedy named).
+
+### L2. Read PDFs in the app
+
+- [x] **Files:** the reader in `museum.html`, `GET /artifacts/{id}/page/{n}`
+
+The external "open the file" link is gone. Pages are rasterised by the engine and read in place, lazily, at the screen's real pixel density. Only "keep a copy" remains, as a download.
+
+Two bugs found by running it. The width was measured at mount, when the pane sometimes has not laid out, producing `?width=0` and a blank reader; it is now measured when a page is actually reached, and the endpoint clamps the width rather than returning 404. And one observer cannot do two jobs: loading wants to fire a screen early, the page counter wants to fire late and exactly, and sharing one made the counter read "2 / 9" while page one filled the screen. There are two observers now.
+
+A page that will not render says so and stays in place. Removing it would silently renumber the document under the reader.
+
+**Done when:** a nine-page PDF reads end to end in the app, sharp on a Retina display, with an accurate page counter. Verified.
+
+---
+
+## Phase C - Chats
+
+### C1. Chats replace the single-shot ask
+
+- [x] **Files:** `src/enqueue/chats.py`, `0003`, endpoints, the chat surface
+
+The question mark no longer runs curate. It opens a conversation.
+
+The reason is the premise of the product: the conceptualisation is usually not known in advance, so a single shot asks the person to name the thing they are trying to find. A conversation lets them circle it.
+
+**Topics are why this is not just a transcript.** After each exchange, the concepts the conversation is circling are extracted and stored against the chat. A topic is the same kind of object a lens is, so it is clickable and hangs a room. They are regenerated from the whole transcript each time rather than appended to, because a conversation's real subject is often not visible until several turns in, and a list that only grows keeps its wrong early guesses forever. Topics that come back are kept by id, so one already used to hang a room does not change identity underneath it.
+
+Three model calls, and only the first blocks the reply. A chat whose title or topics failed is a chat that works and is badly named.
+
+**Done when:** a question is answered from the collection with citations, a follow-up keeps the thread, and an absent subject is refused. All verified against `llama3.1:8b`.
+
+### C2. The answer contract
 
 - [x] **File:** `src/enqueue/schemas.py`
 
-Transcribe `AbstractionLevel`, `Facet`, `FacetSet`, `Verdict`, `Judgment`, `Grouping`, `Tension`, and `Exhibit` **exactly as written in [CURATION.md](CURATION.md)**, including every validator.
+The failure this exists for is the answer that reads as though it came from the museum and did not. A model that knows the subject will answer from what it knows, cite whatever it was shown, and produce something fluent and correct and unconnected to anything the person saved. It is indistinguishable from the good case from the outside, and it quietly makes the collection pointless.
 
-Do not soften a validator because a model fails it. A failing validator is the system working.
+So `grounded` is a claim the model has to make, and the citations have to back it: cite nothing while grounded, or cite while not grounded, and the answer is rejected and re-prompted. Citations naming an artifact that was never offered are rejected outright and dropped again on the way to the database.
 
-**Done when:** `pytest tests/test_schemas.py` passes, with tests that assert each validator **rejects** bad input: a 4-facet set, a set with zero level-3-or-above facets, a level-3 facet containing a banned proper noun, a hedged placard, evidence that is not a substring, and a through-line that restates the lens.
+**The first version of the prompt was wrong in the other direction.** It warned about hallucination three times and never said what to do when the passages did answer, so the model refused a question whose answer was sitting in the top passage at a retrieval score of 1.0. Rebalanced: grounded is the ordinary case, refusal is for no fit rather than imperfect fit. Same question, same corpus, correct answer with two citations.
 
-### E3. Facet eligibility gate
+### C3. The chat surface
 
-- [x] **File:** extend `facets.py`, plus `enq facet-gate`
+- [x] **File:** `src/enqueue/static/museum.html`
 
-**About a third of this corpus should never get facets.** A kubectl command has no honest level-3 abstraction. Forcing five to fifteen out of it produces noise that matches random lenses forever.
+A left rail of conversations, each named by what it was about, with the active one's topics beneath it in gold. It is the only persistent chrome in the product, and it earns that: a conversation you cannot find again is a conversation you did not have. Below 900px it slides away behind a control in the pill.
 
-Write `facet_skips` for every artifact where any of these holds:
+The pill becomes the composer. There is still exactly one input surface in the app.
 
-| Condition | `reason` |
-|---|---|
-| fewer than 40 words of text | `too_short` |
-| folder is `snippets` or `biz_` | `kind` |
-| `status` is `text_only` | `text_only` |
+**Done when:** a conversation renders, sends, shows its thinking, cites clickable artifacts, and lists its topics; and it holds up in both themes and at 860px. Verified.
 
-Skipped artifacts stay searchable and readable. They are simply never curatable.
+### C4. Rooms are kept, not rebuilt
 
-**Done when:** roughly 30 to 40 of the 76 notes are skipped, `mental_models/getting_rich_vs_staying_rich` is skipped as `too_short`, `snippets/sftp_command` is skipped, and `books/Discourses_by_Epictetus` is **not** skipped. Print the counts per reason.
+- [x] `POST /exhibits`, `GET /exhibits/{id}`
 
-### E4. Facet generation
+Clicking a topic hangs a room. Keeping it saves what was already computed rather than re-running three model passes to set a flag, and the payload is revalidated on the way in with the same context the generating call used, because it made a round trip through a client.
 
-- [x] **File:** extend `facets.py`, plus `enq facets`
-
-For each artifact **not in `facet_skips`**: build the input text, compute `proper_nouns`, call the provider with the facet-generation system prompt from CURATION.md and `response_model=FacetSet`, passing `context={"proper_nouns": ...}`.
-
-Route to Ollama when the artifact is `local_only`, and to the chosen good model otherwise. Record which one was used.
-
-Store each facet with `model_version = LLM_MODEL`.
-
-Print a per-artifact line showing the facet count and the level histogram. Print a final summary of how many artifacts needed a retry and how many failed after `max_retries`.
-
-**Done when:** every eligible artifact has between 5 and 15 facets, at least two at level 3 or above, and the retry rate is reported. **If more than a third of artifacts fail after retries, stop and report it** rather than weakening validators.
-
-### E5. Index facets, with two post-checks
-
-- [x] **File:** extend `qdrant.py`
-
-Embed every facet statement, then drop before upserting:
-
-1. **Near-duplicates.** Any facet within 0.95 cosine of another facet in the same artifact's set. One idea should not get several votes.
-2. **Vacuous facets, by geometry.** Compare each level-2-or-above facet's embedding to its own artifact's chunk embeddings. Drop it if the maximum similarity is **above 0.90** (it never climbed, whatever level it claims) or **below 0.25** (untethered boilerplate that will match anything).
-
-The band edges are guesses. Record how many were dropped at each end so the ablations can tune them.
-
-Upsert the survivors into the `facets` collection. Payload is ids only, as always.
-
-**Done when:** the `facets` point count equals the number of surviving facets, the drop counts are printed, and no more than about 20 percent were dropped. **A much higher drop rate means the generation prompt is producing summaries rather than abstractions.** Report it.
-
----
-
-## Phase F - Search
-
-### F1. Search
-
-- [x] **File:** `src/enqueue/retrieve/search.py`, plus `enq search "QUERY"`
-
-Embed the query, search the `chunks` collection for the top 30, fetch chunk text and artifact titles from SQLite by id, and print title plus a 120-character snippet.
-
-**Done when:** `uv run enq search "what did Epictetus say about control"` returns the Epictetus note in the top three.
-
----
-
-## Phase G - Curate
-
-### G1. Lens expansion
-
-- [x] **File:** `src/enqueue/retrieve/expand.py`
-
-Given a lens string, ask the provider for 5 facet-style restatements of the lens and 3 hypothetical passages that would appear in a document exemplifying it. Return all 8 as strings.
-
-Use a small pydantic model for the response. **This is a model call, so it goes through the Provider, not a raw HTTP request.**
-
-**Done when:** expanding "antifragility" returns 8 strings, and at least one mentions repair or reversibility without using the word antifragile.
-
-### G2. Candidates
-
-- [x] **File:** `src/enqueue/retrieve/search.py`
-
-```python
-def candidates(lens: str, limit: int = 150) -> list[str]: ...  # artifact ids
-```
-
-Embed the lens plus all 8 expansions. Search both `chunks` and `facets`. Union the results, roll chunk and facet hits up to their `artifact_id`, dedupe, and return artifact ids ordered by best hit score.
-
-**At 76 artifacts this will return nearly everything. That is expected and correct. Do not add filtering to make the number look better.**
-
-**Done when:** `candidates("antifragility")` returns a list of artifact ids with no duplicates.
-
-### G3. Rerank
-
-- [x] **File:** `src/enqueue/retrieve/rerank.py`
-
-For each candidate: call the provider with the rerank system prompt from CURATION.md, `response_model=Judgment`, and `context={"artifact_text": <the artifact's full text>}`.
-
-Run with **bounded concurrency of 4**. Not sequentially.
-
-A full eval run is 76 judgments per lens across 8 lenses. Sequential turns that into hours, and an eval nobody runs casually defeats the entire reason it was built before the retriever. Four workers is roughly twenty lines and turns it into tens of minutes.
-
-Do not raise it above 4 without measuring. Ollama serialises internally, and a hosted endpoint has rate limits.
-
-Keep judgments where `verdict == BELONGS`, sort by `strength` descending, and take the top 15.
-
-**Done when:** running against "antifragility" produces judgments where every kept one has evidence that is a verbatim substring, and the count of `no` verdicts is greater than zero. **If nothing is rejected, the prompt or the model is broken.** Report it.
-
-### G4. Synthesis
-
-- [x] **File:** `src/enqueue/retrieve/synthesize.py`
-
-Call the provider with the synthesis system prompt, `response_model=Exhibit`, and `context={"kept_artifact_ids": [...], "lens": lens}`. Pass the kept artifacts as title plus placard plus evidence, not full text.
-
-**Done when:** it returns an `Exhibit` that passes its validators, including the report guard.
-
-### G5. The curate command
-
-- [x] **File:** `cli.py`
-
-`enq curate "LENS"` runs expand, candidates, rerank, synthesize; persists the exhibit and its members; and prints the room: name, through-line, each artifact with its placard, then groupings and tensions.
-
-**Done when:** `uv run enq curate "antifragility"` prints a readable room, and re-running `SELECT * FROM exhibit_members` shows the rows persisted.
+Saved exhibits used to render as a name and a through line with no artifacts in them, because nothing served their members. They render now.
 
 ---
 
 ## Phase H - Measure
 
-### H1. Proposal pass
+Never built. Unchanged from the previous plan, and blocked on the same thing: a corpus with **planted analogies**. Junk data scores perfectly and means nothing. See [OPEN.md](OPEN.md) item 1.
 
-- [ ] **File:** `eval/propose.py`, plus `enq propose "LENS"`
-
-For each artifact in the corpus, in a loop, ask the provider whether it is an instance of the lens and why, in one sentence. Write a draft `should_surface` list.
-
-**This must read every artifact directly. It must not call `candidates()` or touch Qdrant.** Using retrieval here makes the golden set circular, which is hard rule 5.
-
-**Done when:** `enq propose "antifragility"` emits YAML matching the golden-set format in [EVAL.md](EVAL.md), having read all 76 artifacts.
-
-### H2. Golden set
-
-- [ ] **File:** `eval/golden.yaml`
-
-Run `enq propose` for these seven lenses and hand the drafts to the human for correction:
-
-`antifragility`, `slow craft`, `stoic control`, `systems that improve under stress`, `what I keep saving without knowing why`, `memory and forgetting`, `combat sport as a model for thinking`.
-
-The human must mark `hard: true` on artifacts sharing no vocabulary with the lens, add anything missed, and add at least one lens the proposal pass never saw.
-
-**Done when:** the human has corrected all seven, every lens has at least two `hard: true` entries, and an eighth human-authored lens exists.
-
-### H3. Harness
-
-- [ ] **File:** `eval/harness.py`, plus `enq eval`
-
-For each lens in `golden.yaml`: run the full curate pipeline, compare the top 15 against `should_surface`.
-
-Report per lens and in aggregate:
-- `hard-hit@15`: the share of `hard: true` artifacts that landed in the top 15. **This is the number.**
-- `hit@15` overall
-- false positives from `should_not_surface`
-- lens-pair agreement between `antifragility` and `systems that improve under stress`
-
-**Print a banner stating that recall is not reported because the corpus is under 500 artifacts**, so nobody later mistakes a missing number for a failure.
-
-Write every run to `eval/runs/<timestamp>.json`.
-
-**Done when:** `uv run enq eval` prints a per-lens table and writes a run file.
-
-### H4. First measurement
-
-- [ ] Run it. Report `hard-hit@15` per lens and overall.
-
-Then, for every missed `hard: true` artifact, report which of **three** causes applies. They have nothing in common and their fixes point in opposite directions.
-
-| Cause | How to tell |
-|---|---|
-| **Eligibility** | the artifact is in `facet_skips` and has no facets at all |
-| **Facet** | it has facets, but none above level 2 that match the lens. Quote what they actually said |
-| **Judgment** | a matching facet exists and rerank still returned `no`. Quote the facet and the verdict |
-
-**Report this breakdown before changing anything.** An aggregate score without it is close to useless.
-
-Also report which model produced the facets, per the privacy decision at the top. A score is meaningless without it.
+- [ ] H1. Proposal pass, brute force, never using retrieval
+- [ ] H2. Golden set, seven lenses, corrected by hand
+- [ ] H3. Harness reporting `hard-hit@15`
+- [ ] H4. First measurement, with the miss breakdown by cause
 
 ---
 
-## Ablations (only after H4)
+## Phase D - The macOS shell
 
-Each answers a question that is currently a guess. Run one at a time, re-run `enq eval`, record the number.
+### D1. Tauri window
 
-- [ ] Facets disabled, chunks only. This is the baseline the whole architecture is justified against.
-- [ ] The proper-noun ban removed from the level-2-and-above validator.
-- [ ] The minimum-two-at-level-3 rule removed.
-- [ ] Levels 0 and 1 dropped from the `facets` collection.
-- [ ] Facet count capped at 5, then at 15.
-- [ ] The vacuity band widened to 0.95 and 0.15, then narrowed to 0.85 and 0.35.
-- [ ] The eligibility gate disabled, so short notes and snippets get facets after all.
-- [ ] Local model versus the good model, same corpus, same golden set. This is the one that tells you whether a poor score was the design or the model.
+- [x] **Files:** `desktop/Cargo.toml`, `desktop/src/main.rs`, `desktop/tauri.conf.json`
+
+A native window over the same HTML the browser view uses, so the layout is shared and there is one client to maintain rather than two.
+
+The shell owns three things and nothing else: the window, the menu bar, and the lifetime of the engine process. It spawns `uv run enq serve`, waits up to 30s for the port, and kills the child when the window closes. If an engine is already listening it attaches rather than starting a second one.
+
+Title bar is `Overlay` with a hidden title, so the traffic lights float over the content. A visible title bar would be the wall the pill exists to remove.
+
+**Done when:** the app opens, the museum renders, and closing it leaves no orphan engine.
+
+### D2. Bundling - not done
+
+- [ ] `cargo tauri build` needs the engine as a real sidecar binary rather than a `uv run` child, plus signing and notarisation.
+
+This is the packaging problem AGENTS.md already flags: a bundled CPython that breaks on OS updates. Development runs from the repo, which is fine until it ships.
 
 ---
 
-## Risks (for the human, not the agent)
+## Open questions
 
-- **The local model may not be good enough.** A 7B is the largest that fits comfortably in 16GB alongside Docker, and it may produce facets that never climb past level 2, which would make the eval measure the model rather than the design. The tell is a low `hard-hit@15` combined with facet statements that read like summaries. The fix is a stronger model, which means either more RAM or content leaving the machine. That is your call, not the agent's.
-- **Facet generation over 76 artifacts on an M1 will take a while.** Roughly 76 calls, each producing 5 to 15 sentences, sequentially, on a 7B. Expect tens of minutes, not seconds. Reranking during `enq eval` is 76 calls per lens across 8 lenses, so budget hours for a full evaluation run and do not run it casually.
-- **76 artifacts is a small corpus.** A good score here does not prove the retrieval design works at 10,000, only that the judgment layer works. Retrieval genuinely gets tested at M1 volumes.
-- **The corpus is your real notes.** M0 was specified against a throwaway corpus and this is not that. Local-only models are what makes that acceptable.
-- **A password is in the corpus.** Rotate it. B2 keeps it out of prompts, but it will still sit in your SQLite.
+Six decisions I could not make for you, each with what I would do.
+
+### 1. The local model cannot drive curate. Settled for now: it does not have to.
+
+Measured this session: 3 of 4 rerank judgments failed validation, synthesis failed outright, four minutes for four candidates. The previous build measured 4 of 10 on the same validator. It is getting worse as the validators get stricter, and the validators are right.
+
+This is [OPEN.md](OPEN.md) item 0, now with numbers.
+
+**Decided: `llama3.1:8b` stays as a placeholder and the bad results are accepted.** The POC is being built, not judged, and tuning the model now would be optimising a number nobody is reading yet. A real model gets pointed at when there is something worth measuring; GLM 5.2 through opencode is the intended one.
+
+Two things were done so that swap costs nothing later:
+
+- **The adapter was already protocol-generic**, it just hardcoded the API key. It no longer does. Any OpenAI-compatible endpoint is now three environment variables and no code change: `ENQ_OLLAMA_URL`, `ENQ_LLM_MODEL`, `ENQ_LLM_API_KEY`.
+- **Retries moved to `ENQ_MODEL_RETRIES`, default 1.** They were 2, meaning three attempts per judgment, which on a model that fails most of them is two extra generations bought for almost nothing. Re-measured on the same four candidates: 3 minutes 30 against 4 minutes 4, and 2 kept against 1. Set it to 0 for the fastest, worst run; raise it when the model is good enough for a retry to be worth waiting for.
+
+The remaining latency is the placeholder generating slowly, and Ollama serving one request at a time, which nullifies `RERANK_CONCURRENCY`. `OLLAMA_NUM_PARALLEL=4` on the Ollama daemon would fix the second half without touching quality, if the wait becomes annoying before the model is replaced.
+
+**Do not soften the evidence-verbatim validator to make the placeholder pass.** It is the thing standing between a placard and a plausible invention, and it is the reason the bad results are visibly bad instead of quietly wrong.
+
+### 2. Should facets be generated on save?
+
+`ingest/queue.py` chunks and indexes. It does not generate facets, so the facet layer is empty and conceptual retrieval is running on chunks alone. Every retrieval in this session was literal.
+
+**Recommendation: still leave it off, and now for a sharper reason.** Question 1 settled on keeping a placeholder model, which makes this worse rather than better: a bad facet is written to the index permanently, so generating them from a model nobody trusts would poison the conceptual layer with junk that outlives the placeholder. Chat answers and curate rooms are read once and thrown away; facets are not.
+
+The queue has the seam. Turn it on in the same change that points at the real model.
+
+Meanwhile `enq facets` still works as a manual pass, and it is worth running once on a real corpus to see what the facet half actually buys.
+
+### 3. Should the default user agent carry a contact URL?
+
+Wikipedia and others refuse a client without one. Complying is identification, not evasion, and is exactly what their policy asks for. But I will not invent a URL that does not exist, so the default stays honest and those pages fail with the remedy named.
+
+**Recommendation: set `ENQ_USER_AGENT` to something with a real contact URL once there is one** - a repo, a personal domain, anything you actually own. Until then the current behaviour is correct: it fails, and it says why.
+
+### 4. Should chats sync?
+
+Everything else in the data model is built for the encrypted append-only log. Chats are not in it yet, and I did not put them there, because their status is genuinely ambiguous. Messages are append-only and would sync cleanly. Topics are derived and should not sync at all. And a chat is the one object in this product that can be deleted, which is a shape the log does not currently have.
+
+**Recommendation: sync messages, never sync topics, and treat deletion as a tombstone event.** But this touches the sync design in [AGENTS.md](../AGENTS.md), so it is a spec change before it is a code change.
+
+### 5. Should an answer stream?
+
+It does not. A question sits on "reading what you saved" for 15 to 30 seconds against the local model. The structured-output contract is what makes streaming awkward: `grounded` and `cited` are only meaningful once the whole object exists.
+
+**Recommendation: leave it.** Streaming a grounded answer means streaming prose whose citations may not survive validation, which would show the person a paragraph and then retract it. If the wait becomes the complaint, the honest fix is showing which artifacts are being read while it thinks - the passages are already known before the model is called, and `GET /chats/passages` already returns them.
+
+### 6. What happens to exhibits now that curate is reached only through a topic?
+
+Rooms still work and are still saved. But nothing outside a chat can build one, so a lens that occurs to you in the shower has no door.
+
+**Recommendation: leave it for now and watch whether you miss it.** The premise of the change is that people do not arrive knowing their lens. If that turns out to be wrong for you, the cheapest fix is a fourth pill action, and the pill's own rule says it never grows a fourth action without something else leaving.
+
+---
+
+## Not done
+
+- **Phase H, the eval harness.** Unchanged and still blocked on a corpus with planted analogies. Everything measured this session was measured by hand on seven junk artifacts, which is enough to find bugs and not enough to score anything.
+- **D2, bundling.** `cargo tauri build` still needs a real sidecar, signing, and notarisation.
+- **Facet generation on save.** Question 2.
+- **Chat sync.** Question 4.
+
+---
+
+## Specs updated
+
+Done before R1, since the code would otherwise contradict them.
+
+- **PRODUCT.md** - principle 6 now names three categories, the museum model gained a "Two kinds of artifact" table, and the decision log records why the first model was wrong.
+- **AGENTS.md** - invariant 2 split by kind, invariant 3 restated as "no user-authored text is ever destroyed", `note_entries` replaced by `artifact_versions` plus `annotations`, sync events and conflict rules rewritten.

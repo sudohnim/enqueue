@@ -14,7 +14,7 @@ This file covers engineering decisions and gotchas, not product behaviour.
 
 Consult PRODUCT.md for "what should this feature do" questions, and CURATION.md before touching anything that shapes a facet, a placard, or an exhibit.
 
-**Status: design. Nothing is built yet.**
+**Status: rebuilding.** The retrieval half is built and works. The ingest half is being replaced, because the first version had no concept of authorship. See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## General Guidelines
 
@@ -144,14 +144,27 @@ POST   /capture                       202 {artifact_id}, returns before processi
 POST   /capture/upload                multipart
 
 GET    /artifacts?since=&limit=       newest first, the home feed
-GET    /artifacts/{id}                detail, blocks, notes, exhibits it hangs in
+GET    /artifacts/{id}                detail, body, annotations, exhibits it hangs in
 GET    /artifacts/{id}/content        readable rendering
 GET    /artifacts/{id}/blob           original bytes
-POST   /artifacts/{id}/notes          user-authored note
-PATCH  /artifacts/{id}                local_only, pinned. Flags only, never content
+PATCH  /artifacts/{id}/body           edit a note. Captures reject this
+GET    /artifacts/{id}/versions       every saved body
+POST   /artifacts/{id}/annotations    commentary on a capture
+PATCH  /artifacts/{id}                local_only, pinned. Flags only
+
+POST   /artifacts/{id}/preview        fetch what a saved link is. Opt-in, one request
 
 GET    /search?q=                     artifacts. No model calls, fully local
-POST   /ask                           {scope, id?, question} to answer plus citations
+
+GET    /chats                         conversations, newest first, each with its topics
+POST   /chats                         {scope_kind, scope_id?, text?} start one
+GET    /chats/{id}                    transcript, citations, topics
+POST   /chats/{id}/messages           {text} one turn
+PATCH  /chats/{id}                    rename
+DELETE /chats/{id}                    the one deletable object in the product
+GET    /chats/ready                   whether there is anything to answer from
+GET    /chats/passages?q=             exactly what an answer would be allowed to read
+
 POST   /curate                        {lens}, SSE
 GET    /exhibits
 GET    /exhibits/{id}
@@ -183,13 +196,18 @@ SQLCipher for everything textual and relational. Qdrant for vectors only.
 | `artifact_blobs` | original bytes | encrypted at rest, referenced by path |
 | `artifact_text` | extracted text | per artifact, with extractor name and version |
 | `capture_context` | silent capture-time context | source app, page title, selection, nearby captures |
-| `note_entries` | user-authored notes on artifacts | **append-only. One row per writing session, never updated in place.** See below |
+| `artifact_versions` | every saved state of a note's body | append-only. The artifact holds current state; this holds history |
+| `annotations` | your commentary on a **captured** artifact | append-only, superseding by id. A note's own body is never stored here |
 | `chunks` | literal layer | text, ordinal, token count, chunker name and version |
 | `facets` | conceptual layer | statement, abstraction level, generator model and version, **`trust` REAL default 0.5** |
 | `exhibits` | saved formations | `theme` is immutable after creation |
 | `exhibit_members` | artifact in exhibit | placard, rank, `origin` (generated/manual), `ejected_at` |
 | `exhibit_notes` | pinned wall text | **user-authored, never regenerated** |
-| `asks` | question and answer log | ephemeral by default, promotable to an exhibit |
+| `chats` | conversations with the collection | replaced `asks`. A chat is scoped to everything, one artifact, or one room |
+| `chat_messages` | one turn | append-only. `grounded` records whether the answer came from the collection |
+| `chat_citations` | what an answer was built from | message to artifact, ranked |
+| `chat_topics` | the concepts a conversation circles | derived, regenerable, and the handle a room is hung from |
+| `link_previews` | what a saved link turns out to be | derived. Text only, never a remote asset URL |
 | `ingest_jobs` | durable work queue | resumable, backpressured, survives restarts |
 | `model_versions` | registry | embedding models, facet generators, chunkers, with dimensions |
 
@@ -198,22 +216,29 @@ SQLCipher for everything textual and relational. Qdrant for vectors only.
 Break these and the product's promises stop being true.
 
 1. **Qdrant payloads never contain text.** Vectors plus opaque `artifact_id` and `chunk_id`/`facet_id`. No titles, no URLs, no excerpts. Qdrant stores payloads unencrypted on disk, and the privacy promise says nothing readable sits on disk. Text is fetched from SQLCipher by id after retrieval. This is cheap to do now and impossible to retrofit once an index exists.
-2. **Artifacts are immutable after ingest.** Every derived row carries the model or tool version that produced it, so anything derived can be regenerated. Nothing derived is ever the only copy of anything.
-3. **User-authored rows are never overwritten by regeneration.** `notes`, `exhibit_notes`, manual `exhibit_members`, and `ejected_at` survive every refresh and every re-index. This is product principle 7 as a schema rule.
+2. **A capture's body is immutable after ingest. A note's body is not.** A capture is frozen because fidelity to the source is why it was saved. A note is a document the user owns, and `artifacts.body` is updated in place when they edit it.
+3. **No user-authored text is ever destroyed.** Editing a note appends the new body to `artifact_versions` before updating the artifact. Annotations on captures supersede by id and are never deleted. Regeneration never touches `annotations`, `exhibit_notes`, manual `exhibit_members`, or `ejected_at`. This is product principle 7 as a schema rule.
 4. **Every vector is stamped with its embedding model version.** Query and corpus must share a vector space, so a model change means re-embedding. Stamping makes that an incremental background job instead of a migration crisis.
 5. **`exhibits.theme` is immutable.** Reshaping means a new exhibit.
-6. **Notes are append-only entries, never a mutable text field.** A note is a list of `note_entries` rendered in order, and editing appends a new entry that supersedes an earlier one by id. There is nothing to merge, so there is nothing to lose.
+6. **Derived rows carry the model or tool version that produced them**, so anything derived can be regenerated and nothing derived is ever the only copy of anything.
+7. **Schema changes are Alembic revisions.** Never a `CREATE TABLE` in application code, never an edit by hand. A database that predates migrations is stamped at the baseline and upgraded, never rebuilt: rebuilding it would destroy everything the person ever saved, which is the one failure this product cannot come back from.
+8. **An answer states whether it is grounded, and the citations must back it.** A grounded answer names artifacts it was actually shown; an ungrounded one names none. Enforced in `schemas.Answer` and again when citations are written. The failure being prevented is the fluent, correct, well-cited answer that came from the model's own knowledge and has nothing to do with the collection, which is invisible from the outside and makes the collection pointless.
 
-### Why notes are entries rather than a field
+### Why a note is mutable and its history is not
 
-Last-write-wins on a mutable text field is silent data loss, and it is the one place the sync model would violate the product's first principle.
+An earlier version of this file made every note an append-only list of entries, with no mutable body anywhere.
 
-Write a note on one machine, extend it on another before the pull lands, and last-write-wins discards one version with no conflict marker and no copy.
-Dequeue can resolve this with server timestamps because it has a server. Enqueue has no authoritative clock, only a hybrid logical clock, which orders events but does not make discarding one of them safe.
+The reasoning was sound and the conclusion was wrong. Last-write-wins on a text field genuinely is silent data loss: write on one machine, extend on another before the pull lands, and one version disappears with no conflict marker. Enqueue has no server and therefore no authoritative clock, only a hybrid logical clock, which orders events but does not make discarding one of them safe.
 
-Append-only entries remove the merge entirely. It is also the same paradigm as the sync log rather than a second one sitting beside it.
+What that argument justifies is **keeping every version**. It does not justify refusing to let the user rewrite their own paragraph, which is what shipped: a note whose text could only be appended to.
 
-Last-write-wins stays correct for scalars and flags, where discarding the loser is what the user meant. See the decision log in PRODUCT.md.
+The resolution keeps the guarantee and drops the restriction:
+
+- `artifacts.body` is the current text and is updated in place.
+- `artifact_versions` gets an append before every update.
+- Sync ships the version rows, so two peers editing the same note produce two version rows and neither is lost. Reconciling which body is current is last-write-wins on a field whose entire history is recoverable, which is a different proposition from last-write-wins on a field that has none.
+
+Annotations on captures stay append-only, because they comment on something immutable and there is no "current state" to resolve.
 
 ### Qdrant collections
 
@@ -525,6 +550,7 @@ Adding a second machine, restoring from backup, and recovering a corrupted index
 | Syncs | Rebuilt locally |
 |---|---|
 | artifacts and blobs, content-addressed | chunks |
+| `artifact_versions`, every note body ever saved | |
 | extracted text | **all embeddings** |
 | capture context | the Qdrant index |
 | your notes | |
@@ -568,7 +594,8 @@ Blobs are content addressed by sha256, so the same artifact captured on two mach
 |---|---|
 | `artifact.created` | id, kind, title, source_url, content_hash, captured_at, provenance |
 | `block.added` | artifact_id, parent_id, ordinal, depth, text |
-| `note.appended` | artifact_id, entry_id, supersedes_id, text |
+| `note.revised` | artifact_id, version_id, body |
+| `annotation.appended` | artifact_id, entry_id, supersedes_id, text |
 | `facet.generated` | artifact_id, level, statement, model_version |
 | `exhibit.saved` | id, name, theme, through_line, members with placards |
 | `member.placard_edited` | exhibit_id, artifact_id, text |
@@ -590,7 +617,8 @@ There is no custom protocol and no server-side code to operate or secure.
 ### Conflicts
 
 - **Artifacts cannot conflict.** Content-addressed and immutable. The same URL captured on two machines is one artifact with two capture events.
-- **Notes cannot conflict either.** They are append-only entries, so two peers writing at once produce two entries and both survive. See [Why notes are entries rather than a field](#why-notes-are-entries-rather-than-a-field).
+- **Note bodies resolve by last-write-wins over a complete history.** Two peers editing the same note produce two rows in `artifact_versions`, both of which sync. Only which body is *current* is resolved by the clock, and the losing text is one click away rather than gone. See [Why a note is mutable and its history is not](#why-a-note-is-mutable-and-its-history-is-not).
+- **Annotations cannot conflict.** They are append-only and supersede by id, so two peers annotating at once produce two entries and both survive.
 - **Placards and flags** resolve by field-level last-write-wins. A placard is machine-generated with a rare manual override, and a flag is a scalar where discarding the loser is what the user meant.
 - **Ejections are tombstones**, resolved by the same rule, so an ejection made on either peer sticks.
 
@@ -639,7 +667,7 @@ That splits the problem cleanly:
 
 | Class | Tables | Policy |
 |---|---|---|
-| Sacred | `artifacts`, `artifact_blobs`, `capture_context`, `note_entries`, `exhibits`, `exhibit_members`, `exhibit_notes` | Real migrations. **Additive only.** Never a destructive change, never a drop that loses user-authored content. |
+| Sacred | `artifacts`, `artifact_versions`, `artifact_blobs`, `capture_context`, `annotations`, `exhibits`, `exhibit_members`, `exhibit_notes` | Real migrations. **Additive only.** Never a destructive change, never a drop that loses user-authored content. |
 | Disposable | `artifact_text`, `chunks`, `facets`, both Qdrant collections | No migrations at all. On a version bump, truncate and rebuild from originals in the background. |
 
 Consequences to respect:

@@ -20,9 +20,9 @@ from .candidates import artifact_text
 
 
 def _judge(lens: str, candidate: dict, text: str) -> Judgment | None:
-    # Two retries, not the default. A failed judgment is a dropped candidate, not a
-    # crisis, and on a weak local model the validators fail often enough that four
-    # attempts each turns ten candidates into thirty-odd calls for nothing.
+    # Retries come from config, and are low. A failed judgment is a dropped candidate,
+    # not a crisis, and on the placeholder model the validators fail often enough that
+    # extra attempts turn ten candidates into thirty-odd calls for nothing.
     try:
         return get_provider().complete(
             system=RERANK,
@@ -34,7 +34,6 @@ def _judge(lens: str, candidate: dict, text: str) -> Judgment | None:
             ),
             response_model=Judgment,
             context={"artifact_text": text, "lens": lens},
-            max_retries=2,
         )
     except Exception:  # noqa: BLE001 - a failed judgment is a dropped candidate
         return None

@@ -49,7 +49,7 @@ Anything that makes Enqueue feel like a task manager or a file tree is off-conce
 3. **Structure is generated, not maintained.** The enemy is manual toil, not structure. Backlinks, membership, and themes are all welcome - as long as the machine produces them and you only adjust. What is banned is being asked to file, tag, or link something by hand before the tool will accept it.
 4. **Eighty percent is a good day.** The curator proposes, the director disposes. An auto-generated exhibit that is mostly right and one nudge from correct beats a perfect one you had to build. Design every generated thing to be cheaply adjustable rather than exactly right.
 5. **Silent until asked.** No badges, no unread counts, no digests, no nudges. The pile never nags. This is what makes guilt-free hoarding possible.
-6. **Captures are sacred; derivations are disposable.** Originals are immutable forever. Every abstraction, embedding, placard, and exhibit is rebuildable, so the museum gets smarter when the models do.
+6. **Captures are sacred, your writing is yours, derivations are disposable.** Three categories, not two. A capture is immutable forever, because fidelity to the source is the whole point of having saved it. Your own writing is a document you own and can rewrite at will, with every version kept. Everything abstracted, embedded, or curated is rebuildable, so the museum gets smarter when the models do.
 7. **Your hand beats the machine's.** Anything you wrote, edited, pinned, or ejected survives every regeneration. The curator never overwrites the director.
 8. **Show your work.** Every connection traces back to the passage that produced it. A leap you cannot check is a leap you cannot use.
 9. **Privacy is the premise, not a feature.** Proton's Lumo is the default AI backend and the reason the promise holds. See [Privacy](#privacy).
@@ -172,7 +172,7 @@ The organizing metaphor, and the vocabulary the whole product uses.
 
 | Museum | Enqueue | Rule |
 |---|---|---|
-| **Artifact** | a capture | immutable, permanent, never filed, never deleted |
+| **Artifact** | anything you saved or wrote | permanent, never filed, never deleted. A capture is immutable; a note is yours to rewrite |
 | **Vault** | everything you have, newest first | most artifacts sit in storage most of the time, and that is normal, not a backlog |
 | **Exhibit** | a saved formation on a theme | summoned by naming a theme, never filled by dragging |
 | **Placard** | the "why this is here" note on an artifact | written per-artifact, *per-exhibit* |
@@ -183,13 +183,28 @@ The organizing metaphor, and the vocabulary the whole product uses.
 
 The primary data model.
 
-An artifact is one captured thing: a link, an article, a PDF, a video, an image, a screenshot, a highlighted passage, a typed note.
+An artifact is one thing you saved or wrote: a link, an article, a PDF, a video, an image, a screenshot, a highlighted passage, a note.
 
-- Immutable and permanent. Nothing expires, nothing is capped, nothing is auto-deleted.
-- Never filed. An artifact does not live anywhere. It has no parent, no folder, no home.
-- Carries your own notes and descriptions, which you can add or edit at any time after capture.
-- The original bytes are kept, not just extracted text. See [Originals are kept](#originals-are-kept-forever) for why.
-- Shows which exhibits it is currently hanging in. This is a backlink you never maintained: derived, not authored, and the moment you see the shape of your own mind.
+- **Permanent.** Nothing expires, nothing is capped, nothing is auto-deleted.
+- **Never filed.** An artifact does not live anywhere. It has no parent, no folder, no home.
+- **The original bytes are kept**, not just extracted text. See [Originals are kept](#originals-are-kept-forever) for why.
+- **Shows which exhibits it is currently hanging in.** A backlink you never maintained: derived, not authored, and the moment you see the shape of your own mind.
+
+### Two kinds of artifact
+
+They differ in exactly one respect, and it is the one that matters.
+
+| | A capture | A note |
+|---|---|---|
+| Where it came from | the world | you |
+| Its body | **immutable** | **yours, editable, every version kept** |
+| Your commentary | an annotation attached to it | there is nothing to attach it to; the note *is* the commentary |
+
+A captured page is frozen because fidelity to the source is the reason you saved it. Editing it would destroy the only thing it was for.
+
+A note has no source to be faithful to. It is a document you own, and a tool that will not let you rewrite your own paragraph is not a second brain, it is a filing cabinet.
+
+**This was got wrong once.** The first build treated every artifact as an immutable capture with an editable comment underneath, which made a note you wrote read-only and appendable-to. See [Notes are documents, captures are not](#notes-are-documents-captures-are-not) in the decision log.
 
 ### Vault
 
@@ -276,7 +291,7 @@ One continuum, not three features. The same retrieval spine, at three depths, re
 | Act | The question | Returns | Cost | Persists |
 |---|---|---|---|---|
 | **Search** | "find that thing from Epictetus" | artifacts | instant | no |
-| **Ask** | "what have I saved about Stoic control?" | an answer with citations | seconds | promotable |
+| **Ask** | "what have I saved about Stoic control?" | an answer with citations, in a conversation | seconds | yes, as a chat |
 | **Curate** | "antifragility" | an exhibit | around a minute | when you save it |
 
 They are never merged into one bar.
@@ -300,14 +315,16 @@ A question about your own material, answered with citations back to the passage.
 - **One exhibit.** Follow-up questions about a room you already built.
 - **Everything.** Question answering over the whole hoard.
 
-Answers are ephemeral by default.
-An answer worth keeping is one click from becoming an exhibit.
-An exhibit-scoped answer can be pinned into that exhibit as wall text, so a room accumulates your thinking over time and not only artifacts.
+**Ask is a conversation, and it is kept.**
+This was one shot and ephemeral, and the shape was wrong for the reason the whole product exists: the conceptualisation is usually not known in advance. A single shot asks you to name the thing you are trying to find. A conversation lets you circle it.
 
-**Ask is the utility; curate is the product.**
+What makes the conversation worth keeping is not the transcript.
+As you talk, the concepts you are circling are extracted and stored against the chat, and **a topic is the same kind of object a lens is.** So a topic drawn out of a conversation is clickable, and clicking it hangs a room. The chat is where you find out what you are actually asking; the room is what that turns into.
+
+**Ask is still the utility; curate is still the product.**
 Chat-with-your-notes is what Fabric and mem.ai already are.
 If the home screen becomes a chat box, Enqueue is a worse version of both.
-The hierarchy has to stay visible in the interface.
+Conversations sit above the artifacts on the home screen, not in place of them, and asking is still one of three glyphs on one small control.
 
 #### Curate
 
@@ -775,6 +792,26 @@ Technical questions are now answered in [AGENTS.md](../AGENTS.md): retrieval arc
 
 Decisions made deliberately, with the reasoning, so a future reader does not restore something that was reversed on purpose.
 
+### Ask became a conversation, and its topics became lenses
+
+Ask was one shot: name a theme, get an answer, lose the thread. That assumed you arrive knowing what you are looking for, which contradicts the premise of everything else here. The whole product exists because the conceptualisation shows up later.
+
+A chat keeps the thread. But a stored transcript is not worth much on its own, and a sidebar of them is the failure mode this product is built against: a list that grows until nothing in it can be found.
+
+What makes it worth keeping is that the concepts a conversation circles are extracted and stored against it, and those are the same kind of object a lens is. A topic can be handed straight back to the curator. So the sidebar is not a pile of transcripts, it is a list of concepts you arrived at by talking, each one a door into a room.
+
+The risk taken knowingly: chat-with-your-notes is what Fabric and mem.ai already are, and a chat box on the home screen would make Enqueue a worse version of both. The mitigation is placement, not restraint in the feature. Conversations sit above the artifacts and never replace them, and asking stays one of three glyphs on one small control.
+
+### A saved link says nothing until you ask it to
+
+Saving a link fetches nothing, because a request at capture time tells the publisher you read the thing, for every link you ever save, whether or not you go back to it.
+
+The cost is a museum full of bare URLs, which is a real cost and was the complaint that produced this entry. A preview pays it once, per link, when you press the button, and the button says what it will do.
+
+Only text is stored. An `og:image` kept as a URL would fetch from the publisher on every single view, forever, which is worse than the one request the default was avoiding. That distinction is the whole reason this is a stored preview and not an embed.
+
+Some publishers refuse a client that does not identify itself with a contact URL. Complying with a stated policy is identification, not evasion, and it stays a setting rather than a default that invents a URL nobody owns.
+
 ### Spaces were rejected, but structure was not
 
 Fabric-style spaces were the reference for the home screen, and are explicitly not the model.
@@ -864,6 +901,20 @@ Several richer directions were built and rejected, and the reasoning matters bec
 **A single mid-value gold shared by both modes**, the literal Solarized construction, was computed and rejected. The best achievable balance on these grounds is roughly 3.9 to 1 in each mode, and at that lightness the gold is mustard. Solarized accepts 2.98 to 1 for its yellow on its light ground because it is a syntax theme; product UI cannot.
 
 What survived is the structural lesson rather than the literal one: hold a set fixed and invert the rest. Applied to the mount instead of to a hue, it works, and it is rule 2.
+
+### Notes are documents, captures are not
+
+The first build had one artifact model: immutable body, with an append-only note attached underneath. Every artifact was treated as something captured from the world.
+
+That is right for a page, a PDF, or an image, where the promise is that what you saved is what the source said. It is wrong for a note you wrote. The symptom was a note whose text could not be changed, only added to; the cause was a data model with no concept of authorship.
+
+Three categories now, not two:
+
+- **A capture** is immutable. Fidelity is the point.
+- **A note** is a document you own. Editing it rewrites the body and keeps the previous version.
+- **An annotation** is your commentary on a capture, and stays append-only because it comments on something fixed.
+
+Editing a note updates the artifact and appends to its version log. That is not a contradiction with append-only storage: the log is the history, the artifact is the current state, and nothing you wrote is ever destroyed.
 
 ### The output is a thinking surface, not a report
 

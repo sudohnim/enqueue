@@ -17,6 +17,9 @@ dependencies = [
     "chonkie>=1.7.0",
     "fastembed>=0.8.0",
     "qdrant-client>=1.18.0",
+    "pymupdf>=1.28.0",
+    "python-multipart>=0.0.32",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +44,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/enqueue"]
-artifacts = ["src/enqueue/schema.sql", "src/enqueue/static/*"]
+artifacts = [
+    "src/enqueue/static/*",
+    "src/enqueue/migrations/*",
+    "src/enqueue/migrations/versions/*",
+]
 
 [tool.black]
 line-length = 100

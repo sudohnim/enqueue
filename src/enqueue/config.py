@@ -22,10 +22,59 @@ SPARSE_MODEL = "Qdrant/bm25"
 # the IPv6 wildcard, and localhost resolves to IPv6 first. See docs/PROGRESS.md.
 OLLAMA_URL = os.getenv("ENQ_OLLAMA_URL", "http://127.0.0.1:11434/v1")
 
-# llama3.1:8b because it is already pulled. qwen2.5:7b-instruct is the better
-# instruction follower for this task if it is ever worth the download; the coder
-# variant is tuned for code and is the wrong shape for conceptual abstraction.
+# Named endpoints, so switching backend is a choice rather than a URL to remember.
+# Everything here speaks the OpenAI-compatible protocol, which is the only reason one
+# adapter covers all of them.
+#
+# Anything other than `ollama` sends the text of your artifacts to somebody else's
+# computer. That is a real change in what this product is, so it is a deliberate
+# selection and never a default, and `local_only` artifacts never take this path.
+BACKENDS = {
+    "ollama": {
+        "label": "Ollama, on this machine",
+        "url": "http://127.0.0.1:11434/v1",
+        "local": True,
+        "key_var": None,
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "url": "https://openrouter.ai/api/v1",
+        "local": False,
+        "key_var": "ENQ_LLM_API_KEY",
+    },
+    "openai": {
+        "label": "OpenAI",
+        "url": "https://api.openai.com/v1",
+        "local": False,
+        "key_var": "ENQ_LLM_API_KEY",
+    },
+    "custom": {
+        "label": "Something else that speaks the OpenAI protocol",
+        "url": "",
+        "local": False,
+        "key_var": "ENQ_LLM_API_KEY",
+    },
+}
+
+LLM_BACKEND = os.getenv("ENQ_LLM_BACKEND", "ollama")
+
+# llama3.1:8b because it is already pulled. It is a placeholder and it is bad at this:
+# measured, three of four rerank judgments fail their validators. That is accepted for
+# now. A real model gets pointed at when the POC is actually being judged.
+#
+# Nothing about swapping it is a code change. The adapter speaks the OpenAI-compatible
+# protocol, so any endpoint that does too, including a hosted GLM, is these three
+# variables:
+#
+#   ENQ_OLLAMA_URL=https://host/v1  ENQ_LLM_MODEL=glm-5.2  ENQ_LLM_API_KEY=...
 LLM_MODEL = os.getenv("ENQ_LLM_MODEL", "llama3.1:8b")
+LLM_API_KEY = os.getenv("ENQ_LLM_API_KEY", "ollama")
+
+# Retries *after* the first attempt, so 1 means two tries. Kept low on purpose: a
+# failed judgment is a dropped candidate rather than a crisis, and on a placeholder
+# model most of them fail, so each extra retry buys almost nothing and costs a full
+# generation. Set to 0 for the fastest, worst run.
+MODEL_RETRIES = int(os.getenv("ENQ_MODEL_RETRIES", "1"))
 
 # M0 runs Qdrant in process, at QDRANT_PATH. Set ENQ_QDRANT_URL to use a server instead.
 #

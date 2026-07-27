@@ -160,6 +160,68 @@ def index_facets(batch_size: int = 64) -> dict:
     )
 
 
+def drop_artifact(collection: str, artifact_id: str) -> None:
+    """Remove every point belonging to one artifact."""
+    from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+
+    ensure_collections()
+    client().delete(
+        collection_name=collection,
+        points_selector=FilterSelector(
+            filter=Filter(
+                must=[FieldCondition(key="artifact_id", match=MatchValue(value=artifact_id))]
+            )
+        ),
+    )
+
+
+def index_artifact(artifact_id: str) -> int:
+    """Re-embed one artifact's chunks in place.
+
+    The full `index_chunks` pass resets the collection, which is right for a rebuild
+    and wrong for a save: it would drop the whole index every time a note is edited.
+    This replaces one artifact's points and leaves the rest alone.
+    """
+    ensure_collections()
+    drop_artifact(CHUNKS, artifact_id)
+
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT c.id, c.artifact_id, c.text, a.title"
+            " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
+            " WHERE c.artifact_id = ? ORDER BY c.ordinal",
+            (artifact_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return 0
+
+    # Title prepended for indexing only, exactly as in the full pass. See index_chunks.
+    texts = [f"{r['title']}\n\n{r['text']}" for r in rows]
+    dense = embed(texts)
+    sparse = embed_sparse(texts)
+
+    client().upsert(
+        collection_name=CHUNKS,
+        points=[
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector={DENSE: d, SPARSE: SparseVector(indices=s[0], values=s[1])},
+                payload={
+                    "artifact_id": r["artifact_id"],
+                    "chunk_id": r["id"],
+                    "embed_version": config.EMBED_VERSION,
+                },
+            )
+            for r, d, s in zip(rows, dense, sparse)
+        ],
+    )
+    return len(rows)
+
+
 def search(collection: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:
     """Hybrid retrieval: dense and sparse, fused with RRF."""
     indices, values = embed_sparse_one(text)

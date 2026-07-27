@@ -23,16 +23,26 @@ class Provider(Protocol):
         user: str,
         response_model: type[T],
         context: dict | None = None,
-        max_retries: int = 3,
+        max_retries: int | None = None,
     ) -> T: ...
 
 
 def get_provider(local_only: bool = False) -> Provider:
     """Return the configured provider.
 
-    Local-only artifacts always route to Ollama, whatever the default is. The POC
-    has one adapter, so this is a seam rather than a decision point today.
+    Local-only artifacts always route to the local backend, whatever the default is.
+    That is the one rule here that is not a preference: marking something local-only
+    is a promise that its text never leaves the machine, and a configuration change
+    must not be able to quietly break it.
     """
-    from .ollama import OllamaProvider
+    from .. import config, settings
+    from .ollama import OpenAICompatibleProvider
 
-    return OllamaProvider()
+    name = "ollama" if local_only else settings.get("llm_backend")
+    backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
+
+    url = settings.get("llm_url") if not local_only else config.BACKENDS["ollama"]["url"]
+    return OpenAICompatibleProvider(
+        model=settings.get("llm_model") if not local_only else config.LLM_MODEL,
+        base_url=url or backend["url"],
+    )

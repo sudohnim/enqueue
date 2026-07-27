@@ -63,9 +63,13 @@ def candidates(queries: list[str], limit: int = 150, per_query: int = 40) -> lis
 
 
 def artifact_text(conn, artifact_id: str, max_words: int = 1200) -> str:
-    rows = conn.execute(
-        "SELECT text, depth FROM blocks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
-    ).fetchall()
-    text = "\n".join(("  " * r["depth"]) + r["text"] for r in rows)
+    """The text a judgment reads. A note has a body; a capture has its chunks."""
+    row = conn.execute("SELECT body FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+    text = (row["body"] if row else None) or ""
+    if not text.strip():
+        chunks = conn.execute(
+            "SELECT text FROM chunks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
+        ).fetchall()
+        text = "\n\n".join(c["text"] for c in chunks)
     words = text.split()
     return text if len(words) <= max_words else " ".join(words[:max_words])

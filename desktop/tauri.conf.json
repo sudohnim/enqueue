@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Enqueue",
+  "version": "0.1.0",
+  "identifier": "com.sudohnim.enqueue",
+  "build": {
+    "frontendDist": "../src/enqueue/static"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    },
+    "macOSPrivateApi": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.png"],
+    "category": "Productivity",
+    "copyright": "",
+    "shortDescription": "Capture anything, organise it later."
+  }
+}

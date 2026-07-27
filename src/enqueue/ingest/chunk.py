@@ -1,142 +1,204 @@
-"""Chunking.
+"""Chunking markdown.
 
-A depth-0 block plus all of its descendants becomes one chunk, so a claim and the
-author's elaboration on it stay together. Only oversized results get split further.
+The previous build chunked a tree of immutable blocks. The insight it produced still
+holds and is what this preserves: a claim plus its elaboration is one unit, and loose
+paragraphs shred into uselessly small pieces unless they are merged.
 
-A depth-0 block with *no* children is a loose paragraph rather than a semantic unit,
-so consecutive ones are merged up to a floor. Without this, pasted model output
-shreds into headings and single list items: measured on the real corpus, 400 of 1421
-chunks came in under ten words, concentrated in eight artifacts of pasted transcript.
-A ten-word chunk embeds badly and pollutes retrieval.
+Measured on a real corpus then: a paragraph-per-chunk rule produced 1,421 chunks at a
+median of 17 words, with 400 under ten. A ten-word chunk embeds badly and pollutes
+retrieval. Merging fixed it without breaking the units that were already coherent.
 
-The distinction is read off the block tree rather than guessed from the folder,
-because pasted content appears in `books` as well as `hideas`.
+Here the same shape is read from markdown structure instead of `parent_id`:
+
+  - a heading and everything under it, until the next heading of equal or higher rank
+  - a list and its nested items, kept whole
+  - consecutive loose paragraphs, merged to a floor
 """
 
 from __future__ import annotations
 
+import re
 import uuid
-from dataclasses import dataclass
 
 from .. import db
 
 MAX_WORDS = 600  # roughly 800 tokens
 SPLIT_WORDS = 380
 OVERLAP_WORDS = 60
-MERGE_FLOOR_WORDS = 120  # childless paragraphs accumulate to at least this
+MERGE_FLOOR_WORDS = 120
 
-
-@dataclass
-class Chunk:
-    artifact_id: str
-    ordinal: int
-    text: str
-    chunker: str
-
-
-def _subtree(rows: list[dict], root_id: str) -> list[str]:
-    """Text of a block and everything under it, in document order."""
-    by_parent: dict[str | None, list[dict]] = {}
-    for row in rows:
-        by_parent.setdefault(row["parent_id"], []).append(row)
-
-    out: list[str] = []
-
-    def walk(block_id: str, indent: int) -> None:
-        row = next(r for r in rows if r["id"] == block_id)
-        out.append(("  " * indent) + row["text"])
-        for child in sorted(by_parent.get(block_id, []), key=lambda r: r["ordinal"]):
-            walk(child["id"], indent + 1)
-
-    walk(root_id, 0)
-    return out
+_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+")
 
 
 def _split_long(text: str) -> list[str]:
     words = text.split()
     if len(words) <= MAX_WORDS:
         return [text]
-    out: list[str] = []
-    start = 0
+    out, start = [], 0
     while start < len(words):
         out.append(" ".join(words[start : start + SPLIT_WORDS]))
         start += SPLIT_WORDS - OVERLAP_WORDS
     return out
 
 
-def chunk_artifact(artifact_id: str, rows: list[dict]) -> list[Chunk]:
-    tops = sorted((r for r in rows if r["parent_id"] is None), key=lambda r: r["ordinal"])
-    has_child = {r["parent_id"] for r in rows if r["parent_id"] is not None}
+def _segments(markdown: str) -> list[tuple[str, str]]:
+    """Split into (kind, text) where kind is heading, list, code, or prose.
 
-    chunks: list[Chunk] = []
-    ordinal = 0
-    buffer: list[str] = []
+    Blank lines are held rather than consumed, because a blank line inside a list is
+    a gap between items and a blank line before prose is the end of the list. That
+    cannot be decided until the next non-blank line is seen. Consuming them eagerly
+    made a single list swallow the entire rest of the document.
+    """
+    segments: list[tuple[str, str]] = []
+    buf: list[str] = []
+    blanks: list[str] = []
+    mode = "prose"
+    in_fence = False
 
-    def emit(text: str, chunker: str) -> None:
-        nonlocal ordinal
-        for piece in _split_long(text):
-            label = chunker if "\n" not in piece or chunker != "blocks-v1" else chunker
-            chunks.append(Chunk(artifact_id, ordinal, piece, label))
-            ordinal += 1
+    def flush():
+        nonlocal buf, blanks
+        text = "\n".join(buf).strip()
+        if text:
+            segments.append((mode, text))
+        buf, blanks = [], []
 
-    def flush() -> None:
-        nonlocal buffer
-        if buffer:
-            emit("\n".join(buffer).strip(), "blocks-v1+merged")
-            buffer = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
 
-    for top in tops:
-        text = "\n".join(_subtree(rows, top["id"])).strip()
-        if not text:
+        if stripped.startswith("```"):
+            if in_fence:
+                buf.append(line)
+                in_fence = False
+                flush()
+            else:
+                flush()
+                mode = "code"
+                buf.append(line)
+                in_fence = True
             continue
 
-        if top["id"] in has_child:
-            # A claim with the author's elaboration under it. Never merged.
-            flush()
-            emit(text, "blocks-v1")
+        if in_fence:
+            buf.append(line)
             continue
 
-        buffer.append(text)
-        if sum(len(b.split()) for b in buffer) >= MERGE_FLOOR_WORDS:
+        if not stripped:
+            blanks.append(line)
+            continue
+
+        if _HEADING.match(line):
             flush()
+            mode = "heading"
+        elif _LIST_ITEM.match(line):
+            if mode != "list":
+                flush()
+                mode = "list"
+            else:
+                buf.extend(blanks)  # a gap between items of the same list
+                blanks = []
+        elif mode in ("heading", "list") and not blanks:
+            pass  # a wrapped line continues what it follows
+        elif mode == "heading" and blanks:
+            buf.extend(blanks)  # body under a heading belongs to it
+            blanks = []
+        else:
+            if mode != "prose":
+                flush()
+                mode = "prose"
+            elif blanks:
+                flush()
+                mode = "prose"
+
+        buf.append(line)
 
     flush()
+    return segments
+
+
+def chunk_markdown(markdown: str) -> list[tuple[str, str]]:
+    """Return (text, chunker) pairs.
+
+    Headings, lists, and code fences are coherent on their own and never merge.
+    Loose prose accumulates to a floor, because that is the case that shredded before.
+    """
+    chunks: list[tuple[str, str]] = []
+    pending: list[str] = []
+
+    def flush_pending():
+        nonlocal pending
+        if pending:
+            joined = "\n\n".join(pending).strip()
+            for piece in _split_long(joined):
+                chunks.append((piece, "markdown-v1+merged"))
+            pending = []
+
+    for kind, text in _segments(markdown):
+        if kind in ("heading", "list", "code"):
+            flush_pending()
+            for piece in _split_long(text):
+                chunks.append((piece, f"markdown-v1+{kind}"))
+        else:
+            pending.append(text)
+            if sum(len(p.split()) for p in pending) >= MERGE_FLOOR_WORDS:
+                flush_pending()
+
+    flush_pending()
     return chunks
 
 
-def chunk_all() -> dict[str, int]:
-    """Rebuild chunks for every artifact that has blocks. Derived data, so it is dropped first."""
+def chunk_artifact(conn, artifact_id: str) -> int:
+    """Rebuild chunks for one artifact. Derived data, so it is replaced wholesale."""
+    row = conn.execute(
+        "SELECT kind, title, body FROM artifacts WHERE id = ?", (artifact_id,)
+    ).fetchone()
+    if row is None:
+        return 0
+
+    conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
+
+    # Notes carry their own text. A link carries whatever its preview found out, which
+    # is the only reason fetching one is worth a network request at all: it turns a
+    # bare URL into something the index can match. Other captures wait for extraction.
+    body = row["body"] or ""
+    if not body.strip() and row["kind"] == "link":
+        from ..preview import text_for_index
+
+        body = text_for_index(artifact_id)
+    if not body.strip() and row["kind"] == "pdf":
+        # A page is already a unit a person navigates by, so the page boundary is a
+        # better chunk boundary than anything the markdown chunker would invent. Long
+        # pages still split; short ones still merge.
+        pages = conn.execute(
+            "SELECT page, text FROM page_text WHERE artifact_id = ? ORDER BY page",
+            (artifact_id,),
+        ).fetchall()
+        body = "\n\n".join(f"## page {p['page'] + 1}\n\n{p['text']}" for p in pages)
+    if not body.strip():
+        return 0
+
+    made = chunk_markdown(body)
+    for ordinal, (text, chunker) in enumerate(made):
+        conn.execute(
+            "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker) VALUES (?,?,?,?,?)",
+            (str(uuid.uuid4()), artifact_id, ordinal, text, chunker),
+        )
+    return len(made)
+
+
+def chunk_all() -> dict:
     stats = {"artifacts": 0, "chunks": 0}
-
     with db.transaction() as conn:
-        conn.execute("DELETE FROM chunks")
-        artifact_ids = [
-            r["artifact_id"] for r in conn.execute("SELECT DISTINCT artifact_id FROM blocks")
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM artifacts WHERE body IS NOT NULL"
+                " OR id IN (SELECT artifact_id FROM link_previews WHERE status = 'ok')"
+                " OR id IN (SELECT DISTINCT artifact_id FROM page_text)"
+            )
         ]
-
-        for artifact_id in artifact_ids:
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT id, parent_id, ordinal, text FROM blocks WHERE artifact_id = ?"
-                    " ORDER BY ordinal",
-                    (artifact_id,),
-                )
-            ]
-            chunks = chunk_artifact(artifact_id, rows)
-            for chunk in chunks:
-                conn.execute(
-                    "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker)"
-                    " VALUES (?,?,?,?,?)",
-                    (
-                        str(uuid.uuid4()),
-                        chunk.artifact_id,
-                        chunk.ordinal,
-                        chunk.text,
-                        chunk.chunker,
-                    ),
-                )
-            stats["artifacts"] += 1
-            stats["chunks"] += len(chunks)
-
+        for artifact_id in ids:
+            made = chunk_artifact(conn, artifact_id)
+            if made:
+                stats["artifacts"] += 1
+                stats["chunks"] += made
     return stats

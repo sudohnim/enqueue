@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Restart Enqueue: engine, then the macOS window, then bring it to the front.
+#
+# The shell owns the engine's lifetime, so restarting the engine alone leaves the
+# window pointing at a dead port, and killing the window takes the engine with it.
+# They come up together or not at all, which is what this exists to guarantee.
+#
+#   bin/relaunch          restart both
+#   bin/relaunch --build  rebuild the shell first (after editing desktop/src)
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$REPO/desktop/target/debug/enqueue-desktop"
+LOG="${TMPDIR:-/tmp}/enqueue-app.log"
+
+if [[ "${1:-}" == "--build" ]]; then
+  echo "building the shell..."
+  (cd "$REPO/desktop" && cargo build)
+fi
+
+# The shell kills its own engine when the window closes, so stop the window first
+# and let it clean up rather than orphaning a process on the port.
+pkill -f "enqueue-desktop" 2>/dev/null || true
+sleep 1
+pkill -f "enq serve" 2>/dev/null || true
+sleep 1
+
+if [[ ! -x "$BIN" ]]; then
+  echo "no shell built yet. run: bin/relaunch --build" >&2
+  exit 1
+fi
+
+echo "/Users/minhmai/enqueue" > "$HOME/.enqueue-poc/repo" 2>/dev/null || true
+
+ENQUEUE_REPO="$REPO" "$BIN" >"$LOG" 2>&1 &
+
+# The window is only useful once the engine behind it answers.
+for _ in $(seq 1 40); do
+  if curl -sf -o /dev/null http://127.0.0.1:8787/health; then break; fi
+  sleep 0.5
+done
+
+if ! curl -sf -o /dev/null http://127.0.0.1:8787/health; then
+  echo "engine never came up. log:" >&2
+  tail -20 "$LOG" >&2
+  exit 1
+fi
+
+# Launched from a shell, the process is not frontmost, so the window opens behind
+# whatever the person was looking at and reads as a launch that failed.
+osascript -e 'tell application "System Events" to tell process "enqueue-desktop" to set frontmost to true' 2>/dev/null || true
+
+echo "up: $(curl -s http://127.0.0.1:8787/health)"
+echo "log: $LOG"

@@ -1,7 +1,7 @@
-"""Facet eligibility, and the proper-noun set that forces abstraction.
+"""Facets: what an artifact could be an example of.
 
-Facet generation itself is task E4 and is not implemented yet: it depends on the
-model decision recorded at the top of docs/PROGRESS.md.
+Reads a note's markdown body. Captures are skipped by the eligibility gate until
+text extraction exists, since there is nothing to abstract from yet.
 """
 
 from __future__ import annotations
@@ -81,12 +81,9 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     from ..schemas import FacetSet
 
     row = conn.execute(
-        "SELECT title, local_only FROM artifacts WHERE id = ?", (artifact_id,)
+        "SELECT title, body, local_only FROM artifacts WHERE id = ?", (artifact_id,)
     ).fetchone()
-    blocks = conn.execute(
-        "SELECT text, depth FROM blocks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
-    ).fetchall()
-    text = "\n".join(("  " * b["depth"]) + b["text"] for b in blocks)
+    text = row["body"] or ""
 
     provider = get_provider(local_only=bool(row["local_only"]))
     nouns = proper_nouns(text, row["title"])
@@ -127,7 +124,7 @@ def generate_all(limit: int | None = None, redo: bool = False, verbose: bool = F
         rows = conn.execute(
             "SELECT a.id, a.title FROM artifacts a"
             " LEFT JOIN facet_skips s ON s.artifact_id = a.id"
-            " WHERE s.artifact_id IS NULL ORDER BY a.captured_at"
+            " WHERE s.artifact_id IS NULL ORDER BY a.created_at"
         ).fetchall()
         if limit:
             rows = rows[:limit]
@@ -162,13 +159,8 @@ def generate_all(limit: int | None = None, redo: bool = False, verbose: bool = F
     return report
 
 
-def _word_count(conn, artifact_id: str) -> int:
-    row = conn.execute(
-        "SELECT COALESCE(SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), 0) AS n"
-        " FROM blocks WHERE artifact_id = ?",
-        (artifact_id,),
-    ).fetchone()
-    return int(row["n"])
+def _word_count(body: str | None) -> int:
+    return len((body or "").split())
 
 
 def apply_eligibility_gate() -> dict[str, int]:
@@ -182,17 +174,18 @@ def apply_eligibility_gate() -> dict[str, int]:
 
     with db.transaction() as conn:
         conn.execute("DELETE FROM facet_skips")
-        rows = conn.execute("SELECT id, kind, status, imported_from FROM artifacts").fetchall()
+        rows = conn.execute("SELECT id, kind, status, body FROM artifacts").fetchall()
 
         for row in rows:
-            folder = (row["imported_from"] or "").split(":")[-1]
             reason = None
 
             if row["status"] == "text_only":
                 reason = "text_only"
-            elif row["kind"] != "note" or folder in config.SKIP_FACETS_FOR_FOLDERS:
+            elif row["kind"] != "note":
+                # A capture has no extracted text yet, so there is nothing to abstract
+                # from. This relaxes once extraction exists.
                 reason = "kind"
-            elif _word_count(conn, row["id"]) < config.MIN_WORDS_FOR_FACETS:
+            elif _word_count(row["body"]) < config.MIN_WORDS_FOR_FACETS:
                 reason = "too_short"
 
             if reason:

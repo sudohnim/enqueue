@@ -8,6 +8,7 @@ Do not soften one because a model keeps failing it. Report it instead.
 
 from __future__ import annotations
 
+import re
 from enum import IntEnum, StrEnum
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
@@ -242,6 +243,135 @@ class Exhibit(BaseModel):
             )
         if self.thin and not self.thin_reason:
             raise ValueError("a thin room must say why it is thin")
+        return self
+
+
+class Answer(BaseModel):
+    """One turn of a chat, answered out of the collection.
+
+    The failure this guards against is the answer that reads as though it came from
+    the museum and did not. A model that knows the subject will happily answer from
+    what it already knows, cite whatever it was shown, and produce something fluent,
+    correct, and completely unconnected to anything the person saved. That is the
+    worst possible output here: it is indistinguishable from the good case and it
+    quietly makes the collection irrelevant.
+
+    So `grounded` is a claim the model has to make, and the citations have to back it.
+    """
+
+    answer: str = Field(min_length=1)
+    grounded: bool = Field(
+        description="True only if the answer came from the artifacts you were shown."
+    )
+    cited: list[str] = Field(
+        default_factory=list, description="Ids of the artifacts the answer actually used."
+    )
+
+    @model_validator(mode="after")
+    def check(self, info: ValidationInfo):
+        offered = set((info.context or {}).get("offered_artifact_ids", []))
+
+        invented = set(self.cited) - offered if offered else set()
+        if invented:
+            raise ValueError(
+                f"cited artifacts that were not provided: {sorted(invented)}; "
+                "cite only from the numbered list you were given"
+            )
+
+        if self.grounded and not self.cited:
+            raise ValueError(
+                "grounded is true but nothing is cited; either name the artifacts the "
+                "answer came from, or set grounded to false and say the collection "
+                "does not hold this"
+            )
+        if not self.grounded and self.cited:
+            raise ValueError(
+                "grounded is false but artifacts are cited; if they carried the answer, "
+                "grounded is true"
+            )
+        return self
+
+
+class ChatTitle(BaseModel):
+    """What a conversation gets called in the list of conversations."""
+
+    title: str = Field(description="2 to 6 words naming the subject, not the exchange.")
+
+    @model_validator(mode="after")
+    def check(self):
+        words = self.title.split()
+        if not 2 <= len(words) <= 6:
+            raise ValueError(f"title is {len(words)} words, must be 2 to 6: {self.title!r}")
+        if self.title.rstrip().endswith(("?", ".", "!")):
+            raise ValueError("a title is a name, not a sentence; drop the final punctuation")
+        lowered = self.title.lower()
+        # "Chat about X" and "Question regarding X" are the model naming the container
+        # instead of the contents. Every one of them sorts identically in a sidebar.
+        for phrase in (
+            "chat about",
+            "conversation about",
+            "discussion of",
+            "question about",
+            "questions about",
+            "inquiry into",
+            "exploring",
+        ):
+            if lowered.startswith(phrase):
+                raise ValueError(
+                    f"title names the exchange ({phrase!r}) rather than the subject; "
+                    "name what it is about"
+                )
+        return self
+
+
+class ChatTopics(BaseModel):
+    """The concepts a conversation turned out to circle.
+
+    These are the same kind of object a lens is, which is the point: a topic drawn
+    out of a conversation can be handed straight back to the curator to hang a room.
+    A topic that only makes sense next to this transcript cannot do that, so the
+    validators push toward standalone concepts.
+    """
+
+    topics: list[str] = Field(description="2 to 5 concepts, each 1 to 4 words.")
+
+    @model_validator(mode="after")
+    def check(self, info: ValidationInfo):
+        if not 2 <= len(self.topics) <= 5:
+            raise ValueError(f"{len(self.topics)} topics, must be 2 to 5")
+
+        seen = set()
+        for topic in self.topics:
+            words = topic.split()
+            if not 1 <= len(words) <= 4:
+                raise ValueError(f"topic {topic!r} is {len(words)} words, must be 1 to 4")
+            if topic.endswith(("?", ".")):
+                raise ValueError(f"topic {topic!r} is a sentence; a topic is a noun phrase")
+
+            # Found in the wild: "NotesNotFetched", "MuseumCollection". A concatenated
+            # identifier passes the word count because it contains no spaces, and it is
+            # not a phrase anyone would write on a wall. It also cannot be handed to
+            # the curator as a lens, which is the only reason topics exist.
+            if re.search(r"[a-z][A-Z]", topic):
+                raise ValueError(
+                    f"topic {topic!r} runs words together like an identifier; "
+                    "write it as ordinary words with spaces"
+                )
+            if "_" in topic or "-" in topic.strip("-"):
+                raise ValueError(
+                    f"topic {topic!r} is punctuated like a slug; write it as ordinary words"
+                )
+
+            lowered = topic.lower()
+            for phrase in SELF_REFERENCE:
+                if phrase in lowered:
+                    raise ValueError(
+                        f"topic {topic!r} refers to the conversation or its material; "
+                        "name the idea on its own"
+                    )
+            if lowered in seen:
+                raise ValueError(f"topic {topic!r} appears twice")
+            seen.add(lowered)
         return self
 
 

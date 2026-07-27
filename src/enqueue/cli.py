@@ -7,7 +7,6 @@ that need it say so rather than reaching around the boundary.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import httpx
 import typer
@@ -60,33 +59,17 @@ def health() -> None:
     _echo(_call("GET", "/health"))
 
 
-@app.command("import-fabric")
-def import_fabric(path: Path) -> None:
-    """Import a Fabric export directory."""
-    result = _call("POST", "/import/fabric", json={"path": str(path)})
-    _echo(result)
-    for name in result.get("with_secrets", []):
-        typer.secho(
-            f"  credential detected in {name}  (imported as text_only)", fg=typer.colors.YELLOW
-        )
-
-
-@app.command("import-bookmarks")
-def import_bookmarks(path: Path) -> None:
-    """Import a Netscape bookmarks file. Never fetches the URLs."""
-    _echo(_call("POST", "/import/bookmarks", json={"path": str(path)}))
-
-
 @app.command()
-def chunk() -> None:
-    """Rebuild chunks from blocks."""
-    _echo(_call("POST", "/chunk"))
+def migrate() -> None:
+    """Bring the database to the newest revision.
 
+    The engine does this at startup, so this is for inspecting or repairing a
+    database without one running.
+    """
+    from . import db
 
-@app.command("facet-gate")
-def facet_gate() -> None:
-    """Decide which artifacts never get facets."""
-    _echo(_call("POST", "/facet-gate"))
+    db.migrate()
+    typer.echo(f"migrated {config.DB_PATH}")
 
 
 @app.command()
@@ -147,35 +130,77 @@ def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> No
 
 
 @app.command()
-def artifacts(limit: int = 20, offset: int = 0) -> None:
+def note(body: str = "") -> None:
+    """Write a note. The body is markdown and stays editable."""
+    _echo(_call("POST", "/notes", json={"body": body}))
+
+
+@app.command()
+def link(url: str) -> None:
+    """Save a URL. Nothing is fetched."""
+    _echo(_call("POST", "/capture/link", json={"url": url}))
+
+
+@app.command()
+def artifacts(limit: int = 20) -> None:
     """List artifacts, newest first."""
-    result = _call("GET", "/artifacts", params={"limit": limit, "offset": offset})
+    result = _call("GET", "/artifacts", params={"limit": limit})
     typer.echo(f"{result['total']} artifacts")
+    for a in result["items"]:
+        flag = " [local-only]" if a["local_only"] else ""
+        typer.echo(f"  {a['kind']:<6} {a['updated_at'][:10]}  {a['title'][:52]}{flag}")
+
+
+@app.command()
+def preview(artifact_id: str) -> None:
+    """Fetch what a saved link turns out to be. One request, because you asked."""
+    _echo(_call("POST", f"/artifacts/{artifact_id}/preview"))
+
+
+@app.command()
+def chat(question: str, chat_id: str = "") -> None:
+    """Ask the collection something. Continues a chat if given one."""
+    if chat_id:
+        result = _call("POST", f"/chats/{chat_id}/messages", json={"text": question}, timeout=None)
+    else:
+        result = _call("POST", "/chats", json={"text": question}, timeout=None)
+
+    answer = result["messages"][-1]
+    typer.secho(f"\n{result['chat']['title']}", fg=typer.colors.YELLOW, bold=True)
+    typer.echo(f"{result['chat']['id']}\n")
+    typer.echo(answer["text"])
+
+    if answer["cited"]:
+        typer.echo("")
+        for source in answer["cited"]:
+            typer.secho(f"  {source['title'][:60]}", fg=typer.colors.CYAN)
+    elif not answer["grounded"]:
+        typer.secho("\n  nothing in the collection carried this", fg=typer.colors.RED)
+
+    if result["topics"]:
+        typer.echo("\ntopics: " + ", ".join(t["topic"] for t in result["topics"]))
+
+
+@app.command()
+def chats(limit: int = 20) -> None:
+    """List conversations, newest first."""
+    result = _call("GET", "/chats", params={"limit": limit})
     for item in result["items"]:
-        flag = " [local-only]" if item["local_only"] else ""
-        typer.echo(
-            f"  {item['captured_at'][:10]}  {item['imported_from'] or '-':<22}"
-            f"  {item['title'][:48]:<50}{flag}"
-        )
+        typer.secho(f"  {item['title'][:52]:<54}{item['id']}", fg=typer.colors.CYAN)
+        if item["topics"]:
+            typer.echo("    " + " · ".join(item["topics"]))
 
 
 @app.command()
-def artifact(artifact_id: str) -> None:
-    """Show one artifact in full."""
-    _echo(_call("GET", f"/artifacts/{artifact_id}"))
+def chunk() -> None:
+    """Rebuild chunks from note bodies."""
+    _echo(_call("POST", "/chunk"))
 
 
-@app.command()
-def secrets() -> None:
-    """List detected credentials. Values are redacted."""
-    result = _call("GET", "/secrets")
-    typer.echo(f"{result['count']} credential hits")
-    for hit in result["hits"]:
-        typer.secho(
-            f"  {hit['imported_from']}  {hit['title']}  line {hit['line']}  {hit['kind']}",
-            fg=typer.colors.YELLOW,
-        )
-        typer.echo(f"    {hit['excerpt']}")
+@app.command("facet-gate")
+def facet_gate() -> None:
+    """Decide which artifacts never get facets."""
+    _echo(_call("POST", "/facet-gate"))
 
 
 if __name__ == "__main__":

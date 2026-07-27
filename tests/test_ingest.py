@@ -1,76 +1,17 @@
 """Tests for the parts that run without a model or a vector store.
 
-The corpus fixtures are the real Fabric export. If it is absent the corpus tests skip
-rather than fail, since the export is not in the repository.
+Every fixture here is inline. Tests that depended on an external corpus were deleted
+with the importer that read it: a test that silently skips when a file is missing is
+a test that reports green while checking nothing.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
-from enqueue.ingest.chunk import MERGE_FLOOR_WORDS, chunk_artifact
-from enqueue.ingest.fabric import parse_fabric_html, plain_text
 from enqueue.ingest.facets import proper_nouns
-from enqueue.ingest.importer import classify_provenance
 from enqueue.ingest.secrets import scan
-
-EXPORT = Path.home() / "Downloads" / "Fabric Export 1784999815368"
-needs_corpus = pytest.mark.skipif(not EXPORT.is_dir(), reason="Fabric export not present")
-
-
-def _rows(blocks):
-    """Turn ParsedBlocks into the dict shape chunk_artifact expects."""
-    ids = {b.uuid: b.uuid for b in blocks}
-    return [
-        {
-            "id": b.uuid,
-            "parent_id": ids.get(b.parent_uuid) if b.parent_uuid else None,
-            "ordinal": b.ordinal,
-            "text": b.text,
-        }
-        for b in blocks
-    ]
-
-
-class TestFabricParser:
-    def test_nesting_survives(self):
-        html = """
-        <ul><li data-uuid="a"><p>Claim one</p>
-              <ul><li data-uuid="b"><p>Elaboration</p></li></ul></li>
-            <li data-uuid="c"><p>Claim two</p></li></ul>
-        """
-        blocks = parse_fabric_html(html)
-        assert [b.depth for b in blocks] == [0, 1, 0]
-        assert blocks[1].parent_uuid == "a"
-        assert blocks[2].parent_uuid is None
-
-    def test_parent_text_excludes_children(self):
-        html = "<ul><li><p>Parent</p><ul><li><p>Child</p></li></ul></li></ul>"
-        blocks = parse_fabric_html(html)
-        assert blocks[0].text == "Parent"
-
-    def test_empty_paragraphs_are_dropped(self):
-        assert parse_fabric_html("<p></p><p>  </p>") == []
-
-    def test_code_survives_verbatim(self):
-        html = "<pre><code>line one\nline two</code></pre>"
-        assert "\n" in parse_fabric_html(html)[0].text
-
-    @needs_corpus
-    def test_epictetus_ground_truth(self):
-        blocks = parse_fabric_html(
-            (EXPORT / "books" / "Discourses_by_Epictetus.html").read_text(encoding="utf-8")
-        )
-        assert len(blocks) == 19
-        assert sum(1 for b in blocks if b.depth == 0) == 8
-        assert sum(1 for b in blocks if b.depth == 1) == 11
-        assert all(b.created_at for b in blocks)
-
-        boxer = next(b for b in blocks if "boxer" in b.text)
-        assert boxer.depth == 0
-        assert sum(1 for b in blocks if b.parent_uuid == boxer.uuid) == 3
 
 
 class TestSecretScan:
@@ -95,41 +36,17 @@ class TestSecretScan:
     def test_clean_text_is_clean(self):
         assert scan("The true man is revealed during difficult times.") == []
 
-    @needs_corpus
-    def test_corpus_credential_is_caught_and_never_leaked(self):
-        text = plain_text(
-            parse_fabric_html(
-                (EXPORT / "snippets" / "sftp_command.html").read_text(encoding="utf-8")
-            )
+    def test_realistic_snippet_is_caught_and_never_leaked(self):
+        # Shaped after a real credential found in the first corpus. The value must
+        # never reach the excerpt, because that excerpt is what gets displayed.
+        text = (
+            "import paramiko\n"
+            'transport = paramiko.Transport("partners.sftp.example.com")\n'
+            'transport.connect(username="minh", password="hunter2!")\n'
         )
         hits = scan(text)
         assert hits
-        assert not any("testMinh" in h.excerpt for h in hits)
-
-
-class TestChunking:
-    def test_claim_with_children_is_one_unit(self):
-        blocks = parse_fabric_html(
-            "<ul><li><p>Claim</p><ul><li><p>Because</p></li><li><p>And</p></li></ul></li></ul>"
-        )
-        chunks = chunk_artifact("a", _rows(blocks))
-        assert len(chunks) == 1
-        assert chunks[0].chunker == "blocks-v1"
-        assert "Because" in chunks[0].text
-
-    def test_childless_paragraphs_merge(self):
-        html = "".join(f"<p>{'word ' * 20}</p>" for _ in range(10))
-        chunks = chunk_artifact("a", _rows(parse_fabric_html(html)))
-        assert len(chunks) < 10
-        assert all(c.chunker == "blocks-v1+merged" for c in chunks)
-        assert all(len(c.text.split()) >= MERGE_FLOOR_WORDS * 0.5 for c in chunks[:-1])
-
-    def test_claims_are_never_merged_into_paragraphs(self):
-        html = "<p>loose one</p><ul><li><p>Claim</p><ul><li><p>Sub</p></li></ul></li></ul>"
-        chunks = chunk_artifact("a", _rows(parse_fabric_html(html)))
-        claim = [c for c in chunks if "Claim" in c.text]
-        assert len(claim) == 1
-        assert "loose one" not in claim[0].text
+        assert not any("hunter2!" in h.excerpt for h in hits)
 
 
 class TestProperNouns:
@@ -142,15 +59,6 @@ class TestProperNouns:
 
     def test_excludes_sentence_openers(self):
         assert "walking" not in proper_nouns("Walking makes you a better walker.", "x")
-
-
-class TestProvenance:
-    def test_pasted_llm_output(self):
-        text = "That's an excellent question. 🎯 Let's break it down. " + "word " * 900
-        assert classify_provenance(text, []) == "pasted"
-
-    def test_own_notes(self):
-        assert classify_provenance("Death is a hobgoblin, a scary mask.", []) == "authored"
 
 
 class TestFacetValidators:

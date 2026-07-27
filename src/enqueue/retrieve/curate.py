@@ -18,13 +18,22 @@ from .expand import expand
 from .rerank import rerank
 
 
-def _synthesise(lens: str, kept: list[dict]) -> Exhibit | None:
+def _synthesise(lens: str, kept: list[dict]) -> tuple[Exhibit | None, str | None]:
+    """Return the exhibit and, if it could not be made, the reason.
+
+    Swallowing the reason produced a room with a null name and no through line and
+    nothing anywhere saying why. The synthesis failing is a fact about the model, and
+    the person is the one who has to act on it.
+    """
     if not kept:
-        return Exhibit(
-            suggested_name=lens,
-            through_line="Nothing in the collection speaks to this yet.",
-            thin=True,
-            thin_reason="No artifact survived reranking.",
+        return (
+            Exhibit(
+                suggested_name=lens,
+                through_line="Nothing in the collection speaks to this yet.",
+                thin=True,
+                thin_reason="No artifact survived reranking.",
+            ),
+            None,
         )
 
     body = "\n\n".join(
@@ -32,23 +41,27 @@ def _synthesise(lens: str, kept: list[dict]) -> Exhibit | None:
         for k in kept
     )
     try:
-        return get_provider().complete(
-            system=SYNTHESIS,
-            user=f"Theme: {lens}\n\nThe room:\n\n{body}",
-            response_model=Exhibit,
-            context={"kept_artifact_ids": [k["artifact_id"] for k in kept], "lens": lens},
+        return (
+            get_provider().complete(
+                system=SYNTHESIS,
+                user=f"Theme: {lens}\n\nThe room:\n\n{body}",
+                response_model=Exhibit,
+                context={"kept_artifact_ids": [k["artifact_id"] for k in kept], "lens": lens},
+            ),
+            None,
         )
-    except Exception:  # noqa: BLE001 - a room without synthesis still beats no room
-        return None
+    except Exception as exc:  # noqa: BLE001 - a room without synthesis still beats no room
+        return None, f"{type(exc).__name__}: {exc}"[:300]
 
 
 def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> dict:
     queries = expand(lens)
     pool_rows = get_candidates(queries, limit=pool)
     reranked = rerank(lens, pool_rows, keep=keep)
-    exhibit = _synthesise(lens, reranked["kept"])
+    exhibit, synthesis_error = _synthesise(lens, reranked["kept"])
 
     result = {
+        "synthesis_error": synthesis_error,
         "lens": lens,
         "expansions": len(queries),
         "candidates": len(pool_rows),
@@ -63,6 +76,20 @@ def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> di
     if save and exhibit:
         result["saved_id"] = _save(lens, exhibit, reranked["kept"])
     return result
+
+
+def save(lens: str, exhibit: dict, kept: list[dict]) -> str:
+    """Keep a room that has already been built.
+
+    Revalidated with the same context the generating call used, because the payload
+    made the round trip through a client and is no longer trusted to be what the
+    model returned.
+    """
+    checked = Exhibit.model_validate(
+        exhibit,
+        context={"kept_artifact_ids": [k["artifact_id"] for k in kept], "lens": lens},
+    )
+    return _save(lens, checked, kept)
 
 
 def _save(lens: str, exhibit: Exhibit, kept: list[dict]) -> str:
