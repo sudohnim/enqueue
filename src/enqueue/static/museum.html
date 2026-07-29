@@ -783,6 +783,89 @@
     }
   }
 
+  /* settings hub nav rows -------------------------------------------------- */
+  .settings-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: none;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text);
+    text-align: left;
+    transition: background 0.2s;
+  }
+  .settings-nav-row:first-of-type {
+    border-top: 1px solid var(--line);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .settings-nav-row:last-of-type {
+    border-radius: 0 0 var(--r-lg) var(--r-lg);
+    border-bottom: none;
+  }
+  .settings-nav-row:hover {
+    background: color-mix(in srgb, var(--line) 20%, var(--surface));
+  }
+  .settings-nav-row .row-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--text-dim);
+  }
+  .settings-nav-row .row-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .settings-nav-row .row-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .settings-nav-row .row-desc {
+    font-size: 12px;
+    color: var(--text-mute);
+    margin-top: 1px;
+  }
+  .settings-nav-row .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+    opacity: 0.5;
+  }
+  .settings-nav-wrap {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--sp-5);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+  }
+  .settings-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    margin-bottom: var(--sp-4);
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: 13px;
+    transition: color 0.2s;
+  }
+  .settings-back:hover {
+    color: var(--text);
+  }
+  .settings-back svg {
+    width: 16px;
+    height: 16px;
+  }
+
   /* ---- the capture pill ---------------------------------------------------
      The app's signature object, present on every page. It floats, so it is one of the
      four things in the whole system allowed a shadow. */
@@ -4437,51 +4520,60 @@
     teardown();
     restorePill("inside");
     view.innerHTML = '<div class="state">...</div>';
+
+    let html =
+      '<div class="h1">Settings</div>' +
+      '<div class="settings-nav-wrap">' +
+      // AI
+      '<button class="settings-nav-row" onclick="showSettingsAI()">' +
+      '<svg class="row-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M10 2L12.5 6.5L17.5 7.5L14 11L14.5 16.5L10 14L5.5 16.5L6 11L2.5 7.5L7.5 6.5L10 2Z"/>' +
+      "</svg>" +
+      '<div class="row-body"><div class="row-label">AI</div><div class="row-desc">Model, endpoint, API key</div></div>' +
+      '<svg class="chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3L11 8L6 13"/></svg></button>' +
+      // Features
+      '<button class="settings-nav-row" onclick="showSettingsFeatures()">' +
+      '<svg class="row-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+      '<rect x="3" y="3" width="14" height="14" rx="2"/>' +
+      '<path d="M10 7V13M7 10H13"/>' +
+      "</svg>" +
+      '<div class="row-body"><div class="row-label">Features</div><div class="row-desc">Hotkey, user agent, link previews</div></div>' +
+      '<svg class="chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3L11 8L6 13"/></svg></button>' +
+      // Storage
+      '<button class="settings-nav-row" onclick="showSettingsStorage()">' +
+      '<svg class="row-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+      '<ellipse cx="10" cy="5.5" rx="7" ry="3"/>' +
+      '<path d="M3 5.5V10C3 11.66 6.13 13 10 13C13.87 13 17 11.66 17 10V5.5"/>' +
+      '<path d="M3 10V14.5C3 16.16 6.13 17.5 10 17.5C13.87 17.5 17 16.16 17 14.5V10"/>' +
+      "</svg>" +
+      '<div class="row-body"><div class="row-label">Storage</div><div class="row-desc">Data location, usage, index rebuild</div></div>' +
+      '<svg class="chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3L11 8L6 13"/></svg></button>' +
+      // Trash
+      '<button class="settings-nav-row" onclick="showSettingsTrash()">' +
+      '<svg class="row-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M4 5H16"/><path d="M7 5V4A1 1 0 0 1 8 3H12A1 1 0 0 1 13 4V5"/>' +
+      '<path d="M5 5L6 16A1 1 0 0 0 7 17H13A1 1 0 0 0 14 16L15 5"/>' +
+      "</svg>" +
+      '<div class="row-body"><div class="row-label">Trash</div><div class="row-desc">Retention, deleted items</div></div>' +
+      '<svg class="chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3L11 8L6 13"/></svg></button></div>';
+
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+  // Switching backend moves the endpoint with it, because leaving the old URL behind
+
+  // ---- AI sub-page ---------------------------------------------------------
+  async function showSettingsAI() {
+    teardown();
+    restorePill("inside");
+    view.innerHTML = '<div class="state">...</div>';
     const d = await api("/settings");
-
-    let html = '<div class="h1">Settings</div>';
-
-    // Tab bar
-    const tabs = [
-      { id: "ai", label: "AI" },
-      { id: "features", label: "Features" },
-      { id: "storage", label: "Storage" },
-      { id: "trash", label: "Trash" },
-    ];
-    html +=
-      '<div class="seg" style="margin-bottom:var(--sp-4)">' +
-      tabs
-        .map(
-          (t) =>
-            '<button class="' +
-            (t.id === _settingsTab ? "on" : "") +
-            '" onclick="switchSettingsTab(\'' +
-            t.id +
-            "')\">" +
-            esc(t.label) +
-            "</button>",
-        )
-        .join("") +
-      "</div>";
-
-    // Mandatory, and first. The promise the whole product rests on is stated where
-    // someone worried about it would go looking, not buried in a paragraph elsewhere.
-    const s0 = d.storage;
-    html +=
-      '<div class="shelf">Local only</div>' +
-      '<div class="callout note"><p>Nothing you keep here leaves this machine. The ' +
-      "engine binds to 127.0.0.1 and the interface makes no request to anything else.</p>" +
-      "</div>" +
-      '<div class="group"><div class="field">' +
-      '<span class="rowlabel">Everything lives at</span>' +
-      '<div class="mono chip">' +
-      esc(s0.data_dir) +
-      "</div></div></div>";
+    let html =
+      '<button class="settings-back" onclick="showSettings()">' +
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
+      '<div class="h2">AI</div>';
 
     html += '<div class="shelf">The model</div><div class="group">';
-
-    // Which backend answers is the one setting here that changes what the product is,
-    // so it says so at the point of choosing rather than in a note somewhere else.
     const chosen = d.settings.llm_backend;
     html +=
       '<div class="field"><label for="s_backend">Answers come from</label>' +
@@ -4501,7 +4593,6 @@
         )
         .join("") +
       "</select>";
-
     const picked = d.backends.find((b) => b.name === chosen.value);
     if (picked && !picked.local)
       html +=
@@ -4515,7 +4606,6 @@
     else if (picked)
       html += '<div class="aside">Nothing leaves this machine.</div>';
     html += "</div>";
-
     for (const name of ["llm_model", "llm_url", "model_retries"]) {
       const f = d.settings[name];
       html +=
@@ -4540,9 +4630,6 @@
           : "") +
         "</div>";
     }
-
-    // Said plainly rather than shown as an empty field. Writing a key into a plaintext
-    // file on disk would contradict the reason this product exists.
     const keyed = d.storage.api_key_present;
     html +=
       '<div class="field"><label for="s_key">API key</label>' +
@@ -4559,9 +4646,7 @@
             ? '<button class="btn ghost harm sm" onclick="forgetKey()">Forget</button>'
             : "") +
           "</div>" +
-          '<div class="aside">saved in the macOS Keychain, not in any file here. ' +
-          "Masked so nobody reads it over your shoulder; the Keychain is what stops " +
-          "it being read off the disk.</div>"
+          '<div class="aside">saved in the macOS Keychain, not in any file here.</div>'
         : '<div class="aside caution">' +
           (d.storage.api_key_where === "environment"
             ? "Pinned by <b>ENQ_LLM_API_KEY</b> in the environment" +
@@ -4569,9 +4654,7 @@
                 ? " (" + esc(d.storage.api_key_hint) + ")"
                 : "") +
               ". Unset it to store one here instead."
-            : "No keychain on this system, so a key has to come from " +
-              "<b>ENQ_LLM_API_KEY</b> in the environment. Writing it into a file " +
-              "here would put it in plain text on disk.") +
+            : "No keychain on this system.") +
           "</div>") +
       '<div id="keyState" class="aside caution"></div></div>';
 
@@ -4584,17 +4667,25 @@
       '" onchange="saveSetting(\'llm_headers\', this.value)">' +
       esc(String(d.settings.llm_headers.value || "")) +
       "</textarea>" +
-      '<div class="aside">One <b>Name: value</b> per line, sent with every model ' +
-      "call. Some endpoints want a referer or an app name before they will answer. " +
-      "Do not put a key here - it would be written to a file.</div></div>";
+      '<div class="aside">One <b>Name: value</b> per line.</div></div>';
 
-    html +=
-      '<div class="aside" style="display:none">' +
-      (d.storage.api_key_present ? "set" : "not set") +
-      ". Keys are read from <b>ENQ_LLM_API_KEY</b> and never written to disk, so there " +
-      "is no field for one here.</div>";
+    html += '<div id="settingState" class="aside"></div>';
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
 
-    html += '</div><div class="shelf">Capture</div><div class="group">';
+  // ---- Features sub-page ---------------------------------------------------
+  async function showSettingsFeatures() {
+    teardown();
+    restorePill("inside");
+    view.innerHTML = '<div class="state">...</div>';
+    const d = await api("/settings");
+    let html =
+      '<button class="settings-back" onclick="showSettings()">' +
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
+      '<div class="h2">Features</div>';
+
+    html += '<div class="shelf">Capture</div><div class="group">';
     const hk = d.settings.hotkey;
     html +=
       '<div class="field"><label for="s_hotkey">' +
@@ -4607,27 +4698,21 @@
       "</span></button>" +
       (hk.locked
         ? '<div class="pinned">pinned by ' + esc(hk.env_var) + "</div>"
-        : '<div class="aside">Click, then press the combination you want. ' +
-          "Takes effect on the next launch.</div>") +
+        : '<div class="aside">Click, then press the combination you want.</div>') +
       "</div>";
-
     const ua = d.settings.user_agent;
     html +=
       '<div class="field"><label for="s_ua">' +
       esc(SETTING_LABELS.user_agent) +
       "</label>" +
-      '<input id="s_ua" placeholder="Enqueue/0.2 (+https://your-contact-url)" value="' +
+      '<input id="s_ua" placeholder="Enqueue/0.2 (+https://...)" value="' +
       esc(String(ua.value ?? "")) +
       '"' +
       (ua.locked ? " disabled" : "") +
       " onchange=\"saveSetting('user_agent', this.value)\">" +
-      '<div class="aside">Some publishers refuse a client with no contact URL. Naming ' +
-      "yourself is how you satisfy that; disguising the request is not.</div></div>";
-
+      '<div class="aside">Some publishers refuse a client with no contact URL.</div></div>';
     const ap = d.settings.auto_preview;
     const apOn = String(ap.value).toLowerCase() !== "off";
-    // The one boolean here, and the one non-button control allowed the accent: an
-    // on-state that is a live instruction to the software rather than a category.
     html +=
       '</div><div class="shelf">Links</div><div class="group">' +
       '<div class="field"><div class="togglerow"><div>' +
@@ -4638,11 +4723,9 @@
         ? '<div class="pinned">pinned by ' + esc(ap.env_var) + "</div>"
         : '<div class="aside">' +
           (apOn
-            ? "One request per link, as you save it, so the wall is not a list of " +
-              "addresses. The publisher learns you saved it."
-            : "A link stays a bare address until you open it and ask. Nobody learns " +
-              "anything until then.") +
-          " Links marked local only are never fetched either way.</div>") +
+            ? "One request per link, as you save it."
+            : "A link stays a bare address until you open it.") +
+          "</div>") +
       "</div>" +
       '<button class="toggle" role="switch" aria-checked="' +
       String(apOn) +
@@ -4652,12 +4735,79 @@
       (ap.locked ? ' disabled aria-disabled="true"' : "") +
       " onclick=\"saveSetting('auto_preview', '" +
       (apOn ? "off" : "on") +
-      '\').then(showSettings)"><span class="knob"></span></button>' +
-      "</div></div>";
+      '\').then(showSettingsFeatures)"><span class="knob"></span></button>' +
+      "</div></div></div>";
+
+    html += '<div id="settingState" class="aside"></div>';
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  // ---- Storage sub-page ----------------------------------------------------
+  async function showSettingsStorage() {
+    teardown();
+    restorePill("inside");
+    view.innerHTML = '<div class="state">...</div>';
+    const d = await api("/settings");
+    let html =
+      '<button class="settings-back" onclick="showSettings()">' +
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
+      '<div class="h2">Storage</div>';
+
+    const s0 = d.storage;
+    html +=
+      '<div class="callout note"><p>Nothing you keep here leaves this machine.</p></div>' +
+      '<div class="group"><div class="field">' +
+      '<span class="rowlabel">Everything lives at</span>' +
+      '<div class="mono chip">' +
+      esc(s0.data_dir) +
+      "</div></div></div>";
+    html +=
+      '<div class="shelf">Usage</div><div class="group">' +
+      '<div class="field"><div class="facts">' +
+      '<b>database</b> <span class="mono">' +
+      bytes(s0.database.bytes) +
+      "</span><br>" +
+      '<b>files</b> <span class="mono">' +
+      bytes(s0.blobs.bytes) +
+      "</span><br>" +
+      '<b>index</b> <span class="mono">' +
+      bytes(s0.index.bytes) +
+      "</span><br>" +
+      Object.entries(s0.counts)
+        .map(
+          ([k, v]) =>
+            "<b>" + esc(k) + '</b> <span class="mono">' + v + "</span>",
+        )
+        .join("<br>") +
+      "</div></div>" +
+      '<div class="field"><span class="rowlabel">Rebuild the index</span>' +
+      '<div class="aside">Everything derived is thrown away and rebuilt.</div>' +
+      '<div class="actions"><button class="btn tertiary" ' +
+      'onclick="rebuildIndex(this)">Rebuild the index</button></div></div></div>';
+
+    html += '<div id="settingState" class="aside"></div>';
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  // ---- Trash sub-page ------------------------------------------------------
+  async function showSettingsTrash() {
+    teardown();
+    restorePill("inside");
+    view.innerHTML = '<div class="state">...</div>';
+    const [d, trash] = await Promise.all([
+      api("/settings"),
+      api("/trash").catch(() => ({ items: [], retention_days: 30 })),
+    ]);
+    let html =
+      '<button class="settings-back" onclick="showSettings()">' +
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
+      '<div class="h2">Trash</div>';
 
     const td = d.settings.trash_days;
     html +=
-      '</div><div class="shelf">The trash</div><div class="group">' +
+      '<div class="shelf">Retention</div><div class="group">' +
       '<div class="field"><label for="s_trash">' +
       esc(SETTING_LABELS.trash_days) +
       "</label>" +
@@ -4668,52 +4818,62 @@
       " onchange=\"saveSetting('trash_days', this.value)\">" +
       (td.locked
         ? '<div class="pinned">pinned by ' + esc(td.env_var) + "</div>"
-        : '<div class="aside">Only things you delete are ever removed. Nothing else ' +
-          "here expires, however old it gets.</div>") +
-      "</div>";
-
-    const s = d.storage;
+        : '<div class="aside">Only things you delete are ever removed.</div>') +
+      "</div></div>";
     html +=
-      '</div><div class="shelf">Where everything lives</div><div class="group">' +
-      '<div class="field"><div class="facts">' +
-      "<b>database</b> " +
-      '<span class="mono">' +
-      bytes(s.database.bytes) +
-      "</span><br>" +
-      "<b>files</b> " +
-      '<span class="mono">' +
-      bytes(s.blobs.bytes) +
-      "</span><br>" +
-      "<b>index</b> " +
-      '<span class="mono">' +
-      bytes(s.index.bytes) +
-      "</span><br>" +
-      Object.entries(s.counts)
-        .map(
-          ([k, v]) =>
-            "<b>" + esc(k) + "</b> " + '<span class="mono">' + v + "</span>",
-        )
-        .join("<br>") +
-      "</div></div>" +
-      '<div class="field"><span class="rowlabel">Rebuild the index</span>' +
-      '<div class="aside">Everything derived is thrown away and made again from what ' +
-      "you wrote and what you saved. Nothing you authored is touched.</div>" +
-      '<div class="actions"><button class="btn tertiary" ' +
-      'onclick="rebuildIndex(this)">Rebuild the index</button></div></div></div>';
+      '<div class="shelf">Trash</div><div class="group">' +
+      '<div class="aside">Deleted things wait ' +
+      trash.retention_days +
+      " day" +
+      (trash.retention_days === 1 ? "" : "s") +
+      ", then go for good.</div>";
+    if (!trash.items.length) {
+      html += '<div class="aside">Nothing in the trash.</div>';
+    } else {
+      html +=
+        '<div class="callout warn">Emptying the trash deletes files permanently.</div>' +
+        '<div class="actions"><button class="btn danger terminal" onclick="emptyTrash(' +
+        trash.items.length +
+        ')">Empty trash (' +
+        trash.items.length +
+        ")</button></div>" +
+        trash.items
+          .map(
+            (a) =>
+              '<div class="item" data-kind="' +
+              esc(a.kind) +
+              '"><div class="item-body"><span class="kindrow">' +
+              '<span class="kindmark"></span>' +
+              '<span class="kindword">' +
+              esc(a.kind) +
+              "</span></span>" +
+              '<div class="title">' +
+              esc(a.title || "Untitled") +
+              "</div></div>" +
+              '<span class="meta">' +
+              (a.days_left > 0
+                ? a.days_left +
+                  " day" +
+                  (a.days_left === 1 ? "" : "s") +
+                  " left"
+                : "goes at the next launch") +
+              "</span>" +
+              '<div class="rowacts">' +
+              '<button class="btn ghost" onclick="restoreArtifact(&#39;' +
+              a.id +
+              '&#39;)">Restore</button>' +
+              '<button class="btn ghost harm" onclick="purgeArtifact(&#39;' +
+              a.id +
+              '&#39;)">Delete now</button></div></div>',
+          )
+          .join("") +
+        "</div>";
+    }
 
     html += '<div id="settingState" class="aside"></div>';
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
-
-  function switchSettingsTab(id) {
-    _settingsTab = id;
-    showSettings();
-  }
-
-  let _settingsTab = "ai";
-
-  // Switching backend moves the endpoint with it, because leaving the old URL behind
   // would point a hosted model at localhost and fail in a way nobody could read.
   const BACKEND_MODELS = {
     ollama: "llama3.1:8b",
