@@ -137,7 +137,7 @@
     --sp-4: 20px;
     --sp-5: 32px;
     --sp-6: 48px;
-    --sp-section: 96px;
+    --sp-section: 48px;
 
     /* The scale skips the 8px to 16px band on purpose: that middle ground is what
        makes an interface read as generic. Controls are 20px, containers 40px. */
@@ -146,9 +146,7 @@
     --r-lg: 40px;
     --r-full: 999px;
 
-    --sans:
-      "IBM Plex Sans", system-ui, -apple-system, "Segoe UI",
-      sans-serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     /* System-only on purpose. Monospace here is information - hashes, paths, byte
        sizes - never decoration, and it is not worth a second font file. Nothing is
        named here that is not already on the machine. */
@@ -173,7 +171,7 @@
      content still needs its gutters, but 96px of air above a title does not. */
   @media (max-width: 900px) {
     :root {
-      --sp-section: 48px;
+      --sp-section: 24px;
     }
   }
 
@@ -190,13 +188,32 @@
     background: var(--bg);
     color: var(--text-dim);
     font-family: var(--sans);
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 450;
     line-height: 1.4;
     /* The variable cut that reaches 450 is not vendored, so this rounds to 400 and
        reads a shade looser than the type system intends. The tracking pays it back. */
     letter-spacing: -0.08px;
     -webkit-font-smoothing: antialiased;
+    /* Make the top of the window draggable for native window move.
+       Interactive elements opt out via -webkit-app-region: no-drag below. */
+    -webkit-app-region: drag;
+  }
+
+  /* Everything interactive opts out of window dragging so clicks register. */
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  [role="button"],
+  [tabindex]:not([tabindex="-1"]),
+  label,
+  iframe,
+  .pill,
+  .card,
+  .item {
+    -webkit-app-region: no-drag;
   }
 
   /* No chrome. A persistent bar is a wall, and the walls are supposed to recede. */
@@ -218,24 +235,24 @@
     margin: 0;
   }
   .display {
-    font-size: 40px;
-    line-height: 42px;
-    letter-spacing: -0.8px;
-  }
-  .h1 {
     font-size: 32px;
-    line-height: 38px;
+    line-height: 36px;
     letter-spacing: -0.64px;
   }
+  .h1 {
+    font-size: 26px;
+    line-height: 31px;
+    letter-spacing: -0.52px;
+  }
   .h2 {
-    font-size: 24px;
-    line-height: 29px;
-    letter-spacing: -0.48px;
+    font-size: 20px;
+    line-height: 25px;
+    letter-spacing: -0.4px;
   }
   .h3 {
-    font-size: 20px;
-    line-height: 26px;
-    letter-spacing: -0.4px;
+    font-size: 17px;
+    line-height: 22px;
+    letter-spacing: -0.34px;
   }
 
   /* The section-category signal. The leading accent dot is the identity of the label,
@@ -523,7 +540,7 @@
      of auto-fill rather than out of a breakpoint list. */
   .wall {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: var(--sp-4);
     margin-top: var(--sp-4);
   }
@@ -748,12 +765,12 @@
 
   @media (max-width: 1080px) {
     .wall {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
   @media (max-width: 760px) {
     .wall {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--sp-3);
     }
     .rail-h {
@@ -1439,8 +1456,7 @@
   /* ---- the left rail ------------------------------------------------------
      Its own scroll region on the canvas, divided from the content by a hairline. */
   .rail {
-    position: fixed;
-    left: 0;
+    display: none;
     top: 0;
     bottom: 0;
     width: 280px;
@@ -1579,13 +1595,6 @@
     line-height: 20px;
     letter-spacing: 0;
     color: var(--text-dim);
-  }
-
-  body.railed {
-    padding-left: 280px;
-  }
-  body.railed .pill {
-    left: calc(50% + 140px);
   }
 
   /* ---- the conversation ---------------------------------------------------
@@ -1946,9 +1955,6 @@
     background: var(--tint-warn);
     border-color: transparent;
   }
-  body.railed .toast {
-    left: calc(50% + 140px);
-  }
 
   @keyframes breathe {
     0%,
@@ -1964,13 +1970,6 @@
   }
 
   @media (max-width: 900px) {
-    body.railed {
-      padding-left: 0;
-    }
-    body.railed .pill,
-    body.railed .toast {
-      left: 50%;
-    }
     /* Off-canvas, sliding in over the scrim rather than shoving the content sideways
        on a window that has none to give. */
     .rail {
@@ -2296,50 +2295,36 @@
     if (where) place = where;
     closeMenu();
     pill.classList.remove("wide");
-    // Search leaves when you are inside something. Searching the whole collection from
-    // inside one object is a different intention from the one you are holding there;
-    // what you want is to find a phrase in front of you, and that is Cmd+F.
     const inside = place === "inside";
 
-    // The rail toggle is emitted on every surface, not only inside a conversation.
-    // Below 900px the rail is off-screen, and it holds the only route to Settings and
-    // to every thread: drawing the opener in one place out of five left both stranded
-    // on the wall, on an artifact, on search, and in Settings itself.
+    // Four buttons: keep/add, search/ask, conversations (eye), settings (gear).
+    // The rail is gone — settings and conversations live in the pill now.
     pill.innerHTML =
-      '<button class="round" id="btnRail" aria-label="Conversations and settings" ' +
-      'onclick="toggleRail()">' +
-      svg("rail") +
-      "</button>" +
       (inside
         ? '<button class="round" aria-label="Back to everything" onclick="home()">' +
           svg("back") +
           "</button>"
-        : // The one instruction on the pill, so the one thing wearing the accent. The
-          // label is in ink beside the disc rather than in the yellow, which at 1.76:1
-          // on any ground in this app is not a colour text can be set in.
-          '<button class="keep" id="btnAdd" aria-expanded="false" ' +
+        : '<button class="keep" id="btnAdd" aria-expanded="false" ' +
           'onclick="toggleMenu(event)">' +
           '<span class="disc">' +
           svg("plus") +
-          "</span>Keep something" +
+          "</span>" +
           '<span class="chev">' +
           svg("chev") +
           "</span></button>") +
       (inside
-        ? ""
-        : '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
-          svg("find") +
-          "</button>") +
-      // Only inside. Out on the wall this was a second, wordless door to the thing the
-      // rail already offers by name under Conversations, and its label still read "Ask
-      // about this" on a surface where there is no this. Inside an object it is not a
-      // duplicate at all: it carries the scope, which is the one route the rail cannot
-      // express, because a conversation started from the rail is about everything.
-      (inside
         ? '<button class="round" aria-label="Ask about this" onclick="openField(\'ask\')">' +
           svg("ask") +
           "</button>"
-        : "");
+        : '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
+          svg("find") +
+          "</button>") +
+      '<button class="round" aria-label="Conversations" onclick="showChatList()">' +
+      svg("ask") +
+      "</button>" +
+      '<button class="round" aria-label="Settings" onclick="showSettings()">' +
+      svg("gear") +
+      "</button>";
   }
 
   const MENU = [
@@ -2716,8 +2701,7 @@
     const weeks = Math.round(days / 7);
     if (days < 60) return weeks === 1 ? "last week" : weeks + " weeks ago";
     const months = Math.round(days / 30);
-    if (days < 365)
-      return months === 1 ? "last month" : months + " months ago";
+    if (days < 365) return months === 1 ? "last month" : months + " months ago";
     const years = Math.round(days / 365);
     return years === 1 ? "last year" : years + " years ago";
   }
@@ -2911,13 +2895,13 @@
     scope = { kind: "everything", label: "everything" };
     view.removeAttribute("data-kind");
     restorePill("wall");
-    showRail(null);
     view.innerHTML = '<div class="state">opening...</div>';
 
-    const [kept, first, exs] = await Promise.all([
+    const [kept, first, exs, chats] = await Promise.all([
       api("/artifacts?pinned=true&order=touched&limit=200"),
       api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
       api("/exhibits"),
+      api("/chats?limit=40"),
     ]);
 
     if (!kept.total && !first.total) {
@@ -2953,20 +2937,28 @@
           .join("");
     }
 
-    // Kept things run sideways. They are a short shelf you scan, not a list you read
-    // down, and giving them a row of their own is what stops them being buried by
-    // whatever you touched this morning.
+    // Kept and fresh share the same grid so every card is the same size.
     if (kept.total) {
       html +=
         '<div class="shelf">saved</div>' +
-        '<div class="rail-h" id="keptRail" tabindex="0" role="list" ' +
-        'aria-label="saved artifacts">' +
+        '<div class="wall" style="margin-bottom:var(--sp-5)">' +
         kept.items.map(card).join("") +
         "</div>";
     }
 
+    // Chat cards use the same visual as artifact cards but open the chat view.
+    const chatItems = (chats && chats.items) || [];
+    const chatCard = (c) =>
+      '<div class="card" tabindex="0" role="button" onclick="showChat(\'' +
+      c.id +
+      "')\">" +
+      '<div class="item-body"><div class="title">' +
+      esc(c.title) +
+      '</div><div class="excerpt">conversation</div></div></div>';
+
     html +=
       '<div class="shelf">Everything else</div><div class="wall" id="wall">' +
+      chatItems.map(chatCard).join("") +
       first.items.map(card).join("") +
       '</div><div id="wallEnd" class="aside"></div>';
 
@@ -3065,10 +3057,7 @@
       esc(a.title || "Untitled") +
       "</div></div>" +
       '<div class="meta">' +
-      bits
-        .filter(Boolean)
-        .map(esc)
-        .join('<span class="sep">&bull;</span>') +
+      bits.filter(Boolean).map(esc).join('<span class="sep">&bull;</span>') +
       "</div>" +
       '<div class="actions">' +
       (a.source_url
@@ -3986,12 +3975,7 @@
         ? '<div class="from scopebar">' +
           '<span class="meta">reading only</span>' +
           (d.chat.scope_kind === "artifact"
-            ? chip(
-                "",
-                d.chat.scope_id,
-                d.chat.scope_label,
-                "showArtifact",
-              )
+            ? chip("", d.chat.scope_id, d.chat.scope_label, "showArtifact")
             : chip("", d.chat.scope_id, d.chat.scope_label, "showExhibit")) +
           "</div>"
         : '<div class="meta">reading everything</div>');
@@ -4015,9 +3999,7 @@
         html +=
           '<div class="from">' +
           m.cited
-            .map((c) =>
-              chip(c.kind, c.artifact_id, c.title, "showArtifact"),
-            )
+            .map((c) => chip(c.kind, c.artifact_id, c.title, "showArtifact"))
             .join("") +
           "</div>";
       else if (m.role === "assistant" && !m.grounded)
@@ -4039,83 +4021,9 @@
 
   // The rail is present on every surface, not only inside a conversation. A thread you
   // have to be already reading in order to find is a thread you will not go back to.
-  async function showRail(activeId) {
-    document.body.classList.add("railed");
-    if (!rail) {
-      rail = document.createElement("nav");
-      rail.className = "rail";
-      rail.setAttribute("aria-label", "Conversations");
-      document.body.appendChild(rail);
-    }
-
-    const list = await api("/chats?limit=40").catch(() => ({ items: [] }));
-
-    const thread = (c) => {
-      const on = c.id === activeId;
-      return (
-        '<div class="threadrow' +
-        (on ? " on" : "") +
-        '">' +
-        '<button class="thread" onclick="showChat(\'' +
-        c.id +
-        "')\">" +
-        esc(c.title) +
-        "</button>" +
-        '<button class="rowbtn' +
-        (c.pinned ? " lit" : "") +
-        '" title="' +
-        (c.pinned ? "Unpin" : "Keep at the top") +
-        '" aria-label="' +
-        (c.pinned ? "Unpin" : "Keep at the top") +
-        '" aria-pressed="' +
-        !!c.pinned +
-        '" onclick="event.stopPropagation();togglePin(\'' +
-        c.id +
-        "'," +
-        !c.pinned +
-        ')">' +
-        svg("star") +
-        "</button>" +
-        '<button class="rowbtn" title="Delete this conversation" ' +
-        'aria-label="Delete this conversation" ' +
-        "onclick=\"event.stopPropagation();dropChat('" +
-        c.id +
-        "')\">" +
-        svg("trash") +
-        "</button></div>"
-      );
-    };
-
-    const kept = list.items.filter((c) => c.pinned);
-    const rest = list.items.filter((c) => !c.pinned);
-
-    // One accent in the rail, on the one thing here that is an instruction. Selection
-    // is marked by lifting a row onto the raised white, never by the accent: a
-    // selected thread is a state, not something you are being told to do.
-    rail.innerHTML =
-      '<div class="h3 wordmark">Enqueue</div>' +
-      '<button class="btn primary newchat" onclick="openField(\'ask\')">' +
-      svg("plus") +
-      "Ask something</button>" +
-      '<button class="btn ghost gohome" onclick="home()">' +
-      svg("home") +
-      "Everything</button>" +
-      '<div class="shelf">Conversations</div>' +
-      (kept.length
-        ? '<div class="kept">' + kept.map(thread).join("") + "</div>"
-        : "") +
-      (rest.length
-        ? rest.map(thread).join("")
-        : kept.length
-          ? ""
-          : '<div class="aside" style="padding:0 16px">Nothing asked yet.</div>') +
-      '<div class="railfoot"><button class="btn ghost" onclick="showTrash()">' +
-      svg("trash") +
-      "Trash</button>" +
-      '<button class="btn ghost" onclick="showSettings()">' +
-      svg("gear") +
-      "Settings</button></div>";
-  }
+  // Rail removed — conversations are accessed via the pill's eye icon.
+  async function showRail(_activeId) {}
+  function toggleRail() {}
 
   // A conversation is scaffolding around the collection, not part of it, so this
   // removes it outright rather than sending it to the trash: there is no original to
@@ -4139,9 +4047,39 @@
       chat = null;
       home();
     } else {
-      showRail(chat ? chat.chat.id : null);
+      home();
     }
     toast("Conversation deleted.");
+  }
+
+  // Show a list of all conversations — called from the pill's eye button.
+  async function showChatList() {
+    teardown();
+    restorePill("wall");
+    const list = await api("/chats?limit=100").catch(() => ({ items: [] }));
+    let html = '<div class="shelf">Conversations</div>';
+    if (!list.items.length) {
+      html += '<div class="aside">No conversations yet.</div>';
+    } else {
+      html +=
+        '<div class="wall">' +
+        list.items
+          .map(
+            (c) =>
+              '<div class="card" tabindex="0" role="button" onclick="showChat(\'' +
+              c.id +
+              "')\">" +
+              '<div class="frame" style="padding:24px 16px">' +
+              '<div class="title">' +
+              esc(c.title) +
+              '</div><div class="excerpt">' +
+              (c.pinned ? "kept" : "") +
+              "</div></div></div>",
+          )
+          .join("") +
+        "</div>";
+    }
+    view.innerHTML = html;
   }
 
   async function togglePin(id, pinned) {
@@ -4154,7 +4092,7 @@
     } catch (err) {
       return toast(String(err.message || err), true);
     }
-    showRail(chat ? chat.chat.id : null);
+    home();
   }
 
   // The composer is drawn before the rail has finished loading, so the toggle looks the
@@ -4498,11 +4436,33 @@
   async function showSettings() {
     teardown();
     restorePill("inside");
-    showRail(null);
     view.innerHTML = '<div class="state">...</div>';
     const d = await api("/settings");
 
     let html = '<div class="h1">Settings</div>';
+
+    // Tab bar
+    const tabs = [
+      { id: "ai", label: "AI" },
+      { id: "features", label: "Features" },
+      { id: "storage", label: "Storage" },
+      { id: "trash", label: "Trash" },
+    ];
+    html +=
+      '<div class="seg" style="margin-bottom:var(--sp-4)">' +
+      tabs
+        .map(
+          (t) =>
+            '<button class="' +
+            (t.id === _settingsTab ? "on" : "") +
+            '" onclick="switchSettingsTab(\'' +
+            t.id +
+            "')\">" +
+            esc(t.label) +
+            "</button>",
+        )
+        .join("") +
+      "</div>";
 
     // Mandatory, and first. The promise the whole product rests on is stated where
     // someone worried about it would go looking, not buried in a paragraph elsewhere.
@@ -4692,7 +4652,7 @@
       (ap.locked ? ' disabled aria-disabled="true"' : "") +
       " onclick=\"saveSetting('auto_preview', '" +
       (apOn ? "off" : "on") +
-      "').then(showSettings)\"><span class=\"knob\"></span></button>" +
+      '\').then(showSettings)"><span class="knob"></span></button>' +
       "</div></div>";
 
     const td = d.settings.trash_days;
@@ -4745,6 +4705,13 @@
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
+
+  function switchSettingsTab(id) {
+    _settingsTab = id;
+    showSettings();
+  }
+
+  let _settingsTab = "ai";
 
   // Switching backend moves the endpoint with it, because leaving the old URL behind
   // would point a hosted model at localhost and fail in a way nobody could read.
