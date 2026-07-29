@@ -50,25 +50,28 @@
        silently break the thing you press when you are mid-sentence somewhere else.
        The tokens below are the small subset of museum.html the overlay actually uses,
        copied rather than shared. */
-    --bg: #f5f4ee;
-    --surface: #efede6;
-    --surface-2: #e6e3da;
-    --line: #d6d3cb;
+    --bg: #eeefe9;
+    --surface: #ffffff;
+    --surface-2: #e5e7e0;
+    --line: #bfc1b7;
     --line-strong: #7d7b73;
-    --text: #1c1d18;
-    --text-dim: #4a4b44;
-    --text-mute: #5e5f57;
-    --accent: #8c5b16;
-    --pink: #83556a;
+    --text: #23251d;
+    --text-dim: #4d4f46;
+    --text-mute: #63655b;
+    --accent: #f7a501;
+    /* The yellow is unreadable as text or a lone border on cream (1.63:1). The deep
+       gold is its legible companion, used for the drag-drop boundary at 3.02:1. */
+    --accent-strong: #b17816;
+    --pink: #8f4273;
 
     --sans:
-      "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system,
+      "IBM Plex Sans", system-ui, -apple-system, "Segoe UI",
       sans-serif;
-    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
     --r-sm: 6px;
     --r-full: 999px;
-    --shadow-1: 0 2px 8px rgb(0 0 0 / 0.06);
+    --shadow-1: 0 4px 24px rgba(35, 37, 29, 0.05);
 
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
     --dur: 160ms;
@@ -106,7 +109,7 @@
   }
 
   #card.hovering {
-    border-color: var(--accent);
+    border-color: var(--accent-strong);
   }
 
   /* ------------------------------------------------------------------ title bar */
@@ -137,7 +140,7 @@
   }
 
   #kind {
-    color: var(--accent);
+    color: var(--text);
   }
 
   .label.problem {

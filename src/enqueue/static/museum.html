@@ -29,6 +29,10 @@
   crossorigin
 />
 <style>
+  /* IBM Plex Sans, vendored as static cuts. The variable "Var" roman the type system
+     wants is not in fonts/, so weight 450 resolves down to 400 here and body copy
+     carries the -0.08px tracking compensation instead. Nothing is fetched: these are
+     files on disk beside this page. */
   @font-face {
     font-family: "IBM Plex Sans";
     font-weight: 400;
@@ -58,24 +62,63 @@
     src: url("fonts/IBMPlexSans-Bold.ttf") format("truetype");
   }
   :root {
-    --bg: #f5f4ee;
-    --surface: #efede6;
-    --surface-2: #e6e3da;
-    --line: #d6d3cb;
+    /* The app is light only. Without this the browser assumes it may be either, and
+       on a machine set to dark mode it paints native scrollbars, the caret and select
+       menus dark against the cream. */
+    color-scheme: light;
+
+    /* Surfaces: canvas -> raised -> reading, with --surface-2 sideways off the canvas
+       as a recession rather than an elevation. */
+    --bg: #eeefe9;
+    --surface: #ffffff;
+    --surface-doc: #fcfcfa;
+    --surface-2: #e5e7e0;
+
+    /* Ink. --surface-2 is the darkest ground anything sits on, so it is the binding
+       case: --text-mute measures 4.75 there and has no headroom left. */
+    --text: #23251d;
+    --text-dim: #4d4f46;
+    --text-mute: #63655b;
+
+    /* The one loud colour. It is a fill and only ever a fill: 1.76:1 on the canvas
+       means it can be neither text nor a lone border, which is why every filled accent
+       control below carries a 1.5px --text edge to satisfy the 3:1 boundary rule. */
+    --accent: #f7a501;
+    --accent-quiet: #dd9001;
+    --accent-ink: #23251d;
+
+    --line: #bfc1b7;
+    --line-soft: #dcdfd2;
+    /* The only line token clearing 3:1 (3.40 at worst), so it is the only one allowed
+       to be the sole boundary of a control. */
     --line-strong: #7d7b73;
-    --text: #1c1d18;
-    --text-dim: #4a4b44;
-    --text-mute: #5e5f57;
 
-    --accent: #8c5b16;
-    --accent-quiet: #7b4d10;
-    --accent-ink: #f7f5f0;
+    --link: #0c6083;
+    --danger: #9e2a20;
 
-    --green: #476e50;
-    --blue: #476683;
-    --peach: #8f533b;
-    --pink: #83556a;
-    --teal: #436b65;
+    /* Pastel callouts carry --text or --text-dim only. --text-mute measures 4.36 on
+       --tint-note and fails, which is why it is not permitted on any of them. */
+    --tint-info: #dceaf6;
+    --tint-ok: #d9eddf;
+    --tint-warn: #f7d6d3;
+    --tint-note: #e7d8ee;
+
+    /* Kind colours live on an 8px dot, which is a graphic, so they answer to 3:1
+       rather than the 4.5:1 text needs. That matters: on a light canvas every colour
+       passing 4.5 has to sit under 0.132 luminance, and five hues crammed into that
+       band came out 2.5% apart - green and teal were already indistinguishable with
+       normal vision. Freeing them from carrying text widens the band to 0.223 and lets
+       them separate by hue instead. Worst pair: 29.2 normal, 10.9 deuteranopia, 8.3
+       protanopia.
+
+       --teal holds an olive-gold and --peach a burnt terracotta. The names are wrong
+       and the values are right: an actual teal collapses into --green under
+       deuteranopia. Do not "fix" a value to match its name. */
+    --green: #30804b;
+    --blue: #376899;
+    --peach: #ad5a31;
+    --pink: #8f4273;
+    --teal: #755c12;
 
     /* Kind is a fact about a thing, never an action, so none of these is the accent. */
     --kind-note: var(--green);
@@ -84,304 +127,585 @@
     --kind-image: var(--pink);
     --kind-file: var(--teal);
 
+    --focus: #23251d;
+    /* Tinted with --text rather than black so it warms the cream rather than greying it. */
+    --scrim: rgba(35, 37, 29, 0.32);
+
     --sp-1: 4px;
     --sp-2: 8px;
     --sp-3: 12px;
     --sp-4: 20px;
     --sp-5: 32px;
-    --sp-6: 44px;
-    --sp-7: 64px;
-    --sp-8: 96px;
-    --sp-9: 128px;
+    --sp-6: 48px;
+    --sp-section: 96px;
 
+    /* The scale skips the 8px to 16px band on purpose: that middle ground is what
+       makes an interface read as generic. Controls are 20px, containers 40px. */
     --r-sm: 6px;
-    --r: 10px;
-    --r-lg: 20px;
+    --r: 20px;
+    --r-lg: 40px;
     --r-full: 999px;
 
     --sans:
-      "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system,
+      "IBM Plex Sans", system-ui, -apple-system, "Segoe UI",
       sans-serif;
-    /* Code only. Monospace is information here, not styling. */
-    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* System-only on purpose. Monospace here is information - hashes, paths, byte
+       sizes - never decoration, and it is not worth a second font file. Nothing is
+       named here that is not already on the machine. */
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
     --z-pill: 40;
     --z-menu: 50;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --dur-fast: 120ms;
+    --dur-fast: 140ms;
     --dur: 160ms;
-    --dur-slow: 240ms;
+    --dur-slow: 200ms;
 
-    --shadow-1: 0 2px 8px rgb(0 0 0 / 0.06);
-    --shadow-2: 0 4px 12px rgb(0 0 0 / 0.4), 0 12px 32px rgb(0 0 0 / 0.4);
+    /* Atmospheric cushioning, not drop shadows: 24px blur minimum, 10% opacity
+       maximum, tinted with --text so the halo stays warm on cream. About 95% of
+       surfaces use none of these and sit flat on the canvas with a hairline. */
+    --shadow-1: 0 4px 24px rgba(35, 37, 29, 0.05);
+    --shadow-2: 0 24px 48px rgba(35, 37, 29, 0.08);
+    --shadow-3: 0 40px 96px rgba(35, 37, 29, 0.1);
+  }
+
+  /* Structural whitespace is the first thing to give when the window is narrow: the
+     content still needs its gutters, but 96px of air above a title does not. */
+  @media (max-width: 900px) {
+    :root {
+      --sp-section: 48px;
+    }
   }
 
   * {
     box-sizing: border-box;
   }
-  /* The sticky period heading is 45px tall and would otherwise cover the focus ring of
-   anything reached by keyboard from below. */
+  /* The sticky period heading would otherwise cover the focus ring of anything reached
+     by keyboard from below. */
   html {
-    scroll-padding-top: 60px;
+    scroll-padding-top: 72px;
   }
   body {
     margin: 0;
     background: var(--bg);
-    color: var(--text);
+    color: var(--text-dim);
     font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.6;
+    font-size: 16px;
+    font-weight: 450;
+    line-height: 1.4;
+    /* The variable cut that reaches 450 is not vendored, so this rounds to 400 and
+       reads a shade looser than the type system intends. The tracking pays it back. */
+    letter-spacing: -0.08px;
     -webkit-font-smoothing: antialiased;
   }
 
   /* No chrome. A persistent bar is a wall, and the walls are supposed to recede. */
   main {
-    max-width: 680px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: var(--sp-6) var(--sp-4) 150px;
+    padding: var(--sp-section) var(--sp-5) 160px;
   }
 
-  .shelf {
-    font-size: 11px;
+  /* ---- type roles --------------------------------------------------------
+     One geometric sans, no second family. Headlines lock together at -2% tracking;
+     line-height ratio drops as size rises. Uppercase appears in exactly one role. */
+  .h1,
+  .display,
+  .h2,
+  .h3 {
+    color: var(--text);
     font-weight: 500;
-    color: var(--text-mute);
-    letter-spacing: 1.2px;
+    margin: 0;
+  }
+  .display {
+    font-size: 40px;
+    line-height: 42px;
+    letter-spacing: -0.8px;
+  }
+  .h1 {
+    font-size: 32px;
+    line-height: 38px;
+    letter-spacing: -0.64px;
+  }
+  .h2 {
+    font-size: 24px;
+    line-height: 29px;
+    letter-spacing: -0.48px;
+  }
+  .h3 {
+    font-size: 20px;
+    line-height: 26px;
+    letter-spacing: -0.4px;
+  }
+
+  /* The section-category signal. The leading accent dot is the identity of the label,
+     not a flourish, so it is drawn here rather than left to each caller to remember. */
+  .shelf {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.56px;
     text-transform: uppercase;
-    margin: var(--sp-6) 0 var(--sp-3);
+    color: var(--text-mute);
+    margin: var(--sp-5) 0 var(--sp-2);
+  }
+  .shelf::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: var(--r-full);
+    background: var(--accent);
   }
   .shelf:first-child {
     margin-top: 0;
   }
 
-  .item {
+  .title {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 22.4px;
+    letter-spacing: 0;
+    color: var(--text);
+  }
+  .excerpt {
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+    margin-top: var(--sp-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Metadata only: timestamps, kinds, counts, byte sizes. */
+  .meta {
     display: flex;
-    gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-2);
-    --focus-ring: 0;
-    margin: 0 calc(-1 * var(--sp-2));
-    border-radius: var(--r-sm);
-    align-items: flex-start;
-    transition: background var(--dur-fast) var(--ease);
-    cursor: pointer;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 18px;
+    letter-spacing: 0;
+    color: var(--text-mute);
+    margin-top: var(--sp-2);
   }
-  .item + .item {
-    border-top: 1px solid var(--line);
+  /* The separator is a graphic between labels, so it answers to 3:1 rather than 4.5. */
+  .meta .sep {
+    color: var(--line-strong);
   }
-  .item:hover {
-    background: var(--surface-2);
+  .aside {
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+    margin-top: var(--sp-2);
+    max-width: 64ch;
   }
-  /* Keyboard-navigation focus indicator: only visible when tabbing through the UI.
-     Chrome shows :focus-visible on mouse clicks for buttons, so we use a class
-     that toggles on Tab keydown and off on mousedown. */
-  body.keyboard-nav *:focus {
-    outline: 2px solid var(--accent);
+  /* Why something failed carries more than what it will cost, so it is not the same
+     grey. It is still ink, never the accent: the accent is an instruction. */
+  .aside.caution,
+  .strongtext {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .state {
+    font-size: 16px;
+    line-height: 22.4px;
+    color: var(--text-dim);
+    padding: var(--sp-5) 0;
+    max-width: 62ch;
+  }
+  /* At most one display line per view, and this is the only place it appears. */
+  .empty {
+    text-align: center;
+    padding-top: var(--sp-section);
+  }
+  .empty .state {
+    margin: 0 auto;
+    text-align: left;
+  }
+
+  /* Every focusable element, one ring, no exceptions. A translucent browser default
+     would be the only thing in the app that is not verified against its ground. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
-  /* Mouse clicks shouldn't leave a focus ring. */
   :focus:not(:focus-visible) {
     outline: none;
   }
 
-  .item:focus-visible,
-  .item:focus {
-    outline: 2px solid var(--line-strong);
-    outline-offset: -2px;
+  /* ---- buttons ------------------------------------------------------------
+     One geometry for all of them: 20px radius, 16/500 label at -3% tracking, 6px 24px
+     padding, 40px minimum height. What changes between variants is fill and edge. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    min-height: 40px;
+    padding: 6px 24px;
+    border-radius: var(--r);
+    border: 1.5px solid transparent;
+    background: transparent;
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 16px;
+    letter-spacing: -0.48px;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
   }
-  .item:hover .face {
+  .btn.sm {
+    font-size: 14px;
+    line-height: 14px;
+    letter-spacing: -0.42px;
+  }
+  /* The border, not the fill, is what clears 3:1 here: the yellow measures 1.76 on
+     cream and could never bound a control on its own. */
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--text);
+    color: var(--accent-ink);
+  }
+  .btn.primary:hover {
+    background: var(--accent-quiet);
+  }
+  .btn.primary:active {
+    background: var(--accent-quiet);
+  }
+  .btn.secondary {
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+  }
+  .btn.secondary:hover {
+    background: #14150f;
+  }
+  .btn.tertiary {
+    background: var(--surface);
+    border-color: var(--line-strong);
+    color: var(--text);
+  }
+  .btn.tertiary:hover {
+    background: var(--surface-2);
+  }
+  .btn.ghost {
+    padding: 6px 12px;
+    color: var(--text);
+  }
+  .btn.ghost:hover {
+    background: var(--surface-2);
+  }
+  .btn.danger {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #ffffff;
+  }
+  .btn.danger:hover {
+    background: #82221a;
+    border-color: #82221a;
+  }
+  /* The fill change is the boundary, so --line-strong is not required around it. */
+  .btn.icon {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-radius: var(--r-full);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .btn.icon:hover {
+    background: var(--line-soft);
+  }
+  /* Disabled is never colour alone: fill, opacity, cursor and aria-disabled together. */
+  .btn[disabled],
+  .btn[aria-disabled="true"] {
+    background: var(--surface-2);
+    border-color: transparent;
+    color: var(--text-mute);
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .btn.icon svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* ---- callouts -----------------------------------------------------------
+     Inline notices only. No border, no shadow, --text or --text-dim on the tint. */
+  .callout {
+    border-radius: var(--r);
+    padding: var(--sp-4);
+    margin-top: var(--sp-4);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 22.4px;
+    max-width: 68ch;
+  }
+  .callout.info {
+    background: var(--tint-info);
+  }
+  .callout.ok {
+    background: var(--tint-ok);
+  }
+  .callout.warn {
+    background: var(--tint-warn);
+  }
+  .callout.note {
+    background: var(--tint-note);
+  }
+  /* --text-mute measures 4.36 on --tint-note and fails 4.5, so an eyebrow on a tint
+     steps up to --text-dim (6.13) rather than keeping its usual grey. */
+  .callout .shelf {
+    color: var(--text-dim);
+    margin: 0 0 var(--sp-3);
+  }
+  .callout p {
+    margin: 0;
+  }
+  .callout p + p {
+    margin-top: var(--sp-3);
+  }
+
+  /* ---- rows ---------------------------------------------------------------
+     Collections on the wall, trash entries, anything that is a line rather than an
+     object. Lifted onto --surface with a hairline, never a recessed fill inside a card. */
+  .item {
+    display: flex;
+    gap: var(--sp-4);
+    align-items: center;
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-2);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    transition: border-color var(--dur-fast) var(--ease);
+    cursor: pointer;
+  }
+  .item:hover {
     border-color: var(--line-strong);
   }
   .item-body {
     flex: 1;
     min-width: 0;
   }
-
-  .title {
-    font-family: var(--sans);
-    font-size: 16px;
-    line-height: 1.35;
-    font-weight: 400;
+  .item-body .kindrow {
+    margin-bottom: var(--sp-1);
   }
-  .excerpt {
-    font-family: var(--sans);
-    font-size: 12.5px;
-    line-height: 1.55;
-    color: var(--text-mute);
-    margin-top: var(--sp-1);
+  .item .meta {
+    margin-top: 0;
+    flex-shrink: 0;
+  }
+
+  /* ---- the wall ----------------------------------------------------------
+     Square cards on cream. Roughly 4-up at 1200px and 1-up at 480px, which falls out
+     of auto-fill rather than out of a breakpoint list. */
+  .wall {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--sp-4);
+    margin-top: var(--sp-4);
+  }
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    aspect-ratio: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    /* 40px of corner on a 240px square eats the corners, so nothing sits closer than
+       24px to the edge or it collides with the curve. */
+    padding: 24px;
+    /* The wall never sheds a card: scrolling appends, and a collection meant to grow
+       forever means the grid keeps everything ever scrolled past. Measured at 2,000
+       cards, one style change cost 152 ms of forced layout - nine dropped frames for a
+       hover. Skipping the rendering work for off-screen cards brings that to 48 ms
+       while leaving them in the DOM, so scroll position, anchoring and find-in-page
+       all keep working. Virtual scrolling would be faster and would break all three. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 280px;
+    /* Elevation only. Scaling a card on hover moves everything the eye was using to
+       compare one object with another. */
+    transition: box-shadow var(--dur) ease;
+  }
+  .card:hover {
+    box-shadow: var(--shadow-2);
+  }
+
+  /* One hue per kind, resolved wherever the kind is declared and inherited by the dot
+     inside it. The dot is the only thing that ever reads it: a kind may not become a
+     background, a border, a title colour or a badge, because kind is a fact about a
+     thing and every one of those would make it look like an instruction. */
+  [data-kind="note"] {
+    --kind: var(--kind-note);
+  }
+  [data-kind="link"] {
+    --kind: var(--kind-link);
+  }
+  [data-kind="pdf"] {
+    --kind: var(--kind-pdf);
+  }
+  [data-kind="image"] {
+    --kind: var(--kind-image);
+  }
+  [data-kind="file"] {
+    --kind: var(--kind-file);
+  }
+
+  /* The dot carries the hue, the word beside it carries the meaning, and they always
+     travel together. Colour is never the only thing saying what a thing is, which
+     satisfies 1.4.1 structurally rather than by a note in a document. */
+  .kindrow {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    flex-shrink: 0;
+  }
+  .kindmark {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: var(--r-full);
+    background: var(--kind, var(--line-strong));
+  }
+  .kindword {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--text-dim);
+  }
+
+  .card .title {
+    margin-top: var(--sp-3);
+    font-size: 20px;
+    font-weight: 500;
+    line-height: 26px;
+    letter-spacing: -0.4px;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .meta {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
+  .card .preview {
+    flex: 1;
+    min-height: 0;
     margin-top: var(--sp-2);
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
-
-  /* ---- the wall ----------------------------------------------------------
-   Each artifact shows its own face at the same size, so the eye compares objects
-   rather than reading a list. The faces are not one repeated template: a PDF shows
-   its first page, an image shows itself, a note shows its own opening set as type,
-   and a link shows its domain. What differs between kinds is the point. */
-  .wall {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-    gap: var(--sp-4) var(--sp-4);
+  .cardfoot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
     margin-top: var(--sp-3);
   }
-  .card {
-    cursor: pointer;
-    min-width: 0;
-    /* The wall never sheds a card: scrolling appends, and a collection that is meant
-       to grow forever means the grid keeps everything ever scrolled past. Measured at
-       2,000 cards, one style change cost 152 ms of forced layout - nine dropped frames
-       for a hover. Skipping the rendering work for cards that are off-screen brings
-       that to 48 ms while leaving them in the DOM, so scroll position, anchoring and
-       find-in-page all keep working. Virtual scrolling would be faster still and would
-       break all three.
-
-       The intrinsic size is the real one: a square frame at column width plus its
-       caption. `auto` then remembers each card's measured height once it has been
-       seen, so the scrollbar does not jump as you pass. Measured drift over the same
-       2,000 cards was 0.75%. */
-    content-visibility: auto;
-    contain-intrinsic-size: auto 252px;
+  .cardfoot .meta {
+    margin-top: 0;
   }
-  .frame {
-    aspect-ratio: 1;
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    overflow: hidden;
-    background: var(--surface);
-    position: relative;
-    transition:
-      border-color var(--dur) var(--ease),
-      transform var(--dur) var(--ease);
+  /* The only accent on the wall, and it means one thing: nothing has read this yet. */
+  .unread {
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    border-radius: var(--r-full);
+    background: var(--accent);
   }
-  /* One hue per kind, resolved once on the card and inherited by everything inside
-     it. Colour here is categorisation, not decoration: it tells you what a thing is
-     before you have read a word of it, and it means the same thing on every surface. */
-  .card[data-kind="note"] {
-    --kind: var(--kind-note);
+  /* A card that is being kept says so, but quietly: keeping is a state, not an
+     instruction, so it does not get the accent. */
+  .card .flag {
+    color: var(--text-mute);
   }
-  .card[data-kind="link"] {
-    --kind: var(--kind-link);
-  }
-  .card[data-kind="pdf"] {
-    --kind: var(--kind-pdf);
-  }
-  .card[data-kind="image"] {
-    --kind: var(--kind-image);
-  }
-  .card[data-kind="file"] {
-    --kind: var(--kind-file);
+  .card .flag svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
   }
 
-  /* The mark carries the hue; the word beside it carries the meaning. Anyone who
-     cannot tell the hues apart loses nothing, because the kind is also written. */
-  .kindmark {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    margin-right: 7px;
-    vertical-align: 0;
-    background: var(--kind, var(--line-strong));
+  /* A picture is the truest face a thing has, so it fills the card and the title rides
+     a band over the foot of it. A band, not a gradient: a gradient has no edge and the
+     text ends up sitting on whatever the photograph happens to be doing there. */
+  .card.pictorial {
+    padding: 0;
   }
-  .kindword {
-    color: var(--kind, var(--text-mute));
-  }
-  .cap .title {
-    border-bottom: 1px solid transparent;
-  }
-  .card:hover .cap .title {
-    border-bottom-color: var(--kind, var(--line-strong));
-  }
-
-  /* Kinds with nothing to show are the ones that most need the colour, because a
-     glyph on a flat panel is the emptiest thing on the wall. */
-  .frame .glyphface {
-    color: var(--kind, var(--accent));
-  }
-
-  .card:hover .frame {
-    border-color: var(--kind, var(--line-strong));
-    transform: translateY(-2px);
-  }
-  .card:focus-visible,
-  .card:focus {
-    outline: none;
-  }
-  .frame img {
+  .card.pictorial img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
     object-position: top center;
     display: block;
-    background: #fff;
   }
-  /* A note's face is the note. Set in the reading face, clipped where it runs out,
-   so the wall is legible text rather than a grid of identical grey rectangles. */
-  /* Faded at the foot rather than guillotined mid-word: the text runs out of card, it
-   does not stop having more to say. */
-  .frame .opening {
-    font-family: var(--sans);
-    font-size: 12.5px;
-    line-height: 1.55;
-    color: var(--text-dim);
-    padding: var(--sp-3);
-    height: 100%;
-    overflow: hidden;
-    -webkit-mask-image: linear-gradient(180deg, #000 68%, transparent 98%);
-    mask-image: linear-gradient(180deg, #000 68%, transparent 98%);
+  .cardband {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: var(--sp-3) 24px 24px;
+    background: rgb(255 255 255 / 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
-  .frame .glyphface {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-2);
-    align-items: center;
-    justify-content: center;
-    padding: var(--sp-3);
-    color: var(--accent);
-    font-size: 20px;
-    text-align: center;
-  }
-  .frame .host {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    word-break: break-all;
-  }
-  .cap {
-    margin-top: var(--sp-2);
-  }
-  .cap .title {
-    font-size: 14px;
-    overflow: hidden;
-    display: -webkit-box;
+  .cardband .title {
+    margin-top: 0;
     -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
   }
-  .cap .meta {
-    margin-top: 3px;
+  .cardband .kindrow {
+    margin-bottom: var(--sp-1);
+  }
+  .card.pictorial .flag {
+    position: absolute;
+    top: var(--sp-3);
+    right: var(--sp-3);
   }
 
   /* Sticky, so you always know which stretch of time you are looking at once the wall
-   is long enough to lose your place in. */
+     is long enough to lose your place in. */
   .when {
     position: sticky;
     top: 0;
     z-index: 1;
-    font-family: var(--sans);
-    font-size: 11px;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text-mute);
     padding: var(--sp-4) 0 var(--sp-2);
     background: linear-gradient(var(--bg) 68%, transparent);
-  }
-  .when:first-of-type {
-    padding-top: var(--sp-2);
   }
 
   /* Kept things run sideways: a shelf you scan, not a list you read down. Snap so a
@@ -389,16 +713,17 @@
   .rail-h {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: 196px;
-    gap: var(--sp-4);
+    grid-auto-columns: 200px;
+    gap: var(--sp-5);
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
     padding-bottom: var(--sp-3);
-    margin-top: var(--sp-3);
+    margin-top: var(--sp-4);
   }
   .rail-h > .card {
     scroll-snap-align: start;
+    content-visibility: visible;
   }
   /* A visible track, because a scroller with no scrollbar is a scroller nobody finds. */
   .rail-h::-webkit-scrollbar {
@@ -409,7 +734,7 @@
   }
   .rail-h::-webkit-scrollbar-thumb {
     background: var(--line);
-    border-radius: 4px;
+    border-radius: var(--r-full);
   }
   .rail-h::-webkit-scrollbar-thumb:hover {
     background: var(--line-strong);
@@ -420,91 +745,102 @@
     padding: var(--sp-4) 0 var(--sp-6);
     text-align: center;
   }
-  .sort {
-    background: transparent;
-    border: 0;
-    padding: 0;
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    cursor: pointer;
+
+  @media (max-width: 1080px) {
+    .wall {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
   }
-  .sort[aria-pressed="true"] {
-    color: var(--accent);
+  @media (max-width: 760px) {
+    .wall {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--sp-3);
+    }
+    .rail-h {
+      gap: var(--sp-3);
+    }
   }
-  .sort:hover {
-    color: var(--text);
+  @media (max-width: 460px) {
+    .wall {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
-  /* Only when there is something real to show. A note's excerpt is its face. */
-  .face {
-    width: 60px;
-    height: 76px;
-    border-radius: var(--r);
-    flex-shrink: 0;
-    overflow: hidden;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    transition: border-color var(--dur) var(--ease);
-  }
-  .face img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .face.glyph {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    color: var(--accent);
-  }
-  /* Holds the column open without drawing anything in it, and without the 76px of
-   height that would pad a short row out to the size of a page thumbnail. */
-  .face.gap {
-    height: 0;
-    background: none;
-    border-color: transparent;
-  }
-  .item:hover .face.gap {
-    border-color: transparent;
-  }
-
-  /* ---- the pill ---------------------------------------------------------- */
+  /* ---- the capture pill ---------------------------------------------------
+     The app's signature object, present on every page. It floats, so it is one of the
+     four things in the whole system allowed a shadow. */
   .pill {
     position: fixed;
     left: 50%;
-    bottom: 26px;
+    bottom: var(--sp-5);
     transform: translateX(-50%);
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: var(--sp-2);
+    height: 56px;
+    padding: 0 var(--sp-4);
     z-index: var(--z-pill);
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--r-full);
-    box-shadow: var(--shadow-1);
-    padding: var(--sp-1);
+    box-shadow: var(--shadow-2);
+    transition:
+      width var(--dur-slow) ease,
+      border-color var(--dur-slow) ease;
   }
-  .pill button {
-    width: 44px;
+  /* The capture control is the one thing on the pill that is an instruction, so it is
+     the one thing wearing the accent: a filled circle, with the label in plain ink
+     beside it rather than in the yellow, which could not be read. */
+  .pill .keep {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
     height: 44px;
+    padding: 0 var(--sp-2) 0 0;
     border: 0;
-    border-radius: 9999px;
     background: transparent;
+    border-radius: var(--r-full);
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 16px;
+    letter-spacing: -0.48px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .pill .keep .disc {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    border: 1.5px solid var(--text);
+    color: var(--accent-ink);
+  }
+  .pill .keep:hover .disc {
+    background: var(--accent-quiet);
+  }
+  .pill .keep .chev {
+    color: var(--text-mute);
+  }
+  /* Icon-only companions. Their fill is their boundary, so they need no line. */
+  .pill button.round {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--surface-2);
     color: var(--text);
     cursor: pointer;
     display: grid;
     place-items: center;
     transition: background var(--dur-fast) var(--ease);
   }
-  .pill button:hover {
-    background: var(--bg);
-  }
-  .pill button[aria-expanded="true"] {
-    background: var(--line-strong);
-    color: var(--accent-ink);
+  .pill button.round:hover {
+    background: var(--line-soft);
   }
   .pill svg {
     width: 19px;
@@ -515,17 +851,29 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
+  .pill .keep .disc svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.2;
+  }
+  .pill .keep .chev svg {
+    width: 15px;
+    height: 15px;
+  }
 
+  /* Typing turns the pill into a field. It keeps the stadium, because it is still the
+     same object doing a second thing rather than a different control appearing. */
   .pill.wide {
-    border-radius: var(--r);
-    padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
     width: min(560px, calc(100vw - 40px));
+    padding-left: var(--sp-4);
   }
   .pill input {
     flex: 1;
     min-width: 0;
-    font: inherit;
-    font-size: 14px;
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 450;
+    letter-spacing: -0.08px;
     background: transparent;
     border: 0;
     color: var(--text);
@@ -538,26 +886,28 @@
     color: var(--text-mute);
   }
   .scope {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-mute);
     white-space: nowrap;
     padding-right: var(--sp-2);
   }
 
+  /* Four equal choices, so none of them is the primary and none of them is yellow. */
   .menu {
     position: fixed;
     left: 50%;
-    bottom: 88px;
+    bottom: 96px;
     z-index: var(--z-menu);
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
+    width: 280px;
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
+    box-shadow: var(--shadow-2);
     padding: var(--sp-2);
-    min-width: 212px;
   }
   .menu button {
     display: flex;
@@ -566,10 +916,13 @@
     width: 100%;
     background: transparent;
     border: 0;
-    border-radius: var(--r-sm);
+    border-radius: var(--r);
     cursor: pointer;
-    padding: var(--sp-2) var(--sp-3);
-    font: inherit;
+    padding: var(--sp-3);
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 450;
+    letter-spacing: -0.08px;
     color: var(--text);
     text-align: left;
     transition: background var(--dur-fast) var(--ease);
@@ -577,44 +930,18 @@
   .menu button:hover,
   .menu button:focus-visible {
     background: var(--surface-2);
-    outline: none;
-  }
-  /* The mark leads the row on hover, so the thing you are about to add is named twice:
-     once by the word and once by the colour it will wear on the wall. */
-  .menu button:hover .ic,
-  .menu button:focus-visible .ic {
-    border-color: var(--kind, var(--accent));
-    color: var(--kind, var(--accent));
-  }
-  .menu button[data-kind="note"] {
-    --kind: var(--kind-note);
-  }
-  .menu button[data-kind="link"] {
-    --kind: var(--kind-link);
-  }
-  .menu button[data-kind="image"] {
-    --kind: var(--kind-image);
-  }
-  .menu button[data-kind="upload"] {
-    --kind: var(--kind-file);
   }
   .menu .ic {
-    width: 32px;
-    height: 32px;
-    border-radius: 9999px;
-    background: transparent;
-    border: 1px solid var(--line);
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
     color: var(--text-mute);
     display: grid;
     place-items: center;
-    flex-shrink: 0;
-    transition:
-      border-color var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease);
   }
   .menu svg {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.8;
@@ -625,7 +952,7 @@
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translate(-50%, 8px);
+      transform: translate(-50%, 4px);
     }
     to {
       opacity: 1;
@@ -634,7 +961,7 @@
   }
   .menu {
     transform: translateX(-50%);
-    animation: rise var(--dur) var(--ease) both;
+    animation: rise var(--dur-fast) ease both;
   }
   @keyframes hang {
     from {
@@ -646,15 +973,16 @@
       transform: none;
     }
   }
+  /* `backwards`, not `both`: the end frame is the element's own resting state anyway,
+     and a retained end frame keeps `transform: none` winning over every later rule. */
   .hang {
-    animation: hang var(--dur-slow) var(--ease) both;
+    animation: hang var(--dur-slow) var(--ease) backwards;
   }
 
   /* `animation-iteration-count` has to be reset too, and leaving it out is worse than
-   doing nothing at all. Measured: `breathe` kept `infinite` while its duration was
-   crushed to 1ms, turning a slow pulse into roughly sixty opacity flashes a second
-   for exactly the people who asked for less motion. Every loading state in the app
-   uses that keyframe. */
+     doing nothing at all. Measured: `breathe` kept `infinite` while its duration was
+     crushed to 1ms, turning a slow pulse into roughly sixty opacity flashes a second
+     for exactly the people who asked for less motion. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -671,30 +999,21 @@
     }
   }
 
-  /* ---- detail ------------------------------------------------------------ */
+  /* ---- the artifact ------------------------------------------------------- */
   .back {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    cursor: pointer;
+    margin-bottom: var(--sp-4);
   }
   .h1 {
-    font-family: var(--sans);
-    font-size: 28px;
-    line-height: 1.2;
-    font-weight: 600;
-    letter-spacing: -0.5px;
     margin-top: var(--sp-4);
   }
-  /* No back link above it, so it does not need to sit below one. */
   .h1:first-child {
     margin-top: 0;
   }
   /* ---- opening a thing --------------------------------------------------
-     The card and the artifact are one object seen twice, so the browser tweens
-     between them rather than replacing a page. The default crossfade is switched off
-     for the named parts: a face that dissolves into a different face looks like two
-     things, and the whole point is that it is one. */
+     The card and the artifact are one object seen twice, so the browser tweens between
+     them rather than replacing a page. The default crossfade is switched off for the
+     named parts: a face that dissolves into a different face looks like two things,
+     and the whole point is that it is one. */
   ::view-transition-old(artifact-face),
   ::view-transition-new(artifact-face) {
     /* Height, not both: a square card becoming a tall page must not squash on the
@@ -716,8 +1035,6 @@
     animation-timing-function: cubic-bezier(0.2, 0.9, 0.24, 1);
   }
 
-  /* Everything that is not the object itself simply crosses over, quickly, so the
-     morph is the only thing the eye follows. */
   ::view-transition-old(root) {
     animation: 120ms cubic-bezier(0.4, 0, 1, 1) both fadeOut;
   }
@@ -735,63 +1052,40 @@
     }
   }
 
-  /* ---- the artifact, in its own colour --------------------------------- */
-  /* The wall says what kind a thing is by hue. Repeating it here is what makes the
-     click feel like it landed somewhere related, rather than on a generic page. */
-  #view[data-kind="note"] {
-    --kind: var(--kind-note);
-  }
-  #view[data-kind="link"] {
-    --kind: var(--kind-link);
-  }
-  #view[data-kind="pdf"] {
-    --kind: var(--kind-pdf);
-  }
-  #view[data-kind="image"] {
-    --kind: var(--kind-image);
-  }
-  #view[data-kind="file"] {
-    --kind: var(--kind-file);
-  }
-
-  /* A hairline under the title in the thing's own colour. One line, the width of the
-     words above it, doing the job an icon would do more loudly. */
-  #view[data-kind] .titlerow {
-    padding-bottom: var(--sp-3);
-    margin-bottom: var(--sp-2);
-  }
-  #view[data-kind] .titlerow::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    width: 34px;
-    height: 2px;
-    background: var(--kind, var(--line-strong));
-  }
-
   .titlerow {
-    position: relative;
     display: flex;
     align-items: flex-start;
     gap: var(--sp-3);
+    margin-top: var(--sp-2);
   }
-  .titlerow .h1 {
+  .titlerow .h1,
+  .titlerow .h2 {
     flex: 1;
     min-width: 0;
     margin-top: 0;
   }
-  /* Keeping something is a small decision, so the control behaves like one: it
-     settles rather than springs. Ease-out only, no bounce. */
-  .pin.big {
+  /* Nothing you can do to an artifact is urgent, so this row has no primary in it. */
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-top: var(--sp-4);
+  }
+
+  /* Keeping something is a small decision, so the control behaves like one: it settles
+     rather than springs. Ease-out only, no bounce. */
+  .pin {
     transition:
+      background var(--dur-fast) var(--ease),
       color var(--dur) var(--ease),
       transform var(--dur) cubic-bezier(0.22, 1, 0.36, 1);
   }
-  .pin.big:active {
-    transform: scale(0.88);
+  .pin:active {
+    transform: scale(0.92);
   }
-  .pin.big.lit svg {
+  .pin.lit svg {
+    fill: currentColor;
     animation: kept 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   @keyframes kept {
@@ -805,65 +1099,30 @@
     }
   }
 
-  .pin.big {
-    opacity: 1;
-    padding: 8px;
-    margin-top: 2px;
+  /* The reading pane. Long-form sits on the warm white rather than the raised white,
+     so a full page of it does not glare against the cream. */
+  .docpane {
+    background: var(--surface-doc);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: var(--sp-6);
+    margin-top: var(--sp-6);
+    max-width: 720px;
   }
-  .pin.big svg {
-    width: 17px;
-    height: 17px;
+  .docpane > *:first-child {
+    margin-top: 0;
   }
-  .pin.big:not(.lit) {
-    color: var(--line-strong);
-  }
-  .pin.big:not(.lit):hover {
-    color: var(--accent);
-  }
-  /* A pinned card is the only thing on the wall allowed to announce itself. */
-  .card .flag {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    color: var(--accent);
-  }
-  .card .flag svg {
-    width: 14px;
-    height: 14px;
-    display: block;
-    fill: currentColor;
-    stroke: currentColor;
-    stroke-width: 1.4;
-    stroke-linejoin: round;
-  }
+
   /* One pane. You type into the document itself, not into a source view beside it.
-   Markdown remains the storage format; it is parsed on load and serialised on save. */
+     Markdown remains the storage format; it is parsed on load and serialised on save. */
   .editor {
-    min-height: 400px;
-    max-width: 70ch;
-    margin-top: var(--sp-4);
+    min-height: 320px;
     outline: none;
-    caret-color: var(--accent);
+    caret-color: var(--text);
   }
   .editor:empty::before {
     content: attr(data-placeholder);
     color: var(--text-mute);
-  }
-  /* Invisible until clicked is not a state. The rule appears on hover to say the text
-   is yours to change, and fills on focus so keyboard users can see where they are. */
-  .editor {
-    border-left: 2px solid transparent;
-    padding-left: var(--sp-4);
-    margin-left: calc(-1 * var(--sp-4) - 2px);
-    transition: border-color var(--dur-fast) var(--ease);
-  }
-  .editor:hover {
-    border-left-color: var(--line);
-  }
-  .editor:focus,
-  .editor:focus-visible {
-    outline: none;
-    border-left-color: var(--line-strong);
   }
   .editor > *:first-child {
     margin-top: 0;
@@ -880,16 +1139,13 @@
     display: flex;
     gap: var(--sp-3);
     align-items: center;
-    margin-top: var(--sp-5);
+    margin-top: var(--sp-4);
     padding-top: var(--sp-3);
-    border-top: 1px solid var(--line);
-    max-width: 70ch;
-  }
-  /* The rule under the editor fills once, left to right, in the artifact's colour.
-     The page acknowledging the words, rather than a notification about them. */
-  .bar {
+    border-top: 1px solid var(--line-soft);
     position: relative;
   }
+  /* The rule under the editor fills once, left to right. The page acknowledging the
+     words, rather than a notification about them. */
   .bar.landed::after {
     content: "";
     position: absolute;
@@ -897,7 +1153,7 @@
     top: -1px;
     height: 1px;
     width: 100%;
-    background: var(--kind, var(--accent));
+    background: var(--line-strong);
     transform-origin: left center;
     animation: fill 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
@@ -916,17 +1172,11 @@
     }
   }
 
-  .saved {
-    color: var(--accent);
-    font-family: var(--sans);
-    font-size: 11px;
-  }
-
   .md,
   .editor {
-    font-family: var(--sans);
     font-size: 16px;
-    line-height: 1.75;
+    line-height: 22.4px;
+    color: var(--text-dim);
   }
   .md h1,
   .md h2,
@@ -935,281 +1185,189 @@
   .editor h2,
   .editor h3 {
     font-weight: 500;
+    color: var(--text);
     margin: var(--sp-4) 0 var(--sp-2);
-    line-height: 1.25;
   }
   .md h1,
   .editor h1 {
-    font-size: 28px;
-    letter-spacing: -0.5px;
+    font-size: 32px;
+    line-height: 38px;
+    letter-spacing: -0.64px;
   }
   .md h2,
   .editor h2 {
-    font-size: 20px;
+    font-size: 24px;
+    line-height: 29px;
+    letter-spacing: -0.48px;
   }
   .md h3,
   .editor h3 {
-    font-size: 16px;
+    font-size: 20px;
+    line-height: 26px;
+    letter-spacing: -0.4px;
   }
   .md p,
   .editor p {
-    margin: var(--sp-2) 0;
+    margin: var(--sp-4) 0 0;
   }
   .md ul,
   .md ol,
   .editor ul,
   .editor ol {
-    margin: var(--sp-2) 0;
+    margin: var(--sp-4) 0 0;
     padding-left: var(--sp-4);
   }
   .md li,
   .editor li {
-    margin: 3px 0;
+    margin: var(--sp-1) 0;
   }
   .md code,
   .editor code {
     font-family: var(--mono);
-    font-size: 0.86em;
-    background: var(--surface);
-    border: 1px solid var(--line);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 400;
+    letter-spacing: 0;
+    background: var(--surface-2);
     border-radius: var(--r-sm);
-    padding: 1px 5px;
+    padding: 1px 6px;
   }
   .md pre,
   .editor pre {
-    background: var(--surface);
-    border: 1px solid var(--line);
+    background: var(--surface-2);
     border-radius: var(--r);
-    padding: var(--sp-3);
+    padding: var(--sp-4);
+    margin: var(--sp-4) 0 0;
     overflow-x: auto;
   }
   .md pre code {
-    border: 0;
     background: none;
     padding: 0;
   }
   .md blockquote,
   .editor blockquote {
-    margin: var(--sp-2) 0;
-    padding-left: var(--sp-3);
-    border-left: 1px solid var(--accent);
+    margin: var(--sp-4) 0 0;
+    padding-left: var(--sp-4);
+    border-left: 2px solid var(--line-strong);
     color: var(--text-dim);
   }
   .md a,
   .editor a {
-    color: var(--line-strong);
+    color: var(--link);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
   .md strong,
   .editor strong {
-    font-weight: 500;
+    font-weight: 600;
+    color: var(--text);
   }
   .md em,
   .editor em {
     font-style: italic;
   }
 
-  .page {
+  /* An image is its own proportion, so it is not cropped to a shape of ours. */
+  .page,
+  .shot {
     display: block;
-    width: 100%;
-    border: 1px solid var(--line);
+    max-width: 100%;
+    height: auto;
+    margin: var(--sp-4) auto 0;
     border-radius: var(--r);
-    margin-top: var(--sp-3);
-    background: #fff;
-  }
-  .state {
-    color: var(--text-mute);
-    font-size: 14px;
-    padding: var(--sp-5) 0;
-    max-width: 58ch;
-    line-height: 1.75;
-  }
-  .gold {
-    color: var(--accent);
   }
   a {
     color: inherit;
     text-decoration: none;
   }
 
-  /* ---- a link, once it has said what it is ------------------------------- */
-  /* Block, and only as wide as its text: two of these stack instead of colliding, and
-   the next element starts on its own line rather than beside a long address. */
   .url {
-    font-family: var(--sans);
-    font-size: 12.5px;
-    color: var(--line-strong);
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--link);
     word-break: break-all;
     display: block;
     width: fit-content;
     max-width: 100%;
     margin-top: var(--sp-2);
-  }
-  .url:hover {
     text-decoration: underline;
     text-underline-offset: 2px;
   }
   .lede {
-    font-family: var(--sans);
-    font-size: 14px;
-    line-height: 1.65;
+    font-size: 16px;
+    line-height: 22.4px;
     color: var(--text-dim);
     max-width: 64ch;
     margin-top: var(--sp-4);
     text-wrap: pretty;
   }
 
-  .act {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-2);
-    margin-top: var(--sp-4);
-    font: inherit;
+  /* Paths, hashes and byte sizes are information, so they are set in the one place
+     monospace is allowed and chipped onto the recessed fill. */
+  .mono {
+    font-family: var(--mono);
     font-size: 14px;
-    padding: var(--sp-2) var(--sp-4);
-    cursor: pointer;
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--line-strong);
+    line-height: 20px;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+  .chip {
+    background: var(--surface-2);
     border-radius: var(--r-sm);
-    transition:
-      border-color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
+    padding: 1px 6px;
   }
-  .act:hover {
-    border-color: var(--line-strong);
-    background: var(--bg);
-  }
-  .act:focus-visible {
-    outline: 2px solid var(--line-strong);
-    outline-offset: 2px;
-  }
-  .act[disabled] {
-    opacity: 0.55;
-    cursor: default;
-    border-color: var(--line);
-  }
-  /* The cost of the button, stated where the button is, rather than as a standing
-   paragraph about privacy that nobody reads twice. */
-  /* The trash page had assembled itself out of five borrowed vocabularies: a serif
-     page title, a mono note, an uppercase tracked shelf, a serif row title and a mono
-     row meta, plus 14px sans buttons carrying a stray top margin from the settings
-     screen. It also asked for a `.sortbar` class that was never defined, which is why
-     the count and the button ran together with no space between them.
 
-     One page, one voice. Two type roles only: the row's name in the same serif every
-     artifact name uses, and everything procedural in the same mono at one size. */
+  /* ---- the trash ---------------------------------------------------------- */
   .trashbar {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: var(--sp-4);
-    margin: var(--sp-6) 0 var(--sp-2);
-    padding-bottom: var(--sp-2);
-    border-bottom: 1px solid var(--line-strong);
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    margin: var(--sp-6) 0 var(--sp-4);
   }
-
-  .plain {
-    background: transparent;
-    border: 0;
-    padding: 4px 6px;
-    margin: 0;
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    cursor: pointer;
-    border-radius: var(--r-sm);
-    transition:
-      color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
+  /* Full-pill radius is the only place this app departs from the 20px control radius,
+     and it is deliberate: the shape itself flags the action as terminal. */
+  .btn.terminal {
+    border-radius: var(--r-full);
   }
-
-  .plain:hover {
-    color: var(--text);
-  }
-
-  .plain.danger {
-    color: var(--text-dim);
-  }
-  .plain.danger:hover {
-    color: var(--pink);
-    background: color-mix(in srgb, var(--pink) 10%, transparent);
-  }
-
-  .plain:focus-visible {
-    outline: 2px solid var(--line-strong);
-    outline-offset: 3px;
-  }
-
-  /* Nothing on this page opens on click, so the rows must not offer a hand. */
+  /* A list, not the wall grid. A wall implies keeping, and this page is about not
+     keeping. */
   .trash .item {
     cursor: default;
-    align-items: center;
   }
-
   .trash .item:hover {
-    background: transparent;
+    border-color: var(--line);
   }
-
   .trash .rowacts {
     display: flex;
-    gap: var(--sp-4);
+    align-items: center;
+    gap: var(--sp-2);
     flex-shrink: 0;
   }
-
-  .trash .meta {
-    margin-top: 3px;
+  .btn.ghost.harm {
+    color: var(--danger);
+  }
+  .btn.ghost.harm:hover {
+    background: var(--tint-warn);
   }
 
-  .aside {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    margin-top: var(--sp-2);
-    max-width: 52ch;
-    line-height: 1.6;
-  }
-  /* Why it failed carries more than what it will cost, so it is not the same grey. */
-  .aside.why {
-    color: var(--text-dim);
-  }
-
-  /* The publisher's own picture, kept locally. Its proportions are theirs, so it is
-   not cropped to a shape of ours. */
-  .shot {
-    display: block;
-    max-width: min(100%, 640px);
-    height: auto;
-    margin-top: var(--sp-4);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    background: var(--surface);
-  }
-
-  /* ---- the reader -------------------------------------------------------- */
+  /* ---- the reader --------------------------------------------------------- */
   .leaf {
     position: relative;
     width: 100%;
     aspect-ratio: 1 / 1.414;
-    background: var(--surface);
+    background: var(--surface-doc);
     border: 1px solid var(--line);
     border-radius: var(--r);
     margin-top: var(--sp-3);
     overflow: hidden;
-    /* Pages load as they are reached and are then held forever: nothing here ever put
-       one back. Each is rasterised at the pane's width times the device pixel ratio,
-       so on a Retina screen a page is roughly 1800 x 2545, which is about 18 MB once
-       decoded regardless of how small the PNG was on the wire. Reading a few hundred
-       pages that way is gigabytes of bitmap for pages nobody is looking at.
-
-       Skipping the rendering work off-screen lets the decoded data go with it, and the
-       element stays in the DOM so page numbering, the folio counter and the find
-       highlights all keep their positions. `auto` remembers each page's real height
-       after its first appearance, so only pages never yet seen use the A4 guess. */
+    /* Pages load as they are reached and are then held forever. Each is rasterised at
+       the pane's width times the device pixel ratio, so on a Retina screen a page is
+       roughly 1800 x 2545, which is about 18 MB once decoded regardless of how small
+       the PNG was on the wire. Skipping the rendering work off-screen lets the decoded
+       data go with it, and the element stays in the DOM so page numbering, the folio
+       counter and the find highlights all keep their positions. */
     content-visibility: auto;
     contain-intrinsic-size: auto 1000px;
   }
@@ -1227,139 +1385,109 @@
     min-height: 120px;
     display: grid;
     place-items: center;
-    font-family: var(--sans);
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-mute);
   }
-  /* The page a hit is on. The word cannot be highlighted, because the page is a picture
-   of itself, so the page is marked instead and the reader does the last step. */
-  /* Drawn over the page picture, in percentages of it, so they hold at any width and
-     any pixel density. Multiply keeps the words underneath readable through them. */
+  /* The word cannot be highlighted, because the page is a picture of itself, so the
+     box is drawn over it in percentages that hold at any width and any pixel density.
+     Multiply keeps the words underneath readable through them.
+
+     The tint family is where this colour comes from. A find highlight is a notice, not
+     a kind and not an action, so it may be neither a kind hue nor the accent. */
   .findbox {
     position: absolute;
-    background: var(--blue);
-    opacity: 0.32;
+    background: var(--tint-info);
     mix-blend-mode: multiply;
     pointer-events: none;
-    border-radius: 1px;
+    border-radius: var(--r-sm);
   }
   .findbox.on {
-    opacity: 0.55;
-    outline: 1.5px solid var(--accent);
+    background: var(--tint-warn);
+    outline: 1.5px solid var(--line-strong);
   }
-  /* No dark-mode variant. A rendered page is white whatever the app's theme is, and
-     screening onto white produces white: the highlight was drawn in exactly the right
-     place and was invisible. The backdrop here is the paper, not the interface. */
 
   /* The CSS Custom Highlight API paints over live text without touching the DOM, so
      the editor's markdown is not rewritten by having searched it. */
   ::highlight(enqueue-find) {
-    background: color-mix(in oklab, var(--blue) 34%, transparent);
+    background: var(--tint-info);
+    color: var(--text);
   }
   ::highlight(enqueue-find-current) {
-    background: color-mix(in oklab, var(--blue) 62%, transparent);
+    background: var(--tint-warn);
     color: var(--text);
   }
 
   .leaf.hit {
     border-color: var(--line-strong);
-    outline: 2px solid var(--line-strong);
-    outline-offset: 2px;
   }
   .folio {
     position: fixed;
-    right: 22px;
-    bottom: 32px;
+    right: var(--sp-5);
+    bottom: var(--sp-5);
     z-index: var(--z-pill);
-    font-family: var(--sans);
-    font-size: 11px;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text-mute);
     background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 9999px;
-    padding: 6px 12px;
+    border-radius: var(--r-full);
+    padding: var(--sp-2) var(--sp-3);
+    box-shadow: var(--shadow-2);
     pointer-events: none;
   }
 
-  /* ---- chats ------------------------------------------------------------- */
-  /* The one place with a persistent sidebar. Everywhere else the walls recede, but a
-   conversation you cannot find again is a conversation you did not have. */
+  /* ---- the left rail ------------------------------------------------------
+     Its own scroll region on the canvas, divided from the content by a hairline. */
   .rail {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
-    width: 250px;
+    width: 280px;
     z-index: var(--z-pill);
-    background: var(--surface);
+    background: var(--bg);
     border-right: 1px solid var(--line);
     overflow-y: auto;
-    padding: 56px var(--sp-3) 132px;
+    padding: var(--sp-5) var(--sp-4) 132px;
     transition: transform var(--dur) var(--ease);
   }
-  .rail h2 {
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--text-mute);
-    margin: 0 0 var(--sp-3) var(--sp-2);
+  .rail .wordmark {
+    margin-bottom: var(--sp-4);
   }
-  /* The one place the eye should land first in the rail, so it carries the accent
-     on its border alone — warm amber line on a cream ground, lighter than a full fill. */
-  .gohome {
+  .rail .shelf {
+    margin: var(--sp-5) 0 var(--sp-2);
+  }
+  /* The rail's only accent, because it is the rail's only instruction. */
+  .rail .newchat {
+    width: 100%;
+    margin-bottom: var(--sp-2);
+  }
+  .rail .gohome {
+    width: 100%;
+    justify-content: flex-start;
+    color: var(--text-dim);
+  }
+
+  /* Rows lift onto the raised white when selected and take a hairline with them, which
+     is the whole gesture: selection is a state, so it does not shout in yellow. */
+  .threadrow {
     display: flex;
     align-items: center;
-    gap: var(--sp-2);
-    width: 100%;
-    text-align: left;
-    background: var(--surface);
-    border: 1px solid var(--accent);
-    border-radius: var(--r-lg);
-    cursor: pointer;
-    padding: var(--sp-3);
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    color: var(--accent);
-    margin-bottom: var(--sp-5);
+    gap: var(--sp-1);
+    margin-bottom: 2px;
+    padding-right: var(--sp-2);
+    border: 1px solid transparent;
+    border-radius: var(--r);
     transition:
       background var(--dur-fast) var(--ease),
       border-color var(--dur-fast) var(--ease);
   }
-  .gohome:hover {
-    background: var(--surface-2);
-    border-color: var(--accent);
-  }
-  .gohome:active {
+  .threadrow:hover {
     background: var(--surface-2);
   }
-  .gohome:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
-  .gohome svg {
-    width: 15px;
-    height: 15px;
-    flex-shrink: 0;
-    fill: none;
-    stroke: currentColor;
-    /* Matched to the label's new weight. A hairline glyph beside 600-weight text
-       reads as two different buttons overlapping. */
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .threadrow {
-    display: flex;
-    align-items: center;
-    border-radius: var(--r-sm);
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .threadrow:hover,
   .threadrow.on {
-    background: var(--surface-2);
+    background: var(--surface);
+    border-color: var(--line);
   }
   .thread {
     flex: 1;
@@ -1367,518 +1495,459 @@
     text-align: left;
     background: transparent;
     border: 0;
-    padding: var(--sp-2) var(--sp-3);
-    font: inherit;
-    font-size: 14px;
-    line-height: 1.4;
+    padding: var(--sp-3) 16px;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 450;
+    letter-spacing: -0.08px;
+    line-height: 22px;
     color: var(--text-dim);
     cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .threadrow:hover .thread,
   .threadrow.on .thread {
+    font-weight: 600;
+    font-size: 16px;
     color: var(--text);
   }
-  .thread:focus-visible {
-    outline: 2px solid var(--line-strong);
-    outline-offset: -2px;
-    border-radius: var(--r-sm);
-  }
 
-  /* Visible only on hover or when it is already doing something, so the rail stays a
-   list of names rather than a list of controls. */
-  .pin {
+  /* Visible only on hover or when already doing something, so the rail stays a list of
+     names rather than a list of controls. */
+  .rowbtn {
     flex-shrink: 0;
     background: transparent;
     border: 0;
     cursor: pointer;
     padding: 6px;
-    margin-right: 2px;
     color: var(--text-mute);
     opacity: 0;
-    border-radius: var(--r-sm);
+    border-radius: var(--r-full);
     transition:
       opacity var(--dur-fast) var(--ease),
       color var(--dur-fast) var(--ease);
   }
-  .pin svg {
-    width: 13px;
-    height: 13px;
+  .rowbtn svg {
+    width: 15px;
+    height: 15px;
     display: block;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.6;
     stroke-linejoin: round;
   }
-  .threadrow:hover .pin,
-  .pin:focus-visible {
+  .threadrow:hover .rowbtn,
+  .rowbtn:focus-visible {
     opacity: 1;
   }
-  .pin:hover {
-    color: var(--accent);
+  .rowbtn:hover {
+    color: var(--text);
   }
-  .pin.lit {
+  .rowbtn.lit {
     opacity: 1;
-    color: var(--accent);
+    color: var(--text);
   }
-  .pin.lit svg {
+  .rowbtn.lit svg {
     fill: currentColor;
-  }
-  .pin:focus-visible {
-    outline: 2px solid var(--line-strong);
-    outline-offset: -2px;
   }
 
   /* Kept threads sit above the rest with a rule under them, so the break reads as an
-   ordering and not as two unrelated lists. */
+     ordering and not as two unrelated lists. */
   .kept {
     padding-bottom: var(--sp-3);
     margin-bottom: var(--sp-3);
-    border-bottom: 1px solid var(--line);
-  }
-  /* The subject of a conversation, treated the same as the artifacts an answer cites,
-     because it is the same kind of object and you should be able to open it. */
-  .scopebar {
-    margin-top: var(--sp-3);
-    align-items: center;
-  }
-  .scopebar .aside {
-    margin: 0;
+    border-bottom: 1px solid var(--line-soft);
   }
 
-  /* A way out that does not require reaching the bottom of the window. Sits above the
-     title rather than in the flow, so it costs the page no vertical rhythm. */
-  .wayout {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    margin: 0 0 var(--sp-3) -6px;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    border-radius: var(--r-sm);
-    color: var(--text-mute);
-    cursor: pointer;
-    transition: color var(--dur-fast) var(--ease);
-  }
-  .wayout:hover {
-    color: var(--text);
-  }
-  .wayout:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .wayout svg {
-    width: 18px;
-    height: 18px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  /* The download is an anchor, not a button, so it needs the icon sizing spelled out. */
-  a.pin.big {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  body.railed {
-    padding-left: 250px;
-  }
-  body.railed .pill {
-    left: calc(50% + 125px);
-  }
-
-  /* The gear sits at the foot of the rail, out of the way of the thing the rail is
-   for. Configuration is not a destination; it is where you go when something is
-   wrong, and it should look like it. */
+  /* Configuration is not a destination; it is where you go when something is wrong,
+     and it should look like it. */
   .railfoot {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    padding: var(--sp-3);
-    background: var(--surface);
+    padding: var(--sp-3) var(--sp-4) var(--sp-4);
+    background: var(--bg);
     border-top: 1px solid var(--line);
   }
-  .gear {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
+  .railfoot .btn {
     width: 100%;
-    background: transparent;
-    border: 0;
-    border-radius: var(--r-sm);
-    cursor: pointer;
-    padding: var(--sp-2) var(--sp-3);
-    font: inherit;
-    font-size: 12.5px;
-    color: var(--text-mute);
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .gear:hover {
-    background: var(--surface-2);
-    color: var(--text);
-  }
-  .gear:focus-visible {
-    outline: 2px solid var(--line-strong);
-    outline-offset: -2px;
-  }
-  .gear svg {
-    width: 15px;
-    height: 15px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .newchat {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    width: 100%;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    cursor: pointer;
-    padding: var(--sp-2) var(--sp-3);
-    font: inherit;
-    font-size: 12.5px;
+    justify-content: flex-start;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: 0;
     color: var(--text-dim);
-    margin-bottom: var(--sp-3);
-    text-align: left;
-    transition:
-      border-color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease);
-  }
-  .newchat:hover {
-    background: var(--surface-2);
-    border-color: var(--line-strong);
-    color: var(--text);
-  }
-  .newchat:focus-visible {
-    outline: 2px solid var(--line-strong);
-    outline-offset: -2px;
-  }
-  /* Without an explicit size an inline svg takes its intrinsic dimensions and drags the
-   button to the height of the viewBox. */
-  .newchat svg,
-  .gear svg {
-    width: 15px;
-    height: 15px;
-    flex-shrink: 0;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
 
-  /* ---- settings ---------------------------------------------------------- */
-  .field {
-    max-width: 60ch;
-    margin-top: var(--sp-4);
+  body.railed {
+    padding-left: 280px;
   }
-  .field label {
-    display: block;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    margin-bottom: var(--sp-2);
+  body.railed .pill {
+    left: calc(50% + 140px);
   }
-  .field input,
-  .field select {
-    width: 100%;
-    font: inherit;
-    font-family: var(--sans);
-    font-size: 12.5px;
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--r-sm);
-    color: var(--text);
+
+  /* ---- the conversation ---------------------------------------------------
+     Side and corner shape carry the speaker. No avatars, no name labels, no in-flow
+     timestamps: a label under every bubble is a thing to read that says nothing. */
+  .transcript {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .turn {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--sp-5);
+  }
+  .turn + .turn.you + .turn.you,
+  .turn + .turn.curator + .turn.curator {
+    margin-top: var(--sp-3);
+  }
+  .turn.you {
+    align-items: flex-end;
+  }
+  .said {
+    max-width: 88%;
     background: var(--surface);
     border: 1px solid var(--line);
+    border-radius: var(--r) var(--r) var(--r) var(--r-sm);
+    padding: var(--sp-4);
+    color: var(--text-dim);
+    text-wrap: pretty;
   }
-  .field input:focus,
-  .field select:focus {
-    outline: none;
-    border-color: var(--accent);
+  .turn.you .said {
+    max-width: 78%;
+    background: var(--surface-2);
+    border: 0;
+    border-radius: var(--r) var(--r) var(--r-sm) var(--r);
+    padding: var(--sp-3) var(--sp-4);
+    font-weight: 600;
+    color: var(--text);
   }
-  .field input[disabled] {
-    opacity: 0.6;
-  }
-  /* One choice at a time, so the current appearance is legible without reading. */
-  .seg {
-    display: inline-flex;
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
+  /* The answer is still streaming. A bar across the top edge rather than a spinner or
+     three dots: it belongs to the bubble it is filling. */
+  .said.streaming {
+    position: relative;
     overflow: hidden;
   }
-  .seg button {
-    font: inherit;
-    font-size: 12.5px;
-    padding: var(--sp-2) var(--sp-4);
-    background: transparent;
+  .said.streaming::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 3px;
+    width: 40%;
+    background: var(--accent);
+    animation: sweep 1.4s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(350%);
+    }
+  }
+
+  /* Where the answer came from. This is what separates an answer from an assertion, so
+     it sits inside the bubble it supports rather than as a footnote under it. */
+  .from {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    align-items: center;
+    margin-top: var(--sp-4);
+  }
+  .src {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 14px;
+    letter-spacing: -0.42px;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    padding: var(--sp-2) var(--sp-3);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .src:hover {
+    border-color: var(--line-strong);
+  }
+  .scopebar {
+    margin-top: var(--sp-3);
+  }
+
+  /* The highest-stakes line in the product: the collection does not hold this. It sits
+     at the same weight as the claim it qualifies rather than as small print under it. */
+  .unsourced {
+    margin-top: var(--sp-4);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--line-soft);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* ---- settings -----------------------------------------------------------
+     Grouped onto raised cards, with rows divided by the soft rule rather than by a
+     recessed block nested inside a card. */
+  .group {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: var(--sp-6);
+    margin-top: var(--sp-4);
+    max-width: 860px;
+  }
+  .group > .field + .field {
+    border-top: 1px solid var(--line-soft);
+    margin-top: var(--sp-4);
+    padding-top: var(--sp-4);
+  }
+  .field label,
+  .field .rowlabel {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 22.4px;
+    color: var(--text);
+    margin-bottom: var(--sp-2);
+  }
+  .field .aside {
+    margin-top: var(--sp-2);
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    max-width: 520px;
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 450;
+    letter-spacing: -0.08px;
+    line-height: 22.4px;
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--r);
+    color: var(--text);
+    background: var(--surface);
+    /* The border is the only thing telling you where the typable region is, so it is
+       the one line token that clears 3:1. */
+    border: 1.5px solid var(--line-strong);
+  }
+  .field textarea {
+    resize: vertical;
+  }
+  .field input::placeholder,
+  .field textarea::placeholder {
     color: var(--text-mute);
-    border: 0;
+  }
+  .field input[disabled],
+  .field select[disabled],
+  .field textarea[disabled] {
+    background: var(--surface-2);
+    border-color: transparent;
+    color: var(--text-mute);
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* The one non-button control allowed the accent: its on-state is a live instruction
+     to the software rather than a category. */
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    width: 44px;
+    height: 26px;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: var(--r-full);
+    background: var(--surface-2);
+    border: 1.5px solid var(--line-strong);
     cursor: pointer;
     transition:
       background var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease);
+      border-color var(--dur-fast) var(--ease);
   }
-  .seg button + button {
-    border-left: 1px solid var(--line);
+  .toggle .knob {
+    width: 18px;
+    height: 18px;
+    margin-left: 2px;
+    border-radius: var(--r-full);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    transition: transform var(--dur-fast) var(--ease);
   }
-  .seg button:hover {
-    color: var(--text);
+  .toggle[aria-checked="true"] {
+    background: var(--accent);
+    border-color: var(--text);
   }
-  .seg button[aria-pressed="true"] {
-    background: var(--surface-2);
-    color: var(--text);
+  .toggle[aria-checked="true"] .knob {
+    transform: translateX(18px);
   }
-  .seg button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
+  .toggle[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .togglerow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+  }
+  .togglerow > div {
+    min-width: 0;
   }
 
   .keyrow {
     display: flex;
     gap: var(--sp-2);
-    align-items: stretch;
+    align-items: center;
+    flex-wrap: wrap;
   }
   .keyrow input {
     flex: 1;
-    min-width: 0;
-  }
-  .keyrow .act.small {
-    margin-top: 0;
-    white-space: nowrap;
-  }
-  .field textarea {
-    width: 100%;
-    font: inherit;
-    font-family: var(--sans);
-    font-size: 12.5px;
-    line-height: 1.6;
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--r-sm);
-    color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    resize: vertical;
-  }
-  .field textarea:focus {
-    outline: none;
-    border-color: var(--accent);
+    min-width: 220px;
   }
 
+  /* Click, then press. It is a control whose boundary is its own border, so the border
+     is --line-strong, and "listening" is said in words as well as in the fill. */
   .recorder {
-    width: 100%;
     text-align: left;
     font-family: var(--sans);
-    font-size: 14px;
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--r-sm);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 16px;
+    letter-spacing: -0.48px;
+    min-height: 40px;
+    padding: 6px 24px;
+    border-radius: var(--r);
     color: var(--text);
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: 1.5px solid var(--line-strong);
     cursor: pointer;
-    transition: border-color var(--dur-fast) var(--ease);
+    transition: background var(--dur-fast) var(--ease);
   }
   .recorder:hover:not([disabled]) {
-    border-color: var(--line-strong);
-  }
-  .recorder:focus-visible {
-    outline: none;
-    border-color: var(--line-strong);
+    background: var(--surface-2);
   }
   .recorder[disabled] {
-    opacity: 0.6;
-    cursor: default;
+    background: var(--surface-2);
+    border-color: transparent;
+    color: var(--text-mute);
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .recorder.listening {
-    border-color: var(--accent);
-    color: var(--text-mute);
+    background: var(--surface-2);
   }
   .recorder.listening span {
     animation: breathe 1.4s var(--ease) infinite;
   }
 
+  /* Where a value came from, said at the value. A field you edit that is silently
+     overridden by an environment variable is worse than no field. */
   .pinned {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-mute);
     margin-top: var(--sp-2);
   }
   .facts {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    line-height: 1.9;
-    max-width: 60ch;
-    margin-top: var(--sp-3);
+    font-size: 15px;
+    line-height: 26px;
+    color: var(--text-dim);
+    margin-top: var(--sp-2);
   }
   .facts b {
-    color: var(--text-dim);
-    font-weight: 400;
+    color: var(--text);
+    font-weight: 600;
+    margin-right: var(--sp-2);
   }
 
-  /* Sides carry the speaker, so the transcript is parseable before a word is read.
-   Only your side is a bubble: a question is a short utterance and boxing it is
-   natural, while an answer is the thing you came to read and boxing it would turn a
-   reading surface into a feed. */
-  .turn {
-    max-width: 70ch;
+  /* ---- the modal ----------------------------------------------------------
+     Used for anything irreversible, and only for that.
+
+     `<dialog>` rather than a hand-built overlay: focus trapping, Esc to dismiss, inert
+     background and the top layer all come from the platform instead of from us.
+     `window.confirm` is a no-op in the WKWebView this ships inside - it never shows a
+     panel and returns false immediately - so every destructive action guarded by it
+     silently did nothing. */
+  dialog.ask {
+    border: 0;
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    color: var(--text-dim);
+    padding: var(--sp-6);
+    max-width: min(480px, calc(100vw - 40px));
+    font-family: var(--sans);
+    box-shadow: var(--shadow-3);
+    animation: lift var(--dur) ease both;
+  }
+  @keyframes lift {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  dialog.ask::backdrop {
+    background: var(--scrim);
+    animation: fadeIn var(--dur) ease both;
+  }
+  dialog.ask h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 29px;
+    letter-spacing: -0.48px;
+    color: var(--text);
+  }
+  dialog.ask p {
+    margin: var(--sp-3) 0 0;
+    font-size: 16px;
+    line-height: 22.4px;
+    color: var(--text-dim);
+  }
+  /* The destructive choice sits on the right and repeats the verb. Cancel takes the
+     initial focus, so a stray Return cannot destroy anything. */
+  dialog.ask .asked {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-3);
     margin-top: var(--sp-6);
   }
-  .who {
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    margin-bottom: var(--sp-2);
-  }
 
-  /* The answer is the thing you came for, so it is the thing that leads: the largest
-     type on the surface, unboxed, at a reading measure. It had been 16px in a bordered
-     panel, one point off the question and framed identically - the two halves of the
-     exchange competing at the same weight when only one of them is the content. */
-  .said {
-    font-family: var(--sans);
-    font-size: 16px;
-    line-height: 1.68;
-    letter-spacing: -0.003em;
-    color: var(--text);
-    text-wrap: pretty;
-    max-width: 68ch;
-  }
-
-  /* The question is context for the answer, not content beside it. Smaller, quieter,
-     and boxed - which is what makes the unboxed answer read as the page speaking. */
-  .turn.you {
-    margin-left: auto;
-    max-width: 44ch;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    margin-top: var(--sp-5);
-  }
-  .turn.you .who {
-    margin-bottom: var(--sp-1);
-  }
-  .turn.you .said {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    padding: var(--sp-3) var(--sp-4);
-    font-family: var(--sans);
-    font-size: 14px;
-    line-height: 1.55;
-    letter-spacing: 0;
-    color: var(--text-dim);
-    text-align: left;
-    max-width: none;
-  }
-
-  .turn.curator .who {
-    color: var(--accent);
-  }
-
-  /* Where the answer came from. These were 11px grey chips at the bottom of the most
-     important thing on the page: the evidence, styled as a footnote. They are what
-     separates an answer from an assertion, so they carry real weight now. */
-  .from {
-    margin-top: var(--sp-4);
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-2);
-    align-items: center;
-  }
-  .from::before {
-    content: "from";
-    font-family: var(--sans);
-    font-size: 11px;
-    color: var(--text-mute);
-    margin-right: var(--sp-1);
-  }
-  .src {
-    font-family: var(--sans);
-    font-size: 12.5px;
-    color: var(--text-dim);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 7px 13px;
-    min-height: 26px;
-    cursor: pointer;
-    transition:
-      border-color var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
-  }
-  .src:hover {
-    border-color: var(--accent);
-    color: var(--text);
-    background: var(--bg);
-  }
-
-  /* The highest-stakes line in the product: the collection does not hold this. It was
-     11px of accent under a full-size answer, which is exactly backwards - the caveat
-     was the smallest thing attached to the claim it qualifies. */
-  .unsourced {
-    font-family: var(--sans);
-    font-size: 12.5px;
-    color: var(--text-dim);
-    margin-top: var(--sp-4);
-    padding-left: var(--sp-4);
-    position: relative;
-    max-width: 52ch;
-  }
-  .unsourced::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0.62em;
-    width: 7px;
-    height: 7px;
-    border: 1.5px solid var(--accent);
-    border-radius: 50%;
-  }
-  /* An answer standing on nothing is set apart from one standing on your material. */
-  .turn.curator:has(.unsourced) .said {
-    color: var(--text-dim);
-    font-size: 16px;
-  }
-
-  /* Above the pill, never over it, and it announces itself to a screen reader because a
-   capture you cannot see confirmed is a capture you have to go and check. */
   .toast {
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    bottom: 92px;
+    bottom: 108px;
     z-index: var(--z-menu);
     max-width: min(560px, calc(100vw - 40px));
     background: var(--surface);
     color: var(--text);
-    border: 1px solid var(--line-strong);
-    border-radius: var(--r-lg);
-    padding: var(--sp-2) var(--sp-4);
-    font-size: 14px;
-    animation: rise var(--dur) var(--ease) both;
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    box-shadow: var(--shadow-2);
+    padding: var(--sp-3) var(--sp-4);
+    font-size: 16px;
+    line-height: 22.4px;
+    animation: rise var(--dur) ease both;
   }
   .toast.bad {
-    border-color: var(--pink);
+    background: var(--tint-warn);
+    border-color: transparent;
   }
   body.railed .toast {
-    left: calc(50% + 125px);
-  }
-  @media (max-width: 900px) {
-    body.railed .toast {
-      left: 50%;
-    }
+    left: calc(50% + 140px);
   }
 
   @keyframes breathe {
@@ -1898,18 +1967,39 @@
     body.railed {
       padding-left: 0;
     }
-    body.railed .pill {
+    body.railed .pill,
+    body.railed .toast {
       left: 50%;
     }
+    /* Off-canvas, sliding in over the scrim rather than shoving the content sideways
+       on a window that has none to give. */
     .rail {
       transform: translateX(-100%);
+      box-shadow: var(--shadow-2);
     }
     .rail.open {
       transform: none;
     }
+    .railscrim {
+      position: fixed;
+      inset: 0;
+      z-index: calc(var(--z-pill) - 1);
+      background: var(--scrim);
+    }
+    main {
+      padding-left: var(--sp-4);
+      padding-right: var(--sp-4);
+    }
+    .docpane,
+    .group {
+      padding: var(--sp-4);
+    }
   }
   @media (min-width: 901px) {
     #btnRail {
+      display: none;
+    }
+    .railscrim {
       display: none;
     }
   }
@@ -1919,17 +2009,9 @@
 <div class="pill" id="pill"></div>
 
 <script>
-  // Keyboard-navigation detection: toggle a class on Tab vs mouse so focus
-  // outlines only appear for keyboard users and never on mouse clicks.
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Tab") document.body.classList.add("keyboard-nav");
-  });
-  document.addEventListener("mousedown", () =>
-    document.body.classList.remove("keyboard-nav"),
-  );
-  window.addEventListener("pointerdown", () =>
-    document.body.classList.remove("keyboard-nav"),
-  );
+  // Focus is drawn by `:focus-visible` in one rule for the whole app. The engine
+  // already knows the difference between a Tab and a click, and the hand-rolled
+  // keyboard-nav class this replaces had drifted into four different ring colours.
 
   const view = document.getElementById("view");
   const pill = document.getElementById("pill");
@@ -2169,6 +2251,7 @@
     // at what you already own and seeing what is in it.
     ask: '<path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.8"/>',
     back: '<path d="M14.5 6.5L9 12l5.5 5.5"/>',
+    chev: '<path d="M6.5 14.5L12 9l5.5 5.5"/>',
     down: '<path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>',
     home: '<path d="M4 10.5L12 4l8 6.5"/><path d="M6 9.6V20h12V9.6"/>',
     star: '<path d="M12 4.2l2.3 4.9 5.2.7-3.8 3.7 1 5.3-4.7-2.6-4.7 2.6 1-5.3-3.8-3.7 5.2-.7z"/>',
@@ -2223,20 +2306,28 @@
     // to every thread: drawing the opener in one place out of five left both stranded
     // on the wall, on an artifact, on search, and in Settings itself.
     pill.innerHTML =
-      '<button id="btnRail" aria-label="Conversations and settings" onclick="toggleRail()">' +
+      '<button class="round" id="btnRail" aria-label="Conversations and settings" ' +
+      'onclick="toggleRail()">' +
       svg("rail") +
       "</button>" +
       (inside
-        ? '<button aria-label="Back to everything" onclick="home()">' +
+        ? '<button class="round" aria-label="Back to everything" onclick="home()">' +
           svg("back") +
           "</button>"
-        : '<button id="btnAdd" aria-label="Capture" aria-expanded="false" ' +
+        : // The one instruction on the pill, so the one thing wearing the accent. The
+          // label is in ink beside the disc rather than in the yellow, which at 1.76:1
+          // on any ground in this app is not a colour text can be set in.
+          '<button class="keep" id="btnAdd" aria-expanded="false" ' +
           'onclick="toggleMenu(event)">' +
+          '<span class="disc">' +
           svg("plus") +
-          "</button>") +
+          "</span>Keep something" +
+          '<span class="chev">' +
+          svg("chev") +
+          "</span></button>") +
       (inside
         ? ""
-        : '<button aria-label="Search" onclick="openField(\'search\')">' +
+        : '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
           svg("find") +
           "</button>") +
       // Only inside. Out on the wall this was a second, wordless door to the thing the
@@ -2245,7 +2336,7 @@
       // duplicate at all: it carries the scope, which is the one route the rail cannot
       // express, because a conversation started from the rail is about everything.
       (inside
-        ? '<button aria-label="Ask about this" onclick="openField(\'ask\')">' +
+        ? '<button class="round" aria-label="Ask about this" onclick="openField(\'ask\')">' +
           svg("ask") +
           "</button>"
         : "");
@@ -2264,11 +2355,12 @@
     menu = document.createElement("div");
     menu.className = "menu";
     menu.setAttribute("role", "menu");
+    // Four equal-weight choices. None of them is the primary, so none of them is
+    // yellow, and hover is the recessed fill rather than a colour that would read as
+    // "this is the one you want".
     menu.innerHTML = MENU.map(
       ([k, label]) =>
-        '<button role="menuitem" data-kind="' +
-        k +
-        '"><span class="ic">' +
+        '<button role="menuitem"><span class="ic">' +
         svg(k) +
         "</span>" +
         label +
@@ -2323,7 +2415,7 @@
       '<input id="field" placeholder="' +
       esc(hint) +
       '" autocomplete="off">' +
-      '<button aria-label="Close" onclick="restorePill()">' +
+      '<button class="round" aria-label="Close" onclick="restorePill()">' +
       svg("close") +
       "</button>";
 
@@ -2355,6 +2447,67 @@
     node.textContent = message;
     document.body.appendChild(node);
     setTimeout(() => node.remove(), bad ? 8000 : 2600);
+  }
+
+  /// Ask before doing something irreversible. Resolves true only on the confirm button.
+  ///
+  /// Replaces `window.confirm`, which the WKWebView this ships inside does not
+  /// implement: it returned false without ever drawing a panel, so every guard read as
+  /// "the person said no" and the action was skipped in silence.
+  ///
+  /// The promise is settled inside each handler rather than on the dialog's `close`
+  /// event. Measured here, `close()` does not fire `close` in this engine, so a version
+  /// that resolved there never resolved at all: `await ask(...)` hung and the delete
+  /// still did not happen. Settling at the source removes the dependency entirely, and
+  /// `done` keeps the double path from resolving twice.
+  function ask(title, detail, confirmLabel) {
+    return new Promise((resolve) => {
+      const box = document.createElement("dialog");
+      box.className = "ask";
+      box.innerHTML =
+        '<h2 id="askTitle"></h2><p></p>' +
+        '<div class="asked">' +
+        '<button class="btn secondary" value="no">Cancel</button>' +
+        '<button class="btn danger" value="yes"></button>' +
+        "</div>";
+      box.setAttribute("aria-labelledby", "askTitle");
+      box.querySelector("h2").textContent = title;
+      box.querySelector("p").textContent = detail;
+      box.querySelector('[value="yes"]').textContent = confirmLabel;
+
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true;
+        try {
+          box.close();
+        } catch (_) {
+          // Already closed by the platform; the node still has to go.
+        }
+        box.remove();
+        resolve(answer);
+      };
+
+      box.querySelector('[value="no"]').onclick = () => finish(false);
+      box.querySelector('[value="yes"]').onclick = () => finish(true);
+      // Esc means no. `cancel` is the specified path; the keydown is the fallback for
+      // engines that skip it, and finish() makes the overlap harmless.
+      box.addEventListener("cancel", (e) => {
+        e.preventDefault();
+        finish(false);
+      });
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          finish(false);
+        }
+      });
+
+      document.body.appendChild(box);
+      box.showModal();
+      // Cancel takes focus, so a stray Return cannot destroy anything.
+      box.querySelector('[value="no"]').focus();
+    });
   }
 
   function pickFile(accept) {
@@ -2490,7 +2643,7 @@
     const card = document.querySelector('.card[data-id="' + id + '"]');
     if (!card) return;
 
-    const frame = card.querySelector(".frame");
+    const frame = card.querySelector("img");
     const title = card.querySelector(".title");
     if (frame) frame.style.viewTransitionName = "artifact-face";
     if (title) title.style.viewTransitionName = "artifact-title";
@@ -2499,7 +2652,7 @@
 
   function releaseMorph() {
     if (!morphing) return;
-    morphing.querySelectorAll(".frame, .title").forEach((el) => {
+    morphing.querySelectorAll("img, .title").forEach((el) => {
       el.style.viewTransitionName = "";
     });
     morphing = null;
@@ -2548,10 +2701,31 @@
     }
   }
 
-  // The square. Each kind shows the truest thing it has, which is why this is a switch
-  // and not one template with a swapped icon.
-  function frame(a) {
-    const drop = " onerror=\"this.parentNode.innerHTML='&#9633;'\"";
+  // "Three weeks ago" is a thing people remember. A date is not, which is why the
+  // wall counts backwards from now rather than printing an ISO string nobody reads.
+  function since(iso) {
+    const then = new Date(iso);
+    if (isNaN(then)) return "undated";
+    const mins = Math.round((Date.now() - then.getTime()) / 60000);
+    if (mins < 2) return "just now";
+    if (mins < 60) return mins + " minutes ago";
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours === 1 ? "an hour ago" : hours + " hours ago";
+    const days = Math.round(hours / 24);
+    if (days < 7) return days === 1 ? "yesterday" : days + " days ago";
+    const weeks = Math.round(days / 7);
+    if (days < 60) return weeks === 1 ? "last week" : weeks + " weeks ago";
+    const months = Math.round(days / 30);
+    if (days < 365)
+      return months === 1 ? "last month" : months + " months ago";
+    const years = Math.round(days / 365);
+    return years === 1 ? "last year" : years + " years ago";
+  }
+
+  // Which artifacts have a picture of their own. Those fill the card and take a band
+  // across the foot for the title; everything else is set as type inside the square.
+  function facePicture(a) {
+    const drop = ' onerror="this.remove()"';
     if (a.kind === "image")
       return (
         '<img src="/artifacts/' +
@@ -2568,31 +2742,69 @@
         drop +
         ">"
       );
-    if (a.kind === "link")
-      return a.has_preview_image
-        ? '<img src="/artifacts/' +
-            a.id +
-            '/preview-image" alt="" loading="lazy"' +
-            drop +
-            ">"
-        : '<div class="glyphface">&#8599;<span class="host">' +
-            esc(host(a.source_url)) +
-            "</span></div>";
-    if (a.kind === "file") return '<div class="glyphface">&#9633;</div>';
-    return a.excerpt
-      ? '<div class="opening">' + esc(a.excerpt) + "</div>"
-      : '<div class="glyphface" style="font-size:13px;color:var(--text-mute)">empty</div>';
+    if (a.kind === "link" && a.has_preview_image)
+      return (
+        '<img src="/artifacts/' +
+        a.id +
+        '/preview-image" alt="" loading="lazy"' +
+        drop +
+        ">"
+      );
+    return null;
   }
 
+  // The dot is a graphic and answers to 3:1; the word beside it carries the meaning and
+  // answers to 4.5:1 in ink. Neither travels without the other, so no piece of
+  // information on the wall is carried by colour alone.
+  const kindRow =
+    '<span class="kindrow"><span class="kindmark"></span>' +
+    '<span class="kindword">';
+
   function card(a, i) {
-    const bits = [];
-    bits.push((a.created_at || "").slice(0, 10));
+    const bits = [since(a.created_at)];
     if (a.local_only) bits.push("local only");
     if (a.status === "text_only" && a.kind === "note")
       bits.push("holds a credential");
 
+    // "pending" is the engine's word for an artifact nothing has read yet, which is
+    // the one thing the wall marks in the accent.
+    const unread = a.status === "pending";
+    const picture = facePicture(a);
+    const flag = a.pinned
+      ? '<span class="flag" aria-hidden="true">' + svg("star") + "</span>"
+      : "";
+
+    const inside = picture
+      ? picture +
+        flag +
+        '<div class="cardband">' +
+        kindRow +
+        esc(a.kind) +
+        "</span></span>" +
+        '<div class="title">' +
+        esc(a.title || "Untitled") +
+        "</div></div>"
+      : '<div class="cardfoot" style="margin-top:0">' +
+        kindRow +
+        esc(a.kind) +
+        "</span></span>" +
+        flag +
+        "</div>" +
+        '<div class="title">' +
+        esc(a.title || "Untitled") +
+        "</div>" +
+        '<div class="preview">' +
+        esc(a.excerpt || (a.kind === "link" ? host(a.source_url) : "")) +
+        "</div>" +
+        '<div class="cardfoot"><span class="meta">' +
+        bits.map(esc).join(" ") +
+        "</span>" +
+        (unread ? '<span class="unread"></span>' : "") +
+        "</div>";
+
     return (
       '<div class="card' +
+      (picture ? " pictorial" : "") +
       (i < 18 ? " hang" : "") +
       '" data-kind="' +
       esc(a.kind) +
@@ -2601,7 +2813,15 @@
       '" ' +
       'tabindex="0" role="button"' +
       ' aria-label="' +
-      esc((a.title || "Untitled") + ", " + a.kind + ", " + bits.join(", ")) +
+      esc(
+        (a.title || "Untitled") +
+          ", " +
+          a.kind +
+          ", " +
+          bits.join(", ") +
+          (unread ? ", not read yet" : "") +
+          (a.pinned ? ", kept" : ""),
+      ) +
       '"' +
       (i < 18 ? ' style="animation-delay:' + i * 22 + 'ms"' : "") +
       " onclick=\"openArtifact('" +
@@ -2610,21 +2830,8 @@
       " onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();openArtifact('" +
       a.id +
       "')}\">" +
-      '<div class="frame" aria-hidden="true">' +
-      frame(a) +
-      (a.pinned
-        ? '<span class="flag" aria-label="pinned">' + svg("star") + "</span>"
-        : "") +
-      "</div>" +
-      '<div class="cap"><div class="title">' +
-      esc(a.title || "Untitled") +
-      "</div>" +
-      '<div class="meta"><span class="kindmark"></span>' +
-      '<span class="kindword">' +
-      esc(a.kind) +
-      "</span> &middot; " +
-      bits.map(esc).join(" &middot; ") +
-      "</div></div></div>"
+      inside +
+      "</div>"
     );
   }
 
@@ -2714,12 +2921,13 @@
     ]);
 
     if (!kept.total && !first.total) {
+      // No illustration and no button. The capture pill is already on screen and it
+      // is the call to action; a second one here would be the same instruction twice.
       view.innerHTML =
-        '<div class="state">Nothing saved yet.<br><br>' +
-        "Everything you save lands here, in the order you found it, with nothing asked of " +
-        "you at the time. No folder, no tag, no reason required. The reason is what you " +
-        "come back for later, when you name a theme and the room assembles itself.<br><br>" +
-        'Nothing here expires. Start with <span class="gold">+</span>.</div>';
+        '<div class="empty"><div class="display">Nothing here yet</div>' +
+        '<div class="state">Anything you drop on the pill below is kept exactly as it ' +
+        "arrived and read on this machine, in the order you found it. No folder, no tag, " +
+        "no reason required. Nothing here expires.</div></div>";
       return;
     }
 
@@ -2838,52 +3046,56 @@
 
     view.setAttribute("data-kind", a.kind);
 
-    const bits = [(a.updated_at || "").slice(0, 10)];
+    const bits = [since(a.updated_at)];
     if (a.local_only) bits.push("local only");
+    if (d.file && d.file.bytes) bits.push(bytes(d.file.bytes));
+    if (a.source_url) bits.push(host(a.source_url));
 
+    // No primary action anywhere on this page. Nothing you can do to a thing you have
+    // already kept is urgent, and a yellow pill here would say otherwise.
     let html =
-      '<button class="wayout" aria-label="Back to everything" title="Back to everything" ' +
-      'onclick="home()">' +
+      '<button class="btn ghost back" onclick="home()">' +
       svg("back") +
-      "</button>" +
+      "Everything</button>" +
+      '<div class="kindrow"><span class="kindmark"></span>' +
+      '<span class="kindword">' +
+      esc(a.kind) +
+      "</span></div>" +
       '<div class="titlerow"><div class="h1" style="view-transition-name:artifact-title">' +
       esc(a.title || "Untitled") +
+      "</div></div>" +
+      '<div class="meta">' +
+      bits
+        .filter(Boolean)
+        .map(esc)
+        .join('<span class="sep">&bull;</span>') +
       "</div>" +
-      '<button class="pin big' +
+      '<div class="actions">' +
+      (a.source_url
+        ? '<a class="btn secondary" href="' +
+          esc(a.source_url) +
+          '" target="_blank" rel="noopener">Open original</a>'
+        : "") +
+      (["pdf", "image", "file"].includes(a.kind)
+        ? '<a class="btn tertiary" href="/artifacts/' +
+          a.id +
+          '/blob" download>Download a copy</a>'
+        : "") +
+      '<button class="btn tertiary pin' +
       (a.pinned ? " lit" : "") +
       '" aria-pressed="' +
       !!a.pinned +
-      '" aria-label="' +
-      (a.pinned ? "Unpin" : "Keep at the front") +
-      '" title="' +
-      (a.pinned ? "Unpin" : "Keep at the front") +
       '" onclick="pinArtifact(\'' +
       a.id +
       "'," +
       !a.pinned +
       ')">' +
       svg("star") +
+      (a.pinned ? "Kept" : "Keep at the front") +
       "</button>" +
-      (["pdf", "image", "file"].includes(a.kind)
-        ? '<a class="pin big" href="/artifacts/' +
-          a.id +
-          '/blob" download ' +
-          'aria-label="Download a copy" title="Download a copy">' +
-          svg("down") +
-          "</a>"
-        : "") +
-      '<button class="pin big" aria-label="Move to the trash" title="Move to the trash" ' +
-      "onclick=\"binArtifact('" +
+      '<button class="btn ghost harm" onclick="binArtifact(\'' +
       a.id +
-      "')\">" +
-      svg("trash") +
-      "</button></div>" +
-      '<div class="meta"><span class="kindmark"></span>' +
-      '<span class="kindword">' +
-      esc(a.kind) +
-      "</span> &middot; " +
-      bits.filter(Boolean).map(esc).join(" &middot; ") +
-      "</div>";
+      "')\">Move to trash</button></div>";
 
     if (a.source_url)
       html +=
@@ -2892,20 +3104,21 @@
         '" target="_blank" rel="noopener">' +
         esc(a.source_url) +
         "</a>";
-    // Not "open externally": the file is read here. This is only the way out, for the
-    // day the museum is not where you want it.
 
     if (d.secrets.length)
       html +=
-        '<div class="state gold">This holds what looks like a credential, so it stays out of ' +
-        "every model call.<br>" +
+        '<div class="callout warn"><p>This holds what looks like a credential, so it ' +
+        "stays out of every model call.</p><p>" +
         d.secrets.map((s) => esc(s.excerpt)).join("<br>") +
-        "</div>";
+        "</p></div>";
 
     if (a.kind === "note") {
       // The body is yours. Edited in place, with every version kept.
       const n = d.versions.length;
+      // Long-form sits on the warm reading white rather than the raised white, so a
+      // whole page of it does not glare against the cream.
       html +=
+        '<div class="docpane">' +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
         'data-placeholder="Start writing. Markdown shorthand becomes formatting as you type."></div>' +
@@ -2914,7 +3127,7 @@
         n +
         '">' +
         (n > 1 ? n + " drafts kept" : "") +
-        "</span></div>";
+        "</span></div></div>";
       ctx = {
         id,
         kind: "note",
@@ -2927,14 +3140,14 @@
         html += reader(a, d.pages);
       } else if (a.kind === "file") {
         html +=
-          fileFacts(d.file) + '<div class="plain" id="plain">reading...</div>';
+          fileFacts(d.file) + '<div class="md" id="plain">reading...</div>';
       } else if (a.kind === "image") {
         html +=
-          '<img class="page" src="/artifacts/' +
+          '<div class="docpane"><img class="page" src="/artifacts/' +
           a.id +
           '/blob" alt="' +
           esc(a.title) +
-          '">';
+          '"></div>';
       } else if (a.kind === "link") {
         html += linkFace(a, d.preview);
       }
@@ -2942,10 +3155,11 @@
       const last = current.length ? current[current.length - 1] : null;
       html +=
         '<div class="shelf">Your note on this</div>' +
+        '<div class="docpane">' +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="Your note on this" ' +
         'style="min-height:150px" data-placeholder="What you thought."></div>' +
-        '<div class="bar"><span id="state" class="meta"></span></div>';
+        '<div class="bar"><span id="state" class="meta"></span></div></div>';
       ctx = {
         id,
         kind: a.kind,
@@ -2955,25 +3169,19 @@
       };
     }
 
+    // How the app keeps its central promise visible: what the model made of this, and
+    // the fact that it made it here. Never behind a disclosure.
     if (d.facet_skip_reason)
       html +=
-        '<div class="aside">' +
+        '<div class="callout note"><div class="shelf">Read locally</div>' +
+        "<p>" +
         esc(whyNoFacets(d.facet_skip_reason)) +
-        "</div>";
-    if (d.facets.length)
+        "</p></div>";
+    else if (d.facets.length)
       html +=
-        '<div class="shelf">What the curator made of it</div>' +
-        d.facets
-          .map(
-            (f) =>
-              '<div class="md" style="font-size:13px;color:var(--text-dim);padding:2px 0">' +
-              '<span class="meta gold" style="margin-right:8px">L' +
-              f.level +
-              "</span>" +
-              esc(f.statement) +
-              "</div>",
-          )
-          .join("");
+        '<div class="callout note"><div class="shelf">Read locally</div>' +
+        d.facets.map((f) => "<p>" + esc(f.statement) + "</p>").join("") +
+        "</div>";
 
     view.innerHTML = html;
     mountEditor(focus);
@@ -3057,10 +3265,10 @@
       // Past the limit, saying "asking" would be a lie: nothing is in flight. Offer
       // the one request that is left to decide on.
       return (
-        '<div class="aside why">Nothing has come back from ' +
+        '<div class="aside caution">Nothing has come back from ' +
         esc(host) +
         ". Automatic previews may be off in settings.</div>" +
-        '<button class="act" id="btnPreview" onclick="fetchPreview(\'' +
+        '<button class="btn tertiary" id="btnPreview" onclick="fetchPreview(\'' +
         a.id +
         "')\">Ask " +
         esc(host) +
@@ -3071,10 +3279,10 @@
     // Only a refusal gets a button, because only a refusal is a decision left to
     // make: the publisher said no, and another request is either worth it or not.
     return (
-      '<div class="aside why">' +
+      '<div class="aside caution">' +
       esc(p.error || "that did not resolve") +
       "</div>" +
-      '<button class="act" id="btnPreview" onclick="fetchPreview(\'' +
+      '<button class="btn tertiary" id="btnPreview" onclick="fetchPreview(\'' +
       a.id +
       "')\">Try again</button>" +
       '<div class="aside">one more request to ' +
@@ -3143,7 +3351,7 @@
   // which is exactly how a successful capture got reported as a failure.
   function fileFacts(file) {
     if (!file)
-      return '<div class="aside why">The stored copy is missing.</div>';
+      return '<div class="aside caution">The stored copy is missing.</div>';
     return (
       '<div class="aside">' +
       esc(file.name) +
@@ -3174,7 +3382,7 @@
           "nothing to show and nothing to search - it is here, and it is intact.";
       }
     } catch (err) {
-      box.className = "aside why";
+      box.className = "aside caution";
       box.textContent = String(err.message || err);
     }
   }
@@ -3203,7 +3411,7 @@
       (ctx.kind === "pdf" ? "document" : "note") +
       '" autocomplete="off">' +
       '<span class="scope" id="findCount"></span>' +
-      '<button aria-label="Close" onclick="restorePill()">' +
+      '<button class="round" aria-label="Close" onclick="restorePill()">' +
       svg("close") +
       "</button>";
 
@@ -3368,7 +3576,7 @@
     if (!pages)
       return (
         '<div class="state">This file will not open as a document. It is stored ' +
-        'exactly as it arrived: <a class="gold" href="/artifacts/' +
+        'exactly as it arrived: <a class="url" href="/artifacts/' +
         a.id +
         '/blob" download>keep a copy</a>.</div>'
       );
@@ -3593,7 +3801,7 @@
         "</div>";
     if (e.thin)
       html +=
-        '<div class="state gold">thin &middot; ' +
+        '<div class="callout warn">thin &middot; ' +
         esc(e.thin_reason) +
         "</div>";
 
@@ -3721,7 +3929,7 @@
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="state">' +
       (why.ready
-        ? 'The curator could not answer.<br><br><span class="gold">' +
+        ? 'The curator could not answer.<br><br><span class="strongtext">' +
           esc(String(err)) +
           "</span><br><br>Nothing was lost. Your question was " +
           esc(text) +
@@ -3749,30 +3957,42 @@
     // saved" to a question the museum could answer instantly. Say what it can see, and
     // put the way out next to it.
     const scoped = d.chat.scope_kind !== "everything";
+    // Side and corner shape carry the speaker, so there are no name labels under the
+    // bubbles. A label on every turn is a thing to read that says nothing.
+    const chip = (kind, id, label, handler) =>
+      '<button class="src" data-kind="' +
+      esc(kind || "") +
+      '" onclick="' +
+      handler +
+      "('" +
+      esc(id) +
+      "')\">" +
+      (kind ? '<span class="kindmark"></span>' : "") +
+      esc(label) +
+      "</button>";
+
     let html =
-      '<div class="back" onclick="home()">&larr; everything</div>' +
-      '<div class="h1" style="display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3)">' +
-      "<span>" +
+      '<div class="transcript">' +
+      '<button class="btn ghost back" onclick="home()">' +
+      svg("back") +
+      "Everything</button>" +
+      '<div class="titlerow"><div class="h2">' +
       esc(d.chat.title) +
-      "</span>" +
-      '<button class="plain danger" onclick="dropChat(\'' +
-      d.chat.id +
-      '\')" style="white-space:nowrap">Delete</button>' +
       "</div>" +
+      '<button class="btn ghost harm" onclick="dropChat(\'' +
+      d.chat.id +
+      "')\">Delete</button></div>" +
       (scoped
         ? '<div class="from scopebar">' +
-          '<span class="aside">reading only</span>' +
+          '<span class="meta">reading only</span>' +
           (d.chat.scope_kind === "artifact"
-            ? '<button class="src" onclick="showArtifact(\'' +
-              esc(d.chat.scope_id) +
-              "')\">" +
-              esc(d.chat.scope_label) +
-              "</button>"
-            : '<button class="src" onclick="showExhibit(\'' +
-              esc(d.chat.scope_id) +
-              "')\">" +
-              esc(d.chat.scope_label) +
-              "</button>") +
+            ? chip(
+                "",
+                d.chat.scope_id,
+                d.chat.scope_label,
+                "showArtifact",
+              )
+            : chip("", d.chat.scope_id, d.chat.scope_label, "showExhibit")) +
           "</div>"
         : '<div class="meta">reading everything</div>');
 
@@ -3781,47 +4001,39 @@
         '<div class="turn ' +
         (m.role === "user" ? "you" : "curator") +
         '">' +
-        '<div class="who">' +
-        (m.role === "user" ? "you" : "the curator") +
-        "</div>" +
         '<div class="said md">' +
-        (m.role === "user" ? esc(m.text) : md(m.text)) +
-        "</div>";
+        (m.role === "user" ? esc(m.text) : md(m.text));
       const echoes =
         d.chat.scope_kind === "artifact" &&
         m.cited &&
         m.cited.length === 1 &&
         m.cited[0].artifact_id === d.chat.scope_id;
 
+      // The evidence lives inside the bubble it supports. Outside it, it was a
+      // footnote under the most important thing on the page.
       if (m.cited && m.cited.length && !echoes)
         html +=
           '<div class="from">' +
           m.cited
-            .map(
-              (c) =>
-                '<button class="src" onclick="showArtifact(\'' +
-                c.artifact_id +
-                "')\">" +
-                esc(c.title) +
-                "</button>",
+            .map((c) =>
+              chip(c.kind, c.artifact_id, c.title, "showArtifact"),
             )
             .join("") +
           "</div>";
       else if (m.role === "assistant" && !m.grounded)
         html +=
-          '<div class="unsourced">nothing you have saved carried this</div>';
-      html += "</div>";
+          '<div class="unsourced">Nothing you have saved carried this.</div>';
+      html += "</div></div>";
     }
 
     if (pending)
       html +=
-        '<div class="turn you"><div class="who">you</div><div class="said">' +
+        '<div class="turn you"><div class="said">' +
         esc(pending) +
         '</div></div><div class="turn curator">' +
-        '<div class="who">the curator</div>' +
-        '<div class="said thinking">reading what you saved...</div></div>';
+        '<div class="said streaming">Reading what you saved...</div></div>';
 
-    view.innerHTML = html;
+    view.innerHTML = html + "</div>";
     window.scrollTo(0, document.body.scrollHeight);
   }
 
@@ -3849,7 +4061,7 @@
         "')\">" +
         esc(c.title) +
         "</button>" +
-        '<button class="pin' +
+        '<button class="rowbtn' +
         (c.pinned ? " lit" : "") +
         '" title="' +
         (c.pinned ? "Unpin" : "Keep at the top") +
@@ -3864,7 +4076,7 @@
         ')">' +
         svg("star") +
         "</button>" +
-        '<button class="pin" title="Delete this conversation" ' +
+        '<button class="rowbtn" title="Delete this conversation" ' +
         'aria-label="Delete this conversation" ' +
         "onclick=\"event.stopPropagation();dropChat('" +
         c.id +
@@ -3877,14 +4089,18 @@
     const kept = list.items.filter((c) => c.pinned);
     const rest = list.items.filter((c) => !c.pinned);
 
+    // One accent in the rail, on the one thing here that is an instruction. Selection
+    // is marked by lifting a row onto the raised white, never by the accent: a
+    // selected thread is a state, not something you are being told to do.
     rail.innerHTML =
-      '<button class="gohome" onclick="home()">' +
-      svg("home") +
-      "Everything</button>" +
-      "<h2>Conversations</h2>" +
-      '<button class="newchat" onclick="openField(\'ask\')">' +
+      '<div class="h3 wordmark">Enqueue</div>' +
+      '<button class="btn primary newchat" onclick="openField(\'ask\')">' +
       svg("plus") +
       "Ask something</button>" +
+      '<button class="btn ghost gohome" onclick="home()">' +
+      svg("home") +
+      "Everything</button>" +
+      '<div class="shelf">Conversations</div>' +
       (kept.length
         ? '<div class="kept">' + kept.map(thread).join("") + "</div>"
         : "") +
@@ -3892,11 +4108,11 @@
         ? rest.map(thread).join("")
         : kept.length
           ? ""
-          : '<div class="aside" style="padding:0 var(--sp-3)">Nothing asked yet.</div>') +
-      '<div class="railfoot"><button class="gear" onclick="showTrash()">' +
+          : '<div class="aside" style="padding:0 16px">Nothing asked yet.</div>') +
+      '<div class="railfoot"><button class="btn ghost" onclick="showTrash()">' +
       svg("trash") +
       "Trash</button>" +
-      '<button class="gear" onclick="showSettings()">' +
+      '<button class="btn ghost" onclick="showSettings()">' +
       svg("gear") +
       "Settings</button></div>";
   }
@@ -3907,8 +4123,12 @@
   async function dropChat(id) {
     const row = document.querySelector('.thread[onclick*="' + id + '"]');
     const name = row ? row.textContent.trim() : "this conversation";
-    if (!window.confirm("Delete " + name + "?\n\nThe artifacts it cited stay."))
-      return;
+    const yes = await ask(
+      "Delete this conversation?",
+      name + " will be removed. The artifacts it cited stay where they are.",
+      "Delete",
+    );
+    if (!yes) return;
 
     try {
       await api("/chats/" + id, { method: "DELETE" });
@@ -3984,7 +4204,7 @@
       chat = await api("/chats/" + id);
       renderChat(chat);
       const note = document.createElement("div");
-      note.className = "state gold";
+      note.className = "callout warn";
       note.textContent = String(err);
       view.appendChild(note);
       return;
@@ -4006,7 +4226,7 @@
     const d = await api("/trash");
 
     let html =
-      '<div class="h1">Trash</div>' +
+      '<div class="h2">Trash</div>' +
       '<div class="aside">Deleted things wait ' +
       d.retention_days +
       " day" +
@@ -4014,38 +4234,49 @@
       ", then go for good. Nothing else here ever expires on its own.</div>";
 
     if (!d.items.length) {
-      html += '<div class="state">Nothing waiting.</div>';
+      html += '<div class="state">Nothing in the trash.</div>';
       view.innerHTML = html;
       return;
     }
 
     html +=
+      '<div class="callout warn">Emptying the trash deletes these files from this ' +
+      "machine. It cannot be undone.</div>";
+
+    // A list, not the wall grid. A wall implies keeping, and this page is about not
+    // keeping. The full-pill radius on "Empty trash" is the one departure from the
+    // 20px control radius in the app, and the shape is what flags it as terminal.
+    html +=
       '<div class="trash">' +
-      '<div class="trashbar"><span>' +
+      '<div class="trashbar"><span class="meta">' +
       d.items.length +
       " waiting</span>" +
-      '<button class="plain danger" onclick="emptyTrash(' +
+      '<button class="btn danger terminal" onclick="emptyTrash(' +
       d.items.length +
-      ')">Empty it now</button></div>';
+      ')">Empty trash</button></div>';
     html += d.items
       .map(
         (a) =>
-          '<div class="item"><div class="item-body">' +
+          '<div class="item" data-kind="' +
+          esc(a.kind) +
+          '"><div class="item-body">' +
+          '<span class="kindrow"><span class="kindmark"></span>' +
+          '<span class="kindword">' +
+          esc(a.kind) +
+          "</span></span>" +
           '<div class="title">' +
           esc(a.title || "Untitled") +
-          "</div>" +
-          '<div class="meta">' +
-          esc(a.kind) +
-          " &middot; " +
+          "</div></div>" +
+          '<span class="meta">' +
           (a.days_left > 0
             ? a.days_left + " day" + (a.days_left === 1 ? "" : "s") + " left"
             : "goes at the next launch") +
-          "</div></div>" +
+          "</span>" +
           '<div class="rowacts">' +
-          '<button class="plain" onclick="restoreArtifact(&#39;' +
+          '<button class="btn ghost" onclick="restoreArtifact(&#39;' +
           a.id +
-          '&#39;)">Put back</button>' +
-          '<button class="plain danger" onclick="purgeArtifact(&#39;' +
+          '&#39;)">Restore</button>' +
+          '<button class="btn ghost harm" onclick="purgeArtifact(&#39;' +
           a.id +
           '&#39;)">Delete now</button></div></div>',
       )
@@ -4059,16 +4290,17 @@
   // Skips the waiting period for everything at once, so the confirmation counts the
   // things rather than saying "are you sure".
   async function emptyTrash(count) {
-    if (
-      !window.confirm(
-        "Destroy " +
-          count +
-          " thing" +
-          (count === 1 ? "" : "s") +
-          " for good?\n\nThis cannot be undone.",
-      )
-    )
-      return;
+    const yes = await ask(
+      "Empty the trash?",
+      "This destroys " +
+        count +
+        " thing" +
+        (count === 1 ? "" : "s") +
+        " for good. It cannot be undone.",
+      // The verb, repeated. Never "OK", never "Yes".
+      "Empty trash",
+    );
+    if (!yes) return;
 
     try {
       await api("/trash", { method: "DELETE" });
@@ -4098,12 +4330,12 @@
     const title =
       row?.closest(".item")?.querySelector(".title")?.textContent || "this";
 
-    if (
-      !window.confirm(
-        "Delete " + title + " for good?\n\nThis cannot be undone.",
-      )
-    )
-      return;
+    const yes = await ask(
+      "Delete for good?",
+      title + " will be destroyed. This cannot be undone.",
+      "Delete",
+    );
+    if (!yes) return;
     try {
       await api("/trash/" + id, { method: "DELETE" });
     } catch (err) {
@@ -4272,7 +4504,21 @@
 
     let html = '<div class="h1">Settings</div>';
 
-    html += '<div class="shelf">The model</div>';
+    // Mandatory, and first. The promise the whole product rests on is stated where
+    // someone worried about it would go looking, not buried in a paragraph elsewhere.
+    const s0 = d.storage;
+    html +=
+      '<div class="shelf">Local only</div>' +
+      '<div class="callout note"><p>Nothing you keep here leaves this machine. The ' +
+      "engine binds to 127.0.0.1 and the interface makes no request to anything else.</p>" +
+      "</div>" +
+      '<div class="group"><div class="field">' +
+      '<span class="rowlabel">Everything lives at</span>' +
+      '<div class="mono chip">' +
+      esc(s0.data_dir) +
+      "</div></div></div>";
+
+    html += '<div class="shelf">The model</div><div class="group">';
 
     // Which backend answers is the one setting here that changes what the product is,
     // so it says so at the point of choosing rather than in a note somewhere else.
@@ -4299,7 +4545,7 @@
     const picked = d.backends.find((b) => b.name === chosen.value);
     if (picked && !picked.local)
       html +=
-        '<div class="aside why">The text of whatever is retrieved gets sent to ' +
+        '<div class="aside caution">The text of whatever is retrieved gets sent to ' +
         esc(picked.label) +
         ". Artifacts marked local only never take this path." +
         (picked.needs_key && !picked.key_present
@@ -4348,15 +4594,15 @@
             ? "stored " + esc(d.storage.api_key_hint || "")
             : "paste a key") +
           '">' +
-          '<button class="act small" onclick="saveKey()">Save</button>' +
+          '<button class="btn tertiary sm" onclick="saveKey()">Save</button>' +
           (keyed
-            ? '<button class="act small danger" onclick="forgetKey()">Forget</button>'
+            ? '<button class="btn ghost harm sm" onclick="forgetKey()">Forget</button>'
             : "") +
           "</div>" +
           '<div class="aside">saved in the macOS Keychain, not in any file here. ' +
           "Masked so nobody reads it over your shoulder; the Keychain is what stops " +
           "it being read off the disk.</div>"
-        : '<div class="aside why">' +
+        : '<div class="aside caution">' +
           (d.storage.api_key_where === "environment"
             ? "Pinned by <b>ENQ_LLM_API_KEY</b> in the environment" +
               (d.storage.api_key_hint
@@ -4367,7 +4613,7 @@
               "<b>ENQ_LLM_API_KEY</b> in the environment. Writing it into a file " +
               "here would put it in plain text on disk.") +
           "</div>") +
-      '<div id="keyState" class="aside why"></div></div>';
+      '<div id="keyState" class="aside caution"></div></div>';
 
     html +=
       '<div class="field"><label for="s_headers">' +
@@ -4388,7 +4634,7 @@
       ". Keys are read from <b>ENQ_LLM_API_KEY</b> and never written to disk, so there " +
       "is no field for one here.</div>";
 
-    html += '<div class="shelf">Capture</div>';
+    html += '</div><div class="shelf">Capture</div><div class="group">';
     const hk = d.settings.hotkey;
     html +=
       '<div class="field"><label for="s_hotkey">' +
@@ -4420,30 +4666,14 @@
 
     const ap = d.settings.auto_preview;
     const apOn = String(ap.value).toLowerCase() !== "off";
+    // The one boolean here, and the one non-button control allowed the accent: an
+    // on-state that is a live instruction to the software rather than a category.
     html +=
-      '<div class="shelf">Links</div>' +
-      '<div class="field"><label>' +
+      '</div><div class="shelf">Links</div><div class="group">' +
+      '<div class="field"><div class="togglerow"><div>' +
+      '<span class="rowlabel">' +
       esc(SETTING_LABELS.auto_preview) +
-      "</label>" +
-      '<div class="seg" role="group" aria-label="Resolve links">' +
-      [
-        ["on", "Yes"],
-        ["off", "Only when I ask"],
-      ]
-        .map(
-          ([key, label]) =>
-            '<button aria-pressed="' +
-            String(apOn === (key === "on")) +
-            '"' +
-            (ap.locked ? " disabled" : "") +
-            " onclick=\"saveSetting('auto_preview', '" +
-            key +
-            "').then(showSettings)\">" +
-            esc(label) +
-            "</button>",
-        )
-        .join("") +
-      "</div>" +
+      "</span>" +
       (ap.locked
         ? '<div class="pinned">pinned by ' + esc(ap.env_var) + "</div>"
         : '<div class="aside">' +
@@ -4453,11 +4683,21 @@
             : "A link stays a bare address until you open it and ask. Nobody learns " +
               "anything until then.") +
           " Links marked local only are never fetched either way.</div>") +
-      "</div>";
+      "</div>" +
+      '<button class="toggle" role="switch" aria-checked="' +
+      String(apOn) +
+      '" aria-label="' +
+      esc(SETTING_LABELS.auto_preview) +
+      '"' +
+      (ap.locked ? ' disabled aria-disabled="true"' : "") +
+      " onclick=\"saveSetting('auto_preview', '" +
+      (apOn ? "off" : "on") +
+      "').then(showSettings)\"><span class=\"knob\"></span></button>" +
+      "</div></div>";
 
     const td = d.settings.trash_days;
     html +=
-      '<div class="shelf">The trash</div>' +
+      '</div><div class="shelf">The trash</div><div class="group">' +
       '<div class="field"><label for="s_trash">' +
       esc(SETTING_LABELS.trash_days) +
       "</label>" +
@@ -4474,28 +4714,34 @@
 
     const s = d.storage;
     html +=
-      '<div class="shelf">Where everything lives</div><div class="facts">' +
-      "<b>data</b> " +
-      esc(s.data_dir) +
-      "<br>" +
+      '</div><div class="shelf">Where everything lives</div><div class="group">' +
+      '<div class="field"><div class="facts">' +
       "<b>database</b> " +
+      '<span class="mono">' +
       bytes(s.database.bytes) +
-      "<br>" +
+      "</span><br>" +
       "<b>files</b> " +
+      '<span class="mono">' +
       bytes(s.blobs.bytes) +
-      "<br>" +
+      "</span><br>" +
       "<b>index</b> " +
+      '<span class="mono">' +
       bytes(s.index.bytes) +
-      "<br>" +
+      "</span><br>" +
       Object.entries(s.counts)
-        .map(([k, v]) => "<b>" + esc(k) + "</b> " + v)
+        .map(
+          ([k, v]) =>
+            "<b>" + esc(k) + "</b> " + '<span class="mono">' + v + "</span>",
+        )
         .join("<br>") +
-      "</div>" +
-      '<button class="act" onclick="rebuildIndex(this)">Rebuild the index</button>' +
-      '<div class="aside">Everything derived is thrown away and made again from what you ' +
-      "wrote and what you saved. Nothing you authored is touched.</div>";
+      "</div></div>" +
+      '<div class="field"><span class="rowlabel">Rebuild the index</span>' +
+      '<div class="aside">Everything derived is thrown away and made again from what ' +
+      "you wrote and what you saved. Nothing you authored is touched.</div>" +
+      '<div class="actions"><button class="btn tertiary" ' +
+      'onclick="rebuildIndex(this)">Rebuild the index</button></div></div></div>';
 
-    html += '<div id="settingState" class="aside why"></div>';
+    html += '<div id="settingState" class="aside"></div>';
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
@@ -4553,7 +4799,12 @@
   }
 
   async function forgetKey() {
-    if (!window.confirm("Forget the stored API key?")) return;
+    const yes = await ask(
+      "Forget the stored API key?",
+      "It is removed from the Keychain. Anything that needs it stops working until you enter it again.",
+      "Forget",
+    );
+    if (!yes) return;
     try {
       await api("/settings/api-key", { method: "DELETE" });
     } catch (err) {
@@ -4627,7 +4878,7 @@
       clearInterval(tick);
       view.innerHTML =
         back(backTo) +
-        '<div class="state">The curator could not finish.<br><br><span class="gold">' +
+        '<div class="state">The curator could not finish.<br><br><span class="strongtext">' +
         esc(String(err)) +
         "</span><br><br>Nothing was lost. The artifacts are untouched; only the " +
         "room failed to hang.</div>";
@@ -4657,7 +4908,7 @@
         "</div>";
     if (ex.thin)
       html +=
-        '<div class="state gold">thin &middot; ' +
+        '<div class="callout warn">thin &middot; ' +
         esc(ex.thin_reason) +
         "</div>";
 
@@ -4666,14 +4917,14 @@
     // a useful answer and a mystery.
     if (r.failed)
       html +=
-        '<div class="aside why">' +
+        '<div class="aside caution">' +
         r.failed +
         " of " +
         r.considered +
         " judgments failed their checks; those artifacts were dropped without being judged.</div>";
     if (r.synthesis_error)
       html +=
-        '<div class="aside why">no through line: ' +
+        '<div class="aside caution">no through line: ' +
         esc(r.synthesis_error) +
         "</div>";
 
@@ -4704,7 +4955,7 @@
     // default, but re-deriving it later would cost the same again, so the offer is here.
     if (r.kept.length)
       html +=
-        '<button class="act" id="btnKeep" onclick="keepRoom()">Keep this room</button>';
+        '<button class="btn tertiary" id="btnKeep" onclick="keepRoom()">Keep this room</button>';
 
     view.innerHTML = html;
     window.scrollTo(0, 0);

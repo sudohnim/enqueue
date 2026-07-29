@@ -20,6 +20,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from .. import config
+from .base import ProviderError, why
 
 
 def _extra_headers() -> dict[str, str]:
@@ -69,16 +70,22 @@ class OpenAICompatibleProvider:
         # instructor >= 1.9 renamed validation_context to context. The keyword is what
         # carries proper_nouns, artifact_text, and lens into the validators, so getting
         # it wrong silently disables every context-dependent check rather than erroring.
-        return self._client.chat.completions.create(
-            model=self.model,
-            response_model=response_model,
-            max_retries=config.MODEL_RETRIES if max_retries is None else max_retries,
-            context=context or {},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
+        try:
+            return self._client.chat.completions.create(
+                model=self.model,
+                response_model=response_model,
+                max_retries=config.MODEL_RETRIES if max_retries is None else max_retries,
+                context=context or {},
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            )
+        # This is the only boundary between somebody else's HTTP endpoint and the rest
+        # of the program, so it is the only place that knows enough to say what went
+        # wrong. Everything above it gets one exception type carrying one sentence.
+        except Exception as exc:  # noqa: BLE001 - translated, not swallowed
+            raise ProviderError(why(exc, self.base_url, self.model)) from exc
 
 
 # The old name, kept so nothing importing it breaks. It was never Ollama-specific.

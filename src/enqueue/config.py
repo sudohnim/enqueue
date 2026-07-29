@@ -43,8 +43,13 @@ BACKENDS = {
         "key_var": "ENQ_LLM_API_KEY",
     },
     "opencode": {
-        "label": "OpenCode",
-        "url": "https://api.opencode.ai/v1",
+        "label": "OpenCode Zen",
+        # opencode.ai/zen/v1, not api.opencode.ai/v1. The latter host resolves and
+        # answers 200 with the plain text "Not Found" for every path, which is not an
+        # HTTP error and so is not caught as one - the OpenAI client hands the body
+        # back as a string and the first attribute access on it fails. Verified against
+        # the live host: GET /zen/v1/models returns the model list as JSON.
+        "url": "https://opencode.ai/zen/v1",
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
     },
