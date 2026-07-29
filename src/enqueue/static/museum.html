@@ -1164,6 +1164,49 @@
     min-width: 0;
     margin-top: 0;
   }
+  .title-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-radius: var(--r-sm);
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition:
+      color 0.15s,
+      background 0.15s;
+  }
+  .title-action svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .title-action.lit svg {
+    fill: currentColor;
+  }
+  .title-action:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--line) 20%, transparent);
+  }
+  .title-action.lit {
+    color: var(--accent);
+  }
+  .title-action.lit:hover {
+    color: var(--accent);
+  }
+  .title-action.danger:hover {
+    color: var(--danger);
+  }
   /* Nothing you can do to an artifact is urgent, so this row has no primary in it. */
   .actions {
     display: flex;
@@ -3150,7 +3193,23 @@
       "</span></div>" +
       '<div class="titlerow"><div class="h1" style="view-transition-name:artifact-title">' +
       esc(a.title || "Untitled") +
-      "</div></div>" +
+      "</div>" +
+      '<button class="title-action' +
+      (a.pinned ? " lit" : "") +
+      '" aria-label="' +
+      (a.pinned ? "Kept" : "Keep") +
+      '" onclick="pinArtifact(\'' +
+      a.id +
+      "'," +
+      !a.pinned +
+      ')">' +
+      svg("star") +
+      "</button>" +
+      '<button class="title-action danger" aria-label="Move to trash" onclick="binArtifact(\'' +
+      a.id +
+      "')\">" +
+      svg("trash") +
+      "</button></div>" +
       '<div class="meta">' +
       bits.filter(Boolean).map(esc).join('<span class="sep">&bull;</span>') +
       "</div>" +
@@ -3165,21 +3224,7 @@
           a.id +
           '/blob" download>Download a copy</a>'
         : "") +
-      '<button class="btn tertiary pin' +
-      (a.pinned ? " lit" : "") +
-      '" aria-pressed="' +
-      !!a.pinned +
-      '" onclick="pinArtifact(\'' +
-      a.id +
-      "'," +
-      !a.pinned +
-      ')">' +
-      svg("star") +
-      (a.pinned ? "Kept" : "Keep at the front") +
-      "</button>" +
-      '<button class="btn ghost harm" onclick="binArtifact(\'' +
-      a.id +
-      "')\">Move to trash</button></div>";
+      "</div>";
 
     if (a.source_url)
       html +=
