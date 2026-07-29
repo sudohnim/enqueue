@@ -164,6 +164,11 @@ def chunk_artifact(conn, artifact_id: str) -> int:
         from ..preview import text_for_index
 
         body = text_for_index(artifact_id)
+    if not body.strip() and row["kind"] == "file":
+        page = conn.execute(
+            "SELECT text FROM page_text WHERE artifact_id = ? AND page = 0", (artifact_id,)
+        ).fetchone()
+        body = page["text"] if page else ""
     if not body.strip() and row["kind"] == "pdf":
         # A page is already a unit a person navigates by, so the page boundary is a
         # better chunk boundary than anything the markdown chunker would invent. Long
@@ -191,9 +196,9 @@ def chunk_all() -> dict:
         ids = [
             r["id"]
             for r in conn.execute(
-                "SELECT id FROM artifacts WHERE body IS NOT NULL"
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND (body IS NOT NULL"
                 " OR id IN (SELECT artifact_id FROM link_previews WHERE status = 'ok')"
-                " OR id IN (SELECT DISTINCT artifact_id FROM page_text)"
+                " OR id IN (SELECT DISTINCT artifact_id FROM page_text))"
             )
         ]
         for artifact_id in ids:

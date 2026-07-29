@@ -8,15 +8,42 @@
   },
   "app": {
     "windows": [],
+    "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": [
+        {
+          "identifier": "capture-overlay",
+          "description": "Lets the quick-capture overlay put itself away and be dragged by its title bar.",
+          "windows": ["capture"],
+          "remote": {
+            "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
+          },
+          "permissions": ["allow-capture-dismiss", "allow-capture-drag"]
+        },
+        {
+          "identifier": "museum-links",
+          "description": "Lets the museum hand a saved http(s) address to the system browser. A WKWebView has no tabs, so target=_blank opens nothing and the page has to ask the OS instead.",
+          "windows": ["main"],
+          "remote": {
+            "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
+          },
+          "permissions": ["allow-open-external"]
+        }
+      ]
     },
-    "macOSPrivateApi": false
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
-    "icon": ["icons/icon.png"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
     "category": "Productivity",
     "copyright": "",
     "shortDescription": "Capture anything, organise it later."

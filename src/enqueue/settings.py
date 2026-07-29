@@ -10,10 +10,10 @@ The environment winning matters: a value set in the launcher and silently overri
 by a file the person forgot about is the kind of bug that costs an afternoon. When
 that happens the interface says so rather than showing a field that does nothing.
 
-**No secret is ever written here.** The API key is read from `ENQ_LLM_API_KEY` and
-never stored, because this file is plaintext on disk and the whole product exists to
-keep plaintext off disk. The interface reports whether a key is present, not what it
-is. That is a real limitation and it is the correct one.
+**No secret is ever written here.** This file is plaintext on disk, so the API key
+lives in the macOS Keychain instead (see `keyring.py`) and only ever leaves it to be
+put in an Authorization header. What this module reports about the key is whether one
+exists and its last four characters, never the key.
 """
 
 from __future__ import annotations
@@ -24,7 +24,17 @@ from typing import Any
 
 from . import config
 
-SETTINGS_PATH = config.DATA_DIR / "settings.json"
+
+def settings_path():
+    """Resolved at call time, not at import.
+
+    Binding this once meant a test that repointed `config.DATA_DIR` at a temporary
+    directory still read and wrote the developer's real settings file. It was found
+    by a theme test that passed or failed depending on what was set in the running
+    app, after the suite had already been quietly mutating it.
+    """
+    return config.DATA_DIR / "settings.json"
+
 
 # name -> (environment variable, default, whether the interface may write it)
 FIELDS: dict[str, tuple[str, Any, bool]] = {
@@ -34,6 +44,16 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
     "user_agent": ("ENQ_USER_AGENT", None, True),
     "hotkey": ("ENQ_HOTKEY", "Alt+Shift+E", True),
+    # Whether saving a link also fetches what it is. On means one request per link at
+    # the moment you save it; off means it stays a bare address until you ask. Default
+    # on, because a wall of unresolved URLs is the thing the preview exists to fix.
+    "auto_preview": ("ENQ_AUTO_PREVIEW", "on", True),
+    # Free text, sent as extra headers on every model call. Some endpoints want a
+    # referer or an app name before they will answer; this is the escape hatch that
+    # stops each one becoming a code change. One `Name: value` per line.
+    "llm_headers": ("ENQ_LLM_HEADERS", "", True),
+    # Days a deleted artifact survives before it is destroyed for good.
+    "trash_days": ("ENQ_TRASH_DAYS", 30, True),
 }
 
 WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}
@@ -41,7 +61,7 @@ WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}
 
 def _stored() -> dict:
     try:
-        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        return json.loads(settings_path().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -119,9 +139,9 @@ def update(changes: dict) -> dict:
             stored[name] = value
 
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_PATH.write_text(json.dumps(stored, indent=2), encoding="utf-8")
+    settings_path().write_text(json.dumps(stored, indent=2), encoding="utf-8")
     # Not a secret, but not everyone's business either.
-    SETTINGS_PATH.chmod(0o600)
+    settings_path().chmod(0o600)
     return all_settings()
 
 
@@ -146,8 +166,31 @@ def storage() -> dict:
             table: db.count(table)
             for table in ("artifacts", "chunks", "facets", "chats", "exhibits")
         },
-        # Stated rather than implied: there is no key here to lose, because there is
-        # no key here at all.
-        "api_key_present": bool(os.getenv("ENQ_LLM_API_KEY", "").strip())
-        and os.getenv("ENQ_LLM_API_KEY") != "ollama",
+        **api_key_state(),
+    }
+
+
+def api_key_state() -> dict:
+    """What is known about the key without revealing it."""
+    from . import keyring
+
+    from_env = os.getenv("ENQ_LLM_API_KEY", "").strip()
+    if from_env and from_env != "ollama":
+        return {
+            "api_key_present": True,
+            "api_key_where": "environment",
+            "api_key_hint": keyring.hint(from_env),
+            "api_key_editable": False,
+            "keychain_available": keyring.available(),
+        }
+
+    stored = keyring.get()
+    return {
+        "api_key_present": bool(stored),
+        "api_key_where": "keychain" if stored else None,
+        "api_key_hint": keyring.hint(stored),
+        # Pinned by the environment means the field would do nothing, so it is not
+        # offered rather than offered and ignored.
+        "api_key_editable": keyring.available(),
+        "keychain_available": keyring.available(),
     }

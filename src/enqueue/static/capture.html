@@ -1,0 +1,508 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Enqueue capture</title>
+<link
+  rel="preload"
+  href="fonts/IBMPlexSans-Regular.ttf"
+  as="font"
+  type="font/ttf"
+  crossorigin
+/>
+<style>
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    src: url("fonts/IBMPlexSans-Regular.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+    src: url("fonts/IBMPlexSans-Medium.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+    src: url("fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+    src: url("fonts/IBMPlexSans-Bold.ttf") format("truetype");
+  }
+  /* The overlay is self-contained on purpose. It is served from the same engine as
+     the museum but it is a different surface with a different lifetime, and having
+     it depend on the museum's stylesheet would mean a layout change over there can
+     silently break the thing you press when you are mid-sentence somewhere else.
+     The tokens below are the small subset of museum.html the overlay actually uses,
+     copied rather than shared. */
+  :root {
+    /* The overlay is self-contained on purpose. It is served from the same engine as
+       the museum but it is a different surface with a different lifetime, and having
+       it depend on the museum's stylesheet would mean a layout change over there can
+       silently break the thing you press when you are mid-sentence somewhere else.
+       The tokens below are the small subset of museum.html the overlay actually uses,
+       copied rather than shared. */
+    --bg: #f5f4ee;
+    --surface: #efede6;
+    --surface-2: #e6e3da;
+    --line: #d6d3cb;
+    --line-strong: #7d7b73;
+    --text: #1c1d18;
+    --text-dim: #4a4b44;
+    --text-mute: #5e5f57;
+    --accent: #8c5b16;
+    --pink: #83556a;
+
+    --sans:
+      "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, -apple-system,
+      sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --r-sm: 6px;
+    --r-full: 999px;
+    --shadow-1: 0 2px 8px rgb(0 0 0 / 0.06);
+
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur: 160ms;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    /* The window is transparent so the card can carry its own edge and shadow.
+       Anything painted on the body would show up as a rectangle around it. */
+    background: transparent;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--sans);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    box-shadow: var(--shadow-1);
+    transition: border-color var(--dur) var(--ease);
+  }
+
+  #card.hovering {
+    border-color: var(--accent);
+  }
+
+  /* ------------------------------------------------------------------ title bar */
+
+  #bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 12px;
+    height: 30px;
+    flex: 0 0 30px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    /* The whole bar is the drag handle, so nothing in it may swallow a mousedown
+       or start a text selection on the way past. */
+    user-select: none;
+    cursor: default;
+  }
+
+  .label {
+    font-family: var(--sans);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-mute);
+    white-space: nowrap;
+  }
+
+  #kind {
+    color: var(--accent);
+  }
+
+  .label.problem {
+    color: var(--pink);
+  }
+
+  /* --------------------------------------------------------------------- field */
+
+  #field {
+    flex: 1 1 auto;
+    display: block;
+    width: 100%;
+    /* Aligned to the title bar's 12px gutter so the caret sits under the wordmark. */
+    padding: 11px 12px 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  #field::placeholder {
+    color: var(--text-mute);
+  }
+
+  #foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 12px 9px;
+    flex: 0 0 auto;
+  }
+
+  #status {
+    /* Errors are the only thing here that can run long, so it gets the room. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .busy {
+    opacity: 0.55;
+  }
+</style>
+
+<div id="card">
+  <div id="bar">
+    <span class="label">Enqueue</span>
+    <span class="label" id="kind"></span>
+  </div>
+  <textarea
+    id="field"
+    placeholder="A note, a link, an image, or dropped files"
+    autofocus
+    spellcheck="false"
+  ></textarea>
+  <div id="foot">
+    <span class="label" id="status"></span>
+    <span class="label" id="hint">Return to keep</span>
+  </div>
+</div>
+
+<script>
+  const card = document.getElementById("card");
+  const bar = document.getElementById("bar");
+  const field = document.getElementById("field");
+  const kindLabel = document.getElementById("kind");
+  const statusLabel = document.getElementById("status");
+
+  const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
+
+  // A single token that is plausibly an address: an explicit scheme, a www., or a
+  // bare host.tld with no whitespace anywhere. The engine fills in https:// for the
+  // last two, so being permissive here costs nothing and saves the person from
+  // having to type a scheme they never type anywhere else.
+  const URLISH =
+    /^(?:[a-z][a-z0-9+.-]*:\/\/\S+|www\.\S+|[\w-]+(?:\.[\w-]+)+(?:[/?#]\S*)?)$/i;
+
+  function looksLikeLink(text) {
+    const t = text.trim();
+    return t.length > 0 && !/\s/.test(t) && URLISH.test(t);
+  }
+
+  // The most natural thing to type is the address and why you bothered. Treating that
+  // as a note meant the link was never a link: no preview, no title, no picture, and
+  // findable only by the words you happened to use rather than the ones on the page.
+  //
+  // So a URL anywhere in the text makes this a link, and everything else you typed
+  // becomes the note on it. Both halves survive, in the places that can use them.
+  function splitLink(text) {
+    const words = text.trim().split(/\s+/);
+    const at = words.findIndex((w) => URLISH.test(w));
+    if (at === -1) return null;
+
+    const url = words[at];
+    // Stripped only when the address is at one end, which is how people actually
+    // write it. Pulling it out of the middle of a sentence would leave "read later"
+    // where "read example.com later" was, so there the whole line is kept as written.
+    const inside = at !== 0 && at !== words.length - 1;
+    const note = inside
+      ? text.trim()
+      : words
+          .filter((_, i) => i !== at)
+          .join(" ")
+          .trim();
+
+    return { url, note };
+  }
+
+  let pending = 0; // files waiting to be dropped, only meaningful while hovering
+
+  function paint() {
+    if (pending) {
+      kindLabel.textContent = pending === 1 ? "1 file" : pending + " files";
+      return;
+    }
+    const text = field.value;
+    if (!text.trim()) {
+      kindLabel.textContent = "";
+      return;
+    }
+    const split = splitLink(text);
+    kindLabel.textContent = !split
+      ? "Note"
+      : split.note
+        ? "Link + note"
+        : "Link";
+  }
+
+  function say(message, problem) {
+    statusLabel.textContent = message || "";
+    statusLabel.classList.toggle("problem", !!problem);
+  }
+
+  function busy(on) {
+    card.classList.toggle("busy", on);
+    field.readOnly = on;
+  }
+
+  /// Put the overlay away and hand focus back to wherever the person was. Rust owns
+  /// this because hiding the window is not enough on macOS: showing it activated
+  /// Enqueue at the process level, so the app has to be hidden too or the person
+  /// lands in Enqueue instead of the editor they were typing in.
+  function dismiss() {
+    if (invoke) invoke("capture_dismiss").catch(() => {});
+  }
+
+  // Clicking anything else puts the overlay away, which for a window with no chrome
+  // is the ordinary way out: there is nothing to click that means "cancel".
+  //
+  // The guard matters. The window emits a transient unfocused event while it is being
+  // shown, so dismissing on the first one would close the overlay the instant the
+  // hotkey opened it. Only a loss of focus *after* it has actually held focus counts.
+  (function dismissOnFocusLoss() {
+    const w = window.__TAURI__ && window.__TAURI__.window;
+    if (!w || !w.getCurrentWindow) return;
+
+    let hasHeldFocus = false;
+    try {
+      w.getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+        if (focused) {
+          hasHeldFocus = true;
+          field.focus();
+        } else if (hasHeldFocus) {
+          hasHeldFocus = false;
+          dismiss();
+        }
+      });
+    } catch (_) {
+      // No Tauri window API means this is being viewed in a plain browser, where
+      // there is no overlay to dismiss.
+    }
+  })();
+
+  async function send(path, init) {
+    const response = await fetch(path, init);
+    if (!response.ok) {
+      let detail = response.status + "";
+      try {
+        detail = (await response.json()).detail || detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+
+  async function keepFiles(files) {
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      await send("/capture/upload", { method: "POST", body: form });
+    }
+  }
+
+  /// One field, four outcomes, no question asked. Which one it is falls out of what
+  /// is in the field rather than out of a control the person has to operate first.
+  async function keep() {
+    const text = field.value.trim();
+    if (!text) return;
+
+    busy(true);
+    say("Keeping");
+    try {
+      const split = splitLink(text);
+      if (split) {
+        const made = await send("/capture/link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: split.url }),
+        });
+        // A note on a capture is an annotation, which is exactly what the box on the
+        // artifact's own page writes. Same field, reached from somewhere else.
+        if (split.note) {
+          await send("/artifacts/" + made.id + "/annotations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: split.note }),
+          });
+        }
+      } else {
+        await send("/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: text }),
+        });
+      }
+      field.value = "";
+      say("");
+      paint();
+      dismiss();
+    } catch (err) {
+      // The text stays. Losing what someone just typed because a background
+      // process is down is the one failure this whole surface exists to avoid.
+      say("Not kept: " + err.message, true);
+    } finally {
+      busy(false);
+    }
+  }
+
+  field.addEventListener("input", paint);
+
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      // Escape is "not now", not "discard": whatever is half-typed is still there
+      // the next time the overlay is summoned.
+      dismiss();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      keep();
+    }
+  });
+
+  // An image on the clipboard is the case where asking "what kind is this?" would be
+  // most obviously absurd, so it is captured on arrival rather than pasted as a
+  // filename the person then has to explain.
+  field.addEventListener("paste", async (event) => {
+    const items = Array.from(
+      event.clipboardData ? event.clipboardData.items : [],
+    );
+    const images = items
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (!images.length) return;
+
+    event.preventDefault();
+    busy(true);
+    say("Keeping");
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      await keepFiles(
+        images.map((file, index) => {
+          const suffix = (file.type.split("/")[1] || "png").replace(
+            /[^a-z0-9]/gi,
+            "",
+          );
+          const name =
+            images.length > 1
+              ? `pasted-${stamp}-${index + 1}`
+              : `pasted-${stamp}`;
+          return new File([file], `${name}.${suffix}`, { type: file.type });
+        }),
+      );
+      say("");
+      dismiss();
+    } catch (err) {
+      say("Not kept: " + err.message, true);
+    } finally {
+      busy(false);
+    }
+  });
+
+  // Tauri's own drag-drop handler is switched off for this window (see main.rs), so
+  // these are the real web events and the dropped items are real Files.
+  let depth = 0; // dragenter/dragleave fire per child element, so they are counted
+
+  window.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+
+  window.addEventListener("dragenter", (event) => {
+    depth += 1;
+    pending = Array.from(event.dataTransfer.items || []).filter(
+      (item) => item.kind === "file",
+    ).length;
+    card.classList.add("hovering");
+    paint();
+  });
+
+  window.addEventListener("dragleave", () => {
+    depth -= 1;
+    if (depth > 0) return;
+    depth = 0;
+    pending = 0;
+    card.classList.remove("hovering");
+    paint();
+  });
+
+  window.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    depth = 0;
+    pending = 0;
+    card.classList.remove("hovering");
+    paint();
+
+    const files = Array.from(event.dataTransfer.files || []);
+    if (!files.length) return;
+
+    busy(true);
+    say("Keeping");
+    try {
+      await keepFiles(files);
+      say("");
+      dismiss();
+    } catch (err) {
+      say("Not kept: " + err.message, true);
+    } finally {
+      busy(false);
+    }
+  });
+
+  // Dragging a transparent, undecorated window is more reliable started from Rust
+  // than from the JS window API, which is why this is an invoke rather than a
+  // data-tauri-drag-region attribute.
+  bar.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    if (invoke) invoke("capture_drag").catch(() => {});
+  });
+
+  // The window is hidden rather than destroyed between summonings, so the caret has
+  // to be put back by hand each time it returns.
+  window.addEventListener("focus", () => {
+    field.focus();
+    const end = field.value.length;
+    field.setSelectionRange(end, end);
+  });
+
+  field.focus();
+  paint();
+</script>

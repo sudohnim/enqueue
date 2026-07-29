@@ -112,6 +112,7 @@ def index_chunks(batch_size: int = 64) -> dict:
         rows = conn.execute(
             "SELECT c.id, c.artifact_id, c.text, a.title"
             " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
+            " WHERE a.deleted_at IS NULL"
         ).fetchall()
     finally:
         conn.close()

@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Check WCAG contrast of all text-bearing tokens in museum.html's :root block.
+
+Reads the palette from the file (not hardcoded) so it stays a real check.
+Exits non-zero if any token fails.
+"""
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MUSEUM = "src/enqueue/static/museum.html"
+SRC = "bin/check-contrast"
+
+# --- WCAG relative luminance ---
+def srgb_linear(c):
+    c = c / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+def luminance(hex_str):
+    """Hex like #313238 or #c3b8ee -> relative luminance."""
+    h = hex_str.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return 0.2126 * srgb_linear(r) + 0.7152 * srgb_linear(g) + 0.0722 * srgb_linear(b)
+
+def contrast_ratio(l1, l2):
+    lighter = max(l1, l2)
+    darker = min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+def parse_root_palette(text):
+    """Return a dict of token -> hex from the first :root block."""
+    # Find the first :root { ... } block
+    m = re.search(r":root\s*\{([^}]+)\}", text, re.DOTALL)
+    if not m:
+        print(f"{SRC}: ERROR: no :root block found in {MUSEUM}", file=sys.stderr)
+        sys.exit(2)
+    body = m.group(1)
+    tokens = {}
+    for line in body.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("/*"):
+            continue
+        # Match --name: #hex;
+        m2 = re.match(r"(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\s*;", line)
+        if m2:
+            tokens[m2.group(1)] = m2.group(2)
+    return tokens
+
+TEXT_BEARING = {
+    "--text", "--text-dim", "--text-mute",
+    "--accent", "--accent-quiet",
+    "--green", "--blue", "--peach", "--pink", "--teal",
+}
+
+GROUNDS = ["--bg", "--surface", "--surface-2"]
+LINE_STRONG = "--line-strong"
+ACCENT_INK = "--accent-ink"
+ACCENT = "--accent"
+EXEMPT = {"--line"}  # decorative hairline, never a sole boundary
+
+def main():
+    os.chdir(HERE)
+    with open(MUSEUM) as f:
+        text = f.read()
+
+    palette = parse_root_palette(text)
+    if not palette:
+        print(f"{SRC}: ERROR: could not parse any tokens from :root in {MUSEUM}", file=sys.stderr)
+        sys.exit(2)
+
+    # Resolve ground luminance
+    grounds = {}
+    for g in GROUNDS:
+        c = palette.get(g)
+        if not c:
+            print(f"{SRC}: ERROR: {g} not found in :root", file=sys.stderr)
+            sys.exit(2)
+        grounds[g] = luminance(c)
+
+    failures = []
+
+    # --- Text-bearing tokens: need 4.5:1 against the WORST ground ---
+    for token in sorted(TEXT_BEARING):
+        c = palette.get(token)
+        if not c:
+            print(f"{SRC}: WARNING: {token} not found in :root, skipping", file=sys.stderr)
+            continue
+        l = luminance(c)
+        worst_ground = min(grounds, key=lambda g: contrast_ratio(l, grounds[g]))
+        cr = contrast_ratio(l, grounds[worst_ground])
+        print(f"  {token} {c}  {cr:.2f}:1  (worst ground: {worst_ground})", end="")
+        if cr < 4.5:
+            print(f"  FAIL ({cr:.2f} < 4.5)", end="")
+            failures.append(token)
+        print()
+
+    # --- --line-strong: 3.0:1 against the WORST ground ---
+    c = palette.get(LINE_STRONG)
+    if c:
+        l = luminance(c)
+        worst_ground = min(grounds, key=lambda g: contrast_ratio(l, grounds[g]))
+        cr = contrast_ratio(l, grounds[worst_ground])
+        print(f"  {LINE_STRONG} {c}  {cr:.2f}:1  (worst ground: {worst_ground})", end="")
+        if cr < 3.0:
+            print(f"  FAIL ({cr:.2f} < 3.0)", end="")
+            failures.append(LINE_STRONG)
+        print()
+    else:
+        print(f"{SRC}: WARNING: {LINE_STRONG} not found in :root", file=sys.stderr)
+
+    # --- --accent-ink: 4.5:1 against --accent ---
+    ink_hex = palette.get(ACCENT_INK)
+    acc_hex = palette.get(ACCENT)
+    if ink_hex and acc_hex:
+        cr = contrast_ratio(luminance(ink_hex), luminance(acc_hex))
+        print(f"  {ACCENT_INK} {ink_hex} on {ACCENT} {acc_hex}  {cr:.2f}:1", end="")
+        if cr < 4.5:
+            print(f"  FAIL ({cr:.2f} < 4.5)", end="")
+            failures.append(ACCENT_INK)
+        print()
+    else:
+        print(f"{SRC}: WARNING: {ACCENT_INK} or {ACCENT} not found in :root", file=sys.stderr)
+
+    if failures:
+        print(f"\n{SRC}: FAILED tokens: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"\n{SRC}: all contrast checks passed")
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()

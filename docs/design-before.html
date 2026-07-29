@@ -1,0 +1,4528 @@
+<meta charset="utf-8" />
+<!-- Without this a phone lays the page out at 980px and scales it to fit: measured
+     0.383x at 375px wide, which renders 14px body text at 5.4 device pixels and makes
+     the max-width:900px rules unreachable on any actual phone. -->
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, viewport-fit=cover"
+/>
+<title>Enqueue</title>
+<style>
+  :root {
+    /* Plaster - light mode */
+    --canvas: #eae9e4;
+    --surface-lifted: #f4f3ef;
+    --iron-structural: #55585b;
+    --iron-hairline: #c3c2bc;
+    --ink: #191b1a;
+    --body: #434644;
+    --grey: #67665f;
+    --bronze: #6b5230;
+    /* Semantic - archival key */
+    --verdigris: #40644a;
+    --ochre: #7c5d24;
+    --oxide: #9b4a3c;
+    --slate: #4a5c6b;
+    /* What each kind of thing is coloured, everywhere it appears. Notes are the
+       only things you wrote, so they get the one living colour in the key. */
+    --kind-note: var(--verdigris);
+    --kind-link: var(--ochre);
+    --kind-pdf: var(--bronze);
+    --kind-image: var(--oxide);
+    --kind-file: var(--slate);
+
+    /* Legacy aliases for backward compatibility */
+    --base: var(--canvas);
+    --s1: var(--surface-lifted);
+    --s2: var(--canvas);
+    --subtext: var(--body);
+    --muted: var(--grey);
+    --border: var(--iron-hairline);
+    --border-strong: var(--iron-structural);
+    --mount: var(--iron-structural);
+    --gold: var(--bronze);
+    --vellum: var(--surface-lifted);
+    --gold-ink: var(--bronze);
+
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 20px;
+    --sp-5: 32px;
+    --sp-6: 44px;
+    --sp-7: 64px;
+    --sp-8: 96px;
+    --sp-9: 128px;
+    --sans:
+      "ABC Diatype", "Söhne", -apple-system, BlinkMacSystemFont, "Inter",
+      system-ui, sans-serif;
+    --serif: "Lyon Text", "Freight Text Pro", "Source Serif 4", Georgia, serif;
+    --mono:
+      "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+      monospace;
+
+    --z-pill: 40;
+    --z-menu: 50;
+    --ease: cubic-bezier(0.2, 0, 0.2, 1);
+    --dur-fast: 140ms;
+    --dur: 140ms;
+    --dur-slow: 200ms;
+  }
+  :root[data-theme="dark"] {
+    /* Iron vitrine - dark mode */
+    --canvas: #16171a;
+    --surface-lifted: #202226;
+    --iron-structural: #4a4e52;
+    --iron-hairline: #303338;
+    --ink: #edede9;
+    --body: #bcbeba;
+    --grey: #83868b;
+    --bronze: #af9057;
+    /* Semantic */
+    --verdigris: #8fb89d;
+    --ochre: #c4a05a;
+    --oxide: #c4705e;
+    --slate: #8ba3b8;
+    --kind-note: var(--verdigris);
+    --kind-link: var(--ochre);
+    --kind-pdf: var(--bronze);
+    --kind-image: var(--oxide);
+    --kind-file: var(--slate);
+
+    /* Legacy aliases */
+    --base: var(--canvas);
+    --s1: var(--surface-lifted);
+    --s2: var(--canvas);
+    --subtext: var(--body);
+    --muted: var(--grey);
+    --border: var(--iron-hairline);
+    --border-strong: var(--iron-structural);
+    --gold: var(--bronze);
+    --gold-ink: var(--bronze);
+  }
+  * {
+    box-sizing: border-box;
+  }
+  /* The sticky period heading is 45px tall and would otherwise cover the focus ring of
+   anything reached by keyboard from below. */
+  html {
+    scroll-padding-top: 60px;
+  }
+  body {
+    margin: 0;
+    background: var(--base);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* No chrome. A persistent bar is a wall, and the walls are supposed to recede. */
+  main {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--sp-6) var(--sp-4) 150px;
+  }
+
+  .shelf {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--grey);
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin: var(--sp-6) 0 var(--sp-3);
+  }
+  .shelf:first-child {
+    margin-top: 0;
+  }
+
+  .item {
+    display: flex;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-2);
+    --focus-ring: 0;
+    margin: 0 calc(-1 * var(--sp-2));
+    border-radius: 0;
+    align-items: flex-start;
+    transition: background var(--dur-fast) var(--ease);
+    cursor: pointer;
+  }
+  .item + .item {
+    border-top: 1px solid var(--iron-hairline);
+  }
+  .item:hover {
+    background: var(--s2);
+  }
+  .item:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: -2px;
+  }
+  .item:hover .face {
+    border-color: var(--iron-structural);
+  }
+  .item-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .title {
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.35;
+    font-weight: 400;
+  }
+  .excerpt {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--grey);
+    margin-top: var(--sp-1);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    margin-top: var(--sp-2);
+  }
+
+  /* ---- the wall ----------------------------------------------------------
+   Each artifact shows its own face at the same size, so the eye compares objects
+   rather than reading a list. The faces are not one repeated template: a PDF shows
+   its first page, an image shows itself, a note shows its own opening set as type,
+   and a link shows its domain. What differs between kinds is the point. */
+  .wall {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    gap: var(--sp-4) var(--sp-4);
+    margin-top: var(--sp-3);
+  }
+  .card {
+    cursor: pointer;
+    min-width: 0;
+    /* The wall never sheds a card: scrolling appends, and a collection that is meant
+       to grow forever means the grid keeps everything ever scrolled past. Measured at
+       2,000 cards, one style change cost 152 ms of forced layout - nine dropped frames
+       for a hover. Skipping the rendering work for cards that are off-screen brings
+       that to 48 ms while leaving them in the DOM, so scroll position, anchoring and
+       find-in-page all keep working. Virtual scrolling would be faster still and would
+       break all three.
+
+       The intrinsic size is the real one: a square frame at column width plus its
+       caption. `auto` then remembers each card's measured height once it has been
+       seen, so the scrollbar does not jump as you pass. Measured drift over the same
+       2,000 cards was 0.75%. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 252px;
+  }
+  .frame {
+    aspect-ratio: 1;
+    border: 1px solid
+      color-mix(in oklab, var(--kind, var(--iron-structural)) 55%, var(--iron-hairline));
+    border-radius: 0;
+    overflow: hidden;
+    background: var(--surface-lifted);
+    position: relative;
+    transition:
+      border-color var(--dur) var(--ease),
+      transform var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease);
+  }
+  /* One hue per kind, resolved once on the card and inherited by everything inside
+     it. Colour here is categorisation, not decoration: it tells you what a thing is
+     before you have read a word of it, and it means the same thing on every surface. */
+  .card[data-kind="note"] { --kind: var(--kind-note); }
+  .card[data-kind="link"] { --kind: var(--kind-link); }
+  .card[data-kind="pdf"] { --kind: var(--kind-pdf); }
+  .card[data-kind="image"] { --kind: var(--kind-image); }
+  .card[data-kind="file"] { --kind: var(--kind-file); }
+
+  /* The mark carries the hue; the word beside it carries the meaning. Anyone who
+     cannot tell the hues apart loses nothing, because the kind is also written. */
+  .kindmark {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 7px;
+    vertical-align: 0;
+    background: var(--kind, var(--iron-structural));
+  }
+  .kindword { color: var(--kind, var(--grey)); }
+  .cap .title { border-bottom: 1px solid transparent; }
+  .card:hover .cap .title { border-bottom-color: var(--kind, var(--iron-structural)); }
+
+  /* Kinds with nothing to show are the ones that most need the colour, because a
+     glyph on a flat panel is the emptiest thing on the wall. */
+  .frame .glyphface { color: var(--kind, var(--bronze)); }
+  .card[data-kind="link"] .frame,
+  .card[data-kind="file"] .frame,
+  .card[data-kind="note"] .frame {
+    background:
+      linear-gradient(
+        155deg,
+        color-mix(in oklab, var(--kind) 26%, var(--surface-lifted)),
+        var(--surface-lifted) 70%
+      );
+  }
+
+  .card:hover .frame {
+    border-color: var(--kind, var(--iron-structural));
+    transform: translateY(-2px);
+    box-shadow: 0 2px 0 0 var(--kind, var(--iron-structural));
+  }
+  .card:focus-visible {
+    outline: none;
+  }
+  .card:focus-visible .frame {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: 2px;
+  }
+  .frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+    background: #fff;
+  }
+  /* A note's face is the note. Set in the reading face, clipped where it runs out,
+   so the wall is legible text rather than a grid of identical grey rectangles. */
+  /* Faded at the foot rather than guillotined mid-word: the text runs out of card, it
+   does not stop having more to say. */
+  .frame .opening {
+    font-family: var(--serif);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--subtext);
+    padding: var(--sp-3);
+    height: 100%;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(180deg, #000 68%, transparent 98%);
+    mask-image: linear-gradient(180deg, #000 68%, transparent 98%);
+  }
+  .frame .glyphface {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-3);
+    color: var(--bronze);
+    font-size: 22px;
+    text-align: center;
+  }
+  .frame .host {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    word-break: break-all;
+  }
+  .cap {
+    margin-top: var(--sp-2);
+  }
+  .cap .title {
+    font-size: 14px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .cap .meta {
+    margin-top: 3px;
+  }
+
+  /* Sticky, so you always know which stretch of time you are looking at once the wall
+   is long enough to lose your place in. */
+  .when {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    padding: var(--sp-4) 0 var(--sp-2);
+    background: linear-gradient(var(--base) 68%, transparent);
+  }
+  .when:first-of-type {
+    padding-top: var(--sp-2);
+  }
+
+  /* Kept things run sideways: a shelf you scan, not a list you read down. Snap so a
+     flick lands on a card rather than between two. */
+  .rail-h {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 196px;
+    gap: var(--sp-4);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding-bottom: var(--sp-3);
+    margin-top: var(--sp-3);
+  }
+  .rail-h > .card { scroll-snap-align: start; }
+  .rail-h:focus-visible { outline: 2px solid var(--gold-ink); outline-offset: 4px; }
+  /* A visible track, because a scroller with no scrollbar is a scroller nobody finds. */
+  .rail-h::-webkit-scrollbar { height: 8px; }
+  .rail-h::-webkit-scrollbar-track { background: transparent; }
+  .rail-h::-webkit-scrollbar-thumb {
+    background: var(--iron-hairline);
+    border-radius: 4px;
+  }
+  .rail-h::-webkit-scrollbar-thumb:hover { background: var(--iron-structural); }
+
+  #wallEnd {
+    min-height: 24px;
+    padding: var(--sp-4) 0 var(--sp-6);
+    text-align: center;
+  }
+  .sort {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    cursor: pointer;
+  }
+  .sort[aria-pressed="true"] {
+    color: var(--bronze);
+  }
+  .sort:hover {
+    color: var(--ink);
+  }
+
+  /* Only when there is something real to show. A note's excerpt is its face. */
+  .face {
+    width: 60px;
+    height: 76px;
+    border-radius: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    transition: border-color var(--dur) var(--ease);
+  }
+  .face img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .face.glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--bronze);
+  }
+  /* Holds the column open without drawing anything in it, and without the 76px of
+   height that would pad a short row out to the size of a page thumbnail. */
+  .face.gap {
+    height: 0;
+    background: none;
+    border-color: transparent;
+  }
+  .item:hover .face.gap {
+    border-color: transparent;
+  }
+
+  /* ---- the pill ---------------------------------------------------------- */
+  .pill {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    z-index: var(--z-pill);
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 9999px;
+    padding: var(--sp-1);
+  }
+  .pill button {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .pill button:hover {
+    background: var(--base);
+  }
+  .pill button:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: -2px;
+  }
+  .pill button[aria-expanded="true"] {
+    background: var(--iron-structural);
+    color: var(--canvas);
+  }
+  .pill svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .pill.wide {
+    border-radius: 0;
+    padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+    width: min(560px, calc(100vw - 40px));
+  }
+  .pill input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 14px;
+    background: transparent;
+    border: 0;
+    color: var(--ink);
+    padding: var(--sp-2) 0;
+  }
+  .pill input:focus {
+    outline: none;
+  }
+  .pill input::placeholder {
+    color: var(--grey);
+  }
+  .scope {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--bronze);
+    white-space: nowrap;
+    padding-right: var(--sp-2);
+  }
+
+  .menu {
+    position: fixed;
+    left: 50%;
+    bottom: 88px;
+    z-index: var(--z-menu);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 0;
+    padding: var(--sp-2);
+    min-width: 212px;
+  }
+  .menu button {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    cursor: pointer;
+    padding: var(--sp-2) var(--sp-3);
+    font: inherit;
+    color: var(--ink);
+    text-align: left;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: var(--surface-lifted);
+    outline: none;
+  }
+  /* The mark leads the row on hover, so the thing you are about to add is named twice:
+     once by the word and once by the colour it will wear on the wall. */
+  .menu button:hover .ic,
+  .menu button:focus-visible .ic {
+    border-color: var(--kind, var(--bronze));
+    color: var(--kind, var(--bronze));
+  }
+  .menu button[data-kind="note"] { --kind: var(--kind-note); }
+  .menu button[data-kind="link"] { --kind: var(--kind-link); }
+  .menu button[data-kind="image"] { --kind: var(--kind-image); }
+  .menu button[data-kind="upload"] { --kind: var(--kind-file); }
+  .menu .ic {
+    width: 32px;
+    height: 32px;
+    border-radius: 9999px;
+    background: transparent;
+    border: 1px solid var(--iron-hairline);
+    color: var(--grey);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    transition:
+      border-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .menu svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 8px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+  .menu {
+    transform: translateX(-50%);
+    animation: rise var(--dur) var(--ease) both;
+  }
+  @keyframes hang {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .hang {
+    animation: hang var(--dur-slow) var(--ease) both;
+  }
+
+  /* `animation-iteration-count` has to be reset too, and leaving it out is worse than
+   doing nothing at all. Measured: `breathe` kept `infinite` while its duration was
+   crushed to 1ms, turning a slow pulse into roughly sixty opacity flashes a second
+   for exactly the people who asked for less motion. Every loading state in the app
+   uses that keyframe. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-delay: 0ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+    }
+    .thinking,
+    .recorder.listening span {
+      animation: none !important;
+      opacity: 1 !important;
+    }
+  }
+
+  /* ---- detail ------------------------------------------------------------ */
+  .back {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    cursor: pointer;
+  }
+  .h1 {
+    font-family: var(--serif);
+    font-size: 25px;
+    line-height: 1.2;
+    margin-top: var(--sp-4);
+  }
+  /* No back link above it, so it does not need to sit below one. */
+  .h1:first-child {
+    margin-top: 0;
+  }
+  /* ---- opening a thing --------------------------------------------------
+     The card and the artifact are one object seen twice, so the browser tweens
+     between them rather than replacing a page. The default crossfade is switched off
+     for the named parts: a face that dissolves into a different face looks like two
+     things, and the whole point is that it is one. */
+  ::view-transition-old(artifact-face),
+  ::view-transition-new(artifact-face) {
+    /* Height, not both: a square card becoming a tall page must not squash on the
+       way. Letting height animate alone keeps the width honest at every frame. */
+    height: 100%;
+    animation: none;
+    mix-blend-mode: normal;
+    object-fit: cover;
+  }
+  ::view-transition-old(artifact-title),
+  ::view-transition-new(artifact-title) {
+    height: 100%;
+    animation: none;
+    mix-blend-mode: normal;
+  }
+  ::view-transition-group(artifact-face),
+  ::view-transition-group(artifact-title) {
+    animation-duration: 340ms;
+    animation-timing-function: cubic-bezier(0.2, 0.9, 0.24, 1);
+  }
+
+  /* Everything that is not the object itself simply crosses over, quickly, so the
+     morph is the only thing the eye follows. */
+  ::view-transition-old(root) {
+    animation: 120ms cubic-bezier(0.4, 0, 1, 1) both fadeOut;
+  }
+  ::view-transition-new(root) {
+    animation: 220ms cubic-bezier(0, 0, 0.2, 1) 60ms both fadeIn;
+  }
+  @keyframes fadeOut { to { opacity: 0; } }
+  @keyframes fadeIn { from { opacity: 0; } }
+
+  /* ---- the artifact, in its own colour --------------------------------- */
+  /* The wall says what kind a thing is by hue. Repeating it here is what makes the
+     click feel like it landed somewhere related, rather than on a generic page. */
+  #view[data-kind="note"] { --kind: var(--kind-note); }
+  #view[data-kind="link"] { --kind: var(--kind-link); }
+  #view[data-kind="pdf"] { --kind: var(--kind-pdf); }
+  #view[data-kind="image"] { --kind: var(--kind-image); }
+  #view[data-kind="file"] { --kind: var(--kind-file); }
+
+  /* A hairline under the title in the thing's own colour. One line, the width of the
+     words above it, doing the job an icon would do more loudly. */
+  #view[data-kind] .titlerow {
+    padding-bottom: var(--sp-3);
+    margin-bottom: var(--sp-2);
+  }
+  #view[data-kind] .titlerow::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 34px;
+    height: 2px;
+    background: var(--kind, var(--iron-structural));
+  }
+
+  .titlerow {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+  }
+  .titlerow .h1 {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
+  }
+  /* Keeping something is a small decision, so the control behaves like one: it
+     settles rather than springs. Ease-out only, no bounce. */
+  .pin.big {
+    transition:
+      color var(--dur) var(--ease),
+      transform var(--dur) cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .pin.big:active { transform: scale(0.88); }
+  .pin.big.lit svg { animation: kept 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  @keyframes kept {
+    from { transform: scale(0.7); opacity: 0.4; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .pin.big {
+    opacity: 1;
+    padding: 8px;
+    margin-top: 2px;
+  }
+  .pin.big svg {
+    width: 17px;
+    height: 17px;
+  }
+  .pin.big:not(.lit) {
+    color: var(--iron-structural);
+  }
+  .pin.big:not(.lit):hover {
+    color: var(--bronze);
+  }
+  /* A pinned card is the only thing on the wall allowed to announce itself. */
+  .card .flag {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--bronze);
+  }
+  .card .flag svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+  }
+  /* One pane. You type into the document itself, not into a source view beside it.
+   Markdown remains the storage format; it is parsed on load and serialised on save. */
+  .editor {
+    min-height: 400px;
+    max-width: 70ch;
+    margin-top: var(--sp-4);
+    outline: none;
+    caret-color: var(--bronze);
+  }
+  .editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--grey);
+  }
+  /* Invisible until clicked is not a state. The rule appears on hover to say the text
+   is yours to change, and fills on focus so keyboard users can see where they are. */
+  .editor {
+    border-left: 2px solid transparent;
+    padding-left: var(--sp-4);
+    margin-left: calc(-1 * var(--sp-4) - 2px);
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .editor:hover {
+    border-left-color: var(--iron-hairline);
+  }
+  .editor:focus,
+  .editor:focus-visible {
+    outline: none;
+    border-left-color: var(--iron-structural);
+  }
+  .editor > *:first-child {
+    margin-top: 0;
+  }
+  .editor.titled > h1:first-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .bar {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: center;
+    margin-top: var(--sp-5);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--iron-hairline);
+    max-width: 70ch;
+  }
+  /* The rule under the editor fills once, left to right, in the artifact's colour.
+     The page acknowledging the words, rather than a notification about them. */
+  .bar { position: relative; }
+  .bar.landed::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -1px;
+    height: 1px;
+    width: 100%;
+    background: var(--kind, var(--gold-ink));
+    transform-origin: left center;
+    animation: fill 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes fill {
+    from { transform: scaleX(0); opacity: 1; }
+    60% { transform: scaleX(1); opacity: 1; }
+    to { transform: scaleX(1); opacity: 0; }
+  }
+
+  .saved {
+    color: var(--bronze);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .md,
+  .editor {
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .md h1,
+  .md h2,
+  .md h3,
+  .editor h1,
+  .editor h2,
+  .editor h3 {
+    font-weight: 500;
+    margin: var(--sp-4) 0 var(--sp-2);
+    line-height: 1.25;
+  }
+  .md h1,
+  .editor h1 {
+    font-size: 25px;
+  }
+  .md h2,
+  .editor h2 {
+    font-size: 19px;
+  }
+  .md h3,
+  .editor h3 {
+    font-size: 17px;
+  }
+  .md p,
+  .editor p {
+    margin: var(--sp-2) 0;
+  }
+  .md ul,
+  .md ol,
+  .editor ul,
+  .editor ol {
+    margin: var(--sp-2) 0;
+    padding-left: var(--sp-4);
+  }
+  .md li,
+  .editor li {
+    margin: 3px 0;
+  }
+  .md code,
+  .editor code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 0;
+    padding: 1px 5px;
+  }
+  .md pre,
+  .editor pre {
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 0;
+    padding: var(--sp-3);
+    overflow-x: auto;
+  }
+  .md pre code {
+    border: 0;
+    background: none;
+    padding: 0;
+  }
+  .md blockquote,
+  .editor blockquote {
+    margin: var(--sp-2) 0;
+    padding-left: var(--sp-3);
+    border-left: 1px solid var(--bronze);
+    color: var(--subtext);
+  }
+  .md a,
+  .editor a {
+    color: var(--iron-structural);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .md strong,
+  .editor strong {
+    font-weight: 500;
+  }
+  .md em,
+  .editor em {
+    font-style: italic;
+  }
+
+  .page {
+    display: block;
+    width: 100%;
+    border: 1px solid var(--iron-hairline);
+    border-radius: 0;
+    margin-top: var(--sp-3);
+    background: #fff;
+  }
+  .state {
+    color: var(--grey);
+    font-size: 14px;
+    padding: var(--sp-5) 0;
+    max-width: 58ch;
+    line-height: 1.75;
+  }
+  .gold {
+    color: var(--bronze);
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* ---- a link, once it has said what it is ------------------------------- */
+  /* Block, and only as wide as its text: two of these stack instead of colliding, and
+   the next element starts on its own line rather than beside a long address. */
+  .url {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--iron-structural);
+    word-break: break-all;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin-top: var(--sp-2);
+  }
+  .url:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .lede {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--subtext);
+    max-width: 64ch;
+    margin-top: var(--sp-4);
+    text-wrap: pretty;
+  }
+
+  .act {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+    font: inherit;
+    font-size: 14px;
+    padding: var(--sp-2) var(--sp-4);
+    cursor: pointer;
+    background: var(--s2);
+    color: var(--ink);
+    border: 1px solid var(--iron-structural);
+    border-radius: 0;
+    transition:
+      border-color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
+  }
+  .act:hover {
+    border-color: var(--iron-structural);
+    background: var(--base);
+  }
+  .act:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: 2px;
+  }
+  .act[disabled] {
+    opacity: 0.55;
+    cursor: default;
+    border-color: var(--iron-hairline);
+  }
+  /* The cost of the button, stated where the button is, rather than as a standing
+   paragraph about privacy that nobody reads twice. */
+  /* The trash page had assembled itself out of five borrowed vocabularies: a serif
+     page title, a mono note, an uppercase tracked shelf, a serif row title and a mono
+     row meta, plus 14px sans buttons carrying a stray top margin from the settings
+     screen. It also asked for a `.sortbar` class that was never defined, which is why
+     the count and the button ran together with no space between them.
+
+     One page, one voice. Two type roles only: the row's name in the same serif every
+     artifact name uses, and everything procedural in the same mono at one size. */
+  .trashbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    margin: var(--sp-6) 0 var(--sp-2);
+    padding-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--iron-structural);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+  }
+
+  .plain {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease);
+  }
+
+  .plain:hover {
+    color: var(--ink);
+  }
+
+  .plain.danger:hover {
+    color: var(--oxide);
+  }
+
+  .plain:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: 3px;
+  }
+
+  /* Nothing on this page opens on click, so the rows must not offer a hand. */
+  .trash .item {
+    cursor: default;
+    align-items: center;
+  }
+
+  .trash .item:hover {
+    background: transparent;
+  }
+
+  .trash .rowacts {
+    display: flex;
+    gap: var(--sp-4);
+    flex-shrink: 0;
+  }
+
+  .trash .meta {
+    margin-top: 3px;
+  }
+
+  .aside {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    margin-top: var(--sp-2);
+    max-width: 52ch;
+    line-height: 1.6;
+  }
+  /* Why it failed carries more than what it will cost, so it is not the same grey. */
+  .aside.why {
+    color: var(--subtext);
+  }
+
+  /* The publisher's own picture, kept locally. Its proportions are theirs, so it is
+   not cropped to a shape of ours. */
+.shot { display:block; max-width:min(100%, 640px); height:auto; margin-top:var(--sp-4);
+        border:1px solid var(--border); border-radius:8px; background:var(--s2); }
+
+/* ---- the reader -------------------------------------------------------- */
+  .leaf {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1.414;
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 0;
+    margin-top: var(--sp-3);
+    overflow: hidden;
+    /* Pages load as they are reached and are then held forever: nothing here ever put
+       one back. Each is rasterised at the pane's width times the device pixel ratio,
+       so on a Retina screen a page is roughly 1800 x 2545, which is about 18 MB once
+       decoded regardless of how small the PNG was on the wire. Reading a few hundred
+       pages that way is gigabytes of bitmap for pages nobody is looking at.
+
+       Skipping the rendering work off-screen lets the decoded data go with it, and the
+       element stays in the DOM so page numbering, the folio counter and the find
+       highlights all keep their positions. `auto` remembers each page's real height
+       after its first appearance, so only pages never yet seen use the A4 guess. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 1000px;
+  }
+  .leaf.loaded {
+    aspect-ratio: auto;
+    background: #fff;
+  }
+  .leaf img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .leaf.blank {
+    aspect-ratio: auto;
+    min-height: 120px;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+  }
+  /* The page a hit is on. The word cannot be highlighted, because the page is a picture
+   of itself, so the page is marked instead and the reader does the last step. */
+  /* Drawn over the page picture, in percentages of it, so they hold at any width and
+     any pixel density. Multiply keeps the words underneath readable through them. */
+  .findbox {
+    position: absolute;
+    background: var(--ochre);
+    opacity: 0.32;
+    mix-blend-mode: multiply;
+    pointer-events: none;
+    border-radius: 1px;
+  }
+  .findbox.on {
+    opacity: 0.55;
+    outline: 1.5px solid var(--gold-ink);
+  }
+  /* No dark-mode variant. A rendered page is white whatever the app's theme is, and
+     screening onto white produces white: the highlight was drawn in exactly the right
+     place and was invisible. The backdrop here is the paper, not the interface. */
+
+  /* The CSS Custom Highlight API paints over live text without touching the DOM, so
+     the editor's markdown is not rewritten by having searched it. */
+  ::highlight(enqueue-find) {
+    background: color-mix(in oklab, var(--ochre) 34%, transparent);
+  }
+  ::highlight(enqueue-find-current) {
+    background: color-mix(in oklab, var(--ochre) 62%, transparent);
+    color: var(--ink);
+  }
+
+  .leaf.hit {
+    border-color: var(--iron-structural);
+    outline: 2px solid var(--iron-structural);
+    outline-offset: 2px;
+  }
+  .folio {
+    position: fixed;
+    right: 22px;
+    bottom: 32px;
+    z-index: var(--z-pill);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 9999px;
+    padding: 6px 12px;
+    pointer-events: none;
+  }
+
+  /* ---- chats ------------------------------------------------------------- */
+  /* The one place with a persistent sidebar. Everywhere else the walls recede, but a
+   conversation you cannot find again is a conversation you did not have. */
+  .rail {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 250px;
+    z-index: var(--z-pill);
+    background: var(--s1);
+    border-right: 1px solid var(--iron-hairline);
+    overflow-y: auto;
+    padding: 56px var(--sp-3) 132px;
+    transition: transform var(--dur) var(--ease);
+  }
+  .rail h2 {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--grey);
+    margin: 0 0 var(--sp-3) var(--sp-2);
+  }
+  /* The one place the eye should land first in the rail, so it is the only thing in
+   here carrying the accent at full strength. */
+  /* The one thing in the rail that is always a way back, and it was the quietest
+     thing on the panel: structural grey, lighter than the conversation titles under
+     it, on no surface at all. A destination that outranks everything below it should
+     not read as the least of them.
+
+     Bronze, because bronze is the plaque in this system and this is the plaque on the
+     door. It stays the only accent in the rail, so it reads as rank rather than as
+     decoration: give the threads a colour too and none of them mean anything. */
+  .gohome {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    text-align: left;
+    /* Solid, not a tint. A bronze wash behind bronze text measured 4.48:1 in the dark
+       theme, under the 4.5 that 14px needs at any weight, and every adjustment to the
+       wash traded legibility against presence. Filling the plaque instead settles both
+       at once: 6.01:1 in light, 5.93:1 in dark, and it is unmistakably a button. */
+    background: var(--bronze);
+    border: 1px solid var(--bronze);
+    border-radius: 0;
+    cursor: pointer;
+    padding: var(--sp-3);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--canvas);
+    margin-bottom: var(--sp-5);
+    transition:
+      background var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease);
+  }
+  /* Mixing toward the ink moves the right way in both themes without a second rule:
+     ink is dark in the light theme and light in the dark one, so the plaque deepens
+     under the cursor either way. */
+  .gohome:hover {
+    background: color-mix(in oklab, var(--bronze) 88%, var(--ink));
+    border-color: color-mix(in oklab, var(--bronze) 88%, var(--ink));
+  }
+  .gohome:active {
+    background: color-mix(in oklab, var(--bronze) 78%, var(--ink));
+  }
+  .gohome:focus-visible {
+    outline: 2px solid var(--bronze);
+    outline-offset: 2px;
+  }
+
+  .gohome svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    /* Matched to the label's new weight. A hairline glyph beside 600-weight text
+       reads as two different buttons overlapping. */
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .threadrow {
+    display: flex;
+    align-items: center;
+    border-radius: 0;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .threadrow:hover,
+  .threadrow.on {
+    background: var(--s2);
+  }
+  .thread {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    padding: var(--sp-2) var(--sp-3);
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--subtext);
+    cursor: pointer;
+  }
+  .threadrow:hover .thread,
+  .threadrow.on .thread {
+    color: var(--ink);
+  }
+  .thread:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: -2px;
+    border-radius: 0;
+  }
+
+  /* Visible only on hover or when it is already doing something, so the rail stays a
+   list of names rather than a list of controls. */
+  .pin {
+    flex-shrink: 0;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 6px;
+    margin-right: 2px;
+    color: var(--grey);
+    opacity: 0;
+    border-radius: 0;
+    transition:
+      opacity var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .pin svg {
+    width: 13px;
+    height: 13px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+  }
+  .threadrow:hover .pin,
+  .pin:focus-visible {
+    opacity: 1;
+  }
+  .pin:hover {
+    color: var(--bronze);
+  }
+  .pin.lit {
+    opacity: 1;
+    color: var(--bronze);
+  }
+  .pin.lit svg {
+    fill: currentColor;
+  }
+  .pin:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: -2px;
+  }
+
+  /* Kept threads sit above the rest with a rule under them, so the break reads as an
+   ordering and not as two unrelated lists. */
+  .kept {
+    padding-bottom: var(--sp-3);
+    margin-bottom: var(--sp-3);
+    border-bottom: 1px solid var(--iron-hairline);
+  }
+  /* The subject of a conversation, treated the same as the artifacts an answer cites,
+     because it is the same kind of object and you should be able to open it. */
+  .scopebar { margin-top: var(--sp-3); align-items: center; }
+  .scopebar .aside { margin: 0; }
+
+  /* A way out that does not require reaching the bottom of the window. Sits above the
+     title rather than in the flow, so it costs the page no vertical rhythm. */
+  .wayout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin: 0 0 var(--sp-3) -6px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease);
+  }
+  .wayout:hover { color: var(--ink); }
+  .wayout:focus-visible { outline: 2px solid var(--gold-ink); outline-offset: 2px; }
+  .wayout svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* The download is an anchor, not a button, so it needs the icon sizing spelled out. */
+  a.pin.big { display: inline-flex; align-items: center; justify-content: center; }
+
+  body.railed {
+    padding-left: 250px;
+  }
+  body.railed .pill {
+    left: calc(50% + 125px);
+  }
+
+  /* The gear sits at the foot of the rail, out of the way of the thing the rail is
+   for. Configuration is not a destination; it is where you go when something is
+   wrong, and it should look like it. */
+  .railfoot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: var(--sp-3);
+    background: var(--s1);
+    border-top: 1px solid var(--iron-hairline);
+  }
+  .gear {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    cursor: pointer;
+    padding: var(--sp-2) var(--sp-3);
+    font: inherit;
+    font-size: 12px;
+    color: var(--grey);
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .gear:hover {
+    background: var(--s2);
+    color: var(--ink);
+  }
+  .gear:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: -2px;
+  }
+  .gear svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .newchat {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--iron-structural);
+    border-radius: 0;
+    cursor: pointer;
+    padding: var(--sp-2) var(--sp-3);
+    font: inherit;
+    font-size: 12px;
+    color: var(--grey);
+    margin-bottom: var(--sp-3);
+    text-align: left;
+    transition:
+      border-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .newchat:hover {
+    border-color: var(--iron-structural);
+    color: var(--ink);
+  }
+  .newchat:focus-visible {
+    outline: 2px solid var(--iron-structural);
+    outline-offset: -2px;
+  }
+  /* Without an explicit size an inline svg takes its intrinsic dimensions and drags the
+   button to the height of the viewBox. */
+  .newchat svg,
+  .gear svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ---- settings ---------------------------------------------------------- */
+  .field {
+    max-width: 60ch;
+    margin-top: var(--sp-4);
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--body);
+    margin-bottom: var(--sp-2);
+  }
+  .field input,
+  .field select {
+    width: 100%;
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: 0;
+    color: var(--ink);
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+  }
+  .field input:focus,
+  .field select:focus {
+    outline: none;
+    border-color: var(--iron-structural);
+  }
+  .field input[disabled] {
+    opacity: 0.6;
+  }
+  /* One choice at a time, so the current appearance is legible without reading. */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 0;
+         overflow: hidden; }
+  .seg button { font: inherit; font-size: 12.5px; padding: var(--sp-2) var(--sp-4);
+                background: transparent; color: var(--muted); border: 0; cursor: pointer;
+                transition: background var(--dur-fast) var(--ease),
+                            color var(--dur-fast) var(--ease); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { color: var(--ink); }
+  .seg button[aria-pressed="true"] { background: var(--surface-lifted); color: var(--ink); }
+  .seg button:focus-visible { outline: 2px solid var(--gold-ink); outline-offset: -2px; }
+
+  .keyrow { display: flex; gap: var(--sp-2); align-items: stretch; }
+  .keyrow input { flex: 1; min-width: 0; }
+  .keyrow .act.small { margin-top: 0; white-space: nowrap; }
+  .field textarea { width: 100%; font: inherit; font-family: var(--mono);
+                    font-size: 12.5px; line-height: 1.6; padding: var(--sp-2) var(--sp-3);
+                    border-radius: 0; color: var(--ink); background: var(--surface-lifted);
+                    border: 1px solid var(--border); resize: vertical; }
+  .field textarea:focus { outline: none; border-color: var(--gold-ink); }
+
+  .recorder {
+    width: 100%;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: 0;
+    color: var(--ink);
+    background: var(--s2);
+    border: 1px solid var(--iron-hairline);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease);
+  }
+  .recorder:hover:not([disabled]) {
+    border-color: var(--iron-structural);
+  }
+  .recorder:focus-visible {
+    outline: none;
+    border-color: var(--iron-structural);
+  }
+  .recorder[disabled] {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .recorder.listening {
+    border-color: var(--bronze);
+    color: var(--grey);
+  }
+  .recorder.listening span {
+    animation: breathe 1.4s var(--ease) infinite;
+  }
+
+  .pinned {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--bronze);
+    margin-top: var(--sp-2);
+  }
+  .facts {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    line-height: 1.9;
+    max-width: 60ch;
+    margin-top: var(--sp-3);
+  }
+  .facts b {
+    color: var(--body);
+    font-weight: 400;
+  }
+
+  /* Sides carry the speaker, so the transcript is parseable before a word is read.
+   Only your side is a bubble: a question is a short utterance and boxing it is
+   natural, while an answer is the thing you came to read and boxing it would turn a
+   reading surface into a feed. */
+  .turn {
+    max-width: 70ch;
+    margin-top: var(--sp-6);
+  }
+  .who {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    margin-bottom: var(--sp-2);
+  }
+
+  /* The answer is the thing you came for, so it is the thing that leads: the largest
+     type on the surface, unboxed, at a reading measure. It had been 16px in a bordered
+     panel, one point off the question and framed identically - the two halves of the
+     exchange competing at the same weight when only one of them is the content. */
+  .said {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.68;
+    letter-spacing: -0.003em;
+    color: var(--ink);
+    text-wrap: pretty;
+    max-width: 64ch;
+  }
+
+  /* The question is context for the answer, not content beside it. Smaller, quieter,
+     and boxed - which is what makes the unboxed answer read as the page speaking. */
+  .turn.you {
+    margin-left: auto;
+    max-width: 44ch;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-top: var(--sp-5);
+  }
+  .turn.you .who {
+    margin-bottom: var(--sp-1);
+  }
+  .turn.you .said {
+    background: var(--surface-lifted);
+    border: 1px solid var(--iron-hairline);
+    padding: var(--sp-3) var(--sp-4);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    letter-spacing: 0;
+    color: var(--body);
+    text-align: left;
+    max-width: none;
+  }
+
+  .turn.curator .who {
+    color: var(--bronze);
+  }
+
+  /* Where the answer came from. These were 11px grey chips at the bottom of the most
+     important thing on the page: the evidence, styled as a footnote. They are what
+     separates an answer from an assertion, so they carry real weight now. */
+  .from {
+    margin-top: var(--sp-4);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    align-items: center;
+  }
+  .from::before {
+    content: "from";
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--grey);
+    margin-right: var(--sp-1);
+  }
+  .src {
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--body);
+    background: var(--surface-lifted);
+    border: 1px solid var(--iron-hairline);
+    border-radius: 0;
+    padding: 7px 13px;
+    min-height: 26px;
+    cursor: pointer;
+    transition:
+      border-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
+  }
+  .src:hover {
+    border-color: var(--bronze);
+    color: var(--ink);
+    background: var(--canvas);
+  }
+
+  /* The highest-stakes line in the product: the collection does not hold this. It was
+     11px of bronze under a full-size answer, which is exactly backwards - the caveat
+     was the smallest thing attached to the claim it qualifies. */
+  .unsourced {
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--body);
+    margin-top: var(--sp-4);
+    padding-left: var(--sp-4);
+    position: relative;
+    max-width: 52ch;
+  }
+  .unsourced::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.62em;
+    width: 7px;
+    height: 7px;
+    border: 1.5px solid var(--bronze);
+    border-radius: 50%;
+  }
+  /* An answer standing on nothing is set apart from one standing on your material. */
+  .turn.curator:has(.unsourced) .said {
+    color: var(--body);
+    font-size: 16px;
+  }
+
+  /* Above the pill, never over it, and it announces itself to a screen reader because a
+   capture you cannot see confirmed is a capture you have to go and check. */
+  .toast {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 92px;
+    z-index: var(--z-menu);
+    max-width: min(560px, calc(100vw - 40px));
+    background: var(--s2);
+    color: var(--ink);
+    border: 1px solid var(--iron-structural);
+    border-radius: 0;
+    padding: var(--sp-2) var(--sp-4);
+    font-size: 14px;
+    animation: rise var(--dur) var(--ease) both;
+  }
+  .toast.bad {
+    border-color: var(--oxide);
+  }
+  body.railed .toast {
+    left: calc(50% + 125px);
+  }
+  @media (max-width: 900px) {
+    body.railed .toast {
+      left: 50%;
+    }
+  }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  .thinking {
+    animation: breathe 1.8s var(--ease) infinite;
+  }
+
+  @media (max-width: 900px) {
+    body.railed {
+      padding-left: 0;
+    }
+    body.railed .pill {
+      left: 50%;
+    }
+    .rail {
+      transform: translateX(-100%);
+    }
+    .rail.open {
+      transform: none;
+    }
+  }
+  @media (min-width: 901px) {
+    #btnRail {
+      display: none;
+    }
+  }
+</style>
+
+<main id="view"><div class="state">opening...</div></main>
+<div class="pill" id="pill"></div>
+
+<script>
+  const view = document.getElementById("view");
+  const pill = document.getElementById("pill");
+  const esc = (s) =>
+    (s ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+
+  // Follows the system, including when it changes under a window that is already open,
+  // which is the whole point of a machine that goes dark at sunset.
+  const darkness = matchMedia("(prefers-color-scheme: dark)");
+
+  // Kept in localStorage as well as in settings.json. The stored preference has to be
+  // applied on the very first paint, before any request has come back, or the window
+  // flashes the wrong theme every time it opens.
+  function applyTheme(choice) {
+    if (choice) localStorage.setItem("enqueue.theme", choice);
+    const want = choice || localStorage.getItem("enqueue.theme") || "system";
+    const dark = want === "dark" || (want === "system" && darkness.matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    return want;
+  }
+
+  darkness.addEventListener("change", () => applyTheme());
+  applyTheme();
+
+  async function chooseTheme(choice) {
+    applyTheme(choice);
+    document.querySelectorAll(".seg button").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.theme === choice));
+    });
+    saveSetting("theme", choice);
+  }
+
+  // One-entry cache for the artifact about to be opened. The morph needs the detail
+  // payload in hand before the transition begins; without it the callback awaits the
+  // network mid-transition and the browser tweens between two unfinished frames.
+  let warmed = null;
+
+  const api = async (p, o) => {
+    if (!o && warmed && warmed.path === p) {
+      const hit = warmed.body;
+      warmed = null;
+      return hit;
+    }
+    const r = await fetch(p, o);
+    if (!r.ok)
+      throw new Error(
+        (await r.json().catch(() => ({}))).detail || r.statusText,
+      );
+    return r.json();
+  };
+
+  // Self-contained markdown. A CDN would make the museum reach the network to render
+  // something you wrote, which is the opposite of the promise. Escapes before parsing,
+  // so no input path can render raw HTML.
+  function md(src) {
+    let t = esc(src);
+    const held = [];
+    t = t.replace(
+      /```([\s\S]*?)```/g,
+      (m, code) =>
+        " " +
+        (held.push(
+          "<pre><code>" + code.replace(/^\w*\n/, "") + "</code></pre>",
+        ) -
+          1) +
+        " ",
+    );
+    t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    t = t.replace(
+      /\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener">$1</a>',
+    );
+    t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+
+    const out = [];
+    let list = null;
+    const close = () => {
+      if (list) {
+        out.push("</" + list + ">");
+        list = null;
+      }
+    };
+    for (const raw of t.split("\n")) {
+      const line = raw.trimEnd();
+      const h = line.match(/^(#{1,3})\s+(.*)$/);
+      const li = line.match(/^\s*[-*+]\s+(.*)$/);
+      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      const bq = line.match(/^(?:&gt;|>)\s?(.*)$/);
+      if (h) {
+        close();
+        out.push("<h" + h[1].length + ">" + h[2] + "</h" + h[1].length + ">");
+      } else if (li) {
+        if (list !== "ul") {
+          close();
+          out.push("<ul>");
+          list = "ul";
+        }
+        out.push("<li>" + li[1] + "</li>");
+      } else if (ol) {
+        if (list !== "ol") {
+          close();
+          out.push("<ol>");
+          list = "ol";
+        }
+        out.push("<li>" + ol[1] + "</li>");
+      } else if (bq) {
+        close();
+        out.push("<blockquote>" + bq[1] + "</blockquote>");
+      } else if (!line.trim()) close();
+      else {
+        close();
+        out.push("<p>" + line + "</p>");
+      }
+    }
+    close();
+    return out.join("").replace(/ (\d+) /g, (m, i) => held[+i]);
+  }
+
+  // Turn the edited document back into markdown. Only the tags md() can produce need
+  // handling, which is what keeps this tractable: the editor and the parser are two
+  // halves of one contract rather than a general HTML converter.
+  function htmlToMd(root) {
+    const inline = (node) => {
+      if (node.nodeType === 3) return node.nodeValue;
+      if (node.nodeType !== 1) return "";
+      const kids = [...node.childNodes].map(inline).join("");
+      switch (node.tagName) {
+        case "BR":
+          return "\n";
+        case "STRONG":
+        case "B":
+          return kids.trim() ? "**" + kids + "**" : "";
+        case "EM":
+        case "I":
+          return kids.trim() ? "*" + kids + "*" : "";
+        case "CODE":
+          return "`" + kids + "`";
+        case "A":
+          return "[" + kids + "](" + (node.getAttribute("href") || "") + ")";
+        default:
+          return kids;
+      }
+    };
+
+    const lines = [];
+    for (const node of root.childNodes) {
+      if (node.nodeType === 3) {
+        const t = node.nodeValue.trim();
+        if (t) lines.push(t, "");
+        continue;
+      }
+      if (node.nodeType !== 1) continue;
+
+      switch (node.tagName) {
+        case "H1":
+          lines.push("# " + inline(node).trim(), "");
+          break;
+        case "H2":
+          lines.push("## " + inline(node).trim(), "");
+          break;
+        case "H3":
+          lines.push("### " + inline(node).trim(), "");
+          break;
+        case "UL":
+          for (const li of node.children) lines.push("- " + inline(li).trim());
+          lines.push("");
+          break;
+        case "OL": {
+          let i = 1;
+          for (const li of node.children)
+            lines.push(i++ + ". " + inline(li).trim());
+          lines.push("");
+          break;
+        }
+        case "BLOCKQUOTE":
+          lines.push("> " + inline(node).trim(), "");
+          break;
+        case "PRE":
+          lines.push("```", node.textContent.replace(/\n$/, ""), "```", "");
+          break;
+        case "DIV":
+        case "P": {
+          const t = inline(node)
+            .replace(/\u00a0/g, " ")
+            .trimEnd();
+          lines.push(t.trim() ? t : "", t.trim() ? "" : null);
+          break;
+        }
+        default: {
+          const t = inline(node).trim();
+          if (t) lines.push(t, "");
+        }
+      }
+    }
+    return lines
+      .filter((l) => l !== null)
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // Structural markdown typed at the start of a line becomes the real thing, the way
+  // it does in any editor that renders as you write.
+  const RULES = [
+    [/^(#{1,3})\s$/, (m) => "h" + m[1].length],
+    [/^[-*+]\s$/, () => "ul"],
+    [/^1\.\s$/, () => "ol"],
+    [/^>\s$/, () => "blockquote"],
+  ];
+
+  function applyInputRules(ed) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    let block = sel.anchorNode;
+    while (block && block.parentNode !== ed) block = block.parentNode;
+    if (!block || block.nodeType !== 1) return;
+    if (["UL", "OL", "PRE", "BLOCKQUOTE"].includes(block.tagName)) return;
+
+    const text = block.textContent;
+    for (const [re, kind] of RULES) {
+      const m = text.match(re);
+      if (!m) continue;
+      const tag = kind(m);
+      document.execCommand(
+        tag === "ul"
+          ? "insertUnorderedList"
+          : tag === "ol"
+            ? "insertOrderedList"
+            : "formatBlock",
+        false,
+        tag === "ul" || tag === "ol" ? null : tag,
+      );
+      // The marker characters were the instruction, not the content.
+      const target = window.getSelection().anchorNode;
+      const host = target && target.nodeType === 3 ? target : null;
+      if (host)
+        host.nodeValue = host.nodeValue.replace(
+          re.source.replace(/[\^$]/g, "") === ""
+            ? ""
+            : /^(#{1,3}|[-*+]|1\.|>)\s/,
+          "",
+        );
+      return;
+    }
+  }
+
+  // ---- the pill ------------------------------------------------------------
+  const ICONS = {
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    find: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+    // The eye, not a question mark. Asking here is not a support request; it is looking
+    // at what you already own and seeing what is in it.
+    ask: '<path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.8"/>',
+    back: '<path d="M14.5 6.5L9 12l5.5 5.5"/>',
+    down: '<path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>',
+    home: '<path d="M4 10.5L12 4l8 6.5"/><path d="M6 9.6V20h12V9.6"/>',
+    star: '<path d="M12 4.2l2.3 4.9 5.2.7-3.8 3.7 1 5.3-4.7-2.6-4.7 2.6 1-5.3-3.8-3.7 5.2-.7z"/>',
+    trash: '<path d="M4 7h16"/><path d="M9.5 7V5h5v2"/><path d="M6.5 7l1 13h9l1-13"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    note: '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/>',
+    upload:
+      '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v3h16v-3"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
+    image:
+      '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-7 7"/>',
+    rail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/>',
+    gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/>',
+  };
+  const svg = (k) => '<svg viewBox="0 0 24 24">' + ICONS[k] + "</svg>";
+
+  let menu = null;
+  let scope = { kind: "everything", label: "everything" };
+
+  function closeMenu(restoreFocus) {
+    if (menu) {
+      menu.remove();
+      menu = null;
+    }
+    const b = document.getElementById("btnAdd");
+    if (b) {
+      b.setAttribute("aria-expanded", "false");
+      // Focus goes back where it came from. Dropping it on BODY leaves a keyboard user
+      // at the top of the document with no idea the menu ever opened.
+      if (restoreFocus) b.focus();
+    }
+  }
+
+  // The first slot changes with where you are. On the wall it captures, because that is
+  // the only thing you can do to a wall. Inside an object there is nowhere to put a new
+  // capture yet and the thing you actually want is out, so it becomes the way out.
+  // Search and ask never move: they mean the same thing on every surface.
+  let place = "wall";
+
+  function restorePill(where) {
+    if (where) place = where;
+    closeMenu();
+    pill.classList.remove("wide");
+    // Search leaves when you are inside something. Searching the whole collection from
+    // inside one object is a different intention from the one you are holding there;
+    // what you want is to find a phrase in front of you, and that is Cmd+F.
+    const inside = place === "inside";
+
+    // The rail toggle is emitted on every surface, not only inside a conversation.
+    // Below 900px the rail is off-screen, and it holds the only route to Settings and
+    // to every thread: drawing the opener in one place out of five left both stranded
+    // on the wall, on an artifact, on search, and in Settings itself.
+    pill.innerHTML =
+      '<button id="btnRail" aria-label="Conversations and settings" onclick="toggleRail()">' +
+      svg("rail") +
+      "</button>" +
+      (inside
+        ? '<button aria-label="Back to everything" onclick="home()">' +
+          svg("back") +
+          "</button>"
+        : '<button id="btnAdd" aria-label="Capture" aria-expanded="false" ' +
+          'onclick="toggleMenu(event)">' +
+          svg("plus") +
+          "</button>") +
+      (inside
+        ? ""
+        : '<button aria-label="Search" onclick="openField(\'search\')">' +
+          svg("find") +
+          "</button>") +
+      // Only inside. Out on the wall this was a second, wordless door to the thing the
+      // rail already offers by name under Conversations, and its label still read "Ask
+      // about this" on a surface where there is no this. Inside an object it is not a
+      // duplicate at all: it carries the scope, which is the one route the rail cannot
+      // express, because a conversation started from the rail is about everything.
+      (inside
+        ? '<button aria-label="Ask about this" onclick="openField(\'ask\')">' +
+          svg("ask") +
+          "</button>"
+        : "");
+  }
+
+  const MENU = [
+    ["note", "Note", () => newNote()],
+    ["upload", "Upload", () => pickFile("*/*")],
+    ["link", "Link", () => openField("link")],
+    ["image", "Image", () => pickFile("image/*")],
+  ];
+
+  function toggleMenu(e) {
+    if (e) e.stopPropagation();
+    if (menu) return closeMenu();
+    menu = document.createElement("div");
+    menu.className = "menu";
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = MENU.map(
+      ([k, label]) =>
+        '<button role="menuitem" data-kind="' +
+        k +
+        '"><span class="ic">' +
+        svg(k) +
+        "</span>" +
+        label +
+        "</button>",
+    ).join("");
+    document.body.appendChild(menu);
+    menu.querySelectorAll("button").forEach((b, i) => {
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        closeMenu();
+        MENU[i][2]();
+      };
+    });
+    document.getElementById("btnAdd").setAttribute("aria-expanded", "true");
+    menu.querySelector("button").focus();
+
+    // role="menu" promises arrow navigation. Without it the role is a lie to a screen
+    // reader that has already announced a menu.
+    menu.addEventListener("keydown", (ev) => {
+      const items = [...menu.querySelectorAll("button")];
+      const at = items.indexOf(document.activeElement);
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        const next =
+          (at + (ev.key === "ArrowDown" ? 1 : -1) + items.length) %
+          items.length;
+        items[next].focus();
+      }
+      if (ev.key === "Home") {
+        ev.preventDefault();
+        items[0].focus();
+      }
+      if (ev.key === "End") {
+        ev.preventDefault();
+        items[items.length - 1].focus();
+      }
+    });
+  }
+
+  function openField(mode) {
+    closeMenu();
+    const hint = {
+      search: "find something",
+      ask: "ask about " + scope.label,
+      link: "paste a url",
+    }[mode];
+    pill.classList.add("wide");
+    pill.innerHTML =
+      (mode === "ask"
+        ? '<span class="scope">' + esc(scope.label) + "</span>"
+        : "") +
+      '<input id="field" placeholder="' +
+      esc(hint) +
+      '" autocomplete="off">' +
+      '<button aria-label="Close" onclick="restorePill()">' +
+      svg("close") +
+      "</button>";
+
+    const field = document.getElementById("field");
+    field.focus();
+    field.onkeydown = (e) => {
+      if (e.key === "Escape") return restorePill();
+      if (e.key !== "Enter") return;
+      const v = field.value.trim();
+      if (!v) return;
+      restorePill();
+      if (mode === "search") doSearch(v);
+      else if (mode === "ask") startChat(v);
+      else saveLink(v);
+    };
+  }
+
+  // Capture is the one act the whole product rests on, and it used to fail in silence:
+  // a link that errored and an upload that 500ed both re-rendered the wall exactly like
+  // success. "Nothing is ever lost" cannot be true of a thing that can drop your capture
+  // without saying so, so both paths now report, and a failure keeps what you typed.
+  function toast(message, bad) {
+    const old = document.getElementById("toast");
+    if (old) old.remove();
+    const node = document.createElement("div");
+    node.id = "toast";
+    node.className = "toast" + (bad ? " bad" : "");
+    node.setAttribute("role", "status");
+    node.textContent = message;
+    document.body.appendChild(node);
+    setTimeout(() => node.remove(), bad ? 8000 : 2600);
+  }
+
+  function pickFile(accept) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.multiple = true;
+
+    // The input has to be in the document before it is clicked. Chrome opens the
+    // panel for a detached input; WKWebView, which is what the macOS window is,
+    // silently does nothing, so Upload appeared to do nothing at all in the app while
+    // working in a browser. Kept off-screen rather than display:none, because a
+    // hidden input is not clickable either.
+    input.style.cssText =
+      "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0";
+    document.body.appendChild(input);
+    const done = () => input.remove();
+
+    input.onchange = async () => {
+      const failed = [];
+      let saved = 0;
+      for (const file of input.files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+          const r = await fetch("/capture/upload", {
+            method: "POST",
+            body: fd,
+          });
+          if (!r.ok)
+            throw new Error(
+              (await r.json().catch(() => ({}))).detail || r.statusText,
+            );
+          saved++;
+        } catch (err) {
+          failed.push(file.name + ": " + String(err.message || err));
+        }
+      }
+      done();
+      home();
+      if (failed.length) toast("Not saved. " + failed.join("; "), true);
+      else if (saved) toast(saved === 1 ? "Saved." : saved + " saved.");
+    };
+
+    // Cancelling the panel fires `cancel` in modern engines and nothing at all in
+    // older ones, so the node is also swept on the next focus back to the window.
+    input.oncancel = done;
+    window.addEventListener("focus", () => setTimeout(() => {
+      if (!input.files || !input.files.length) done();
+    }, 500), {once: true});
+
+    input.click();
+  }
+
+  async function saveLink(url) {
+    try {
+      await api("/capture/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+    } catch (err) {
+      // The pill stays open with the address still in it: a failed capture must not
+      // also cost you the thing you were capturing.
+      openField("link");
+      const field = document.getElementById("field");
+      if (field) field.value = url;
+      toast("Not saved. " + String(err.message || err), true);
+      return;
+    }
+    home();
+    toast("Saved.");
+  }
+
+  async function newNote() {
+    const d = await api("/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "" }),
+    });
+    showArtifact(d.artifact.id, true);
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const wasOpen = !!menu;
+      closeMenu(true);
+      if (!wasOpen && pill.classList.contains("wide")) restorePill();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (menu && !menu.contains(e.target) && !pill.contains(e.target))
+      closeMenu();
+  });
+
+  // A WKWebView has no tabs, so `target="_blank"` opens nothing: clicking the address
+  // on a saved link did precisely nothing, with no error anywhere to say why. The page
+  // has to hand the address to the OS instead.
+  //
+  // Delegated rather than wired per link, because addresses also come out of rendered
+  // markdown, and a rule that only covers the ones this file writes by hand is a rule
+  // that breaks the next time something else renders a link.
+  const bridge = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
+
+  document.addEventListener("click", (e) => {
+    if (!bridge) return; // an ordinary browser can open its own tabs
+    const link = e.target.closest && e.target.closest("a[href]");
+    if (!link) return;
+
+    const href = link.getAttribute("href") || "";
+    if (!/^https?:/i.test(href)) return; // in-page and engine-relative links stay here
+
+    e.preventDefault();
+    bridge("open_external", { url: link.href }).catch((err) =>
+      toast(String(err && err.message ? err.message : err), true),
+    );
+  });
+
+  // ---- surfaces ------------------------------------------------------------
+  // Enter and Space activate a row, the way they would if it were a real button.
+  // Only one card can claim the shared names at a time: `view-transition-name` must be
+  // unique in the document or the browser refuses the whole transition. So the names
+  // are applied to the card being opened, held across the swap, and released after.
+  let morphing = null;
+
+  function claimMorph(id) {
+    releaseMorph();
+    const card = document.querySelector('.card[data-id="' + id + '"]');
+    if (!card) return;
+
+    const frame = card.querySelector(".frame");
+    const title = card.querySelector(".title");
+    if (frame) frame.style.viewTransitionName = "artifact-face";
+    if (title) title.style.viewTransitionName = "artifact-title";
+    morphing = card;
+  }
+
+  function releaseMorph() {
+    if (!morphing) return;
+    morphing.querySelectorAll(".frame, .title").forEach((el) => {
+      el.style.viewTransitionName = "";
+    });
+    morphing = null;
+  }
+
+  // Wraps a navigation so the browser can tween between the two states. Falls straight
+  // through where the API is missing, or where the person asked for less motion: a
+  // morph is motion, and "reduced" has to mean reduced here too.
+  function withMorph(run) {
+    const wants = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (wants || !document.startViewTransition) return run();
+    return document.startViewTransition(run).finished.finally(releaseMorph);
+  }
+
+  // The fetch happens BEFORE the transition starts, not inside it.
+  //
+  // startViewTransition snapshots the page, runs the callback, then snapshots again.
+  // An awaited fetch inside that callback means the browser holds a frozen frame of
+  // the old page while the network happens, then swaps to a half-built new one: the
+  // jumble. Warming the cache first makes the callback a synchronous DOM write, which
+  // is the only thing the API can actually tween.
+  async function openArtifact(id) {
+    claimMorph(id);
+    const path = "/artifacts/" + id;
+    try {
+      warmed = { path, body: await api(path) };
+    } catch (err) {
+      releaseMorph();
+      return toast(String(err.message || err), true);
+    }
+    withMorph(() => showArtifact(id));
+  }
+
+  function rowKey(event, run) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      run();
+    }
+  }
+
+  function host(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch (e) {
+      return url || "";
+    }
+  }
+
+  // The square. Each kind shows the truest thing it has, which is why this is a switch
+  // and not one template with a swapped icon.
+  function frame(a) {
+    const drop = " onerror=\"this.parentNode.innerHTML='&#9633;'\"";
+    if (a.kind === "image")
+      return (
+        '<img src="/artifacts/' +
+        a.id +
+        '/blob" alt="" loading="lazy"' +
+        drop +
+        ">"
+      );
+    if (a.kind === "pdf")
+      return (
+        '<img src="/artifacts/' +
+        a.id +
+        '/page/0?width=520" alt="" loading="lazy"' +
+        drop +
+        ">"
+      );
+    if (a.kind === "link")
+      return a.has_preview_image
+        ? '<img src="/artifacts/' + a.id + '/preview-image" alt="" loading="lazy"' + drop + ">"
+        : '<div class="glyphface">&#8599;<span class="host">' +
+          esc(host(a.source_url)) +
+          "</span></div>";
+    if (a.kind === "file") return '<div class="glyphface">&#9633;</div>';
+    return a.excerpt
+      ? '<div class="opening">' + esc(a.excerpt) + "</div>"
+      : '<div class="glyphface" style="font-size:13px;color:var(--muted)">empty</div>';
+  }
+
+  function card(a, i) {
+    const bits = [];
+    bits.push((a.created_at || "").slice(0, 10));
+    if (a.local_only) bits.push("local only");
+    if (a.status === "text_only" && a.kind === "note")
+      bits.push("holds a credential");
+
+    return (
+      '<div class="card' +
+      (i < 18 ? " hang" : "") +
+      '" data-kind="' + esc(a.kind) + '" data-id="' + esc(a.id) + '" ' +
+      'tabindex="0" role="button"' +
+      ' aria-label="' +
+      esc((a.title || "Untitled") + ", " + a.kind + ", " + bits.join(", ")) +
+      '"' +
+      (i < 18 ? ' style="animation-delay:' + i * 22 + 'ms"' : "") +
+      " onclick=\"openArtifact('" +
+      a.id +
+      "')\"" +
+      " onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();openArtifact('" +
+      a.id +
+      "')}\">" +
+      '<div class="frame" aria-hidden="true">' +
+      frame(a) +
+      (a.pinned
+        ? '<span class="flag" aria-label="pinned">' + svg("star") + "</span>"
+        : "") +
+      "</div>" +
+      '<div class="cap"><div class="title">' +
+      esc(a.title || "Untitled") +
+      "</div>" +
+      '<div class="meta"><span class="kindmark"></span>' +
+      '<span class="kindword">' + esc(a.kind) + "</span> &middot; " +
+      bits.map(esc).join(" &middot; ") +
+      "</div></div></div>"
+    );
+  }
+
+  // Ingestion time by default. The promise is that things sit in the order you found
+  // them, and sorting by last touched means fixing a typo silently moves a note to the
+  // front of your own museum.
+  const MONTHS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+
+  // "Three weeks ago" is a thing people remember. A date is not. Grouping by how long
+  // ago turns the wall into something you can navigate by memory, which is the only
+  // index this product is willing to ask you to maintain.
+  function bucket(iso) {
+    const then = new Date(iso);
+    if (isNaN(then)) return "Undated";
+    const now = new Date();
+    const midnight = (d) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const days = Math.round((midnight(now) - midnight(then)) / 86400000);
+
+    if (days <= 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return "Earlier this week";
+    if (days < 14) return "Last week";
+    if (
+      then.getFullYear() === now.getFullYear() &&
+      then.getMonth() === now.getMonth()
+    )
+      return "Earlier this month";
+    if (days < 365) return MONTHS[then.getMonth()];
+    return String(then.getFullYear());
+  }
+
+  // What the wall was showing last time it drew. Compared on focus so a refresh only
+  // happens when something actually changed, rather than reflowing the grid and
+  // throwing away your scroll position every time you tab back.
+  let wallStamp = null;
+
+  // A capture made in the overlay lands in a different window, and this one has no
+  // way to hear about it. Without this the museum sits stale until you navigate, so
+  // saving something correctly looked like saving nothing.
+  async function refreshIfStale() {
+    if (place !== "wall" || document.hidden || !view) return;
+    const peek = await api("/artifacts?limit=1&order=ingested").catch(() => null);
+    if (!peek) return;
+    const stamp = peek.total + ":" + ((peek.items[0] || {}).id || "");
+    if (stamp !== wallStamp) home({ keepScroll: true });
+  }
+
+  window.addEventListener("focus", refreshIfStale);
+  document.addEventListener("visibilitychange", refreshIfStale);
+
+  // One order, always: what you touched last. The bar of alternatives was three
+  // controls for a decision nobody makes twice, sitting above the thing they were
+  // meant to help you read.
+  const PAGE = 48;
+  let wall = null;
+
+  async function home(opts) {
+    const wasReading = chat;
+    const keepAt = opts && opts.keepScroll ? window.scrollY : null;
+    teardown();
+    scope = { kind: "everything", label: "everything" };
+    view.removeAttribute("data-kind");
+    restorePill("wall");
+    showRail(null);
+    view.innerHTML = '<div class="state">opening...</div>';
+
+    const [kept, first, exs] = await Promise.all([
+      api("/artifacts?pinned=true&order=touched&limit=200"),
+      api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
+      api("/exhibits"),
+    ]);
+
+    if (!kept.total && !first.total) {
+      view.innerHTML =
+        '<div class="state">Nothing saved yet.<br><br>' +
+        "Everything you save lands here, in the order you found it, with nothing asked of " +
+        "you at the time. No folder, no tag, no reason required. The reason is what you " +
+        "come back for later, when you name a theme and the room assembles itself.<br><br>" +
+        'Nothing here expires. Start with <span class="gold">+</span>.</div>';
+      return;
+    }
+
+    let html = "";
+    if (exs.items.length) {
+      html +=
+        '<div class="shelf">Exhibits</div>' +
+        exs.items
+          .map(
+            (e) =>
+              '<div class="item" tabindex="0" role="button" onclick="showExhibit(\'' +
+              e.id +
+              "')\"" +
+              " onkeydown=\"rowKey(event, () => showExhibit('" +
+              e.id +
+              "'))\">" +
+              '<div class="item-body"><div class="title">' +
+              esc(e.name) +
+              '</div><div class="excerpt">' +
+              esc(e.through_line || "") +
+              "</div></div></div>",
+          )
+          .join("");
+    }
+
+    // Kept things run sideways. They are a short shelf you scan, not a list you read
+    // down, and giving them a row of their own is what stops them being buried by
+    // whatever you touched this morning.
+    if (kept.total) {
+      html +=
+        '<div class="shelf">Kept</div>' +
+        '<div class="rail-h" id="keptRail" tabindex="0" role="list" ' +
+        'aria-label="Kept artifacts">' +
+        kept.items.map(card).join("") +
+        "</div>";
+    }
+
+    html +=
+      '<div class="shelf">Everything else</div><div class="wall" id="wall">' +
+      first.items.map(card).join("") +
+      '</div><div id="wallEnd" class="aside"></div>';
+
+    wall = { offset: first.items.length, more: first.more, loading: false };
+    wallStamp = first.total + ":" + ((first.items[0] || {}).id || "");
+
+    view.innerHTML = html;
+    watchWallEnd();
+    if (keepAt !== null) window.scrollTo(0, keepAt);
+    else if (wasReading) window.scrollTo(0, 0);
+  }
+
+  // Loads the next page when the foot of the wall comes near, so the collection is
+  // not silently truncated at whatever number the first request asked for.
+  let wallWatch = null;
+
+  function watchWallEnd() {
+    if (wallWatch) wallWatch.disconnect();
+    const foot = document.getElementById("wallEnd");
+    if (!foot) return;
+
+    wallWatch = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMore();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    wallWatch.observe(foot);
+  }
+
+  async function loadMore() {
+    if (!wall || wall.loading || !wall.more) return;
+    wall.loading = true;
+
+    const foot = document.getElementById("wallEnd");
+    if (foot) foot.textContent = "loading more...";
+
+    const next = await api(
+      "/artifacts?pinned=false&order=touched&limit=" + PAGE + "&offset=" + wall.offset,
+    ).catch(() => null);
+
+    if (!next) {
+      wall.loading = false;
+      if (foot) foot.textContent = "could not load more";
+      return;
+    }
+
+    const grid = document.getElementById("wall");
+    if (grid) grid.insertAdjacentHTML("beforeend", next.items.map(card).join(""));
+
+    wall.offset += next.items.length;
+    wall.more = next.more;
+    wall.loading = false;
+    if (foot) foot.textContent = wall.more ? "" : "";
+    if (!wall.more && wallWatch) wallWatch.disconnect();
+  }
+
+  let ctx = null;
+  // A pending re-look at a link's preview. Held at module scope so leaving the screen
+  // can cancel it rather than hoping a stale guard happens to be false.
+  let faceWatch = null;
+  let faceTries = 0;
+  const FACE_LIMIT = 8;
+
+  async function showArtifact(id, focus) {
+    const arriving = !ctx || ctx.id !== id;
+    teardown();
+    if (arriving) faceTries = 0;
+    const d = await api("/artifacts/" + id);
+    const a = d.artifact;
+    scope = { kind: "artifact", id, label: "this artifact" };
+    restorePill("inside");
+
+    view.setAttribute("data-kind", a.kind);
+
+    const bits = [(a.updated_at || "").slice(0, 10)];
+    if (a.local_only) bits.push("local only");
+
+    let html =
+      '<button class="wayout" aria-label="Back to everything" title="Back to everything" ' +
+      'onclick="home()">' + svg("back") + "</button>" +
+      '<div class="titlerow"><div class="h1" style="view-transition-name:artifact-title">' +
+      esc(a.title || "Untitled") +
+      "</div>" +
+      '<button class="pin big' +
+      (a.pinned ? " lit" : "") +
+      '" aria-pressed="' +
+      !!a.pinned +
+      '" aria-label="' +
+      (a.pinned ? "Unpin" : "Keep at the front") +
+      '" title="' +
+      (a.pinned ? "Unpin" : "Keep at the front") +
+      '" onclick="pinArtifact(\'' +
+      a.id +
+      "'," +
+      !a.pinned +
+      ')">' +
+      svg("star") +
+      "</button>" +
+      (["pdf", "image", "file"].includes(a.kind)
+        ? '<a class="pin big" href="/artifacts/' + a.id + '/blob" download ' +
+          'aria-label="Download a copy" title="Download a copy">' + svg("down") + "</a>"
+        : "") +
+      '<button class="pin big" aria-label="Move to the trash" title="Move to the trash" ' +
+      'onclick="binArtifact(\'' + a.id + '\')">' + svg("trash") + "</button></div>" +
+      '<div class="meta"><span class="kindmark"></span>' +
+      '<span class="kindword">' +
+      esc(a.kind) +
+      "</span> &middot; " +
+      bits.filter(Boolean).map(esc).join(" &middot; ") +
+      "</div>";
+
+    if (a.source_url)
+      html +=
+        '<a class="url" href="' +
+        esc(a.source_url) +
+        '" target="_blank" rel="noopener">' +
+        esc(a.source_url) +
+        "</a>";
+    // Not "open externally": the file is read here. This is only the way out, for the
+    // day the museum is not where you want it.
+
+
+    if (d.secrets.length)
+      html +=
+        '<div class="state gold">This holds what looks like a credential, so it stays out of ' +
+        "every model call.<br>" +
+        d.secrets.map((s) => esc(s.excerpt)).join("<br>") +
+        "</div>";
+
+    if (a.kind === "note") {
+      // The body is yours. Edited in place, with every version kept.
+      const n = d.versions.length;
+      html +=
+        '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
+        'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
+        'data-placeholder="Start writing. Markdown shorthand becomes formatting as you type."></div>' +
+        '<div class="bar"><span id="state" class="meta"></span>' +
+        '<span class="meta" style="margin-left:auto" id="vers" data-n="' +
+        n +
+        '">' +
+        (n > 1 ? n + " drafts kept" : "") +
+        "</span></div>";
+      ctx = {
+        id,
+        kind: "note",
+        title: a.title,
+        saved: a.body || "",
+        html: md(a.body || ""),
+      };
+    } else {
+      if (a.kind === "pdf") {
+        html += reader(a, d.pages);
+      } else if (a.kind === "file") {
+        html += fileFacts(d.file) + '<div class="plain" id="plain">reading...</div>';
+      } else if (a.kind === "image") {
+        html +=
+          '<img class="page" src="/artifacts/' +
+          a.id +
+          '/blob" alt="' +
+          esc(a.title) +
+          '">';
+      } else if (a.kind === "link") {
+        html += linkFace(a, d.preview);
+      }
+      const current = d.annotations.filter((x) => x.current);
+      const last = current.length ? current[current.length - 1] : null;
+      html +=
+        '<div class="shelf">Your note on this</div>' +
+        '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
+        'role="textbox" aria-multiline="true" aria-label="Your note on this" ' +
+        'style="min-height:150px" data-placeholder="What you thought."></div>' +
+        '<div class="bar"><span id="state" class="meta"></span></div>';
+      ctx = {
+        id,
+        kind: a.kind,
+        entryId: last ? last.id : null,
+        saved: last ? last.text : "",
+        html: md(last ? last.text : ""),
+      };
+    }
+
+    if (d.facet_skip_reason)
+      html +=
+        '<div class="aside">' +
+        esc(whyNoFacets(d.facet_skip_reason)) +
+        "</div>";
+    if (d.facets.length)
+      html +=
+        '<div class="shelf">What the curator made of it</div>' +
+        d.facets
+          .map(
+            (f) =>
+              '<div class="md" style="font-size:13px;color:var(--subtext);padding:2px 0">' +
+              '<span class="meta gold" style="margin-right:8px">L' +
+              f.level +
+              "</span>" +
+              esc(f.statement) +
+              "</div>",
+          )
+          .join("");
+
+    view.innerHTML = html;
+    mountEditor(focus);
+    if (a.kind === "pdf") mountReader(a.id, d.pages);
+    if (a.kind === "file") mountPlain(a.id);
+    window.scrollTo(0, 0);
+  }
+
+  // The gate prints its own enum value otherwise: "No facets: too_short" tells the
+  // reader nothing and names an internal state they have no way to know about. Facets
+  // are the machine's index of what a thing could be an example of; not having them
+  // costs you nothing except being pulled into a room you did not search for by name.
+  const NO_FACETS = {
+    too_short:
+      "Too short for the curator to draw anything general out of. Still searchable.",
+    text_only:
+      "Held out of every model call, because it looks like it contains a credential. " +
+      "Still searchable.",
+    kind: "Nothing here for the curator to read yet. Still searchable.",
+  };
+
+  function whyNoFacets(reason) {
+    return (
+      NO_FACETS[reason] ||
+      "The curator has not read this yet. Still searchable."
+    );
+  }
+
+  // ---- a link's face -------------------------------------------------------
+  // A saved link has nothing but its address until someone decides it is worth one
+  // request. So the page shows what is actually known, and the button that would find
+  // out more says what it costs, right where it is.
+  function linkFace(a, p) {
+    const host = (() => {
+      try {
+        return new URL(a.source_url).hostname.replace(/^www\./, "");
+      } catch (e) {
+        return "the publisher";
+      }
+    })();
+
+    if (p && p.status === "ok") {
+      const shot = p.image_hash
+        ? '<img class="shot" style="view-transition-name:artifact-face" src="/artifacts/' + a.id + '/preview-image" alt="" ' +
+          'onerror="this.remove()">'
+        : "";
+      return shot +
+        (p.description ? '<div class="lede">' + esc(p.description) + "</div>" : "");
+    }
+
+    // No row yet means the queue has not reached it. Saving already asked for a
+    // preview, so a button here would be a second way to start something that is
+    // already happening. It says so, and looks again shortly.
+    //
+    // The wait has to be bounded and the timer has to be cancellable. Neither was true
+    // before: the poll rescheduled itself off a `ctx` that nothing ever cleared, so a
+    // link whose preview never arrives (auto-fetch off, or a publisher that never
+    // answers) kept firing `showArtifact` forever, which yanked the reader back out of
+    // whatever they had navigated to. Going Home did not stop it, because Home did not
+    // clear `ctx`. Two bugs stacked into one: an unbounded loop, and a loop that
+    // outlived its own screen.
+    if (!p) {
+      if (faceTries < FACE_LIMIT) {
+        faceTries += 1;
+        clearTimeout(faceWatch);
+        faceWatch = setTimeout(() => {
+          if (ctx && ctx.id === a.id) showArtifact(a.id);
+        }, 1500);
+        return (
+          '<div class="aside thinking">asking ' + esc(host) + " what this is...</div>"
+        );
+      }
+      // Past the limit, saying "asking" would be a lie: nothing is in flight. Offer
+      // the one request that is left to decide on.
+      return (
+        '<div class="aside why">Nothing has come back from ' +
+        esc(host) +
+        ". Automatic previews may be off in settings.</div>" +
+        '<button class="act" id="btnPreview" onclick="fetchPreview(\'' +
+        a.id +
+        "')\">Ask " +
+        esc(host) +
+        "</button>"
+      );
+    }
+
+    // Only a refusal gets a button, because only a refusal is a decision left to
+    // make: the publisher said no, and another request is either worth it or not.
+    return (
+      '<div class="aside why">' +
+      esc(p.error || "that did not resolve") +
+      "</div>" +
+      '<button class="act" id="btnPreview" onclick="fetchPreview(\'' +
+      a.id +
+      "')\">Try again</button>" +
+      '<div class="aside">one more request to ' +
+      esc(host) +
+      "</div>"
+    );
+  }
+
+  // Deleting is reversible and says so, because the whole promise of the product is
+  // that nothing is lost. The window is the person's own setting, so the confirmation
+  // quotes it rather than a number this code invented.
+  async function binArtifact(id) {
+    let days = 30;
+    try {
+      days = (await api("/trash")).retention_days;
+    } catch (err) {}
+    try {
+      await api("/artifacts/" + id, { method: "DELETE" });
+    } catch (err) {
+      return toast("Not deleted. " + String(err.message || err), true);
+    }
+    home();
+    toast("Moved to the trash. Recoverable for " + days + " day" + (days === 1 ? "" : "s") + ".");
+  }
+
+  async function pinArtifact(id, pinned) {
+    try {
+      await api("/artifacts/" + id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned }),
+      });
+    } catch (err) {
+      return toast(String(err.message || err), true);
+    }
+    showArtifact(id);
+  }
+
+  async function fetchPreview(id) {
+    const button = document.getElementById("btnPreview");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "asking " + "...";
+    }
+    try {
+      await api("/artifacts/" + id + "/preview", { method: "POST" });
+    } catch (err) {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Try again";
+      }
+      return toast(String(err.message || err), true);
+    }
+    faceTries = 0;
+    showArtifact(id);
+  }
+
+  // What is known about a file the reader may not be able to show. An upload that
+  // renders as a featureless square is indistinguishable from one that never arrived,
+  // which is exactly how a successful capture got reported as a failure.
+  function fileFacts(file) {
+    if (!file) return '<div class="aside why">The stored copy is missing.</div>';
+    return '<div class="aside">' + esc(file.name) + " &middot; " + esc(file.mime) +
+      " &middot; " + bytes(file.bytes) + "</div>";
+  }
+
+  // A captured text file had its contents nowhere: not on screen, not in the index,
+  // not answerable. It rendered as an empty glyph with a filename.
+  async function mountPlain(id) {
+    const box = document.getElementById("plain");
+    if (!box) return;
+    try {
+      const d = await api("/artifacts/" + id + "/text");
+      const text = (d.pages || []).map(p => p.text).join("\n").trim();
+      box.textContent = text || "";
+      if (!text) {
+        box.className = "state";
+        box.innerHTML =
+          "Kept exactly as it arrived. Nothing in it reads as text, so there is " +
+          "nothing to show and nothing to search - it is here, and it is intact.";
+      }
+    } catch (err) {
+      box.className = "aside why";
+      box.textContent = String(err.message || err);
+    }
+  }
+
+  // ---- finding a phrase inside one thing -----------------------------------
+  // Only intercepted for PDFs. Their pages are rendered as images, so the browser has
+  // no text to search and its own find is genuinely useless. A note is real text in the
+  // DOM, where Cmd+F already works better than anything reimplemented here would, so it
+  // is left alone.
+  let findState = null;
+
+  async function openFind() {
+    // Notes are real text in the DOM, so the browser could search them - except this
+    // window has no Edit menu, and without one the webview never binds its own find.
+    // So the same field serves both, and only the drawing differs.
+    if (!ctx || !["pdf", "note", "file"].includes(ctx.kind)) return false;
+
+    if (!findState || findState.id !== ctx.id) {
+      const d = await api("/artifacts/" + ctx.id + "/text").catch(() => null);
+      findState = { id: ctx.id, kind: ctx.kind, pages: (d && d.pages) || [] };
+    }
+
+    pill.classList.add("wide");
+    pill.innerHTML =
+      '<input id="findField" placeholder="find in this ' +
+      (ctx.kind === "pdf" ? "document" : "note") +
+      '" autocomplete="off">' +
+      '<span class="scope" id="findCount"></span>' +
+      '<button aria-label="Close" onclick="restorePill()">' +
+      svg("close") +
+      "</button>";
+
+    const field = document.getElementById("findField");
+    field.focus();
+    field.oninput = () => runFind(field.value);
+    field.onkeydown = (e) => {
+      if (e.key === "Escape") {
+        clearFind();
+        return restorePill();
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        stepFind(e.shiftKey ? -1 : 1);
+      }
+    };
+    return true;
+  }
+
+  async function runFind(term) {
+    const count = document.getElementById("findCount");
+    clearFind();
+    term = term.trim();
+    if (!term) {
+      if (count) count.textContent = "";
+      return;
+    }
+
+    if (findState.kind === "pdf") {
+      // The engine knows where the words are; the browser is looking at a picture.
+      // Counting matches in the extracted text here and drawing boxes from a separate
+      // source would let the two disagree, so both come from the one call.
+      const found = await api(
+        "/artifacts/" + findState.id + "/find?q=" + encodeURIComponent(term),
+      ).catch(() => ({ hits: [] }));
+      findState.hits = found.hits || [];
+      paintPdfHits();
+    } else {
+      findState.hits = markInNote(term);
+    }
+
+    findState.at = findState.hits.length ? 0 : -1;
+    if (count)
+      count.textContent = findState.hits.length
+        ? "1 of " + findState.hits.length
+        : "nothing";
+    if (findState.hits.length) goToHit(0);
+  }
+
+  // Boxes over the rendered page, positioned as percentages of it, so they stay put
+  // at any window width and any pixel density.
+  function paintPdfHits() {
+    for (const hit of findState.hits) {
+      const leaf = document.querySelector('.leaf[data-page="' + hit.page + '"]');
+      if (!leaf) continue;
+      const mark = document.createElement("span");
+      mark.className = "findbox";
+      mark.style.left = hit.x * 100 + "%";
+      mark.style.top = hit.y * 100 + "%";
+      mark.style.width = hit.w * 100 + "%";
+      mark.style.height = hit.h * 100 + "%";
+      leaf.appendChild(mark);
+      hit.node = mark;
+    }
+  }
+
+  // A note is live text the person can edit, so the matches are wrapped in CSS
+  // highlights rather than in elements. Inserting <mark> tags would change the DOM
+  // the editor serialises back to markdown, and the next save would write them into
+  // the note.
+  function markInNote(term) {
+    const root = document.getElementById("body") || document.getElementById("plain");
+    if (!root || !window.CSS || !CSS.highlights) return [];
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const ranges = [];
+    const needle = term.toLowerCase();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const hay = node.nodeValue.toLowerCase();
+      let at = hay.indexOf(needle);
+      while (at !== -1) {
+        const range = new Range();
+        range.setStart(node, at);
+        range.setEnd(node, at + needle.length);
+        ranges.push({ range });
+        at = hay.indexOf(needle, at + needle.length);
+      }
+    }
+
+    CSS.highlights.set("enqueue-find", new Highlight(...ranges.map((r) => r.range)));
+    return ranges;
+  }
+
+  function stepFind(by) {
+    const hits = (findState && findState.hits) || [];
+    if (!hits.length) return;
+    findState.at = (findState.at + by + hits.length) % hits.length;
+    document.getElementById("findCount").textContent =
+      findState.at + 1 + " of " + hits.length;
+    goToHit(findState.at);
+  }
+
+  function goToHit(index) {
+    const hit = findState.hits[index];
+    if (!hit) return;
+
+    document.querySelectorAll(".findbox.on").forEach((m) => m.classList.remove("on"));
+
+    if (findState.kind === "pdf") {
+      if (hit.node) hit.node.classList.add("on");
+      const target =
+        hit.node || document.querySelector('.leaf[data-page="' + hit.page + '"]');
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    // A Range has no scrollIntoView of its own, so its rectangle is measured and the
+    // window moved to it.
+    const box = hit.range.getBoundingClientRect();
+    window.scrollTo({
+      top: window.scrollY + box.top - window.innerHeight / 2,
+      behavior: "smooth",
+    });
+    CSS.highlights.set("enqueue-find-current", new Highlight(hit.range));
+  }
+
+  function clearFind() {
+    document.querySelectorAll(".findbox").forEach((m) => m.remove());
+    if (window.CSS && CSS.highlights) {
+      CSS.highlights.delete("enqueue-find");
+      CSS.highlights.delete("enqueue-find-current");
+    }
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (
+      (e.metaKey || e.ctrlKey) &&
+      e.key === "f" &&
+      ctx &&
+      ctx.kind === "pdf"
+    ) {
+      e.preventDefault();
+      openFind();
+    }
+  });
+
+  // ---- the reader ----------------------------------------------------------
+  // A PDF is read here, not handed to whatever the operating system would open it
+  // with. Pages are rasterised by the engine, so they render in a webview that has no
+  // PDF plugin, and they load as they are reached rather than all at once.
+  function reader(a, pages) {
+    if (!pages)
+      return (
+        '<div class="state">This file will not open as a document. It is stored ' +
+        'exactly as it arrived: <a class="gold" href="/artifacts/' +
+        a.id +
+        '/blob" download>keep a copy</a>.</div>'
+      );
+
+    let html = '<div class="reader" id="reader">';
+    for (let i = 0; i < pages; i++)
+      html +=
+        '<div class="leaf"' +
+        (i === 0 ? ' style="view-transition-name:artifact-face"' : "") +
+        ' data-page="' +
+        i +
+        '" role="img" aria-label="page ' +
+        (i + 1) +
+        " of " +
+        pages +
+        '"></div>';
+    return (
+      html + "</div>" + '<div class="folio" id="folio">1 / ' + pages + "</div>"
+    );
+  }
+
+  let readerWatch = null;
+
+  function mountReader(id, pages) {
+    if (readerWatch) {
+      readerWatch.disconnect();
+      readerWatch = null;
+    }
+    const root = document.getElementById("reader");
+    if (!root || !pages) return;
+
+    // Rasterise at the density the screen actually has: a 900px render on a Retina
+    // display is a soft page, and soft type is the one thing a reader cannot forgive.
+    //
+    // Measured at mount, the width is sometimes 0, because the pane has not laid out
+    // yet and a zero-width request renders nothing. So it is measured at the moment a
+    // page is actually reached, by which point layout has certainly happened.
+    const width = () =>
+      Math.min(
+        2400,
+        Math.max(
+          700,
+          Math.round(root.clientWidth * (window.devicePixelRatio || 1)),
+        ),
+      );
+
+    const load = (leaf) => {
+      if (leaf.dataset.loaded) return;
+      leaf.dataset.loaded = "1";
+      const img = new Image();
+      img.alt = "";
+      img.onload = () => {
+        // Prepended, not replaced. Pages load lazily, so a find can paint highlight
+        // boxes onto a page before its picture arrives; `replaceChildren` then wiped
+        // them and the search silently lost a third of its results.
+        leaf.prepend(img);
+        leaf.classList.add("loaded");
+      };
+      // A page that will not render is still a page. Removing it would silently
+      // renumber the document underneath the reader.
+      img.onerror = () => {
+        leaf.dataset.loaded = "";
+        leaf.classList.add("blank");
+        leaf.textContent =
+          "page " + (Number(leaf.dataset.page) + 1) + " would not render";
+      };
+      img.src =
+        "/artifacts/" + id + "/page/" + leaf.dataset.page + "?width=" + width();
+    };
+
+    // Two observers, because the two jobs want opposite settings. Loading wants to fire
+    // early, a screen or two ahead. The page counter wants to fire late and exactly:
+    // sharing one observer is what made it read "2 / 9" while page one filled the screen.
+    const ahead = new IntersectionObserver(
+      (entries) =>
+        entries.filter((e) => e.isIntersecting).forEach((e) => load(e.target)),
+      { rootMargin: "1200px 0px" },
+    );
+
+    const folio = document.getElementById("folio");
+    const shown = new Map();
+    const here = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          shown.set(Number(entry.target.dataset.page), entry.intersectionRatio);
+        if (!folio) return;
+        // The page you are reading is the one filling most of the screen. Ties go to the
+        // earlier page, because that is the one you are still finishing.
+        let best = null;
+        for (const [page, ratio] of [...shown].sort((a, b) => a[0] - b[0]))
+          if (ratio > 0 && (best === null || ratio > shown.get(best) + 0.01))
+            best = page;
+        if (best !== null) folio.textContent = best + 1 + " / " + pages;
+      },
+      { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] },
+    );
+
+    root.querySelectorAll(".leaf").forEach((leaf) => {
+      ahead.observe(leaf);
+      here.observe(leaf);
+    });
+    readerWatch = {
+      disconnect: () => {
+        ahead.disconnect();
+        here.disconnect();
+      },
+    };
+  }
+
+  function mountEditor(focus) {
+    const ed = document.getElementById("body");
+    if (!ed || !ctx) return;
+    ed.innerHTML = ctx.html || "";
+
+    const lead = ed.firstElementChild;
+    if (
+      lead &&
+      lead.tagName === "H1" &&
+      ctx.title &&
+      lead.textContent.trim() === ctx.title.trim()
+    )
+      ed.classList.add("titled");
+
+    ed.addEventListener("input", () => applyInputRules(ed));
+    ed.addEventListener("blur", saveBody);
+    ed.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && "bi".includes(e.key)) {
+        e.preventDefault();
+        document.execCommand(e.key === "b" ? "bold" : "italic");
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        saveBody();
+      }
+    });
+    // Paste as plain text. Pasting styled HTML from a browser would smuggle in tags the
+    // serialiser cannot represent, and they would be silently lost on the next save.
+    ed.addEventListener("paste", (e) => {
+      e.preventDefault();
+      document.execCommand(
+        "insertText",
+        false,
+        (e.clipboardData || window.clipboardData).getData("text"),
+      );
+    });
+
+    if (focus) ed.focus();
+  }
+
+  async function saveBody() {
+    if (!ctx) return;
+    const ed = document.getElementById("body"),
+      state = document.getElementById("state");
+    if (!ed || !state) return;
+    const text = htmlToMd(ed);
+    if (text === ctx.saved) return;
+
+    try {
+      if (ctx.kind === "note") {
+        await api("/artifacts/" + ctx.id + "/body", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: text }),
+        });
+        const v = document.getElementById("vers");
+        if (v) {
+          const n = Number(v.dataset.n || 0) + 1;
+          v.dataset.n = n;
+          // "3 versions" is a row count. What it means is that nothing you wrote is gone.
+      v.textContent = n > 1 ? n + " drafts kept" : "";
+        }
+      } else {
+        if (!text.trim()) return;
+        const r = await api("/artifacts/" + ctx.id + "/annotations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, supersedes_id: ctx.entryId }),
+        });
+        ctx.entryId = r.id;
+      }
+    } catch (err) {
+      state.className = "meta";
+      state.textContent = String(err);
+      return;
+    }
+
+    ctx.saved = text;
+    state.className = "saved";
+    state.textContent = ctx.kind === "note" ? "kept" : "noted";
+
+    // The rule under the editor fills once in the artifact's own colour. It reads as
+    // the page acknowledging the words rather than a toast arriving from elsewhere.
+    const bar = state.closest(".bar");
+    if (bar) {
+      bar.classList.remove("landed");
+      void bar.offsetWidth;
+      bar.classList.add("landed");
+    }
+    setTimeout(() => {
+      if (state.textContent === "saved") state.textContent = "";
+    }, 2200);
+  }
+
+  async function showExhibit(id) {
+    teardown();
+    const d = await api("/exhibits/" + id);
+    const e = d.exhibit;
+    scope = { kind: "exhibit", id, label: "this room" };
+    restorePill("inside");
+
+    let html =
+      '<div class="h1">' +
+      esc(e.name) +
+      "</div>" +
+      '<div class="meta">' +
+      d.members.length +
+      " here</div>";
+    if (e.through_line)
+      html +=
+        '<div class="md" style="margin:var(--sp-4) 0">' +
+        esc(e.through_line) +
+        "</div>";
+    if (e.thin)
+      html +=
+        '<div class="state gold">thin &middot; ' +
+        esc(e.thin_reason) +
+        "</div>";
+
+    html += d.members
+      .map(
+        (m, j) =>
+          '<div class="item hang" style="animation-delay:' +
+          j * 70 +
+          'ms" ' +
+          'tabindex="0" role="button" onclick="showArtifact(\'' +
+          m.artifact_id +
+          "')\" " +
+          "onkeydown=\"rowKey(event, () => showArtifact('" +
+          m.artifact_id +
+          "'))\">" +
+          '<div class="item-body">' +
+          '<div class="title">' +
+          esc(m.title) +
+          "</div>" +
+          '<div class="md" style="font-size:14px">' +
+          esc(m.placard) +
+          "</div>" +
+          '<div class="meta">match ' +
+          m.strength +
+          "</div></div></div>",
+      )
+      .join("");
+
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  async function doSearch(q) {
+    teardown();
+    view.innerHTML = '<div class="state thinking">searching...</div>';
+    const r = await api("/search?limit=20&q=" + encodeURIComponent(q));
+    view.innerHTML =
+      '<div class="back" onclick="home()">&larr; everything</div>' +
+      '<div class="shelf">' +
+      r.hits.length +
+      " result" +
+      (r.hits.length === 1 ? "" : "s") +
+      " for &ldquo;" +
+      esc(q) +
+      "&rdquo;</div>" +
+      (r.hits.length
+        ? r.hits
+            .map(
+              (h) =>
+                '<div class="item" tabindex="0" role="button"' +
+                " onclick=\"showArtifact('" +
+                h.artifact_id +
+                "')\"" +
+                " onkeydown=\"rowKey(event, () => showArtifact('" +
+                h.artifact_id +
+                "'))\">" +
+                '<div class="item-body"><div class="title">' +
+                esc(h.title) +
+                "</div>" +
+                '<div class="excerpt">' +
+                esc(h.snippet) +
+                "</div>" +
+                '<div class="meta">' +
+                h.score.toFixed(3) +
+                "</div></div></div>",
+            )
+            .join("")
+        : '<div class="state">Nothing matched those words.<br><br>Search finds things you can ' +
+          "name. If you are chasing an idea rather than a phrase, ask instead and let the room " +
+          "assemble itself.</div>");
+  }
+
+  // ---- chats ---------------------------------------------------------------
+  // Asking is a conversation, not a single shot. The concepts a conversation turns out
+  // to circle are kept beside it, and each one can still hang a room, which is the
+  // only reason to store them rather than to name a chat by its first line.
+
+  let chat = null;
+  let rail = null;
+
+  function teardown() {
+    if (readerWatch) {
+      readerWatch.disconnect();
+      readerWatch = null;
+    }
+    // Leaving a screen has to take that screen's pending work with it. `ctx` is what
+    // every deferred callback tests itself against, so a `ctx` that outlives its view
+    // is a licence for the old screen to redraw itself over the new one.
+    clearTimeout(faceWatch);
+    faceWatch = null;
+    ctx = null;
+    chat = null;
+  }
+
+  async function startChat(text) {
+    const asked = { kind: scope.kind, id: scope.id };
+    view.innerHTML =
+      '<div class="state thinking">reading what you saved...</div>';
+    let made;
+    try {
+      made = await api("/chats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope_kind:
+            asked.kind === "artifact" || asked.kind === "exhibit"
+              ? asked.kind
+              : "everything",
+          scope_id: asked.id || null,
+          text,
+        }),
+      });
+    } catch (err) {
+      return chatFailed(err, text);
+    }
+    showChat(made.chat.id, made);
+  }
+
+  async function chatFailed(err, text) {
+    const why = await api("/chats/ready").catch(() => ({
+      ready: true,
+      reason: null,
+    }));
+    view.innerHTML =
+      '<div class="back" onclick="home()">&larr; everything</div>' +
+      '<div class="state">' +
+      (why.ready
+        ? 'The curator could not answer.<br><br><span class="gold">' +
+          esc(String(err)) +
+          "</span><br><br>Nothing was lost. Your question was " +
+          esc(text) +
+          "."
+        : "There is nothing to answer from yet: " + esc(why.reason) + ".") +
+      "</div>";
+  }
+
+  async function showChat(id, preloaded) {
+    if (readerWatch) {
+      readerWatch.disconnect();
+      readerWatch = null;
+    }
+    const d = preloaded || (await api("/chats/" + id));
+    chat = d;
+    scope = { kind: "chat", id, label: "this conversation" };
+    showRail(id);
+    renderChat(d);
+    composer();
+  }
+
+  function renderChat(d, pending) {
+    // The scope is a constraint, not a subtitle. Rendered as metadata it read like a
+    // caption, and a chat silently locked to one empty link answered "nothing you have
+    // saved" to a question the museum could answer instantly. Say what it can see, and
+    // put the way out next to it.
+    const scoped = d.chat.scope_kind !== "everything";
+    let html =
+      '<div class="back" onclick="home()">&larr; everything</div>' +
+      '<div class="h1">' +
+      esc(d.chat.title) +
+      "</div>" +
+      (scoped
+        ? '<div class="from scopebar">' +
+          '<span class="aside">reading only</span>' +
+          (d.chat.scope_kind === "artifact"
+            ? '<button class="src" onclick="showArtifact(\'' +
+              esc(d.chat.scope_id) +
+              '\')">' +
+              esc(d.chat.scope_label) +
+              "</button>"
+            : '<button class="src" onclick="showExhibit(\'' +
+              esc(d.chat.scope_id) +
+              '\')">' +
+              esc(d.chat.scope_label) +
+              "</button>") +
+          "</div>"
+        : '<div class="meta">reading everything</div>');
+
+    for (const m of d.messages) {
+      html +=
+        '<div class="turn ' +
+        (m.role === "user" ? "you" : "curator") +
+        '">' +
+        '<div class="who">' +
+        (m.role === "user" ? "you" : "the curator") +
+        "</div>" +
+        '<div class="said md">' +
+        (m.role === "user" ? esc(m.text) : md(m.text)) +
+        "</div>";
+      const echoes =
+        d.chat.scope_kind === "artifact" &&
+        m.cited &&
+        m.cited.length === 1 &&
+        m.cited[0].artifact_id === d.chat.scope_id;
+
+      if (m.cited && m.cited.length && !echoes)
+        html +=
+          '<div class="from">' +
+          m.cited
+            .map(
+              (c) =>
+                '<button class="src" onclick="showArtifact(\'' +
+                c.artifact_id +
+                "')\">" +
+                esc(c.title) +
+                "</button>",
+            )
+            .join("") +
+          "</div>";
+      else if (m.role === "assistant" && !m.grounded)
+        html +=
+          '<div class="unsourced">nothing you have saved carried this</div>';
+      html += "</div>";
+    }
+
+    if (pending)
+      html +=
+        '<div class="turn you"><div class="who">you</div><div class="said">' +
+        esc(pending) +
+        '</div></div><div class="turn curator">' +
+        '<div class="who">the curator</div>' +
+        '<div class="said thinking">reading what you saved...</div></div>';
+
+    view.innerHTML = html;
+    window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  // The rail is present on every surface, not only inside a conversation. A thread you
+  // have to be already reading in order to find is a thread you will not go back to.
+  async function showRail(activeId) {
+    document.body.classList.add("railed");
+    if (!rail) {
+      rail = document.createElement("nav");
+      rail.className = "rail";
+      rail.setAttribute("aria-label", "Conversations");
+      document.body.appendChild(rail);
+    }
+
+    const list = await api("/chats?limit=40").catch(() => ({ items: [] }));
+
+    const thread = (c) => {
+      const on = c.id === activeId;
+      return (
+        '<div class="threadrow' +
+        (on ? " on" : "") +
+        '">' +
+        '<button class="thread" onclick="showChat(\'' +
+        c.id +
+        "')\">" +
+        esc(c.title) +
+        "</button>" +
+        '<button class="pin' +
+        (c.pinned ? " lit" : "") +
+        '" title="' +
+        (c.pinned ? "Unpin" : "Keep at the top") +
+        '" aria-label="' +
+        (c.pinned ? "Unpin" : "Keep at the top") +
+        '" aria-pressed="' +
+        !!c.pinned +
+        '" onclick="event.stopPropagation();togglePin(\'' +
+        c.id +
+        "'," +
+        !c.pinned +
+        ')">' +
+        svg("star") +
+        "</button>" +
+        '<button class="pin" title="Delete this conversation" ' +
+        'aria-label="Delete this conversation" ' +
+        'onclick="event.stopPropagation();dropChat(\'' +
+        c.id +
+        '\')">' +
+        svg("trash") +
+        "</button></div>"
+      );
+    };
+
+    const kept = list.items.filter((c) => c.pinned);
+    const rest = list.items.filter((c) => !c.pinned);
+
+    rail.innerHTML =
+      '<button class="gohome" onclick="home()">' +
+      svg("home") +
+      "Everything</button>" +
+      "<h2>Conversations</h2>" +
+      '<button class="newchat" onclick="openField(\'ask\')">' +
+      svg("plus") +
+      "Ask something</button>" +
+      (kept.length
+        ? '<div class="kept">' + kept.map(thread).join("") + "</div>"
+        : "") +
+      (rest.length
+        ? rest.map(thread).join("")
+        : kept.length
+          ? ""
+          : '<div class="aside" style="padding:0 var(--sp-3)">Nothing asked yet.</div>') +
+      '<div class="railfoot"><button class="gear" onclick="showTrash()">' +
+      svg("trash") +
+      "Trash</button>" +
+      '<button class="gear" onclick="showSettings()">' +
+      svg("gear") +
+      "Settings</button></div>";
+  }
+
+  // A conversation is scaffolding around the collection, not part of it, so this
+  // removes it outright rather than sending it to the trash: there is no original to
+  // recover, and the artifacts it cited are untouched either way.
+  async function dropChat(id) {
+    const row = document.querySelector('.thread[onclick*="' + id + '"]');
+    const name = row ? row.textContent.trim() : "this conversation";
+    if (!window.confirm("Delete " + name + "?\n\nThe artifacts it cited stay."))
+      return;
+
+    try {
+      await api("/chats/" + id, { method: "DELETE" });
+    } catch (err) {
+      return toast("Not deleted. " + String(err.message || err), true);
+    }
+    if (chat && chat.chat.id === id) {
+      chat = null;
+      home();
+    } else {
+      showRail(chat ? chat.chat.id : null);
+    }
+    toast("Conversation deleted.");
+  }
+
+  async function togglePin(id, pinned) {
+    try {
+      await api("/chats/" + id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned }),
+      });
+    } catch (err) {
+      return toast(String(err.message || err), true);
+    }
+    showRail(chat ? chat.chat.id : null);
+  }
+
+  // The composer is drawn before the rail has finished loading, so the toggle looks the
+  // rail up when it is pressed rather than closing over a variable that may still be null.
+  function toggleRail() {
+    const found = document.querySelector(".rail");
+    if (found) found.classList.toggle("open");
+  }
+
+  function composer() {
+    closeMenu();
+    pill.classList.add("wide");
+    pill.innerHTML =
+      '<button id="btnRail" aria-label="Conversations" onclick="toggleRail()">' +
+      svg("rail") +
+      "</button>" +
+      '<input id="field" placeholder="ask about ' +
+      esc(chat.chat.scope_label) +
+      '" autocomplete="off">' +
+      '<button aria-label="Leave" onclick="home()">' +
+      svg("close") +
+      "</button>";
+
+    const field = document.getElementById("field");
+    field.focus();
+    field.onkeydown = (e) => {
+      if (e.key === "Escape") return home();
+      if (e.key !== "Enter") return;
+      const v = field.value.trim();
+      if (!v) return;
+      field.value = "";
+      sendInChat(v);
+    };
+  }
+
+  async function sendInChat(text) {
+    const id = chat.chat.id;
+    renderChat(chat, text);
+    let d;
+    try {
+      d = await api("/chats/" + id + "/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+    } catch (err) {
+      chat = await api("/chats/" + id);
+      renderChat(chat);
+      const note = document.createElement("div");
+      note.className = "state gold";
+      note.textContent = String(err);
+      view.appendChild(note);
+      return;
+    }
+    chat = d;
+    renderChat(d);
+    showRail(id);
+    composer();
+  }
+
+  // ---- the trash -----------------------------------------------------------
+  // Everything else here is kept on purpose. This is the one surface where something
+  // leaves, so it says what is going, when, and how to stop it.
+  async function showTrash() {
+    teardown();
+    restorePill("inside");
+    showRail(null);
+    view.innerHTML = '<div class="state">...</div>';
+    const d = await api("/trash");
+
+    let html =
+      '<div class="h1">Trash</div>' +
+      '<div class="aside">Deleted things wait ' +
+      d.retention_days +
+      " day" +
+      (d.retention_days === 1 ? "" : "s") +
+      ", then go for good. Nothing else here ever expires on its own.</div>";
+
+    if (!d.items.length) {
+      html += '<div class="state">Nothing waiting.</div>';
+      view.innerHTML = html;
+      return;
+    }
+
+    html +=
+      '<div class="trash">' +
+      '<div class="trashbar"><span>' +
+      d.items.length +
+      " waiting</span>" +
+      '<button class="plain danger" onclick="emptyTrash(' +
+      d.items.length +
+      ')">Empty it now</button></div>';
+    html += d.items
+      .map(
+        (a) =>
+          '<div class="item"><div class="item-body">' +
+          '<div class="title">' +
+          esc(a.title || "Untitled") +
+          "</div>" +
+          '<div class="meta">' +
+          esc(a.kind) +
+          " &middot; " +
+          (a.days_left > 0
+            ? a.days_left + " day" + (a.days_left === 1 ? "" : "s") + " left"
+            : "goes at the next launch") +
+          "</div></div>" +
+          '<div class="rowacts">' +
+          '<button class="plain" onclick="restoreArtifact(&#39;' +
+          a.id +
+          '&#39;)">Put back</button>' +
+          '<button class="plain danger" onclick="purgeArtifact(&#39;' +
+          a.id +
+          "&#39;)\">Delete now</button></div></div>",
+      )
+      .join("");
+    html += "</div>";
+
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  // Skips the waiting period for everything at once, so the confirmation counts the
+  // things rather than saying "are you sure".
+  async function emptyTrash(count) {
+    if (
+      !window.confirm(
+        "Destroy " +
+          count +
+          " thing" +
+          (count === 1 ? "" : "s") +
+          " for good?\n\nThis cannot be undone.",
+      )
+    )
+      return;
+
+    try {
+      await api("/trash", { method: "DELETE" });
+    } catch (err) {
+      return toast(String(err.message || err), true);
+    }
+    showTrash();
+    toast("Trash emptied.");
+  }
+
+  async function restoreArtifact(id) {
+    try {
+      await api("/artifacts/" + id + "/restore", { method: "POST" });
+    } catch (err) {
+      return toast("Not restored. " + String(err.message || err), true);
+    }
+    showTrash();
+    toast("Put back.");
+  }
+
+  // The only irreversible action in the product, so it is the only one that asks.
+  async function purgeArtifact(id) {
+    // The title is read from the row rather than passed through the handler: a title
+    // is model- or file-derived text, and threading it through an inline onclick
+    // string is how that kind of text ends up being parsed as code.
+    const row = document.querySelector('[onclick*="' + id + '"]');
+    const title =
+      row?.closest(".item")?.querySelector(".title")?.textContent || "this";
+
+    if (!window.confirm("Delete " + title + " for good?\n\nThis cannot be undone."))
+      return;
+    try {
+      await api("/trash/" + id, { method: "DELETE" });
+    } catch (err) {
+      return toast(String(err.message || err), true);
+    }
+    showTrash();
+    toast("Gone.");
+  }
+
+  // ---- settings ------------------------------------------------------------
+  // Not a destination. This is where you go when something is wrong, so it says where
+  // every value came from: a field you edit that is silently overridden by an
+  // environment variable is worse than no field.
+  const SETTING_LABELS = {
+    llm_model: "Model",
+    llm_url: "Endpoint",
+    model_retries: "Retries after a failed answer",
+    user_agent: "User agent for link previews",
+    hotkey: "Capture hotkey",
+    theme: "Appearance",
+    llm_headers: "Extra headers",
+    auto_preview: "Resolve links when you save them",
+    trash_days: "Days a deleted thing waits before it goes",
+  };
+
+  // Two spellings of the same binding, kept apart on purpose.
+  //
+  // `Alt` is what the shortcut plugin registers; `Option` is what is printed on the
+  // key. Showing the accelerator to a Mac user asks them to find a key their keyboard
+  // does not have. Store one, display the other.
+  const KEY_NAMES = [
+    ["CommandOrControl", "⌘"],
+    ["Command", "⌘"],
+    ["Cmd", "⌘"],
+    ["Control", "⌃"],
+    ["Ctrl", "⌃"],
+    ["Alt", "⌥"],
+    ["Option", "⌥"],
+    ["Shift", "⇧"],
+  ];
+
+  function keyLabel(accelerator) {
+    return String(accelerator || "")
+      .split("+")
+      .map((part) => {
+        const hit = KEY_NAMES.find(
+          ([name]) => name.toLowerCase() === part.trim().toLowerCase(),
+        );
+        return hit ? hit[1] : part.trim().toUpperCase();
+      })
+      .join("");
+  }
+
+  function toAccelerator(label) {
+    // Accepts what the field shows back (glyphs) and what someone might type instead.
+    const parts = [];
+    let rest = String(label || "");
+    for (const [name, glyph] of [
+      ["Control", "⌃"],
+      ["Alt", "⌥"],
+      ["Shift", "⇧"],
+      ["CommandOrControl", "⌘"],
+    ]) {
+      if (rest.includes(glyph)) {
+        parts.push(name);
+        rest = rest.split(glyph).join("");
+      }
+    }
+    for (const spoken of [
+      "Option",
+      "Command",
+      "Cmd",
+      "Ctrl",
+      "Control",
+      "Alt",
+      "Shift",
+    ]) {
+      const re = new RegExp("\\b" + spoken + "\\b\\s*\\+?\\s*", "i");
+      if (re.test(rest)) {
+        rest = rest.replace(re, "");
+        const name = /option|alt/i.test(spoken)
+          ? "Alt"
+          : /cmd|command/i.test(spoken)
+            ? "CommandOrControl"
+            : /ctrl|control/i.test(spoken)
+              ? "Control"
+              : "Shift";
+        if (!parts.includes(name)) parts.push(name);
+      }
+    }
+    const key = rest.replace(/[+\s]/g, "").toUpperCase();
+    return key ? [...parts, key].join("+") : parts.join("+");
+  }
+
+  // Recorded, not typed. Nobody knows the accelerator spelling of the key they want,
+  // and everybody can press it.
+  let recording = null;
+
+  function recordHotkey(button) {
+    if (recording) return;
+    const label = document.getElementById("hotkeyLabel");
+    const previous = label.textContent;
+    button.classList.add("listening");
+    label.textContent = "press a combination";
+
+    const stop = () => {
+      window.removeEventListener("keydown", onKey, true);
+      button.classList.remove("listening");
+      recording = null;
+    };
+
+    const onKey = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape") {
+        label.textContent = previous;
+        return stop();
+      }
+
+      // A bare letter is not a system-wide shortcut, it is the letter T. Wait until at
+      // least one modifier is held before accepting anything.
+      const held = [];
+      if (e.ctrlKey) held.push("Control");
+      if (e.altKey) held.push("Alt");
+      if (e.shiftKey) held.push("Shift");
+      if (e.metaKey) held.push("CommandOrControl");
+      if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+      if (!held.length) {
+        label.textContent = "hold a modifier too";
+        return;
+      }
+
+      const key = e.code.startsWith("Key")
+        ? e.code.slice(3)
+        : e.code.startsWith("Digit")
+          ? e.code.slice(5)
+          : e.key.length === 1
+            ? e.key.toUpperCase()
+            : e.key;
+      const accelerator = [...held, key].join("+");
+      label.textContent = keyLabel(accelerator);
+      stop();
+      saveSetting("hotkey", accelerator);
+    };
+
+    recording = onKey;
+    window.addEventListener("keydown", onKey, true);
+  }
+
+  function bytes(n) {
+    if (!n) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const i = Math.min(
+      units.length - 1,
+      Math.floor(Math.log(n) / Math.log(1024)),
+    );
+    return (n / Math.pow(1024, i)).toFixed(i ? 1 : 0) + " " + units[i];
+  }
+
+  async function showSettings() {
+    teardown();
+    restorePill("inside");
+    showRail(null);
+    view.innerHTML = '<div class="state">...</div>';
+    const d = await api("/settings");
+
+    let html = '<div class="h1">Settings</div>';
+
+    html +=
+      '<div class="shelf">Appearance</div>' +
+      '<div class="field"><label>' + esc(SETTING_LABELS.theme) + "</label>" +
+      '<div class="seg" role="group" aria-label="Appearance">' +
+      [["system", "Follow the Mac"], ["light", "Light"], ["dark", "Dark"]]
+        .map(([key, label]) =>
+          '<button data-theme="' + key + '" aria-pressed="' +
+          String((localStorage.getItem("enqueue.theme") || "system") === key) +
+          '" onclick="chooseTheme(\'' + key + '\')">' + esc(label) + "</button>")
+        .join("") +
+      "</div></div>";
+
+    html += '<div class="shelf">The model</div>';
+
+    // Which backend answers is the one setting here that changes what the product is,
+    // so it says so at the point of choosing rather than in a note somewhere else.
+    const chosen = d.settings.llm_backend;
+    html +=
+      '<div class="field"><label for="s_backend">Answers come from</label>' +
+      '<select id="s_backend"' +
+      (chosen.locked ? " disabled" : "") +
+      ' onchange="chooseBackend(this.value)">' +
+      d.backends
+        .map(
+          (b) =>
+            '<option value="' +
+            esc(b.name) +
+            '"' +
+            (b.name === chosen.value ? " selected" : "") +
+            ">" +
+            esc(b.label) +
+            "</option>",
+        )
+        .join("") +
+      "</select>";
+
+    const picked = d.backends.find((b) => b.name === chosen.value);
+    if (picked && !picked.local)
+      html +=
+        '<div class="aside why">The text of whatever is retrieved gets sent to ' +
+        esc(picked.label) +
+        ". Artifacts marked local only never take this path." +
+        (picked.needs_key && !picked.key_present
+          ? " <b>No API key is set</b>, so calls will fail until ENQ_LLM_API_KEY is exported."
+          : "") +
+        "</div>";
+    else if (picked)
+      html += '<div class="aside">Nothing leaves this machine.</div>';
+    html += "</div>";
+
+    for (const name of ["llm_model", "llm_url", "model_retries"]) {
+      const f = d.settings[name];
+      html +=
+        '<div class="field"><label for="s_' +
+        name +
+        '">' +
+        esc(SETTING_LABELS[name]) +
+        "</label>" +
+        '<input id="s_' +
+        name +
+        '" value="' +
+        esc(String(f.value ?? "")) +
+        '"' +
+        (f.locked ? " disabled" : "") +
+        " onchange=\"saveSetting('" +
+        name +
+        "', this.value)\">" +
+        (f.locked
+          ? '<div class="pinned">pinned by ' +
+            esc(f.env_var) +
+            " in the environment</div>"
+          : "") +
+        "</div>";
+    }
+
+    // Said plainly rather than shown as an empty field. Writing a key into a plaintext
+    // file on disk would contradict the reason this product exists.
+    const keyed = d.storage.api_key_present;
+    html +=
+      '<div class="field"><label for="s_key">API key</label>' +
+      (d.storage.api_key_editable
+        ? '<div class="keyrow">' +
+          '<input id="s_key" type="password" autocomplete="off" spellcheck="false" ' +
+          'placeholder="' +
+          (keyed ? "stored " + esc(d.storage.api_key_hint || "") : "paste a key") +
+          '">' +
+          '<button class="act small" onclick="saveKey()">Save</button>' +
+          (keyed
+            ? '<button class="act small danger" onclick="forgetKey()">Forget</button>'
+            : "") +
+          "</div>" +
+          '<div class="aside">Kept in the macOS Keychain, not in any file here. ' +
+          "Masked so nobody reads it over your shoulder; the Keychain is what stops " +
+          "it being read off the disk.</div>"
+        : '<div class="aside why">' +
+          (d.storage.api_key_where === "environment"
+            ? "Pinned by <b>ENQ_LLM_API_KEY</b> in the environment" +
+              (d.storage.api_key_hint ? " (" + esc(d.storage.api_key_hint) + ")" : "") +
+              ". Unset it to store one here instead."
+            : "No keychain on this system, so a key has to come from " +
+              "<b>ENQ_LLM_API_KEY</b> in the environment. Writing it into a file " +
+              "here would put it in plain text on disk.") +
+          "</div>") +
+      '<div id="keyState" class="aside why"></div></div>';
+
+    html +=
+      '<div class="field"><label for="s_headers">' + esc(SETTING_LABELS.llm_headers) +
+      "</label>" +
+      '<textarea id="s_headers" rows="3" spellcheck="false" placeholder="' +
+      "HTTP-Referer: https://your-app&#10;X-Title: Enqueue" +
+      '" onchange="saveSetting(\'llm_headers\', this.value)">' +
+      esc(String(d.settings.llm_headers.value || "")) + "</textarea>" +
+      '<div class="aside">One <b>Name: value</b> per line, sent with every model ' +
+      "call. Some endpoints want a referer or an app name before they will answer. " +
+      "Do not put a key here - it would be written to a file.</div></div>";
+
+    html +=
+      '<div class="aside" style="display:none">' +
+      (d.storage.api_key_present ? "set" : "not set") +
+      ". Keys are read from <b>ENQ_LLM_API_KEY</b> and never written to disk, so there " +
+      "is no field for one here.</div>";
+
+    html += '<div class="shelf">Capture</div>';
+    const hk = d.settings.hotkey;
+    html +=
+      '<div class="field"><label for="s_hotkey">' +
+      esc(SETTING_LABELS.hotkey) +
+      "</label>" +
+      '<button class="recorder" id="s_hotkey"' +
+      (hk.locked ? " disabled" : "") +
+      ' onclick="recordHotkey(this)"><span id="hotkeyLabel">' +
+      esc(keyLabel(hk.value)) +
+      "</span></button>" +
+      (hk.locked
+        ? '<div class="pinned">pinned by ' + esc(hk.env_var) + "</div>"
+        : '<div class="aside">Click, then press the combination you want. ' +
+          "Takes effect on the next launch.</div>") +
+      "</div>";
+
+    const ua = d.settings.user_agent;
+    html +=
+      '<div class="field"><label for="s_ua">' +
+      esc(SETTING_LABELS.user_agent) +
+      "</label>" +
+      '<input id="s_ua" placeholder="Enqueue/0.2 (+https://your-contact-url)" value="' +
+      esc(String(ua.value ?? "")) +
+      '"' +
+      (ua.locked ? " disabled" : "") +
+      " onchange=\"saveSetting('user_agent', this.value)\">" +
+      '<div class="aside">Some publishers refuse a client with no contact URL. Naming ' +
+      "yourself is how you satisfy that; disguising the request is not.</div></div>";
+
+    const ap = d.settings.auto_preview;
+    const apOn = String(ap.value).toLowerCase() !== "off";
+    html +=
+      '<div class="shelf">Links</div>' +
+      '<div class="field"><label>' + esc(SETTING_LABELS.auto_preview) + "</label>" +
+      '<div class="seg" role="group" aria-label="Resolve links">' +
+      [["on", "Yes"], ["off", "Only when I ask"]]
+        .map(([key, label]) =>
+          '<button aria-pressed="' + String(apOn === (key === "on")) + '"' +
+          (ap.locked ? " disabled" : "") +
+          ' onclick="saveSetting(\'auto_preview\', \'' + key + '\').then(showSettings)">' +
+          esc(label) + "</button>")
+        .join("") +
+      "</div>" +
+      (ap.locked
+        ? '<div class="pinned">pinned by ' + esc(ap.env_var) + "</div>"
+        : '<div class="aside">' +
+          (apOn
+            ? "One request per link, as you save it, so the wall is not a list of " +
+              "addresses. The publisher learns you saved it."
+            : "A link stays a bare address until you open it and ask. Nobody learns " +
+              "anything until then.") +
+          " Links marked local only are never fetched either way.</div>") +
+      "</div>";
+
+    const td = d.settings.trash_days;
+    html +=
+      '<div class="shelf">The trash</div>' +
+      '<div class="field"><label for="s_trash">' +
+      esc(SETTING_LABELS.trash_days) +
+      "</label>" +
+      '<input id="s_trash" type="number" min="1" max="3650" value="' +
+      esc(String(td.value)) +
+      '"' +
+      (td.locked ? " disabled" : "") +
+      " onchange=\"saveSetting('trash_days', this.value)\">" +
+      (td.locked
+        ? '<div class="pinned">pinned by ' + esc(td.env_var) + "</div>"
+        : '<div class="aside">Only things you delete are ever removed. Nothing else ' +
+          "here expires, however old it gets.</div>") +
+      "</div>";
+
+    const s = d.storage;
+    html +=
+      '<div class="shelf">Where everything lives</div><div class="facts">' +
+      "<b>data</b> " +
+      esc(s.data_dir) +
+      "<br>" +
+      "<b>database</b> " +
+      bytes(s.database.bytes) +
+      "<br>" +
+      "<b>files</b> " +
+      bytes(s.blobs.bytes) +
+      "<br>" +
+      "<b>index</b> " +
+      bytes(s.index.bytes) +
+      "<br>" +
+      Object.entries(s.counts)
+        .map(([k, v]) => "<b>" + esc(k) + "</b> " + v)
+        .join("<br>") +
+      "</div>" +
+      '<button class="act" onclick="rebuildIndex(this)">Rebuild the index</button>' +
+      '<div class="aside">Everything derived is thrown away and made again from what you ' +
+      "wrote and what you saved. Nothing you authored is touched.</div>";
+
+    html += '<div id="settingState" class="aside why"></div>';
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  // Switching backend moves the endpoint with it, because leaving the old URL behind
+  // would point a hosted model at localhost and fail in a way nobody could read.
+  const BACKEND_MODELS = {
+    ollama: "llama3.1:8b",
+    openrouter: "google/gemini-3-flash",
+    openai: "gpt-5.6-luna",
+  };
+
+  async function chooseBackend(name) {
+    const list = (await api("/settings")).backends;
+    const spec = list.find((b) => b.name === name);
+    const changes = { llm_backend: name };
+    if (spec && spec.url) changes.llm_url = spec.url;
+    if (BACKEND_MODELS[name]) changes.llm_model = BACKEND_MODELS[name];
+
+    try {
+      await api("/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes }),
+      });
+    } catch (err) {
+      const state = document.getElementById("settingState");
+      if (state) state.textContent = String(err);
+      return;
+    }
+    showSettings();
+  }
+
+  // The value is sent once and never read back. What returns is whether a key now
+  // exists and its last four characters, so the field can be cleared immediately.
+  async function saveKey() {
+    const field = document.getElementById("s_key");
+    const state = document.getElementById("keyState");
+    const key = field.value.trim();
+    if (!key) return;
+
+    try {
+      await api("/settings/api-key", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+    } catch (err) {
+      state.textContent = String(err.message || err);
+      return;
+    }
+    field.value = "";
+    showSettings();
+    toast("Key stored in the Keychain.");
+  }
+
+  async function forgetKey() {
+    if (!window.confirm("Forget the stored API key?")) return;
+    try {
+      await api("/settings/api-key", { method: "DELETE" });
+    } catch (err) {
+      return toast(String(err.message || err), true);
+    }
+    showSettings();
+    toast("Key forgotten.");
+  }
+
+  async function saveSetting(name, value) {
+    const state = document.getElementById("settingState");
+    try {
+      await api("/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes: { [name]: value } }),
+      });
+      if (state) {
+        state.textContent = "saved";
+        setTimeout(() => {
+          state.textContent = "";
+        }, 2000);
+      }
+    } catch (err) {
+      if (state) state.textContent = String(err);
+    }
+  }
+
+  async function rebuildIndex(button) {
+    button.disabled = true;
+    button.textContent = "rebuilding...";
+    try {
+      const r = await api("/index", { method: "POST" });
+      button.textContent = "Rebuilt " + r.chunks.indexed + " passages";
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Could not rebuild: " + String(err);
+    }
+  }
+
+  // A topic drawn out of a conversation is the same kind of thing a lens is, so it
+  // hangs a room. The chat it came from stays in the rail, because the room is a move
+  // inside the conversation rather than a departure from it.
+  let room = null;
+
+  async function doCurate(lens) {
+    const backTo = chat ? chat.chat.id : null;
+    const stages = [
+      "expanding the lens into the way documents actually talk",
+      "searching the literal and conceptual layers",
+      "reading each candidate and deciding whether it belongs",
+      "looking for what they share, and where they disagree",
+    ];
+    let i = 0;
+    view.innerHTML =
+      '<div class="state thinking" id="stage">' + stages[0] + "</div>";
+    const tick = setInterval(() => {
+      i = Math.min(i + 1, stages.length - 1);
+      const el = document.getElementById("stage");
+      if (el) el.textContent = stages[i];
+    }, 9000);
+
+    let r;
+    try {
+      r = await api("/curate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lens, keep: 8, pool: 10 }),
+      });
+    } catch (err) {
+      clearInterval(tick);
+      view.innerHTML =
+        back(backTo) +
+        '<div class="state">The curator could not finish.<br><br><span class="gold">' +
+        esc(String(err)) +
+        "</span><br><br>Nothing was lost. The artifacts are untouched; only the " +
+        "room failed to hang.</div>";
+      return;
+    }
+    clearInterval(tick);
+
+    const ex = r.exhibit || {};
+    room = { lens, exhibit: ex, kept: r.kept };
+
+    let html =
+      back(backTo) +
+      '<div class="h1">' +
+      esc(ex.suggested_name || lens) +
+      "</div>" +
+      '<div class="meta">' +
+      r.kept.length +
+      " kept &middot; " +
+      r.rejected +
+      " rejected &middot; " +
+      r.considered +
+      " considered</div>";
+    if (ex.through_line)
+      html +=
+        '<div class="md" style="margin:var(--sp-4) 0">' +
+        esc(ex.through_line) +
+        "</div>";
+    if (ex.thin)
+      html +=
+        '<div class="state gold">thin &middot; ' +
+        esc(ex.thin_reason) +
+        "</div>";
+
+    // A room can come back short for two very different reasons: the collection did not
+    // hold it, or the model could not do the job. Saying which is the difference between
+    // a useful answer and a mystery.
+    if (r.failed)
+      html +=
+        '<div class="aside why">' +
+        r.failed +
+        " of " +
+        r.considered +
+        " judgments failed their checks; those artifacts were dropped without being judged.</div>";
+    if (r.synthesis_error)
+      html +=
+        '<div class="aside why">no through line: ' +
+        esc(r.synthesis_error) +
+        "</div>";
+
+    r.kept.forEach((k, j) => {
+      html +=
+        '<div class="item hang" style="animation-delay:' +
+        j * 70 +
+        'ms" ' +
+        'tabindex="0" role="button" onclick="showArtifact(\'' +
+        k.artifact_id +
+        "')\" " +
+        "onkeydown=\"rowKey(event, () => showArtifact('" +
+        k.artifact_id +
+        "'))\">" +
+        '<div class="item-body">' +
+        '<div class="title">' +
+        esc(k.title) +
+        "</div>" +
+        '<div class="md" style="font-size:14px">' +
+        esc(k.placard) +
+        "</div>" +
+        '<div class="meta">match ' +
+        k.strength +
+        "</div></div></div>";
+    });
+
+    // A room costs three model passes to build. Keeping one is a decision, not a
+    // default, but re-deriving it later would cost the same again, so the offer is here.
+    if (r.kept.length)
+      html +=
+        '<button class="act" id="btnKeep" onclick="keepRoom()">Keep this room</button>';
+
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  function back(chatId) {
+    return chatId
+      ? '<div class="back" onclick="showChat(\'' +
+          chatId +
+          "')\">&larr; the conversation</div>"
+      : '<div class="back" onclick="home()">&larr; everything</div>';
+  }
+
+  async function keepRoom() {
+    const button = document.getElementById("btnKeep");
+    if (!room || !button) return;
+    button.disabled = true;
+    try {
+      await api("/exhibits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(room),
+      });
+      button.textContent = "Kept";
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Could not keep it: " + String(err);
+    }
+  }
+
+  home();
+</script>

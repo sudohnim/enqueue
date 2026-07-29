@@ -42,9 +42,9 @@ BACKENDS = {
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
     },
-    "openai": {
-        "label": "OpenAI",
-        "url": "https://api.openai.com/v1",
+    "opencode": {
+        "label": "OpenCode",
+        "url": "https://api.opencode.ai/v1",
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
     },
@@ -68,13 +68,38 @@ LLM_BACKEND = os.getenv("ENQ_LLM_BACKEND", "ollama")
 #
 #   ENQ_OLLAMA_URL=https://host/v1  ENQ_LLM_MODEL=glm-5.2  ENQ_LLM_API_KEY=...
 LLM_MODEL = os.getenv("ENQ_LLM_MODEL", "llama3.1:8b")
+
+
+def llm_api_key() -> str:
+    """The key, resolved at call time rather than at import.
+
+    Order: the environment, then the macOS Keychain, then a placeholder that Ollama
+    ignores. It is a function because the Keychain can change while the engine is
+    running - someone sets a key in Settings and expects the next question to work
+    without restarting anything.
+    """
+    from_env = os.getenv("ENQ_LLM_API_KEY")
+    if from_env:
+        return from_env
+
+    from . import keyring
+
+    return keyring.get() or "ollama"
+
+
+# Kept so existing imports keep working. Prefer `llm_api_key()`: this is bound once at
+# import and will not see a key stored later.
 LLM_API_KEY = os.getenv("ENQ_LLM_API_KEY", "ollama")
 
 # Retries *after* the first attempt, so 1 means two tries. Kept low on purpose: a
 # failed judgment is a dropped candidate rather than a crisis, and on a placeholder
 # model most of them fail, so each extra retry buys almost nothing and costs a full
 # generation. Set to 0 for the fastest, worst run.
-MODEL_RETRIES = int(os.getenv("ENQ_MODEL_RETRIES", "1"))
+_MODEL_RETRIES = os.getenv("ENQ_MODEL_RETRIES", "1")
+try:
+    MODEL_RETRIES = int(_MODEL_RETRIES)
+except ValueError:
+    MODEL_RETRIES = 1
 
 # M0 runs Qdrant in process, at QDRANT_PATH. Set ENQ_QDRANT_URL to use a server instead.
 #

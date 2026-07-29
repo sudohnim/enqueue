@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Gate: JS parse check on both pages, pytest, contrast check.
+
+Extracts every <script> block, wraps each in { } so const/let scoping
+cannot collide across blocks, then runs node --check on the result.
+"""
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+SRC = "bin/verify"
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FILES = ["src/enqueue/static/museum.html", "src/enqueue/static/capture.html"]
+
+def extract_script_blocks(path):
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    blocks = re.findall(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
+    return [b.strip() for b in blocks if b.strip()]
+
+def check_js(path):
+    blocks = extract_script_blocks(path)
+    if not blocks:
+        print(f"{SRC}: WARNING: no <script> blocks found in {path}")
+        return True
+    # Wrap each block in { } so const/let are scoped and don't collide
+    wrapped = "\n".join("{" + b + "\n}" for b in blocks)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as f:
+        f.write(wrapped)
+        tmp = f.name
+    try:
+        result = subprocess.run(
+            ["node", "--check", tmp],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            print(f"{SRC}: JS parse OK: {path}")
+            return True
+        else:
+            print(f"{SRC}: JS parse FAILED: {path}", file=sys.stderr)
+            print(result.stderr, file=sys.stderr)
+            return False
+    except subprocess.TimeoutExpired:
+        print(f"{SRC}: JS parse TIMEOUT: {path}", file=sys.stderr)
+        return False
+    finally:
+        os.unlink(tmp)
+
+def main():
+    os.chdir(HERE)
+    pass_flag = True
+
+    print(f"=== {SRC}: JS parse: {FILES[0]} ===")
+    if not check_js(FILES[0]):
+        pass_flag = False
+
+    print("")
+    print(f"=== {SRC}: JS parse: {FILES[1]} ===")
+    if not check_js(FILES[1]):
+        pass_flag = False
+
+    print("")
+    print(f"=== {SRC}: pytest ===")
+    r = subprocess.run(["uv", "run", "pytest", "-q"], capture_output=False, timeout=120)
+    if r.returncode == 0:
+        print(f"{SRC}: pytest OK")
+    else:
+        print(f"{SRC}: pytest FAILED", file=sys.stderr)
+        pass_flag = False
+
+    print("")
+    print(f"=== {SRC}: contrast check ===")
+    r = subprocess.run(["bin/check-contrast"], capture_output=False, timeout=30)
+    if r.returncode == 0:
+        print(f"{SRC}: contrast OK")
+    else:
+        print(f"{SRC}: contrast check FAILED", file=sys.stderr)
+        pass_flag = False
+
+    print("")
+    if pass_flag:
+        print(f"{SRC}: all checks passed")
+        sys.exit(0)
+    else:
+        print(f"{SRC}: some checks FAILED", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

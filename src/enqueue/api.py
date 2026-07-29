@@ -9,13 +9,14 @@ Binds to 127.0.0.1 only, on every milestone.
 from __future__ import annotations
 
 import re
+import os
 from importlib import resources
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from . import capture, chats, config, db, notes, preview, settings
+from . import capture, chats, config, db, notes, preview, settings, trash
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
 from .ingest import queue as ingest_queue
@@ -23,9 +24,25 @@ from .ingest import queue as ingest_queue
 app = FastAPI(title="Enqueue engine", version="0.2.0")
 
 
+font_dir = resources.files("enqueue").joinpath("static/fonts")
+
+
+@app.get("/fonts/{name:path}")
+async def serve_font(name: str) -> Response:
+    font_path = os.path.join(str(font_dir), name)
+    if not os.path.isfile(font_path):
+        raise HTTPException(status_code=404, detail="font not found")
+    return FileResponse(font_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
 @app.get("/", response_class=HTMLResponse)
 def museum() -> str:
     return resources.files("enqueue").joinpath("static/museum.html").read_text(encoding="utf-8")
+
+
+@app.get("/capture", response_class=HTMLResponse)
+def capture_window() -> str:
+    return resources.files("enqueue").joinpath("static/capture.html").read_text(encoding="utf-8")
 
 
 @app.get("/health")
@@ -83,6 +100,54 @@ def set_flags(artifact_id: str, req: ArtifactFlags) -> dict:
     return notes.get(artifact_id)
 
 
+@app.delete("/artifacts/{artifact_id}")
+def bin_artifact(artifact_id: str) -> dict:
+    """Move to the trash. Reversible for as long as the retention window lasts."""
+    try:
+        return trash.delete(artifact_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such artifact")
+
+
+@app.post("/artifacts/{artifact_id}/restore")
+def restore_artifact(artifact_id: str) -> dict:
+    try:
+        return trash.restore(artifact_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such artifact")
+
+
+@app.get("/trash")
+def read_trash() -> dict:
+    return trash.listing()
+
+
+@app.delete("/trash/{artifact_id}")
+def purge_artifact(artifact_id: str) -> dict:
+    """Destroy one artifact for good. The only irreversible operation in the product."""
+    try:
+        return trash.purge(artifact_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such artifact")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.post("/trash/purge")
+def purge_trash() -> dict:
+    return trash.purge_expired()
+
+
+@app.delete("/trash")
+def empty_trash() -> dict:
+    """Destroy everything waiting, now, without waiting out the window.
+
+    Separate from `/trash/purge`, which only takes what has already expired. This one
+    is the deliberate "I meant it" and the interface confirms before calling it.
+    """
+    return trash.empty()
+
+
 @app.get("/artifacts/{artifact_id}/text")
 def artifact_text(artifact_id: str) -> dict:
     """The readable text of an artifact, with page numbers when it has pages.
@@ -100,8 +165,10 @@ def artifact_text(artifact_id: str) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="no such artifact")
 
-    if row["kind"] == "pdf":
-        return {"kind": "pdf", "pages": capture.page_text(artifact_id)}
+    # A capture has no body, so its text is whatever extraction found. A note is its
+    # own text. Both come back in the same shape so the reader does not have to care.
+    if row["kind"] in ("pdf", "file", "image"):
+        return {"kind": row["kind"], "pages": capture.page_text(artifact_id)}
     return {"kind": row["kind"], "pages": [{"page": 0, "text": row["body"] or ""}]}
 
 
@@ -110,14 +177,19 @@ ORDERINGS = {
     # things land in the order you found them: a note you reopen and fix a typo in has
     # not become newer, and re-sorting on every autosave makes the wall unstable
     # under your own reading.
-    "ingested": "pinned DESC, created_at DESC",
-    "touched": "pinned DESC, updated_at DESC",
-    "title": "pinned DESC, title COLLATE NOCASE ASC",
+    "ingested": "created_at DESC",
+    "touched": "updated_at DESC",
+    "title": "title COLLATE NOCASE ASC",
 }
 
 
 @app.get("/artifacts")
-def list_artifacts(limit: int = 60, offset: int = 0, order: str = "ingested") -> dict:
+def list_artifacts(
+    limit: int = 60,
+    offset: int = 0,
+    order: str = "touched",
+    pinned: bool | None = None,
+) -> dict:
     """Newest first, each with enough content to render rather than a blank.
 
     Nothing about where an artifact came from is returned. Import provenance is a
@@ -127,25 +199,69 @@ def list_artifacts(limit: int = 60, offset: int = 0, order: str = "ingested") ->
     if order not in ORDERINGS:
         raise HTTPException(status_code=400, detail=f"order must be one of {sorted(ORDERINGS)}")
 
+    # `pinned` splits the wall into two shelves that are paged separately: the kept
+    # few scroll sideways, everything else scrolls down. Without the filter the pinned
+    # ones would appear in both.
+    where = "deleted_at IS NULL"
+    if pinned is True:
+        where += " AND pinned = 1"
+    elif pinned is False:
+        where += " AND pinned = 0"
+
     conn = db.get_conn()
     try:
         rows = conn.execute(
             "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
-            " updated_at, local_only, pinned, status FROM artifacts"
+            " updated_at, local_only, pinned, status, pages FROM artifacts"
+            f" WHERE {where}"
             f" ORDER BY {ORDERINGS[order]} LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
+
+        # Both of these were per-row lookups that each opened their own connection, and
+        # the page count additionally opened the PDF itself. Measured here, that was
+        # 69x the cost of the query it was decorating, and it grew with the page rather
+        # than with anything the person could see. One query each, on the connection
+        # already in hand.
+        links = [row["id"] for row in rows if row["kind"] == "link"]
+        with_image: set[str] = set()
+        if links:
+            marks = ",".join("?" * len(links))
+            with_image = {
+                r["artifact_id"]
+                for r in conn.execute(
+                    f"SELECT artifact_id FROM link_previews WHERE artifact_id IN ({marks})"
+                    " AND image_hash IS NOT NULL",
+                    links,
+                )
+            }
 
         items = []
         for row in rows:
             item = dict(row)
             item["excerpt"] = _excerpt(item.pop("body") or "", row["title"])
             item["has_blob"] = row["mime"] is not None and row["kind"] != "link"
-            if row["kind"] == "pdf":
+            if row["kind"] != "pdf":
+                item.pop("pages", None)
+            elif item["pages"] is None:
+                # Captured before the count was stored. Reading it now costs one file
+                # open, and writing it back means no listing ever pays for this row
+                # again.
                 item["pages"] = capture.page_count(row["id"])
+            if row["kind"] == "link":
+                item["has_preview_image"] = row["id"] in with_image
             items.append(item)
 
-        return {"total": db.count("artifacts"), "order": order, "items": items}
+        total = conn.execute(f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}").fetchone()["n"]
+        return {
+            "total": total,
+            "order": order,
+            "offset": offset,
+            # So the client knows whether to keep asking without guessing from a
+            # short page, which is wrong exactly when the last page is full.
+            "more": offset + len(items) < total,
+            "items": items,
+        }
     finally:
         conn.close()
 
@@ -158,6 +274,13 @@ def get_artifact(artifact_id: str) -> dict:
         raise HTTPException(status_code=404, detail="no such artifact")
 
     kind = detail["artifact"]["kind"]
+    if kind in ("file", "image", "pdf"):
+        found = capture.blob_path(artifact_id)
+        detail["file"] = (
+            {"bytes": found[0].stat().st_size, "mime": found[1], "name": found[2]}
+            if found
+            else None
+        )
     if kind == "pdf":
         # The reader needs to know how many pages to expect before it can render one.
         detail["pages"] = capture.page_count(artifact_id)
@@ -181,6 +304,40 @@ def get_blob(artifact_id: str):
         raise HTTPException(status_code=404, detail="this artifact has no stored file")
     path, mime, filename = found
     return FileResponse(path, media_type=mime, filename=filename, content_disposition_type="inline")
+
+
+@app.get("/artifacts/{artifact_id}/find")
+def find_in_artifact(artifact_id: str, q: str) -> dict:
+    """Where a phrase appears in a PDF, so the reader can draw over it.
+
+    The pages are pictures, so the browser has no text to highlight of its own. These
+    are the rectangles it needs, in page fractions rather than points.
+    """
+    return {"query": q, "hits": capture.find_in_pdf(artifact_id, q)}
+
+
+@app.get("/artifacts/{artifact_id}/preview-image")
+def get_preview_image(artifact_id: str):
+    """A link's picture, served from here rather than from the publisher.
+
+    This is the whole reason the bytes were downloaded: the card can be drawn as many
+    times as you like without anyone learning you looked at it again.
+    """
+    found = preview.image(artifact_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no picture for this link")
+    path, mime = found
+    return FileResponse(
+        path,
+        media_type=mime,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            # Belt and braces: content-addressed, type-checked on the way in, and
+            # still told not to be sniffed into something executable.
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
 
 
 @app.get("/artifacts/{artifact_id}/page/{number}")
@@ -550,6 +707,36 @@ class SettingsUpdate(BaseModel):
     changes: dict
 
 
+class ApiKey(BaseModel):
+    key: str
+
+
+@app.put("/settings/api-key")
+def store_api_key(req: ApiKey) -> dict:
+    """Put the key in the macOS Keychain. It is never written to settings.json.
+
+    The body is not logged and the value is never returned: what comes back is only
+    whether a key now exists and its last four characters.
+    """
+    from . import keyring
+
+    try:
+        keyring.set(req.key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return settings.api_key_state()
+
+
+@app.delete("/settings/api-key")
+def forget_api_key() -> dict:
+    from . import keyring
+
+    keyring.clear()
+    return settings.api_key_state()
+
+
 @app.patch("/settings")
 def write_settings(req: SettingsUpdate) -> dict:
     try:
@@ -573,5 +760,12 @@ def secret_report() -> dict:
 
 def serve() -> None:
     import uvicorn
+
+    try:
+        expired = trash.purge_expired()
+        if expired["purged"]:
+            print(f"[engine] purged {expired['purged']} artifact(s) past the trash window")
+    except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
+        print(f"[engine] could not purge the trash: {exc}")
 
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")

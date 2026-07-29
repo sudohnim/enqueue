@@ -1,0 +1,186 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Enqueue - design target</title>
+<!--
+  The agreed look, frozen as a static reference. Open it in a browser and match it.
+  This file is a specification, not shipping code: it duplicates the tokens on purpose
+  so it keeps rendering the agreed design even after museum.html changes.
+-->
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #313238;
+    --surface: #292a2f;
+    --surface-2: #3c3d45;
+    --line: #4b4c55;
+    --line-strong: #8a8c9e;
+    --text: #d4d6e0;
+    --text-dim: #bcbecb;
+    --text-mute: #adafbd;
+    --accent: #c3b8ee;
+    --accent-quiet: #b5abdd;
+    --accent-ink: #232329;
+    --green: #a6d189;
+    --blue: #93b0f0;
+    --peach: #efa079;
+    --pink: #eeb6e2;
+    --teal: #86c9c0;
+    --r-sm: 6px;
+    --r: 10px;
+    --r-lg: 16px;
+    --r-full: 999px;
+    --shadow-2: 0 4px 12px rgb(0 0 0 / 0.4), 0 12px 32px rgb(0 0 0 / 0.4);
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-mute); font-size: 12.5px; margin: 0 0 26px; max-width: 76ch; }
+  h2 {
+    font-size: 11px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--text-mute); margin: 30px 0 10px;
+  }
+
+  .app {
+    display: grid; grid-template-columns: 190px 1fr; border-radius: var(--r-lg);
+    border: 1px solid var(--line); overflow: hidden; max-width: 900px;
+  }
+  .rail { background: var(--surface); padding: 14px; border-right: 1px solid var(--line); }
+  .home {
+    display: flex; align-items: center; gap: 8px; width: 100%; border-radius: var(--r-sm);
+    background: var(--accent); color: var(--accent-ink); border: 0; padding: 9px 12px;
+    font: inherit; font-weight: 600; font-size: 13.5px; margin-bottom: 18px; cursor: pointer;
+  }
+  .railcap {
+    font-size: 11px; font-weight: 650; letter-spacing: 0.05em; color: var(--text-mute);
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .newchat {
+    width: 100%; text-align: left; background: transparent; color: var(--text-mute);
+    border: 1px dashed var(--line-strong); border-radius: var(--r-sm); padding: 7px 10px;
+    font: inherit; font-size: 12.5px; margin-bottom: 10px; cursor: pointer;
+  }
+  .thread {
+    padding: 6px 10px; border-radius: var(--r-sm); color: var(--text-dim); font-size: 13px;
+  }
+  .thread.on { background: var(--surface-2); color: var(--text); font-weight: 500; }
+  .main { padding: 18px 20px; }
+  .shelf {
+    font-size: 11px; font-weight: 650; letter-spacing: 0.05em; color: var(--text-mute);
+    text-transform: uppercase; margin: 0 0 10px;
+  }
+  .wall { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+  .frame {
+    aspect-ratio: 1; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); display: grid; place-items: center;
+    transition: border-color 160ms;
+  }
+  .card:hover .frame { border-color: var(--kind); }
+  .glyph { font-size: 22px; color: var(--kind); }
+  .cap { margin-top: 8px; }
+  .cap .t { font-size: 13px; line-height: 1.3; }
+  .cap .m {
+    font-size: 11px; color: var(--text-mute); margin-top: 3px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--kind); flex: none; }
+
+  .chatbox {
+    border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px 18px;
+    max-width: 900px;
+  }
+  .turn { margin-bottom: 12px; display: flex; }
+  .turn.you { justify-content: flex-end; }
+  .bubble { max-width: 74%; padding: 9px 13px; font-size: 13.5px; line-height: 1.55; border-radius: 14px; }
+  .you .bubble { background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+  .them .bubble { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .cite { font-size: 11px; color: var(--text-mute); margin-top: 7px; display: flex; gap: 6px; align-items: center; }
+
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  .btn {
+    font: inherit; font-size: 13px; padding: 7px 13px; cursor: pointer; font-weight: 500;
+    border-radius: var(--r-sm); background: var(--accent); color: var(--accent-ink);
+    border: 1px solid var(--accent);
+  }
+  .btn.ghost { background: transparent; color: var(--text); border-color: var(--line-strong); }
+  .btn.quiet { background: transparent; color: var(--text-mute); border-color: transparent; }
+  .fld {
+    font: inherit; font-size: 13px; padding: 7px 11px; background: var(--surface);
+    border: 1px solid var(--accent); border-radius: var(--r-sm); color: var(--text);
+    min-width: 260px; box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+  .ramp { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    width: 104px; height: 56px; border-radius: var(--r-sm); padding: 6px 8px;
+    font-family: var(--mono); font-size: 9.5px; line-height: 1.35;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    border: 1px solid rgb(255 255 255 / 0.07);
+  }
+</style>
+
+<h1>Enqueue — design target</h1>
+<p class="sub">
+  Neutral charcoal, one lilac accent, one sans family. Lilac means "act on this" and
+  nothing else uses it; kind colours are facts about a thing, never actions. Monospace
+  appears only inside <code>code</code>.
+</p>
+
+<h2>Tokens</h2>
+<div class="ramp">
+  <div class="chip" style="background:var(--bg);color:var(--text)"><div>--bg</div><div>#313238</div></div>
+  <div class="chip" style="background:var(--surface);color:var(--text)"><div>--surface</div><div>#292a2f</div></div>
+  <div class="chip" style="background:var(--surface-2);color:var(--text)"><div>--surface-2</div><div>#3c3d45</div></div>
+  <div class="chip" style="background:var(--line);color:var(--text)"><div>--line</div><div>#4b4c55</div></div>
+  <div class="chip" style="background:var(--line-strong);color:var(--accent-ink)"><div>--line-strong</div><div>#8a8c9e</div></div>
+  <div class="chip" style="background:var(--text-mute);color:var(--accent-ink)"><div>--text-mute</div><div>#adafbd</div></div>
+  <div class="chip" style="background:var(--text);color:var(--accent-ink)"><div>--text</div><div>#d4d6e0</div></div>
+  <div class="chip" style="background:var(--accent);color:var(--accent-ink)"><div>--accent</div><div>#c3b8ee</div></div>
+  <div class="chip" style="background:var(--green);color:var(--accent-ink)"><div>--green note</div><div>#a6d189</div></div>
+  <div class="chip" style="background:var(--blue);color:var(--accent-ink)"><div>--blue link</div><div>#93b0f0</div></div>
+  <div class="chip" style="background:var(--peach);color:var(--accent-ink)"><div>--peach pdf</div><div>#efa079</div></div>
+  <div class="chip" style="background:var(--pink);color:var(--accent-ink)"><div>--pink image</div><div>#eeb6e2</div></div>
+  <div class="chip" style="background:var(--teal);color:var(--accent-ink)"><div>--teal file</div><div>#86c9c0</div></div>
+</div>
+
+<h2>Rail and wall</h2>
+<div class="app">
+  <div class="rail">
+    <button class="home">⌂ Everything</button>
+    <div class="railcap">Chats</div>
+    <button class="newchat">+ Ask something</button>
+    <div class="thread on">Durability under duress</div>
+    <div class="thread">Kubernetes networking</div>
+    <div class="thread">Object extraction</div>
+  </div>
+  <div class="main">
+    <div class="shelf">Pinned</div>
+    <div class="wall">
+      <div class="card" style="--kind:var(--green)"><div class="frame"><span class="glyph">✎</span></div><div class="cap"><div class="t">The boxer</div><div class="m"><span class="dot"></span>note · 2026-07-28</div></div></div>
+      <div class="card" style="--kind:var(--blue)"><div class="frame"><span class="glyph">↗</span></div><div class="cap"><div class="t">Antifragility</div><div class="m"><span class="dot"></span>link · 2026-07-27</div></div></div>
+      <div class="card" style="--kind:var(--peach)"><div class="frame"><span class="glyph">▤</span></div><div class="cap"><div class="t">RAG deep dive</div><div class="m"><span class="dot"></span>pdf · 2026-07-28</div></div></div>
+    </div>
+  </div>
+</div>
+
+<h2>Chat and controls</h2>
+<div class="chatbox">
+  <div class="turn you"><div class="bubble">What did I save about antifragility?</div></div>
+  <div class="turn them">
+    <div class="bubble">
+      A note on sparring partners: adversity as input rather than obstacle.
+      <div class="cite"><span class="dot" style="--kind:var(--green)"></span>The boxer · note</div>
+    </div>
+  </div>
+  <div class="row">
+    <input class="fld" value="Ask about everything" />
+    <button class="btn">Ask</button>
+    <button class="btn ghost">Cancel</button>
+    <button class="btn quiet">Skip</button>
+  </div>
+</div>

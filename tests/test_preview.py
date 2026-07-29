@@ -36,11 +36,38 @@ class TestParse:
         assert fields["title"] == "Just this"
         assert fields["site_name"] == "a.co"
 
-    def test_never_keeps_a_remote_asset(self):
-        """An og:image left as a URL would fetch from the publisher on every single
-        view, forever. That is worse than the one request the default avoids."""
+    def test_the_image_url_is_resolved_but_never_stored(self, store, quiet_queue):
+        """The invariant is about what is *kept*, not what is read.
+
+        `parse` hands back the picture's address so the fetcher can download it. What
+        must never happen is that address surviving into the database, because an
+        `<img>` pointing at the publisher would fetch from them on every view of the
+        card, forever - worse than the single request the no-fetch default avoids,
+        and silent. What is stored is a content hash of bytes we hold.
+        """
         fields = preview.parse(PAGE, "https://example.com/x")
-        assert "cdn.example.com" not in repr(fields)
+        assert fields["image_url"] == "https://cdn.example.com/tracker.png"
+
+        made = capture.link("https://example.com/x")
+        stored = dict(fields)
+        stored.pop("image_url")
+        preview._store(made["id"], {"status": "ok", **stored})
+
+        row = preview.get(made["id"])
+        assert "cdn.example.com" not in repr(row)
+        assert row["image_hash"] is None
+
+    def test_a_relative_image_path_is_resolved_against_the_page(self):
+        """og:image is routinely site-relative. Left alone it would resolve against
+        the engine's own origin and fetch from us instead of from the publisher."""
+        page = '<html><head><meta property="og:image" content="/img/card.png"></head></html>'
+        fields = preview.parse(page, "https://example.com/posts/one")
+        assert fields["image_url"] == "https://example.com/img/card.png"
+
+    def test_svg_is_refused_as_a_preview_picture(self):
+        """A preview is served back from the engine's own origin, so an SVG would run
+        its script in the same context as the museum. A picture is not worth that."""
+        assert "image/svg+xml" not in preview.IMAGE_MIMES
 
     def test_a_page_saying_nothing_about_itself(self):
         fields = preview.parse("<html><body>hi</body></html>", "https://www.a.co/p")

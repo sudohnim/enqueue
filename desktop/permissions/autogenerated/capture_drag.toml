@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-capture-drag"
+description = "Enables the capture_drag command without any pre-configured scope."
+commands.allow = ["capture_drag"]
+
+[[permission]]
+identifier = "deny-capture-drag"
+description = "Denies the capture_drag command without any pre-configured scope."
+commands.deny = ["capture_drag"]

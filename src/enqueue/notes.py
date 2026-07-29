@@ -155,11 +155,17 @@ def annotate(artifact_id: str, text: str, supersedes_id: str | None = None) -> d
             if prior is None:
                 raise ValueError("supersedes_id is not an annotation on this artifact")
 
+        now = _now()
         conn.execute(
             "INSERT INTO annotations (id, artifact_id, supersedes_id, text, created_at)"
             " VALUES (?,?,?,?,?)",
-            (entry_id, artifact_id, supersedes_id, text, _now()),
+            (entry_id, artifact_id, supersedes_id, text, now),
         )
+        # Writing about a thing is touching it. The wall is ordered by last touch, so
+        # leaving this out meant a note added from the capture overlay landed on an
+        # artifact that then stayed exactly where it was, days down the wall. The note
+        # was saved and the person had no way to tell.
+        conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, artifact_id))
 
     return {"id": entry_id, "supersedes_id": supersedes_id}
 

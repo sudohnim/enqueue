@@ -10,9 +10,11 @@ something: one request, for one link, because the person asked for it.
 
 Two rules hold this together.
 
-1. **Nothing remote is ever referenced.** Only text is stored. An `og:image` left as
-   a URL and rendered in an `<img>` would fetch from the publisher on every view,
-   forever, which is worse than the single request the default was avoiding.
+1. **Nothing remote is ever referenced.** An `og:image` left as a URL and rendered in
+   an `<img>` would fetch from the publisher on every view of that card, forever,
+   which is worse than the single request the default was avoiding, and silent.
+   So the picture is downloaded during this same fetch and stored in the ordinary
+   blob store. What is kept is a content hash, never an address.
 2. **The response is data, not instructions.** It is parsed for four fields and the
    rest is discarded. Nothing from a page reaches a model except through the same
    secret scan and the same chunking every other artifact goes through.
@@ -22,11 +24,11 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from . import db
+from . import config, db
 from .ingest import queue as ingest_queue
 
 # Enough for any <head> worth reading. A page that has not declared itself by then
@@ -38,11 +40,27 @@ MAX_REDIRECTS = 5
 # Honest and plain. Not a browser string: pretending to be Chrome to get better
 # markup is the beginning of the crawler-evasion path this product does not take.
 #
-# Some publishers require a contact URL in the user agent before they will serve a
-# non-browser client. Wikipedia is one, and refuses this default with a 403. That is
-# their policy working as intended, and the way to satisfy it is to say who you are,
-# not to disguise the request. Set ENQ_USER_AGENT to something like
-# "Enqueue/0.2 (+https://example.com/you)" if you want those pages to resolve.
+# Some publishers want a contact URL in the user agent before they will serve a
+# non-browser client, and the way to satisfy that is to say who you are rather than to
+# disguise the request. Set ENQ_USER_AGENT to something like
+# "Enqueue/0.2 (+https://example.com/you)" if a publisher asks for one.
+#
+# This comment used to name Wikipedia as refusing the default user agent with a 403.
+# That was wrong, and it sent a reader off to change a setting that would have fixed
+# nothing. Interleaving the two clients against the same URL with the same string:
+#
+#   curl                200, every time
+#   httpx over HTTP/1.1 403, every time    "Please respect our robot policy"
+#   httpx over HTTP/2   200
+#
+# The discriminator is the TLS handshake, not the user agent: Wikimedia treats a client
+# that does not negotiate h2 as a bot, because every browser negotiates it. So the fix
+# is to speak the protocol everything else speaks, which is why HTTP/2 is enabled below.
+#
+# That is a protocol choice, not a disguise, and the difference is the whole line this
+# product will not cross. The user agent stays honest and still says what this is; what
+# changed is that we stopped sounding like 2012 on the wire. Matching a browser's TLS
+# fingerprint to defeat detection would be the other thing, and it stays out.
 USER_AGENT = os.getenv(
     "ENQ_USER_AGENT", "Enqueue/0.2 (personal link preview; one request per saved link)"
 )
@@ -54,6 +72,22 @@ DESC_KEYS = (
     ("name", "description"),
 )
 SITE_KEYS = (("property", "og:site_name"),)
+IMAGE_KEYS = (("property", "og:image"), ("name", "twitter:image"), ("property", "og:image:url"))
+
+# A preview picture is decoration. It is never worth a large download, and the cap is
+# what stops a hostile or careless page turning one click into a hundred megabytes.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+# SVG is deliberately absent. It can carry script, and this file is served back from
+# the engine's own origin, so an SVG preview would run in the same context as the
+# museum itself. A picture is not worth that.
+IMAGE_MIMES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+}
 
 
 def _now() -> str:
@@ -73,6 +107,7 @@ def _read_capped(url: str) -> tuple[str, str]:
         follow_redirects=True,
         timeout=TIMEOUT,
         max_redirects=MAX_REDIRECTS,
+        http2=True,
         headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
     ) as client:
         with client.stream("GET", url) as response:
@@ -113,7 +148,71 @@ def parse(html: str, url: str) -> dict:
         "title": _clean(title, limit=200),
         "description": meta(DESC_KEYS),
         "site_name": meta(SITE_KEYS) or urlparse(url).netloc.replace("www.", "") or None,
+        # Absolute, because og:image is routinely a site-relative path and a relative
+        # one would be resolved against the engine rather than the publisher.
+        "image_url": urljoin(url, meta(IMAGE_KEYS)) if meta(IMAGE_KEYS) else None,
     }
+
+
+def _fetch_image(url: str) -> tuple[str, str] | None:
+    """Download a preview picture and store it. Returns (content_hash, mime).
+
+    Stored locally so the card can be drawn without ever contacting the publisher
+    again. Everything here is a limit: the type must be a real raster image, the size
+    is capped, and nothing is written until the bytes have been seen.
+    """
+    import hashlib
+
+    if urlparse(url).scheme not in ("http", "https"):
+        return None
+
+    try:
+        with httpx.Client(
+            follow_redirects=True,
+            timeout=TIMEOUT,
+            max_redirects=MAX_REDIRECTS,
+            # Same protocol as the page fetch. A picture served from the same host that
+            # just answered would otherwise be requested over a connection that host
+            # has already decided it does not like.
+            http2=True,
+            headers={"User-Agent": USER_AGENT, "Accept": "image/*"},
+        ) as client:
+            with client.stream("GET", url) as response:
+                response.raise_for_status()
+                mime = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                if mime not in IMAGE_MIMES:
+                    return None
+
+                chunks, total = [], 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_IMAGE_BYTES:
+                        return None
+                    chunks.append(chunk)
+        data = b"".join(chunks)
+    except Exception:  # noqa: BLE001 - a missing picture is not a failed preview
+        return None
+
+    if not data:
+        return None
+
+    digest = hashlib.sha256(data).hexdigest()
+    config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
+    blob = config.BLOB_DIR / digest
+    if not blob.exists():
+        blob.write_bytes(data)
+    return digest, mime
+
+
+def image(artifact_id: str) -> tuple[object, str] | None:
+    """The stored picture for a link, as (path, mime)."""
+    row = get(artifact_id)
+    if not row or not row.get("image_hash"):
+        return None
+    path = config.BLOB_DIR / row["image_hash"]
+    if not path.exists():
+        return None
+    return path, row.get("image_mime") or "application/octet-stream"
 
 
 def _why(exc: Exception) -> str:
@@ -125,9 +224,13 @@ def _why(exc: Exception) -> str:
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
         if code in (401, 403):
+            # Two different causes wear this status, and guessing wrong costs a person
+            # a configuration change that fixes nothing. Retrying is the cheaper test,
+            # so it is named first.
             return (
-                "the publisher refused an unidentified client; set ENQ_USER_AGENT "
-                "to a user agent with a contact URL if you want this one"
+                "the publisher refused the request; it may be a temporary block, so "
+                "try again first. If it keeps refusing, set ENQ_USER_AGENT to a user "
+                "agent with a contact URL"
             )
         if code == 429:
             return "the publisher is rate limiting; try later"
@@ -158,10 +261,11 @@ def _store(artifact_id: str, fields: dict) -> None:
     with db.transaction() as conn:
         conn.execute(
             "INSERT INTO link_previews (artifact_id, status, title, description, site_name,"
-            " error, fetched_at) VALUES (?,?,?,?,?,?,?)"
+            " error, image_hash, image_mime, fetched_at) VALUES (?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(artifact_id) DO UPDATE SET status=excluded.status,"
             " title=excluded.title, description=excluded.description,"
             " site_name=excluded.site_name, error=excluded.error,"
+            " image_hash=excluded.image_hash, image_mime=excluded.image_mime,"
             " fetched_at=excluded.fetched_at",
             (
                 artifact_id,
@@ -170,6 +274,8 @@ def _store(artifact_id: str, fields: dict) -> None:
                 fields.get("description"),
                 fields.get("site_name"),
                 fields.get("error"),
+                fields.get("image_hash"),
+                fields.get("image_mime"),
                 _now(),
             ),
         )
@@ -213,6 +319,15 @@ def fetch(artifact_id: str) -> dict:
         return get(artifact_id)
 
     fields = parse(html, url)
+
+    # One more request, inside the same act the person already chose, and then the
+    # bytes are ours. A missing or refused picture is not a failed preview.
+    image_url = fields.pop("image_url", None)
+    if image_url:
+        found_image = _fetch_image(image_url)
+        if found_image:
+            fields["image_hash"], fields["image_mime"] = found_image
+
     _store(artifact_id, {"status": "ok", **fields})
 
     with db.transaction() as conn:
@@ -225,10 +340,37 @@ def fetch(artifact_id: str) -> dict:
                 (fields["title"], _now(), artifact_id),
             )
         # Hard rule 6: scanned before this text can reach a model through chunking.
-        _record_secrets(conn, artifact_id, "\n".join(filter(None, fields.values())))
+        _record_secrets(
+            conn,
+            artifact_id,
+            "\n".join(
+                filter(
+                    None, (fields.get("title"), fields.get("description"), fields.get("site_name"))
+                )
+            ),
+        )
 
     ingest_queue.submit(artifact_id)
     return get(artifact_id)
+
+
+def fetch_quietly(artifact_id: str) -> None:
+    """Fetch in the background and swallow everything.
+
+    Used on the automatic path, where nobody is waiting and a publisher that refuses
+    is not worth interrupting a capture for. The row records the reason either way, so
+    the artifact can still explain itself when it is opened.
+    """
+    try:
+        fetch(artifact_id)
+    except Exception:  # noqa: BLE001 - the stored row carries the reason
+        pass
+
+
+def auto_enabled() -> bool:
+    from . import settings
+
+    return str(settings.get("auto_preview") or "on").lower() not in ("off", "0", "false")
 
 
 def text_for_index(artifact_id: str) -> str:

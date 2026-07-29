@@ -8,8 +8,9 @@ Three things here are deliberate and easy to get wrong:
    in Docker bound to the IPv6 wildcard, and localhost resolves to IPv6 first.
 2. The instructor mode is JSON, passed explicitly. The default is TOOLS, which needs
    function calling. MD_JSON and JSON require nothing of the endpoint beyond chat.
-3. The API key is read from config rather than hardcoded. Ollama ignores it; a hosted
-   endpoint does not, and finding that out at swap time is a waste of an afternoon.
+3. The API key is resolved per client rather than at import, so a key stored in
+   Settings takes effect on the next question instead of the next restart. Ollama
+   ignores it; a hosted endpoint does not.
 """
 
 from __future__ import annotations
@@ -21,6 +22,27 @@ from pydantic import BaseModel
 from .. import config
 
 
+def _extra_headers() -> dict[str, str]:
+    """Headers the person configured, one `Name: value` per line.
+
+    OpenRouter wants an HTTP-Referer and an X-Title before it will attribute a call,
+    and every hosted endpoint has some variation on that. Without this each one is a
+    code change, which is how an adapter that was meant to be generic stops being it.
+    """
+    from .. import settings
+
+    raw = str(settings.get("llm_headers") or "")
+    headers: dict[str, str] = {}
+    for line in raw.splitlines():
+        name, sep, value = line.partition(":")
+        name, value = name.strip(), value.strip()
+        # A line with no colon is a typo, not a header. Silently sending it as one
+        # would produce a confusing rejection from the far end.
+        if sep and name and value:
+            headers[name] = value
+    return headers
+
+
 class OpenAICompatibleProvider:
     name = "openai-compatible"
 
@@ -28,7 +50,11 @@ class OpenAICompatibleProvider:
         self.model = model or config.LLM_MODEL
         self.base_url = base_url or config.OLLAMA_URL
         self._client = instructor.from_openai(
-            OpenAI(base_url=self.base_url, api_key=config.LLM_API_KEY),
+            OpenAI(
+                base_url=self.base_url,
+                api_key=config.llm_api_key(),
+                default_headers=_extra_headers(),
+            ),
             mode=instructor.Mode.JSON,
         )
 

@@ -31,10 +31,34 @@ _idle.set()
 
 
 def process(artifact_id: str) -> dict:
-    """Extract, chunk, and index one artifact. Synchronous."""
-    from .. import capture, db
+    """Resolve, extract, chunk, and index one artifact. Synchronous."""
+    from .. import capture, db, preview
     from ..index import qdrant
     from . import chunk as chunk_mod
+
+    # A saved link is only an address until the publisher is asked what it is. Doing
+    # that here rather than at capture time is what keeps saving instant: the request
+    # happens behind the response, on this thread, where nobody is waiting on it.
+    #
+    # `local_only` is excluded on purpose. Marking something local only is a promise
+    # that it does not cause network traffic, and an automatic fetch would break that
+    # promise without anyone asking for it.
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT kind, local_only FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if (
+        row is not None
+        and row["kind"] == "link"
+        and not row["local_only"]
+        and preview.get(artifact_id) is None
+        and preview.auto_enabled()
+    ):
+        preview.fetch_quietly(artifact_id)
 
     # A PDF has to be read before it can be chunked. Everything else already carries
     # its own text by the time it gets here.
@@ -95,7 +119,7 @@ def submit_all() -> int:
 
     conn = db.get_conn()
     try:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM artifacts")]
+        ids = [r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL")]
     finally:
         conn.close()
 
