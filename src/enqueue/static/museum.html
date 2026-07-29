@@ -2380,34 +2380,46 @@
     pill.classList.remove("wide");
     const inside = place === "inside";
 
-    // Four buttons: keep/add, search/ask, conversations (eye), settings (gear).
-    // The rail is gone — settings and conversations live in the pill now.
-    pill.innerHTML =
-      (inside
-        ? '<button class="round" aria-label="Back to everything" onclick="home()">' +
-          svg("back") +
-          "</button>"
-        : '<button class="keep" id="btnAdd" aria-expanded="false" ' +
-          'onclick="toggleMenu(event)">' +
-          '<span class="disc">' +
-          svg("plus") +
-          "</span>" +
-          '<span class="chev">' +
-          svg("chev") +
-          "</span></button>") +
-      (inside
-        ? '<button class="round" aria-label="Ask about this" onclick="openField(\'ask\')">' +
-          svg("ask") +
-          "</button>"
-        : '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
-          svg("find") +
-          "</button>") +
-      '<button class="round" aria-label="Conversations" onclick="showChatList()">' +
-      svg("ask") +
-      "</button>" +
-      '<button class="round" aria-label="Settings" onclick="showSettings()">' +
-      svg("gear") +
-      "</button>";
+    // Wall: Plus + Search + Eye (chat) + Settings.
+    // Inside: Back + Eye (context-aware).
+    let html = "";
+    if (inside) {
+      html =
+        '<button class="round" aria-label="Back to everything" onclick="home()">' +
+        svg("back") +
+        "</button>" +
+        '<button class="round" aria-label="' +
+        (scope.kind === "chat" ? "Continue chat" : "Ask about this") +
+        '" onclick="chatOrAsk()">' +
+        svg("ask") +
+        "</button>";
+    } else {
+      html =
+        '<button class="keep" id="btnAdd" aria-expanded="false" ' +
+        'onclick="toggleMenu(event)">' +
+        '<span class="disc">' +
+        svg("plus") +
+        "</span></button>" +
+        '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
+        svg("find") +
+        "</button>" +
+        '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
+        svg("ask") +
+        "</button>" +
+        '<button class="round" aria-label="Settings" onclick="showSettings()">' +
+        svg("gear") +
+        "</button>";
+    }
+    pill.innerHTML = html;
+  }
+
+  // Context-aware eye action inside an exhibit/chat.
+  function chatOrAsk() {
+    if (scope.kind === "chat" && scope.id) {
+      showChat(scope.id);
+    } else {
+      openField("ask");
+    }
   }
 
   const MENU = [
