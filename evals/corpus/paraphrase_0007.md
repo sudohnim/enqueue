@@ -1,0 +1,3 @@
+# The meaning of the technique of growing plants without soil using nutrient solutions
+
+In a warehouse on the outskirts of the city, lettuce grows in stacks under purple LED lights. There is no dirt, no rain, and no soil microbes. The roots dangle in a shallow stream of water mixed with carefully measured minerals, and the whole system is monitored by sensors that adjust the light spectrum depending on the growth stage.

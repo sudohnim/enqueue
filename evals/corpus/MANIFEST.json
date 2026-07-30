@@ -1,0 +1,285 @@
+{
+  "seed": 20250730,
+  "artifacts": [
+    {
+      "id": "title_only_0001",
+      "filename": "title_only_0001.md",
+      "category": "title-only",
+      "name": "Hypatia"
+    },
+    {
+      "id": "title_only_0002",
+      "filename": "title_only_0002.md",
+      "category": "title-only",
+      "name": "Ibn Sina"
+    },
+    {
+      "id": "title_only_0003",
+      "filename": "title_only_0003.md",
+      "category": "title-only",
+      "name": "Mary Anning"
+    },
+    {
+      "id": "title_only_0004",
+      "filename": "title_only_0004.md",
+      "category": "title-only",
+      "name": "Cheng Ho"
+    },
+    {
+      "id": "title_only_0005",
+      "filename": "title_only_0005.md",
+      "category": "title-only",
+      "name": "Rosalind Franklin"
+    },
+    {
+      "id": "title_only_0006",
+      "filename": "title_only_0006.md",
+      "category": "title-only",
+      "name": "Hypatia of Alexandria"
+    },
+    {
+      "id": "title_only_0007",
+      "filename": "title_only_0007.md",
+      "category": "title-only",
+      "name": "Sima Qian"
+    },
+    {
+      "id": "title_only_0008",
+      "filename": "title_only_0008.md",
+      "category": "title-only",
+      "name": "Emmy Noether"
+    },
+    {
+      "id": "title_only_0009",
+      "filename": "title_only_0009.md",
+      "category": "title-only",
+      "name": "Wangari Maathai"
+    },
+    {
+      "id": "title_only_0010",
+      "filename": "title_only_0010.md",
+      "category": "title-only",
+      "name": "Claudius Ptolemy"
+    },
+    {
+      "id": "paraphrase_0001",
+      "filename": "paraphrase_0001.md",
+      "category": "paraphrase",
+      "forbidden_term": "grit"
+    },
+    {
+      "id": "paraphrase_0002",
+      "filename": "paraphrase_0002.md",
+      "category": "paraphrase",
+      "forbidden_term": "imagination"
+    },
+    {
+      "id": "paraphrase_0003",
+      "filename": "paraphrase_0003.md",
+      "category": "paraphrase",
+      "forbidden_term": "neophobia"
+    },
+    {
+      "id": "paraphrase_0004",
+      "filename": "paraphrase_0004.md",
+      "category": "paraphrase",
+      "forbidden_term": "inquiry"
+    },
+    {
+      "id": "paraphrase_0005",
+      "filename": "paraphrase_0005.md",
+      "category": "paraphrase",
+      "forbidden_term": "vagrancy"
+    },
+    {
+      "id": "paraphrase_0006",
+      "filename": "paraphrase_0006.md",
+      "category": "paraphrase",
+      "forbidden_term": "archiving"
+    },
+    {
+      "id": "paraphrase_0007",
+      "filename": "paraphrase_0007.md",
+      "category": "paraphrase",
+      "forbidden_term": "hydroponics"
+    },
+    {
+      "id": "paraphrase_0008",
+      "filename": "paraphrase_0008.md",
+      "category": "paraphrase",
+      "forbidden_term": "dualism"
+    },
+    {
+      "id": "paraphrase_0009",
+      "filename": "paraphrase_0009.md",
+      "category": "paraphrase",
+      "forbidden_term": "market efficiency"
+    },
+    {
+      "id": "paraphrase_0010",
+      "filename": "paraphrase_0010.md",
+      "category": "paraphrase",
+      "forbidden_term": "afterlife beliefs"
+    },
+    {
+      "id": "rare_string_0001",
+      "filename": "rare_string_0001.md",
+      "category": "rare-string",
+      "rare_string": "ERR_QUEUE_4412"
+    },
+    {
+      "id": "rare_string_0002",
+      "filename": "rare_string_0002.md",
+      "category": "rare-string",
+      "rare_string": "XKCD_REF_9274"
+    },
+    {
+      "id": "rare_string_0003",
+      "filename": "rare_string_0003.md",
+      "category": "rare-string",
+      "rare_string": "API_KEY_PLACEHOLDER_abc"
+    },
+    {
+      "id": "rare_string_0004",
+      "filename": "rare_string_0004.md",
+      "category": "rare-string",
+      "rare_string": "FACTORIAL_OVERFLOW_64"
+    },
+    {
+      "id": "rare_string_0005",
+      "filename": "rare_string_0005.md",
+      "category": "rare-string",
+      "rare_string": "Z40_GHOST_CONNECTION"
+    },
+    {
+      "id": "near_dup_0001",
+      "filename": "near_dup_0001.md",
+      "category": "near-duplicate",
+      "variant": 1
+    },
+    {
+      "id": "near_dup_0002",
+      "filename": "near_dup_0002.md",
+      "category": "near-duplicate",
+      "variant": 2
+    },
+    {
+      "id": "near_dup_0003",
+      "filename": "near_dup_0003.md",
+      "category": "near-duplicate",
+      "variant": 3
+    },
+    {
+      "id": "near_dup_0004",
+      "filename": "near_dup_0004.md",
+      "category": "near-duplicate",
+      "variant": 4
+    },
+    {
+      "id": "near_dup_0005",
+      "filename": "near_dup_0005.md",
+      "category": "near-duplicate",
+      "variant": 5
+    },
+    {
+      "id": "long_0001",
+      "filename": "long_0001.md",
+      "category": "long"
+    },
+    {
+      "id": "long_0002",
+      "filename": "long_0002.md",
+      "category": "long"
+    },
+    {
+      "id": "long_0003",
+      "filename": "long_0003.md",
+      "category": "long"
+    },
+    {
+      "id": "long_0004",
+      "filename": "long_0004.md",
+      "category": "long"
+    },
+    {
+      "id": "long_0005",
+      "filename": "long_0005.md",
+      "category": "long"
+    },
+    {
+      "id": "short_0001",
+      "filename": "short_0001.md",
+      "category": "short"
+    },
+    {
+      "id": "short_0002",
+      "filename": "short_0002.md",
+      "category": "short"
+    },
+    {
+      "id": "short_0003",
+      "filename": "short_0003.md",
+      "category": "short"
+    },
+    {
+      "id": "short_0004",
+      "filename": "short_0004.md",
+      "category": "short"
+    },
+    {
+      "id": "short_0005",
+      "filename": "short_0005.md",
+      "category": "short"
+    },
+    {
+      "id": "ordinary_0001",
+      "filename": "ordinary_0001.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0002",
+      "filename": "ordinary_0002.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0003",
+      "filename": "ordinary_0003.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0004",
+      "filename": "ordinary_0004.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0005",
+      "filename": "ordinary_0005.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0006",
+      "filename": "ordinary_0006.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0007",
+      "filename": "ordinary_0007.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0008",
+      "filename": "ordinary_0008.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0009",
+      "filename": "ordinary_0009.md",
+      "category": "ordinary"
+    },
+    {
+      "id": "ordinary_0010",
+      "filename": "ordinary_0010.md",
+      "category": "ordinary"
+    }
+  ]
+}

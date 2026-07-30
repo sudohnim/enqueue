@@ -1,0 +1,270 @@
+# Query set for the synthetic test corpus.
+#
+# Each entry:
+#   id                  — unique identifier
+#   query               — the search text
+#   expect_artifact_ids — artifact id(s) that must appear in results for this query to pass
+#   category            — one of: title-only, paraphrase, rare-string, phrase, partial,
+#                         vague-semantic, nothing, regression
+
+queries:
+
+  # ── 10 title-only names ──────────────────────────────────────────────
+  - id: t_only_01
+    query: "Hypatia"
+    expect_artifact_ids: ["title_only_0001"]
+    category: title-only
+
+  - id: t_only_02
+    query: "Ibn Sina"
+    expect_artifact_ids: ["title_only_0002"]
+    category: title-only
+
+  - id: t_only_03
+    query: "Mary Anning"
+    expect_artifact_ids: ["title_only_0003"]
+    category: title-only
+
+  - id: t_only_04
+    query: "Cheng Ho"
+    expect_artifact_ids: ["title_only_0004"]
+    category: title-only
+
+  - id: t_only_05
+    query: "Rosalind Franklin"
+    expect_artifact_ids: ["title_only_0005"]
+    category: title-only
+
+  - id: t_only_06
+    query: "Hypatia of Alexandria"
+    expect_artifact_ids: ["title_only_0006"]
+    category: title-only
+
+  - id: t_only_07
+    query: "Sima Qian"
+    expect_artifact_ids: ["title_only_0007"]
+    category: title-only
+
+  - id: t_only_08
+    query: "Emmy Noether"
+    expect_artifact_ids: ["title_only_0008"]
+    category: title-only
+
+  - id: t_only_09
+    query: "Wangari Maathai"
+    expect_artifact_ids: ["title_only_0009"]
+    category: title-only
+
+  - id: t_only_10
+    query: "Claudius Ptolemy"
+    expect_artifact_ids: ["title_only_0010"]
+    category: title-only
+
+  # ── 10 paraphrase terms ──────────────────────────────────────────────
+  - id: para_01
+    query: "grit"
+    expect_artifact_ids: ["paraphrase_0001"]
+    category: paraphrase
+
+  - id: para_02
+    query: "imagination"
+    expect_artifact_ids: ["paraphrase_0002"]
+    category: paraphrase
+
+  - id: para_03
+    query: "neophobia"
+    expect_artifact_ids: ["paraphrase_0003"]
+    category: paraphrase
+
+  - id: para_04
+    query: "inquiry"
+    expect_artifact_ids: ["paraphrase_0004"]
+    category: paraphrase
+
+  - id: para_05
+    query: "vagrancy"
+    expect_artifact_ids: ["paraphrase_0005"]
+    category: paraphrase
+
+  - id: para_06
+    query: "archiving"
+    expect_artifact_ids: ["paraphrase_0006"]
+    category: paraphrase
+
+  - id: para_07
+    query: "hydroponics"
+    expect_artifact_ids: ["paraphrase_0007"]
+    category: paraphrase
+
+  - id: para_08
+    query: "dualism"
+    expect_artifact_ids: ["paraphrase_0008"]
+    category: paraphrase
+
+  - id: para_09
+    query: "market efficiency"
+    expect_artifact_ids: ["paraphrase_0009"]
+    category: paraphrase
+
+  - id: para_10
+    query: "afterlife beliefs"
+    expect_artifact_ids: ["paraphrase_0010"]
+    category: paraphrase
+
+  # ── 5 rare exact strings ─────────────────────────────────────────────
+  - id: rare_01
+    query: "ERR_QUEUE_4412"
+    expect_artifact_ids: ["rare_string_0001"]
+    category: rare-string
+
+  - id: rare_02
+    query: "XKCD_REF_9274"
+    expect_artifact_ids: ["rare_string_0002"]
+    category: rare-string
+
+  - id: rare_03
+    query: "API_KEY_PLACEHOLDER_abc"
+    expect_artifact_ids: ["rare_string_0003"]
+    category: rare-string
+
+  - id: rare_04
+    query: "FACTORIAL_OVERFLOW_64"
+    expect_artifact_ids: ["rare_string_0004"]
+    category: rare-string
+
+  - id: rare_05
+    query: "Z40_GHOST_CONNECTION"
+    expect_artifact_ids: ["rare_string_0005"]
+    category: rare-string
+
+  # ── 5 multi-word phrases from long artifacts ─────────────────────────
+  - id: phrase_01
+    query: "travelling post offices where letters were sorted en route"
+    expect_artifact_ids: ["long_0001"]
+    category: phrase
+
+  - id: phrase_02
+    query: "gravitational pull of the moon"
+    expect_artifact_ids: ["long_0002"]
+    category: phrase
+
+  - id: phrase_03
+    query: "discard half and feed again with fresh flour"
+    expect_artifact_ids: ["long_0003"]
+    category: phrase
+
+  - id: phrase_04
+    query: "mauveine the first synthetic dye was discovered by accident"
+    expect_artifact_ids: ["long_0004"]
+    category: phrase
+
+  - id: phrase_05
+    query: "the Arctic tern holds the record for the longest migration"
+    expect_artifact_ids: ["long_0005"]
+    category: phrase
+
+  # ── 5 partial-word / prefix queries ──────────────────────────────────
+  - id: partial_01
+    query: "postal"
+    expect_artifact_ids: ["long_0001"]
+    category: partial
+
+  - id: partial_02
+    query: "tidal"
+    expect_artifact_ids: ["long_0002"]
+    category: partial
+
+  - id: partial_03
+    query: "sourd"
+    expect_artifact_ids: ["long_0003"]
+    category: partial
+
+  - id: partial_04
+    query: "pigment"
+    expect_artifact_ids: ["long_0004"]
+    category: partial
+
+  - id: partial_05
+    query: "migrat"
+    expect_artifact_ids: ["long_0005"]
+    category: partial
+
+  # ── 5 vague semantic queries (multiple acceptable) ────────────────────
+  - id: vague_01
+    query: "how to find your way without a map"
+    expect_artifact_ids: ["long_0005"]
+    category: vague-semantic
+
+  - id: vague_02
+    query: "growing food without soil"
+    expect_artifact_ids: ["paraphrase_0007"]
+    category: vague-semantic
+
+  - id: vague_03
+    query: "things you can make from clay"
+    expect_artifact_ids: ["long_0004"]
+    category: vague-semantic
+
+  - id: vague_04
+    query: "keeping records for the future"
+    expect_artifact_ids: ["paraphrase_0006", "ordinary_0009"]
+    category: vague-semantic
+
+  - id: vague_05
+    query: "cooking from scratch"
+    expect_artifact_ids: ["long_0003", "ordinary_0002"]
+    category: vague-semantic
+
+  - id: vague_06
+    query: "building things with your hands"
+    expect_artifact_ids: ["ordinary_0001", "near_dup_0001"]
+    category: vague-semantic
+
+  # ── 7 nothing queries ────────────────────────────────────────────────
+  - id: none_01
+    query: "quantum flux capacitor"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_02
+    query: "zephyrian marmot migration patterns"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_03
+    query: "neptunium alloy recycling facility"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_04
+    query: "hyperdimensional cheese grater"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_05
+    query: "megalodon breeding season temperature"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_06
+    query: "subterranean coral reef formation"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_07
+    query: "quantum decoherence in photosynthetic bacteria"
+    expect_artifact_ids: []
+    category: nothing
+
+  - id: none_08
+    query: "extragalactic neutrino telescope array"
+    expect_artifact_ids: []
+    category: nothing
+
+  # ── 1 regression ─────────────────────────────────────────────────────
+  # Reproduces the Epictetus failure: a search term that appears only in an
+  # artifact's title and never in its body must still return that artifact.
+  - id: regr_01
+    query: "Hypatia"
+    expect_artifact_ids: ["title_only_0001"]
+    category: regression

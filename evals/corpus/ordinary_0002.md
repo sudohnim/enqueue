@@ -1,0 +1,3 @@
+# A recipe for lentil soup
+
+Lentil soup that actually tastes good: saute one diced onion in olive oil until translucent. Add two chopped carrots, two celery stalks, and three cloves of garlic. Cook for five minutes. Add one cup of brown lentils, one can of diced tomatoes, and six cups of vegetable stock. Simmer for thirty minutes. Season with cumin, smoked paprika, salt, and pepper. Stir in a handful of spinach at the end.

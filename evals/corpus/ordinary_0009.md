@@ -1,0 +1,3 @@
+# Why I switched from a notebook to digital notes
+
+I switched from a paper notebook to Obsidian about six months ago. The main advantage is search. I used to spend minutes flipping through pages looking for something I wrote down two weeks ago. Now it takes seconds. The main disadvantage is that writing by hand felt more deliberate and I remembered things better. I am trying a hybrid: handwritten daily notes, digital for reference.
