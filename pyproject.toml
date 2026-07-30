@@ -36,6 +36,7 @@ enq = "enqueue.cli:app"
 dev = [
     "black>=24.0",
     "pytest>=8.0",
+    "sqlite-vec>=0.1.9",
 ]
 
 [build-system]
