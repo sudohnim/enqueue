@@ -311,6 +311,19 @@ fn capture_drag(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Move the main window by its header strip. Called on mousedown from the page.
+///
+/// `-webkit-app-region: drag` is a Chromium feature and does nothing in this WKWebView,
+/// which is why the CSS drag region never moved the window. `start_dragging()` is the
+/// one path that works here, the same one the capture overlay already uses.
+#[tauri::command]
+fn window_drag(app: AppHandle) -> Result<(), String> {
+    if let Some(main) = app.get_webview_window("main") {
+        main.start_dragging().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Hand a saved address to the system browser.
 ///
 /// `target="_blank"` does nothing in a WKWebView: there are no tabs, so clicking a
@@ -352,7 +365,7 @@ fn main() {
         .manage(Engine(Mutex::new(child)))
         .manage(CameFromMuseum(AtomicBool::new(false)))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![capture_dismiss, capture_drag, open_external])
+        .invoke_handler(tauri::generate_handler![capture_dismiss, capture_drag, open_external, window_drag])
         .setup(|app| {
             let window = tauri::WebviewWindowBuilder::new(
                 app,

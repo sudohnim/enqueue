@@ -195,6 +195,12 @@
           "markdownDescription": "Enables the open_external command without any pre-configured scope."
         },
         {
+          "description": "Enables the window_drag command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-window-drag",
+          "markdownDescription": "Enables the window_drag command without any pre-configured scope."
+        },
+        {
           "description": "Denies the capture_dismiss command without any pre-configured scope.",
           "type": "string",
           "const": "deny-capture-dismiss",
@@ -211,6 +217,12 @@
           "type": "string",
           "const": "deny-open-external",
           "markdownDescription": "Denies the open_external command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the window_drag command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-window-drag",
+          "markdownDescription": "Denies the window_drag command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

@@ -195,32 +195,74 @@
        reads a shade looser than the type system intends. The tracking pays it back. */
     letter-spacing: -0.08px;
     -webkit-font-smoothing: antialiased;
-    /* Make the top of the window draggable for native window move.
-       Interactive elements opt out via -webkit-app-region: no-drag below. */
-    -webkit-app-region: drag;
   }
 
-  /* Everything interactive opts out of window dragging so clicks register. */
-  button,
-  a,
-  input,
-  textarea,
-  select,
-  [role="button"],
-  [tabindex]:not([tabindex="-1"]),
-  label,
-  iframe,
-  .pill,
-  .card,
-  .item {
-    -webkit-app-region: no-drag;
+  /* The top strip: a persistent search bar and the window's drag handle.
+     `-webkit-app-region` is a Chromium feature and is inert in this WKWebView, which is
+     why the old CSS drag region never moved the window. Dragging is done by invoking
+     the Rust `window_drag` on mousedown instead (see the script), the same mechanism
+     the capture overlay uses. Everything at this height and above is draggable except
+     the search field itself. */
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--sp-5);
+    background: var(--bg);
+    z-index: calc(var(--z-pill) - 1);
+  }
+  .searchbar {
+    width: 75%;
+    max-width: 900px;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 40px;
+    padding: 0 var(--sp-4);
+    background: var(--surface);
+    border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-full);
+    transition:
+      border-color var(--dur-fast) var(--ease),
+      box-shadow var(--dur-fast) var(--ease);
+  }
+  .searchbar:focus-within {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-1);
+  }
+  .searchbar svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: var(--text-mute);
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .searchbar input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    outline: none;
+    font: inherit;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .searchbar input::placeholder {
+    color: var(--text-mute);
   }
 
-  /* No chrome. A persistent bar is a wall, and the walls are supposed to recede. */
+  /* No chrome beyond the search strip. Content clears the fixed top bar. */
   main {
     max-width: 1200px;
     margin: 0 auto;
-    padding: var(--sp-section) var(--sp-5) 160px;
+    padding: calc(68px + var(--sp-4)) var(--sp-5) 160px;
   }
 
   /* ---- type roles --------------------------------------------------------
@@ -1162,14 +1204,17 @@
   .titlerow .h2 {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     margin-top: 0;
   }
   .title-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border: none;
     background: none;
@@ -1177,22 +1222,26 @@
     color: var(--text-dim);
     border-radius: var(--r-sm);
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 0;
     transition:
       color 0.15s,
       background 0.15s;
   }
   .title-action svg {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.8;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
+  .title-action:active {
+    transform: scale(0.92);
+  }
   .title-action.lit svg {
     fill: currentColor;
+    stroke: var(--text-dim);
   }
   .title-action:hover {
     color: var(--text);
@@ -1203,9 +1252,11 @@
   }
   .title-action.lit:hover {
     color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
   .title-action.danger:hover {
     color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
   }
   /* Nothing you can do to an artifact is urgent, so this row has no primary in it. */
   .actions {
@@ -2130,6 +2181,12 @@
   }
 </style>
 
+<div class="topbar" id="topbar">
+  <div class="searchbar">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="topsearch" type="search" placeholder="Search everything" autocomplete="off" spellcheck="false" />
+  </div>
+</div>
 <main id="view"><div class="state">opening...</div></main>
 <div class="pill" id="pill"></div>
 
@@ -2754,6 +2811,43 @@
     );
   });
 
+  // The persistent search bar. Enter runs the same search the pill's magnifier does;
+  // an emptied field returns to the wall so clearing a search is a way back.
+  const topsearch = document.getElementById("topsearch");
+  if (topsearch) {
+    topsearch.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        topsearch.value = "";
+        topsearch.blur();
+        home();
+        return;
+      }
+      if (e.key !== "Enter") return;
+      const q = topsearch.value.trim();
+      if (q) doSearch(q);
+      else home();
+    });
+  }
+
+  // Drag the window by the top strip. `-webkit-app-region` is inert in this WKWebView,
+  // so the move is done by invoking the Rust `window_drag` on mousedown, the same path
+  // the capture overlay uses. The search field opts out so a click there types rather
+  // than dragging; a plain browser (no bridge) just does nothing, which is correct.
+  const topbar = document.getElementById("topbar");
+  if (topbar && bridge) {
+    topbar.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest("input, button, a, [role='button']")) return;
+      e.preventDefault();
+      // Surface a rejection rather than swallowing it. A silent catch here is exactly
+      // what hid the missing ACL grant last time: the invoke failed and the window
+      // simply did not move, with nothing to say why.
+      bridge("window_drag").catch((err) =>
+        toast("Could not drag the window: " + String(err && err.message ? err.message : err), true),
+      );
+    });
+  }
+
   // ---- surfaces ------------------------------------------------------------
   // Enter and Space activate a row, the way they would if it were a real button.
   // Only one card can claim the shared names at a time: `view-transition-name` must be
@@ -3165,7 +3259,7 @@
   let faceTries = 0;
   const FACE_LIMIT = 8;
 
-  async function showArtifact(id, focus) {
+  async function showArtifact(id, focus, scrollY) {
     const arriving = !ctx || ctx.id !== id;
     teardown();
     if (arriving) faceTries = 0;
@@ -3198,6 +3292,8 @@
       (a.pinned ? " lit" : "") +
       '" aria-label="' +
       (a.pinned ? "Kept" : "Keep") +
+      '" title="' +
+      (a.pinned ? "Kept" : "Keep at the front") +
       '" onclick="pinArtifact(\'' +
       a.id +
       "'," +
@@ -3205,7 +3301,7 @@
       ')">' +
       svg("star") +
       "</button>" +
-      '<button class="title-action danger" aria-label="Move to trash" onclick="binArtifact(\'' +
+      '<button class="title-action danger" aria-label="Move to trash" title="Move to trash" onclick="binArtifact(\'' +
       a.id +
       "')\">" +
       svg("trash") +
@@ -3316,7 +3412,8 @@
     mountEditor(focus);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
     if (a.kind === "file") mountPlain(a.id);
-    window.scrollTo(0, 0);
+    if (scrollY !== undefined) window.scrollTo(0, scrollY);
+    else window.scrollTo(0, 0);
   }
 
   // The gate prints its own enum value otherwise: "No facets: too_short" tells the
@@ -3453,7 +3550,7 @@
     } catch (err) {
       return toast(String(err.message || err), true);
     }
-    showArtifact(id);
+    showArtifact(id, undefined, window.scrollY);
   }
 
   async function fetchPreview(id) {

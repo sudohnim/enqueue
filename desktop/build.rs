@@ -14,6 +14,7 @@ fn main() {
                 "capture_dismiss",
                 "capture_drag",
                 "open_external",
+                "window_drag",
             ]),
         ),
     )

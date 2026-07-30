@@ -23,12 +23,12 @@
         },
         {
           "identifier": "museum-links",
-          "description": "Lets the museum hand a saved http(s) address to the system browser. A WKWebView has no tabs, so target=_blank opens nothing and the page has to ask the OS instead.",
+          "description": "Lets the museum hand a saved http(s) address to the system browser, and drag its own window by the top strip. Both are refused by default because the page is served from a remote origin.",
           "windows": ["main"],
           "remote": {
             "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
           },
-          "permissions": ["allow-open-external"]
+          "permissions": ["allow-open-external", "allow-window-drag"]
         }
       ]
     },
