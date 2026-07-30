@@ -1,239 +1,334 @@
 # Enqueue
 
-**Save anything. Sort it out later, or never.**
+A local-first tool for capturing anything and organising it later, by concept.
 
-Enqueue is a place to put things you want to keep: articles, PDFs, screenshots, links, and notes you write yourself. Saving takes one action and asks you nothing — no folder, no tag, no title, no reason. The organising happens afterwards, when you actually need it, and mostly the app does it for you.
+Save articles, PDFs, images, links, and notes without being asked for a folder, tag, or title.
+The organising happens afterwards, when a subject is on your mind, and the app pulls together everything that speaks to that subject, including things that never used those words.
 
-It runs entirely on your own Mac. Nothing is uploaded anywhere unless you deliberately turn that on.
-
----
-
-## The idea in one paragraph
-
-Most tools that hold your stuff make you file it at the moment you save it. That is the worst possible moment, because you do not yet know why the thing matters. So people either stop saving, or they save into a pile they never open again.
-
-Enqueue takes the opposite bet. Saving is free and instant. Later, when a subject is actually on your mind, you ask for it — and the app pulls together everything that speaks to that subject, **including things that never used those words**. An article about hand-built furniture can turn up when you ask about resilience, because the app has worked out what the article is *an example of*, not just what it is *about*.
+It runs entirely on your own Mac.
+Nothing is uploaded anywhere unless you deliberately point it at an outside model.
 
 ---
 
-## Getting it running
+## Prerequisites
 
-From a terminal, in the project folder:
+- **macOS.** The desktop shell uses Tauri with macOS-specific APIs, and the API key store uses the macOS Keychain.
+- **Python >= 3.12.** The engine is Python and targets 3.12 exactly (see `.python-version`).
+- **[uv](https://docs.astral.sh/uv/).** All commands in this repo and in the desktop shell go through `uv run`, so it must be on your PATH. The shell looks for it at `/opt/homebrew/bin/uv` or `/usr/local/bin/uv`.
+- **[Rust](https://www.rust-lang.org/) and [Tauri](https://v2.tauri.app/) prerequisites**, only if you want to build the desktop window from source. The pre-built binary at `desktop/target/debug/enqueue-desktop` is what `bin/relaunch` runs.
+- **[Node.js](https://nodejs.org/)**, only for the JS parse check that `bin/relaunch` and `bin/verify` run before launching. If `node` is not on the PATH, the check is skipped silently.
+- **[Ollama](https://ollama.com/)** running locally, if you want the default AI backend (model: `llama3.1:8b`). Not required for capture, search, or browsing; only for conversations and rooms.
+
+---
+
+## Install
+
+```bash
+git clone <repo-url> enqueue
+cd enqueue
+uv sync
+```
+
+This installs all Python dependencies from `pyproject.toml`, including `fastembed` and `qdrant-client` for the vector index.
+There is no separate `--extra index` install step; the index dependencies are in the main dependency list.
+
+If you want to build the desktop shell:
+
+```bash
+cd desktop
+cargo build
+cd ..
+```
+
+That produces `desktop/target/debug/enqueue-desktop`, which `bin/relaunch` expects.
+
+---
+
+## Running the desktop app
+
+The easiest way to run everything:
 
 ```bash
 bin/relaunch
 ```
 
-That starts the engine and opens the window. The first time, or after changing the desktop code:
+This starts the Python engine (`enq serve`), waits for it to answer on `127.0.0.1:8787`, then launches the Tauri desktop window and brings it to the front.
+
+After editing Rust code in `desktop/src/`:
 
 ```bash
 bin/relaunch --build
 ```
 
-The window can take a few seconds the first time. If nothing appears, it may have opened behind whatever you were looking at — check your Dock.
+This rebuilds the shell with `cargo build` before relaunching.
 
-**Two parts, one app.** There is a background "engine" that stores everything, and a window that shows it. `bin/relaunch` starts both together and shuts both down together, so you never have to think about it.
+The script kills any existing `enqueue-desktop` and `enq serve` processes first, so engine and window always come up together.
+Engine output is logged to `$TMPDIR/enqueue-app.log` (or `/tmp/enqueue-app.log`).
 
 ---
 
-## The window
+## Running the engine only
 
-The screen is deliberately bare. There is no toolbar and no menu bar of its own.
+```bash
+uv run enq serve
+```
 
-### The wall
+This starts the FastAPI/uvicorn server on `127.0.0.1:8787`.
+You can then open `http://127.0.0.1:8787/` in a browser to see the "museum" (the main wall view), or `http://127.0.0.1:8787/capture` for the quick-capture overlay.
 
-Everything you have saved, newest first, as a grid of squares. Each square shows the thing itself:
+The engine binds to `127.0.0.1` only, never to `0.0.0.0`.
 
-- a **PDF** shows its first page
-- an **image** shows the image
-- a **note** shows its own opening words
-- a **link** shows the site's picture, or its address if there is none
+---
 
-Headings break the wall up by time: **Today**, **Yesterday**, **Earlier this week**, **Last week**, **Earlier this month**, then by month and year. This is how people actually remember saving something — "a couple of weeks ago" — so it is how the wall is arranged.
+## CLI commands
 
-You can also sort by **last touched** or **by name** using the small controls at the top.
+The entry point is `enq`, registered in `pyproject.toml` as `enqueue.cli:app`.
+All commands except `serve`, `migrate`, and `version` are thin HTTP clients over the running engine; if the engine is not running they print an error and exit.
 
-### The pill
+| Command | What it does |
+| --- | --- |
+| `enq serve` | Start the engine on `127.0.0.1:8787`. |
+| `enq version` | Print the installed package version. |
+| `enq health` | Engine status and row counts (artifacts, versions, chunks, facets, chats). |
+| `enq migrate` | Bring the SQLite database to the newest Alembic revision. Runs automatically at engine startup. |
+| `enq note --body "text"` | Create a note (markdown body, stays editable). |
+| `enq link "https://example.com"` | Save a URL. Nothing is fetched. |
+| `enq artifacts --limit 20` | List artifacts, newest first. |
+| `enq preview "ARTIFACT_ID"` | Fetch the title/description/image for a saved link. One request, because you asked. |
+| `enq search "query" --limit 10` | Hybrid dense+sparse search. No model calls. |
+| `enq chat "question" --chat-id "ID"` | Ask the collection something. Starts a new conversation or continues one. |
+| `enq chats --limit 20` | List conversations, newest first. |
+| `enq curate "lens" --keep 15 --pool 150 --save` | Build a "room" on a theme. Slow; involves multiple model calls. |
+| `enq facets --limit 0 --redo` | Generate conceptual facets for eligible artifacts. Slow, resumable. |
+| `enq facet-gate` | Decide which artifacts are eligible for facet generation. |
+| `enq index` | Embed all chunks and facets into the Qdrant vector store. |
+| `enq chunk` | Rebuild text chunks from note bodies. |
 
-The small floating control at the bottom is the only set of buttons in the app. It has three:
+Every command takes `--help` for full argument details.
 
-| Button | What it does |
+---
+
+## Running tests
+
+```bash
+uv run pytest -q
+```
+
+Tests live in `tests/` and cover chats, ingest, migrations, preview, providers, settings, and trash.
+The test suite uses an in-memory or temporary database, not your real `~/.enqueue-poc` data.
+
+---
+
+## Lint
+
+```bash
+uv run black --check .
+```
+
+Or to format:
+
+```bash
+uv run black .
+```
+
+Black is configured in `pyproject.toml`: line length 100, target Python 3.12.
+
+---
+
+## Verification script
+
+```bash
+bin/verify
+```
+
+Runs three checks in sequence: JS parse validation on both served HTML pages, pytest, and a WCAG contrast check on the color palette in `museum.html`.
+Use this before committing UI changes.
+
+---
+
+## Contrast check
+
+```bash
+bin/check-contrast
+```
+
+Parses the `:root` color tokens from `src/enqueue/static/museum.html` and verifies WCAG contrast ratios (4.5:1 for text, 3.0:1 for strong lines).
+Exits non-zero if any token fails.
+
+---
+
+## Environment variables
+
+All environment variables use the `ENQ_` prefix and can override `settings.json` at runtime.
+The precedence is: environment variable > `settings.json` > built-in default.
+
+| Variable | Default | Purpose |
 |---|---|
-| **+** | Save something |
-| **magnifying glass** | Search for something you can name |
-| **eye** | Ask a question about what you have saved |
+| `ENQ_LLM_BACKEND` | `ollama` | Which model backend to use. One of: `ollama`, `openrouter`, `opencode`, `custom`. |
+| `ENQ_LLM_MODEL` | `llama3.1:8b` | The model name to send to the backend. |
+| `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | URL for the Ollama backend. Also used as `llm_url` in settings. |
+| `ENQ_LLM_API_KEY` | `ollama` (placeholder) | API key for non-local backends. Falls back to the macOS Keychain if not set. |
+| `ENQ_MODEL_RETRIES` | `1` | Extra retry attempts after the first model call (1 = two tries total). |
+| `ENQ_QDRANT_URL` | (empty) | If set, use a remote Qdrant server instead of the in-process local store. |
+| `ENQ_USER_AGENT` | `Enqueue/0.2 (personal link preview; one request per saved link)` | User agent string sent when fetching link previews. |
+| `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey. |
+| `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link automatically fetches its preview. |
+| `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. |
+| `ENQ_TRASH_DAYS` | `30` | Days before a trashed artifact is permanently destroyed. Minimum 1. |
+| `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/relaunch`. |
 
-When you are *inside* a saved thing, the **+** becomes a **back arrow** and the magnifying glass disappears — searching your whole collection from inside one document is not what you want there. Use **⌘F** to find words inside the thing in front of you.
-
-### The sidebar
-
-On the left: **Everything** (back to the wall), your **Conversations**, and at the bottom **Trash** and **Settings**. On a narrow window the sidebar tucks away, and the leftmost button on the pill brings it back.
-
----
-
-## Saving things
-
-Press **+** and pick one of four:
-
-| | What happens |
-|---|---|
-| **Note** | Opens a blank page you type into. It is yours and you can edit it forever. |
-| **Upload** | Pick any file. PDFs, images, text files, anything. |
-| **Link** | Paste a web address. |
-| **Image** | Same as Upload, filtered to pictures. |
-
-Saving never makes you wait. The app confirms with a small **"Saved."** at the bottom, and if something goes wrong it says so and keeps what you typed so you do not lose it.
-
-### Two kinds of thing
-
-This distinction runs through the whole app, so it is worth knowing.
-
-**Notes are yours.** You wrote them, you can rewrite them, and every version you have ever saved is kept. Nothing you write is ever destroyed, even when you delete the words.
-
-**Everything else came from the world.** A PDF, an image, a saved link — kept exactly as it arrived, and not editable. That is the point: the reason to save an article is that it says what it says. To add your own thoughts, there is a **"Your note on this"** box underneath, which *is* yours and editable.
+Settings are also writable through the API (`PATCH /settings`) and stored in `~/.enqueue-poc/settings.json` with `0600` permissions.
+No secret is ever written to that file; the API key lives in the macOS Keychain (via `/usr/bin/security`).
 
 ---
 
-## Reading things
+## Model backends
 
-**PDFs open in the app.** Pages load as you scroll, and a counter in the corner shows where you are. Press **⌘F** to search the text inside — it reports how many matches there are, jumps between them, and marks the page each one is on. **Enter** for the next, **Shift+Enter** for the previous.
+The engine speaks the OpenAI-compatible protocol to all backends through a single adapter (`src/enqueue/providers/`).
 
-**Text files show their contents.** Anything that is not readable text says so plainly rather than showing an empty box — file name, type, size, and confirmation that it is safely stored.
+| Backend | URL | Local? | Needs key? |
+| --- | --- | --- | --- |
+| `ollama` | `http://127.0.0.1:11434/v1` | Yes | No |
+| `openrouter` | `https://openrouter.ai/api/v1` | No | Yes (`ENQ_LLM_API_KEY`) |
+| `opencode` | `https://opencode.ai/zen/v1` | No | Yes (`ENQ_LLM_API_KEY`) |
+| `custom` | (set via `ENQ_OLLAMA_URL`) | No | Yes (`ENQ_LLM_API_KEY`) |
 
-**Links start out as just an address.** Saving a link deliberately does *not* visit the page (see [Privacy](#privacy)). When you want the title, description, and picture, press **Fetch a preview**. The button tells you what it costs: one request to that site.
-
-Some sites refuse. Wikipedia will not serve a program that does not identify itself with a contact address. The app says so, and Settings is where you fix it.
-
----
-
-## Finding things
-
-Three ways, different on purpose.
-
-### Search — for things you can name
-
-The magnifying glass. Use it when you know roughly what you want: a phrase, a title, a name. Instant, and entirely on your machine.
-
-### Ask — for things you cannot name
-
-The eye. This starts a **conversation** with your collection. Ask in ordinary language, get an answer built from what you actually saved, with the sources listed underneath — click any to open it.
-
-The important part: **if your collection does not hold the answer, it says so.** It will not quietly answer from general knowledge and dress it up as something you saved. When you see sources under an answer, they are real.
-
-Conversations are kept in the sidebar. Click the star to pin one to the top.
-
-**Scope.** Press the eye while looking at one document and the conversation reads only *that document*. The app says so at the top — "reading only …" — with a link to widen it. This is what makes "ask about this PDF" fast.
-
-### Rooms — for a subject you want gathered
-
-As a conversation goes on, the app works out which concepts you are circling and offers them under **"Make a room from:"**. Click one and it gathers everything in your collection belonging to that idea, with a short note on each explaining why it is there.
-
-This is the part that is not just search: things turn up for what they *demonstrate*, not the words they use. Press **Keep this room** to save it.
-
-Rooms are slow — a minute or more — because the app reads each candidate properly rather than matching words.
+Anything other than `ollama` sends the text of your artifacts to somebody else's computer.
+Artifacts marked `local_only` never go to an outside service, even when one is configured.
 
 ---
 
-## Deleting things
+## Where your data lives
 
-Nothing in Enqueue expires on its own. Nothing is removed for being old or unread. The only thing that ever leaves is something you delete.
+Everything is stored under `~/.enqueue-poc`:
 
-Deleting is two steps:
+| Path | Contents |
+| --- | --- |
+| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, chats, exhibits, trash, secrets. |
+| `blobs/` | Original uploaded files, unmodified. |
+| `qdrant-local/` | The vector index (dense + sparse). Rebuildable; safe to delete. |
+| `settings.json` | User preferences (not secrets). |
+| `repo` | One-line pointer to the repo path, written by `bin/relaunch` so the desktop shell can find the engine. |
+| `capture-position` | Last screen position of the capture overlay. |
 
-1. Press the **bin icon** next to a thing's title. It leaves the wall and stops appearing in searches and answers immediately.
-2. It waits in **Trash** for **30 days**, showing how long it has left. **Put back** restores it completely.
-
-After that it is destroyed for good. You can change the window in Settings — the minimum is one day, because a delete you cannot undo is not something this app will do in a single click.
-
-**Delete now** in the Trash destroys something immediately. It is the only action in Enqueue that cannot be undone, and the only one that asks you to confirm.
-
----
-
-## Settings
-
-The gear at the bottom of the sidebar.
-
-**The model.** Which AI answers your questions. Out of the box it is a model running on your own machine, so nothing leaves. You can switch to **OpenRouter**, **OpenAI**, or another compatible service. The screen says plainly which choice sends your text elsewhere and which does not.
-
-An outside service needs an API key, set as an environment variable rather than typed into the app. There is deliberately no box for it: this file sits in plain text on your disk, and a password written in plain text is not a password. Settings tells you whether a key is present.
-
-**Capture hotkey.** Click the box, press the combination you want. Shown the way your keyboard is labelled — ⌥⇧E, not "Alt+Shift+E".
-
-**User agent for link previews.** How the app introduces itself to websites. Some require a contact address before they will answer.
-
-**The trash.** How many days deleted things wait.
-
-**Where everything lives.** The folder on your disk, how much space each part uses, how many things you have. **Rebuild the index** throws away everything the machine worked out and works it out again — useful if search seems wrong. It never touches anything you wrote.
+To back up Enqueue, copy that folder.
+Your original files are in `blobs/` byte for byte, so they stay readable by other programs even if Enqueue disappears.
 
 ---
 
-## Privacy
+## Project layout
 
-Not a feature bolted on; it is why several things work the way they do.
-
-**Everything is on your machine.** The database, your files, and the search index live in a folder in your home directory. The app listens only on your own computer.
-
-**Saving a link does not visit it.** If it did, every site you saved would learn you were interested, whether or not you went back. So a link is stored as text until you press **Fetch a preview**.
-
-**Preview pictures are downloaded, not linked.** When you do fetch one, the picture is copied onto your machine. If the app merely pointed at the original, that site would hear from you *every time* you looked at the card, forever — worse than the one visit it was avoiding.
-
-**Passwords and keys are noticed.** Everything saved is scanned for things that look like credentials. Anything that trips the scan is held back from every AI model, and the app tells you on the item.
-
-**Local only.** A thing marked local-only never goes to an outside service, even when one is configured.
+```
+enqueue/
+  bin/
+    relaunch           # Restart engine + desktop window together
+    verify             # JS parse + pytest + contrast check
+    check-contrast     # WCAG contrast validation on museum.html palette
+  desktop/
+    src/main.rs        # Tauri shell: window, hotkey, engine lifecycle, capture overlay
+    Cargo.toml         # Tauri 2 + global-shortcut plugin
+    tauri.conf.json    # Window config, capabilities, CSP
+  src/enqueue/
+    cli.py             # `enq` entry point (Typer)
+    api.py             # FastAPI engine: all HTTP endpoints
+    config.py          # Constants: paths, models, backends, env var overrides
+    settings.py        # settings.json read/write, three-layer resolution
+    db.py              # SQLite + Alembic migration at startup
+    notes.py           # Note CRUD, versioning, annotations
+    capture.py         # File/link upload, PDF rendering, text extraction
+    chats.py           # Conversations: retrieval-augmented Q&A
+    preview.py         # Link preview fetching (OG tags, images)
+    trash.py           # Soft delete with retention window
+    keyring.py         # macOS Keychain wrapper for API keys
+    prompts.py         # LLM prompt templates
+    schemas.py         # Pydantic models
+    ingest/
+      chunk.py         # Text chunking (chonkie)
+      facets.py        # Conceptual facet generation
+      queue.py         # Background ingest queue
+      secrets.py       # Credential scanning
+    index/
+      embed.py         # Dense + sparse embeddings (fastembed)
+      qdrant.py        # Qdrant vector store operations
+    retrieve/
+      candidates.py    # Candidate retrieval for curation
+      curate.py        # Room/exhibit building
+      expand.py        # Query expansion
+      rerank.py        # LLM-based reranking
+    providers/
+      base.py          # Provider protocol + error handling
+      ollama.py        # Ollama adapter
+    migrations/
+      versions/        # 0001-0008 Alembic migrations
+    static/
+      museum.html      # Main wall view (inline JS/CSS)
+      capture.html     # Quick-capture overlay
+      fonts/           # IBM Plex Sans
+  tests/
+    conftest.py
+    test_chats.py
+    test_ingest.py
+    test_migrations.py
+    test_preview.py
+    test_providers.py
+    test_settings.py
+    test_trash.py
+  docs/
+    PRODUCT.md         # Product spec
+    DESIGN.md          # Design system
+    CURATION.md        # How curation/rooms work
+    EVAL.md            # Evaluation methodology
+    OPEN.md            # Open questions
+    PROGRESS.md        # Development log
+  pyproject.toml
+  alembic.ini
+  .python-version
+```
 
 ---
 
-## Keyboard
+## API overview
 
-| | |
-|---|---|
-| **⌥⇧E** | Save from anywhere (configurable; the window it opens is still being built) |
-| **⌘F** | Find inside a PDF |
-| **Enter / Shift+Enter** | Next / previous match |
-| **Esc** | Close whatever just opened |
-| **⌘S** | Save a note now (it also saves on its own) |
-| **⌘B / ⌘I** | Bold / italic while writing |
+The engine exposes a REST API on `127.0.0.1:8787`.
+Key endpoints:
 
-While writing a note, markdown shorthand becomes formatting as you type: `# ` for a heading, `- ` for a bullet, `> ` for a quote.
-
----
-
-## When something looks wrong
-
-**The window did not appear.** It may have opened behind another window — check the Dock. `bin/relaunch` brings it to the front.
-
-**An answer says nothing was found, but you know you saved something.** Check the line under the conversation's title. If it says "reading only …", the conversation is locked to one document — click **ask everything instead**.
-
-**Search is not finding something recent.** Give it a few seconds; things are processed just after saving. If it persists, use **Rebuild the index**.
-
-**A link preview failed.** The reason is under the button. Most often a site refusing a program that has not identified itself — set a user agent with a contact address in Settings.
-
-**A room came back nearly empty.** The screen says whether your collection was thin or the AI failed. With the small local model, the AI failing is common; a better model fixes it.
-
----
-
-## Honest limitations
-
-Enqueue is early. These are known, not hidden:
-
-- **The built-in AI is weak.** It runs locally and free, and it is not very good — roughly three of four attempts fail their quality checks when building a room. Conversations are fine; rooms are unreliable. Pointing it at a better model fixes this.
-- **The global save hotkey is not built yet.** The setting exists; the window it opens does not.
-- **The wall shows your most recent 120 things** and does not yet page beyond that.
-- **There is no sync.** One machine only, for now.
-- **There is no phone app.**
-- **Rooms take a minute or more.**
+- `GET /` - The museum (main HTML view)
+- `GET /capture` - The capture overlay (HTML)
+- `GET /health` - Status and counts
+- `GET /artifacts` - List artifacts (paginated, sortable, filterable by pinned)
+- `GET /artifacts/{id}` - Full artifact detail
+- `POST /notes` - Create a note
+- `POST /capture/link` - Save a URL
+- `POST /capture/upload` - Upload a file
+- `POST /artifacts/{id}/preview` - Fetch link preview
+- `GET /search?q=...` - Hybrid search
+- `POST /chats` - Start or continue a conversation
+- `POST /curate` - Build a room
+- `GET /settings` - Read all settings + storage info
+- `PATCH /settings` - Update settings
+- `PUT /settings/api-key` - Store API key in Keychain
+- `DELETE /settings/api-key` - Remove API key from Keychain
+- `POST /index` - Build the vector index
+- `POST /reprocess` - Re-ingest everything
+- `GET /trash` - List trashed artifacts
+- `DELETE /trash/{id}` - Permanently destroy one artifact
 
 ---
 
-## Where your things actually are
+## Known gaps
 
-Everything lives in `~/.enqueue-poc`:
+- **No bundled `.app` yet.** The desktop shell runs from `desktop/target/debug/enqueue-desktop` and spawns the engine via `uv run enq serve` from the repo. There is no packaged sidecar binary, so the app cannot be distributed as a double-clickable `.app` without the repo and `uv` present.
+- **No CI pipeline.** There is no GitHub Actions or other CI configuration in the repo. `bin/verify` is the closest thing to a pre-commit gate.
+- **The global capture hotkey opens a window, but that window is the capture overlay, not a full capture flow.** The hotkey is functional (registered via `tauri-plugin-global-shortcut`), but the overlay is a small note-input box, not a full capture interface.
+- **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the museum HTML view does not implement infinite scroll or pagination.
+- **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
+- **No sync (planned).** One machine only today. Sync is a planned milestone.
+- **The default local model (`llama3.1:8b`) is weak.** Roughly three of four rerank judgments fail their validators. Conversations work; rooms are unreliable until you point at a better model.
+- **Qdrant runs in-process.** The in-process mode is documented for roughly 20,000 points. A real corpus should switch to a Qdrant server via `ENQ_QDRANT_URL`.
+- **No Windows or Linux support.** The desktop shell uses macOS-specific AppKit calls (activation, hiding). The Keychain wrapper is macOS-only.
 
-| | |
-|---|---|
-| `enqueue.db` | Every note, link, conversation, and version |
-| `blobs/` | Your original files, unmodified |
-| `qdrant-local/` | The search index (rebuildable; safe to throw away) |
-| `settings.json` | Your preferences |
+---
 
-To back Enqueue up, copy that folder. Your original files are in there byte for byte, so they stay readable by other programs even if Enqueue disappears.
+## License
+
+See `LICENSE` in the repo root.

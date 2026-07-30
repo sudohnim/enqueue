@@ -1,607 +1,621 @@
-# Enqueue Design System
+# Design System - Enqueue
 
-This document is the single source of truth for how the Enqueue interface looks.
-An agent with no other context should be able to build the whole app from this file alone.
-Values here are normative. If the code disagrees with this document, the code is wrong.
-
----
-
-## 1. Philosophy
+## Overview
 
 Enqueue is a place to put things you are not ready to decide about.
 The interface should feel like a quiet, warm, well-lit room where nothing is urgent and nothing is lost.
+It is a local-only desktop application built on a Tauri shell wrapping a Python FastAPI backend that serves two self-contained HTML surfaces: a museum (the main browsing and reading interface) and a capture overlay (a floating quick-entry window).
 
-Three sentences that govern every decision:
+The visual system combines two source languages.
+Colour comes from PostHog: a warm cream canvas (`#eeefe9`), an olive-charcoal ink ladder, a four-step surface ladder, a pastel callout family, and a single saturated yellow-orange (`#f7a501`) carrying every primary action.
+Form and typography come from Mastercard: a pill-and-stadium radius vocabulary that skips the 8-16px middle ground, one geometric sans (IBM Plex Sans) at weight 450 body with -2% headline tracking, a dotted eyebrow label, generous structural whitespace, and wide low-opacity shadows used only for floating chrome.
 
-1. **The canvas is warm, never white, never dark.** Cream paper, olive ink. The app is a reading room, not a terminal.
-2. **Everything is soft-cornered and generously spaced.** Pills, stadiums, and circles. Whitespace is structure, not leftover.
-3. **There is exactly one loud colour, and it only ever means "do this now."** Yellow-orange is the primary action and nothing else. Anything a colour tells you that is not an action lives on a small dot, never on text.
+The app's signature object is the floating capture pill, present on every page.
+It is a 56px-tall full-pill at the bottom-centre of the viewport, carrying a 32px yellow-orange disc with a plus glyph, flanked by icon-only companion buttons for search, ask, and settings.
+Everything else on screen is olive ink on warm cream, organised into square artifact cards on a responsive grid, with kind identity carried by an 8px dot beside a plain text label rather than by colour alone.
 
-The two systems this document combines:
+The app makes no network requests for fonts, stylesheets, or analytics.
+All fonts are vendored as static TTF files in `src/enqueue/static/fonts/`.
+The HTML is served from `127.0.0.1` and the only external request the app ever makes is a single opt-in fetch per saved link, for preview generation.
 
-- **Colour comes from PostHog.** The cream canvas, the olive ink ladder, the surface ladder, the pastel callout family, and the single saturated yellow-orange.
-- **Form and typography come from Mastercard.** The pill and stadium radius language, one geometric sans at weight 450 body and -2% headline tracking, the dotted eyebrow label, generous structural whitespace, and wide low-opacity shadows instead of hard drops.
+### Key Characteristics
 
-Nothing else gets to be a source.
-If a value cannot be traced to one of those two systems or to a contrast requirement in section 3, it does not belong here.
-
----
-
-## 2. Hard constraints
-
-These are not preferences. Violating any of them is a bug.
-
-- **Dark mode does not exist.** There is one theme: light and warm. Do not write a `prefers-color-scheme: dark` block. Do not add a theme toggle. Do keep `color-scheme: light` on `:root` so the browser paints native scrollbars, carets, and select menus light even when macOS is set to dark.
-- **No network, ever.** No CDN fonts, no external stylesheets, no remote images, no analytics, no request to anything but `127.0.0.1`. The app is offline and local-only, and a single external request would be a privacy regression, not a styling detail.
-- **Fonts must be vendored or system.** See section 5.1.
-- **Contrast is verified, not assumed.** Every text colour reaches 4.5:1 against every ground it can sit on. Every colour that is the sole boundary of a control reaches 3:1. Measured numbers are in section 3.
-- **Plain dashes only.** Never an em dash, in the UI or in this document.
+- Warm cream canvas (`#eeefe9`) edge to edge, never pure white, never dark.
+- Single yellow-orange CTA (`#f7a501`) with a mandatory 1.5px ink border, because the yellow measures 1.63:1 on the darkest ground and cannot bound a control on its own.
+- IBM Plex Sans across every text role, vendored as static TTF cuts at weights 400, 500, 600, 700. Weight 450 is declared but rounds to 400 because the variable woff2 cut is not vendored; body letter-spacing is tightened by -0.08px to compensate.
+- Radius scale skips 8-16px entirely: 6px for micro-decoration, 20px for controls, 40px for containers, 999px for pills and circles.
+- Kind identity is always an 8px dot plus a plain ink text label, never colour alone.
+- About 95% of surfaces sit flat on cream with a 1px hairline border; shadows appear only on genuinely floating chrome (the capture pill, the capture menu, the modal, hovered cards).
+- No dark mode. `color-scheme: light` on `:root` ensures native scrollbars and carets stay light.
 
 ---
 
-## 3. Colour tokens
+## Colours
 
-All ratios below were computed with the WCAG 2.1 relative-luminance formula.
-The four grounds a foreground colour can sit on are `--bg`, `--surface`, `--surface-doc`, and `--surface-2`.
-The darkest of those is `--surface-2` (`#e5e7e0`), so it is the binding case for every text colour.
-All four are listed anyway so nothing has to be re-derived later.
+All hex values below are extracted from the `:root` block in `src/enqueue/static/museum.html`.
+The capture overlay (`capture.html`) copies a subset of these tokens rather than sharing the stylesheet, because it is a different surface with a different lifetime.
 
-### 3.1 Surfaces (the PostHog ladder)
+### Surface Ladder
 
 | Token | Hex | Role |
-|---|---|---|
-| `--bg` | `#eeefe9` | Warm cream canvas. The page body, the left rail, the trash page, the settings page. Runs edge to edge. Never substitute white. |
-| `--surface` | `#ffffff` | Raised card. Artifact cards, the answer bubble, settings group cards, the modal dialog, the capture menu. The dominant card surface. |
-| `--surface-doc` | `#fcfcfa` | Warm reading white. Long-form surfaces: the artifact detail body, note text, extracted PDF text. Softer than `--surface` so a full page of it does not glare against the cream. |
-| `--surface-2` | `#e5e7e0` | Recessed soft fill. Secondary fills, inline code chips, the search field at rest, a hovered rail row, disabled control fill. |
+| --- | --- | --- |
+| `--bg` | `#eeefe9` | Warm cream canvas. The page body, the top bar, every page background. Runs edge to edge. Never substitute white. |
+| `--surface` | `#ffffff` | Raised card. Artifact cards, the answer bubble, settings group cards, the modal dialog, the capture menu, the search bar. The dominant card surface. |
+| `--surface-doc` | `#fcfcfa` | Warm reading white. Long-form surfaces: the artifact detail body pane (`.docpane`), note text, extracted PDF text. Softer than `--surface` so a full page of it does not glare against the cream. |
+| `--surface-2` | `#e5e7e0` | Recessed soft fill. Secondary fills, inline code chips, the search field at rest, hovered rail rows, disabled control fill, the user's chat bubble. |
 
-Surface rule: the ladder is **canvas -> raised (`--surface`) -> reading (`--surface-doc`)**, with `--surface-2` sideways off the canvas as a *recession*, not an elevation.
-Never nest a `--surface-2` block inside a `--surface` card; use a hairline there instead.
+Surface rule: the ladder runs canvas to raised (`--surface`) to reading (`--surface-doc`), with `--surface-2` sideways off the canvas as a recession, not an elevation.
+The code never nests a `--surface-2` block inside a `--surface` card.
 
-### 3.2 Ink (text)
+### Ink (Text)
 
-| Token | Hex | Role | vs `--bg` | vs `--surface` | vs `--surface-doc` | vs `--surface-2` |
-|---|---|---|---|---|---|---|
-| `--text` | `#23251d` | Headlines, artifact titles, button labels on light, question text, active nav. Olive-charcoal that reads near-black on cream. | 13.41 | 15.51 | 15.10 | 12.44 |
-| `--text-dim` | `#4d4f46` | Default body copy. Answer text, note bodies, settings descriptions, card previews. The most-used text colour in the app. | 7.20 | 8.33 | 8.10 | 6.68 |
-| `--text-mute` | `#63655b` | Metadata only: timestamps, kind labels, counts, capture source. | 5.13 | 5.93 | 5.77 | **4.75** |
+| Token | Hex | Role | Worst contrast (vs `--surface-2`) |
+| --- | --- | --- | --- |
+| `--text` | `#23251d` | Headlines, artifact titles, button labels on light, question text, active nav, focus ring. Olive-charcoal that reads near-black on cream. | 12.44:1 |
+| `--text-dim` | `#4d4f46` | Default body copy. Answer text, note bodies, settings descriptions, card previews, excerpts. The most-used text colour. | 6.68:1 |
+| `--text-mute` | `#63655b` | Metadata only: timestamps, kind labels, counts, capture source, meta rows. | 4.75:1 |
 
-All three pass 4.5:1 on all four grounds.
-`--text-mute` is the tightest at 4.75 on `--surface-2` and has almost no headroom left. Do not lighten it.
+All three pass 4.5:1 on all three grounds checked by `bin/check-contrast` (`--bg`, `--surface`, `--surface-2`).
+`--text-mute` is the tightest at 4.75:1 on `--surface-2` and has almost no headroom left.
 
-> **Changed from source:** PostHog's `mute` is `#6c6e63`, which measures **4.16** on `--surface-2` and fails 4.5:1.
-> It was darkened to `#63655b` (4.75 worst case). This is the only PostHog ink value altered.
+PostHog's `mute` value `#6c6e63` measures 4.16:1 on `--surface-2` and fails 4.5:1.
+It was darkened to `#63655b` (4.75:1). This is the only PostHog ink value altered from the source.
 
-Two PostHog ink values are deliberately **not** tokens here.
-`ash` `#9b9c92` (2.40 on canvas) and `stone` `#b6b7af` (1.58) fail badly and have no legitimate use in this app.
-Disabled text is `--text-mute` at 55% opacity plus `cursor: not-allowed` plus `aria-disabled`, because disabled state must be signalled by more than colour regardless.
+PostHog's `ash` `#9b9c92` (2.40:1 on canvas) and `stone` `#b6b7af` (1.58:1) are deliberately absent.
+Disabled text uses `--text-mute` at 55% opacity plus `cursor: not-allowed` plus `aria-disabled`, because disabled state must be signalled by more than colour.
 
-### 3.3 The accent
+### The Accent
 
 | Token | Hex | Role |
-|---|---|---|
-| `--accent` | `#f7a501` | The one loud colour. Fill of the primary action only. |
-| `--accent-quiet` | `#dd9001` | Pressed state of the primary action. |
-| `--accent-ink` | `#23251d` | Text and icons on `--accent`. Measured **7.64:1** on `#f7a501`. |
+| --- | --- | --- |
+| `--accent` | `#f7a501` | The one loud colour. Fill of the primary action only: the capture pill's disc, the primary button, the toggle on-state, the unread marker dot, the streaming bar, the eyebrow dot. |
+| `--accent-quiet` | `#dd9001` | Pressed / hover state of the primary action. |
+| `--accent-ink` | `#23251d` | Text and icons on `--accent`. Measures 7.64:1 on `#f7a501`. |
+| `--accent-strong` | `#b17816` | Used only in `capture.html` for the drag-over border. Not present in `museum.html`. |
 
-**`--accent` is never text.**
-It measures 1.76:1 on the cream canvas and 2.03:1 on white.
+`--accent` is never used as text.
+It measures 1.63:1 on `--surface-2` (the darkest ground) and 1.76:1 on `--bg`.
 There is no ground in this app where yellow-orange text is legible.
-If you want an emphasised word, set it in `--text` and put a yellow-orange element beside it.
 
-**`--accent` is never a lone border.**
-1.76:1 fails the 3:1 non-text requirement outright.
+`--accent` is never a lone border.
+1.63:1 fails the 3:1 non-text boundary requirement.
 
-**The primary button is therefore always `--accent` fill plus a 1.5px `--text` border.**
-The border, not the fill, satisfies the 3:1 boundary requirement, and it measures 13.41:1 against the canvas.
-This is not an accessibility patch bolted on afterwards: Mastercard's primary pill specifies a 1.5px border in the same colour as its fill for exactly this crisp-edge reason, so the mechanism is native to the source system.
+Every filled `--accent` control carries a 1.5px `--text` border.
+The border, not the fill, satisfies the 3:1 boundary requirement.
+This mechanism is native to Mastercard's primary-pill spec, which uses a 1.5px border in the same colour as its fill for a crisp edge.
 
-### 3.4 Lines
+### Lines
 
-| Token | Hex | Role | Contrast |
-|---|---|---|---|
-| `--line` | `#bfc1b7` | Decorative hairline. Card borders, table rules, the rail divider, section rules. | 1.58 vs `--bg`, 1.82 vs `--surface`. **Decorative only.** |
-| `--line-soft` | `#dcdfd2` | In-card divider between adjacent rows. | 1.17 vs `--bg`, 1.35 vs `--surface`. **Decorative only.** |
-| `--line-strong` | `#7d7b73` | The sole boundary of a control: outlined button, text input, checkbox, select, toggle track. | **3.67** vs `--bg`, 4.24 vs `--surface`, 4.13 vs `--surface-doc`, **3.40** vs `--surface-2`. Clears 3:1 everywhere. |
+| Token | Hex | Role | Worst contrast (vs `--bg`) |
+| --- | --- | --- | --- |
+| `--line` | `#bfc1b7` | Decorative hairline. Card borders, table rules, the rail divider, section rules, the top bar's bottom border. | 1.58:1. Decorative only. |
+| `--line-soft` | `#dcdfd2` | In-card divider between adjacent rows (`.bar` top border, `.kept` bottom border). | 1.17:1. Decorative only. |
+| `--line-strong` | `#7d7b73` | The sole boundary of a control: outlined button (tertiary), text input, select, textarea, toggle track, search bar, meta separator dot. | 3.40:1 (vs `--surface-2`). Clears 3:1 everywhere. |
 
-Rule: if a line is the *only* thing telling the user where a clickable or typable region starts and ends, it must be `--line-strong`.
+Rule: if a line is the only thing telling the user where a clickable or typable region starts and ends, it must be `--line-strong`.
 If the element also has a fill change or a visible label boundary, `--line` is fine.
 
-### 3.5 Semantic colours
+### Semantic Colours
 
-| Token | Hex | Role | Worst ground (`--surface-2`) |
-|---|---|---|---|
-| `--link` | `#0c6083` | Inline anchor in prose, source URL on a link artifact. | 5.58 |
-| `--danger` | `#9e2a20` | Destructive text, and the fill of the destructive button. | 6.00 as text on `--surface-2`; `#ffffff` on `#9e2a20` measures 7.48. |
+| Token | Hex | Role | Worst contrast (vs `--surface-2`) |
+| --- | --- | --- | --- |
+| `--link` | `#0c6083` | Inline anchor in prose, source URL on a link artifact. | 5.58:1 |
+| `--danger` | `#9e2a20` | Destructive text and the fill of the destructive button. White on `#9e2a20` measures 7.48:1. | 6.00:1 as text |
 
-> **Changed from source:** PostHog's `link-teal` `#1078a3` measures **3.97** on `--surface-2` and fails; darkened to `#0c6083` (5.58).
-> PostHog's `accent-red` `#cd4239` measures **3.80** and fails; darkened to `#9e2a20` (6.00).
-> PostHog's `link-blue` `#1d4ed8` passes at 5.37 but is dropped anyway, because two link colours in a single-purpose app is one too many.
+PostHog's `link-teal` `#1078a3` measures 3.97:1 on `--surface-2` and fails; darkened to `#0c6083` (5.58:1).
+PostHog's `accent-red` `#cd4239` measures 3.80:1 and fails; darkened to `#9e2a20` (6.00:1).
 
-### 3.6 Pastel callout family (from PostHog)
+### Pastel Callout Family
 
-Soft tinted panels carrying `--text`, used for inline notices only.
+Soft tinted panels carrying `--text` or `--text-dim`, used for inline notices only.
+Rendered at `--r` (20px) radius, `--sp-4` (20px) inset, no border, no shadow.
 
-| Token | Hex | Meaning | `--text` on it | `--text-dim` on it |
-|---|---|---|---|---|
-| `--tint-info` | `#dceaf6` | Neutral information. "This has not been read yet." | 12.66 | 6.80 |
-| `--tint-ok` | `#d9eddf` | Confirmation. "Restored to the wall." | 12.65 | 6.79 |
-| `--tint-warn` | `#f7d6d3` | Caution and destructive framing. "Emptying trash is permanent." | 11.46 | 6.15 |
-| `--tint-note` | `#e7d8ee` | Model and provenance annotation. "Read locally by Lumo." | 11.42 | 6.13 |
+| Token | Hex | Meaning |
+| --- | --- | --- |
+| `--tint-info` | `#dceaf6` | Neutral information. PDF page count callout, find highlights in the reader. |
+| `--tint-ok` | `#d9eddf` | Confirmation. Active drop state on the capture pill. |
+| `--tint-warn` | `#f7d6d3` | Caution and destructive framing. Trash warning callout, error toasts, current find highlight. |
+| `--tint-note` | `#e7d8ee` | Model and provenance annotation. "Read locally" callout, credential warning. |
 
-`--text-mute` is **not** permitted on any tint.
-Callouts render at `--r` (20px), `--sp-4` inset, no border, no shadow.
+`--text-mute` is not permitted on any tint.
+On `--tint-note` it measures 4.36:1 and fails 4.5:1.
+The eyebrow on a callout steps up to `--text-dim` (6.13:1) rather than keeping its usual grey.
 
-### 3.7 Kind colours
+### Kind Colours
 
-Five hues identify what an artifact *is*.
-Section 6.5 gives the rendering rule; this section gives the values and the evidence.
-
-| Token | Alias | Hex | vs `--bg` | vs `--surface` | vs `--surface-doc` | vs `--surface-2` |
-|---|---|---|---|---|---|---|
-| `--green` | `--kind-note` | `#30804b` | 4.21 | 4.87 | 4.74 | **3.90** |
-| `--blue` | `--kind-link` | `#376899` | 5.04 | 5.83 | 5.67 | 4.67 |
-| `--peach` | `--kind-pdf` | `#ad5a31` | 4.24 | 4.90 | 4.77 | **3.93** |
-| `--pink` | `--kind-image` | `#8f4273` | 5.68 | 6.57 | 6.40 | 5.27 |
-| `--teal` | `--kind-file` | `#755c12` | 5.51 | 6.37 | 6.20 | 5.11 |
-
-All five clear **3:1** on every ground. The worst is `--green` at 3.90.
-
-Two of them (`--green`, `--peach`) do **not** clear 4.5:1 on `--surface-2`, and that is correct, because of the rule in 6.5: kind is an 8px dot beside a plain ink label.
+Five hues identify what an artifact is.
+They appear only as an 8px dot at `--r-full` filled with the kind colour, then `--sp-1` (4px), then the kind name as plain text.
 The dot is a graphic and answers to 3:1. The label carries the meaning and answers to 4.5:1 in `--text-dim`.
 
-This is a deliberate move, not a concession.
-Forcing five hues to clear 4.5:1 on a light canvas confines all of them below 0.132 relative luminance, at which point they separate by roughly 2.5% and green and teal are indistinguishable to normal vision before colour vision deficiency is even considered.
-Freeing them to be graphics widens the usable band to 0.223 and lets them separate by hue instead of by lightness.
+| Token | Alias | Hex | Worst contrast (vs `--surface-2`) |
+| --- | --- | --- | --- |
+| `--green` | `--kind-note` | `#30804b` | 3.90:1 |
+| `--blue` | `--kind-link` | `#376899` | 4.67:1 |
+| `--peach` | `--kind-pdf` | `#ad5a31` | 3.93:1 |
+| `--pink` | `--kind-image` | `#8f4273` | 5.27:1 |
+| `--teal` | `--kind-file` | `#755c12` | 5.11:1 |
 
-Measured separation between the five, worst pair, CIE ΔE76, with Viénot colour vision simulation:
+All five clear 3:1 on every ground. The worst is `--green` at 3.90:1.
+`--green` and `--peach` do not clear 4.5:1 on `--surface-2`, which is correct because they are graphics, not text.
 
-| Vision | Worst pair | ΔE76 |
-|---|---|---|
-| Normal | pdf / file | 29.2 |
-| Deuteranopia | pdf / file | 10.9 |
-| Protanopia | note / pdf | 8.3 |
-
-Two naming legacies are kept so the token names map cleanly onto the existing implementation:
-
-- `--teal` holds an olive-gold `#755c12`, not a teal. An actual teal collapses into `--green` under deuteranopia; this gold does not. The name is wrong and the value is right. Do not "fix" the value to match the name.
-- `--peach` holds a burnt terracotta, not a peach.
+Two naming legacies are kept so token names map onto the existing implementation:
+`--teal` holds an olive-gold `#755c12`, not a teal. An actual teal collapses into `--green` under deuteranopia simulation; this gold does not.
+`--peach` holds a burnt terracotta `#ad5a31`, not a peach.
+The names are wrong and the values are right. Do not "fix" the value to match the name.
 
 `--teal` `#755c12` and `--accent` `#f7a501` are both in the yellow family and measure 3.14:1 against each other.
 They never occupy the same role: `--accent` is only ever a filled action, `--teal` is only ever an 8px dot beside a text label.
 Do not place them adjacent.
 
-### 3.8 Focus
+### Focus and Scrim
 
 | Token | Value | Role |
-|---|---|---|
-| `--focus` | `#23251d` | Focus ring colour. |
-
-Focus ring: `outline: 2px solid var(--focus); outline-offset: 2px;` on every focusable element, via `:focus-visible`.
-Measures 13.41:1 on the canvas and 12.44 on the softest surface.
-Do not use a translucent blue browser-default ring. Do not remove outlines.
-
-### 3.9 Scrim
-
-| Token | Value | Role |
-|---|---|---|
+| --- | --- | --- |
+| `--focus` | `#23251d` | Focus ring colour. Applied via `:focus-visible` as `outline: 2px solid var(--focus); outline-offset: 2px;` on every focusable element. Measures 12.44:1 on `--surface-2`. |
 | `--scrim` | `rgba(35, 37, 29, 0.32)` | Behind the modal dialog. Tinted with `--text` rather than black, so it warms the cream rather than greying it. |
 
 ---
 
-## 4. Spacing, radii, shadows
+## Typography
 
-### 4.1 Spacing
+### Font Family
+
+IBM Plex Sans is the system's only typeface, vendored as static TTF cuts in `src/enqueue/static/fonts/`.
+The available weights are: Regular (400), Medium (500), SemiBold (600), Bold (700).
+A variable woff2 file (`IBM-Plex-Sans-400.woff2`) exists in the fonts directory but is not loaded by the HTML; the code loads only the static TTF cuts.
+
+The type system calls for body weight 450 (Mastercard's signature half-step), but without the variable woff2 cut loaded, 450 rounds to 400.
+Body letter-spacing is tightened by -0.08px to compensate for the extra apparent looseness of 400 vs 450.
+
+Stacks declared in the code:
+
+```css
+--sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+```
+
+`--mono` is deliberately system-only.
+Monospace in this app carries information (hashes, paths, byte sizes), never decoration, and is not worth a second font file.
+
+MarkForMC is proprietary and must never appear in a font stack, not even as an unreachable first entry.
+
+### Hierarchy
+
+Values below are extracted from the computed CSS in `museum.html`.
+The chrome type roles (display, h1, h2, h3, eyebrow) are used for the app's own interface.
+The markdown/editor roles (md h1, md h2, md h3) apply inside rendered markdown content and the contenteditable note editor.
+
+| Role | Selector | Size | Weight | Line height | Letter spacing | Transform | Use |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Display | `.display` | 32px | 500 | 36px (1.125) | -0.64px (-2%) | none | Empty wall first-run copy. At most one per view. |
+| H1 | `.h1` | 26px | 500 | 31px (1.19) | -0.52px (-2%) | none | Artifact detail title. |
+| H2 | `.h2` | 20px | 500 | 25px (1.25) | -0.4px (-2%) | none | Modal title, settings section heading. |
+| H3 | `.h3` | 17px | 500 | 22px (1.29) | -0.34px (-2%) | Not used in current chrome; card title overrides this. |
+| Card title | `.card .title` | 20px | 500 | 26px (1.30) | -0.4px (-2%) | none | Artifact card title on the wall. Clamped to 3 lines (2 for pictorial). |
+| Eyebrow | `.shelf` | 14px | 700 | 1 (1.0) | 0.56px (+4%) | uppercase | Section category label. Always preceded by a leading 8px accent dot drawn via `::before`. |
+| Body | `body` | 14px | 450 (rounds to 400) | 1.4 | -0.08px | none | Default paragraph, base text. |
+| Title (inline) | `.title` | 16px | 600 | 22.4px (1.40) | 0 | none | Inline emphasis, settings nav row label. |
+| Excerpt | `.excerpt` | 15px | inherited (450) | 22px (1.47) | 0 | none | Card preview, secondary prose. Clamped to 3 lines. |
+| Label | `.kindword` | 14px | 500 | 20px (1.43) | 0 | none | Kind label beside a dot. |
+| Button | `.btn` | 16px | 500 | 16px (1.0) | -0.48px (-3%) | none | Every button label and nav link. |
+| Button sm | `.btn.sm` | 14px | 500 | 14px (1.0) | -0.42px (-3%) | none | Chip and compact CTA label. |
+| Meta | `.meta` | 13px | 500 | 18px (1.38) | 0 | none | Timestamp, count, byte size, capture source. Always `--text-mute`. |
+| Thread | `.thread` | 15px | 450 (rounds to 400) | 22px (1.47) | -0.08px | none | Rail conversation row label. Selected row: 16px / 600. |
+| Code | `.md code`, `.editor code` | 14px | 400 | 20px (1.43) | 0 | none | `--mono`. Inline chips and code blocks. |
+| MD H1 | `.md h1`, `.editor h1` | 32px | 500 | 38px (1.19) | -0.64px (-2%) | none | Rendered markdown heading. |
+| MD H2 | `.md h2`, `.editor h2` | 24px | 500 | 29px (1.21) | -0.48px (-2%) | none | Rendered markdown heading. |
+| MD H3 | `.md h3`, `.editor h3` | 20px | 500 | 26px (1.30) | -0.4px (-2%) | none | Rendered markdown heading. |
+
+### Principles
+
+- Headlines carry -2% letter-spacing. In px that is `size * -0.02`. The words lock together rather than breathe, giving display type its editorial density.
+- Line-height ratio drops as size rises. Display is 1.125, h1 is 1.19, body is 1.4. Tight display, comfortable reading.
+- Uppercase appears in exactly one role: the 14px eyebrow (`.shelf`). Nowhere else, at no size, for no reason.
+- One-font system. No serif accent, no display face, no second family. Contrast comes from scale, weight, and letter-spacing.
+- Weight 450 is the intended body identity but is unreachable without the variable font. The -0.08px tracking compensation is the fallback.
+
+### Font Substitutes
+
+IBM Plex Sans is open-source under the SIL Open Font License.
+The static TTF cuts are already vendored in `src/enqueue/static/fonts/`.
+If the variable woff2 cut were also vendored, weight 450 would work directly and the -0.08px compensation could be removed.
+Inter is the closest open-source substitute at all weights if IBM Plex Sans is unavailable.
+
+---
+
+## Layout
+
+### Spacing System
 
 Base unit 4px, structural rhythm on 8.
-Mastercard's generosity applies to the *structure*; the artifact wall itself stays dense, because it is a working surface.
 
 | Token | Value | Use |
-|---|---|---|
+| --- | --- | --- |
 | `--sp-1` | `4px` | Icon-to-label gap, dot-to-label gap. |
-| `--sp-2` | `8px` | Chip inset, tight list gaps. |
-| `--sp-3` | `12px` | Control inner padding, rail row vertical padding. |
-| `--sp-4` | `20px` | Card inner padding, standard block gap. |
-| `--sp-5` | `32px` | Card grid gutters, page gutters, gaps between groups. |
-| `--sp-6` | `48px` | Gap between major regions inside a page. |
-| `--sp-section` | `96px` | Top padding of a page region, and the gap between top-level sections on the settings page. Compresses to `48px` below 900px viewport width. |
+| `--sp-2` | `8px` | Chip inset, tight list gaps, menu item gap. |
+| `--sp-3` | `12px` | Control inner padding, rail row vertical padding, meta gap. |
+| `--sp-4` | `20px` | Card inner padding, standard block gap, search bar horizontal padding. |
+| `--sp-5` | `32px` | Card grid gutters, page gutters, pill bottom offset, rail width padding. |
+| `--sp-6` | `48px` | Gap between major regions, modal/settings group card inset. |
+| `--sp-section` | `48px` | Top padding of a page region. Compresses to `24px` below 900px viewport width. |
 
 Never invent a spacing value.
 If nothing on the scale fits, the layout is wrong.
 
-### 4.2 Radii
+### Grid and Container
+
+- **Max content width:** `1200px`, centred with `margin: 0 auto`.
+- **Content padding:** `calc(68px + var(--sp-4))` top (clearing the fixed top bar), `var(--sp-5)` horizontal, `160px` bottom (clearing the floating pill).
+- **Wall grid:** `repeat(5, minmax(0, 1fr))` at desktop, with `aspect-ratio: 1 / 1` on every card and `gap: var(--sp-4)` (20px).
+  - At 1080px viewport: 4 columns.
+  - At 760px viewport: 3 columns, gap drops to `var(--sp-3)` (12px).
+  - At 460px viewport: 1 column.
+- **Kept rail (horizontal):** `grid-auto-flow: column`, `grid-auto-columns: 200px`, `gap: var(--sp-5)`, with scroll-snap.
+- **Top bar:** Fixed, full width, 68px height, centred search bar at 75% width (max 900px).
+- **Left rail:** Declared at 280px width but `display: none` in the current code. See Notes on the current build.
+
+### Whitespace Philosophy
+
+Structural whitespace is generous at the page level but the artifact wall stays dense, because it is a working surface.
+The empty wall state centres a display headline with `--sp-section` of air above it and no illustration and no accent button, because the capture pill is already on screen and is the call to action.
+The artifact detail page uses `--sp-6` (48px) margins between the header, the body pane, and the AI annotation block.
+
+---
+
+## Shapes
+
+### Border Radius Scale
 
 This is Mastercard's scale and it is the most load-bearing gesture in the system.
-It deliberately **skips the 8px to 16px middle ground**, which is what makes the UI read as either precise-and-small or soft-and-editorial, with nothing generic in between.
+It deliberately skips the 8px to 16px middle ground, which is what makes the UI read as either precise-and-small or soft-and-editorial, with nothing generic in between.
 
 | Token | Value | Use |
-|---|---|---|
-| `--r-sm` | `6px` | Tiny decorative elements only: inline code chips, keyboard-shortcut glyphs, the square kind-marker variant. Nothing interactive, nothing larger than about 28px. |
-| `--r` | `20px` | The signature control radius. Buttons, text inputs, select, callout panels, chat bubbles, rail rows, menu items. |
-| `--r-lg` | `40px` | Large containers. Artifact cards, the artifact detail pane, the modal dialog, the settings group card, the capture menu, the composer field. |
-| `--r-full` | `999px` | Full pill and circle. The floating capture pill, filter chips, kind dots, the search field, icon-only buttons, the "Empty trash" pill. |
+| --- | --- | --- |
+| `--r-sm` | `6px` | Inline code chips, keyboard-shortcut glyphs, the capture overlay card, title-action buttons, find boxes. Nothing interactive larger than about 28px. |
+| `--r` | `20px` | The signature control radius. Buttons, text inputs, select, callout panels, chat bubbles, rail rows, menu items, item rows, the bar under the editor, the folio counter. |
+| `--r-lg` | `40px` | Large containers. Artifact cards, the artifact detail pane (`.docpane`), the modal dialog, the settings group card, the capture menu, the settings nav wrap, the reader leaf. |
+| `--r-full` | `999px` | Full pill and circle. The floating capture pill, filter chips, kind dots, the search field, icon-only buttons, the "Empty trash" pill, the toggle track, source chips, the unread marker. |
 
-**There is no 8px, 10px, 12px, or 16px radius anywhere in this app.**
+There is no 8px, 10px, 12px, or 16px radius anywhere in this app.
 If you find one, it is drift and it should be removed.
 
-### 4.3 Shadows
+---
+
+## Depth and Elevation
 
 Mastercard's atmospheric cushioning: wide spread, very low opacity, no directional light.
-Tinted with `--text` rather than pure black so the halo stays warm on cream.
+Tinted with `--text` (`#23251d`) rather than pure black so the halo stays warm on cream.
 
-| Token | Value | Use |
-|---|---|---|
-| `--shadow-1` | `0 4px 24px rgba(35, 37, 29, 0.05)` | Barely-there lift. Sticky headers, the search field on focus. |
-| `--shadow-2` | `0 24px 48px rgba(35, 37, 29, 0.08)` | The floating capture pill at rest, the capture menu, a hovered artifact card. |
-| `--shadow-3` | `0 40px 96px rgba(35, 37, 29, 0.10)` | The modal dialog only. |
+| Level | Token | Value | Use |
+| --- | --- | --- | --- |
+| 0 | (none) | No border, no shadow | Default for canvas-on-canvas blocks, body sections. About 95% of surfaces. |
+| Flat | `--line` | 1px solid `--line` border | Cards, item rows, rail divider, callouts have no border. |
+| 1 | `--shadow-1` | `0 4px 24px rgba(35, 37, 29, 0.05)` | Barely-there lift. The search bar on focus. |
+| 2 | `--shadow-2` | `0 24px 48px rgba(35, 37, 29, 0.08)` | The floating capture pill at rest, the capture menu, a hovered artifact card, the toast, the folio counter, the rail on mobile. |
+| 3 | `--shadow-3` | `0 40px 96px rgba(35, 37, 29, 0.1)` | The modal dialog only. |
 
-Rules: minimum 24px blur, maximum 10% opacity, no `inset` shadows, no stacked second shadow, no shadow on anything that already has a `--line` border unless it genuinely floats over other content.
-**About 95% of surfaces have no shadow at all** and sit flat on the cream with a hairline.
+Rules: minimum 24px blur, maximum 10% opacity, no `inset` shadows, no stacked second shadow.
+No shadow on anything that already has a `--line` border unless it genuinely floats over other content.
 Reach for a border before a shadow.
 
 ---
 
-## 5. Typography
+## Components
 
-One geometric sans across the entire app.
-No serif accent, no display face, no second family.
+### App Shell
 
-### 5.1 Font, and how to ship it offline
-
-**Recommendation: self-host IBM Plex Sans from `src/enqueue/static/fonts/`.**
-It is the PostHog face, it is open-source under the SIL Open Font License, and its variable cut supports the weight 450 that Mastercard's type system depends on.
-
-Choosing this means **the woff2 files must be vendored into the repository** at `src/enqueue/static/fonts/`.
-Do not link Google Fonts. Do not link any CDN. Do not use `@import url(...)`.
-Vendor one file, or two if italics are actually used, and declare them locally:
-
-```css
-@font-face {
-  font-family: "IBM Plex Sans Var";
-  src: url("fonts/IBMPlexSansVar-Roman.woff2") format("woff2-variations");
-  font-weight: 100 700;
-  font-style: normal;
-  font-display: swap;
-}
-```
-
-Stacks:
-
-```css
---sans: "IBM Plex Sans Var", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
---mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-```
-
-If the woff2 files are not vendored, **do not fall back to a webfont link**.
-Ship the same stack, let it resolve to `system-ui`, and accept that weight 450 rounds to 400 (see 5.2 for the compensation).
-
-`--mono` is deliberately system-only.
-Monospace here is information (hashes, paths, byte sizes), never decoration, and it is not worth a second font file.
-Do not name JetBrains Mono or Source Code Pro in the stack unless those files are also vendored.
-
-**MarkForMC is proprietary and must never appear in a font stack**, not even as an unreachable first entry.
-
-### 5.2 The two properties that are the identity
-
-- **Body copy is weight 450.** Not 400. It reads softer than regular without going thin, and it is the single most identifying property of the type system. With the variable font this works directly. With the `system-ui` fallback it rounds to 400; in that case tighten body letter-spacing by `-0.08px` to compensate for the extra apparent looseness.
-- **Headlines carry -2% letter-spacing.** Every role at 20px and above. In px that is `size * -0.02`. The words lock together rather than breathe, which is what gives display type its editorial density.
-- **Line-height ratio drops as size rises.** Display near 1.05, headings 1.2 to 1.3, body 1.4 to 1.5. Tight display, comfortable reading.
-
-### 5.3 Scale
-
-| Role | Size | Weight | Line height | Letter spacing | Transform | Use |
-|---|---|---|---|---|---|---|
-| `display` | 40px | 500 | 42px (1.05) | -0.80px (-2%) | none | The line on an empty wall, first-run copy. At most one per view. |
-| `h1` | 32px | 500 | 38px (1.19) | -0.64px (-2%) | none | Artifact detail title, settings page title. |
-| `h2` | 24px | 500 | 29px (1.20) | -0.48px (-2%) | none | Trash page title, settings section title, modal title, conversation title. |
-| `h3` | 20px | 500 | 26px (1.30) | -0.40px (-2%) | none | Artifact card title, settings group title. |
-| `eyebrow` | 14px | 700 | 14px (1.0) | +0.56px (+4%) | uppercase | Section category label. **Always preceded by a leading accent dot** (6.5 and 8). |
-| `body` | 16px | 450 | 22.4px (1.40) | 0 | none | Default paragraph. Answer text, note bodies, settings descriptions. |
-| `body-strong` | 16px | 600 | 22.4px (1.40) | 0 | none | Inline emphasis, selected rail row, question text. |
-| `body-sm` | 15px | 450 | 22px (1.47) | 0 | none | Card preview, secondary prose, list second line. |
-| `label` | 14px | 500 | 20px (1.43) | 0 | none | Form field label, kind label beside a dot, rail row label. |
-| `button` | 16px | 500 | 16px (1.0) | -0.48px (-3%) | none | Every button label and nav link. Tight and compact, never uppercase. |
-| `button-sm` | 14px | 500 | 14px (1.0) | -0.42px (-3%) | none | Chip and compact CTA label. |
-| `meta` | 13px | 500 | 18px (1.38) | 0 | none | Timestamp, count, byte size, capture source. Always `--text-mute`. |
-| `code` | 14px | 400 | 20px (1.43) | 0 | none | `--mono`. Inline chips and code blocks. |
-
-**Uppercase appears in exactly one role: `eyebrow`.**
-Nowhere else, at no size, for no reason.
-No shouty section titles, no uppercase buttons, no uppercase nav.
-
----
-
-## 6. Where the two systems conflict, and how it is resolved
-
-The sources disagree in four places, plus one rule that keeps the first resolution honest.
-Each is settled here with a reason. Do not relitigate them in code.
-
-### 6.1 The primary CTA colour. RESOLVED: PostHog yellow, in Mastercard geometry.
-
-**The conflict.**
-PostHog's primary CTA is a saturated yellow-orange `#f7a501` pill, and that yellow is the entire brand.
-Mastercard's primary CTA is an Ink Black `#141413` pill at 20px radius, and its Signal Orange `#CF4500` is reserved strictly for consent, legal, and compliance actions, on the explicit grounds that using it for marketing would dilute a legal signal.
-These are directly incompatible: one system's primary colour is the other system's forbidden colour.
-
-**The decision.**
-**PostHog's yellow-orange `--accent` carries the primary action, rendered in Mastercard's pill geometry and type.**
-Concretely: `#f7a501` fill, `--accent-ink` label, `--r` (20px) radius, 1.5px `--text` border, `6px 24px` padding, label at `button` type (16px / weight 500 / -0.48px).
-
-**Why.**
-
-1. The brief takes colour from PostHog and form from Mastercard. This button is the single most visible place those two axes intersect. Resolving it any other way makes the whole combination incoherent, because the accent would then come from neither system.
-2. Mastercard's reason for quarantining its orange does not transfer. That reservation exists because Mastercard runs cookie-consent and privacy flows where a legal signal must stay unambiguous. Enqueue has no consent flow, no legal action, and no third-party surface. It is local-only software with nothing to consent to. The constraint has no referent here.
-3. An ink-black pill on cream would make the app's most important control indistinguishable from the app's text colour. The wall of artifacts is already almost entirely olive-on-cream. A black pill would disappear into it. The yellow is the only thing in the system that says "act."
-
-**The cost, accepted.**
-The yellow pill on cream is 1.76:1 as a shape, so the 1.5px `--text` border in 3.3 is mandatory rather than decorative.
-That border is Mastercard's own primary-pill spec, so no new mechanism is invented to pay this cost.
-
-**Consequence.**
-Mastercard's ink-black pill survives, demoted to the *secondary* action, and its outlined white variant becomes the tertiary. See 7.2.
-
-### 6.2 Border radius. RESOLVED: Mastercard, entirely.
-
-**The conflict.**
-PostHog clusters at 4px and 6px, with 8px for rare large containers, and calls the 4-6px band its card vocabulary.
-Mastercard uses 20 / 40 / 999 and deliberately avoids everything between 8 and 16.
-
-**The decision.**
-Mastercard's scale wins outright, per the brief's split.
-PostHog's 4-6px band survives only as `--r-sm` (6px) for inline code chips and similar sub-28px decoration.
-PostHog cards at 6px radius do not exist in this app. Artifact cards are 40px.
-
-**Why.**
-Radius is the most immediately legible property of a form language, and the brief assigns form to Mastercard.
-A 40px artifact card is a fundamentally different object from a 6px one, and that difference is the entire point of the combination.
-
-### 6.3 Elevation. RESOLVED: split by function, not by source.
-
-**The conflict.**
-PostHog has essentially no shadows; cards sit flat on cream with thin olive borders, and its documentation says so explicitly.
-Mastercard uses soft wide halos as atmospheric cushioning.
-
-**The decision.**
-**Flat, with a 1px `--line` hairline, is the default for anything in the document flow.**
-Mastercard's wide low-opacity shadow is used only for things that genuinely float above other content: the capture pill, the capture menu, the modal, and the hover state of an artifact card.
-
-**Why.**
-These two are not really answering the same question.
-PostHog is describing static page content, which this app has a great deal of.
-Mastercard is describing floating chrome, which this app also has.
-Shadows everywhere would make the wall look like a pile of receipts.
-Shadows nowhere would leave the floating capture pill with no way to say it is floating.
-
-### 6.4 Canvas tint and body weight. RESOLVED: PostHog canvas, Mastercard weight.
-
-**The conflict.**
-PostHog's canvas is `#eeefe9`, a greenish cream, with body at weight 400.
-Mastercard's is `#F3F0EE`, a pinkish putty, with body at weight 450.
-
-**The decision.**
-Canvas is PostHog's `#eeefe9`. Body weight is Mastercard's 450.
-
-**Why.**
-A straight application of the brief's split: colour is PostHog's axis, type is Mastercard's.
-The olive cast of `#eeefe9` is also what makes the olive ink ladder read as intentional rather than as grey text on beige, and the ink ladder is the part of PostHog's colour system doing the most work here.
-
-### 6.5 Kind colours are facts, never actions.
-
-Not a conflict between sources, but the rule that keeps 6.1 honest, stated here so it cannot be missed.
-
-**None of the five kind colours may ever be `--accent`, and `--accent` may never identify a kind.**
-Kind is a fact about a thing. The accent is an instruction.
-If the two ever share a colour, the user cannot tell a category from a command.
-
-**Rendering rule.**
-Kind is always an **8px circle at `--r-full` filled with the kind colour, then `--sp-1`, then the kind name as plain text in `label` type at `--text-dim`.**
-
-- The dot is a graphic. It answers to 3:1 and all five clear it (3.7).
-- The label carries the meaning. It answers to 4.5:1 and it is ink, so it does.
-- Colour is therefore never the sole carrier of information, which satisfies WCAG 1.4.1 structurally rather than by a note in a doc.
-
-Prohibited: kind colour as a card background, as a card border, as a title colour, as a filled badge, as a full-bleed strip.
-A tinted background derived from a kind colour is prohibited even at low opacity.
-
----
-
-## 7. Component specifications
-
-### 7.1 App shell
-
-Two columns, full viewport height, no page scroll on the shell itself.
+The current museum.html implements a single-column layout with a fixed top bar.
+A left rail is declared in CSS but set to `display: none` (see Notes on the current build).
 
 - Body background `--bg`, `color-scheme: light`.
-- Left rail: fixed `280px` wide, background `--bg`, right border 1px `--line`, its own scroll region. Below 900px viewport width it collapses behind a `--r-full` icon button in the content header and slides in as an overlay over `--scrim`.
-- Content column: fills the rest, its own scroll region, horizontal padding `--sp-5`, top padding `--sp-section`.
-- Max content width `1200px`, centred; gutters grow symmetrically past that.
+- Top bar: fixed, full width, 68px height, `--bg` background, centred search bar.
+- Content column: `max-width: 1200px`, centred, own scroll region, padding `calc(68px + 20px) 32px 160px`.
+- Capture pill: fixed, bottom-centre, above content, below the modal.
 
-### 7.2 Buttons
+### Top Bar and Search
 
-All buttons: `--r` (20px) radius, `button` type, `6px 24px` padding, minimum height `40px`, minimum tap target `44px` reached with transparent inline padding where the visible height is smaller.
+- Container: fixed, `--bg` background, 68px height, `z-index: calc(var(--z-pill) - 1)`.
+- Search bar: `--r-full`, fill `--surface`, 1.5px `--line-strong` border, 40px height, `0 20px` padding, `max-width: 900px`, width 75%.
+- On focus: border becomes `--accent`, `--shadow-1` appears.
+- Magnifier glyph: 16px, `--text-mute` stroke.
+- Input: `14px`, `--text` colour, placeholder `--text-mute`.
+- The entire top bar is a window drag handle (via Rust `window_drag` invoke), except the search field itself.
 
-| Variant | Fill | Label | Border | Use |
-|---|---|---|---|---|
-| Primary | `--accent` | `--accent-ink` (7.64) | 1.5px `--text` (13.41 vs canvas) | The one urgent action in a view. Pressed: fill `--accent-quiet`, no size change, no shadow. |
-| Secondary | `--text` | `--bg` (13.41, not pure white) | 1.5px `--text` | Mastercard's ink pill, demoted. "Cancel" beside a destructive primary, "Open original", "Save". |
-| Tertiary | `--surface` | `--text` | 1.5px `--line-strong` (3.67) | Low-emphasis but still bounded. The border is the sole boundary, hence `--line-strong`. |
-| Ghost | none | `--text` | none, padding `6px 12px` | Lowest emphasis. "Show more", "Restore", non-destructive "Cancel". |
-| Destructive | `--danger` | `#ffffff` (7.48) | 1.5px `--danger` | Only in a confirmation modal or on the trash page. Never on the wall. |
-| Icon-only | `--surface-2` | icon in `--text` | none, `--r-full`, 40px diameter | The fill change is the boundary, so `--line-strong` is not required. |
-| Disabled | `--surface-2` | `--text-mute` at 55% | none | Plus `cursor: not-allowed` and `aria-disabled="true"`. Never colour alone. |
+### Buttons
+
+All buttons share: `--r` (20px) radius, `button` type (16px / 500 / -0.48px), `6px 24px` padding, minimum height `40px`.
+The `.btn` class also has a `.sm` variant at 14px / 500 / -0.42px.
+
+| Variant | Class | Fill | Label | Border | Use |
+| --- | --- | --- | --- | --- | --- |
+| Primary | `.btn.primary` | `--accent` | `--accent-ink` | 1.5px `--text` | The one urgent action in a view. Hover/active: `--accent-quiet`. |
+| Secondary | `.btn.secondary` | `--text` | `--bg` | 1.5px `--text` | Mastercard's ink pill, demoted. "Cancel" beside a destructive primary, "Open original", "Download a copy". Hover: `#14150f`. |
+| Tertiary | `.btn.tertiary` | `--surface` | `--text` | 1.5px `--line-strong` | Low-emphasis but bounded. Hover: `--surface-2`. |
+| Ghost | `.btn.ghost` | transparent | `--text` | none, `6px 12px` padding | Lowest emphasis. "Show more", "Restore", back button. Hover: `--surface-2`. |
+| Destructive | `.btn.danger` | `--danger` | `#ffffff` | 1.5px `--danger` | Only in a confirmation modal or on the trash page. Hover: `#82221a`. |
+| Terminal | `.btn.terminal` | (inherits variant) | (inherits) | (inherits) | `--r-full` radius override. Only "Empty trash". |
+| Icon-only | `.btn.icon` | `--surface-2` | icon in `--text` | none, `--r-full`, 40x40 | Hover: `--line-soft`. |
+| Disabled | `.btn[disabled]` | `--surface-2` | `--text-mute` at 55% | transparent | Plus `cursor: not-allowed` and `aria-disabled="true"`. |
 
 One primary per view.
-If a view seems to need two, one of them is a secondary.
 
-### 7.3 Left rail with conversation list
+### The Wall (Artifact Cards)
 
-- Header: the wordmark in `h3` at `--text`, then `--sp-4`.
-- A "New conversation" **primary** button at full rail width minus `--sp-4` gutters. This is the rail's only accent.
-- Search field: `--r-full`, fill `--surface-2`, 1.5px `--line-strong`, `12px 16px` padding, magnifier glyph at the left in `--text-mute`, placeholder in `--text-mute`. On focus: fill `--surface`, `--shadow-1`, focus ring per 3.8.
-- An `eyebrow` reading "• CONVERSATIONS": dot filled `--accent`, text `--text-mute`. `--sp-5` above, `--sp-2` below.
-- Rows: `--r` (20px), `12px 16px` padding, `2px` vertical gap.
-  - Rest: transparent fill, title in `body-sm` at `--text-dim`, second line in `meta` at `--text-mute` giving relative time and artifact count.
-  - Hover: fill `--surface-2`.
-  - Selected: fill `--surface`, 1px `--line`, title becomes `body-strong` at `--text`. The row lifts off the cream, which is PostHog's tab-selection gesture.
-  - **Never mark selection with `--accent`.** Selection is a state, not an action.
-- Rail footer, pinned to the bottom above a 1px `--line` rule: two ghost rows, "Trash" and "Settings", in `label` at `--text-dim`.
+The default view. A grid of square cards on cream.
 
-### 7.4 The wall (square artifact cards)
+- Grid: `repeat(5, minmax(0, 1fr))`, gap `--sp-4` (20px), `aspect-ratio: 1 / 1` on every card.
+- Cards use `content-visibility: auto` with `contain-intrinsic-size: auto 280px` for scroll performance on large collections.
+- First 18 cards animate in with a staggered `hang` animation (22ms delay per card).
 
-The default view. A wall of square cards on cream.
+**Card (text-based).**
 
-- Grid: `repeat(auto-fill, minmax(240px, 1fr))`, gutter `--sp-5` (32px), `aspect-ratio: 1 / 1` on every card.
-- Column count follows from `auto-fill`: roughly 4-up at 1200px, 3-up at 1024px, 2-up at 768px, 1-up at 480px. Gutter drops to `--sp-4` below 768px.
+- Container: fill `--surface`, 1px `--line`, `--r-lg` (40px), 24px inset, no shadow at rest.
+- Top row: kind dot (8px `--r-full` filled with kind colour) and kind label (`.kindword`, 14px / 500, `--text-dim`), left aligned. Optional pinned star flag on the right.
+- Title: 20px / 500 / -0.4px, `--text`, clamped to 3 lines.
+- Preview: 15px / `--text-dim`, clamped to 3 lines, filling the middle.
+- Bottom row: `.meta` at `--text-mute` with relative capture time on the left, and an unread marker (6px `--accent` dot) on the right when the artifact has not been read by the AI yet.
+- Hover: `--shadow-2`, border unchanged, no transform, no scale. Transition `box-shadow 160ms ease`.
+- Focus: ring per Focus spec.
 
-**Card.**
+**Card (pictorial).**
 
-- Container: fill `--surface`, 1px `--line`, `--r-lg` (40px), `--sp-4` inset, no shadow at rest.
-- Because the radius is 40px on a roughly 240px square, keep all content inside a 24px inset from the card edge or it will visually collide with the corner curve.
-- Top row: kind dot and label per 6.5, left aligned.
-- Title: `h3` at `--text`, clamped to 3 lines.
-- Preview: `body-sm` at `--text-dim`, clamped to 3 lines, filling the middle.
-- Bottom row, pinned: `meta` at `--text-mute` with relative capture time on the left, and an unread marker on the right when the AI has not read the artifact yet. The unread marker is a 6px `--accent` dot with an `aria-label`, and it is the only `--accent` on the wall.
-- Hover: `--shadow-2`, border unchanged, **no transform and no scale**. Transition `box-shadow 160ms ease`.
-- Focus: ring per 3.8.
-- Image artifacts: thumbnail fills the card with `object-fit: cover` and `overflow: hidden` so it inherits `--r-lg`, with a bottom band carrying the title. The band is `--surface` at 92% opacity with `backdrop-filter: blur(8px)`, never a gradient.
+- `.card.pictorial`: padding 0, image fills card with `object-fit: cover` and `overflow: hidden`.
+- Bottom band: `--surface` at 92% opacity with `backdrop-filter: blur(8px)`, carrying kind row and title (clamped to 2 lines).
+- Pinned flag positioned absolute top-right.
 
 **Empty wall.**
-Centred, `--sp-section` from the top: a `display` line ("Nothing here yet"), then `body` at `--text-dim` explaining that anything dropped on the capture pill is kept and read locally.
-No illustration, no accent button. The capture pill is already on screen and is the call to action.
 
-### 7.5 Artifact detail page
+Centred, `--sp-section` from the top: a `.display` line ("Nothing here yet"), then `.state` body explaining the capture pill.
+No illustration, no accent button.
+
+### Artifact Detail Page
 
 Single column, replaces the wall in the content column.
 
-- Back control: ghost button with a left-arrow glyph, top left.
-- Header block, `--sp-6` bottom margin:
-  - Kind dot and label per 6.5.
-  - Title in `h1`.
-  - `meta` row at `--text-mute`: captured time, byte size, source, separated by a `•` in `--line-strong`.
-- Actions row: **secondary** "Open original", tertiary "Copy", ghost "Move to trash". No primary action on this page. Nothing you can do to an artifact is urgent.
-- Body pane: fill `--surface-doc`, 1px `--line`, `--r-lg` (40px), padding `--sp-6`, `max-width: 720px`.
-  - Text artifacts: `body` at `--text-dim` with `--sp-4` paragraph gaps.
-  - Images: `max-width: 100%`, `--r` radius, centred on `--surface-doc`.
-  - PDFs: extracted text in the same body treatment, preceded by a `--tint-info` callout naming the page count.
-  - Paths, hashes, sizes: `--mono` at `code`, chips filled `--surface-2` at `--r-sm`.
-- "What the AI made of this" block, `--sp-6` below the body pane: a `--tint-note` callout at `--r` with `--sp-4` inset, containing an `eyebrow` reading "• READ LOCALLY" with an `--accent` dot, then the model's summary in `body` at `--text-dim`.
-  This block is how the app keeps its central promise visible. Do not hide it behind a disclosure.
+- Back control: ghost button with a left-arrow glyph.
+- Kind dot and label.
+- Title in `.h1` (26px).
+- `.meta` row: captured time, byte size, source, separated by `•` in `--line-strong`.
+- Title-action row: pin (star) button and trash button, 40x40, `--r-sm`, positioned to the right of the title.
+  - Pin lit state: `--accent` colour, filled star icon, with a `kept` keyframe animation (260ms scale-up).
+  - Trash: `.title-action.danger` hover, `--danger` colour.
+- Actions row: secondary "Open original" (if link), tertiary "Download a copy" (if pdf/image/file). No primary action on this page.
+- Body pane (`.docpane`): fill `--surface-doc`, 1px `--line`, `--r-lg` (40px), `--sp-6` (48px) padding, `max-width: 720px`.
+  - Notes: contenteditable `.editor.md` with markdown rendering, auto-saving, version count shown in `.bar` below.
+  - Images: `max-width: 100%`, `--r` (20px) radius, centred.
+  - PDFs: reader with `.leaf` pages at `aspect-ratio: 1 / 1.414`, `content-visibility: auto`, find highlighting via `.findbox` overlays.
+  - Links: preview image (`.shot`), description (`.lede`), URL (`.url` in `--link`).
+- "Read locally" block: `--tint-note` callout at `--r` with `--sp-4` inset, containing a `.shelf` eyebrow with `--accent` dot, then the model's summary.
+- Credential warning: `--tint-warn` callout if the artifact holds a detected secret.
 
-### 7.6 Chat transcript
+### Chat Transcript
 
 Question right, answer left. Transcript `max-width: 760px`, centred.
 
 **Question (user, right).**
 
 - Right aligned, `max-width: 78%`.
-- Fill `--surface-2`, no border, `--r` (20px) with the bottom-right corner at `--r-sm` (6px) to point at the sender.
-- Text: `body-strong` at `--text` (12.44 on `--surface-2`).
-- Padding `--sp-3 --sp-4`.
+- Fill `--surface-2`, no border, `--r` (20px) with bottom-right corner at `--r-sm` (6px).
+- Text: `.title` type (16px / 600) at `--text`.
+- Padding `--sp-3 --sp-4` (12px 20px).
 
 **Answer (assistant, left).**
 
 - Left aligned, `max-width: 88%`.
-- Fill `--surface`, 1px `--line`, `--r` (20px) with the bottom-left corner at `--r-sm`.
+- Fill `--surface`, 1px `--line`, `--r` (20px) with bottom-left corner at `--r-sm`.
 - Text: `body` at `--text-dim`.
-- Padding `--sp-4`.
-- Cited artifacts appear at the bottom of the bubble as a chip row: `--r-full`, fill `--surface-2`, 1px `--line`, `--sp-2` inset, kind dot plus `button-sm` label at `--text`. Selecting one opens the artifact detail page.
+- Padding `--sp-4` (20px).
+- Cited artifacts: `.src` chips at `--r-full`, fill `--surface-2`, 1px `--line`, `--sp-2 --sp-3` padding, kind dot plus `button-sm` label.
+- Unsourced caveat: 16px / 600 at `--text`, with a 1px `--line-soft` top border.
 
-**Rhythm.**
-`--sp-5` between turns, `--sp-3` between consecutive bubbles on the same side.
-No avatars, no name labels, no in-flow timestamps. Side and corner shape carry the speaker.
+**Streaming indicator.**
 
-**Composer.**
-Pinned to the bottom of the content column, background `--bg`, 1px `--line` top rule, `--sp-4` padding.
-Field: `--r-lg` (40px), fill `--surface`, 1.5px `--line-strong`, `--sp-3 --sp-4` padding, `body` at `--text`, auto-growing to 6 lines then scrolling.
-Send: primary icon-only button at `--r-full`, 40px, inside the field's right edge with `--sp-2` clearance.
-
-**Streaming.**
-A 3px `--accent` bar animating left to right across the top edge of the answer bubble.
+A 3px `--accent` bar animating left to right across the top edge of the answer bubble (`sweep` keyframe, 1.4s ease-in-out infinite).
 No spinner, no bouncing dots.
 
-### 7.7 Trash page
+**Rhythm.**
 
-- Header: `h2` "Trash", then `body` at `--text-dim` stating the retention rule in plain words.
-- Directly beneath: a `--tint-warn` callout at `--r` with `--sp-4` inset, text `--text`: "Emptying the trash deletes these files from this machine. It cannot be undone."
-- Items render as a **list, not the wall grid**, because a wall implies keeping and this page is about not keeping.
-  Rows: `--r` radius, fill `--surface`, 1px `--line`, `--sp-3 --sp-4` padding, `--sp-2` gap. Each row: kind dot and label, title in `body-strong` at `--text`, `meta` deletion date right aligned, ghost "Restore".
-- Page actions, top right of the header: ghost "Restore all", and a **destructive pill** "Empty trash" at `--r-full`.
-  Full-pill radius is the only place trash departs from the app's 20px button radius, and it is intentional: the shape itself flags the action as terminal. It opens the modal in 7.10.
-- Empty state: `body` at `--text-mute`, "Nothing in the trash." No illustration.
+`--sp-5` (32px) between turns, `--sp-3` (12px) between consecutive bubbles on the same side.
+No avatars, no name labels, no in-flow timestamps. Side and corner shape carry the speaker.
 
-### 7.8 Settings page
+### Trash Page
 
-- Page title in `h1`, `--sp-section` top padding.
-- Sections separated by `--sp-section`, each opened by an `eyebrow` with an `--accent` dot, for example "• PRIVACY".
-- Group card: fill `--surface`, 1px `--line`, `--r-lg` (40px), `--sp-6` inset. Rows inside are separated by 1px `--line-soft` full-bleed rules with `--sp-4` above and below.
-- Row layout: label in `body-strong` at `--text`, description beneath in `body-sm` at `--text-dim`, control right aligned and vertically centred.
-- **Toggle:** track 44x26px at `--r-full`. Off: fill `--surface-2`, 1.5px `--line-strong`, knob `--surface` with a 1px `--line` ring. On: fill `--accent`, 1.5px `--text`, knob `--surface`.
-  The toggle is the one non-button control permitted to use `--accent`, because its on-state is a live instruction to the software rather than a category.
-- **Select:** `--r`, fill `--surface`, 1.5px `--line-strong`, `body` at `--text`, chevron in `--text-mute`.
-- **Text input:** `--r`, fill `--surface`, 1.5px `--line-strong`, `--sp-3 --sp-4` padding, `body` at `--text`, placeholder `--text-mute`.
-- A "Local only" section is mandatory and comes first: a `--tint-note` callout at `--r` stating in `body` that no data leaves the machine and that the app binds to `127.0.0.1`, followed by rows showing the model in use and the storage path in `--mono` at `code`.
-- Destructive settings ("Delete all artifacts") live in a final section under a `--tint-warn` callout with a destructive button, and always open the modal in 7.10.
+- Header: `.h2` "Trash", then `.state` body stating the retention rule.
+- `--tint-warn` callout at `--r` with `--sp-4` inset: "Emptying the trash deletes these files from this machine."
+- Items as list rows (`.item`), not the wall grid.
+  - Rows: `--r` radius, fill `--surface`, 1px `--line`, `--sp-3 --sp-4` padding, `--sp-2` gap.
+  - Each row: kind dot and label, title in `.title` (16px / 600) at `--text`, `.meta` deletion date, ghost "Restore".
+- Page actions: ghost "Restore all", and a `.btn.terminal` (full-pill) "Empty trash" at `--r-full`.
+- Empty state: `.state` at `--text-mute`, "Nothing in the trash."
 
-### 7.9 Floating capture pill and its menu
+### Settings Page
+
+- Page title in `.h1`.
+- Settings nav wrap: `--surface` fill, 1px `--line`, `--r-lg` (40px), with nav rows divided by 1px `--line` bottom borders.
+  - Nav rows: 14px 16px padding, 14px / 500 label, 12px / `--text-mute` description, 20px row icon, 16px chevron at 50% opacity.
+- Group card (`.group`): fill `--surface`, 1px `--line`, `--r-lg` (40px), `--sp-6` (48px) inset.
+  - Rows separated by 1px `--line-soft` full-bleed rules with `--sp-4` above and below.
+  - Row layout: label in 16px / 600 at `--text`, description in 15px / `--text-dim`, control right aligned.
+- **Toggle:** track 44x26px at `--r-full`. Off: fill `--surface-2`, 1.5px `--line-strong`, knob `--surface` with 1px `--line`. On: fill `--accent`, 1.5px `--text`, knob `--surface`. Knob translates 18px on activation.
+- **Text input:** `--r`, fill `--surface`, 1.5px `--line-strong`, `--sp-3 --sp-4` padding, 16px / 450 (rounds to 400), `--text`, placeholder `--text-mute`.
+- **Select:** same as text input with chevron.
+- **Recorder button:** `--r`, fill `--surface`, 1.5px `--line-strong`, 16px / 500, `--text`. Listening state: fill `--surface-2`, `breathe` animation on label.
+
+### Floating Capture Pill
 
 The app's signature object. Present on every page.
 
-**Pill.**
+- `position: fixed`, horizontally centred (`left: 50%; transform: translateX(-50%)`), `bottom: var(--sp-5)` (32px), `z-index: var(--z-pill)` (40).
+- Shape `--r-full`, height `56px`, padding `0 var(--sp-4)`, fill `--surface`, 1px `--line`, `--shadow-2`.
+- Content varies by context:
+  - **On the wall:** Plus disc (32px `--accent` circle with 1.5px `--text` border, `--accent-ink` stroke) + "Keep something" label (16px / 500 / -0.48px, `--text`) + chevron (`--text-mute`) + Search icon button + Ask icon button + Settings icon button.
+  - **Inside an artifact:** Back icon button + Ask icon button.
+  - **Wide (typing mode):** `width: min(560px, calc(100vw - 40px))`, input field (16px / 450 / -0.08px, `--text`, placeholder `--text-mute`) + Close icon button. Optional scope label (13px / 500, `--text-mute`) prepended for "ask" mode.
+- Icon-only companion buttons: 40x40, `--r-full`, `--surface-2` fill, `--text` icon. Hover: `--line-soft`.
+- Disc hover: `--accent-quiet`.
+- Z-index: `--z-pill` (40) for the pill, `--z-menu` (50) for the menu.
 
-- `position: fixed`, horizontally centred, `--sp-5` from the viewport bottom, above content and below the modal.
-- Shape `--r-full`, height `56px`, padding `0 --sp-4`, fill `--surface`, 1px `--line`, `--shadow-2`.
-- Content: a plus glyph inside a 32px `--accent` circle at the left with `--accent-ink` stroke, then "Keep something" in `button` at `--text`, then a chevron in `--text-mute`.
-- Drag-over state: pill widens to `min(560px, 90vw)`, border becomes 1.5px `--accent`, label changes to "Drop to keep". Transition `200ms ease` on width and border-color.
-  Because 1.5px `--accent` at 1.76:1 cannot be a sole indicator, the label text changes at the same moment. The colour is reinforcement, never the signal.
-- Active drop: fill `--tint-ok`, label `--text`.
+### Capture Menu
 
-**Menu.** Opens upward on click.
+Opens upward on click of the plus disc.
 
-- Fill `--surface`, 1px `--line`, `--r-lg` (40px), `--shadow-2`, `--sp-2` inset, width `280px`, anchored `--sp-2` above the pill and centred on it.
-- Items: `--r` (20px) rows, `--sp-3` padding, 20px glyph in `--text-mute`, then `body` label at `--text`, then a `meta` keyboard hint at `--text-mute`, right aligned.
-- Items are: "Paste from clipboard", "Choose a file", "Write a note", "Save a link".
-- Hover and keyboard focus: fill `--surface-2`. **Never `--accent`.** These are four equal-weight choices and none of them is the primary.
-- Opens with a `140ms` fade plus 4px upward translate. Closes on Escape, outside click, or selection. Focus returns to the pill.
+- Fill `--surface`, 1px `--line`, `--r-lg` (40px), `--shadow-2`, `--sp-2` (8px) inset, width `280px`.
+- Anchored `bottom: 96px`, centred on the pill.
+- Items: `--r` (20px) rows, `--sp-3` (12px) padding, 20px glyph in `--text-mute`, then 16px / 450 / -0.08px label at `--text`.
+- Items: "Note", "Upload", "Link", "Image".
+- Hover and keyboard focus: fill `--surface-2`. Never `--accent`.
+- Opens with a `rise` keyframe: 140ms fade plus 4px upward translate.
+- Arrow-key navigation, Home/End support. Focus returns to the pill on close.
+- `role="menu"`, `role="menuitem"` on items.
 
-### 7.10 Modal confirmation dialog
+### Modal Confirmation Dialog
 
 Used for anything irreversible, and only for that.
+Implemented as a native `<dialog>` element for focus trapping, Esc handling, and top-layer rendering.
 
-- Scrim: full viewport, `--scrim`, fading in over `160ms`.
-- Dialog: fill `--surface`, `--r-lg` (40px), `--shadow-3`, no border, `--sp-6` inset, `max-width: 480px`, centred, entering with a `160ms` fade plus 8px upward translate.
-- Content order: `h2` title stating the action in plain words ("Empty the trash?"), `--sp-3`, `body` at `--text-dim` stating exactly what happens and that it cannot be undone, `--sp-6`, action row.
-- Action row: right aligned, `--sp-3` gap. The **destructive button sits on the right**, with a **secondary "Cancel"** to its left.
-- The destructive button repeats the verb ("Empty trash"). Never "OK", never "Yes".
-- Focus is trapped inside the dialog. Initial focus lands on **Cancel**, never on the destructive action. Escape cancels.
+- Scrim: full viewport, `--scrim`, fading in over 160ms.
+- Dialog: fill `--surface`, `--r-lg` (40px), `--shadow-3`, no border, `--sp-6` (48px) inset, `max-width: min(480px, calc(100vw - 40px))`, centred.
+- Enters with `lift` keyframe: 160ms fade plus 8px upward translate.
+- Content: `.h2` (20px / 500) title, then `body` at `--text-dim`, then action row.
+- Action row: right aligned, `--sp-3` gap. Destructive button on the right, secondary "Cancel" to its left.
+- Destructive button repeats the verb ("Empty trash"). Never "OK", never "Yes".
+- Initial focus lands on Cancel. Escape cancels.
 - `role="dialog"`, `aria-modal="true"`, `aria-labelledby` pointing at the title.
-- Never open a modal for a reversible action. Confirmation friction with no payoff is just friction.
+
+### Toast
+
+- Fixed, centred, `bottom: 108px`, `z-index: var(--z-menu)` (50).
+- Fill `--surface`, 1px `--line`, `--r` (20px), `--shadow-2`, `--sp-3 --sp-4` padding.
+- Error variant (`.toast.bad`): fill `--tint-warn`, no border.
+- `role="status"`. Auto-dismisses after 2.6s (8s for errors).
+- Enters with `rise` keyframe: 160ms fade plus 4px upward translate.
+
+### Capture Overlay
+
+A separate Tauri window, served from `capture.html`.
+Self-contained: copies a subset of museum tokens rather than sharing the stylesheet.
+
+- Window is transparent; the card carries its own edge and shadow.
+- Card: `--bg` fill, 1px `--line-strong` border, `--r-sm` (6px) radius, `--shadow-1`.
+- Title bar: `--surface` fill, 30px height, 1px `--line` bottom border, draggable.
+- Labels: 10px, uppercase, 1.2px letter-spacing, `--text-mute`. Problem state: `--pink` (`#8f4273`).
+- Textarea: 15px, 1.45 line-height, `--text`, placeholder `--text-mute`.
+- Drag-over state: border becomes `--accent-strong` (`#b17816`), with a 160ms ease transition.
+- Busy state: 55% opacity, read-only field.
 
 ---
 
-## 8. Do and Don't
+## Motion and Interaction
+
+### Timing Tokens
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--ease` | `cubic-bezier(0.16, 1, 0.3, 1)` | The app's default easing. A smooth ease-out. |
+| `--dur-fast` | `140ms` | Menu open, button state transitions, border/colour changes. |
+| `--dur` | `160ms` | Card hover shadow, rail transform, modal enter. |
+| `--dur-slow` | `200ms` | Pill width morph, hang animation for card entrance. |
+
+### Keyframe Animations
+
+| Name | Duration | Easing | Use |
+| --- | --- | --- | --- |
+| `rise` | `--dur-fast` (140ms) | ease | Menu and toast entrance: opacity 0 to 1, translateY 4px to 0. |
+| `hang` | `--dur-slow` (200ms) | `--ease` | Card entrance on wall load: opacity 0 to 1, translateY 6px to 0. Staggered 22ms per card, first 18 only. Uses `backwards` fill mode. |
+| `lift` | `--dur` (160ms) | ease | Modal entrance: opacity 0 to 1, translateY 8px to 0. |
+| `kept` | 260ms | `cubic-bezier(0.22, 1, 0.36, 1)` | Pin/star activation: scale 0.7 to 1, opacity 0.4 to 1. |
+| `sweep` | 1.4s | ease-in-out, infinite | Streaming indicator: 3px `--accent` bar translating -100% to 350% across the answer bubble top. |
+| `breathe` | 1.4s-1.8s | `--ease`, infinite | Thinking state and recorder listening: opacity 0.35 to 1 pulse. |
+| `fill` | 620ms | `cubic-bezier(0.16, 1, 0.3, 1)` | Editor save bar: 1px line scaleX 0 to 1, then fade. |
+
+### View Transitions
+
+The app uses the View Transitions API to morph between the wall card and the artifact detail page.
+The card's image (or title) claims a `view-transition-name` before the transition, held across the swap, and released after.
+
+- `artifact-face` and `artifact-title` named transitions have their default crossfade disabled (`animation: none`), with only the group transition animated at 340ms using `cubic-bezier(0.2, 0.9, 0.24, 1)`.
+- Root transition: old view fades out at 120ms, new view fades in at 220ms (60ms delay).
+- Falls through to instant swap where the API is missing or `prefers-reduced-motion: reduce` is set.
+
+### Reduced Motion
+
+A blanket `@media (prefers-reduced-motion: reduce)` rule crushes all animation and transition durations to 1ms, sets iteration-count to 1, and explicitly disables `breathe` and `sweep` animations.
+This is applied globally to `*`, `*::before`, and `*::after`.
+
+### Interaction Patterns
+
+- **Card hover:** Elevation only (`--shadow-2`). No transform, no scale. The eye was using the grid to compare objects; moving one breaks the comparison.
+- **Pin activation:** Scale-down on active (0.92), then `kept` keyframe on the SVG.
+- **Title-action active:** Scale 0.92.
+- **Menu open/close:** 140ms fade plus 4px translate. Focus trapped inside. Escape, outside click, or selection closes.
+- **Pill wide mode:** 200ms ease transition on width and border-color.
+- **Search focus:** Border colour transitions to `--accent` at 140ms, `--shadow-1` appears.
+- **Editor save:** A 1px `--line-strong` rule fills left-to-right under the editor (620ms), then fades. The page acknowledging the words rather than a notification about them.
+
+---
+
+## Accessibility and Contrast
+
+### Contrast Verification
+
+The repo includes `bin/check-contrast`, a Python script that reads the `:root` palette from `museum.html` and verifies WCAG 2.1 contrast ratios.
+It checks text-bearing tokens against three grounds (`--bg`, `--surface`, `--surface-2`) at 4.5:1, and `--line-strong` at 3:1.
+
+Current results:
+
+| Token | Hex | Worst ratio | Status |
+| --- | --- | --- | --- |
+| `--text` | `#23251d` | 12.44:1 | Pass |
+| `--text-dim` | `#4d4f46` | 6.68:1 | Pass |
+| `--text-mute` | `#63655b` | 4.75:1 | Pass |
+| `--line-strong` | `#7d7b73` | 3.40:1 | Pass (3:1) |
+| `--accent-ink` on `--accent` | `#23251d` on `#f7a501` | 7.64:1 | Pass |
+| `--accent` | `#f7a501` | 1.63:1 | Fails 4.5:1 as text. Intentional: used as fill only, with 1.5px `--text` border for boundary. |
+| `--accent-quiet` | `#dd9001` | 2.09:1 | Fails 4.5:1 as text. Intentional: pressed fill only. |
+| `--green` | `#30804b` | 3.90:1 | Fails 4.5:1 as text. Intentional: 8px dot graphic, needs only 3:1. |
+| `--peach` | `#ad5a31` | 3.93:1 | Fails 4.5:1 as text. Intentional: 8px dot graphic, needs only 3:1. |
+| `--blue` | `#376899` | 4.67:1 | Pass |
+| `--pink` | `#8f4273` | 5.27:1 | Pass |
+| `--teal` | `#755c12` | 5.11:1 | Pass |
+
+The script does not check `--surface-doc` (`#fcfcfa`) as a ground, though it is used for long-form reading surfaces.
+This is an open question (see below).
+
+### Structural Accessibility
+
+- **Colour is never the sole carrier of information.** Kind is always a dot plus a text label. Disabled state is fill, opacity, cursor, and `aria-disabled` together. Drag-over state changes border colour and label text simultaneously.
+- **Focus is visible everywhere.** `:focus-visible` applies `outline: 2px solid var(--focus); outline-offset: 2px;` on every focusable element. `:focus:not(:focus-visible)` removes the outline for mouse users.
+- **Keyboard navigation.** Cards are `tabindex="0"` with `role="button"` and Enter/Space activation. Menu items support arrow keys, Home, End. Modal traps focus and returns it on close.
+- **ARIA roles.** `role="dialog"`, `aria-modal="true"`, `aria-labelledby` on modals. `role="menu"`, `role="menuitem"` on the capture menu. `role="status"` on toasts. `role="button"` on cards. `role="textbox"` with `aria-multiline="true"` on the editor.
+- **`color-scheme: light`** on `:root` ensures native scrollbars, carets, and select menus paint light even when macOS is set to dark.
+
+---
+
+## Do's and Don'ts
 
 ### Do
 
-- Use `--bg` `#eeefe9` as the page canvas everywhere, including the rail, the trash page, and the settings page.
-- Set body copy at weight **450**, and headlines at weight 500 with **-2%** letter-spacing.
+- Use `--bg` `#eeefe9` as the page canvas everywhere, including the top bar, the trash page, and the settings page.
+- Set body copy at weight 450 (compensated with -0.08px tracking when the variable font is absent), and headlines at weight 500 with -2% letter-spacing.
 - Reach for one of three radii by default: `--r` 20px for controls, `--r-lg` 40px for containers, `--r-full` for pills and circles.
-- Put a leading accent dot before every eyebrow label. It is the identity of the label, not a flourish.
-- Keep to **one primary action per view**, and let it be the only saturated yellow-orange on screen.
+- Put a leading accent dot before every eyebrow label (`.shelf::before`). It is the identity of the label, not a flourish.
+- Keep to one primary action per view, and let it be the only saturated yellow-orange on screen.
 - Give every filled `--accent` control a 1.5px `--text` border so its boundary clears 3:1.
 - Express kind as an 8px dot plus a plain ink text label, always both together.
 - Prefer a 1px `--line` border over a shadow. Reserve shadows for things that genuinely float.
 - Use `--surface-doc` for anything read at length, and `--surface` for anything scanned.
-- Keep the pastel tints to inline callouts: `--tint-info` for information, `--tint-ok` for confirmation, `--tint-warn` for caution, `--tint-note` for model provenance.
+- Keep the pastel tints to inline callouts only.
 - Signal disabled state with fill, opacity, cursor, and `aria-disabled` together.
 - State the destructive verb on the destructive button, and land initial focus on Cancel.
 - Keep `color-scheme: light` on `:root`.
+- Run `bin/check-contrast` after any palette change.
 
 ### Don't
 
 - Don't write a dark theme, a `prefers-color-scheme: dark` block, or a theme toggle. There is one theme.
-- Don't request a single byte over the network. No CDN fonts, no external stylesheets, no remote images.
+- Don't request a single byte over the network for fonts, stylesheets, or images. The app is local-only.
 - Don't name MarkForMC in a font stack. It is proprietary.
-- Don't set `--accent` as a text colour or as a lone border. It measures 1.76:1 on the canvas and fails both thresholds.
+- Don't set `--accent` as a text colour or as a lone border. It measures 1.63:1 on the darkest ground and fails both thresholds.
 - Don't use `--line` `#bfc1b7` as the sole boundary of a control. It measures 1.58:1. Use `--line-strong`.
 - Don't use `--text-mute` on a pastel tint, and don't lighten it past `#63655b`. It has 0.25 of headroom on `--surface-2`.
 - Don't use any radius between 8px and 16px. That middle ground is what makes an interface look generic and it is deliberately absent from this system.
@@ -618,22 +632,100 @@ Used for anything irreversible, and only for that.
 
 ---
 
-## 9. What changed and why
+## Responsive Behavior
 
-This replaces the previous `docs/DESIGN.md` (the "Atrium" museum-catalogue system: plaster, iron, and bronze) and corrects the drift that accumulated in `src/enqueue/static/museum.html`.
-The museum metaphor produced a palette belonging to neither source system and a radius scale that landed squarely in the generic band.
+### Breakpoints
 
-| Was | Now | Why |
-|---|---|---|
-| `--accent: #8c5b16` | `--accent: #f7a501`, `--accent-quiet: #dd9001`, `--accent-ink: #23251d` | The old value is a muddy brown belonging to neither source system. It got there by being darkened until it passed 4.5:1 as *text*, which solves the wrong problem: the accent is a fill, not a text colour, and darkening it to text legibility destroyed the one thing it existed for. The correct fix is PostHog's actual yellow plus a 1.5px ink border that carries the 3:1 boundary requirement, which is Mastercard's own primary-pill construction. |
-| `--bg: #f5f4ee`, `--surface: #efede6`, `--surface-2: #e6e3da` | `--bg: #eeefe9`, `--surface: #ffffff`, `--surface-2: #e5e7e0`, plus new `--surface-doc: #fcfcfa` | The old ladder was three shades of one beige with no raised surface at all, so cards never separated from the canvas. PostHog's four-step ladder gives a true canvas, a true raised white, a warm reading white, and a recessed soft fill. |
-| `--text: #1c1d18`, `--text-dim: #4a4b44`, `--text-mute: #5e5f57` | `#23251d`, `#4d4f46`, `#63655b` | Adopts PostHog's olive-charcoal ink ladder directly, with `mute` darkened from PostHog's own `#6c6e63` because that value measures 4.16 on `--surface-2` and fails 4.5:1. |
-| `--line-strong: #7d7b73` used loosely | Same value, now specified as the only legal sole-boundary colour, with `--line-soft: #dcdfd2` added | `--line-strong` measures 3.40 at worst and is the only line token clearing 3:1. `--line` at 1.58 was being used on inputs, which failed. |
-| `--r-sm: 6px`, `--r: 10px`, `--r-lg: 20px` | `--r-sm: 6px`, `--r: 20px`, `--r-lg: 40px`, `--r-full` unchanged | The 10px radius sat inside the 8-16px band Mastercard deliberately skips, which is exactly why the old UI read as generic. Every control moves to 20px, every container to 40px. |
-| `--sp-6: 44px`, no section token | `--sp-6: 48px`, new `--sp-section: 96px` | 48 is on the 8-grid; 44 was not. The section token supplies the structural whitespace Mastercard's layout depends on, which the old scale had no way to express. |
-| `--shadow-1` alone, tight | Three-step wide-halo ladder tinted with `--text`: `--shadow-1/2/3` | Mastercard's atmospheric cushioning: 24px+ blur at 8% opacity or less. Tight shadows were making floating chrome look pasted on. |
-| System sans, body weight 400 | IBM Plex Sans, self-hosted from vendored woff2 in `src/enqueue/static/fonts/`, body weight **450**, -2% headline tracking | Weight 450 is the load-bearing identity of Mastercard's type system and is unreachable without a variable font. Vendoring is mandatory because the app makes no network requests. If the files are not vendored, the stack resolves to `system-ui` and 450 rounds to 400, compensated with -0.08px body tracking. |
-| No eyebrow role, no accent dot | `eyebrow` at 14px / 700 / +4% uppercase with a mandatory leading accent dot | The dotted eyebrow is Mastercard's section-category signal and the previous system had no equivalent, which is why sections had no consistent opening gesture. |
-| Kind colours present but the rule only lived in a code comment | Same five values, rule promoted to normative spec (6.5) | `--green` `#30804b`, `--blue` `#376899`, `--peach` `#ad5a31`, `--pink` `#8f4273`, `--teal` `#755c12` were already tuned for hue separation under colour vision deficiency and all five clear 3:1 on all four grounds. Values kept; the dot-plus-ink-label rendering that justifies the 3:1 threshold is now written down, along with the measured ΔE76 separation figures. |
-| No link or danger colour | `--link: #0c6083`, `--danger: #9e2a20` | PostHog's `#1078a3` (3.97) and `#cd4239` (3.80) both fail 4.5:1 on `--surface-2` and were darkened until they passed. |
-| No pastel family | `--tint-info`, `--tint-ok`, `--tint-warn`, `--tint-note` | PostHog's callout family, brought across for inline notices, which the app previously had no vocabulary for and was faking with bare text. |
+| Name | Width | Key Changes |
+| --- | --- | --- |
+| Wide | 1081px+ | Wall grid: 5 columns. Rail: `display: none`. |
+| Desktop | 760-1080px | Wall grid: 4 columns. |
+| Tablet | 460-760px | Wall grid: 3 columns, gap drops to `--sp-3` (12px). Horizontal rail gap drops to `--sp-3`. |
+| Mobile | 460px | Wall grid: 1 column. `--sp-section` compresses to 24px. Docpane and group card padding compress to `--sp-4` (20px). |
+
+### Touch Targets
+
+All interactive elements meet or approach 44x44px.
+Buttons are 40px minimum height with 24px horizontal padding, reaching 44px tappable via inline padding.
+Icon-only buttons are 40x40.
+The capture pill is 56px tall.
+Menu items have 12px padding at 16px font size.
+
+### Collapsing Strategy
+
+- **Wall grid:** 5 to 4 to 3 to 1 columns at 1080px, 760px, and 460px breakpoints.
+- **Section padding:** `--sp-section` compresses from 48px to 24px below 900px.
+- **Docpane and settings group:** padding compresses from `--sp-6` (48px) to `--sp-4` (20px) below 900px.
+- **Content padding:** horizontal padding compresses to `--sp-4` (20px) below 900px.
+
+---
+
+## Design Genealogy
+
+This system combines two source languages.
+Understanding where each value comes from prevents relitigating settled decisions.
+
+### Colour comes from PostHog
+
+The cream canvas (`#eeefe9`), the olive ink ladder (`#23251d` / `#4d4f46` / `#63655b`), the four-step surface ladder, the pastel callout family, and the single saturated yellow-orange (`#f7a501`) all come from PostHog's design system.
+PostHog's `mute` value `#6c6e63` was darkened to `#63655b` because it fails 4.5:1 on `--surface-2`.
+PostHog's `link-teal` and `accent-red` were darkened for the same reason.
+PostHog's `ash` and `stone` values were dropped entirely because they fail badly.
+
+### Form and typography come from Mastercard
+
+The pill-and-stadium radius vocabulary (20px / 40px / 999px, skipping 8-16px), the weight 450 body, the -2% headline tracking, the dotted eyebrow label, the generous structural whitespace, and the wide low-opacity shadow philosophy all come from Mastercard's design system.
+Mastercard's ink-black pill (`#141413`) survives as the secondary button.
+Mastercard's Signal Orange is absent because Enqueue has no consent or legal flow to quarantine it for.
+
+### Where they conflict
+
+Four conflicts were resolved:
+
+1. **Primary CTA colour.** PostHog's yellow vs Mastercard's ink-black. Resolved: PostHog yellow in Mastercard geometry. The brief takes colour from PostHog and form from Mastercard, and this button is where those two axes intersect.
+2. **Border radius.** PostHog clusters at 4-6px; Mastercard uses 20/40/999. Resolved: Mastercard wins outright. PostHog's 6px survives only as `--r-sm` for sub-28px decoration.
+3. **Elevation.** PostHog has no shadows; Mastercard uses soft halos. Resolved: flat with a hairline is the default; shadows only for floating chrome.
+4. **Canvas tint and body weight.** PostHog's `#eeefe9` canvas with weight 400 vs Mastercard's `#F3F0EE` with weight 450. Resolved: PostHog canvas, Mastercard weight.
+
+### Kind colours are facts, never actions
+
+None of the five kind colours may ever be `--accent`, and `--accent` may never identify a kind.
+Kind is a fact about a thing. The accent is an instruction.
+If the two ever share a colour, the user cannot tell a category from a command.
+
+### Previous design systems
+
+The repo contains two earlier design references:
+
+- `docs/design-before.html`: the "Atrium" museum-catalogue system (plaster, iron, bronze) with a dark mode and serif type. Superseded.
+- `docs/design-target.html`: a dark charcoal theme with a lilac accent (`#c3b8ee`). Superseded.
+- `src/enqueue/static/museum-plain.html` and `capture-plain.html`: stripped-down variants with no colour tokens, used as structural references. Not the shipping design.
+
+---
+
+## Notes on the current build
+
+These are facts about the current code, recorded so a future change does not silently regress them.
+The code is the source of truth; where an older spec disagreed, the code wins.
+
+1. **`--sp-section` is 48px** in the code, compressing to 24px below 900px.
+2. **The left rail is `display: none`** in the current build.
+The CSS declares a 280px `.rail` (conversation list, search, new-chat button, Trash/Settings footer) but no rule shows it at any breakpoint.
+The app shell currently has no left rail.
+3. **Typography sizes are the code's values:** 32px display, 26px h1, 20px h2, 17px h3, 14px body.
+The compact sizes reflect the desktop window size.
+4. **The wall grid is fixed at 5 columns:** `repeat(5, minmax(0, 1fr))`, not auto-fill.
+Column width varies with viewport; card count does not adapt.
+5. **`--surface-doc` (`#fcfcfa`) is not checked by `bin/check-contrast`.**
+The script checks three grounds (`--bg`, `--surface`, `--surface-2`) only.
+If long-form reading text on `--surface-doc` matters, add it to the script.
+6. **The variable woff2 is not loaded.**
+`IBM-Plex-Sans-400.woff2` exists in the fonts directory but the HTML loads only static TTF cuts, so weight 450 rounds to 400.
+The `-0.08px` letter-spacing compensation covers the gap.
+7. **`--accent-strong: #b17816` is defined only in `capture.html`** for the drag-over border, not in `museum.html` or the shared token list.
+The overlay owns this token locally.
+8. **The capture overlay uses `--r-sm` (6px) for its card** while the main app uses `--r-lg` (40px).
+The tight radius is because the overlay is a small floating window, not a page card.
+9. **Settings nav rows use `border-bottom: 1px solid var(--line)`** with an explicit `border: none` reset, a slightly different pattern from the `.group` card's `--line-soft` internal dividers.
+10. **The `.h3` role (17px / 500) appears unused** in the rendered HTML.
+The card title overrides `.title` to 20px and the modal uses `.h2`.
