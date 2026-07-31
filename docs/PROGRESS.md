@@ -375,8 +375,14 @@ both engines from the same rows. Full write-up in
       fusing with `k=1`. Ordering is k-invariant, so this changed magnitudes
       only, never rankings
 - [x] Latency gate: p95 21 ms, far under 150 ms; no quantization needed
-- [ ] [HUMAN] gates did not trigger (recall@10 and MRR improved; lens
-      within 2.2 percent; p95 under gate); the human search test
-      (`evals/HUMAN-TEST-SEARCH.md` against the new engine) is still open
-      for the maintainer, plus `evals/lens/HUMAN-TEST-LENS.md` and the D4
-      threshold pick from Part 2
+- [x] [HUMAN] gates did not trigger (recall@10 and MRR improved; lens
+      within 2.2 percent; p95 under gate)
+- [x] [HUMAN] human search test (`evals/HUMAN-TEST-SEARCH.md`) run against
+      sqlite-vec; answers recorded next to the baseline. sqlite-vec is equal
+      or better on every test: Test 3 (Lumo mascot) BAD -> OK, Test 4 second
+      query (page count) BAD -> GOOD; Tests 1, 2, 4-first, 5, 6 GOOD on both;
+      Test 7 same speed (p95 21 ms); Test 8 skipped (single device). No
+      regressions. (Still open separately from Part 2: the human lens test
+      and the D4 threshold pick.)
+
+Phase 19 passed. Phase 20 cutover next.

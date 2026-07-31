@@ -45,8 +45,8 @@ Actual Response:Yes, you have several excerpts from Rosabeth Moss Kanter's 1972 
 
 **Engine 2: sqlite-vec**
 Question: Did you find anything about Kanter?
-Answer: ____
-Actual response: ____
+Answer: GOOD
+Actual response: Yes — the saved material includes pages from Rosabeth Moss Kanter's book *Commitment and Community: Communes and Utopias in America* (1972). The excerpts cover her analysis of utopian communities, including concepts like mortification, isomorphism, and leadership dynamics, as well as appendix material on methodology and data.
 
 ## Test 2 - Find something when you only half remember it
 
@@ -56,16 +56,18 @@ Search using your own words for it, not the words in the item.
 Example: if you saved an article about staying calm under pressure,
 search for "keeping cool when things go wrong".
 
-Question: Did the right item come up? (What was my max squat?)
+Question: What was my max squat?
 Answer: GOOD
 ACtual REsponse: Your max squat is 350, from your stats updated 7/6.
 
 ---
 
 **Engine 2: sqlite-vec**
-Question: Did the right item come up? (What was my max squat?)
-Answer: ____
-Actual response: ____
+Question: What was my max squat?
+Answer: GOOD
+Actual response:Your squat is listed at 350, per the stats in your workout note (updated 7/6). For context, that note also tracks Bench at 240, Deadlift at 410, Press at 167, and Pedley Row at 190, and the squat number appears to be the training max your 5/3/1 percentages are based on.
+
+
 
 ## Test 3 - Find something by an exact code or unusual word
 
@@ -80,9 +82,11 @@ Actual REsponse You haven't saved anything that says what the Lumo mascot was. T
 ---
 
 **Engine 2: sqlite-vec**
-Question: Did the right item come up? (What was the Lumo mascot?)
-Answer: ____
-Actual response: ____
+Question: What was the Lumo mascot?
+Answer: OK
+Actual response: Lumo was the mascot of Proton's Lumo AI assistant — a character created to be the face of the product and to embody its values: private, approachable, and easy to use, described as 'a trusted and independent mascot that protects your personal conversations.' The original design was playful and welcoming — apparently kitten-like, since the article about the Lumo 2.0 redesign is headed 'Lumo's not a kitten anymore.' With Lumo 2.0, Proton chose to evolve the character rather than replace it, giving it a stronger, more confident presence to match the product's growing sophistication, plus new illustrations, subtle reactive animations, and a sticker library for messaging platforms. The mascot's name stayed Lumo even as the wordmark changed to 'Lumo AI.'
+
+
 
 ## Test 4 - Find something by its title only
 
@@ -90,7 +94,7 @@ Pick an item whose title says what it is, but where the words in the
 title do not appear in the item itself.
 Search using words from the title.
 
-Question Did the right item come up? (Do we have anything regarding revisiting the commons?)
+Question Do we have anything regarding revisiting the commons?
 Answer: GOOD
 Actual Response: Yes, you have a saved item called "Revisiting the Commons: Local Lessons, Global Challenges." It's a 1999 Science review article by Elinor Ostrom, Joanna Burger, Christopher B. Field, Richard B. Norgaard, and David Policansky, revisiting Hardin's "Tragedy of the Commons" and discussing sustainable management of common-pool resources.
 
@@ -102,29 +106,30 @@ Actual REsponse (within Everything): Your saved materials don't specify the tota
 ---
 
 **Engine 2: sqlite-vec**
-Question: Did the right item come up? (Do we have anything regarding revisiting the commons?)
-Answer: ____
-Actual response: ____
+Question: Do we have anything regarding revisiting the commons?
+Answer: GOOD
+Actual response: Yes — you've saved Ostrom, Burger, Field, Norgaard, and Policansky's 1999 Science article "Revisiting the Commons: Local Lessons, Global Challenges," which is exactly on point. Written thirty years after Garrett Hardin's "The Tragedy of the Commons" (which you also have, at least as a citation), it reassesses Hardin's claim that commons users are locked into an inevitable process of destroying the resources they depend on. The authors' core argument is that Hardin understated the range of solutions: people have self-organized to manage common-pool resources for thousands of years, and neither government ownership nor privatization — Hardin's two remedies — is immune to failure. They give the striking example of a satellite image across northern China, Mongolia, and southern Siberia: Mongolia's traditional group-property pastoralist institutions, with large-scale seasonal movement, show far less grassland degradation than the state-run collectives on the Russian and Chinese sides. The hardest problems, they argue, are now global in scale — international river basins, large marine ecosystems, global climate — and require cooperation across nested institutions at local, national, and international levels. Their closing thought is that institutional diversity may matter as much for long-term survival as biological diversity.
 
 Question: How many pages is Commitment and Community?
-Answer: ____
-Actual response: ____
+Answer: GOOD
+Actual response: Nothing you saved states the total page count directly, but your copy of Kanter's Commitment and Community (Harvard, 1972) can be bounded from what was captured: the scan runs to at least page 322, and the book's own numbered pages reach at least 264, where the Appendix on sample and methodology begins. So the digitized copy is roughly 320+ scan pages, with the main text and appendix extending past page 264 — but the exact final numbered page isn't shown in what you've saved
 
 ## Test 5 - Search for something you never saved
 
 Search for something you are certain you never saved.
 NOTE: I did this twice
 
-Question: Did it correctly show nothing, or almost nothing? (Do I have notes regarding making my own sourdough bread?)
+Question: Do I have notes regarding making my own sourdough bread?
 Answer: GOOD
 Actual REsponse: You haven't saved anything about making your own sourdough bread. The notes you have cover medieval agriculture economics, a RAG explanation, and utopian communities, but nothing on sourdough.
 
 ---
 
 **Engine 2: sqlite-vec**
-Question: Did it correctly show nothing, or almost nothing? (Do I have notes regarding making my own sourdough bread?)
-Answer: ____
-Actual response: ____
+Question: Do I have notes regarding making my own sourdough bread?
+Answer: GOOD
+Actual response: You haven't saved anything about making your own sourdough bread. Bread does come up in your collection, but only in passing and in unrelated contexts: a piece on medieval agriculture discusses grain storage, bread prices, and caloric content, and a book on utopian communes mentions that baking bread held spiritual meaning for the Shakers. Neither contains anything about actually baking bread yourself — no starter, recipe, or technique — and nothing in your notes touches on sourdough at all.
+
 
 ## Test 6 - Same words, different order
 
@@ -139,8 +144,10 @@ Actual REsponse: A boxer's greatest advantage comes from their sparring partner�
 
 **Engine 2: sqlite-vec**
 Question: What is a boxer's advantage?
-Answer: ____
-Actual response: ____
+Answer: GOOD
+Actual response: According to what you've saved, a boxer's greatest advantage is their sparring partner. The idea is that adversity functions as input rather than obstacle — the partner is the mechanism by which that adversity compounds into growth. What looks like harm (getting hit) is actually the process working as intended.
+
+
 
 ## Test 7 - Does it feel fast
 
@@ -152,7 +159,7 @@ Answer: Each took around 5-10 seconds
 ---
 
 **Engine 2: sqlite-vec**
-Answer: ____ (for reference, the automated eval measured p95 = 21 ms per query)
+Answer: Same speed (for reference, the automated eval measured p95 = 21 ms per query)
 
 ---
 
