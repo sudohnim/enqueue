@@ -255,3 +255,20 @@ holds the library:
       — data preserved; `test_index_revision_round_trips` pins the cycle
 
 Tests: 6 migration tests pass.
+
+## Phase 18B — Fusion function, on its own ✅
+
+`src/enqueue/index/fusion.py` holds reciprocal rank fusion as a pure function
+with zero imports from the rest of the app:
+
+- [x] `rrf(*ranked_lists, k=60, limit=30)` — ids in rank order in, fused id
+      list out; score per id is the sum of 1/(k + rank) across lists; ties
+      break by first appearance so the same input always yields the same
+      output
+- [x] `rrf_scored` also returns each id's fused score, so the store can tag
+      hits with a branch-agnostic score and the formula lives in one place
+- [x] Tests: one list, two identical lists, two disjoint lists (tie-break),
+      two lists sharing one id, limit truncation, determinism across runs,
+      and a scored-variant check against the hand-computed formula
+
+Tests: 7 fusion tests pass.
