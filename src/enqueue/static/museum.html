@@ -364,6 +364,10 @@
     margin-top: var(--sp-2);
     max-width: 64ch;
   }
+  .aside.dirty {
+    color: var(--accent);
+    font-weight: 500;
+  }
   /* Why something failed carries more than what it will cost, so it is not the same
      grey. It is still ink, never the accent: the accent is an instruction. */
   .aside.caution,
@@ -4735,10 +4739,18 @@
     restorePill("inside");
     view.innerHTML = '<div class="state">...</div>';
     const d = await api("/settings");
+    if (pendingAI) {
+      for (const [name, value] of Object.entries(pendingAI)) {
+        if (d.settings[name]) d.settings[name].value = value;
+      }
+    }
     let html =
-      '<button class="settings-back" onclick="showSettings()">' +
+      '<button class="settings-back" onclick="showSettings()"' +
+      (pendingAI ? ' title="Discard unsaved changes and go back"' : '') + '>' +
       '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
-      '<div class="h2">AI</div>';
+      '<div class="h2">AI' +
+      (pendingAI ? ' <span class="aside dirty">unsaved</span>' : '') +
+      '</div>';
 
     html += '<div class="shelf">The model</div><div class="group">';
     const chosen = d.settings.llm_backend;
@@ -4746,7 +4758,7 @@
       '<div class="field"><label for="s_backend">Answers come from</label>' +
       '<select id="s_backend"' +
       (chosen.locked ? " disabled" : "") +
-      ' onchange="chooseBackend(this.value)">' +
+      ' onchange="stageBackend(this.value)">' +
       d.backends
         .map(
           (b) =>
@@ -4787,7 +4799,7 @@
         esc(String(f.value ?? "")) +
         '"' +
         (f.locked ? " disabled" : "") +
-        " onchange=\"saveSetting('" +
+        " onchange=\"stageSetting('" +
         name +
         "', this.value)\">" +
         (f.locked
@@ -4831,14 +4843,64 @@
       "</label>" +
       '<textarea id="s_headers" rows="3" spellcheck="false" placeholder="' +
       "HTTP-Referer: https://your-app&#10;X-Title: Enqueue" +
-      '" onchange="saveSetting(\'llm_headers\', this.value)">' +
+      '" onchange="stageSetting(\'llm_headers\', this.value)">' +
       esc(String(d.settings.llm_headers.value || "")) +
       "</textarea>" +
       '<div class="aside">One <b>Name: value</b> per line.</div></div>';
 
     html += '<div id="settingState" class="aside"></div>';
+    if (pendingAI && Object.keys(pendingAI).length > 0) {
+      html +=
+        '<div class="actions">' +
+        '<button class="btn primary" onclick="saveAIChanges()">Save</button>' +
+        '<button class="btn ghost" onclick="discardAIChanges()">Discard</button>' +
+        "</div>";
+    }
     view.innerHTML = html;
     window.scrollTo(0, 0);
+  }
+
+  // Staged settings that the user has changed in the AI form but not saved yet.
+  // null when nothing is pending. Cleared by Save or Discard, or by navigating
+  // away (deliberate: unsaved means unsaved).
+  let pendingAI = null;
+
+  async function stageBackend(name) {
+    const list = (await api("/settings")).backends;
+    const spec = list.find((b) => b.name === name);
+    if (!pendingAI) pendingAI = {};
+    pendingAI.llm_backend = name;
+    if (spec && spec.url) pendingAI.llm_url = spec.url;
+    if (BACKEND_MODELS[name]) pendingAI.llm_model = BACKEND_MODELS[name];
+    showSettingsAI();
+  }
+
+  function stageSetting(name, value) {
+    if (!pendingAI) pendingAI = {};
+    pendingAI[name] = value;
+    showSettingsAI();
+  }
+
+  async function saveAIChanges() {
+    if (!pendingAI || Object.keys(pendingAI).length === 0) return;
+    const state = document.getElementById("settingState");
+    try {
+      await api("/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes: pendingAI }),
+      });
+      pendingAI = null;
+      toast("Settings saved.");
+      showSettingsAI();
+    } catch (err) {
+      if (state) state.textContent = String(err.message || err);
+    }
+  }
+
+  function discardAIChanges() {
+    pendingAI = null;
+    showSettingsAI();
   }
 
   // ---- Features sub-page ---------------------------------------------------
@@ -5046,6 +5108,7 @@
     ollama: "llama3.1:8b",
     openrouter: "google/gemini-3-flash",
     opencode: "opencode-model",
+    "opencode-go": "kimi-k3",
   };
 
   async function chooseBackend(name) {

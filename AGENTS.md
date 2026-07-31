@@ -403,6 +403,7 @@ The key is resolved per-call (not at import) so a key stored in Settings takes e
 | ollama | `http://127.0.0.1:11434/v1` | yes | no |
 | openrouter | `https://openrouter.ai/api/v1` | no | yes |
 | opencode | `https://opencode.ai/zen/v1` | no | yes |
+| opencode-go | `https://opencode.ai/zen/go/v1` | no | yes |
 | custom | (user-set) | no | yes |
 
 All backends speak the OpenAI-compatible protocol.

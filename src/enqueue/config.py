@@ -53,6 +53,16 @@ BACKENDS = {
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
     },
+    "opencode-go": {
+        "label": "OpenCode Go",
+        # The Go subscription endpoint. Separate billing from Zen: a Go key has no
+        # Zen entitlement and vice versa, so a key that 503s on opencode (Zen) may
+        # work fine here. Verified against the live host: GET /zen/go/v1/models
+        # returns the model list as JSON with a Go key in the Authorization header.
+        "url": "https://opencode.ai/zen/go/v1",
+        "local": False,
+        "key_var": "ENQ_LLM_API_KEY",
+    },
     "custom": {
         "label": "Something else that speaks the OpenAI protocol",
         "url": "",

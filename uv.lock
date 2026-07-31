@@ -436,6 +436,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "qdrant-client" },
+    { name = "sqlite-vec" },
     { name = "trafilatura" },
     { name = "typer" },
     { name = "uvicorn" },
@@ -452,7 +453,6 @@ index = [
 dev = [
     { name = "black" },
     { name = "pytest" },
-    { name = "sqlite-vec" },
 ]
 
 [package.metadata]
@@ -475,6 +475,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qdrant-client", specifier = ">=1.18.0" },
     { name = "qdrant-client", marker = "extra == 'index'", specifier = ">=1.11" },
+    { name = "sqlite-vec", specifier = ">=0.1.9" },
     { name = "trafilatura", specifier = ">=1.8" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.30" },
@@ -485,7 +486,6 @@ provides-extras = ["index"]
 dev = [
     { name = "black", specifier = ">=24.0" },
     { name = "pytest", specifier = ">=8.0" },
-    { name = "sqlite-vec", specifier = ">=0.1.9" },
 ]
 
 [[package]]

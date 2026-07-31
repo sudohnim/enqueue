@@ -196,6 +196,7 @@ The engine speaks the OpenAI-compatible protocol to all backends through a singl
 | `ollama` | `http://127.0.0.1:11434/v1` | Yes | No |
 | `openrouter` | `https://openrouter.ai/api/v1` | No | Yes (`ENQ_LLM_API_KEY`) |
 | `opencode` | `https://opencode.ai/zen/v1` | No | Yes (`ENQ_LLM_API_KEY`) |
+| `opencode-go` | `https://opencode.ai/zen/go/v1` | No | Yes (`ENQ_LLM_API_KEY`) |
 | `custom` | (set via `ENQ_OLLAMA_URL`) | No | Yes (`ENQ_LLM_API_KEY`) |
 
 Anything other than `ollama` sends the text of your artifacts to somebody else's computer.
