@@ -89,6 +89,17 @@ def index() -> None:
 
 
 @app.command()
+def reprocess() -> None:
+    """Re-read, re-chunk, and re-index every artifact.
+
+    Nothing authored is touched. Re-fetches saved links that have a preview but
+    no article body, which is how existing links pick up body indexing after
+    this feature ships.
+    """
+    _echo(_call("POST", "/reprocess", timeout=None))
+
+
+@app.command()
 def search(query: str, limit: int = 10) -> None:
     """Find artifacts. Hybrid dense plus sparse, no model calls."""
     result = _call("GET", "/search", params={"q": query, "limit": limit})
