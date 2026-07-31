@@ -386,3 +386,39 @@ both engines from the same rows. Full write-up in
       and the D4 threshold pick.)
 
 Phase 19 passed. Phase 20 cutover next.
+
+## Phase 20 — Cut over to sqlite-vec (in progress)
+
+Steps 1-5 landed; step 6 ([HUMAN] confirm before the irreversible deletions)
+is the current stop.
+
+- [x] Default `VECTOR_STORE` is now `sqlite-vec`. `get_store()` falls back to
+      it, and the eval / lens-eval defaults follow the app default so
+      `enq eval` and `enq lens-eval --corpus` run against the production
+      engine with no flag. Qdrant stays selectable behind the interface until
+      the cutover deletes it. (178 tests green before the next step)
+- [x] `index/bootstrap.py`: `read_embed_version()` reads `index_meta` via
+      plain SQLite; `needs_reindex()` is true when no version is recorded;
+      `ensure_index()` rebuilds both collections through the configured
+      VectorStore and records the version, then clears the store cache so the
+      long-lived search path gets a clean instance. `api.serve()` runs it
+      before uvicorn with row progress to the engine log. Fresh installs and
+      qdrant-era upgrades both reach a working index with no manual reindex;
+      later starts are a cheap read and a no-op.
+- [x] Verified fresh install end-to-end through `serve()` on a throwaway
+      HOME: bootstrap messages printed, empty index built, `embed_version`
+      recorded. Unit tests cover the empty fresh DB, the seeded upgrade
+      (index built from existing chunks, search finds the artifact, source
+      chunks untouched - no data loss), a missing-vec-tables adoption, and
+      idempotency. (4 tests)
+- [x] `enq doctor` / `GET /doctor`: artifact/chunk/facet counts, the four
+      index table counts, recorded embedding version, whether it matches the
+      running model, `index_in_sync` (index chunk rows vs the chunks table),
+      and a single `healthy` bit. Tests: synced-current reports healthy;
+      a chunk the index never saw flips sync off; a stale embed version
+      flips version-current off while row sync stays true. (3 tests)
+
+Next: step 6 [HUMAN] STOP - confirm with the maintainer before the four
+irreversible deletions (store_qdrant.py, qdrant-client dep, QDRANT_URL/
+QDRANT_PATH config, the on-disk Qdrant data), then the doc updates (single-
+process note, whole-library heavy-query note, README/AGENTS engine rewrite).
