@@ -1,6 +1,6 @@
 # Enqueue — implementation progress
 
-Status: **Part 2 (Lens view) in progress** - phases 5-13 done, phase 14 next
+Status: **Part 2 (Lens view) DONE** - phases 5-17 complete; open [HUMAN] items: evals/lens/topics.yaml, the D4 threshold pick, and the human lens test (evals/lens/HUMAN-TEST-LENS.md)
 
 ## Plan
 
