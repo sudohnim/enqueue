@@ -988,7 +988,9 @@ def lens_eval(
             # that total. Pinned artifacts never enter the buckets, so the
             # bucket total is total_count - pinned.
             unrelated_total += out["total_count"] - len(expected)
-            per_topic.append({"topic": topic["topic"], "correct": tp, "true": len(expected), "fp": fp})
+            per_topic.append(
+                {"topic": topic["topic"], "correct": tp, "true": len(expected), "fp": fp}
+            )
 
         placed = tp_total / true_total if true_total else 0.0
         wrong = fp_total / unrelated_total if unrelated_total else 0.0
@@ -1031,12 +1033,17 @@ def lens_eval(
                 fg=typer.colors.RED,
             )
             raise typer.Exit(2)
-        typer.secho(f"correct placement {placed:.3f} at operating threshold {default_threshold:g} holds 5% floor {floor:.3f}", fg=typer.colors.GREEN)
+        typer.secho(
+            f"correct placement {placed:.3f} at operating threshold {default_threshold:g} holds 5% floor {floor:.3f}",
+            fg=typer.colors.GREEN,
+        )
 
     if json_path:
         out = Path(json_path).resolve()
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"rows": rows, "topics": topics_list}, indent=2), encoding="utf-8")
+        out.write_text(
+            json.dumps({"rows": rows, "topics": topics_list}, indent=2), encoding="utf-8"
+        )
         typer.echo(f"\nWrote results to {out}")
 
     for attr, val in originals.items():

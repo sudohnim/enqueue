@@ -164,7 +164,9 @@ class TestLensEndpoint:
 
 
 class TestLensStreamingHttp:
-    def test_endpoint_streams_split_before_judgments(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_endpoint_streams_split_before_judgments(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         # The HTTP contract: POST /lens is a text/event-stream whose first
         # event is the split. The client opens the wall before the model
         # finishes judging.
@@ -188,7 +190,9 @@ class TestLensStreamingHttp:
             split = _json.loads(first.strip())
             assert split["stage"] == "split"
             assert len(split["judging"]) == 1
-            assert any(e["stage"] == "done" for e in (_json.loads(r.strip()) for r in rest if r.strip()))
+            assert any(
+                e["stage"] == "done" for e in (_json.loads(r.strip()) for r in rest if r.strip())
+            )
 
 
 class TestSaveLensView:
@@ -206,7 +210,10 @@ class TestSaveLensView:
                 "/exhibits",
                 json={
                     "lens": lens,
-                    "exhibit": {"suggested_name": name, "through_line": "The city feeds itself from above."},
+                    "exhibit": {
+                        "suggested_name": name,
+                        "through_line": "The city feeds itself from above.",
+                    },
                     "kept": kept,
                 },
             )
@@ -220,7 +227,9 @@ class TestSaveLensView:
 
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
-        out = _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2))
+        out = _consume_lens(
+            LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2)
+        )
 
         judged = [e for e in out["related"] if e.get("placard")]
         assert len(judged) >= 1
@@ -230,7 +239,10 @@ class TestSaveLensView:
                 "/exhibits",
                 json={
                     "lens": out["lens"],
-                    "exhibit": {"suggested_name": "Rooftop gardens", "through_line": "The city feeds itself from above."},
+                    "exhibit": {
+                        "suggested_name": "Rooftop gardens",
+                        "through_line": "The city feeds itself from above.",
+                    },
                     "kept": judged,
                 },
             )
@@ -252,7 +264,9 @@ class TestSaveLensView:
 
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
-        out = _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2))
+        out = _consume_lens(
+            LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2)
+        )
         judged = [e for e in out["related"] if e.get("placard")]
 
         with TestClient(app) as client:
