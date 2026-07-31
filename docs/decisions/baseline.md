@@ -167,3 +167,26 @@ answerability boundary, not a retrieval failure.
 The ~5-10s latency is the chat LLM synthesis, not retrieval. Raw search
 latency (measured in eval) is p50 13ms / p95 17ms. If chat speed matters,
 the model/endpoint choice for synthesis is the lever, not retrieval.
+
+### Queue blocked behind slow CPU embedding (found while verifying Test 3 fix)
+
+Verifying the Lumo fix in the running app exposed a second, pre-existing bug:
+the ingest queue never drained, so the refetched body was never indexed. The
+serial queue is documented as a deliberate design ("one worker, not a pool"),
+but its docstring also assumed embedding "costs nothing at this scale". A
+363-chunk PDF broke that assumption: dense embedding of bge-base-en-v1.5 on
+CPU measured ~0.6 s/chunk, so one artifact blocked the queue for 8-15 minutes
+and everything behind it (new saves, backfilled link bodies) waited.
+
+**Resolved 2026-07-31 (`dfa0944`):** embeddings run on CoreML when available,
+with CPU fallback (`ENQ_EMBED_PROVIDERS` overrides). CoreML vectors are
+bit-identical to CPU (max abs diff 0.0), so this is a pure speedup and cannot
+move the retrieval baseline — verified: eval output identical to
+`qdrant-baseline.json` (41/50, R@1 0.700, MRR 0.893). With it, `reprocess`
+drains in ~3.6 minutes instead of effectively never, and search "Lumo mascot"
+returns the Proton article at score 1.000.
+
+Notes for Phase 3: the queue remains serial by design; the embedding provider
+is now a config surface (`ENQ_EMBED_PROVIDERS`), and per-artifact index cost
+is bounded by chunk count, so the "costs nothing at this scale" assumption
+should be re-audited when the engine interface lands.

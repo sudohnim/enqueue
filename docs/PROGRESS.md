@@ -82,4 +82,26 @@ Networking is unchanged: the page was already fetched for previews; now its
 body is kept instead of discarded. `local_only` and `auto_preview=off` links
 still never fetch.
 
-But first: **[HUMAN]** — maintainer runs `evals/HUMAN-TEST-SEARCH.md` and records answers.
+## Phase 2A-followup — Queue blocked behind slow embedding ✅
+
+Verifying the Lumo fix in the running app exposed a second, pre-existing bug:
+`saved link not searchable` was not just the missing body — the ingest queue
+never drained, so the refetched body was never indexed.
+
+Root cause: the serial queue + CPU embedding (bge-base-en-v1.5, ~0.6 s/chunk on
+this machine). A 363-chunk PDF added by the human test blocked the entire queue
+for 8–15 minutes; new saves and backfilled link bodies waited behind it.
+
+Fix (`dfa0944`):
+
+- [x] `embed._providers()`: CoreMLExecutionProvider first, CPU fallback
+      (`ENQ_EMBED_PROVIDERS` overrides)
+- [x] CoreML vectors are bit-identical to CPU (max abs diff 0.0), so the
+      retrieval baseline is untouched — verified: eval 41/50, R@1 0.700,
+      MRR 0.893, identical to `qdrant-baseline.json`
+- [x] `onnxruntime` promoted to a direct dependency (imported directly)
+- [x] Verified live: `reprocess` drains in ~3.6 min (was: effectively never),
+      and search "Lumo mascot" returns the article at score 1.000
+
+Trafilatura-embedded text is unchanged; this is purely an inference-provider
+speedup.
