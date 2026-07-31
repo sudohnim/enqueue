@@ -50,6 +50,7 @@ Return:
   strength  1 to 5, how strongly
   evidence  a span quoted verbatim from the artifact that supports the judgment
   placard   why this is in this room, 8 to 25 words
+  reason    why it does not belong, a few words; only when verdict is no
 
 The evidence must appear in the artifact exactly. Do not paraphrase it.
 

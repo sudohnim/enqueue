@@ -74,7 +74,7 @@ class Facet(BaseModel):
             hit = {w.strip(".,;:'\"()").lower() for w in words} & banned
             if hit:
                 raise ValueError(
-                    f"level {int(self.level)} facet still names {sorted(hit)}; "
+                    f"level {self.level.value} facet still names {sorted(hit)}; "
                     "restate it so it would apply to something unrelated"
                 )
 
@@ -83,7 +83,7 @@ class Facet(BaseModel):
             for phrase in SELF_REFERENCE:
                 if phrase in lowered:
                     raise ValueError(
-                        f"level {int(self.level)} facet refers to the artifact "
+                        f"level {self.level.value} facet refers to the artifact "
                         f"({phrase!r}); state the claim itself, as though it were true "
                         "independently of anything you were given"
                     )
@@ -119,6 +119,9 @@ class Judgment(BaseModel):
     matched_facet_id: str | None = None
     evidence: str = Field(default="", description="Verbatim span from the artifact.")
     placard: str = Field(default="", description="Why this is in this room. 8 to 25 words.")
+    reason: str | None = Field(
+        default=None, description="Why it does not belong, a few words; for rejected verdicts."
+    )
 
     @model_validator(mode="after")
     def check(self, info: ValidationInfo):

@@ -50,14 +50,24 @@ def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
         judgments = list(pool.map(lambda c: _judge(lens, c, texts[c["artifact_id"]]), candidates))
 
     by_id = {c["artifact_id"]: c for c in candidates}
-    belongs, rejected, failed = [], 0, 0
+    belongs: list[dict] = []
+    rejected: list[dict] = []
+    failed_ids = [
+        candidate["artifact_id"]
+        for candidate, judgment in zip(candidates, judgments, strict=True)
+        if judgment is None
+    ]
 
     for judgment in judgments:
         if judgment is None:
-            failed += 1
             continue
         if judgment.verdict is not Verdict.BELONGS:
-            rejected += 1
+            rejected.append(
+                {
+                    "artifact_id": judgment.artifact_id,
+                    "reason": judgment.reason,
+                }
+            )
             continue
         candidate = by_id.get(judgment.artifact_id)
         belongs.append(
@@ -75,7 +85,12 @@ def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
     belongs.sort(key=lambda j: j["strength"], reverse=True)
     return {
         "kept": belongs[:keep],
+        # Everything that passed, before the cutoff threw the tail away. The wall's
+        # topic view needs the whole passing list, not just the top of it.
+        "relevant": belongs,
         "rejected": rejected,
-        "failed": failed,
+        "rejected_count": len(rejected),
+        "failed_ids": failed_ids,
+        "failed": len(failed_ids),
         "considered": len(candidates),
     }

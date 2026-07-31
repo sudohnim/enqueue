@@ -5178,7 +5178,7 @@
       '<div class="meta">' +
       r.kept.length +
       " kept &middot; " +
-      r.rejected +
+      (r.rejected_count ?? 0) +
       " rejected &middot; " +
       r.considered +
       " considered</div>";
