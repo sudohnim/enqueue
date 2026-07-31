@@ -55,8 +55,8 @@ def process(artifact_id: str) -> dict:
         row is not None
         and row["kind"] == "link"
         and not row["local_only"]
-        and preview.get(artifact_id) is None
         and preview.auto_enabled()
+        and preview.needs_fetch(artifact_id)
     ):
         preview.fetch_quietly(artifact_id)
 

@@ -144,6 +144,17 @@ body (product details, mascots, error codes) is not findable in a saved link.
 indexing acceptable? This is a product decision with privacy/cost implications
 (`auto_preview` and `local_only` already gate network access).
 
+**Resolved 2026-07-31:** links are now fully indexed. `preview.fetch()` extracts
+the article body (trafilatura, ≥200 chars) and stores it in `page_text`, the
+same table PDFs use; `chunk_artifact` prefers the body and falls back to the
+four preview fields only when extraction yields nothing. Existing links heal
+themselves: `needs_fetch()` returns true for a preview without a body, so the
+next pass through the ingest queue refetches them (e.g. via `POST /reprocess`).
+The network request and the `auto_preview`/`local_only` gates are unchanged —
+the page was already being fetched; now its body is kept instead of discarded.
+Verified against the real Proton article: 7,172 chars extracted, containing
+"mascot", "kitten", and "Lumo". The human-test Test 3 case is fixed.
+
 ### Test 4b observation
 
 "How many pages is Commitment and Community?" found the item but could not

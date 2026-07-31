@@ -20,6 +20,7 @@ dependencies = [
     "pymupdf>=1.28.0",
     "python-multipart>=0.0.32",
     "alembic>=1.13",
+    "trafilatura>=1.8",
 ]
 
 [project.optional-dependencies]

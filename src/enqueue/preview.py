@@ -15,13 +15,16 @@ Two rules hold this together.
    which is worse than the single request the default was avoiding, and silent.
    So the picture is downloaded during this same fetch and stored in the ordinary
    blob store. What is kept is a content hash, never an address.
-2. **The response is data, not instructions.** It is parsed for four fields and the
-   rest is discarded. Nothing from a page reaches a model except through the same
-   secret scan and the same chunking every other artifact goes through.
+2. **The response is data, not instructions.** It is parsed for four fields, and
+   where the page is an article its body is kept so the link is findable by what
+   it says rather than by its metadata alone. Nothing from a page reaches a model
+   except through the same secret scan and the same chunking every other artifact
+   goes through.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
@@ -36,6 +39,12 @@ from .ingest import queue as ingest_queue
 MAX_BYTES = 512 * 1024
 TIMEOUT = 10.0
 MAX_REDIRECTS = 5
+
+# The article body of a saved link is kept so the link is findable by what it says,
+# not just by the four preview fields. Below this length the "body" is a landing
+# page or a script shell, which would pollute the index with nothing worth finding.
+BODY_MIN_CHARS = 200
+_BODY_EXTRACTOR = "trafilatura"
 
 # Honest and plain. Not a browser string: pretending to be Chrome to get better
 # markup is the beginning of the crawler-evasion path this product does not take.
@@ -103,26 +112,28 @@ def _clean(value: str | None, limit: int = 500) -> str | None:
 
 def _read_capped(url: str) -> tuple[str, str]:
     """Return (content_type, text), never reading more than MAX_BYTES."""
-    with httpx.Client(
-        follow_redirects=True,
-        timeout=TIMEOUT,
-        max_redirects=MAX_REDIRECTS,
-        http2=True,
-        headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
-    ) as client:
-        with client.stream("GET", url) as response:
-            response.raise_for_status()
-            header = response.headers.get("content-type", "")
-            content_type = header.split(";")[0].strip()
-            encoding = header.split("charset=")[-1].strip() if "charset=" in header else "utf-8"
+    with (
+        httpx.Client(
+            follow_redirects=True,
+            timeout=TIMEOUT,
+            max_redirects=MAX_REDIRECTS,
+            http2=True,
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
+        ) as client,
+        client.stream("GET", url) as response,
+    ):
+        response.raise_for_status()
+        header = response.headers.get("content-type", "")
+        content_type = header.split(";")[0].strip()
+        encoding = header.split("charset=")[-1].strip() if "charset=" in header else "utf-8"
 
-            chunks, total = [], 0
-            for chunk in response.iter_bytes():
-                chunks.append(chunk)
-                total += len(chunk)
-                if total >= MAX_BYTES:
-                    break
-            raw = b"".join(chunks)[:MAX_BYTES]
+        chunks, total = [], 0
+        for chunk in response.iter_bytes():
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= MAX_BYTES:
+                break
+        raw = b"".join(chunks)[:MAX_BYTES]
 
     return content_type, raw.decode(encoding or "utf-8", errors="replace")
 
@@ -136,8 +147,9 @@ def parse(html: str, url: str) -> dict:
     def meta(keys) -> str | None:
         for attr, value in keys:
             tag = soup.find("meta", attrs={attr: value})
-            if tag and tag.get("content"):
-                return _clean(tag["content"])
+            content = tag.get("content") if tag else None
+            if isinstance(content, str) and content:
+                return _clean(content)
         return None
 
     title = meta(TITLE_KEYS)
@@ -167,28 +179,30 @@ def _fetch_image(url: str) -> tuple[str, str] | None:
         return None
 
     try:
-        with httpx.Client(
-            follow_redirects=True,
-            timeout=TIMEOUT,
-            max_redirects=MAX_REDIRECTS,
-            # Same protocol as the page fetch. A picture served from the same host that
-            # just answered would otherwise be requested over a connection that host
-            # has already decided it does not like.
-            http2=True,
-            headers={"User-Agent": USER_AGENT, "Accept": "image/*"},
-        ) as client:
-            with client.stream("GET", url) as response:
-                response.raise_for_status()
-                mime = response.headers.get("content-type", "").split(";")[0].strip().lower()
-                if mime not in IMAGE_MIMES:
-                    return None
+        with (
+            httpx.Client(
+                follow_redirects=True,
+                timeout=TIMEOUT,
+                max_redirects=MAX_REDIRECTS,
+                # Same protocol as the page fetch. A picture served from the same host that
+                # just answered would otherwise be requested over a connection that host
+                # has already decided it does not like.
+                http2=True,
+                headers={"User-Agent": USER_AGENT, "Accept": "image/*"},
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
+            response.raise_for_status()
+            mime = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            if mime not in IMAGE_MIMES:
+                return None
 
-                chunks, total = [], 0
-                for chunk in response.iter_bytes():
-                    total += len(chunk)
-                    if total > MAX_IMAGE_BYTES:
-                        return None
-                    chunks.append(chunk)
+            chunks, total = [], 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    return None
+                chunks.append(chunk)
         data = b"".join(chunks)
     except Exception:  # noqa: BLE001 - a missing picture is not a failed preview
         return None
@@ -246,6 +260,64 @@ def _why(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"[:200]
 
 
+def _extract_body(html: str, url: str) -> str:
+    """The article body out of a page's HTML, or "" when there is no article.
+
+    Pure, so it is testable without a network. A page that defeats extraction (a
+    login wall, a JavaScript shell, a landing page) is not a failure; it is simply
+    a link with nothing to say beyond its preview, and the preview metadata stays
+    the whole of its indexable text.
+    """
+    import trafilatura
+
+    try:
+        text = trafilatura.extract(
+            html,
+            url=url,
+            include_comments=False,
+            include_links=False,
+            include_tables=True,
+            favor_recall=False,
+        )
+    except Exception:  # noqa: BLE001 - a page that defeats extraction is not a failure
+        return ""
+    if not text:
+        return ""
+    collapsed = "\n\n".join(line.strip() for line in text.splitlines() if line.strip())
+    if len(collapsed) < BODY_MIN_CHARS:
+        return ""
+    return collapsed
+
+
+def has_body(artifact_id: str) -> bool:
+    """True when the fetched page's article body is stored and chunkable."""
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM page_text WHERE artifact_id = ? AND page = 0 AND extractor = ?",
+            (artifact_id, _BODY_EXTRACTOR),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def needs_fetch(artifact_id: str) -> bool:
+    """True when fetching would add something: no preview yet, or a preview that
+    succeeded but never captured the article body.
+
+    This is what lets an old link heal itself: it was previewed before bodies were
+    kept, so it has metadata and no body, and the next pass through the ingest queue
+    fetches it again and captures what it now can.
+    """
+    row = get(artifact_id)
+    if row is None:
+        return True
+    if row["status"] != "ok":
+        return False
+    return not has_body(artifact_id)
+
+
 def get(artifact_id: str) -> dict | None:
     conn = db.get_conn()
     try:
@@ -281,7 +353,7 @@ def _store(artifact_id: str, fields: dict) -> None:
         )
 
 
-def fetch(artifact_id: str) -> dict:
+def fetch(artifact_id: str) -> dict | None:
     """Make the one request. Raises KeyError if the artifact is not a saved link."""
     from .capture import title_from_url
     from .notes import _record_secrets
@@ -319,6 +391,7 @@ def fetch(artifact_id: str) -> dict:
         return get(artifact_id)
 
     fields = parse(html, url)
+    body_text = _extract_body(html, url)
 
     # One more request, inside the same act the person already chose, and then the
     # bytes are ours. A missing or refused picture is not a failed preview.
@@ -339,13 +412,31 @@ def fetch(artifact_id: str) -> dict:
                 "UPDATE artifacts SET title = ?, updated_at = ? WHERE id = ?",
                 (fields["title"], _now(), artifact_id),
             )
+        # The article body is kept so the link is findable by what it says, not just
+        # by its four preview fields. Page 0 is the convention page_text uses for
+        # text without real pages; the extractor name separates it from PDF pages.
+        if body_text:
+            conn.execute(
+                "DELETE FROM page_text WHERE artifact_id = ? AND page = 0 AND extractor = ?",
+                (artifact_id, _BODY_EXTRACTOR),
+            )
+            conn.execute(
+                "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,0,?,?)",
+                (artifact_id, body_text, _BODY_EXTRACTOR),
+            )
         # Hard rule 6: scanned before this text can reach a model through chunking.
         _record_secrets(
             conn,
             artifact_id,
-            "\n".join(
+            "\n\n".join(
                 filter(
-                    None, (fields.get("title"), fields.get("description"), fields.get("site_name"))
+                    None,
+                    (
+                        fields.get("title"),
+                        fields.get("description"),
+                        fields.get("site_name"),
+                        body_text,
+                    ),
                 )
             ),
         )
@@ -361,10 +452,8 @@ def fetch_quietly(artifact_id: str) -> None:
     is not worth interrupting a capture for. The row records the reason either way, so
     the artifact can still explain itself when it is opened.
     """
-    try:
+    with contextlib.suppress(Exception):
         fetch(artifact_id)
-    except Exception:  # noqa: BLE001 - the stored row carries the reason
-        pass
 
 
 def auto_enabled() -> bool:

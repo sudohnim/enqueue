@@ -60,4 +60,26 @@ Each phase below links to the relevant checkbox in the plan file.
 Phase 3 — Swappable engine interface (sqlite-vec integration).
 Phase 4 — Encrypted sync.
 
+## Phase 2A — Link body indexing ✅
+
+Human search test Test 3 (Lumo mascot) exposed that saved links were searchable
+only by preview metadata (title + description); anything in the article body
+was unfindable. Fixed:
+
+- [x] `preview.fetch()` extracts the article body (trafilatura, ≥200 chars) and
+  stores it in `page_text` (page 0, extractor `trafilatura`)
+- [x] `chunk_artifact` prefers the body for links, falls back to the four
+  preview fields when extraction yields nothing
+- [x] `needs_fetch()`: links with a preview but no body are refetched on the
+  next ingest pass, so existing links heal themselves
+- [x] Hard rule 6: body text goes through the same secret scan as all other text
+- [x] Tests: 6 new (extraction quality, script-shell refusal, full fetch path,
+  chunk-from-body, needs_fetch states)
+- [x] Verified against the real Proton Lumo article: 7,172 chars extracted
+  containing "mascot", "kitten", "Lumo"
+
+Networking is unchanged: the page was already fetched for previews; now its
+body is kept instead of discarded. `local_only` and `auto_preview=off` links
+still never fetch.
+
 But first: **[HUMAN]** — maintainer runs `evals/HUMAN-TEST-SEARCH.md` and records answers.

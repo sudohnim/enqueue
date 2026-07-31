@@ -102,10 +102,7 @@ def _segments(markdown: str) -> list[tuple[str, str]]:
             buf.extend(blanks)  # body under a heading belongs to it
             blanks = []
         else:
-            if mode != "prose":
-                flush()
-                mode = "prose"
-            elif blanks:
+            if mode != "prose" or blanks:
                 flush()
                 mode = "prose"
 
@@ -161,9 +158,18 @@ def chunk_artifact(conn, artifact_id: str) -> int:
     # bare URL into something the index can match. Other captures wait for extraction.
     body = row["body"] or ""
     if not body.strip() and row["kind"] == "link":
-        from ..preview import text_for_index
+        # Prefer the article body when the fetch captured one; fall back to the four
+        # preview fields for pages that defeated extraction (JS shells, paywalls).
+        page = conn.execute(
+            "SELECT text FROM page_text WHERE artifact_id = ? AND page = 0",
+            (artifact_id,),
+        ).fetchone()
+        if page:
+            body = page["text"]
+        else:
+            from ..preview import text_for_index
 
-        body = text_for_index(artifact_id)
+            body = text_for_index(artifact_id)
     if not body.strip() and row["kind"] == "file":
         page = conn.execute(
             "SELECT text FROM page_text WHERE artifact_id = ? AND page = 0", (artifact_id,)

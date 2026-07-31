@@ -65,7 +65,6 @@ class TestFacetValidators:
     """The validators are the quality floor. Test that they reject, not that they pass."""
 
     def _facet(self, level, statement, nouns=frozenset()):
-        from pydantic import ValidationError
 
         from enqueue.schemas import Facet
 

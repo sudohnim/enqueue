@@ -21,6 +21,29 @@ PAGE = """
 </head><body><p>ignored</p></body></html>
 """
 
+ARTICLE = """
+<html><head>
+  <title>Lumo's not a kitten anymore | Proton</title>
+  <meta property="og:title" content="Lumo's not a kitten anymore">
+  <meta property="og:description" content="The Lumo mascot has grown up.">
+</head><body>
+<nav>Home Mail Drive VPN</nav>
+<main><article>
+<h1>Lumo's not a kitten anymore</h1>
+<p>When we launched Lumo a year ago, our ambition was to create an experience
+that was private, approachable, and easy to use.</p>
+<p>We designed Lumo to match these virtues - a trusted and independent mascot
+that protects your personal conversations.</p>
+<p>The product has evolved rapidly since then, and with today's release of
+Lumo 2.0, it is now more capable, intelligent, and versatile than ever.</p>
+<p>Rather than redesigning the character from scratch, we chose to evolve it
+so it reflects where Lumo is today: more capable, more sophisticated.</p>
+<p>And just like the product itself, this evolution is only the beginning.</p>
+</article></main>
+<footer>Copyright Proton 2026</footer>
+</body></html>
+"""
+
 
 class TestParse:
     def test_prefers_open_graph_over_the_title_tag(self):
@@ -54,6 +77,7 @@ class TestParse:
         preview._store(made["id"], {"status": "ok", **stored})
 
         row = preview.get(made["id"])
+        assert row is not None
         assert "cdn.example.com" not in repr(row)
         assert row["image_hash"] is None
 
@@ -117,3 +141,91 @@ class TestIndexing:
         made = capture.link("https://example.com/x")
         preview._store(made["id"], {"status": "failed", "error": "the publisher answered 403"})
         assert preview.text_for_index(made["id"]) == ""
+
+
+class TestArticleBody:
+    def test_extract_body_keeps_the_article_not_the_nav(self):
+        body = preview._extract_body(ARTICLE, "https://proton.me/blog/lumo-2-design")
+        assert "kitten" in body
+        assert "mascot" in body
+        assert "Home" not in body
+        assert len(body) >= preview.BODY_MIN_CHARS
+
+    def test_extract_body_refuses_a_script_shell(self):
+        body = preview._extract_body(
+            "<html><head><title>X</title></head><body><div id='root'></div></body></html>",
+            "https://a.co/p",
+        )
+        assert body == ""
+
+    def test_a_fetched_article_stores_its_body(self, store, quiet_queue, monkeypatch):
+        """The real fetch path: page comes back, body is kept, preview fields stored."""
+        made = capture.link("https://proton.me/blog/lumo-2-design")
+        monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", ARTICLE))
+
+        preview.fetch(made["id"])
+
+        assert preview.has_body(made["id"]) is True
+        assert preview.needs_fetch(made["id"]) is False
+
+    def test_a_bodyless_page_still_indexes_by_preview(self, store, quiet_queue, monkeypatch):
+        """A page that defeats extraction stays findable by its metadata."""
+        made = capture.link("https://a.co/landing")
+        shell = (
+            "<html><head><title>Landing</title>"
+            "<meta property='og:description' content='A page that says nothing.'></head>"
+            "<body><div id='root'></div></body></html>"
+        )
+        monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", shell))
+
+        preview.fetch(made["id"])
+
+        assert preview.has_body(made["id"]) is False
+        assert preview.text_for_index(made["id"]) == "Landing\n\nA page that says nothing."
+
+    def test_a_link_with_a_body_chunks_from_the_article(self, store, quiet_queue, monkeypatch):
+        made = capture.link("https://proton.me/blog/lumo-2-design")
+        monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", ARTICLE))
+        preview.fetch(made["id"])
+
+        from enqueue.ingest import chunk as chunk_mod
+
+        with db.transaction() as conn:
+            assert chunk_mod.chunk_artifact(conn, made["id"]) > 0
+            texts = [
+                r["text"]
+                for r in conn.execute(
+                    "SELECT text FROM chunks WHERE artifact_id = ?", (made["id"],)
+                ).fetchall()
+            ]
+        assert any("mascot" in t for t in texts)
+
+    def test_needs_fetch(self, store, quiet_queue):
+        made = capture.link("https://example.com/x")
+
+        # No preview yet: fetching would add something.
+        assert preview.needs_fetch(made["id"]) is True
+
+        # A failed preview is not worth retrying automatically.
+        preview._store(made["id"], {"status": "failed", "error": "the publisher answered 403"})
+        assert preview.needs_fetch(made["id"]) is False
+
+        # A successful preview without a body is an old link that can heal itself.
+        preview._store(
+            made["id"],
+            {
+                "status": "ok",
+                "title": "Antifragility",
+                "description": "Things that gain from disorder.",
+                "site_name": "Example",
+            },
+        )
+        assert preview.needs_fetch(made["id"]) is True
+
+        # Once the body is there, fetching again adds nothing.
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,0,?,'trafilatura')",
+                (made["id"], "x" * 300),
+            )
+        assert preview.needs_fetch(made["id"]) is False
