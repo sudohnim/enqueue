@@ -89,3 +89,35 @@ For anything you marked BAD, also write down:
 - what you saw instead
 
 That last part is the most useful thing you can give us.
+
+## Running it without the app (API-only)
+
+The wall UI for the lens is currently reverted; the endpoint is fully
+live. Every test below works against the engine directly. The engine is
+http://127.0.0.1:8787 when running normally.
+
+A topic split is a POST with an SSE reply:
+
+    curl -N -X POST http://127.0.0.1:8787/lens \
+      -H 'Content-Type: application/json' \
+      -d '{"lens":"YOUR TOPIC","judge_top":10}'
+
+The first event (stage: split) lists related/other/pinned artifact ids
+and titles immediately. Judgment events follow with the placard under
+the `placard` field. The last event (stage: done) has the totals.
+
+The eight tests map like this:
+
+- Test 1 and 6 (right things, rephrased): read the `related` ids and
+  titles in the split event. Try a second topic that means the same
+  thing and compare which ids came back.
+- Test 2 (misses): read the `other` list, first ten entries.
+- Test 3 (wrong in): read the `related` list.
+- Test 4 (placards): read the `placard` fields on the judgment events.
+- Test 5 (a topic you have nothing about): the split event comes back
+  with an empty `related` list.
+- Test 7 (speed): time the first split with `time curl`; run the same
+  lens again - the second one returns instantly with every judgment
+  already cached (no model calls).
+- Test 8 (nothing changed): `curl http://127.0.0.1:8787/artifacts`
+  before and after a split, and confirm the same ordering both times.
