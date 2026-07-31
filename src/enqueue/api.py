@@ -177,10 +177,12 @@ def artifact_text(artifact_id: str) -> dict:
 
 
 ORDERINGS = {
-    # When it arrived. This is the museum's default, because the promise is that
-    # things land in the order you found them: a note you reopen and fix a typo in has
-    # not become newer, and re-sorting on every autosave makes the wall unstable
-    # under your own reading.
+    # When it was last touched. This is the wall's default: saving, editing, or
+    # annotating an artifact bumps `updated_at`, so the wall rises to what you
+    # are working on. "Ingested" is the museum-shelf order, the order things
+    # landed in; it stays available but is not the default. (The previous text
+    # here claimed ingested was the default; the endpoint has always defaulted
+    # to touched, and notes.py says the wall is ordered by last touch.)
     "ingested": "created_at DESC",
     "touched": "updated_at DESC",
     "title": "title COLLATE NOCASE ASC",
