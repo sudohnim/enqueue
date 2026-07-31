@@ -8,6 +8,7 @@ Binds to 127.0.0.1 only, on every milestone.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from importlib import resources
@@ -21,6 +22,7 @@ from .index.store import get_store
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
 from .ingest import queue as ingest_queue
+from .retrieve import lens as lens_mod
 
 app = FastAPI(title="Enqueue engine", version="0.2.0")
 
@@ -186,7 +188,54 @@ ORDERINGS = {
     "ingested": "created_at DESC",
     "touched": "updated_at DESC",
     "title": "title COLLATE NOCASE ASC",
+    # Relevance has no SQL ordering: there is no score column on the wall. The
+    # control advertises it so the ordering control can express the lens mode;
+    # POST /lens serves it, and the plain wall rejects it with a clear message.
+    "relevance": None,
 }
+
+
+_ARTIFACT_COLUMNS = (
+    "id, kind, title, body, source_url, mime, filename, created_at,"
+    " updated_at, local_only, pinned, status, pages"
+)
+
+
+def _link_images(conn, link_ids: list[str]) -> set[str]:
+    """Which of these links have a preview image. One query, no per-row opens."""
+    if not link_ids:
+        return set()
+    # json_each keeps the IN clause fully parameterized: the ids travel as one
+    # JSON string argument, never interpolated into the SQL text.
+    return {
+        r["artifact_id"]
+        for r in conn.execute(
+            "SELECT artifact_id FROM link_previews"
+            " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+            " AND image_hash IS NOT NULL",
+            (json.dumps(link_ids),),
+        )
+    }
+
+
+def _wall_item(conn, row, with_image: set[str] | None = None) -> dict:
+    """One wall row, with everything the client renders, no second call.
+
+    The page-count lazy fill opens the PDF once, then writes the count back so
+    no listing ever pays for that row again (the file cannot change, so the
+    stored count cannot go stale).
+    """
+    item = dict(row)
+    item["excerpt"] = _excerpt(item.pop("body") or "", row["title"])
+    item["has_blob"] = row["mime"] is not None and row["kind"] != "link"
+    if row["kind"] != "pdf":
+        item.pop("pages", None)
+    elif item["pages"] is None:
+        item["pages"] = capture.page_count(row["id"])
+    if row["kind"] == "link":
+        item["has_preview_image"] = row["id"] in (with_image or set())
+    return item
+
 
 
 @app.get("/artifacts")
@@ -205,6 +254,12 @@ def list_artifacts(
     if order not in ORDERINGS:
         raise HTTPException(
             status_code=400, detail=f"order must be one of {sorted(ORDERINGS)}"
+        ) from None
+    if order == "relevance":
+        # Relevance is not a SQL ordering: there is no score column on the wall. The
+        # control advertises it, POST /lens serves it, and the plain wall says so.
+        raise HTTPException(
+            status_code=400, detail="relevance ordering needs a lens; use POST /lens"
         ) from None
 
     # `pinned` splits the wall into two shelves that are paged separately: the kept
@@ -226,39 +281,9 @@ def list_artifacts(
             (limit, offset),
         ).fetchall()
 
-        # Both of these were per-row lookups that each opened their own connection, and
-        # the page count additionally opened the PDF itself. Measured here, that was
-        # 69x the cost of the query it was decorating, and it grew with the page rather
-        # than with anything the person could see. One query each, on the connection
-        # already in hand.
-        links = [row["id"] for row in rows if row["kind"] == "link"]
-        with_image: set[str] = set()
-        if links:
-            marks = ",".join("?" * len(links))
-            with_image = {
-                r["artifact_id"]
-                for r in conn.execute(
-                    f"SELECT artifact_id FROM link_previews WHERE artifact_id IN ({marks})"
-                    " AND image_hash IS NOT NULL",
-                    links,
-                )
-            }
+        with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
 
-        items = []
-        for row in rows:
-            item = dict(row)
-            item["excerpt"] = _excerpt(item.pop("body") or "", row["title"])
-            item["has_blob"] = row["mime"] is not None and row["kind"] != "link"
-            if row["kind"] != "pdf":
-                item.pop("pages", None)
-            elif item["pages"] is None:
-                # Captured before the count was stored. Reading it now costs one file
-                # open, and writing it back means no listing ever pays for this row
-                # again.
-                item["pages"] = capture.page_count(row["id"])
-            if row["kind"] == "link":
-                item["has_preview_image"] = row["id"] in with_image
-            items.append(item)
+        items = [_wall_item(conn, row, with_image) for row in rows]
 
         total = conn.execute(f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}").fetchone()["n"]
         return {
@@ -272,6 +297,81 @@ def list_artifacts(
         }
     finally:
         conn.close()
+
+
+@app.post("/lens")
+def apply_lens_view(req: LensRequest) -> dict:
+    """Split the wall into related and other for a topic, ephemerally.
+
+    The lens is stateless: nothing here writes an exhibit, bumps `updated_at`,
+    or modifies any artifact (the judgment cache is the one table written, and
+    that is its purpose). Clearing the lens is a client-side act - drop the
+    lens state and re-request with the normal ordering; the wall returns to
+    touched order because the lens left no trace.
+    """
+    result = lens_mod.apply_lens(req.lens, judge_top=req.judge_top)
+
+    # Same fields the wall renders, so the client needs no second call. The
+    # bucketing rows carry lens fields; the wall fields come from the DB in
+    # one query.
+    all_rows = result["related"] + result["other"] + result["pinned"]
+    conn = db.get_conn()
+    try:
+        ids = [e["artifact_id"] for e in all_rows]
+        wall: dict[str, dict] = {}
+        if ids:
+            for r in conn.execute(
+                f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts"
+                " WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps(ids),),
+            ):
+                wall[r["id"]] = _wall_item(
+                    conn, r, _link_images(conn, [r["id"]] if r["kind"] == "link" else [])
+                )
+    finally:
+        conn.close()
+
+    for entry in all_rows:
+        entry.update(wall.get(entry["artifact_id"], {}))
+
+    # Page related and other independently, the way pinned and unpinned page
+    # separately on the wall. Both advance by the same window; each reports
+    # its own total and more flag so the client knows when either ends.
+    def page(items: list[dict]) -> tuple[list[dict], int, bool]:
+        return (
+            items[req.offset : req.offset + req.limit],
+            len(items),
+            req.offset + req.limit < len(items),
+        )
+
+    related, related_total, related_more = page(result["related"])
+    other, other_total, other_more = page(result["other"])
+
+    return {
+        "lens": result["lens"],
+        "coverage": result["coverage"],
+        "threshold": result["threshold"],
+        "scored_count": result["scored_count"],
+        "total_count": result["total_count"],
+        "judged_count": result["judged_count"],
+        "model_calls": result["model_calls"],
+        "related": related,
+        "related_total": related_total,
+        "related_more": related_more,
+        "other": other,
+        "other_total": other_total,
+        "other_more": other_more,
+        "pinned": result["pinned"],
+        "offset": req.offset,
+        "limit": req.limit,
+    }
+
+
+class LensRequest(BaseModel):
+    lens: str
+    judge_top: int | None = None
+    limit: int = 60
+    offset: int = 0
 
 
 @app.get("/artifacts/{artifact_id}")

@@ -112,3 +112,28 @@ The lens response carries `coverage`, `scored_count`, `total_count`, and
 - `scored_count` is how many artifacts received at least one indexed hit;
   `total_count` is every non-deleted artifact; `judged_count` is how many
   got a model judgment.
+
+## The lens endpoint (Phase 11, decision D2)
+
+`POST /lens` accepts `{lens, judge_top, limit, offset}` and returns
+`related`, `other`, `pinned`, and the coverage fields. Each entry carries the
+same fields the wall renders (kind, title, excerpt, has_blob, pages,
+preview-image flags, timestamps, pinned), so the client needs no second call.
+
+- **Pins (D2):** pinned artifacts stay pinned, above both sections. They are
+  not sorted into related or other and are not judged - a topic view is
+  temporary and must not disturb deliberate pins, and judging a shelf that
+  does not move would spend model calls on nothing.
+- **Paging:** related and other page independently, the way pinned and
+  unpinned page separately on the wall; each reports its own total and more
+  flag.
+- **Ephemeral:** the lens is stateless. Applying it writes nothing to
+  `exhibits`, bumps no `updated_at`, and modifies no artifact (the judgment
+  cache is the one table written, and that is its purpose). Clearing the lens
+  is therefore a client-side act - drop the lens state and re-request with
+  the normal ordering; the wall returns to touched order because the lens
+  left no trace. Tested: updated_at identical before and after, zero exhibit
+  rows.
+- **Orderings:** `ORDERINGS` gains `relevance` so the ordering control can
+  express the mode; the plain wall rejects it with a clear message because
+  there is no score column to sort by.

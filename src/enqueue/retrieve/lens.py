@@ -6,10 +6,12 @@ judgment for each, reusing the Phase 8 cache. Everything below the slice is
 bucketed by the score threshold alone. The cost of a lens is therefore
 bounded by `judge_top` model calls, never by the library size.
 
-Every non-deleted artifact ends up in exactly one bucket: `related` (judged
-belonging, or unjudged above threshold) or `other`. A judgment that failed is
-not a judgment: that artifact is marked `judged: false` and bucketed by score
-(decision D3 - never claim a judgment that did not happen).
+Every non-deleted, non-pinned artifact ends up in exactly one bucket:
+`related` (judged belonging, or unjudged above threshold) or `other`. A
+judgment that failed is not a judgment: that artifact is marked
+`judged: false` and bucketed by score (decision D3 - never claim a judgment
+that did not happen). Pinned artifacts stay pinned, above both sections
+(decision D2); they are not bucketed and not judged.
 """
 
 from __future__ import annotations
@@ -39,6 +41,9 @@ def apply_lens(lens: str, judge_top: int | None = None, score_cap: int | None = 
             for r in conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL")
         }
         chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()["n"]
+        pinned_ids = {
+            r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL AND pinned = 1")
+        }
     finally:
         conn.close()
 
@@ -48,7 +53,16 @@ def apply_lens(lens: str, judge_top: int | None = None, score_cap: int | None = 
     scores = score_all(lens, cap=score_cap)
     window = chunk_count if score_cap is None else min(score_cap, chunk_count)
     coverage = "complete" if window >= chunk_count else "partial"
-    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    ranked = [
+        (aid, score)
+        for aid, score in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        # D2: pins stay pinned, above both sections. A topic view is temporary
+        # and must not disturb deliberate pins, so pinned artifacts are not
+        # sorted into related or other, and are not judged - their bucket is
+        # irrelevant, and judging them would spend model calls on a shelf that
+        # does not move.
+        if aid not in pinned_ids
+    ]
 
     # Stage two: judge only the top of the ranking.
     judged_rows = ranked[:top]
@@ -103,6 +117,19 @@ def apply_lens(lens: str, judge_top: int | None = None, score_cap: int | None = 
     related_unjudged.sort(key=lambda e: e["score"], reverse=True)
     other.sort(key=lambda e: e["score"], reverse=True)
 
+    # The pinned shelf, above both sections (D2). They were not judged; they
+    # carry the same shape so the client renders one kind of entry, minus the
+    # placard fields a judgment would have added.
+    pinned = [
+        {
+            "artifact_id": aid,
+            "title": titles.get(aid, "?"),
+            "score": scores.get(aid, 0.0),
+            "judged": False,
+        }
+        for aid in pinned_ids
+    ]
+
     return {
         "lens": lens,
         "threshold": threshold,
@@ -114,4 +141,5 @@ def apply_lens(lens: str, judge_top: int | None = None, score_cap: int | None = 
         "model_calls": result["considered"] - result["hits"],
         "related": related_judged + related_unjudged,
         "other": other,
+        "pinned": pinned,
     }
