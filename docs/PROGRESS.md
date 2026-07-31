@@ -1,6 +1,6 @@
 # Enqueue — implementation progress
 
-Status: **Part 1 (Foundation) in progress**
+Status: **Part 2 (Lens view) in progress** - phases 5-13 done, phase 14 next
 
 ## Plan
 
