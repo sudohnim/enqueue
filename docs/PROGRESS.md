@@ -105,3 +105,28 @@ Fix (`dfa0944`):
 
 Trafilatura-embedded text is unchanged; this is purely an inference-provider
 speedup.
+
+## Phase 3 — Swappable engine interface ✅
+
+`qdrant_client` now appears in exactly one file. Everything else goes through
+`get_store()`.
+
+- [x] `src/enqueue/index/store.py`: `VectorStore` ABC (`ensure`, `reset`,
+      `upsert_chunks`, `upsert_facets`, `drop_artifact`, `index_artifact`,
+      `search`, `search_dense`, `counts`) + `@lru_cache` `get_store()` factory
+      reading `config.VECTOR_STORE` (`ENQ_VECTOR_STORE`, default `qdrant`)
+- [x] `src/enqueue/index/store_qdrant.py`: `QdrantStore` with the old qdrant.py
+      logic copied verbatim; per-instance `lru_cache` client so the eval can
+      repoint at a test index via `get_store.cache_clear()`
+- [x] `git rm src/enqueue/index/qdrant.py`; callers updated: `api.py`,
+      `chats.py`, `retrieve/candidates.py`, `cli.py` (corpus load + eval),
+      `trash.py`, `ingest/queue.py`; tests patch
+      `enqueue.index.store.get_store`
+- [x] `enq eval` and `enq eval --ablation` produce per-query results identical
+      to `qdrant-baseline.json` and `qdrant-ablation.json` (latency jitter
+      excepted) — recorded as `evals/results/qdrant-via-interface.json`
+- [x] 102 tests pass; ruff + pyright clean across `src/` and `tests/`
+      (including pre-existing blockers: capture `int(local_only)`, ollama
+      generic `complete() -> T`, migrations spec asserts, provider overrides)
+
+Behavior unchanged. The engine interface is now a config change, not a rewrite.
