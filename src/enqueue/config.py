@@ -129,3 +129,13 @@ MIN_WORDS_FOR_FACETS = 40
 SKIP_FACETS_FOR_FOLDERS = {"snippets", "biz_"}
 
 RERANK_CONCURRENCY = 4
+
+# The lens view, stage one. Artifacts whose whole-library score sits above
+# this are provisionally related; the rest are not. PROVISIONAL: the value is
+# tuned in Phase 13 against decision D4 with a measured table, and the number
+# here is only a starting point.
+_LENS_SCORE_THRESHOLD = os.getenv("ENQ_LENS_SCORE_THRESHOLD", "0.1")
+try:
+    LENS_SCORE_THRESHOLD = float(_LENS_SCORE_THRESHOLD)
+except (TypeError, ValueError):
+    LENS_SCORE_THRESHOLD = 0.1

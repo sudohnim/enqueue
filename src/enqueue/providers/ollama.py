@@ -80,9 +80,7 @@ class OpenAICompatibleProvider:
                 self._client.chat.completions.create(
                     model=self.model,
                     response_model=response_model,
-                    max_retries=config.MODEL_RETRIES
-                    if max_retries is None
-                    else max_retries,
+                    max_retries=config.MODEL_RETRIES if max_retries is None else max_retries,
                     context=context or {},
                     messages=[
                         {"role": "system", "content": system},

@@ -71,6 +71,24 @@ Two findings worth keeping:
 
 The 100-artifact number is the "before" for the bounded design in Phases 7-9.
 
+## Stage one timing (Phase 7)
+
+`score_all(lens)` — whole-library vector + keyword scoring through the Part 1
+`VectorStore` interface, zero model calls. Measured in one process on an
+Apple Silicon Mac (CoreML embed, local Qdrant):
+
+| library | wall-clock | artifacts | nonzero |
+| --- | --- | --- | --- |
+| 100-artifact temp library | **55.6 ms** | 100 | 78 |
+| 50-artifact eval corpus | **59.6 ms** | 50 | 33 |
+
+Both well under the one-second gate (Phase 7 `[HUMAN]` stop: >1 s on 100
+artifacts; not triggered). Scores are hybrid fusion scores in the 0.0-0.6
+range on this corpus (median ~0.03, p75 ~0.06), so the provisional
+`LENS_SCORE_THRESHOLD` of 0.1 sits above the bulk noise and below the
+meaningful tail. The threshold itself stays provisional until Phase 13's
+measured table (D4).
+
 ## Decisions referenced
 
 - **D2**: how the lens wall pages and pins.

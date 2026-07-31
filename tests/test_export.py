@@ -95,9 +95,7 @@ class TestExport:
         assert len(copies) == 1
         assert copies[0].read_bytes() == b"%PDF-1.4 fake bytes"
 
-        mtimes = {
-            p.relative_to(out): p.stat().st_mtime_ns for p in out.rglob("*") if p.is_file()
-        }
+        mtimes = {p.relative_to(out): p.stat().st_mtime_ns for p in out.rglob("*") if p.is_file()}
 
         # a second run changes nothing at all: not a byte on disk
         second = export.export(out)

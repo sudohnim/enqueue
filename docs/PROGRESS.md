@@ -154,3 +154,52 @@ enqueue-specific software is needed to read them back.
 
 Live demo against the real library: 22 artifacts, 11 capture files copied,
 README index, Lumo article body present in its markdown.
+
+## Phase 5 — Record the curate pipeline ✅
+
+`docs/decisions/lens-view.md` records the four-stage pipeline
+(expand → candidates → rerank → synthesise), the observed expansion width
+(9 queries), candidates defaults (`limit=150`, `per_query=40`), the rerank
+return shape, and the wall's ordering modes (default: `touched`).
+
+- [x] Before number: one full `curate()` on 100 artifacts took **1048 s**
+      (~17.5 min) and 53 model calls (1 expand + 52 judgments); 29/52
+      judgments failed schema validation (`strength` null) and dropped
+      silently. This is the number Phases 7-9 exist to bound.
+- [x] Stale `ORDERINGS` comment fixed: it claimed `ingested` was the default;
+      the endpoint always defaulted to `touched`.
+
+## Phase 6 — Stop discarding information already computed ✅
+
+`rerank()` no longer throws away what it paid for:
+
+- [x] `rejected` is now a list of `{artifact_id, reason}` (reason when the
+      judgment gave one); the integer count lives on as `rejected_count`
+- [x] `relevant` returns the full passing list before `belongs[:keep]`
+      truncation; `kept` stays the truncated list
+- [x] `failed_ids` lists artifacts whose judgment call errored, next to the
+      existing `failed` count
+- [x] `Judgment` gains an optional `reason`; the RERANK prompt asks for it on
+      no-verdicts
+- [x] Conservation test: `len(relevant) + len(rejected) + len(failed_ids) ==
+      considered` passes for every partitioning
+- [x] Wall UI reads `rejected_count` (it rendered the old number as `N
+      rejected`, which now needs the explicit count field)
+
+## Phase 7 — Score every artifact cheaply, no model calls ✅
+
+`score_all(lens) -> dict[str, float]` in `retrieve/score.py`: one relevance
+score per non-deleted artifact via the Part 1 `VectorStore` interface, using
+the same rollup as the curate path. Zero is a score, not an omission — every
+artifact gets an entry.
+
+- [x] No language model anywhere in the file; the search limit is read from
+      the chunk and artifact counts so the whole library is covered
+- [x] Provisional `LENS_SCORE_THRESHOLD = 0.1` (env `ENQ_LENS_SCORE_THRESHOLD`),
+      above the bulk hybrid-score noise (p75 ~0.06) on this corpus; marked
+      provisional, tuned in Phase 13 against D4
+- [x] Timings (Apple Silicon, CoreML embed, local Qdrant): **55.6 ms** on the
+      100-artifact library, **59.6 ms** on the 50-artifact eval corpus — both
+      under the one-second gate
+- [x] Tests: one entry per artifact, trashed artifacts excluded, provider
+      bomb proves zero model calls, unchunked artifact scores exactly zero

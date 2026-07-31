@@ -2183,8 +2183,17 @@
 
 <div class="topbar" id="topbar">
   <div class="searchbar">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-    <input id="topsearch" type="search" placeholder="Search everything" autocomplete="off" spellcheck="false" />
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+    <input
+      id="topsearch"
+      type="search"
+      placeholder="Search everything"
+      autocomplete="off"
+      spellcheck="false"
+    />
   </div>
 </div>
 <main id="view"><div class="state">opening...</div></main>
@@ -2843,7 +2852,11 @@
       // what hid the missing ACL grant last time: the invoke failed and the window
       // simply did not move, with nothing to say why.
       bridge("window_drag").catch((err) =>
-        toast("Could not drag the window: " + String(err && err.message ? err.message : err), true),
+        toast(
+          "Could not drag the window: " +
+            String(err && err.message ? err.message : err),
+          true,
+        ),
       );
     });
   }
