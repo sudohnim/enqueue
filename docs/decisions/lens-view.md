@@ -251,3 +251,13 @@ so the mechanics are known-good before the human run:
 - Test 8 analog: clear the lens returned to the untouched wall; the
   ephemeral tests assert updated_at is byte-identical and no exhibit row is
   written.
+
+## UI revert decision (maintainer, after Part 2)
+
+The lens wall UI was reverted to its Phase 14 state (commit 728842d). The
+maintainer's scope for the lens work is the search and retrieval backend,
+not the wall interface; UI changes happen when UI work is scheduled. The
+backend is untouched by the revert: POST /lens (SSE), the judgment cache,
+enq lens-eval and lens-cache, and all tests. The UI lives in commit
+2cd2390 and is recovered from there. The human lens test runs API-only;
+evals/lens/HUMAN-TEST-LENS.md has the curl walkthrough.
