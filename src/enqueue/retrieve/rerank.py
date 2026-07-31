@@ -11,20 +11,54 @@ lens, and sequential turns that into hours, which produces an evaluation nobody 
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 
 from .. import config, db
 from ..prompts import RERANK
 from ..providers.base import get_provider
 from ..schemas import Judgment, Verdict
+from . import judgments
 from .candidates import artifact_text
 
 
 def _judge(lens: str, candidate: dict, text: str) -> Judgment | None:
+    # A cached judgment is the whole point of Phase 8: the same lens, artifact
+    # and model are not judged twice. Rebuilding the Judgment from the row
+    # re-runs the validators, which is also the staleness check - an artifact
+    # edited since the row was written no longer contains the evidence
+    # verbatim, so the cached row is invalid and the artifact is judged fresh.
+    cached = judgments.get(lens, candidate["artifact_id"])
+    if cached is not None:
+        # Rebuilding through model_validate re-runs the validators, with the
+        # current artifact text as context. That is also the staleness check:
+        # an artifact edited since the row was written no longer contains the
+        # evidence verbatim, the rebuild fails, and the artifact is judged
+        # fresh. The lens is deliberately absent from the context: the
+        # lens-word placard gate is a fresh-judgment quality rule, not a
+        # staleness signal, and a row that was accepted for this lens once is
+        # not stale just because it shares a common word with the lens.
+        try:
+            return Judgment.model_validate(
+                {
+                    "artifact_id": candidate["artifact_id"],
+                    "verdict": Verdict.BELONGS if cached["belongs"] else Verdict.NO,
+                    "strength": cached["strength"],
+                    "placard": cached["placard"],
+                    "evidence": cached["evidence"],
+                },
+                context={"artifact_text": text},
+            )
+        except Exception:  # noqa: BLE001 - a stale row is a cache miss, not a failure
+            return _judge_fresh(lens, candidate, text)
+    return _judge_fresh(lens, candidate, text)
+
+
+def _judge_fresh(lens: str, candidate: dict, text: str) -> Judgment | None:
     # Retries come from config, and are low. A failed judgment is a dropped candidate,
     # not a crisis, and on the placeholder model the validators fail often enough that
     # extra attempts turn ten candidates into thirty-odd calls for nothing.
     try:
-        return get_provider().complete(
+        judgment = get_provider().complete(
             system=RERANK,
             user=(
                 f"Theme: {lens}\n\n"
@@ -37,6 +71,19 @@ def _judge(lens: str, candidate: dict, text: str) -> Judgment | None:
         )
     except Exception:  # noqa: BLE001 - a failed judgment is a dropped candidate
         return None
+
+    # Write-through. The judgment succeeded; a failure to remember it must not
+    # turn a good judgment into a dropped candidate.
+    with suppress(Exception):  # noqa: BLE001 - cache write failures are not judgment failures
+        judgments.put(
+            lens,
+            judgment.artifact_id,
+            judgment.verdict is Verdict.BELONGS,
+            judgment.strength,
+            judgment.placard,
+            judgment.evidence,
+        )
+    return judgment
 
 
 def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:

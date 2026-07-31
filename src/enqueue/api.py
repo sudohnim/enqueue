@@ -456,6 +456,22 @@ def rebuild_chunks() -> dict:
     return chunk_mod.chunk_all()
 
 
+@app.get("/lens-cache/stats")
+def lens_cache_stats() -> dict:
+    """How many judgments are remembered, across how many lenses."""
+    from .retrieve import judgments
+
+    return judgments.stats()
+
+
+@app.post("/lens-cache/clear")
+def lens_cache_clear() -> dict:
+    """Forget every cached judgment. Returns the number of rows removed."""
+    from .retrieve import judgments
+
+    return {"cleared": judgments.clear()}
+
+
 @app.post("/facet-gate")
 def facet_gate() -> dict:
     return facets_mod.apply_eligibility_gate()

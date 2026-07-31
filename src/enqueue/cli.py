@@ -256,6 +256,22 @@ def facet_gate() -> None:
     _echo(_call("POST", "/facet-gate"))
 
 
+@app.command("lens-cache")
+def lens_cache(action: str = typer.Argument(..., help="clear | stats")) -> None:
+    """Inspect or forget the cached lens judgments.
+
+    clear  delete every cached judgment, so the next curate of a topic re-judges
+    stats  report row count and how many distinct lenses are remembered
+    """
+    if action == "clear":
+        _echo(_call("POST", "/lens-cache/clear"))
+    elif action == "stats":
+        _echo(_call("GET", "/lens-cache/stats"))
+    else:
+        typer.secho(f"unknown action: {action} (expected clear or stats)", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Test corpus commands (eval harness)
 # ---------------------------------------------------------------------------

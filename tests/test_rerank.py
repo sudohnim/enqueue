@@ -13,18 +13,33 @@ from enqueue.schemas import Judgment, Verdict
 
 
 class _Scripted:
-    """One judgment per call, in the order rerank asks for them."""
+    """One judgment per artifact, looked up by id.
 
-    def __init__(self, script):
-        self.script = list(script)
+    Rerank judges candidates on a thread pool, so a list that is popped in
+    completion order would race: the worker that picks a candidate second can
+    call `complete` first, and the scripted replies would land on the wrong
+    artifacts. Keying by artifact id (which the prompt always carries) makes
+    the script deterministic no matter the scheduling.
+    """
+
+    def __init__(self, by_id):
+        self.by_id = by_id
         self.calls = 0
 
     def complete(self, system, user, response_model, context=None, max_retries=None):
         self.calls += 1
-        reply = self.script.pop(0)
+        aid = _artifact_id(user)
+        reply = self.by_id[aid]
         if isinstance(reply, Exception):
             raise reply
         return reply
+
+
+def _artifact_id(user: str) -> str:
+    for line in user.splitlines():
+        if line.startswith("Artifact id: "):
+            return line.removeprefix("Artifact id: ")
+    raise AssertionError(f"no artifact id in prompt: {user!r}")
 
 
 def _judgment(artifact_id: str, verdict: Verdict, reason: str | None = None) -> Judgment:
@@ -50,17 +65,19 @@ def _candidates(n: int) -> list[dict]:
 
 
 class TestConservation:
-    def test_every_considered_artifact_is_accounted_for(self, monkeypatch):
+    def test_every_considered_artifact_is_accounted_for(self, store, quiet_queue, monkeypatch):
+        # store: rerank now writes judgments to the cache, and the cache must
+        # never touch the real library's database during a test.
         candidates = _candidates(6)
         provider = _Scripted(
-            [
-                _judgment("a000", Verdict.BELONGS),
-                _judgment("a001", Verdict.NO, reason="about something else"),
-                Exception("the model fell over"),
-                _judgment("a003", Verdict.ADJACENT, reason="tangentially related"),
-                _judgment("a004", Verdict.BELONGS),
-                Exception("the model fell over"),
-            ]
+            {
+                "a000": _judgment("a000", Verdict.BELONGS),
+                "a001": _judgment("a001", Verdict.NO, reason="about something else"),
+                "a002": Exception("the model fell over"),
+                "a003": _judgment("a003", Verdict.ADJACENT, reason="tangentially related"),
+                "a004": _judgment("a004", Verdict.BELONGS),
+                "a005": Exception("the model fell over"),
+            }
         )
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
 
@@ -79,15 +96,15 @@ class TestConservation:
         assert [r["artifact_id"] for r in out["kept"]] == ["a000", "a004"]
         assert len(out["relevant"]) + out["rejected_count"] + len(out["failed_ids"]) == 6
 
-    def test_kept_is_the_top_of_relevant(self, monkeypatch):
+    def test_kept_is_the_top_of_relevant(self, store, quiet_queue, monkeypatch):
         candidates = _candidates(4)
         provider = _Scripted(
-            [
-                _judgment("a000", Verdict.BELONGS),
-                _judgment("a001", Verdict.BELONGS),
-                _judgment("a002", Verdict.BELONGS),
-                _judgment("a003", Verdict.BELONGS),
-            ]
+            {
+                "a000": _judgment("a000", Verdict.BELONGS),
+                "a001": _judgment("a001", Verdict.BELONGS),
+                "a002": _judgment("a002", Verdict.BELONGS),
+                "a003": _judgment("a003", Verdict.BELONGS),
+            }
         )
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
 
@@ -97,9 +114,9 @@ class TestConservation:
         assert out["rejected_count"] == 0
         assert out["failed_ids"] == []
 
-    def test_rejected_still_carries_the_reason_when_absent(self, monkeypatch):
+    def test_rejected_still_carries_the_reason_when_absent(self, store, quiet_queue, monkeypatch):
         candidates = _candidates(1)
-        provider = _Scripted([_judgment("a000", Verdict.NO, reason=None)])
+        provider = _Scripted({"a000": _judgment("a000", Verdict.NO, reason=None)})
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
 
         out = rerank.rerank("any lens", candidates, keep=2)
