@@ -203,3 +203,30 @@ artifact gets an entry.
       under the one-second gate
 - [x] Tests: one entry per artifact, trashed artifacts excluded, provider
       bomb proves zero model calls, unchunked artifact scores exactly zero
+
+## Phase 8 — Remember judgments so the same topic is instant next time ✅
+
+- [x] Migration `0009` creates `lens_judgments`: `lens_key`, `artifact_id`,
+      `belongs`, `strength`, `placard`, `evidence`, `model_version`,
+      `created_at`; primary key is `(lens_key, artifact_id, model_version)`
+      with an index on `lens_key`
+- [x] `lens_key()` in `retrieve/judgments.py`: lowercase, trimmed,
+      whitespace-collapsed, sha256-hashed; capitalization/spacing variants
+      produce the same key (tested)
+- [x] `rerank._judge` consults the cache before calling the provider and
+      writes successful judgments through; a row for a different
+      `model_version` is treated as absent, so a model switch re-judges
+- [x] Staleness: the cache-hit rebuild re-validates the evidence verbatim
+      against the current artifact text, so an edited artifact falls through
+      to a fresh judgment; the lens is deliberately absent from the rebuild
+      context because the lens-word placard gate is a quality rule, not a
+      staleness signal
+- [x] `enq lens-cache clear` and `enq lens-cache stats` (thin CLI over
+      `POST /lens-cache/clear`, `GET /lens-cache/stats`)
+- [x] Tests: key normalization, zero-call replay, re-judge on model change,
+      stale-row fallthrough, clear. Test scripts now key by artifact id: the
+      thread pool exposed a latent pop-order race in the list-based scripted
+      providers
+
+Note: the running engine predates this phase; restart it (`bin/relaunch`) for
+the cache to go live.
