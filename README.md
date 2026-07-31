@@ -99,6 +99,8 @@ All commands except `serve`, `migrate`, and `version` are thin HTTP clients over
 | `enq chat "question" --chat-id "ID"` | Ask the collection something. Starts a new conversation or continues one. |
 | `enq chats --limit 20` | List conversations, newest first. |
 | `enq curate "lens" --keep 15 --pool 150 --save` | Build a "room" on a theme. Slow; involves multiple model calls. |
+| `enq lens-eval --corpus --baseline 0.933` | Measure how the lens threshold places true matches (CI guard once a pipeline exists). |
+| `enq lens-cache clear\|stats` | Clear or inspect the lens judgment cache. |
 | `enq facets --limit 0 --redo` | Generate conceptual facets for eligible artifacts. Slow, resumable. |
 | `enq facet-gate` | Decide which artifacts are eligible for facet generation. |
 | `enq index` | Embed all chunks and facets into the Qdrant vector store. |
@@ -175,6 +177,9 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link automatically fetches its preview. |
 | `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. |
 | `ENQ_TRASH_DAYS` | `30` | Days before a trashed artifact is permanently destroyed. Minimum 1. |
+| `ENQ_LENS_SCORE_THRESHOLD` | `0.1` | Unjudged artifacts score above this land in a lens's related section; below, in other. Provisional (decision D4); lower keeps more in (noisier), higher is stricter (misses more). |
+| `ENQ_LENS_JUDGE_TOP` | `20` | How many artifacts get a model judgment per lens application. The cost bound: model calls never exceed this and never scale with library size. |
+| `ENQ_LENS_JUDGE_TOP_MAX` | `100` | Ceiling one lens application may request. Raise it to let Check More go deeper, at the cost of more model calls per request. |
 | `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/relaunch`. |
 
 Settings are also writable through the API (`PATCH /settings`) and stored in `~/.enqueue-poc/settings.json` with `0600` permissions.
@@ -303,7 +308,9 @@ Key endpoints:
 - `POST /artifacts/{id}/preview` - Fetch link preview
 - `GET /search?q=...` - Hybrid search
 - `POST /chats` - Start or continue a conversation
-- `POST /curate` - Build a room
+- `POST /curate` - Build a room (deep: expansion, candidate pool, model judgments, synthesis)
+- `POST /lens` - Split the wall by a topic, streamed (cheap: free scoring, bounded judgments; SSE)
+- `POST /exhibits` - Save a room or a lens view as an exhibit
 - `GET /settings` - Read all settings + storage info
 - `PATCH /settings` - Update settings
 - `PUT /settings/api-key` - Store API key in Keychain

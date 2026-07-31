@@ -61,7 +61,10 @@ If you bump one for a release, bump the other to match, but a mismatch is not a 
 9. **There is no SSE for curate.**
 `/curate` returns a plain JSON response.
 Streaming was discussed but is not built and is not currently planned.
-Do not add SSE plumbing unless asked.
+Do not add SSE plumbing to curate unless asked. The lens view is the one
+streaming surface: `POST /lens` returns a Server-Sent Events stream (split
+first, then placards as judgments land). Do not model other endpoints on
+it unless asked.
 
 10. **Browser extension and Android are future milestones.**
 No code for either exists in this repo.
@@ -189,6 +192,9 @@ One line per file, describing its job.
 | `retrieve/candidates.py` | Multi-vector search across chunks and facets. Rolls up to artifacts. |
 | `retrieve/rerank.py` | Concurrent judgment per candidate. Generates placard here, not separately. |
 | `retrieve/curate.py` | Orchestrates expand -> candidates -> rerank -> synthesise. Saves exhibits. |
+| `retrieve/score.py` | Stage one of the lens: scores every artifact with vector + keyword search, zero model calls. |
+| `retrieve/lens.py` | The two-stage lens: free scoring over everything, bounded judgments on the top slice. |
+| `retrieve/judgments.py` | The lens judgment cache: per (lens, artifact, model), written through on every judgment. |
 
 ### Index
 
@@ -268,6 +274,26 @@ One line per file, describing its job.
 3. **Rerank** (`retrieve/rerank.py`): concurrent judgment per candidate. Model returns verdict (belongs/adjacent/no), strength, evidence, placard. Only "belongs" survives.
 4. **Synthesise** (`retrieve/curate.py`): model reads kept artifacts, returns through_line, groupings, tensions, thin flag.
 
+### Lens (two-stage topic view)
+
+1. **Score everything for free** (`retrieve/score.py`): vector + keyword
+   search over the whole library, no model calls. Every non-deleted,
+   non-pinned artifact gets one score; zero means no match, not absence.
+2. **Judge only the top slice** (`retrieve/lens.py`): the top `judge_top`
+   by score get a model judgment each, reusing the judgment cache. Model
+   calls are capped by `judge_top` and do not grow with library size.
+3. **Bucket by threshold**: everything below the slice is related above
+   `LENS_SCORE_THRESHOLD`, other below it. A failed judgment is not a
+   judgment: the artifact is marked `judged: false` and bucketed by score.
+4. **Coverage is said, not assumed**: when the stage-one window was capped
+   below the chunk count, the response says `partial` and the wall must not
+   label the second section as not related.
+
+A lens is ephemeral: it writes nothing but the judgment cache, bumps no
+`updated_at`, and leaves no exhibit row. An exhibit is the saved form: Save
+This View posts the lens and its judged related list through the existing
+`/exhibits` path, with the lens as the immutable theme.
+
 ### Chat
 
 1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact/exhibit) do not search. Everything scope uses hybrid search on chunks + facet hits.
@@ -296,6 +322,7 @@ Migrations run automatically at startup via Alembic.
 | `page_text` | extracted text per PDF page | derived, rebuildable |
 | `exhibits` | saved curated rooms | theme is immutable after creation |
 | `exhibit_members` | artifact in exhibit | placard, evidence, strength, rank, origin, ejected_at |
+| `lens_judgments` | lens judgment cache | keyed by (lens_key, artifact_id, model_version); rebuilt on edit |
 | `link_previews` | what a saved link turns out to be | status, title, description, site_name, image_hash |
 | `chats` | conversations | scoped to everything/artifact/exhibit. pinned. |
 | `chat_messages` | one turn | append-only. grounded flag. |
@@ -358,6 +385,9 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
+| `ENQ_LENS_SCORE_THRESHOLD` | `0.1` | Provisional (D4). Below this, unjudged artifacts go to other. Lower keeps more in related (more noise); higher is stricter (more misses). |
+| `ENQ_LENS_JUDGE_TOP` | `20` | How many artifacts get a model judgment per lens. The cost bound: model calls never exceed this, never scale with library size. |
+| `ENQ_LENS_JUDGE_TOP_MAX` | `100` | The ceiling one lens application may request. Raising it lets a person check more of a big library at the cost of more calls per request. |
 
 ### Where secrets live
 
@@ -435,6 +465,8 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq index` | Embed chunks and facets into Qdrant |
 | `enq search <query> [--limit N]` | Hybrid search, no model calls |
 | `enq curate <lens> [--keep N] [--pool N] [--save]` | Build a room on a theme |
+| `enq lens-eval [--corpus] [--baseline F]` | Measure threshold placement of true matches |
+| `enq lens-cache clear\|stats` | Manage the lens judgment cache |
 | `enq note [--body TEXT]` | Write a note |
 | `enq link <url>` | Save a URL (nothing is fetched) |
 | `enq artifacts [--limit N]` | List artifacts, newest first |
@@ -502,6 +534,7 @@ POST   /chats/{id}/messages          one turn
 PATCH  /chats/{id}                   rename / pin
 DELETE /chats/{id}                   the one deletable object
 POST   /curate                       build a room. Returns JSON (not SSE)
+POST   /lens                         stream a topic split: split first, placards as judgments land (SSE)
 POST   /exhibits                     save a room that was already built
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
