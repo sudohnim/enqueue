@@ -1,0 +1,131 @@
+Loaded 50 queries from /Users/minhmai/enqueue/evals/queries.yaml
+
+=== Mode: sqlite-vec ===
+PASS  Rank    Lat  Query
+------------------------------------------------------------
+PASS     1  0.46s  t_only_01
+PASS     1  0.01s  t_only_02
+PASS     1  0.01s  t_only_03
+PASS     1  0.02s  t_only_04
+PASS     1  0.01s  t_only_05
+PASS     1  0.02s  t_only_06
+PASS     1  0.01s  t_only_07
+PASS     1  0.01s  t_only_08
+PASS     1  0.01s  t_only_09
+PASS     1  0.01s  t_only_10
+PASS     6  0.01s  para_01
+PASS     1  0.01s  para_02
+PASS     1  0.01s  para_03
+PASS     1  0.01s  para_04
+PASS     4  0.01s  para_05
+PASS     1  0.01s  para_06
+PASS     1  0.01s  para_07
+PASS     1  0.01s  para_08
+PASS     1  0.01s  para_09
+PASS     1  0.01s  para_10
+PASS     1  0.02s  rare_01
+PASS     1  0.02s  rare_02
+PASS     1  0.02s  rare_03
+PASS     1  0.02s  rare_04
+PASS     1  0.01s  rare_05
+PASS     1  0.02s  phrase_01
+PASS     1  0.01s  phrase_02
+PASS     1  0.02s  phrase_03
+PASS     1  0.02s  phrase_04
+PASS     1  0.02s  phrase_05
+PASS     1  0.01s  partial_01
+PASS     1  0.01s  partial_02
+PASS     1  0.01s  partial_03
+PASS     1  0.01s  partial_04
+PASS     1  0.01s  partial_05
+PASS     6  0.02s  vague_01
+PASS     1  0.01s  vague_02
+PASS     7  0.01s  vague_03
+PASS     1  0.01s  vague_04
+PASS     1  0.01s  vague_05
+PASS    10  0.01s  vague_06
+FAIL     -  0.02s  none_01
+FAIL     -  0.01s  none_02
+FAIL     -  0.02s  none_03
+FAIL     -  0.02s  none_04
+FAIL     -  0.01s  none_05
+FAIL     -  0.02s  none_06
+FAIL     -  0.02s  none_07
+FAIL     -  0.02s  none_08
+PASS     1  0.01s  regr_01
+
+--- Summary [sqlite-vec] ---
+  Total queries:    50
+  Pass:             42
+  Fail:             8
+  Recall@1:         0.740
+  Recall@10:        0.840
+  MRR (non-zero):   0.901
+  Nothing-OK:       0/8
+  p50 latency:      0.015s
+  p95 latency:      0.017s
+
+=== Mode: sqlite-vec-dense ===
+PASS  Rank    Lat  Query
+------------------------------------------------------------
+PASS     1  0.01s  t_only_01
+PASS     1  0.01s  t_only_02
+PASS     1  0.01s  t_only_03
+PASS     1  0.01s  t_only_04
+PASS     1  0.01s  t_only_05
+PASS     1  0.01s  t_only_06
+PASS     1  0.01s  t_only_07
+PASS     1  0.01s  t_only_08
+PASS     1  0.01s  t_only_09
+PASS     1  0.01s  t_only_10
+PASS     6  0.01s  para_01
+PASS     1  0.01s  para_02
+PASS     1  0.01s  para_03
+PASS     1  0.01s  para_04
+PASS     4  0.01s  para_05
+PASS     1  0.01s  para_06
+PASS     1  0.01s  para_07
+PASS     1  0.01s  para_08
+PASS     1  0.01s  para_09
+PASS     1  0.01s  para_10
+PASS     1  0.01s  rare_01
+PASS     6  0.02s  rare_02
+PASS     1  0.01s  rare_03
+PASS     1  0.01s  rare_04
+PASS     1  0.01s  rare_05
+PASS     1  0.02s  phrase_01
+PASS     1  0.02s  phrase_02
+PASS     1  0.02s  phrase_03
+PASS     1  0.02s  phrase_04
+PASS     1  0.02s  phrase_05
+PASS     1  0.01s  partial_01
+PASS     1  0.01s  partial_02
+PASS     1  0.01s  partial_03
+PASS     1  0.01s  partial_04
+PASS     1  0.01s  partial_05
+PASS     6  0.02s  vague_01
+PASS     1  0.01s  vague_02
+PASS     7  0.01s  vague_03
+PASS     1  0.01s  vague_04
+PASS     1  0.01s  vague_05
+PASS    10  0.01s  vague_06
+FAIL     -  0.02s  none_01
+FAIL     -  0.01s  none_02
+FAIL     -  0.02s  none_03
+FAIL     -  0.02s  none_04
+FAIL     -  0.01s  none_05
+FAIL     -  0.02s  none_06
+FAIL     -  0.02s  none_07
+FAIL     -  0.02s  none_08
+PASS     1  0.01s  regr_01
+
+--- Summary [sqlite-vec-dense] ---
+  Total queries:    50
+  Pass:             42
+  Fail:             8
+  Recall@1:         0.720
+  Recall@10:        0.840
+  MRR (non-zero):   0.881
+  Nothing-OK:       0/8
+  p50 latency:      0.014s
+  p95 latency:      0.017s

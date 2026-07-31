@@ -342,3 +342,41 @@ ever copied between engines.
 Tests: 3 reindex/eval-readiness tests pass; EZE-verified on a throwaway
 HOME (sandboxed data dir): run 1 builds 2 chunks + 1 facet with progress,
 run 2 leaves counts identical, embed version `bge-base-en-v1.5` recorded.
+
+## Phase 19 — Bake-off (hard gate) ✅
+
+Measured on the synthetic eval corpus (50 artifacts, 125 chunks) indexed by
+both engines from the same rows. Full write-up in
+`docs/decisions/bakeoff.md`; results in `evals/results/sqlite-vec.json`,
+`sqlite-vec-ablation.txt`, `lens-sqlite-vec.json`, `lens-qdrant.json`.
+
+- [x] `enq test-corpus reset` + `load` with `ENQ_VECTOR_STORE=sqlite-vec`
+      (corpus verification passed; index built inside the test database,
+      embed version recorded)
+- [x] `enq reindex` with sqlite-vec exercised on a sandboxed HOME; the
+      corpus index itself is built by the same `_rebuild` path through the
+      loader
+- [x] **eval: sqlite-vec beats baseline** — 42/50 vs 41/50; recall@1 0.740
+      vs 0.700; recall@10 0.840 vs 0.820; MRR 0.901 vs 0.8931; p50 15 ms vs
+      14 ms; p95 21 ms vs 26 ms. Only the 8 expected nothing-query false
+      positives fail; `vague_06` is fixed; zero new failures
+- [x] Ablation: dense-only is indistinguishable across engines (R@1 0.72,
+      R@10 0.84); hybrid gains come from the FTS5 BM25 branch
+- [x] Lens placement at the 0.1 operating threshold: 0.911 vs 0.933
+      (-2.2 percent, inside the 5 percent gate); false positives lower on
+      sqlite-vec at every threshold
+- [x] `score_all` on the 50-artifact corpus: 23-25 ms vs 59.6 ms recorded in
+      Part 2 Phase 7 (~2.5x faster)
+- [x] `regr_01` (Epictetus/Hypatia regression) passes on the new engine
+- [x] Score-scale decision: the first lens-eval run placed nothing above
+      threshold because the store's `k=60` RRF scores (max ~0.033) were an
+      order of magnitude below Qdrant's fused scale; Qdrant's local RRF is
+      1/(pos+2) over 0-based positions = 1/(rank+1), reproduced exactly by
+      fusing with `k=1`. Ordering is k-invariant, so this changed magnitudes
+      only, never rankings
+- [x] Latency gate: p95 21 ms, far under 150 ms; no quantization needed
+- [ ] [HUMAN] gates did not trigger (recall@10 and MRR improved; lens
+      within 2.2 percent; p95 under gate); the human search test
+      (`evals/HUMAN-TEST-SEARCH.md` against the new engine) is still open
+      for the maintainer, plus `evals/lens/HUMAN-TEST-LENS.md` and the D4
+      threshold pick from Part 2
