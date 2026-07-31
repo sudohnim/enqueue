@@ -1,6 +1,6 @@
 # Enqueue — implementation progress
 
-Status: **Part 2 (Lens view) DONE** - phases 5-17 complete; open [HUMAN] items: evals/lens/topics.yaml, the D4 threshold pick, and the human lens test (evals/lens/HUMAN-TEST-LENS.md)
+Status: **Part 2 (Lens view) DONE** (lens wall UI reverted by maintainer decision - backend API-only; UI recoverable from commit 2cd2390) - phases 5-17 complete; open [HUMAN] items: evals/lens/topics.yaml, the D4 threshold pick, and the human lens test (evals/lens/HUMAN-TEST-LENS.md)
 
 ## Plan
 
