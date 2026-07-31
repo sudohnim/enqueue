@@ -99,4 +99,11 @@ def get_store() -> VectorStore:
         from .store_qdrant import QdrantStore
 
         return QdrantStore()
-    raise ValueError(f"unknown VECTOR_STORE {config.VECTOR_STORE!r}; set ENQ_VECTOR_STORE=qdrant")
+    if name in ("sqlite-vec", "sqlite_vec"):
+        from .store_sqlite import SqliteVecStore
+
+        return SqliteVecStore()
+    raise ValueError(
+        f"unknown VECTOR_STORE {config.VECTOR_STORE!r}; "
+        "set ENQ_VECTOR_STORE=qdrant or sqlite-vec"
+    )
