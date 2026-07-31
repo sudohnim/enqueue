@@ -103,7 +103,7 @@ def get_store(on_progress: Callable[[int, int], None] | None = None) -> VectorSt
     `get_store.cache_clear()` exists for the eval harness, which repoints the
     store at an isolated test index within the same process.
     """
-    name = (config.VECTOR_STORE or "qdrant").strip().lower()
+    name = (config.VECTOR_STORE or "sqlite-vec").strip().lower()
     if name == "qdrant":
         from .store_qdrant import QdrantStore
 

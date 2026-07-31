@@ -649,7 +649,7 @@ RESULTS_DIR = EVALS_DIR / "results"
 @app.command()
 def eval(
     json_path: str = "",
-    engine: str = "qdrant",
+    engine: str = "sqlite-vec",
     ablation: bool = False,
 ) -> None:
     """Run every query from evals/queries.yaml against the test library.
@@ -982,7 +982,7 @@ def lens_eval(
         cfg.DB_PATH = test_db
         # The index lives inside the test database for sqlite-vec and in the
         # test qdrant directory for qdrant; readiness is checked per engine.
-        if (cfg.VECTOR_STORE or "qdrant") == "qdrant":
+        if (cfg.VECTOR_STORE or "sqlite-vec") == "qdrant":
             originals["QDRANT_PATH"] = cfg.QDRANT_PATH
             cfg.QDRANT_PATH = test_dir / "qdrant"
         get_store.cache_clear()
