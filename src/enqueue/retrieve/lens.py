@@ -1,0 +1,105 @@
+"""The two-stage lens: bounded cost, whole-library coverage.
+
+Stage one (`score_all`) ranks every artifact with vector + keyword search and
+no model calls. Stage two takes the top `judge_top` by score and gets a
+judgment for each, reusing the Phase 8 cache. Everything below the slice is
+bucketed by the score threshold alone. The cost of a lens is therefore
+bounded by `judge_top` model calls, never by the library size.
+
+Every non-deleted artifact ends up in exactly one bucket: `related` (judged
+belonging, or unjudged above threshold) or `other`. A judgment that failed is
+not a judgment: that artifact is marked `judged: false` and bucketed by score
+(decision D3 - never claim a judgment that did not happen).
+"""
+
+from __future__ import annotations
+
+from .. import config, db
+from . import rerank
+from .score import score_all
+
+
+def apply_lens(lens: str, judge_top: int | None = None) -> dict:
+    """Split the whole library into `related` and `other` for this lens.
+
+    `judge_top` overrides the default; `model_calls` reports how many
+    judgments were actually made (cache hits cost nothing), and never exceeds
+    `judge_top` no matter how big the library is.
+    """
+    top = config.LENS_JUDGE_TOP if judge_top is None else judge_top
+    threshold = config.LENS_SCORE_THRESHOLD
+
+    conn = db.get_conn()
+    try:
+        titles = {
+            r["id"]: r["title"]
+            for r in conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL")
+        }
+    finally:
+        conn.close()
+
+    # Stage one: rank the whole library, no model calls.
+    scores = score_all(lens)
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+    # Stage two: judge only the top of the ranking.
+    judged_rows = ranked[:top]
+    candidates = [
+        {"artifact_id": aid, "title": titles.get(aid, "?")} for aid, _score in judged_rows
+    ]
+    result = rerank.rerank(lens, candidates, keep=top)
+
+    belongs = {r["artifact_id"]: r for r in result["relevant"]}
+    rejected = {r["artifact_id"] for r in result["rejected"]}
+    failed = set(result["failed_ids"])
+    judged = belongs.keys() | rejected | failed
+
+    related_judged: list[dict] = []
+    related_unjudged: list[dict] = []
+    other: list[dict] = []
+
+    for aid, score in ranked:
+        entry = {
+            "artifact_id": aid,
+            "title": titles.get(aid, "?"),
+            "score": score,
+            "judged": aid in judged,
+        }
+        if aid in belongs:
+            entry.update(
+                {
+                    "strength": belongs[aid]["strength"],
+                    "placard": belongs[aid]["placard"],
+                    "evidence": belongs[aid]["evidence"],
+                }
+            )
+            related_judged.append(entry)
+        elif aid in rejected:
+            # The model said no. The model's word outranks the score: a strong
+            # score on the wrong artifact does not make it related.
+            other.append(entry)
+        elif aid in failed:
+            # The judgment call failed; D3 says no judgment happened, so this
+            # artifact is bucketed by score and carries no placard.
+            entry["judged"] = False
+            (related_unjudged if score > threshold else other).append(entry)
+        elif score > threshold:
+            related_unjudged.append(entry)
+        else:
+            other.append(entry)
+
+    # Related: judged items first, strongest placard first; then unjudged
+    # above-threshold items, best score first. Other: score descending, so
+    # near-misses appear first.
+    related_judged.sort(key=lambda e: e["strength"], reverse=True)
+    related_unjudged.sort(key=lambda e: e["score"], reverse=True)
+    other.sort(key=lambda e: e["score"], reverse=True)
+
+    return {
+        "lens": lens,
+        "threshold": threshold,
+        "judged": len(judged),
+        "model_calls": result["considered"] - result["hits"],
+        "related": related_judged + related_unjudged,
+        "other": other,
+    }

@@ -21,36 +21,40 @@ from . import judgments
 from .candidates import artifact_text
 
 
-def _judge(lens: str, candidate: dict, text: str) -> Judgment | None:
+def _judge(lens: str, candidate: dict, text: str) -> tuple[Judgment | None, bool]:
+    """A judgment for one artifact, plus whether it came from the cache.
+
+    The boolean lets callers count actual model calls (the cost budget of the
+    two-stage lens) without guessing from the judgment itself.
+    """
     # A cached judgment is the whole point of Phase 8: the same lens, artifact
     # and model are not judged twice. Rebuilding the Judgment from the row
-    # re-runs the validators, which is also the staleness check - an artifact
-    # edited since the row was written no longer contains the evidence
-    # verbatim, so the cached row is invalid and the artifact is judged fresh.
+    # re-runs the validators, with the current artifact text as context. That
+    # is also the staleness check: an artifact edited since the row was
+    # written no longer contains the evidence verbatim, the rebuild fails,
+    # and the artifact is judged fresh. The lens is deliberately absent from
+    # the context: the lens-word placard gate is a fresh-judgment quality
+    # rule, not a staleness signal, and a row that was accepted for this lens
+    # once is not stale just because it shares a common word with the lens.
     cached = judgments.get(lens, candidate["artifact_id"])
     if cached is not None:
-        # Rebuilding through model_validate re-runs the validators, with the
-        # current artifact text as context. That is also the staleness check:
-        # an artifact edited since the row was written no longer contains the
-        # evidence verbatim, the rebuild fails, and the artifact is judged
-        # fresh. The lens is deliberately absent from the context: the
-        # lens-word placard gate is a fresh-judgment quality rule, not a
-        # staleness signal, and a row that was accepted for this lens once is
-        # not stale just because it shares a common word with the lens.
         try:
-            return Judgment.model_validate(
-                {
-                    "artifact_id": candidate["artifact_id"],
-                    "verdict": Verdict.BELONGS if cached["belongs"] else Verdict.NO,
-                    "strength": cached["strength"],
-                    "placard": cached["placard"],
-                    "evidence": cached["evidence"],
-                },
-                context={"artifact_text": text},
+            return (
+                Judgment.model_validate(
+                    {
+                        "artifact_id": candidate["artifact_id"],
+                        "verdict": Verdict.BELONGS if cached["belongs"] else Verdict.NO,
+                        "strength": cached["strength"],
+                        "placard": cached["placard"],
+                        "evidence": cached["evidence"],
+                    },
+                    context={"artifact_text": text},
+                ),
+                True,
             )
         except Exception:  # noqa: BLE001 - a stale row is a cache miss, not a failure
-            return _judge_fresh(lens, candidate, text)
-    return _judge_fresh(lens, candidate, text)
+            pass
+    return _judge_fresh(lens, candidate, text), False
 
 
 def _judge_fresh(lens: str, candidate: dict, text: str) -> Judgment | None:
@@ -99,15 +103,18 @@ def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
     by_id = {c["artifact_id"]: c for c in candidates}
     belongs: list[dict] = []
     rejected: list[dict] = []
+    hits = 0
     failed_ids = [
         candidate["artifact_id"]
-        for candidate, judgment in zip(candidates, judgments, strict=True)
+        for candidate, (judgment, _cached) in zip(candidates, judgments, strict=True)
         if judgment is None
     ]
 
-    for judgment in judgments:
+    for judgment, from_cache in judgments:
         if judgment is None:
             continue
+        if from_cache:
+            hits += 1
         if judgment.verdict is not Verdict.BELONGS:
             rejected.append(
                 {
@@ -139,5 +146,8 @@ def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
         "rejected_count": len(rejected),
         "failed_ids": failed_ids,
         "failed": len(failed_ids),
+        # Judgments served from the cache. considered - hits is the number of
+        # model calls actually made, which is the cost budget of the two-stage lens.
+        "hits": hits,
         "considered": len(candidates),
     }

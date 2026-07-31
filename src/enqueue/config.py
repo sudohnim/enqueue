@@ -139,3 +139,13 @@ try:
     LENS_SCORE_THRESHOLD = float(_LENS_SCORE_THRESHOLD)
 except (TypeError, ValueError):
     LENS_SCORE_THRESHOLD = 0.1
+
+# The lens view, stage two: how many artifacts get a model judgment. The rest
+# of the library is bucketed by the score threshold alone, so the cost of a
+# lens is bounded by this number, never by the library size. Overridable per
+# request.
+_LENS_JUDGE_TOP = os.getenv("ENQ_LENS_JUDGE_TOP", "20")
+try:
+    LENS_JUDGE_TOP = int(_LENS_JUDGE_TOP)
+except (TypeError, ValueError):
+    LENS_JUDGE_TOP = 20
