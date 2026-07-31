@@ -937,4 +937,27 @@ def serve() -> None:
     except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
         print(f"[engine] could not purge the trash: {exc}")
 
+    _bootstrap_index()
+
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
+
+
+def _bootstrap_index() -> None:
+    """Build the search index on the first run, so search works immediately.
+
+    A fresh install and an upgrade from the Qdrant era both reach startup with
+    chunks in SQLite but no sqlite-vec index and no recorded embedding
+    version. Rebuild once, with progress to the engine log, then never again:
+    the recorded version makes later starts a cheap no-op. Phase 21 will give
+    the in-app surface the "Updating your search index" message; for now the
+    progress lives in the engine log.
+    """
+    from .index.bootstrap import ensure_index, needs_reindex
+
+    def _progress(indexed: int, total: int) -> None:
+        print(f"[engine] building search index: {indexed}/{total} rows", flush=True)
+
+    if needs_reindex():
+        print("[engine] building search index for the first time...", flush=True)
+        ensure_index(on_progress=_progress)
+        print("[engine] search index ready", flush=True)
