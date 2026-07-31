@@ -33,7 +33,7 @@ _idle.set()
 def process(artifact_id: str) -> dict:
     """Resolve, extract, chunk, and index one artifact. Synchronous."""
     from .. import capture, db, preview
-    from ..index import qdrant
+    from ..index.store import get_store
     from . import chunk as chunk_mod
 
     # A saved link is only an address until the publisher is asked what it is. Doing
@@ -67,11 +67,12 @@ def process(artifact_id: str) -> dict:
     with db.transaction() as conn:
         chunks = chunk_mod.chunk_artifact(conn, artifact_id)
 
-    indexed = qdrant.index_artifact(artifact_id) if chunks else 0
+    store = get_store()
+    indexed = store.index_artifact(artifact_id) if chunks else 0
     if not chunks:
         # An artifact can lose its text: a note emptied, a preview refetched and
         # failed. Its stale points have to go, or search keeps returning it.
-        qdrant.drop_artifact(qdrant.CHUNKS, artifact_id)
+        store.drop_artifact(store.CHUNKS, artifact_id)
 
     return {"artifact_id": artifact_id, "pages": pages, "chunks": chunks, "indexed": indexed}
 

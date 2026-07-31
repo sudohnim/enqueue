@@ -88,7 +88,7 @@ def link(url: str, local_only: bool = False) -> dict:
             "INSERT INTO artifacts (id, kind, title, body, source_url, content_hash,"
             " created_at, updated_at, local_only, status)"
             " VALUES (?,'link',?,NULL,?,?,?,?,?,'pending')",
-            (artifact_id, title_from_url(url), url, digest, now, now, int(local_only)),
+            (artifact_id, title_from_url(url), url, digest, now, now, 1 if local_only else 0),
         )
 
     # Returns before anything is fetched, per hard rule 7. The queue resolves it.
@@ -134,7 +134,7 @@ def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool
                 filename,
                 now,
                 now,
-                int(local_only),
+                1 if local_only else 0,
             ),
         )
 
@@ -255,7 +255,12 @@ def extract_text(artifact_id: str) -> int:
                 # else it costs a file open, which is what the wall used to pay per card.
                 _remember_pages(artifact_id, doc.page_count)
                 for number in range(doc.page_count):
-                    page = doc.load_page(number).get_text("text").strip()
+                    text = doc.load_page(number).get_text("text")
+                    # pymupdf's stubs allow list/dict returns for other flag combos;
+                    # "text" always yields a string, but the guard costs nothing.
+                    if not isinstance(text, str):
+                        continue
+                    page = text.strip()
                     if page:
                         rows.append((number, page))
         except Exception:  # noqa: BLE001 - a file that claims to be a PDF and is not

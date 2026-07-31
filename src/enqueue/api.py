@@ -8,8 +8,8 @@ Binds to 127.0.0.1 only, on every milestone.
 
 from __future__ import annotations
 
-import re
 import os
+import re
 from importlib import resources
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from . import capture, chats, config, db, notes, preview, settings, trash
+from .index.store import get_store
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
 from .ingest import queue as ingest_queue
@@ -31,7 +32,7 @@ font_dir = resources.files("enqueue").joinpath("static/fonts")
 async def serve_font(name: str) -> Response:
     font_path = os.path.join(str(font_dir), name)
     if not os.path.isfile(font_path):
-        raise HTTPException(status_code=404, detail="font not found")
+        raise HTTPException(status_code=404, detail="font not found") from None
     return FileResponse(font_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
@@ -86,9 +87,12 @@ class ArtifactFlags(BaseModel):
 @app.patch("/artifacts/{artifact_id}")
 def set_flags(artifact_id: str, req: ArtifactFlags) -> dict:
     """Flags only. An artifact's content is never edited through here."""
-    changes = {k: int(v) for k, v in req.model_dump(exclude_none=True).items()}
+    try:
+        changes = {k: int(v) for k, v in req.model_dump(exclude_none=True).items()}
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"flags must be integers: {exc}") from None
     if not changes:
-        raise HTTPException(status_code=400, detail="nothing to change")
+        raise HTTPException(status_code=400, detail="nothing to change") from None
 
     sets = ", ".join(f"{k} = ?" for k in changes)
     with db.transaction() as conn:
@@ -96,7 +100,7 @@ def set_flags(artifact_id: str, req: ArtifactFlags) -> dict:
             f"UPDATE artifacts SET {sets} WHERE id = ?", (*changes.values(), artifact_id)
         )
         if not cur.rowcount:
-            raise HTTPException(status_code=404, detail="no such artifact")
+            raise HTTPException(status_code=404, detail="no such artifact") from None
     return notes.get(artifact_id)
 
 
@@ -106,7 +110,7 @@ def bin_artifact(artifact_id: str) -> dict:
     try:
         return trash.delete(artifact_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
 
 
 @app.post("/artifacts/{artifact_id}/restore")
@@ -114,7 +118,7 @@ def restore_artifact(artifact_id: str) -> dict:
     try:
         return trash.restore(artifact_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
 
 
 @app.get("/trash")
@@ -128,9 +132,9 @@ def purge_artifact(artifact_id: str) -> dict:
     try:
         return trash.purge(artifact_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.post("/trash/purge")
@@ -163,7 +167,7 @@ def artifact_text(artifact_id: str) -> dict:
     finally:
         conn.close()
     if row is None:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
 
     # A capture has no body, so its text is whatever extraction found. A note is its
     # own text. Both come back in the same shape so the reader does not have to care.
@@ -197,15 +201,17 @@ def list_artifacts(
     a product built to refuse it.
     """
     if order not in ORDERINGS:
-        raise HTTPException(status_code=400, detail=f"order must be one of {sorted(ORDERINGS)}")
+        raise HTTPException(
+            status_code=400, detail=f"order must be one of {sorted(ORDERINGS)}"
+        ) from None
 
     # `pinned` splits the wall into two shelves that are paged separately: the kept
     # few scroll sideways, everything else scrolls down. Without the filter the pinned
     # ones would appear in both.
     where = "deleted_at IS NULL"
-    if pinned is True:
+    if pinned:
         where += " AND pinned = 1"
-    elif pinned is False:
+    elif pinned is not None:
         where += " AND pinned = 0"
 
     conn = db.get_conn()
@@ -271,7 +277,7 @@ def get_artifact(artifact_id: str) -> dict:
     try:
         detail = notes.get(artifact_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
 
     kind = detail["artifact"]["kind"]
     if kind in ("file", "image", "pdf"):
@@ -293,7 +299,7 @@ def get_artifact(artifact_id: str) -> dict:
 def get_version(artifact_id: str, version_id: str) -> dict:
     body = notes.version_body(artifact_id, version_id)
     if body is None:
-        raise HTTPException(status_code=404, detail="no such version")
+        raise HTTPException(status_code=404, detail="no such version") from None
     return {"id": version_id, "body": body}
 
 
@@ -301,7 +307,7 @@ def get_version(artifact_id: str, version_id: str) -> dict:
 def get_blob(artifact_id: str):
     found = capture.blob_path(artifact_id)
     if found is None:
-        raise HTTPException(status_code=404, detail="this artifact has no stored file")
+        raise HTTPException(status_code=404, detail="this artifact has no stored file") from None
     path, mime, filename = found
     return FileResponse(path, media_type=mime, filename=filename, content_disposition_type="inline")
 
@@ -325,7 +331,7 @@ def get_preview_image(artifact_id: str):
     """
     found = preview.image(artifact_id)
     if found is None:
-        raise HTTPException(status_code=404, detail="no picture for this link")
+        raise HTTPException(status_code=404, detail="no picture for this link") from None
     path, mime = found
     return FileResponse(
         path,
@@ -348,7 +354,7 @@ def get_page(artifact_id: str, number: int, width: int = 900):
     width = max(120, min(width, 3000))
     png = capture.render_page(artifact_id, number, width=width)
     if png is None:
-        raise HTTPException(status_code=404, detail="no such page")
+        raise HTTPException(status_code=404, detail="no such page") from None
     return Response(
         content=png,
         media_type="image/png",
@@ -391,9 +397,9 @@ def edit_body(artifact_id: str, req: BodyEdit) -> dict:
     try:
         return notes.edit(artifact_id, req.body, title=req.title)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.post("/artifacts/{artifact_id}/annotations", status_code=201)
@@ -401,9 +407,9 @@ def add_annotation(artifact_id: str, req: AnnotationCreate) -> dict:
     try:
         return notes.annotate(artifact_id, req.text, supersedes_id=req.supersedes_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.post("/capture/link", status_code=201)
@@ -411,7 +417,7 @@ def capture_link(req: LinkCreate) -> dict:
     try:
         return capture.link(req.url, local_only=req.local_only)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @app.post("/capture/upload", status_code=201)
@@ -422,7 +428,7 @@ async def capture_upload(file: UploadFile = File(...), local_only: bool = Form(F
             data, file.filename or "upload", mime=file.content_type, local_only=local_only
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @app.post("/artifacts/{artifact_id}/preview")
@@ -435,9 +441,9 @@ def fetch_preview(artifact_id: str) -> dict:
     try:
         return preview.fetch(artifact_id) or {}
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such artifact")
+        raise HTTPException(status_code=404, detail="no such artifact") from None
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 # ------------------------------------------------------------------------ derived
@@ -465,9 +471,10 @@ def generate_facets(req: FacetRequest) -> dict:
 
 @app.post("/index")
 def build_index() -> dict:
-    from .index import qdrant as qd
+    from .index.store import get_store
 
-    return {"chunks": qd.index_chunks(), "facets": qd.index_facets()}
+    store = get_store()
+    return {"chunks": store.upsert_chunks(), "facets": store.upsert_facets()}
 
 
 @app.post("/reprocess")
@@ -484,9 +491,7 @@ def ingest_wait(timeout: float = 60.0) -> dict:
 
 @app.get("/index/counts")
 def index_counts() -> dict:
-    from .index import qdrant as qd
-
-    return qd.counts()
+    return get_store().counts()
 
 
 # ------------------------------------------------------------------------- search
@@ -494,9 +499,8 @@ def index_counts() -> dict:
 
 @app.get("/search")
 def search(q: str, limit: int = 20) -> dict:
-    from .index import qdrant as qd
-
-    hits = qd.search(qd.CHUNKS, q, limit=limit)
+    store = get_store()
+    hits = store.search(store.CHUNKS, q, limit=limit)
     conn = db.get_conn()
     try:
         out = []
@@ -579,7 +583,7 @@ def create_chat(req: ChatCreate) -> dict:
     try:
         made = chats.create(scope_kind=req.scope_kind, scope_id=req.scope_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
     if req.text:
         return send_to_chat(made["chat"]["id"], ChatSend(text=req.text))
@@ -591,7 +595,7 @@ def get_chat(chat_id: str) -> dict:
     try:
         return chats.get(chat_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such chat")
+        raise HTTPException(status_code=404, detail="no such chat") from None
 
 
 @app.post("/chats/{chat_id}/messages")
@@ -599,11 +603,13 @@ def send_to_chat(chat_id: str, req: ChatSend) -> dict:
     try:
         return chats.send(chat_id, req.text)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such chat")
+        raise HTTPException(status_code=404, detail="no such chat") from None
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     except Exception as exc:  # noqa: BLE001 - a model failure is a 503, not a crash
-        raise HTTPException(status_code=503, detail=f"the curator could not answer: {exc}")
+        raise HTTPException(
+            status_code=503, detail=f"the curator could not answer: {exc}"
+        ) from None
 
 
 @app.patch("/chats/{chat_id}")
@@ -616,9 +622,9 @@ def edit_chat(chat_id: str, req: ChatEdit) -> dict:
             result = chats.rename(chat_id, req.title)
         return result
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such chat")
+        raise HTTPException(status_code=404, detail="no such chat") from None
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @app.delete("/chats/{chat_id}")
@@ -626,7 +632,7 @@ def delete_chat(chat_id: str) -> dict:
     try:
         return chats.delete(chat_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="no such chat")
+        raise HTTPException(status_code=404, detail="no such chat") from None
 
 
 class CurateRequest(BaseModel):
@@ -663,7 +669,7 @@ def save_exhibit(req: ExhibitSave) -> dict:
     try:
         return {"id": run_save(req.lens, req.exhibit, req.kept)}
     except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @app.get("/exhibits")
@@ -682,7 +688,7 @@ def get_exhibit(exhibit_id: str) -> dict:
     try:
         row = conn.execute("SELECT * FROM exhibits WHERE id = ?", (exhibit_id,)).fetchone()
         if row is None:
-            raise HTTPException(status_code=404, detail="no such exhibit")
+            raise HTTPException(status_code=404, detail="no such exhibit") from None
         members = conn.execute(
             "SELECT m.artifact_id, m.placard, m.strength, m.rank, a.title, a.kind"
             " FROM exhibit_members m JOIN artifacts a ON a.id = m.artifact_id"
@@ -723,9 +729,9 @@ def store_api_key(req: ApiKey) -> dict:
     try:
         keyring.set(req.key)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     return settings.api_key_state()
 
 
@@ -742,7 +748,7 @@ def write_settings(req: SettingsUpdate) -> dict:
     try:
         return {"settings": settings.update(req.changes), "storage": settings.storage()}
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @app.get("/secrets")

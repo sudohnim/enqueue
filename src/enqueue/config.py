@@ -115,6 +115,11 @@ except ValueError:
 QDRANT_URL = os.getenv("ENQ_QDRANT_URL", "")
 QDRANT_PATH = DATA_DIR / "qdrant-local"
 
+# The vector store backend. `qdrant` today; sqlite-vec is the other option the
+# plan pipelines in. Read as ENQ_VECTOR_STORE; `get_store()` in index/store.py
+# resolves it to an instance.
+VECTOR_STORE = os.getenv("ENQ_VECTOR_STORE", "qdrant")
+
 API_HOST = "127.0.0.1"
 API_PORT = 8787
 API_URL = f"http://{API_HOST}:{API_PORT}"

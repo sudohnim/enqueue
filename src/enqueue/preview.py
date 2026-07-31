@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -218,7 +219,7 @@ def _fetch_image(url: str) -> tuple[str, str] | None:
     return digest, mime
 
 
-def image(artifact_id: str) -> tuple[object, str] | None:
+def image(artifact_id: str) -> tuple[Path, str] | None:
     """The stored picture for a link, as (path, mime)."""
     row = get(artifact_id)
     if not row or not row.get("image_hash"):

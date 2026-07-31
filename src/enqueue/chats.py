@@ -127,7 +127,11 @@ def pin(chat_id: str, pinned: bool = True) -> dict:
     and sinking is the failure this product exists to prevent.
     """
     with db.transaction() as conn:
-        cur = conn.execute("UPDATE chats SET pinned = ? WHERE id = ?", (int(pinned), chat_id))
+        try:
+            pinned_int = int(pinned)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"pinned must be an integer: {exc}") from None
+        cur = conn.execute("UPDATE chats SET pinned = ? WHERE id = ?", (pinned_int, chat_id))
         if not cur.rowcount:
             raise KeyError(chat_id)
     return get(chat_id)
@@ -218,6 +222,8 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
     conn = db.get_conn()
     try:
         if scope_kind == "artifact":
+            if scope_id is None:
+                return []
             return _scoped_passages(conn, [scope_id])
         if scope_kind == "exhibit":
             members = [
@@ -230,17 +236,18 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             ]
             return _scoped_passages(conn, members)
 
-        from .index import qdrant
+        from .index.store import get_store
 
+        store = get_store()
         found: dict[str, dict] = {}
-        for hit in qdrant.search(qdrant.CHUNKS, question, limit=PASSAGES):
+        for hit in store.search(store.CHUNKS, question, limit=PASSAGES):
             found[hit["chunk_id"]] = {"score": hit["score"], "why": "passage"}
 
         # The other half of the abstraction gap. A question phrased as a concept can
         # match a facet whose artifact shares no vocabulary with it, which is the case
         # the whole facet ladder exists for. Pull the artifact's opening chunk in so
         # the answer has something literal to stand on.
-        for hit in qdrant.search(qdrant.FACETS, question, limit=4):
+        for hit in store.search(store.FACETS, question, limit=4):
             row = conn.execute(
                 "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
                 (hit["artifact_id"],),
@@ -281,9 +288,9 @@ def readiness() -> dict:
 
     indexed = None
     try:
-        from .index import qdrant
+        from .index.store import get_store
 
-        indexed = qdrant.counts().get("chunks")
+        indexed = get_store().counts().get("chunks")
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         return {"ready": False, "reason": f"the index is unavailable: {exc}"}
 
@@ -377,10 +384,14 @@ def _append(conn, chat_id: str, role: str, text: str, grounded: bool = False) ->
         (chat_id,),
     ).fetchone()["n"]
     message_id = str(uuid.uuid4())
+    try:
+        grounded_int = int(grounded)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"grounded must be an integer: {exc}") from None
     conn.execute(
         "INSERT INTO chat_messages (id, chat_id, ordinal, role, text, grounded, created_at)"
         " VALUES (?,?,?,?,?,?,?)",
-        (message_id, chat_id, ordinal, role, text, int(grounded), _now()),
+        (message_id, chat_id, ordinal, role, text, grounded_int, _now()),
     )
     return message_id
 

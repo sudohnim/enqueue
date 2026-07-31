@@ -20,6 +20,7 @@ identical uploads must not empty the other.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime, timedelta, timezone
 
 from . import config, db
@@ -105,13 +106,13 @@ def listing() -> dict:
 
 
 def _drop_from_index(artifact_id: str) -> None:
-    try:
-        from .index import qdrant
+    # The row is already gone from SQLite; a failure here changes nothing.
+    with contextlib.suppress(Exception):  # noqa: BLE001 - derived data, safe to leave
+        from .index.store import get_store
 
-        qdrant.drop_artifact(qdrant.CHUNKS, artifact_id)
-        qdrant.drop_artifact(qdrant.FACETS, artifact_id)
-    except Exception:  # noqa: BLE001 - the row is already gone from SQLite
-        pass
+        store = get_store()
+        store.drop_artifact(store.CHUNKS, artifact_id)
+        store.drop_artifact(store.FACETS, artifact_id)
 
 
 def purge(artifact_id: str) -> dict:

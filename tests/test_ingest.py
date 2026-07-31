@@ -64,7 +64,7 @@ class TestProperNouns:
 class TestFacetValidators:
     """The validators are the quality floor. Test that they reject, not that they pass."""
 
-    def _facet(self, level, statement, nouns=frozenset()):
+    def _facet(self, level, statement, nouns: frozenset[str] | set[str] = frozenset()):
 
         from enqueue.schemas import Facet
 

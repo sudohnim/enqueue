@@ -479,7 +479,7 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
     from . import config as cfg
     from . import db as db_mod
     from .ingest.chunk import chunk_artifact
-    from .index.qdrant import index_chunks, ensure_collections
+    from .index.store import get_store
 
     test_db = test_dir / "enqueue.db"
     test_qdrant = test_dir / "qdrant"
@@ -537,9 +537,11 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
             finally:
                 conn.close()
 
-        # Index chunks into the test Qdrant
-        ensure_collections()
-        idx_result = index_chunks()
+        # Index chunks into the isolated test store
+        get_store.cache_clear()
+        store = get_store()
+        store.ensure()
+        idx_result = store.upsert_chunks()
 
         typer.echo(
             f"  artifacts: {len(entries)}  chunks: {chunk_count}  "
@@ -609,21 +611,22 @@ def eval(
 
     # Point config at the test data
     from . import config as cfg
-    from .index import qdrant as qd
+    from .index.store import get_store
 
     originals = {"DB_PATH": cfg.DB_PATH, "QDRANT_PATH": cfg.QDRANT_PATH}
     cfg.DB_PATH = test_db
     cfg.QDRANT_PATH = test_qdrant
 
-    # Clear the cached Qdrant client so it re-opens against the test path
-    qd.client.cache_clear()
+    # A fresh store instance so it re-opens against the test path
+    get_store.cache_clear()
+    store = get_store()
 
     def _run_search(text: str, limit: int = 10, mode: str = "hybrid") -> list[dict]:
         """Run search against the test Qdrant, return deduplicated artifact IDs."""
         if mode == "dense":
-            hits = qd.search_dense(qd.CHUNKS, text, limit=limit * 3)
+            hits = store.search_dense(store.CHUNKS, text, limit=limit * 3)
         else:
-            hits = qd.search(qd.CHUNKS, text, limit=limit * 3)
+            hits = store.search(store.CHUNKS, text, limit=limit * 3)
         # Deduplicate by artifact_id, keep lowest distance
         seen: dict[str, float] = {}
         for h in hits:
@@ -811,7 +814,7 @@ def eval(
     # Restore config
     for attr, val in originals.items():
         setattr(cfg, attr, val)
-    qd.client.cache_clear()
+    get_store.cache_clear()
 
 
 if __name__ == "__main__":

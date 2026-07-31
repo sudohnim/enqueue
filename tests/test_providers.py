@@ -46,7 +46,7 @@ def _serve(status: int, content_type: str, body: bytes):
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, *args):
+        def log_message(self, format, *args):  # noqa: ARG002 - silence the test server
             pass
 
     server = HTTPServer(("127.0.0.1", 0), Handler)
@@ -139,10 +139,9 @@ class TestWhy:
         assert "could not reach the model endpoint" in why(outer, "http://x/v1", "m")
 
     def test_a_reply_that_does_not_fit_the_shape_blames_the_model(self):
-        try:
-            Answer(answer=None)
-        except ValidationError as exc:
-            said = why(exc, "http://x/v1", "tiny-1b")
+        with pytest.raises(ValidationError) as excinfo:
+            Answer(answer=None)  # type: ignore[arg-type] - the None is the point
+        said = why(excinfo.value, "http://x/v1", "tiny-1b")
         assert "not in the shape" in said
 
     def test_an_unknown_failure_still_returns_a_string(self):

@@ -33,14 +33,18 @@ class FakeProvider:
 
 @pytest.fixture
 def answered(monkeypatch):
-    def install(**byname):
-        provider = FakeProvider(**byname)
-        monkeypatch.setattr(chats, "get_provider", lambda *a, **k: provider)
-        monkeypatch.setattr(chats, "passages", lambda *a, **k: install.passages)
-        return provider
+    """Callable test double: scripts the provider and the passages queue."""
 
-    install.passages = []
-    return install
+    class Answered:
+        passages: list = []
+
+        def __call__(self, **byname):
+            provider = FakeProvider(**byname)
+            monkeypatch.setattr(chats, "get_provider", lambda *a, **k: provider)
+            monkeypatch.setattr(chats, "passages", lambda *a, **k: self.passages)
+            return provider
+
+    return Answered()
 
 
 class TestAnswerContract:
@@ -247,8 +251,8 @@ class TestScope:
         self, store, quiet_queue, monkeypatch
     ):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
-        from enqueue.ingest import chunk as chunk_mod
         from enqueue import db as db_mod
+        from enqueue.ingest import chunk as chunk_mod
 
         with db_mod.transaction() as conn:
             chunk_mod.chunk_artifact(conn, note["artifact"]["id"])
@@ -256,7 +260,14 @@ class TestScope:
         def explode(*a, **k):
             raise AssertionError("a scoped chat must not reach the vector index")
 
-        monkeypatch.setattr("enqueue.index.qdrant.search", explode)
+        class _NoIndex:
+            CHUNKS = "chunks"
+            FACETS = "facets"
+
+            def search(self, *a, **k):
+                explode()
+
+        monkeypatch.setattr("enqueue.index.store.get_store", lambda: _NoIndex())
 
         found = chats.passages("anything", "artifact", note["artifact"]["id"])
         assert found and all(p["artifact_id"] == note["artifact"]["id"] for p in found)

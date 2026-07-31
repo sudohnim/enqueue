@@ -8,6 +8,7 @@ the person has ever saved. It has to be adopted instead.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sqlite3
 from importlib import resources
 
@@ -22,6 +23,7 @@ def _baseline():
     importability."""
     path = resources.files("enqueue").joinpath("migrations/versions/0001_baseline.py")
     spec = importlib.util.spec_from_file_location("baseline", str(path))
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -34,13 +36,20 @@ def head() -> str:
     """The newest revision, read from the migration scripts themselves."""
     from alembic.script import ScriptDirectory
 
-    return ScriptDirectory.from_config(db._alembic_config()).get_current_head()
+    current = ScriptDirectory.from_config(db._alembic_config()).get_current_head()
+    assert current is not None, "the migrations directory has no head revision"
+    return current
 
 
-def tables(path) -> set[str]:
+def tables(path: str | os.PathLike[str]) -> set[str]:
     conn = sqlite3.connect(path)
     try:
-        return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        names: set[str] = set()
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'"):
+            # Row[0] is typed str | None; table names are never NULL in practice.
+            if row[0] is not None:
+                names.add(str(row[0]))
+        return names
     finally:
         conn.close()
 

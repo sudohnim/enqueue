@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from .. import db
-from ..index import qdrant
+from ..index.store import get_store
 
 
 def candidates(queries: list[str], limit: int = 150, per_query: int = 40) -> list[dict]:
@@ -24,20 +24,27 @@ def candidates(queries: list[str], limit: int = 150, per_query: int = 40) -> lis
     why: dict[str, str] = {}
     matched_facet: dict[str, str] = {}
 
+    store = get_store()
     for query in queries:
-        for hit in qdrant.search(qdrant.CHUNKS, query, limit=per_query):
+        for hit in store.search(store.CHUNKS, query, limit=per_query):
             aid = hit["artifact_id"]
             if hit["score"] > best[aid]:
                 best[aid] = hit["score"]
                 why[aid] = "chunk"
 
-        for hit in qdrant.search(qdrant.FACETS, query, limit=per_query):
+        for hit in store.search(store.FACETS, query, limit=per_query):
             aid = hit["artifact_id"]
-            score = hit["score"] * float(hit.get("trust", 0.5)) * 2.0
+            try:
+                trust = float(hit.get("trust") or 0.5)
+            except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
+                trust = 0.5
+            score = hit["score"] * trust * 2.0
             if score > best[aid]:
                 best[aid] = score
                 why[aid] = f"facet L{hit.get('level')}"
-                matched_facet[aid] = hit.get("facet_id")
+                facet_id = hit.get("facet_id")
+                if facet_id:
+                    matched_facet[aid] = facet_id
 
     ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
 
