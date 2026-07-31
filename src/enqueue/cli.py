@@ -14,9 +14,7 @@ import typer
 
 from . import config
 
-app = typer.Typer(
-    add_completion=False, help="Enqueue: capture anything, organise it later."
-)
+app = typer.Typer(add_completion=False, help="Enqueue: capture anything, organise it later.")
 
 
 def _call(method: str, path: str, **kwargs) -> dict:
@@ -81,11 +79,7 @@ def migrate() -> None:
 @app.command()
 def facets(limit: int = 0, redo: bool = False) -> None:
     """Generate facets for every eligible artifact. Slow, resumable."""
-    _echo(
-        _call(
-            "POST", "/facets", json={"limit": limit or None, "redo": redo}, timeout=None
-        )
-    )
+    _echo(_call("POST", "/facets", json={"limit": limit or None, "redo": redo}, timeout=None))
 
 
 @app.command()
@@ -99,9 +93,7 @@ def search(query: str, limit: int = 10) -> None:
     """Find artifacts. Hybrid dense plus sparse, no model calls."""
     result = _call("GET", "/search", params={"q": query, "limit": limit})
     for hit in result["hits"]:
-        typer.echo(
-            f"  {hit['score']:.3f}  {hit['title'][:44]:<46} {hit['snippet'][:60]}"
-        )
+        typer.echo(f"  {hit['score']:.3f}  {hit['title'][:44]:<46} {hit['snippet'][:60]}")
 
 
 @app.command()
@@ -115,9 +107,7 @@ def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> No
     )
     exhibit = result.get("exhibit") or {}
 
-    typer.secho(
-        f"\n{exhibit.get('suggested_name', lens)}", fg=typer.colors.YELLOW, bold=True
-    )
+    typer.secho(f"\n{exhibit.get('suggested_name', lens)}", fg=typer.colors.YELLOW, bold=True)
     typer.echo(
         f"{len(result['kept'])} artifacts  ·  {result['rejected']} rejected  ·  {result['considered']} considered"
     )
@@ -136,9 +126,7 @@ def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> No
         typer.echo(f"    {group['claim']}")
 
     for tension in exhibit.get("tensions", []):
-        typer.secho(
-            f"\n  tension: {' vs '.join(tension['between'])}", fg=typer.colors.MAGENTA
-        )
+        typer.secho(f"\n  tension: {' vs '.join(tension['between'])}", fg=typer.colors.MAGENTA)
         typer.echo(f"    {tension['claim']}")
 
     if result.get("saved_id"):
@@ -177,9 +165,7 @@ def preview(artifact_id: str) -> None:
 def chat(question: str, chat_id: str = "") -> None:
     """Ask the collection something. Continues a chat if given one."""
     if chat_id:
-        result = _call(
-            "POST", f"/chats/{chat_id}/messages", json={"text": question}, timeout=None
-        )
+        result = _call("POST", f"/chats/{chat_id}/messages", json={"text": question}, timeout=None)
     else:
         result = _call("POST", "/chats", json={"text": question}, timeout=None)
 
@@ -228,9 +214,7 @@ def facet_gate() -> None:
 CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "evals" / "corpus"
 MANIFEST_PATH = CORPUS_DIR / "MANIFEST.json"
 
-test_corpus_app = typer.Typer(
-    help="Manage the synthetic test corpus for search evaluation."
-)
+test_corpus_app = typer.Typer(help="Manage the synthetic test corpus for search evaluation.")
 app.add_typer(test_corpus_app, name="test-corpus")
 
 
@@ -306,9 +290,7 @@ def verify() -> None:
                 violations.append(f"{entry['id']}: missing forbidden_term in manifest")
                 continue
             if term in content.lower():
-                violations.append(
-                    f"{entry['id']}: forbidden term '{term}' found in content"
-                )
+                violations.append(f"{entry['id']}: forbidden term '{term}' found in content")
 
         elif cat == "rare-string":
             rare = entry.get("rare_string", "")
@@ -371,9 +353,7 @@ def load() -> None:
         _run_verify()
     except SystemExit as e:
         if e.code != 0:
-            typer.secho(
-                "corpus verification failed; refusing to load", fg=typer.colors.RED
-            )
+            typer.secho("corpus verification failed; refusing to load", fg=typer.colors.RED)
             raise typer.Exit(1) from e
 
     test_dir = CORPUS_DIR.parent / "test-data"
@@ -719,21 +699,13 @@ def eval(
         total = len(results)
         n_pass = len(passed_qs)
 
-        recall_at_1 = (
-            sum(1 for r in passed_qs if r.get("rank") == 1) / total if total else 0.0
-        )
+        recall_at_1 = sum(1 for r in passed_qs if r.get("rank") == 1) / total if total else 0.0
         recall_at_10 = len(passed_qs) / total if total else 0.0
 
         non_zero_ranks = [
-            r["rank"]
-            for r in results
-            if r.get("rank") is not None and r["category"] != "nothing"
+            r["rank"] for r in results if r.get("rank") is not None and r["category"] != "nothing"
         ]
-        mrr = (
-            sum(1.0 / r for r in non_zero_ranks) / len(non_zero_ranks)
-            if non_zero_ranks
-            else 0.0
-        )
+        mrr = sum(1.0 / r for r in non_zero_ranks) / len(non_zero_ranks) if non_zero_ranks else 0.0
 
         nothing_qs = [r for r in results if r["category"] == "nothing"]
         nothing_pass = sum(1 for r in nothing_qs if r.get("pass"))

@@ -20,7 +20,11 @@ Think of a person who is mentioned in only one of your saved items.
 Search for just their name.
 
 Did the item about that person come up?
-Answer: ______
+Question: Did you find anything about Kanter?
+Answer:  GOOD
+Actual Response:Yes, you have several excerpts from Rosabeth Moss Kanter's 1972 book 'Commitment and Community: Communes and Utopias in Sociological Perspective' (metadata shows Harvard, Cambridge, Mass.). The saved pages cover commitment mechanisms (e.g., investment and irreversibility), problems of contemporary communes, a table on leadership prerogatives and immunities, and reflections on how utopian communities relate to the outside society. So this is definitely from Kanter.
+
+
 
 ## Test 2 - Find something when you only half remember it
 
@@ -30,8 +34,11 @@ Search using your own words for it, not the words in the item.
 Example: if you saved an article about staying calm under pressure,
 search for "keeping cool when things go wrong".
 
-Did the right item come up?
-Answer: ______
+Question: Did the right item come up? (What was my max squat?)
+Answer: GOOD
+ACtual REsponse: Your max squat is 350, from your stats updated 7/6.
+
+
 
 ## Test 3 - Find something by an exact code or unusual word
 
@@ -39,8 +46,10 @@ Think of an item that has an unusual word in it. A product name,
 an error code, a made-up word, a street name.
 Search for exactly that word.
 
-Did the right item come up?
-Answer: ______
+Question: Did the right item come up? (What was the Lumo mascot?)
+Answer: BAD
+Actual REsponse You haven't saved anything that says what the Lumo mascot was. The only Lumo-related note is about the visual redesign of Lumo 2.0, and it doesn't mention a mascot.
+
 
 ## Test 4 - Find something by its title only
 
@@ -48,29 +57,41 @@ Pick an item whose title says what it is, but where the words in the
 title do not appear in the item itself.
 Search using words from the title.
 
-Did the right item come up?
-Answer: ______
+Question Did the right item come up? (Do we have anything regarding revisiting the commons?)
+Answer: GOOD 
+Actual Response: Yes, you have a saved item called "Revisiting the Commons: Local Lessons, Global Challenges." It's a 1999 Science review article by Elinor Ostrom, Joanna Burger, Christopher B. Field, Richard B. Norgaard, and David Policansky, revisiting Hardin's "Tragedy of the Commons" and discussing sustainable management of common-pool resources.
+
+Question: How many pages is Commitment and Community" and it answwered:"Your saved materials don't specify the total page count of Commitment and Community.
+Answer: BAD
+Actual REsponse (within the artifact): The saved passages show page numbers 3, 5, 6, 7, 8, 9, 10, and 11 from the book, but they don't state the book's total number of pages.
+Actual REsponse (within Everything): Your saved materials don't specify the total page count of Commitment and Community.
 
 ## Test 5 - Search for something you never saved
 
-Search for something you are certain you never saved.
+Search for something you are certain you never saved. 
+NOTE: I did this twice
 
-Did it correctly show nothing, or almost nothing?
-Answer: ______
+Question: Did it correctly show nothing, or almost nothing? (Do I have notes regarding making my own sourdough bread?)
+Answer: GOOD
+Actual REsponse: You haven't saved anything about making your own sourdough bread. The notes you have cover medieval agriculture economics, a RAG explanation, and utopian communities, but nothing on sourdough.
+
 
 ## Test 6 - Same words, different order
 
 Pick any item. Search for three words from it, in the wrong order.
 
-Did the right item still come up?
-Answer: ______
+Did the right item still come up? 
+Question: What is a boxer's advantage?
+Answer: GOOD
+Actual REsponse: A boxer's greatest advantage comes from their sparring partner—adversity is treated as input rather than obstacle, and the partner is the mechanism by which that adversity compounds, so what looks like harm is actually the process working.
+
 
 ## Test 7 - Does it feel fast
 
 Do five searches in a row. Count roughly how long each takes.
 
 Did every search feel instant, or did any of them make you wait?
-Answer: ______
+Answer: Each took around 5-10 seconds
 
 ## Test 8 - The same search on two devices
 

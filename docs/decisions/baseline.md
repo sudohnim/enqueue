@@ -104,3 +104,55 @@ irrelevant hits, fixing the nothing-query false positives.
 
 Until then, the 0/8 nothing-OK score is an expected limitation of pure vector
 search, not a regression.
+
+## Human search test — recorded 2026-07-31
+
+Run by the maintainer against the live app (21 saved items), following
+`evals/HUMAN-TEST-SEARCH.md`. Questions were asked through the chat interface,
+so latencies include LLM synthesis, not just retrieval.
+
+| Test | What was asked | Result |
+| --- | --- | --- |
+| 1 — person's name | "anything about Kanter?" | GOOD — Rosabeth Moss Kanter's book found |
+| 2 — half-remembered | "what was my max squat?" | GOOD — 350, from workout stats |
+| 3 — exact word | "what was the Lumo mascot?" | BAD — see below |
+| 4 — title only | "revisiting the commons?" | GOOD — Ostrom article found |
+| 4 — title only | "how many pages is Commitment and Community?" | BAD — item found, but total page count not in saved material |
+| 5 — never saved | "sourdough bread?" | GOOD — correctly found nothing |
+| 6 — words, wrong order | "what is a boxer's advantage?" | GOOD — sparring-partner note found |
+| 7 — feels fast | five searches | Each ~5-10s through chat (LLM synthesis). Retrieval alone is p50 13ms / p95 17ms |
+| 8 — two devices | n/a | Not answered — app on one device only |
+
+### Test 3 failure: links are indexed by preview metadata only
+
+Searching "Lumo mascot" returns the Proton article but no mascot information.
+The article itself says the mascot was a kitten and "remains Lumo". The gap:
+
+- `preview.parse()` extracts only title, description, site_name, image_url from
+  meta tags (`src/enqueue/preview.py:130`).
+- `chunk_artifact` indexes a link via `text_for_index()`, which returns title +
+  description only (`src/enqueue/preview.py:376`).
+- The Lumo item's indexed content is 164 chars; the article body is never
+  fetched into the index.
+
+Not a transient error — the preview fetch succeeded (status `ok`). The full
+article body is never captured by design, so anything that lives only in the
+body (product details, mascots, error codes) is not findable in a saved link.
+
+**Open question for the maintainer:** should saved links be fully fetched
+(readability-extracted body → chunked → indexed), or is preview-metadata-only
+indexing acceptable? This is a product decision with privacy/cost implications
+(`auto_preview` and `local_only` already gate network access).
+
+### Test 4b observation
+
+"How many pages is Commitment and Community?" found the item but could not
+answer the total page count (saved passages only cover pages 3-11). The model
+answered truthfully that the count is not in the saved material — an
+answerability boundary, not a retrieval failure.
+
+### Test 7 observation
+
+The ~5-10s latency is the chat LLM synthesis, not retrieval. Raw search
+latency (measured in eval) is p50 13ms / p95 17ms. If chat speed matters,
+the model/endpoint choice for synthesis is the lever, not retrieval.
