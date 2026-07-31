@@ -214,3 +214,25 @@ best correct placement drops more than 5 percent below 0.933.
   the lens UI lands.
 - Every lens application logs stage-one duration, model calls, cache hits,
   coverage, and total duration.
+
+## Promote a lens into a saved exhibit (Phase 15)
+
+Save This View reuses the existing exhibit path - the same POST /exhibits
+with {lens, exhibit, kept} the curate flow uses - because a lens is a room
+that was built without the naming step, not a second kind of room. No new
+save path exists. The lens becomes the immutable `theme`; the judged-belongs
+entries (the ones with placards) become the members, placards intact.
+Unjudged above-threshold entries are not saved: `exhibit_members.placard`
+is NOT NULL, and a room member without a reason would make the room
+dishonest. Check More first if the person wants the tail vetted.
+
+The lens UI in the wall: a topic input splits the wall into related and
+everything-else as the stream delivers them, placards fill in live, Check
+More raises judge_top, Save This View prompts for a name and a finding then
+posts to /exhibits, and clear the lens returns to the wall with nothing
+written (tested: an unsaved lens leaves zero exhibit rows).
+
+Verified live against the eval corpus on the throwaway engine (port 8788):
+split rendered before judgments finished, a real model placard streamed in,
+the saved exhibit rendered through the untouched exhibit endpoints with its
+members and the lens as theme.

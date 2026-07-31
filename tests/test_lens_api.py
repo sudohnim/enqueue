@@ -189,3 +189,90 @@ class TestLensStreamingHttp:
             assert split["stage"] == "split"
             assert len(split["judging"]) == 1
             assert any(e["stage"] == "done" for e in (_json.loads(r.strip()) for r in rest if r.strip()))
+
+
+class TestSaveLensView:
+    """Save This View reuses the existing exhibit path: the client sends
+    {lens, exhibit, kept} to POST /exhibits exactly as the curate flow does.
+    No second save path exists."""
+
+    def _save_http(self, lens, name, kept):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app
+
+        with TestClient(app) as client:
+            return client.post(
+                "/exhibits",
+                json={
+                    "lens": lens,
+                    "exhibit": {"suggested_name": name, "through_line": "The city feeds itself from above."},
+                    "kept": kept,
+                },
+            )
+
+    def test_save_this_view_writes_an_exhibit_with_the_lens_as_theme(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app
+
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
+        out = _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2))
+
+        judged = [e for e in out["related"] if e.get("placard")]
+        assert len(judged) >= 1
+
+        with TestClient(app) as client:
+            resp = client.post(
+                "/exhibits",
+                json={
+                    "lens": out["lens"],
+                    "exhibit": {"suggested_name": "Rooftop gardens", "through_line": "The city feeds itself from above."},
+                    "kept": judged,
+                },
+            )
+            assert resp.status_code == 201, resp.text
+            exhibit_id = resp.json()["id"]
+            got = client.get(f"/exhibits/{exhibit_id}")
+            assert got.status_code == 200
+            body = got.json()
+            # The lens became the immutable theme; the judged related list
+            # became the members, placards intact.
+            assert body["exhibit"]["theme"] == "hydroponics feeds the city from a rooftop"
+            member_ids = [m["artifact_id"] for m in body["members"]]
+            assert member_ids == [e["artifact_id"] for e in judged]
+
+    def test_reshaping_produces_a_new_exhibit(self, store, quiet_queue, scored_store, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app
+
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
+        out = _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2))
+        judged = [e for e in out["related"] if e.get("placard")]
+
+        with TestClient(app) as client:
+            # Same lens, saved twice under two names: two exhibits, both
+            # carrying the same immutable theme.
+            a = self._save_http(out["lens"], "Rooftop gardens", judged)
+            b = self._save_http(out["lens"], "Gardens above", judged)
+            assert a.status_code == 201 and b.status_code == 201
+            assert a.json()["id"] != b.json()["id"]
+            exhibits = client.get("/exhibits").json()["items"]
+            assert [e["theme"] for e in exhibits] == [out["lens"], out["lens"]]
+
+    def test_unsaved_lens_leaves_no_trace(self, store, quiet_queue, scored_store, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app
+
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
+        _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2))
+
+        with TestClient(app) as client:
+            assert client.get("/exhibits").json()["items"] == []
