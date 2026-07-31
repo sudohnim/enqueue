@@ -19,12 +19,15 @@ from . import rerank
 from .score import score_all
 
 
-def apply_lens(lens: str, judge_top: int | None = None) -> dict:
+def apply_lens(lens: str, judge_top: int | None = None, score_cap: int | None = None) -> dict:
     """Split the whole library into `related` and `other` for this lens.
 
     `judge_top` overrides the default; `model_calls` reports how many
     judgments were actually made (cache hits cost nothing), and never exceeds
-    `judge_top` no matter how big the library is.
+    `judge_top` no matter how big the library is. `score_cap` bounds the
+    stage-one search window; when it caps the search below the chunk count,
+    `coverage` is `partial` and the wall must not label the second section as
+    not related (D3).
     """
     top = config.LENS_JUDGE_TOP if judge_top is None else judge_top
     threshold = config.LENS_SCORE_THRESHOLD
@@ -35,11 +38,16 @@ def apply_lens(lens: str, judge_top: int | None = None) -> dict:
             r["id"]: r["title"]
             for r in conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL")
         }
+        chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()["n"]
     finally:
         conn.close()
 
-    # Stage one: rank the whole library, no model calls.
-    scores = score_all(lens)
+    # Stage one: rank the whole library, no model calls. The coverage label
+    # mirrors the window rule in score_all: a window narrower than the chunk
+    # count means some chunks were never searched, and that must be said.
+    scores = score_all(lens, cap=score_cap)
+    window = chunk_count if score_cap is None else min(score_cap, chunk_count)
+    coverage = "complete" if window >= chunk_count else "partial"
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
 
     # Stage two: judge only the top of the ranking.
@@ -98,7 +106,11 @@ def apply_lens(lens: str, judge_top: int | None = None) -> dict:
     return {
         "lens": lens,
         "threshold": threshold,
+        "coverage": coverage,
+        "scored_count": len([s for s in scores.values() if s > 0]),
+        "total_count": len(scores),
         "judged": len(judged),
+        "judged_count": len(judged),
         "model_calls": result["considered"] - result["hits"],
         "related": related_judged + related_unjudged,
         "other": other,

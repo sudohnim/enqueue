@@ -65,10 +65,13 @@ class VectorStore(ABC):
         """Re-embed one artifact's chunks in place; returns how many were indexed."""
 
     @abstractmethod
-    def search(self, name: str, text: str, limit: int = 30) -> list[dict]:
+    def search(self, name: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:
         """Hybrid (dense + sparse) retrieval, scored highest first.
 
         Hits carry the payload of each matching vector. Payloads hold ids only.
+        `prefetch` is the per-branch window the engine searches before fusing;
+        callers that need whole-collection coverage raise it so nothing is
+        silently left outside the window.
         """
 
     @abstractmethod

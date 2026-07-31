@@ -18,13 +18,18 @@ from .. import db
 from .candidates import candidates as get_candidates
 
 
-def score_all(lens: str) -> dict[str, float]:
+def score_all(lens: str, cap: int | None = None) -> dict[str, float]:
     """A relevance score for every non-deleted artifact; zero when unmatched.
 
     Uses the same rollup as the curate path (chunk hits, facet hits weighted
     by trust) so these scores are comparable to what the model judges later.
     Model expansion is deliberately excluded: it costs seconds, and this stage
     is required to be instant. The lens text is the query.
+
+    `cap` bounds the search window (chunk-level per-query limit and prefetch).
+    When the window is smaller than the chunk count, some chunks are never
+    searched; the caller reports `partial` coverage in that case (D3). The
+    default covers everything.
     """
     conn = db.get_conn()
     try:
@@ -38,8 +43,16 @@ def score_all(lens: str) -> dict[str, float]:
     ids = [r["id"] for r in rows]
     # The chunk-level limit must cover every chunk, not a page, or artifacts
     # whose best chunk ranks low would be missed and quietly score zero. The
-    # artifact-level limit is the whole library for the same reason.
-    rows = get_candidates([lens], limit=max(len(ids), 1), per_query=max(chunk_count, len(ids), 1))
+    # artifact-level limit is the whole library for the same reason. The
+    # prefetch window is raised to match, because a window narrower than the
+    # chunk count would silently leave chunks outside the fusion.
+    window = chunk_count if cap is None else min(cap, chunk_count)
+    rows = get_candidates(
+        [lens],
+        limit=max(len(ids), 1),
+        per_query=max(window, len(ids), 1),
+        prefetch=max(window, 1),
+    )
     best = {row["artifact_id"]: row["score"] for row in rows}
 
     # Zero is a score, not an absence: every artifact gets an entry, so the

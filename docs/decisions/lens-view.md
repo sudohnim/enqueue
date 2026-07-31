@@ -95,3 +95,20 @@ measured table (D4).
 - **D3**: coverage labelling — never claim a judgment that did not happen.
 - **D4**: the `LENS_SCORE_THRESHOLD` value is chosen by the maintainer from a
   measured table (Phase 13), not picked by the implementer.
+
+## Coverage labelling (Phase 10, decision D3)
+
+The lens response carries `coverage`, `scored_count`, `total_count`, and
+`judged_count`.
+
+- `coverage: complete` means stage one searched every chunk: the search
+  window (chunk-level per-query limit and prefetch) was at least the chunk
+  count, so no artifact was silently left outside the search. The second
+  section may then be labelled "not related".
+- `coverage: partial` means scoring was capped for some reason (a narrow
+  window). Artifacts outside the window were never checked, so the second
+  section must be labelled "not yet checked", never "not related" (D3:
+  never claim a judgment - or here, a scoring - that did not happen).
+- `scored_count` is how many artifacts received at least one indexed hit;
+  `total_count` is every non-deleted artifact; `judged_count` is how many
+  got a model judgment.

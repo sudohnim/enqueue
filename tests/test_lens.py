@@ -171,3 +171,31 @@ class TestApplyLens:
         assert out["judged"] == 2
         assert all(e["judged"] for e in out["other"][:2])
         assert all(e["judged"] is False for e in out["related"])
+
+
+class TestCoverage:
+    def test_uncapped_run_reports_complete(self, store, quiet_queue, scored_store, monkeypatch):
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        monkeypatch.setattr(
+            rerank, "get_provider", lambda: _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()})
+        )
+
+        out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+
+        assert out["coverage"] == "complete"
+        assert out["total_count"] == 3
+        assert out["judged_count"] == 1
+        assert out["scored_count"] >= 1
+        assert out["total_count"] == len(out["related"]) + len(out["other"])
+
+    def test_capped_run_reports_partial(self, store, quiet_queue, scored_store, monkeypatch):
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C, _BODY_D, _BODY_E])
+        monkeypatch.setattr(
+            rerank, "get_provider", lambda: _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()})
+        )
+
+        # A window of 2 chunks cannot cover a library with more chunks than
+        # that: coverage must say partial, never complete.
+        out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1, score_cap=2)
+        assert out["coverage"] == "partial"
+        assert out["total_count"] == 5

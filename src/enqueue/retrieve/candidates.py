@@ -14,11 +14,19 @@ from .. import db
 from ..index.store import get_store
 
 
-def candidates(queries: list[str], limit: int = 150, per_query: int = 40) -> list[dict]:
+def candidates(
+    queries: list[str], limit: int = 150, per_query: int = 40, prefetch: int = 100
+) -> list[dict]:
     """Artifact ids ordered by best hit across both collections.
 
     Facet hits are weighted by the facet's trust score, so an abstraction that keeps
     winning matches the director then ejects quietly stops pulling artifacts in.
+
+    `prefetch` widens the per-branch window the store searches before fusion. The
+    default keeps ordinary retrieval unchanged; whole-library scoring raises it so
+    that every chunk is actually searched (otherwise a chunk beyond the fixed
+    window is silently never seen, which would make a "complete" coverage label a
+    lie).
     """
     best: dict[str, float] = defaultdict(float)
     why: dict[str, str] = {}
@@ -26,13 +34,13 @@ def candidates(queries: list[str], limit: int = 150, per_query: int = 40) -> lis
 
     store = get_store()
     for query in queries:
-        for hit in store.search(store.CHUNKS, query, limit=per_query):
+        for hit in store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch):
             aid = hit["artifact_id"]
             if hit["score"] > best[aid]:
                 best[aid] = hit["score"]
                 why[aid] = "chunk"
 
-        for hit in store.search(store.FACETS, query, limit=per_query):
+        for hit in store.search(store.FACETS, query, limit=per_query, prefetch=prefetch):
             aid = hit["artifact_id"]
             try:
                 trust = float(hit.get("trust") or 0.5)
