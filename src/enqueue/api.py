@@ -657,6 +657,38 @@ def index_counts() -> dict:
     return get_store().counts()
 
 
+@app.get("/doctor")
+def doctor() -> dict:
+    """Index health: counts, embedding version, and chunks-table sync.
+
+    A diagnostic for the cutover. `index_in_sync` is true when the search
+    index holds exactly as many chunk rows as the chunks table (the trash
+    path deletes a chunk row and drops its index point together, so a synced
+    index stays synced across deletes). `embed_version_current` is true when
+    the recorded version matches the running embedding model. `healthy` is
+    both. The raw `index_counts` cover all four index tables, so an FTS or
+    facets drift is visible even when the chunks count matches.
+    """
+    from .index import bootstrap
+
+    index_counts = get_store().counts()
+    chunk_count = db.count("chunks")
+    embed_version = bootstrap.read_embed_version()
+    index_chunks = index_counts.get("chunks")
+    in_sync = index_chunks is not None and index_chunks == chunk_count
+    version_current = embed_version == config.EMBED_VERSION
+    return {
+        "artifact_count": db.count("artifacts"),
+        "chunk_count": chunk_count,
+        "facet_count": db.count("facets"),
+        "index_counts": index_counts,
+        "embed_version": embed_version,
+        "embed_version_current": version_current,
+        "index_in_sync": in_sync,
+        "healthy": in_sync and version_current,
+    }
+
+
 # ------------------------------------------------------------------------- search
 
 

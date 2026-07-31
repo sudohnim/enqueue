@@ -65,6 +65,12 @@ def health() -> None:
 
 
 @app.command()
+def doctor() -> None:
+    """Index health: counts, embedding version, and index sync."""
+    _echo(_call("GET", "/doctor"))
+
+
+@app.command()
 def migrate() -> None:
     """Bring the database to the newest revision.
 
