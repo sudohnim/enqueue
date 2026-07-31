@@ -395,7 +395,12 @@ class SqliteVecStore(VectorStore):
         fused = rrf_scored(
             [hit[id_col] for hit in dense],
             [hit[id_col] for hit in keyword],
-            k=60,
+            # k=1 reproduces the Qdrant backend's fused score scale: their RRF
+            # is 1/(pos + 2) over 0-based positions, which is 1/(rank + 1)
+            # over 1-based ranks. The lens score threshold was calibrated on
+            # that scale, so scores have to be comparable across engines.
+            # Ranking is k-invariant, so this changes magnitudes only.
+            k=1,
             limit=limit,
         )
         by_id = {hit[id_col]: hit for hit in dense}

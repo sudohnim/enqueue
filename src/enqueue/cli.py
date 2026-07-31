@@ -625,6 +625,7 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
         store = get_store()
         store.ensure()
         idx_result = store.upsert_chunks()
+        store.write_embed_version()
 
         typer.echo(
             f"  artifacts: {len(entries)}  chunks: {chunk_count}  "
