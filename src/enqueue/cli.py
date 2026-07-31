@@ -100,6 +100,44 @@ def reprocess() -> None:
 
 
 @app.command()
+def export(directory: str, verify: bool = False) -> None:
+    """Write the library as plain files. Re-runs update only what changed.
+
+    --verify checks the existing output against the library instead of writing.
+    """
+    from . import export as export_mod
+
+    target = Path(directory)
+    if verify:
+        result = export_mod.verify(target)
+        if result["ok"]:
+            typer.echo(
+                f"export at {target} is complete: {result['artifacts']} artifacts,"
+                f" {result['exhibits']} exhibits"
+            )
+        else:
+            typer.secho(result["reason"], fg=typer.colors.RED)
+            raise typer.Exit(1)
+        return
+
+    result = export_mod.export(target)
+    typer.echo(
+        f"exported {result['artifacts']} artifacts and {result['exhibits']} exhibits"
+        f" to {target}"
+    )
+    typer.echo(f"  wrote {len(result['written'])} files, {len(result['unchanged'])} unchanged")
+    if result["copied"]:
+        typer.echo(f"  copied {len(result['copied'])} capture files")
+    if result["missing_blobs"]:
+        typer.secho(
+            f"  {len(result['missing_blobs'])} captures had no bytes on disk and were skipped",
+            fg=typer.colors.YELLOW,
+        )
+    if result["pruned"]:
+        typer.echo(f"  removed {len(result['pruned'])} stale files")
+
+
+@app.command()
 def search(query: str, limit: int = 10) -> None:
     """Find artifacts. Hybrid dense plus sparse, no model calls."""
     result = _call("GET", "/search", params={"q": query, "limit": limit})
@@ -478,8 +516,8 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
     """
     from . import config as cfg
     from . import db as db_mod
-    from .ingest.chunk import chunk_artifact
     from .index.store import get_store
+    from .ingest.chunk import chunk_artifact
 
     test_db = test_dir / "enqueue.db"
     test_qdrant = test_dir / "qdrant"
