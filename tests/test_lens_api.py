@@ -81,7 +81,9 @@ def _make_library(store, bodies: list[str]) -> list[dict]:
 
 
 class TestLensEndpoint:
-    def test_ephemeral_leaves_updated_at_unchanged(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_ephemeral_leaves_updated_at_unchanged(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
         before = {a["id"]: a["updated_at"] for a in arts}
@@ -111,7 +113,9 @@ class TestLensEndpoint:
             conn.close()
         assert n == 0
 
-    def test_pinned_stay_pinned_above_both_sections(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_pinned_stay_pinned_above_both_sections(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         pinned_id = arts[1]["id"]  # the commons note, deliberately unrelated
         conn = db.get_conn()
@@ -122,7 +126,9 @@ class TestLensEndpoint:
             conn.close()
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        out = apply_lens_view(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
+        out = apply_lens_view(
+            LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1)
+        )
 
         pinned_ids = {e["artifact_id"] for e in out["pinned"]}
         assert pinned_id in pinned_ids
@@ -133,7 +139,9 @@ class TestLensEndpoint:
         arts = _make_library(scored_store, [_BODY_A])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        out = apply_lens_view(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
+        out = apply_lens_view(
+            LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1)
+        )
         entry = out["related"][0]
         # The wall fields the client renders, with no second call.
         for field in ("id", "kind", "title", "excerpt", "created_at", "updated_at", "pinned"):
@@ -145,7 +153,11 @@ class TestLensEndpoint:
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        out = apply_lens_view(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1, limit=2, offset=0))
+        out = apply_lens_view(
+            LensRequest(
+                lens="hydroponics feeds the city from a rooftop", judge_top=1, limit=2, offset=0
+            )
+        )
         assert len(out["related"]) + len(out["other"]) == 2
         assert out["related_total"] + out["other_total"] == 3
         assert out["related_more"] or out["other_more"]

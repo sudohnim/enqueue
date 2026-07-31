@@ -79,9 +79,7 @@ class TestLensKey:
         assert judgments.lens_key("") == judgments.lens_key("   ")
 
     def test_different_lenses_differ(self):
-        assert judgments.lens_key("what is antifragility") != judgments.lens_key(
-            "what is a lens"
-        )
+        assert judgments.lens_key("what is antifragility") != judgments.lens_key("what is a lens")
 
 
 class TestCacheReplay:

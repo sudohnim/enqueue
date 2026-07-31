@@ -42,7 +42,10 @@ def apply_lens(lens: str, judge_top: int | None = None, score_cap: int | None = 
         }
         chunk_count = conn.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()["n"]
         pinned_ids = {
-            r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL AND pinned = 1")
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND pinned = 1"
+            )
         }
     finally:
         conn.close()

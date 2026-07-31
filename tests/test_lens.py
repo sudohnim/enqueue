@@ -101,7 +101,9 @@ def _make_library(store, bodies: list[str]) -> dict[str, dict]:
 
 
 class TestApplyLens:
-    def test_every_artifact_in_exactly_one_bucket(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_every_artifact_in_exactly_one_bucket(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C, _BODY_D, _BODY_E])
         provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
@@ -117,7 +119,9 @@ class TestApplyLens:
             e["artifact_id"] for e in out["other"]
         } == set()
 
-    def test_judged_carry_placards_unjudged_never(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_judged_carry_placards_unjudged_never(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B])
         a_id = arts.pop(next(iter(arts)))
         # Rebuild a deterministic map: judge only the hydroponics note.
@@ -138,7 +142,9 @@ class TestApplyLens:
                 assert entry["judged"] is False
                 assert "placard" not in entry
 
-    def test_model_calls_never_exceed_judge_top(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_model_calls_never_exceed_judge_top(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C, _BODY_D, _BODY_E])
         provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
@@ -146,7 +152,9 @@ class TestApplyLens:
         out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=2)
         assert out["model_calls"] == 2
 
-    def test_second_run_of_same_lens_costs_nothing(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_second_run_of_same_lens_costs_nothing(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
@@ -157,14 +165,14 @@ class TestApplyLens:
         assert first["model_calls"] == 1
         assert second["model_calls"] == 0
 
-    def test_rejected_goes_to_other_even_above_threshold(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_rejected_goes_to_other_even_above_threshold(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         # The two strongest matches both get judged; the model rejects both.
         # The model's word outranks the score, so even a high-scoring rejected
         # artifact lands in `other`, never in `related`.
         arts = _make_library(scored_store, [_BODY_A, _BODY_D, _BODY_E])
-        provider = _Scripted(
-            {a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()}
-        )
+        provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()})
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
 
         out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=2)
@@ -177,7 +185,9 @@ class TestCoverage:
     def test_uncapped_run_reports_complete(self, store, quiet_queue, scored_store, monkeypatch):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         monkeypatch.setattr(
-            rerank, "get_provider", lambda: _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()})
+            rerank,
+            "get_provider",
+            lambda: _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()}),
         )
 
         out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
@@ -191,7 +201,9 @@ class TestCoverage:
     def test_capped_run_reports_partial(self, store, quiet_queue, scored_store, monkeypatch):
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C, _BODY_D, _BODY_E])
         monkeypatch.setattr(
-            rerank, "get_provider", lambda: _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()})
+            rerank,
+            "get_provider",
+            lambda: _Scripted({a["id"]: _judgment(a["id"], Verdict.NO) for a in arts.values()}),
         )
 
         # A window of 2 chunks cannot cover a library with more chunks than
@@ -202,7 +214,9 @@ class TestCoverage:
 
 
 class TestLibraryGrowth:
-    def test_new_artifact_costs_at_most_one_new_call(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_new_artifact_costs_at_most_one_new_call(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         # Phase 12: ingesting a new artifact must not invalidate the cache. On
         # re-apply, only the new artifact lacks a judgment, so at most one new
         # model call happens - never a re-judgment of everything.
@@ -215,12 +229,16 @@ class TestLibraryGrowth:
 
         added = notes.create(_BODY_D)
         _chunk_and_index(scored_store, added["artifact"]["id"])
-        provider.by_id[added["artifact"]["id"]] = _judgment(added["artifact"]["id"], Verdict.BELONGS)
+        provider.by_id[added["artifact"]["id"]] = _judgment(
+            added["artifact"]["id"], Verdict.BELONGS
+        )
 
         second = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
         assert second["model_calls"] <= 1
 
-    def test_trashed_artifact_leaves_both_sections(self, store, quiet_queue, scored_store, monkeypatch):
+    def test_trashed_artifact_leaves_both_sections(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
         from enqueue import trash
 
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])

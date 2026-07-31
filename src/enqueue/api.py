@@ -237,7 +237,6 @@ def _wall_item(conn, row, with_image: set[str] | None = None) -> dict:
     return item
 
 
-
 @app.get("/artifacts")
 def list_artifacts(
     limit: int = 60,

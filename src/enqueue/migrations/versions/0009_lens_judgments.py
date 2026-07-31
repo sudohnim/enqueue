@@ -26,8 +26,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE lens_judgments (
             lens_key      TEXT NOT NULL,
             artifact_id   TEXT NOT NULL,
@@ -39,8 +38,7 @@ def upgrade() -> None:
             created_at    TEXT NOT NULL,
             PRIMARY KEY (lens_key, artifact_id, model_version)
         )
-        """
-    )
+        """)
     op.execute("CREATE INDEX ix_lens_judgments_lens_key ON lens_judgments (lens_key)")
 
 

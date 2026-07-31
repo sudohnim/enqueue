@@ -158,3 +158,33 @@ preview-image flags, timestamps, pinned), so the client needs no second call.
 - **Purge-driven cleanup of `lens_judgments` is implemented in Part 4,
   Phase 29 and is deliberately not attempted here.** Trashing an artifact
   keeps its judgment rows; the purge phase owns that lifecycle.
+
+## Threshold tuning (Phase 13, decision D4)
+
+`enq lens-eval --corpus` measures threshold placement on the eval corpus
+(45 queries with known matches; synthetic, machine-verifiable ground truth).
+Each topic runs with `judge_top=0`, so the threshold is the only
+decision-maker. Measured with the CoreML embedder, 2025-05-11:
+
+| threshold | true matches correctly placed | unrelated wrongly in related |
+|-----------|------------------------------|------------------------------|
+| 0.0       | 45/45  (1.000)               | 2055/2055 (1.000)            |
+| 0.05      | 42/45  (0.933)               | 333/2055 (0.162)             |
+| 0.1       | 42/45  (0.933)               | 191/2055 (0.093)             |
+| 0.2       | 39/45  (0.867)               | 88/2055 (0.043)              |
+| 0.3       | 38/45  (0.844)               | 54/2055 (0.026)              |
+| 0.5       | 29/45  (0.644)               | 11/2055 (0.005)              |
+
+The knee is at 0.1: it keeps the full 0.05 placement (93.3%) while halving
+the wrong-in-related rate (9.3%). The three misses at 0.1 are the
+vague-semantic corpus queries (grit, imagination, inquiry, and their kin),
+which score low by design - no threshold recovers them without flooding the
+shelf.
+
+**The choice is the maintainer's (D4).** The default `LENS_SCORE_THRESHOLD`
+stays at 0.1, provisionally supported by this table, until the maintainer
+picks from it and records why.
+
+The CI guard does not exist yet (no pipeline in this repo). When CI lands it
+should run `enq lens-eval --corpus --baseline 0.933`, which exits 2 when the
+best correct placement drops more than 5 percent below 0.933.
