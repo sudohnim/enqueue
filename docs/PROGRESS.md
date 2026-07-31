@@ -230,3 +230,28 @@ artifact gets an entry.
 
 Note: the running engine predates this phase; restart it (`bin/relaunch`) for
 the cache to go live.
+
+## Part 3 — sqlite-vec engine migration (in progress)
+
+## Phase 18A — Index tables inside the database ✅
+
+Migration `0010` moves the search index into the SQLite file that already
+holds the library:
+
+- [x] `vec_chunks` / `vec_facets` — sqlite-vec `vec0` virtual tables, each
+      with a TEXT primary key (`chunk_id` / `facet_id`) and an embedding of
+      length `EMBED_DIM` (768)
+- [x] `fts_chunks` / `fts_facets` — FTS5 virtual tables indexing one text
+      column with the id as an unindexed reference column
+- [x] `index_meta` — key/value table to hold the embedding version
+- [x] The migration loads the sqlite-vec extension on the alembic connection
+      for both upgrade and downgrade (dropping a `vec0` table also needs the
+      module), and everything uses `IF NOT EXISTS` so the store's `ensure()`
+      and alembic never fight on a fresh database
+- [x] `sqlite-vec` moved from dev extras into the main dependencies: the
+      migration runs at app startup
+- [x] Verified forward and backward on a copy of the real database (22
+      artifacts, 464 chunks): upgrade to head, downgrade to 0009, re-upgrade
+      — data preserved; `test_index_revision_round_trips` pins the cycle
+
+Tests: 6 migration tests pass.
