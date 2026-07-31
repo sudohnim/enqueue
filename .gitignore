@@ -237,3 +237,7 @@ eval/runs/
 *.db-wal
 *.db-shm
 qdrant-local/
+
+
+# Test corpus generated data (isolated eval DB + Qdrant index)
+evals/test-data/
