@@ -276,7 +276,7 @@ PARAPHRASE_DATA = [
         "rather not, finishing what you start, and treating failure as "
         "information rather than a verdict. The people who succeed over the "
         "long term are rarely the most gifted. They are the ones who simply "
-        "refuse to quit."
+        "refuse to quit.",
     ),
     (
         "The ability to form a clear mental picture of something not present",
@@ -290,7 +290,7 @@ PARAPHRASE_DATA = [
         "Problems become obstacles instead of invitations. The best engineers, "
         "artists, and leaders are those who have kept the childhood muscle of "
         "picturing something that has never been built and then working "
-        "backward from that picture to figure out how to make it real."
+        "backward from that picture to figure out how to make it real.",
     ),
     (
         "The tendency to prefer what is familiar over what is new",
@@ -303,7 +303,7 @@ PARAPHRASE_DATA = [
         "Evolutionary psychology suggests this preference was once adaptive: "
         "the food you recognised was safe to eat, and the person you knew was "
         "safe to approach. But in a world of rapid change, this same instinct "
-        "keeps us anchored to the mediocre simply because it is known."
+        "keeps us anchored to the mediocre simply because it is known.",
     ),
     (
         "The process of reducing uncertainty by gathering information",
@@ -315,7 +315,7 @@ PARAPHRASE_DATA = [
         "The best questioners share a set of habits. They ask what the "
         "evidence is before forming an opinion. They seek out people who "
         "disagree with them. They treat surprise as a signal that their model "
-        "of the world needs updating, not as something to dismiss."
+        "of the world needs updating, not as something to dismiss.",
     ),
     (
         "The state of being without a fixed home or regular employment",
@@ -328,7 +328,7 @@ PARAPHRASE_DATA = [
         "People looked past him on the street. They assumed they understood "
         "his story, but the truth was more ordinary and more complicated. He "
         "had once had an apartment, a job, a routine. Then the routine broke, "
-        "and he had not found a way to build a new one."
+        "and he had not found a way to build a new one.",
     ),
     (
         "The practice of systematically preserving digital records",
@@ -341,7 +341,7 @@ PARAPHRASE_DATA = [
         "digital materials accessible across decades. The principles are "
         "straightforward: use open formats, store in multiple locations, "
         "verify integrity regularly, and document what you did so the next "
-        "person can continue where you left off."
+        "person can continue where you left off.",
     ),
     (
         "The technique of growing plants without soil using nutrient solutions",
@@ -350,7 +350,7 @@ PARAPHRASE_DATA = [
         "under purple LED lights. There is no dirt, no rain, and no soil "
         "microbes. The roots dangle in a shallow stream of water mixed with "
         "carefully measured minerals, and the whole system is monitored by "
-        "sensors that adjust the light spectrum depending on the growth stage."
+        "sensors that adjust the light spectrum depending on the growth stage.",
     ),
     (
         "The philosophical view that the mind and body are separate substances",
@@ -362,7 +362,7 @@ PARAPHRASE_DATA = [
         "The position has intuitive appeal: it certainly feels as though your "
         "thoughts are something other than electrical impulses. But the more "
         "we learn about how the brain works, the harder it becomes to locate "
-        "the boundary where the physical ends and the mental begins."
+        "the boundary where the physical ends and the mental begins.",
     ),
     (
         "The economic concept of allocating resources through voluntary exchange",
@@ -375,7 +375,7 @@ PARAPHRASE_DATA = [
         "sellers produce prices that reflect the true scarcity of goods. "
         "But the conditions are rarely ideal, and the question of what happens "
         "when information is uneven or competition is weak occupies the "
-        "majority of modern economic research."
+        "majority of modern economic research.",
     ),
     (
         "The study of what happens after death in various cultural traditions",
@@ -388,7 +388,7 @@ PARAPHRASE_DATA = [
         "journey, a judgement, a transformation. The common thread is that "
         "death is rarely treated as a simple end. It is a passage, a door, "
         "a change of state. The stories we tell about it reveal more about "
-        "how we live than about what awaits."
+        "how we live than about what awaits.",
     ),
 ]
 
@@ -410,10 +410,13 @@ NEAR_DUP_BASE = (
 )
 
 NEAR_DUP_VARIANTS = [
-    NEAR_DUP_BASE + "\n\nThe key disagreement was over whether to open a second location across the river.",
-    NEAR_DUP_BASE + "\n\nThe key disagreement was over whether to start a delivery service for elderly members.",
+    NEAR_DUP_BASE
+    + "\n\nThe key disagreement was over whether to open a second location across the river.",
+    NEAR_DUP_BASE
+    + "\n\nThe key disagreement was over whether to start a delivery service for elderly members.",
     NEAR_DUP_BASE + "\n\nThe key disagreement was over whether to invest in a refrigerated truck.",
-    NEAR_DUP_BASE + "\n\nThe key disagreement was over whether to accept produce from non-organic farms.",
+    NEAR_DUP_BASE
+    + "\n\nThe key disagreement was over whether to accept produce from non-organic farms.",
     NEAR_DUP_BASE + "\n\nThe key disagreement was over whether to hire a paid coordinator.",
 ]
 
@@ -656,7 +659,7 @@ ORDINARY_BODIES = [
         "Does not charge for estimates."
     ),
     (
-        "Bash one-liners I keep forgetting: find . -name \"*.py\" -exec wc -l "
+        'Bash one-liners I keep forgetting: find . -name "*.py" -exec wc -l '
         "{}+ to count lines in Python files. history | awk '{print $2}' | "
         "sort | uniq -c | sort -rn | head to see most-used commands. "
         "ffmpeg -i input.mp4 -vf scale=1280:720 output.mp4 to resize a video."

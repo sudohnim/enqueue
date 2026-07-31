@@ -8,7 +8,6 @@
 #                         vague-semantic, nothing, regression
 
 queries:
-
   # ── 10 title-only names ──────────────────────────────────────────────
   - id: t_only_01
     query: "Hypatia"

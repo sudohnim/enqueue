@@ -14,13 +14,18 @@ import typer
 
 from . import config
 
-app = typer.Typer(add_completion=False, help="Enqueue: capture anything, organise it later.")
+app = typer.Typer(
+    add_completion=False, help="Enqueue: capture anything, organise it later."
+)
 
 
 def _call(method: str, path: str, **kwargs) -> dict:
     try:
         response = httpx.request(
-            method, f"{config.API_URL}{path}", timeout=kwargs.pop("timeout", 600), **kwargs
+            method,
+            f"{config.API_URL}{path}",
+            timeout=kwargs.pop("timeout", 600),
+            **kwargs,
         )
     except httpx.ConnectError:
         typer.secho(
@@ -76,7 +81,11 @@ def migrate() -> None:
 @app.command()
 def facets(limit: int = 0, redo: bool = False) -> None:
     """Generate facets for every eligible artifact. Slow, resumable."""
-    _echo(_call("POST", "/facets", json={"limit": limit or None, "redo": redo}, timeout=None))
+    _echo(
+        _call(
+            "POST", "/facets", json={"limit": limit or None, "redo": redo}, timeout=None
+        )
+    )
 
 
 @app.command()
@@ -90,7 +99,9 @@ def search(query: str, limit: int = 10) -> None:
     """Find artifacts. Hybrid dense plus sparse, no model calls."""
     result = _call("GET", "/search", params={"q": query, "limit": limit})
     for hit in result["hits"]:
-        typer.echo(f"  {hit['score']:.3f}  {hit['title'][:44]:<46} {hit['snippet'][:60]}")
+        typer.echo(
+            f"  {hit['score']:.3f}  {hit['title'][:44]:<46} {hit['snippet'][:60]}"
+        )
 
 
 @app.command()
@@ -104,7 +115,9 @@ def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> No
     )
     exhibit = result.get("exhibit") or {}
 
-    typer.secho(f"\n{exhibit.get('suggested_name', lens)}", fg=typer.colors.YELLOW, bold=True)
+    typer.secho(
+        f"\n{exhibit.get('suggested_name', lens)}", fg=typer.colors.YELLOW, bold=True
+    )
     typer.echo(
         f"{len(result['kept'])} artifacts  ·  {result['rejected']} rejected  ·  {result['considered']} considered"
     )
@@ -123,7 +136,9 @@ def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> No
         typer.echo(f"    {group['claim']}")
 
     for tension in exhibit.get("tensions", []):
-        typer.secho(f"\n  tension: {' vs '.join(tension['between'])}", fg=typer.colors.MAGENTA)
+        typer.secho(
+            f"\n  tension: {' vs '.join(tension['between'])}", fg=typer.colors.MAGENTA
+        )
         typer.echo(f"    {tension['claim']}")
 
     if result.get("saved_id"):
@@ -162,7 +177,9 @@ def preview(artifact_id: str) -> None:
 def chat(question: str, chat_id: str = "") -> None:
     """Ask the collection something. Continues a chat if given one."""
     if chat_id:
-        result = _call("POST", f"/chats/{chat_id}/messages", json={"text": question}, timeout=None)
+        result = _call(
+            "POST", f"/chats/{chat_id}/messages", json={"text": question}, timeout=None
+        )
     else:
         result = _call("POST", "/chats", json={"text": question}, timeout=None)
 
@@ -211,7 +228,9 @@ def facet_gate() -> None:
 CORPUS_DIR = Path(__file__).resolve().parent.parent.parent / "evals" / "corpus"
 MANIFEST_PATH = CORPUS_DIR / "MANIFEST.json"
 
-test_corpus_app = typer.Typer(help="Manage the synthetic test corpus for search evaluation.")
+test_corpus_app = typer.Typer(
+    help="Manage the synthetic test corpus for search evaluation."
+)
 app.add_typer(test_corpus_app, name="test-corpus")
 
 
@@ -287,7 +306,9 @@ def verify() -> None:
                 violations.append(f"{entry['id']}: missing forbidden_term in manifest")
                 continue
             if term in content.lower():
-                violations.append(f"{entry['id']}: forbidden term '{term}' found in content")
+                violations.append(
+                    f"{entry['id']}: forbidden term '{term}' found in content"
+                )
 
         elif cat == "rare-string":
             rare = entry.get("rare_string", "")
@@ -350,7 +371,9 @@ def load() -> None:
         _run_verify()
     except SystemExit as e:
         if e.code != 0:
-            typer.secho("corpus verification failed; refusing to load", fg=typer.colors.RED)
+            typer.secho(
+                "corpus verification failed; refusing to load", fg=typer.colors.RED
+            )
             raise typer.Exit(1) from e
 
     test_dir = CORPUS_DIR.parent / "test-data"
@@ -457,61 +480,83 @@ def _run_verify() -> None:
 
 
 def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
-    """Load corpus artifacts into a test database at test_dir.
+    """Load corpus artifacts, chunk them, and index into an isolated Qdrant.
 
-    Uses raw sqlite3 directly to avoid the app's DB module caching the
-    migration state and connection settings for the real database.
+    The test database and Qdrant index live under test_dir, completely separate
+    from the real library. Returns (artifact_count, chunk_count).
     """
-    import sqlite3
-
-    # Use the app's migration to create the schema on the test database
     from . import config as cfg
     from . import db as db_mod
+    from .ingest.chunk import chunk_artifact
+    from .index.qdrant import index_chunks, ensure_collections
 
     test_db = test_dir / "enqueue.db"
+    test_qdrant = test_dir / "qdrant"
     test_blobs = test_dir / "blobs"
     test_blobs.mkdir(parents=True, exist_ok=True)
+    test_qdrant.mkdir(parents=True, exist_ok=True)
 
-    # Point config to the test directory and reset migration state
-    # so get_conn() runs the migration on the test DB, not the real one
-    original_data_dir = cfg.DATA_DIR
-    original_db_path = cfg.DB_PATH
-    original_blob_dir = cfg.BLOB_DIR
+    # Point config to the test directory
+    originals = {
+        "DATA_DIR": cfg.DATA_DIR,
+        "DB_PATH": cfg.DB_PATH,
+        "BLOB_DIR": cfg.BLOB_DIR,
+        "QDRANT_PATH": cfg.QDRANT_PATH,
+    }
 
     cfg.DATA_DIR = test_dir
     cfg.DB_PATH = test_db
     cfg.BLOB_DIR = test_blobs
+    cfg.QDRANT_PATH = test_qdrant
 
     try:
         db_mod.reset_migration_state()
-        db_mod.get_conn().close()  # triggers migrate + _migrated
+        db_mod.get_conn().close()  # triggers migrate on the test DB
 
-        # Now insert artifacts using raw sqlite3 to stay clear of cached state
-        conn = sqlite3.connect(str(test_db))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
+        # Insert artifacts via the app's db module
+        conn = db_mod.get_conn()
+        try:
+            for entry in entries:
+                fp = CORPUS_DIR / entry["filename"]
+                content = fp.read_text(encoding="utf-8")
+                parts = content.split("\n\n", 1)
+                title = parts[0].lstrip("# ").strip() if parts else ""
+                body = parts[1] if len(parts) > 1 else ""
 
-        for _i, entry in enumerate(entries):
-            fp = CORPUS_DIR / entry["filename"]
-            content = fp.read_text(encoding="utf-8")
-            parts = content.split("\n\n", 1)
-            title = parts[0].lstrip("# ").strip() if parts else ""
-            body = parts[1] if len(parts) > 1 else ""
+                conn.execute(
+                    "INSERT OR IGNORE INTO artifacts "
+                    "(id, kind, title, body, content_hash, status, "
+                    " created_at, updated_at) "
+                    "VALUES (?, 'note', ?, ?, ?, 'ok', "
+                    " datetime('now'), datetime('now'))",
+                    (entry["id"], title, body, entry["id"] + "_hash"),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
-            conn.execute(
-                "INSERT OR IGNORE INTO artifacts "
-                "(id, kind, title, body, content_hash, status, created_at, updated_at) "
-                "VALUES (?, 'note', ?, ?, ?, 'ok', datetime('now'), datetime('now'))",
-                (entry["id"], title, body, entry["id"] + "_hash"),
-            )
+        # Chunk each artifact
+        chunk_count = 0
+        for entry in entries:
+            conn = db_mod.get_conn()
+            try:
+                made = chunk_artifact(conn, entry["id"])
+                chunk_count += made
+                conn.commit()
+            finally:
+                conn.close()
 
-        conn.commit()
-        conn.close()
+        # Index chunks into the test Qdrant
+        ensure_collections()
+        idx_result = index_chunks()
+
+        typer.echo(
+            f"  artifacts: {len(entries)}  chunks: {chunk_count}  "
+            f"indexed: {idx_result.get('indexed', '?')}"
+        )
     finally:
-        cfg.DATA_DIR = original_data_dir
-        cfg.DB_PATH = original_db_path
-        cfg.BLOB_DIR = original_blob_dir
-        # Revert migration state so next real get_conn() still works
+        for attr, val in originals.items():
+            setattr(cfg, attr, val)
         db_mod.reset_migration_state()
 
 
@@ -519,7 +564,7 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
 # Eval command
 # ---------------------------------------------------------------------------
 
-EVALS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "evals"
+EVALS_DIR = Path(__file__).resolve().parent.parent.parent / "evals"
 QUERIES_PATH = EVALS_DIR / "queries.yaml"
 RESULTS_DIR = EVALS_DIR / "results"
 
@@ -530,10 +575,10 @@ def eval(
     engine: str = "qdrant",
     ablation: bool = False,
 ) -> None:
-    """Run every query from evals/queries.yaml against the running engine.
+    """Run every query from evals/queries.yaml against the test library.
 
-    Prints per-query pass/fail and aggregate metrics.
-    Requires the engine to be running with the test corpus loaded.
+    Runs locally against the isolated test database + test Qdrant index.
+    Does not require the engine to be running.
     """
     import math
     import time
@@ -553,154 +598,237 @@ def eval(
     queries = raw["queries"]
     typer.echo(f"Loaded {len(queries)} queries from {QUERIES_PATH}")
 
-    results: list[dict] = []
-    latencies: list[float] = []
+    # Determine test data paths
+    test_dir = EVALS_DIR / "test-data"
+    test_db = test_dir / "enqueue.db"
+    test_qdrant = test_dir / "qdrant"
 
-    for q in queries:
-        t0 = time.time()
-        try:
-            resp = _call("GET", "/search", params={"q": q["query"], "limit": 10})
-        except SystemExit:
-            typer.secho(f"  engine call failed for query '{q['query']}'", fg=typer.colors.RED)
-            results.append({
-                "id": q["id"],
-                "query": q["query"],
-                "category": q["category"],
-                "pass": False,
-                "rank": None,
-                "error": "engine call failed",
-            })
-            continue
-
-        elapsed = time.time() - t0
-        latencies.append(elapsed)
-
-        hit_ids = [h["id"] for h in resp.get("hits", [])]
-        expected = q["expect_artifact_ids"]
-
-        if not expected:
-            # Query should return nothing
-            passed = len(hit_ids) == 0
-            rank = None
-            result_entry = {
-                "id": q["id"],
-                "query": q["query"],
-                "category": q["category"],
-                "pass": passed,
-                "rank": rank,
-                "latency": round(elapsed, 3),
-                "n_hits": len(hit_ids),
-                "top_hit_id": hit_ids[0] if hit_ids else None,
-            }
-            results.append(result_entry)
-            continue
-
-        # Find the lowest rank at which any expected artifact appears
-        best_rank: int | None = None
-        for rank, hid in enumerate(hit_ids, start=1):
-            if hid in expected:
-                best_rank = rank
-                break
-
-        passed = best_rank is not None and best_rank <= 10
-
-        result_entry = {
-            "id": q["id"],
-            "query": q["query"],
-            "category": q["category"],
-            "pass": passed,
-            "rank": best_rank,
-            "latency": round(elapsed, 3),
-            "n_hits": len(hit_ids),
-            "top_hit_id": hit_ids[0] if hit_ids else None,
-        }
-        results.append(result_entry)
-
-    # Compute aggregate metrics
-    passed_qs = [r for r in results if r.get("pass")]
-    total = len(results)
-    n_pass = len(passed_qs)
-
-    recalls_1 = [r for r in passed_qs if r.get("rank") == 1]
-    recalls_10 = passed_qs
-
-    recall_at_1 = len(recalls_1) / total if total else 0.0
-    recall_at_10 = len(recalls_10) / total if total else 0.0
-
-    # Mean reciprocal rank (non-zero-result queries only)
-    non_zero_ranks = [
-        r["rank"] for r in results
-        if r.get("rank") is not None and r["category"] != "nothing"
-    ]
-    mrr = (
-        sum(1.0 / r for r in non_zero_ranks) / len(non_zero_ranks)
-        if non_zero_ranks
-        else 0.0
-    )
-
-    nothing_queries = [r for r in results if r["category"] == "nothing"]
-    nothing_pass = sum(1 for r in nothing_queries if r.get("pass"))
-
-    sorted_lats = sorted(latencies)
-    p50 = sorted_lats[len(sorted_lats) // 2] if sorted_lats else 0.0
-    p95 = 0.0
-    if sorted_lats:
-        try:
-            idx = int(math.ceil(0.95 * len(sorted_lats))) - 1
-            p95 = sorted_lats[idx]
-        except IndexError:
-            p95 = sorted_lats[-1]
-
-    # Print per-query results
-    typer.echo("")
-    typer.secho(f"{'PASS':>4}  {'Rank':>4}  {'Lat':>5}  Query", bold=True)
-    typer.echo("-" * 60)
-    for r in results:
-        status = typer.colors.GREEN if r.get("pass") else typer.colors.RED
-        rank_str = str(r.get("rank", "-")) if r.get("rank") is not None else "-"
-        lat_str = f"{r.get('latency', 0):.2f}s"
+    if not test_db.exists():
         typer.secho(
-            f"{'PASS' if r.get('pass') else 'FAIL':>4}  {rank_str:>4}  {lat_str:>5}  {r['id']}",
-            fg=status,
+            f"test database not found at {test_db}\nrun: enq test-corpus load",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    if not test_qdrant.exists():
+        typer.secho(
+            f"test Qdrant index not found at {test_qdrant}\nrun: enq test-corpus load",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    # Point config at the test data
+    from . import config as cfg
+    from .index import qdrant as qd
+
+    originals = {"DB_PATH": cfg.DB_PATH, "QDRANT_PATH": cfg.QDRANT_PATH}
+    cfg.DB_PATH = test_db
+    cfg.QDRANT_PATH = test_qdrant
+
+    # Clear the cached Qdrant client so it re-opens against the test path
+    qd.client.cache_clear()
+
+    def _run_search(text: str, limit: int = 10, mode: str = "hybrid") -> list[dict]:
+        """Run search against the test Qdrant, return deduplicated artifact IDs."""
+        if mode == "dense":
+            hits = qd.search_dense(qd.CHUNKS, text, limit=limit * 3)
+        else:
+            hits = qd.search(qd.CHUNKS, text, limit=limit * 3)
+        # Deduplicate by artifact_id, keep lowest distance
+        seen: dict[str, float] = {}
+        for h in hits:
+            aid = h["artifact_id"]
+            if aid not in seen or h["score"] > seen[aid]:
+                seen[aid] = h["score"]
+        ranked = sorted(seen.items(), key=lambda x: -x[1])[:limit]
+        return [{"id": aid, "score": round(score, 4)} for aid, score in ranked]
+
+    def _evaluate(queries_list: list[dict], mode: str) -> list[dict]:
+        """Run queries with a given mode and return results."""
+        out: list[dict] = []
+        for q in queries_list:
+            t0 = time.time()
+            try:
+                hits = _run_search(q["query"], limit=10, mode=mode)
+            except Exception as exc:
+                out.append(
+                    {
+                        "id": q["id"],
+                        "query": q["query"],
+                        "category": q["category"],
+                        "pass": False,
+                        "rank": None,
+                        "error": str(exc),
+                        "latency": round(time.time() - t0, 3),
+                    }
+                )
+                continue
+
+            elapsed = time.time() - t0
+            hit_ids = [h["id"] for h in hits]
+            expected = q["expect_artifact_ids"]
+
+            if not expected:
+                passed = len(hit_ids) == 0
+                out.append(
+                    {
+                        "id": q["id"],
+                        "query": q["query"],
+                        "category": q["category"],
+                        "pass": passed,
+                        "rank": None,
+                        "latency": round(elapsed, 3),
+                        "n_hits": len(hit_ids),
+                        "top_hit_id": hit_ids[0] if hit_ids else None,
+                    }
+                )
+                continue
+
+            best_rank: int | None = None
+            for rank, hid in enumerate(hit_ids, start=1):
+                if hid in expected:
+                    best_rank = rank
+                    break
+
+            passed = best_rank is not None and best_rank <= 10
+            out.append(
+                {
+                    "id": q["id"],
+                    "query": q["query"],
+                    "category": q["category"],
+                    "pass": passed,
+                    "rank": best_rank,
+                    "latency": round(elapsed, 3),
+                    "n_hits": len(hit_ids),
+                    "top_hit_id": hit_ids[0] if hit_ids else None,
+                }
+            )
+        return out
+
+    if ablation:
+        modes = [("hybrid", engine), ("dense", f"{engine}-dense")]
+    else:
+        modes = [("hybrid", engine)]
+
+    all_results: dict[str, list[dict]] = {}
+
+    for mode, label in modes:
+        results = _evaluate(queries, mode)
+        all_results[label] = results
+
+        passed_qs = [r for r in results if r.get("pass")]
+        total = len(results)
+        n_pass = len(passed_qs)
+
+        recall_at_1 = (
+            sum(1 for r in passed_qs if r.get("rank") == 1) / total if total else 0.0
+        )
+        recall_at_10 = len(passed_qs) / total if total else 0.0
+
+        non_zero_ranks = [
+            r["rank"]
+            for r in results
+            if r.get("rank") is not None and r["category"] != "nothing"
+        ]
+        mrr = (
+            sum(1.0 / r for r in non_zero_ranks) / len(non_zero_ranks)
+            if non_zero_ranks
+            else 0.0
         )
 
-    # Print summary
-    typer.echo("")
-    typer.secho("=== Summary ===", bold=True)
-    typer.echo(f"  Total queries:    {total}")
-    typer.echo(f"  Pass:             {n_pass}")
-    typer.echo(f"  Fail:             {total - n_pass}")
-    typer.echo(f"  Recall@1:         {recall_at_1:.3f}")
-    typer.echo(f"  Recall@10:        {recall_at_10:.3f}")
-    typer.echo(f"  MRR (non-zero):   {mrr:.3f}")
-    typer.echo(f"  Nothing-OK:       {nothing_pass}/{len(nothing_queries)}")
-    typer.echo(f"  p50 latency:      {p50:.3f}s")
-    typer.echo(f"  p95 latency:      {p95:.3f}s")
+        nothing_qs = [r for r in results if r["category"] == "nothing"]
+        nothing_pass = sum(1 for r in nothing_qs if r.get("pass"))
+
+        latencies = [r.get("latency", 0) for r in results if r.get("latency")]
+        sorted_lats = sorted(latencies)
+        p50 = sorted_lats[len(sorted_lats) // 2] if sorted_lats else 0.0
+        p95 = 0.0
+        if sorted_lats:
+            try:
+                idx = int(math.ceil(0.95 * len(sorted_lats))) - 1
+                p95 = sorted_lats[idx]
+            except IndexError:
+                p95 = sorted_lats[-1]
+
+        typer.echo("")
+        typer.secho(f"=== Mode: {label} ===", bold=True)
+        typer.secho(f"{'PASS':>4}  {'Rank':>4}  {'Lat':>5}  Query", bold=True)
+        typer.echo("-" * 60)
+        for r in results:
+            status = typer.colors.GREEN if r.get("pass") else typer.colors.RED
+            rank_str = str(r.get("rank", "-")) if r.get("rank") is not None else "-"
+            lat_str = f"{r.get('latency', 0):.2f}s"
+            typer.secho(
+                f"{'PASS' if r.get('pass') else 'FAIL':>4}  "
+                f"{rank_str:>4}  {lat_str:>5}  {r['id']}",
+                fg=status,
+            )
+
+        typer.echo("")
+        typer.secho(f"--- Summary [{label}] ---", bold=True)
+        typer.echo(f"  Total queries:    {total}")
+        typer.echo(f"  Pass:             {n_pass}")
+        typer.echo(f"  Fail:             {total - n_pass}")
+        typer.echo(f"  Recall@1:         {recall_at_1:.3f}")
+        typer.echo(f"  Recall@10:        {recall_at_10:.3f}")
+        typer.echo(f"  MRR (non-zero):   {mrr:.3f}")
+        typer.echo(f"  Nothing-OK:       {nothing_pass}/{len(nothing_qs)}")
+        typer.echo(f"  p50 latency:      {p50:.3f}s")
+        typer.echo(f"  p95 latency:      {p95:.3f}s")
 
     # Save JSON if requested
     if json_path:
         out = Path(json_path).resolve()
         out.parent.mkdir(parents=True, exist_ok=True)
-        summary = {
-            "engine": engine,
-            "total": total,
-            "pass": n_pass,
-            "fail": total - n_pass,
-            "recall@1": round(recall_at_1, 4),
-            "recall@10": round(recall_at_10, 4),
-            "MRR": round(mrr, 4),
-            "nothing_ok": nothing_pass,
-            "nothing_total": len(nothing_queries),
-            "p50_latency": round(p50, 3),
-            "p95_latency": round(p95, 3),
-            "results": results,
-        }
+        summary = {"engine": engine, "modes": {}}
+        for label, results in all_results.items():
+            passed_qs = [r for r in results if r.get("pass")]
+            total = len(results)
+            n_recall_1 = sum(1 for r in passed_qs if r.get("rank") == 1)
+            recall_at_1 = n_recall_1 / total if total else 0.0
+            recall_at_10 = len(passed_qs) / total if total else 0.0
+            non_zero_ranks = [
+                r["rank"]
+                for r in results
+                if r.get("rank") is not None and r["category"] != "nothing"
+            ]
+            mrr = (
+                sum(1.0 / r for r in non_zero_ranks) / len(non_zero_ranks)
+                if non_zero_ranks
+                else 0.0
+            )
+            nothing_qs = [r for r in results if r["category"] == "nothing"]
+            nothing_pass = sum(1 for r in nothing_qs if r.get("pass"))
+            latencies = [r.get("latency", 0) for r in results if r.get("latency")]
+            sorted_lats = sorted(latencies)
+            p50 = sorted_lats[len(sorted_lats) // 2] if sorted_lats else 0.0
+            p95 = 0.0
+            if sorted_lats:
+                try:
+                    idx = int(math.ceil(0.95 * len(sorted_lats))) - 1
+                    p95 = sorted_lats[idx]
+                except IndexError:
+                    p95 = sorted_lats[-1]
+
+            summary["modes"][label] = {
+                "total": total,
+                "pass": len(passed_qs),
+                "fail": total - len(passed_qs),
+                "recall@1": round(recall_at_1, 4),
+                "recall@10": round(recall_at_10, 4),
+                "MRR": round(mrr, 4),
+                "nothing_ok": nothing_pass,
+                "nothing_total": len(nothing_qs),
+                "p50_latency": round(p50, 3),
+                "p95_latency": round(p95, 3),
+                "results": results,
+            }
         out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         typer.echo(f"\nWrote results to {out}")
 
-    if ablation:
-        typer.secho("\nAblation mode not yet implemented — requires swappable engine.",
-                     fg=typer.colors.YELLOW)
+    # Restore config
+    for attr, val in originals.items():
+        setattr(cfg, attr, val)
+    qd.client.cache_clear()
 
 
 if __name__ == "__main__":

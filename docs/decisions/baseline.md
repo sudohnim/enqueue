@@ -57,3 +57,50 @@ Search currently uses:
    search goes through Qdrant only).
 3. The retrieve pipeline is in `src/enqueue/retrieve/`: expand → candidates →
    rerank → synthesise.
+
+## Eval results — Qdrant baseline (hybrid search)
+
+Recorded with `enq eval --json-path evals/results/qdrant-baseline.json` on
+50 test queries from `evals/queries.yaml` against the synthetic test corpus
+(50 artifacts, 125 chunks, 125 Qdrant vector points).
+
+| Metric | Value |
+| --- | --- |
+| Total queries | 50 |
+| Pass | 41 / 50 (82%) |
+| Recall@1 | 0.700 |
+| Recall@10 | 0.820 |
+| MRR (non-zero) | 0.893 |
+| Nothing-OK | 0/8 |
+| p50 latency | 14 ms |
+| p95 latency | 26 ms |
+
+### Observations
+
+- **Title-only queries (10/10 pass)**: Perfect. Every exact title match returns
+  the correct artifact at rank 1.
+- **Paraphrase queries (10/10 pass)**: Strong. Dense embeddings capture semantic
+  overlap even when the search text doesn't match the title exactly.
+- **Rare-string queries (5/5 pass)**: Perfect. The sparse BM25 component handles
+  proper nouns and rare terms well.
+- **Phrase queries (5/5 pass)**: Perfect.
+- **Partial queries (5/5 pass)**: Perfect.
+- **Vague-semantic queries (4/6 pass)**: vague_06 fails — the query is too
+  semantically distant from any artifact. The other 5 resolve correctly due to
+  sparse BM25 overlap with chunk content.
+- **Regression (regr_01, pass)**: The Epictetus/Hypatia regression is fixed by
+  prepending the title to chunk text during indexing.
+- **Nothing queries (0/8 pass)**: All 8 return false positives. This is inherent
+  to vector search without a minimum score threshold — Qdrant always returns
+  the top-k closest vectors even when none are relevant. A score-threshold
+  filter in the reranker would fix this.
+
+### Score threshold recommendation
+
+Plan part-1-foundation Phase 13 ([HUMAN]) quantifies the medium-relevance cutoff
+for the topic view. Once a score threshold is chosen (e.g., cosine similarity
+≥ 0.30), the same threshold can be applied to search results to suppress
+irrelevant hits, fixing the nothing-query false positives.
+
+Until then, the 0/8 nothing-OK score is an expected limitation of pure vector
+search, not a regression.
