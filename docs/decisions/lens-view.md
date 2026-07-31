@@ -137,3 +137,24 @@ preview-image flags, timestamps, pinned), so the client needs no second call.
 - **Orderings:** `ORDERINGS` gains `relevance` so the ordering control can
   express the mode; the plain wall rejects it with a clear message because
   there is no score column to sort by.
+
+## Keeping it correct as the library grows (Phase 12)
+
+- **New artifacts do not invalidate the cache.** A judgment row is keyed by
+  (lens_key, artifact_id, model_version); a new artifact simply has no row,
+  so on the next application of a lens only artifacts without a cached
+  judgment that rank in the top `judge_top` are judged. Tested: apply, add
+  one artifact, re-apply - at most one new model call.
+- **Trashed artifacts leave both sections immediately.** Every stage queries
+  `deleted_at IS NULL`, so a trash action is visible to the next lens
+  application with no cache work at all. Tested.
+- **Embedding version changes do not touch judgments.** Scores are computed
+  live on every application of a lens (score_all runs a real search each
+  time), so there is no cached score to invalidate - a version bump changes
+  future scores the moment it lands. Judgments are about meaning, not about
+  vectors: "this artifact belongs under this lens" survives an embedding
+  change, so `lens_judgments` rows are kept. The judgment cache is keyed by
+  model version (the reasoner), not by embedding version (the measure).
+- **Purge-driven cleanup of `lens_judgments` is implemented in Part 4,
+  Phase 29 and is deliberately not attempted here.** Trashing an artifact
+  keeps its judgment rows; the purge phase owns that lifecycle.

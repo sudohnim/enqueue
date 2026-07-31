@@ -199,3 +199,38 @@ class TestCoverage:
         out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1, score_cap=2)
         assert out["coverage"] == "partial"
         assert out["total_count"] == 5
+
+
+class TestLibraryGrowth:
+    def test_new_artifact_costs_at_most_one_new_call(self, store, quiet_queue, scored_store, monkeypatch):
+        # Phase 12: ingesting a new artifact must not invalidate the cache. On
+        # re-apply, only the new artifact lacks a judgment, so at most one new
+        # model call happens - never a re-judgment of everything.
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        first = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+        assert first["model_calls"] == 1
+
+        added = notes.create(_BODY_D)
+        _chunk_and_index(scored_store, added["artifact"]["id"])
+        provider.by_id[added["artifact"]["id"]] = _judgment(added["artifact"]["id"], Verdict.BELONGS)
+
+        second = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+        assert second["model_calls"] <= 1
+
+    def test_trashed_artifact_leaves_both_sections(self, store, quiet_queue, scored_store, monkeypatch):
+        from enqueue import trash
+
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        doomed = arts.pop(next(iter(arts)))
+        provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        trash.delete(doomed["id"])
+        out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+
+        bucket_ids = {e["artifact_id"] for e in out["related"] + out["other"] + out["pinned"]}
+        assert doomed["id"] not in bucket_ids
+        assert out["total_count"] == 2
