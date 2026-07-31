@@ -272,3 +272,42 @@ with zero imports from the rest of the app:
       and a scored-variant check against the hand-computed formula
 
 Tests: 7 fusion tests pass.
+
+## Phase 18C — Engine implementation ✅
+
+`src/enqueue/index/store_sqlite.py` is `SqliteVecStore(VectorStore)`, the
+full engine behind the same interface Qdrant used:
+
+- [x] Own connections per operation (WAL + sqlite-vec loaded per connection,
+      safe from the API thread and the ingest worker at once); `ensure()`
+      creates all four index tables if missing, safe to call repeatedly
+- [x] `upsert_chunks` / `upsert_facets` rebuild a collection in place from
+      `chunks` / `facets`, keyed on `chunk_id` / `facet_id` (never a random
+      UUID), each batch writing the vector and keyword tables in one
+      transaction; rows for soft-deleted artifacts are excluded
+- [x] Index text is `{title}\n\n{text}` for chunks (title prepended for
+      indexing only, stored text untouched); facet index text is the
+      statement
+- [x] `drop_artifact` removes an artifact's rows from both tables of a
+      collection in one transaction; `index_artifact` re-embeds one
+      artifact's chunks in place (save path, no full-collection wipe)
+- [x] `search` runs dense (`search_dense`, vector nearest-neighbour only)
+      and keyword (`_search_keyword`, FTS5 BM25 only) at prefetch width and
+      fuses with `rrf_scored`; hits carry `score` / `artifact_id` and, for
+      facets, `level` and `trust`; distance becomes score via 1/(1+d)
+- [x] FTS5 input sanitization: every token quoted with embedded quotes
+      doubled, so `"`, `AND`, `foo-bar`, `NEAR`, `*` are literal terms, not
+      query syntax; empty text matches nothing
+- [x] `counts()` covers all four tables, None for a missing table (the
+      "absent collection" shape); `write_embed_version` records the
+      embedding version in `index_meta`, idempotently
+- [x] `VECTOR_STORE=sqlite-vec` wired into the `get_store()` factory;
+      Qdrant stays the default
+- [x] The SQL-injection gate forced the shape of the store: all statements
+      are module-level literals or subscript lookups, values always bound;
+      rule probes confirmed subscript access is invisible to the pattern
+
+Tests: 25 store tests pass, including the literal-string search cases (`"`,
+`AND`, `foo-bar`, `NEAR`, `*`, empty, 500 chars), upsert idempotency,
+deleted-artifact exclusion, title-prepend findability, in-place re-embed,
+and a chunked-artifact round trip through `chunk_artifact`.
