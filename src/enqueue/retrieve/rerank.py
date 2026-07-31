@@ -90,6 +90,20 @@ def _judge_fresh(lens: str, candidate: dict, text: str) -> Judgment | None:
     return judgment
 
 
+def judge_one(lens: str, candidate: dict) -> tuple[Judgment | None, bool]:
+    """A single judgment for one candidate, for streaming applications.
+
+    Same cache-first, write-through path as the pooled rerank, one artifact at
+    a time so a caller can surface placards as they arrive.
+    """
+    conn = db.get_conn()
+    try:
+        text = artifact_text(conn, candidate["artifact_id"])
+    finally:
+        conn.close()
+    return _judge(lens, candidate, text)
+
+
 def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
     conn = db.get_conn()
     try:

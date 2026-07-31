@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from enqueue import config, db, notes
-from enqueue.api import LensRequest, apply_lens_view
+from enqueue.api import LensRequest, _consume_lens
 from enqueue.index.store import get_store
 from enqueue.ingest import chunk as chunk_mod
 from enqueue.retrieve import rerank
@@ -88,7 +88,7 @@ class TestLensEndpoint:
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
         before = {a["id"]: a["updated_at"] for a in arts}
 
-        apply_lens_view(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
+        _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
 
         conn = db.get_conn()
         try:
@@ -104,7 +104,7 @@ class TestLensEndpoint:
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        apply_lens_view(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
+        _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
 
         conn = db.get_conn()
         try:
@@ -126,7 +126,7 @@ class TestLensEndpoint:
             conn.close()
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        out = apply_lens_view(
+        out = _consume_lens(
             LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1)
         )
 
@@ -139,7 +139,7 @@ class TestLensEndpoint:
         arts = _make_library(scored_store, [_BODY_A])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        out = apply_lens_view(
+        out = _consume_lens(
             LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1)
         )
         entry = out["related"][0]
@@ -153,7 +153,7 @@ class TestLensEndpoint:
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
         _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
 
-        out = apply_lens_view(
+        out = _consume_lens(
             LensRequest(
                 lens="hydroponics feeds the city from a rooftop", judge_top=1, limit=2, offset=0
             )
@@ -161,3 +161,31 @@ class TestLensEndpoint:
         assert len(out["related"]) + len(out["other"]) == 2
         assert out["related_total"] + out["other_total"] == 3
         assert out["related_more"] or out["other_more"]
+
+
+class TestLensStreamingHttp:
+    def test_endpoint_streams_split_before_judgments(self, store, quiet_queue, scored_store, monkeypatch):
+        # The HTTP contract: POST /lens is a text/event-stream whose first
+        # event is the split. The client opens the wall before the model
+        # finishes judging.
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app
+
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
+
+        with TestClient(app) as client:
+            resp = client.post(
+                "/lens",
+                json={"lens": "hydroponics feeds the city from a rooftop", "judge_top": 1},
+            )
+            assert resp.status_code == 200
+            assert resp.headers["content-type"].startswith("text/event-stream")
+            first, *rest = resp.text.split("data: ")[1:]
+            import json as _json
+
+            split = _json.loads(first.strip())
+            assert split["stage"] == "split"
+            assert len(split["judging"]) == 1
+            assert any(e["stage"] == "done" for e in (_json.loads(r.strip()) for r in rest if r.strip()))

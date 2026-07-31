@@ -188,3 +188,29 @@ picks from it and records why.
 The CI guard does not exist yet (no pipeline in this repo). When CI lands it
 should run `enq lens-eval --corpus --baseline 0.933`, which exits 2 when the
 best correct placement drops more than 5 percent below 0.933.
+
+## Performance guardrails (Phase 14)
+
+- **The split comes first, placards fill in.** `POST /lens` is now a
+  text/event-stream: the `split` event arrives as soon as stage one
+  finishes - both sections bucketed by score, candidates named in
+  `judging`, every entry `judged: false` - and `judgment` events follow one
+  per artifact, carrying the placard and the final placement. The person
+  sees the wall before the model has spoken. Tested with a slow provider:
+  zero model calls have been made when the split is received. The progress
+  state is the stream itself: each judgment event carries
+  `judged_so_far`/`judge_total`, which is all a first-run client needs to
+  render "checking 3 of 20".
+- **Cached replay is instant.** Re-applying the same lens makes zero model
+  calls; a cached application of a three-artifact library completes in well
+  under a second in the test suite.
+- **Check More is a re-request with a higher judge_top.** The cache makes
+  already-judged artifacts free, so raising judge_top from 1 to 3 costs
+  exactly two model calls, never a re-judgment of the first.
+- **Judge Top is capped.** `LENS_JUDGE_TOP_MAX` (default 100,
+  `ENQ_LENS_JUDGE_TOP_MAX`) bounds a single application so one request
+  cannot spend the library's entire judgment budget. The response reports
+  the clamped `judge_top` and the cap; the wall copy explains the cap when
+  the lens UI lands.
+- Every lens application logs stage-one duration, model calls, cache hits,
+  coverage, and total duration.

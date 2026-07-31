@@ -149,3 +149,14 @@ try:
     LENS_JUDGE_TOP = int(_LENS_JUDGE_TOP)
 except (TypeError, ValueError):
     LENS_JUDGE_TOP = 20
+
+# The ceiling for a single lens application. Judge Top is a person asking for
+# more: "check more of the wall". Without a cap, one request could spend the
+# library's entire judgment budget; with it, checking more is bounded and the
+# response says so. Raising the cap is a config decision, not a per-request
+# one.
+_LENS_JUDGE_TOP_MAX = os.getenv("ENQ_LENS_JUDGE_TOP_MAX", "100")
+try:
+    LENS_JUDGE_TOP_MAX = int(_LENS_JUDGE_TOP_MAX)
+except (TypeError, ValueError):
+    LENS_JUDGE_TOP_MAX = 100

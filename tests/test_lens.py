@@ -51,16 +51,25 @@ def _chunk_and_index(scored_store, artifact_id: str) -> None:
 
 
 class _Scripted:
-    """One judgment per artifact, looked up by id (thread-safe)."""
+    """One judgment per artifact, looked up by id (thread-safe).
 
-    def __init__(self, by_id):
+    `delay` simulates a slow model so a test can prove the split arrives
+    before any judgment completes.
+    """
+
+    def __init__(self, by_id, delay: float = 0.0):
         self.by_id = by_id
+        self.delay = delay
         self.calls = 0
         self._lock = threading.Lock()
 
     def complete(self, system, user, response_model, context=None, max_retries=None):
+        import time
+
         with self._lock:
             self.calls += 1
+        if self.delay:
+            time.sleep(self.delay)
         for line in user.splitlines():
             if line.startswith("Artifact id: "):
                 aid = line.removeprefix("Artifact id: ")
@@ -176,7 +185,7 @@ class TestApplyLens:
         monkeypatch.setattr(rerank, "get_provider", lambda: provider)
 
         out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=2)
-        assert out["judged"] == 2
+        assert out["judged_count"] == 2
         assert all(e["judged"] for e in out["other"][:2])
         assert all(e["judged"] is False for e in out["related"])
 
@@ -211,6 +220,90 @@ class TestCoverage:
         out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1, score_cap=2)
         assert out["coverage"] == "partial"
         assert out["total_count"] == 5
+
+
+class TestStreaming:
+    def test_split_returns_before_any_judgment_completes(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
+        # A slow model: if the split waited on judgments, this test would
+        # stall for the delay. The split must arrive with zero model calls
+        # made - the person sees the two sections before the model speaks.
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        provider = _Scripted(
+            {a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()}, delay=0.3
+        )
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        it = lens.split_and_judge("hydroponics feeds the city from a rooftop", judge_top=1)
+
+        split = next(it)
+        assert split["stage"] == "split"
+        assert provider.calls == 0
+        assert len(split["judging"]) == 1
+        assert all(not e["judged"] for e in split["related"] + split["other"])
+        assert split["coverage"] == "complete"
+
+        judgment = next(it)
+        assert judgment["stage"] == "judgment"
+        assert judgment["verdict"] == "belongs"
+        assert judgment["judged"] is True
+        assert provider.calls == 1
+
+        done = next(it)
+        assert done["stage"] == "done"
+        assert done["model_calls"] == 1
+        assert done["judged_count"] == 1
+
+    def test_cached_rerun_makes_zero_calls_under_one_second(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
+        import time
+
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+        t0 = time.monotonic()
+        second = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+        elapsed = time.monotonic() - t0
+
+        assert second["model_calls"] == 0
+        assert elapsed < 1.0, f"cached lens application took {elapsed:.3f}s"
+
+    def test_check_more_judges_only_the_next_batch(
+        self, store, quiet_queue, scored_store, monkeypatch
+    ):
+        # Check More raises judge_top. The cache makes the already-judged
+        # artifacts free; only the artifacts newly inside the slice cost a
+        # model call, so checking more is bounded by the batch, not by how
+        # much has already been judged.
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C, _BODY_D, _BODY_E])
+        provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        first = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=1)
+        assert first["model_calls"] == 1
+
+        second = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=3)
+        assert second["model_calls"] == 2
+        assert second["judged_count"] == 3
+
+    def test_judge_top_is_capped(self, store, quiet_queue, scored_store, monkeypatch):
+        # The cap keeps one request from spending the library's entire
+        # judgment budget; the response reports the clamped value and the
+        # cap itself, so the client can explain what happened.
+        monkeypatch.setattr(config, "LENS_JUDGE_TOP_MAX", 2)
+        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
+        provider = _Scripted({a["id"]: _judgment(a["id"], Verdict.BELONGS) for a in arts.values()})
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        out = lens.apply_lens("hydroponics feeds the city from a rooftop", judge_top=50)
+
+        assert out["judge_top"] == 2
+        assert out["judge_top_cap"] == 2
+        assert out["judged_count"] == 2
 
 
 class TestLibraryGrowth:

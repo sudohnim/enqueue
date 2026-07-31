@@ -11,10 +11,11 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Iterator
 from importlib import resources
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import capture, chats, config, db, notes, preview, settings, trash
@@ -298,9 +299,24 @@ def list_artifacts(
         conn.close()
 
 
+class LensRequest(BaseModel):
+    lens: str
+    judge_top: int | None = None
+    limit: int = 60
+    offset: int = 0
+
+
 @app.post("/lens")
-def apply_lens_view(req: LensRequest) -> dict:
-    """Split the wall into related and other for a topic, ephemerally.
+def apply_lens_view(req: LensRequest) -> Response:
+    """Split the wall into related and other for a topic, ephemerally, live.
+
+    Returns a Server-Sent Events stream: the `split` event arrives as soon as
+    stage one finishes, with both sections already bucketed by score and the
+    candidates listed in `judging`; `judgment` events follow, one per
+    artifact, carrying the placard and the final placement (`verdict` is
+    belongs, no, or failed); `done` closes with the totals. The person sees
+    the two sections before the model has spoken, and placards fill in as
+    judgments arrive.
 
     The lens is stateless: nothing here writes an exhibit, bumps `updated_at`,
     or modifies any artifact (the judgment cache is the one table written, and
@@ -308,15 +324,54 @@ def apply_lens_view(req: LensRequest) -> dict:
     lens state and re-request with the normal ordering; the wall returns to
     touched order because the lens left no trace.
     """
-    result = lens_mod.apply_lens(req.lens, judge_top=req.judge_top)
+    return StreamingResponse(
+        _lens_sse(req), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+    )
 
-    # Same fields the wall renders, so the client needs no second call. The
-    # bucketing rows carry lens fields; the wall fields come from the DB in
-    # one query.
-    all_rows = result["related"] + result["other"] + result["pinned"]
+
+def _lens_sse(req: LensRequest) -> Iterator[str]:
+    for event in lens_mod.split_and_judge(req.lens, judge_top=req.judge_top):
+        yield f"data: {json.dumps(event)}\n\n"
+
+
+def _consume_lens(req: LensRequest) -> dict:
+    """The synchronous reading of the lens stream, for callers (and tests)
+    that want the final state in one dict rather than a stream of events."""
+    result: dict = {}
+    placements: dict[str, dict] = {}
+    for event in lens_mod.split_and_judge(req.lens, judge_top=req.judge_top):
+        if event["stage"] == "split":
+            result = event
+        elif event["stage"] == "judgment":
+            placements[event["artifact_id"]] = event
+        else:
+            result.update(event)
+
+    # Apply the judgments to the split: move verdicts into place, fill
+    # placards, drop the stage-only fields, and page the two sections
+    # independently, the way pinned and unpinned page on the wall.
+    for entry in result["related"] + result["other"]:
+        event = placements.get(entry["artifact_id"])
+        if not event:
+            continue
+        if event["verdict"] == "belongs":
+            entry.update(
+                {
+                    "judged": True,
+                    "strength": event["strength"],
+                    "placard": event["placard"],
+                    "evidence": event["evidence"],
+                }
+            )
+        elif event["verdict"] == "no":
+            entry["judged"] = True
+        else:
+            entry["judged"] = False
+
+    # Same fields the wall renders, so the client needs no second call.
     conn = db.get_conn()
     try:
-        ids = [e["artifact_id"] for e in all_rows]
+        ids = [e["artifact_id"] for e in result["related"] + result["other"] + result["pinned"]]
         wall: dict[str, dict] = {}
         if ids:
             for r in conn.execute(
@@ -330,12 +385,9 @@ def apply_lens_view(req: LensRequest) -> dict:
     finally:
         conn.close()
 
-    for entry in all_rows:
+    for entry in result["related"] + result["other"] + result["pinned"]:
         entry.update(wall.get(entry["artifact_id"], {}))
 
-    # Page related and other independently, the way pinned and unpinned page
-    # separately on the wall. Both advance by the same window; each reports
-    # its own total and more flag so the client knows when either ends.
     def page(items: list[dict]) -> tuple[list[dict], int, bool]:
         return (
             items[req.offset : req.offset + req.limit],
@@ -346,31 +398,23 @@ def apply_lens_view(req: LensRequest) -> dict:
     related, related_total, related_more = page(result["related"])
     other, other_total, other_more = page(result["other"])
 
-    return {
-        "lens": result["lens"],
-        "coverage": result["coverage"],
-        "threshold": result["threshold"],
-        "scored_count": result["scored_count"],
-        "total_count": result["total_count"],
-        "judged_count": result["judged_count"],
-        "model_calls": result["model_calls"],
-        "related": related,
-        "related_total": related_total,
-        "related_more": related_more,
-        "other": other,
-        "other_total": other_total,
-        "other_more": other_more,
-        "pinned": result["pinned"],
-        "offset": req.offset,
-        "limit": req.limit,
-    }
-
-
-class LensRequest(BaseModel):
-    lens: str
-    judge_top: int | None = None
-    limit: int = 60
-    offset: int = 0
+    out = dict(result)
+    for key in ("stage", "judging", "judge_total", "cache_hits"):
+        out.pop(key, None)
+    out.update(
+        {
+            "related": related,
+            "related_total": related_total,
+            "related_more": related_more,
+            "other": other,
+            "other_total": other_total,
+            "other_more": other_more,
+            "pinned": result["pinned"],
+            "offset": req.offset,
+            "limit": req.limit,
+        }
+    )
+    return out
 
 
 @app.get("/artifacts/{artifact_id}")
