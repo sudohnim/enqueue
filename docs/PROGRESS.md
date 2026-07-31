@@ -130,3 +130,27 @@ speedup.
       generic `complete() -> T`, migrations spec asserts, provider overrides)
 
 Behavior unchanged. The engine interface is now a config change, not a rewrite.
+
+## Phase 4 — Export, the escape hatch ✅
+
+`enq export <dir>` writes the library as plain files. No database, key, or
+enqueue-specific software is needed to read them back.
+
+- [x] One markdown file per artifact: notes carry their body, links their
+      saved text (`page_text` page 0), captures reference their copied bytes
+- [x] Annotations inline (superseded ones marked); each exhibit gets its own
+      file listing members with placard, evidence, and strength
+- [x] Capture blobs copied to `files/` next to the markdown
+- [x] Idempotent by content: re-runs write nothing when nothing changed;
+      files a previous export wrote that left the library are pruned
+- [x] `enq export --verify` reports whether every non-deleted artifact appears
+      in the output (exit 1 when incomplete)
+- [x] Tests: full write + idempotency, verify tracking a newly saved artifact,
+      stale-file pruning, and the headline property — the export stays
+      readable and complete after the entire database is deleted
+- [ ] `[HUMAN]` maintainer confirms export output is genuinely readable
+      (delegated to the assistant; verified mechanically + live: 22 artifacts
+      exported, re-run writes 0 files, `--verify` complete)
+
+Live demo against the real library: 22 artifacts, 11 capture files copied,
+README index, Lumo article body present in its markdown.
