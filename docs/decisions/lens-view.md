@@ -236,3 +236,18 @@ Verified live against the eval corpus on the throwaway engine (port 8788):
 split rendered before judgments finished, a real model placard streamed in,
 the saved exhibit rendered through the untouched exhibit endpoints with its
 members and the lens as theme.
+
+## Human lens test (Phase 16)
+
+`evals/lens/HUMAN-TEST-LENS.md` is ready for the maintainer; the answers
+belong to a person and will be recorded here when they arrive.
+
+Agent pre-verification against the eval corpus (throwaway engine on 8788),
+so the mechanics are known-good before the human run:
+- Test 1 analog: "growing food without soil" put the true match
+  (paraphrase_0007, hydroponics) first in related, before judgments landed.
+- Test 7 analog: the split rendered immediately; a re-run of the same lens
+  makes zero model calls (cache) and completes in well under a second.
+- Test 8 analog: clear the lens returned to the untouched wall; the
+  ephemeral tests assert updated_at is byte-identical and no exhibit row is
+  written.
