@@ -113,3 +113,37 @@ def test_a_capture_can_never_hold_a_body(store):
             )
     finally:
         conn.close()
+
+
+INDEX_TABLES = {"vec_chunks", "vec_facets", "fts_chunks", "fts_facets", "index_meta"}
+
+
+def test_head_has_the_search_index_tables(store):
+    """The sqlite-vec engine's tables are part of the schema, not ad hoc."""
+    assert tables(config.DB_PATH).issuperset(INDEX_TABLES)
+
+
+def test_index_revision_round_trips(store):
+    """Upgrade to 0010, downgrade to 0009, upgrade again: clean both ways.
+
+    Run against the same file the other migration tests use, so the vec0/FTS5
+    virtual tables are created and dropped through the real alembic path, not
+    by hand-rolled DDL that could drift from it.
+    """
+    from alembic import command
+
+    cfg = db._alembic_config()
+    command.downgrade(cfg, "0009")
+    assert not (INDEX_TABLES & tables(config.DB_PATH))
+    command.upgrade(cfg, "0010")
+    assert tables(config.DB_PATH).issuperset(INDEX_TABLES)
+    # A database that went around the loop still reaches head and stays usable.
+    assert conn_count(config.DB_PATH, "chunks") == 0
+
+
+def conn_count(path, table: str) -> int:
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    finally:
+        conn.close()
