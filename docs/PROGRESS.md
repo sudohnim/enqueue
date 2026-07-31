@@ -311,3 +311,34 @@ Tests: 25 store tests pass, including the literal-string search cases (`"`,
 `AND`, `foo-bar`, `NEAR`, `*`, empty, 500 chars), upsert idempotency,
 deleted-artifact exclusion, title-prepend findability, in-place re-embed,
 and a chunked-artifact round trip through `chunk_artifact`.
+
+## Phase 18D — Rebuild command ✅
+
+`enq reindex` rebuilds both collections from the `chunks` and `facets`
+tables already in SQLite. Qdrant is never consulted, so no vector data is
+ever copied between engines.
+
+- [x] New command rebuilds chunks then facets via the configured store,
+      printing progress every 500 rows through `get_store(on_progress=...)`
+- [x] Resumable by construction: a rebuild clears its collection first, so an
+      interrupted run is repaired on the next attempt and rows are never
+      duplicated; verified by running twice and comparing `counts()`
+- [x] `EMBED_VERSION` written to `index_meta` only after both collections
+      finish (`write_embed_version`), so a half-updated index never claims a
+      version; the method joined the `VectorStore` interface and both
+      backends write the same row
+- [x] `enq eval --engine sqlite-vec` now actually selects the backend: the
+      readiness check replaced the hardcoded "test Qdrant directory exists"
+      with a per-engine `store.counts()` check, and `--engine` drives
+      `VECTOR_STORE` instead of just the report label
+- [x] `enq lens-eval --corpus` uses the same per-engine readiness check
+- [x] `POST /index` records the embed version after rebuilding both
+      collections
+- [x] Fixed pre-existing gate findings the dispatch surfaced while editing:
+      bare `except httpx.ConnectError` in the CLI, an un-sorted import in
+      `store_qdrant.py`, and the import-order/type-annotation nits in the
+      new tests
+
+Tests: 3 reindex/eval-readiness tests pass; EZE-verified on a throwaway
+HOME (sandboxed data dir): run 1 builds 2 chunks + 1 facet with progress,
+run 2 leaves counts identical, embed version `bge-base-en-v1.5` recorded.
