@@ -11,7 +11,6 @@ characters, bare boolean words, hyphens, prefix stars, empty text, and a
 from __future__ import annotations
 
 import pytest
-
 from enqueue.index.store import get_store
 from enqueue.index.store_sqlite import SqliteVecStore
 from enqueue.ingest import chunk as chunk_mod

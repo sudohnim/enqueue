@@ -24,6 +24,7 @@ Two deliberate notes on the shape:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from functools import lru_cache
 
 from .. import config
@@ -82,14 +83,22 @@ class VectorStore(ABC):
     def counts(self) -> dict:
         """Vectors per collection, keyed by collection name."""
 
+    @abstractmethod
+    def write_embed_version(self) -> None:
+        """Record which embedding version the index was built at."""
+
 
 @lru_cache(maxsize=1)
-def get_store() -> VectorStore:
+def get_store(on_progress: Callable[[int, int], None] | None = None) -> VectorStore:
     """The configured store, cached. One client per process.
 
     In-process backends (Qdrant local mode) hold a lock on their storage
     directory, so the singleton is not an optimisation, it is the rule: the
     engine must be the only client touching a given storage path.
+
+    `on_progress(indexed, total)` is called every 500 rows of a bulk rebuild;
+    backends without a rebuild progress path ignore it. `enq reindex` uses it
+    for the progress indicator.
 
     `get_store.cache_clear()` exists for the eval harness, which repoints the
     store at an isolated test index within the same process.
@@ -102,7 +111,7 @@ def get_store() -> VectorStore:
     if name in ("sqlite-vec", "sqlite_vec"):
         from .store_sqlite import SqliteVecStore
 
-        return SqliteVecStore()
+        return SqliteVecStore(on_progress=on_progress)
     raise ValueError(
         f"unknown VECTOR_STORE {config.VECTOR_STORE!r}; "
         "set ENQ_VECTOR_STORE=qdrant or sqlite-vec"

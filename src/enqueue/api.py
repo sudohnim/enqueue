@@ -635,7 +635,9 @@ def build_index() -> dict:
     from .index.store import get_store
 
     store = get_store()
-    return {"chunks": store.upsert_chunks(), "facets": store.upsert_facets()}
+    result = {"chunks": store.upsert_chunks(), "facets": store.upsert_facets()}
+    store.write_embed_version()
+    return result
 
 
 @app.post("/reprocess")

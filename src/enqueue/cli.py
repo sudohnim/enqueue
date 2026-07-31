@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import typer
+from httpx import ConnectError
 
 from . import config
 
@@ -25,7 +26,7 @@ def _call(method: str, path: str, **kwargs) -> dict:
             timeout=kwargs.pop("timeout", 600),
             **kwargs,
         )
-    except httpx.ConnectError:
+    except ConnectError:
         typer.secho(
             f"engine is not running at {config.API_URL}\nstart it with:  enq serve",
             fg=typer.colors.RED,
@@ -86,6 +87,34 @@ def facets(limit: int = 0, redo: bool = False) -> None:
 def index() -> None:
     """Embed chunks and facets into the vector store."""
     _echo(_call("POST", "/index", timeout=None))
+
+
+@app.command()
+def reindex() -> None:
+    """Rebuild the search index from the database. Never reads Qdrant.
+
+    Both collections are rebuilt in place from the `chunks` and `facets`
+    tables already in SQLite; Qdrant is never consulted, so no vector data is
+    ever copied between engines. Progress prints every 500 rows. Re-running
+    is safe: a rebuild clears its collection first, so an interrupted run is
+    repaired on the next attempt and rows are never duplicated. When both
+    collections finish, the embedding version is written to `index_meta`.
+    """
+    from .index.store import get_store
+
+    def _progress(indexed: int, total: int) -> None:
+        typer.echo(f"  {indexed}/{total} rows", err=False)
+
+    store = get_store(on_progress=_progress)
+    for name in (store.CHUNKS, store.FACETS):
+        typer.echo(f"Reindexing {name}...")
+        if name == store.CHUNKS:
+            result = store.upsert_chunks()
+        else:
+            result = store.upsert_facets()
+        typer.secho(f"  {result['indexed']} rows indexed", fg=typer.colors.GREEN)
+    store.write_embed_version()
+    typer.echo("Index rebuilt; embedding version recorded.")
 
 
 @app.command()
@@ -648,7 +677,6 @@ def eval(
     # Determine test data paths
     test_dir = EVALS_DIR / "test-data"
     test_db = test_dir / "enqueue.db"
-    test_qdrant = test_dir / "qdrant"
 
     if not test_db.exists():
         typer.secho(
@@ -656,24 +684,34 @@ def eval(
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
-    if not test_qdrant.exists():
-        typer.secho(
-            f"test Qdrant index not found at {test_qdrant}\nrun: enq test-corpus load",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
 
-    # Point config at the test data
+    # Point config at the test data. The engine parameter selects the backend;
+    # the index lives inside the test database for sqlite-vec and in the test
+    # qdrant directory for qdrant, so the readiness check below is per-engine.
     from . import config as cfg
     from .index.store import get_store
 
-    originals = {"DB_PATH": cfg.DB_PATH, "QDRANT_PATH": cfg.QDRANT_PATH}
+    originals: dict[str, object] = {"DB_PATH": cfg.DB_PATH}
     cfg.DB_PATH = test_db
-    cfg.QDRANT_PATH = test_qdrant
+    if engine == "sqlite-vec":
+        originals["VECTOR_STORE"] = cfg.VECTOR_STORE
+        cfg.VECTOR_STORE = "sqlite-vec"
+    else:
+        originals["QDRANT_PATH"] = cfg.QDRANT_PATH
+        cfg.QDRANT_PATH = test_dir / "qdrant"
 
     # A fresh store instance so it re-opens against the test path
     get_store.cache_clear()
     store = get_store()
+
+    counts = store.counts()
+    if counts.get("chunks") is None or counts.get("facets") is None:
+        typer.secho(
+            f"test index not found for engine {engine!r}\n"
+            f"run: ENQ_VECTOR_STORE={engine} enq test-corpus load",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
 
     def _run_search(text: str, limit: int = 10, mode: str = "hybrid") -> list[dict]:
         """Run search against the test Qdrant, return deduplicated artifact IDs."""
@@ -933,18 +971,27 @@ def lens_eval(
     if corpus:
         test_dir = EVALS_DIR / "test-data"
         test_db = test_dir / "enqueue.db"
-        test_qdrant = test_dir / "qdrant"
-        for p in (test_db, test_qdrant):
-            if not p.exists():
-                typer.secho(
-                    f"test data not found at {p}\nrun: enq test-corpus load",
-                    fg=typer.colors.RED,
-                )
-                raise typer.Exit(1)
-        originals = {"DB_PATH": cfg.DB_PATH, "QDRANT_PATH": cfg.QDRANT_PATH}
+        if not test_db.exists():
+            typer.secho(
+                f"test data not found at {test_db}\nrun: enq test-corpus load",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        originals = {"DB_PATH": cfg.DB_PATH}
         cfg.DB_PATH = test_db
-        cfg.QDRANT_PATH = test_qdrant
+        # The index lives inside the test database for sqlite-vec and in the
+        # test qdrant directory for qdrant; readiness is checked per engine.
+        if (cfg.VECTOR_STORE or "qdrant") == "qdrant":
+            originals["QDRANT_PATH"] = cfg.QDRANT_PATH
+            cfg.QDRANT_PATH = test_dir / "qdrant"
         get_store.cache_clear()
+        counts = get_store().counts()
+        if counts.get("chunks") is None or counts.get("facets") is None:
+            typer.secho(
+                f"test index not found in {test_db}\nrun: enq test-corpus load",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
         topics_list = _corpus_topics(_yaml)
         typer.echo(f"Topics from the eval corpus ({len(topics_list)} queries with known matches)")
     else:

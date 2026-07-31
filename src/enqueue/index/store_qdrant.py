@@ -23,18 +23,20 @@ import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
-    Fusion as FusionKind,
     FusionQuery,
-    Prefetch,
     PointStruct,
+    Prefetch,
     SparseIndexParams,
     SparseVector,
     SparseVectorParams,
     VectorParams,
 )
+from qdrant_client.models import (
+    Fusion as FusionKind,
+)
 
 from .. import config, db
-from .embed import embed, embed_sparse, embed_sparse_one, embed_one
+from .embed import embed, embed_one, embed_sparse, embed_sparse_one
 from .store import VectorStore
 
 
@@ -165,7 +167,12 @@ class QdrantStore(VectorStore):
 
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove every point belonging to one artifact."""
-        from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
+        from qdrant_client.models import (
+            FieldCondition,
+            Filter,
+            FilterSelector,
+            MatchValue,
+        )
 
         self.ensure()
         self._client_cache().delete(
@@ -264,6 +271,24 @@ class QdrantStore(VectorStore):
             except Exception:  # noqa: BLE001 - an absent collection is a count of zero
                 out[name] = None
         return out
+
+    def write_embed_version(self) -> None:
+        """Record which embedding version the index was built at.
+
+        `index_meta` lives in the database, not in Qdrant, so both backends
+        write the same row and `enq reindex` / `POST /index` behave
+        identically regardless of engine.
+        """
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO index_meta (key, value) VALUES ('embed_version', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (config.EMBED_VERSION,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 # Names used in payloads and prefetch queries; kept module-level so the methods
