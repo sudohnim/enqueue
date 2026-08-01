@@ -379,6 +379,11 @@ fn main() {
             // the content instead of sitting in a bar that would be a wall.
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
+            // Tauri swallows HTML5 drag-drop for its own file-drop event by default,
+            // so the page would never see a drop. The museum is a drop target for
+            // files, images, and text and wants the real Files, like the capture
+            // overlay below.
+            .disable_drag_drop_handler()
             .build()?;
 
             // Raising the window is not the same as activating the application. A
@@ -387,7 +392,7 @@ fn main() {
             // person was already looking at. It reads exactly like a launch that
             // silently failed, which is what it was reported as.
             #[cfg(target_os = "macos")]
-            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
             let _ = window.show();
             let _ = window.set_focus();

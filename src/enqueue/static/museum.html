@@ -85,6 +85,10 @@
        control below carries a 1.5px --text edge to satisfy the 3:1 boundary rule. */
     --accent: #f7a501;
     --accent-quiet: #dd9001;
+    /* The warmer yellow capture.html uses for its drag-over border. A graphic
+       boundary, never text or a lone accent; shared so the drop affordance reads
+       the same in the capture window and on the museum wall. */
+    --accent-strong: #b17816;
     --accent-ink: #23251d;
     /* The accent is an instruction: bright on fills, never body text. The two
        places it does carry text weight (aside.dirty, .title-action.lit) use
@@ -2141,6 +2145,100 @@
     border-color: transparent;
   }
 
+  /* ---- drag-and-drop overlay ------------------------------------------------
+     The whole window is a drop target, so there is no drop zone to find. When a
+     file, image, or external text drag crosses in, the room dims slightly and a
+     card opens to receive: the capture pill's disc at a larger scale, an arrow
+     into a tray, and the same promise the empty wall makes - anything you drop is
+     kept. The card is the drop surface itself, so visible is ready; the accent
+     warms as the acknowledgement, not as an instruction to hunt for a zone. */
+  .dropover[hidden] {
+    display: none;
+  }
+  .dropover {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-menu);
+    display: grid;
+    place-items: center;
+    background: var(--scrim);
+    opacity: 0;
+    transition: opacity var(--dur) ease;
+  }
+  .dropover.on {
+    opacity: 1;
+  }
+  .dropcard {
+    display: grid;
+    justify-items: center;
+    gap: var(--sp-2);
+    width: min(440px, calc(100vw - 40px));
+    padding: var(--sp-6) var(--sp-5);
+    text-align: center;
+    background: var(--surface);
+    border: 1.5px solid var(--accent-strong);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-2);
+    transform: translateY(6px) scale(0.99);
+    transition:
+      transform var(--dur) var(--ease),
+      background var(--dur) ease;
+  }
+  .dropover.on .dropcard {
+    transform: translateY(0) scale(1);
+  }
+  .dropover[data-state="accept"] .dropcard {
+    background: var(--tint-ok);
+    transform: translateY(0) scale(1.02);
+  }
+  .dropcard .drop-ic {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--sp-2);
+    border-radius: var(--r-full);
+    background: var(--accent);
+    border: 1.5px solid var(--text);
+    color: var(--accent-ink);
+  }
+  .dropcard .drop-ic svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .dropcard .drop-ic #dropOk {
+    display: none;
+  }
+  .dropover[data-state="accept"] .drop-ic #dropIn {
+    display: none;
+  }
+  .dropover[data-state="accept"] .drop-ic #dropOk {
+    display: block;
+  }
+  .dropcard .title {
+    font-size: 22px;
+    font-weight: 450;
+    line-height: 1.3;
+    letter-spacing: -0.4px;
+    color: var(--text);
+  }
+  .dropcard .sub {
+    color: var(--text-dim);
+  }
+  .dropcard .hint {
+    margin-top: var(--sp-2);
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  .dropover[data-state="accept"] .hint {
+    color: var(--text-dim);
+  }
+
   @keyframes breathe {
     0%,
     100% {
@@ -2206,6 +2304,26 @@
 </div>
 <main id="view"><div class="state">opening...</div></main>
 <div class="pill" id="pill"></div>
+
+<div class="dropover" id="dropover" hidden>
+  <div class="dropcard">
+    <div class="drop-ic">
+      <svg id="dropIn" viewBox="0 0 24 24">
+        <path d="M12 4v11" />
+        <path d="M7.5 10.5L12 15l4.5-4.5" />
+        <path d="M5 19h14" />
+      </svg>
+      <svg id="dropOk" viewBox="0 0 24 24">
+        <path d="M4.5 12.5l5 5 10-11" />
+      </svg>
+    </div>
+    <div class="title">Drop anything to keep it</div>
+    <div class="sub">
+      Files, images, and text. Everything stays on this machine.
+    </div>
+    <div class="hint">Release to keep</div>
+  </div>
+</div>
 
 <script>
   // Focus is drawn by `:focus-visible` in one rule for the whole app. The engine
@@ -3223,6 +3341,130 @@
     if (keepAt !== null) window.scrollTo(0, keepAt);
     else if (wasReading) window.scrollTo(0, 0);
   }
+
+  /// Drag-and-drop ingestion.
+  ///
+  /// The whole window is a drop target, so there is no drop zone to find: when a
+  /// file, image, or external text drag crosses into the window, the room dims and
+  /// a card opens to receive (the acknowledgement in `#dropover`). Releasing routes
+  /// through the same paths the pill uses - files and images to /capture/upload,
+  /// text to /notes - so nothing about ingestion is new; only the gesture is.
+  /// A drag that begins inside this document (moving a note's own text around) is
+  /// left to the browser and never hijacked into a capture.
+  const dropOver = document.getElementById("dropover");
+  let dropDepth = 0; // balanced enter/leave count, survives child nodes
+  let internalDrag = false; // true while a drag originates inside this document
+  let dropBusy = false; // quiet while the accept beat plays out
+
+  // Any drag that did not begin inside this document is a candidate: a file or
+  // image from the Finder, or selected text from another app. WebKit does not
+  // always surface the "Files" type on dragover the way Blink does, so eligibility
+  // is decided by origin, not by what the engine happens to report in `types`.
+  const externalDrag = (dt) => !internalDrag && !!dt;
+
+  document.addEventListener("dragstart", () => {
+    internalDrag = true;
+  });
+  document.addEventListener("dragend", () => {
+    internalDrag = false;
+    dropDepth = 0;
+  });
+
+  function showDrop() {
+    if (dropBusy || !dropOver.hidden) return;
+    dropOver.dataset.state = "ready";
+    dropOver.hidden = false;
+    requestAnimationFrame(() => dropOver.classList.add("on"));
+  }
+  function hideDrop() {
+    if (dropOver.hidden) return;
+    dropOver.classList.remove("on");
+    setTimeout(() => {
+      if (!dropOver.classList.contains("on")) dropOver.hidden = true;
+    }, 320);
+  }
+
+  document.addEventListener("dragenter", (e) => {
+    dropDepth++;
+    if (externalDrag(e.dataTransfer)) {
+      e.preventDefault();
+      showDrop();
+    }
+  });
+  document.addEventListener("dragover", (e) => {
+    if (externalDrag(e.dataTransfer)) e.preventDefault();
+  });
+  document.addEventListener("dragleave", () => {
+    if (--dropDepth <= 0) {
+      dropDepth = 0;
+      hideDrop();
+    }
+  });
+  window.addEventListener("blur", () => {
+    dropDepth = 0;
+    hideDrop();
+  });
+
+  async function ingestDrop(files, text) {
+    const failed = [];
+    let kept = 0;
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const r = await fetch("/capture/upload", { method: "POST", body: fd });
+        if (!r.ok)
+          throw new Error(
+            (await r.json().catch(() => ({}))).detail || r.statusText,
+          );
+        kept++;
+      } catch (err) {
+        failed.push(file.name + ": " + String(err.message || err));
+      }
+    }
+    if (text) {
+      try {
+        const r = await fetch("/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body: text }),
+        });
+        if (!r.ok)
+          throw new Error(
+            (await r.json().catch(() => ({}))).detail || r.statusText,
+          );
+        kept++;
+      } catch (err) {
+        failed.push("text: " + String(err.message || err));
+      }
+    }
+    home();
+    if (failed.length) toast("Upload failed. " + failed.join("; "), true);
+    else if (kept) toast(kept === 1 ? "Uploaded." : kept + " uploaded.");
+  }
+
+  document.addEventListener("drop", (e) => {
+    if (dropBusy) return;
+    const dt = e.dataTransfer;
+    if (!externalDrag(dt)) return; // an internal move; let the browser do it
+    // The DataTransfer is only valid inside this event, so the payload is read now.
+    const files = Array.from(dt.files ? dt.files : []);
+    const text = (dt.getData("text/plain") || "").trim();
+    if (!files.length && !text) return;
+    e.preventDefault();
+    internalDrag = false;
+    dropDepth = 0;
+    dropBusy = true;
+    dropOver.dataset.state = "accept";
+    setTimeout(() => {
+      dropOver.classList.remove("on");
+      setTimeout(() => {
+        dropOver.hidden = true;
+        dropBusy = false;
+      }, 320);
+    }, 560);
+    ingestDrop(files, text);
+  });
 
   // Loads the next page when the foot of the wall comes near, so the collection is
   // not silently truncated at whatever number the first request asked for.

@@ -183,3 +183,55 @@ class TestRetentionWindow:
         trash.delete(made["artifact"]["id"])
         _age(made["artifact"]["id"], 4)
         assert trash.purge_expired()["purged"] == 1
+
+
+class TestReaddingBringsItBack:
+    """Dedupe hits a trashed row within the retention window, because delete only
+    marks `deleted_at` and the row (and its UNIQUE content_hash) stays. Re-adding
+    the same bytes or url must mean "keep this again" - restore it, front of the
+    wall, re-ingested - not a 200 that keeps the trash row and reads as a save
+    that never happened."""
+
+    def test_reuploading_a_trashed_capture_restores_it(self, store, quiet_queue):
+        made = capture.upload(b"recently deleted bytes", "gone.png", mime="image/png")
+        artifact_id = made["id"]
+
+        trash.delete(artifact_id)
+        with db.transaction() as conn:
+            assert conn.execute(
+                "SELECT deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()["deleted_at"]
+
+        again = capture.upload(b"recently deleted bytes", "back.png", mime="image/png")
+
+        assert again["id"] == artifact_id, "identical bytes must still dedupe to one artifact"
+        assert not again["created"]
+        assert again.get("restored") is True
+        with db.transaction() as conn:
+            row = conn.execute(
+                "SELECT deleted_at, updated_at FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()
+            assert row["deleted_at"] is None
+
+    def test_recapturing_a_trashed_link_restores_it(self, store, quiet_queue):
+        made = capture.link("https://example.com/brought-back")
+        artifact_id = made["id"]
+
+        trash.delete(artifact_id)
+        again = capture.link("https://example.com/brought-back")
+
+        assert again["id"] == artifact_id
+        assert again.get("restored") is True
+        with db.transaction() as conn:
+            row = conn.execute(
+                "SELECT deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()
+            assert row["deleted_at"] is None
+
+    def test_a_live_dedupe_hit_still_moves_to_the_front(self, store, quiet_queue):
+        made = capture.upload(b"still on the wall", "here.png", mime="image/png")
+        again = capture.upload(b"still on the wall", "again.png", mime="image/png")
+
+        assert again["id"] == made["id"]
+        assert not again["created"]
+        assert "restored" not in again

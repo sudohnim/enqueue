@@ -74,26 +74,53 @@ def link(url: str, local_only: bool = False) -> dict:
 
     with db.transaction() as conn:
         existing = conn.execute(
-            "SELECT id FROM artifacts WHERE content_hash = ?", (digest,)
+            "SELECT id, deleted_at FROM artifacts WHERE content_hash = ?", (digest,)
         ).fetchone()
         if existing:
-            # Saving something already saved is not a no-op. The person reached for it
-            # again, and the wall is ordered by last touch, so the honest answer is to
-            # move it to the front rather than to silently do nothing and look broken.
-            conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, existing["id"]))
-            return {"id": existing["id"], "created": False}
-
-        artifact_id = str(uuid.uuid4())
-        conn.execute(
-            "INSERT INTO artifacts (id, kind, title, body, source_url, content_hash,"
-            " created_at, updated_at, local_only, status)"
-            " VALUES (?,'link',?,NULL,?,?,?,?,?,'pending')",
-            (artifact_id, title_from_url(url), url, digest, now, now, 1 if local_only else 0),
-        )
+            if existing["deleted_at"]:
+                # Saving a link that sits in the trash is "keep this again": it
+                # comes back whole and in front, exactly like re-saving a link that
+                # is still on the wall. A no-op against the trash row would read as
+                # a save that never happened.
+                conn.execute(
+                    "UPDATE artifacts SET deleted_at = NULL, updated_at = ?" " WHERE id = ?",
+                    (now, existing["id"]),
+                )
+                artifact_id = existing["id"]
+                restored = True
+            else:
+                # Saving something already saved is not a no-op. The person reached for it
+                # again, and the wall is ordered by last touch, so the honest answer is to
+                # move it to the front rather than to silently do nothing and look broken.
+                conn.execute(
+                    "UPDATE artifacts SET updated_at = ? WHERE id = ?",
+                    (now, existing["id"]),
+                )
+                return {"id": existing["id"], "created": False}
+        else:
+            artifact_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, source_url, content_hash,"
+                " created_at, updated_at, local_only, status)"
+                " VALUES (?,'link',?,NULL,?,?,?,?,?,'pending')",
+                (
+                    artifact_id,
+                    title_from_url(url),
+                    url,
+                    digest,
+                    now,
+                    now,
+                    1 if local_only else 0,
+                ),
+            )
+            restored = False
 
     # Returns before anything is fetched, per hard rule 7. The queue resolves it.
     ingest_queue.submit(artifact_id)
-    return {"id": artifact_id, "created": True}
+    out = {"id": artifact_id, "created": not restored}
+    if restored:
+        out["restored"] = True
+    return out
 
 
 def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool = False) -> dict:
@@ -108,39 +135,58 @@ def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool
 
     with db.transaction() as conn:
         existing = conn.execute(
-            "SELECT id FROM artifacts WHERE content_hash = ?", (digest,)
+            "SELECT id, deleted_at FROM artifacts WHERE content_hash = ?", (digest,)
         ).fetchone()
         if existing:
-            conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, existing["id"]))
-            return {"id": existing["id"], "created": False}
+            if existing["deleted_at"]:
+                # Re-adding something that sits in the trash is "keep this again": it
+                # comes back whole and in front, exactly like re-saving something that
+                # is still on the wall. A no-op against the trash row would read as a
+                # save that never happened.
+                conn.execute(
+                    "UPDATE artifacts SET deleted_at = NULL, updated_at = ?" " WHERE id = ?",
+                    (now, existing["id"]),
+                )
+                artifact_id = existing["id"]
+                restored = True
+            else:
+                conn.execute(
+                    "UPDATE artifacts SET updated_at = ? WHERE id = ?",
+                    (now, existing["id"]),
+                )
+                return {"id": existing["id"], "created": False}
+        else:
+            config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
+            blob = config.BLOB_DIR / digest
+            if not blob.exists():
+                blob.write_bytes(data)
 
-        config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
-        blob = config.BLOB_DIR / digest
-        if not blob.exists():
-            blob.write_bytes(data)
-
-        artifact_id = str(uuid.uuid4())
-        title = re.sub(r"[-_]+", " ", Path(filename).stem).strip() or filename
-        conn.execute(
-            "INSERT INTO artifacts (id, kind, title, body, content_hash, mime, filename,"
-            " created_at, updated_at, local_only, status)"
-            " VALUES (?,?,?,NULL,?,?,?,?,?,?,'text_only')",
-            (
-                artifact_id,
-                kind_for(mime, filename),
-                title,
-                digest,
-                mime,
-                filename,
-                now,
-                now,
-                1 if local_only else 0,
-            ),
-        )
+            artifact_id = str(uuid.uuid4())
+            title = re.sub(r"[-_]+", " ", Path(filename).stem).strip() or filename
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, content_hash, mime, filename,"
+                " created_at, updated_at, local_only, status)"
+                " VALUES (?,?,?,NULL,?,?,?,?,?,?,'text_only')",
+                (
+                    artifact_id,
+                    kind_for(mime, filename),
+                    title,
+                    digest,
+                    mime,
+                    filename,
+                    now,
+                    now,
+                    1 if local_only else 0,
+                ),
+            )
+            restored = False
 
     # Returns first, per hard rule 7. Extraction and indexing happen behind this.
     ingest_queue.submit(artifact_id)
-    return {"id": artifact_id, "created": True}
+    out = {"id": artifact_id, "created": not restored}
+    if restored:
+        out["restored"] = True
+    return out
 
 
 def blob_path(artifact_id: str) -> tuple[Path, str, str] | None:
