@@ -86,6 +86,10 @@
     --accent: #f7a501;
     --accent-quiet: #dd9001;
     --accent-ink: #23251d;
+    /* The accent is an instruction: bright on fills, never body text. The two
+       places it does carry text weight (aside.dirty, .title-action.lit) use
+       this ink instead, which clears 4.5:1 on every surface. */
+    --accent-text: #a25106;
 
     --line: #bfc1b7;
     --line-soft: #dcdfd2;
@@ -365,7 +369,7 @@
     max-width: 64ch;
   }
   .aside.dirty {
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 500;
   }
   /* Why something failed carries more than what it will cost, so it is not the same
@@ -1252,10 +1256,10 @@
     background: color-mix(in srgb, var(--line) 20%, transparent);
   }
   .title-action.lit {
-    color: var(--accent);
+    color: var(--accent-text);
   }
   .title-action.lit:hover {
-    color: var(--accent);
+    color: var(--accent-text);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
   .title-action.danger:hover {

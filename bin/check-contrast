@@ -2,7 +2,11 @@
 """Check WCAG contrast of all text-bearing tokens in museum.html's :root block.
 
 Reads the palette from the file (not hardcoded) so it stays a real check.
-Exits non-zero if any token fails.
+Text inks must clear 4.5:1 on the worst surface. Non-text tokens (kind hues,
+accent fills) are deliberately not text inks: the design pairs every accent
+fill with a 1.5px --text edge for the 3:1 boundary rule, and kind hues are
+read by a decorative dot only - see the comments in museum.html's :root.
+Exits non-zero if any text ink fails.
 """
 import os
 import re
@@ -49,8 +53,7 @@ def parse_root_palette(text):
 
 TEXT_BEARING = {
     "--text", "--text-dim", "--text-mute",
-    "--accent", "--accent-quiet",
-    "--green", "--blue", "--peach", "--pink", "--teal",
+    "--accent-text",
 }
 
 GROUNDS = ["--bg", "--surface", "--surface-2"]
