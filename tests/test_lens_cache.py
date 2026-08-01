@@ -97,6 +97,29 @@ class TestCacheReplay:
         assert second["kept"] == first["kept"]
         assert judgments.stats() == {"rows": 1, "lenses": 1}
 
+    def test_pool_order_does_not_defeat_the_result_cache(self, store, quiet_queue, monkeypatch):
+        # The same pool presented in a different order is the same key: the
+        # pooled result is served without a second round of model calls.
+        note_a = notes.create(_BODY)
+        note_b = notes.create(_BODY + " Pinned to the wall it stays.")
+        aid_a = note_a["artifact"]["id"]
+        aid_b = note_b["artifact"]["id"]
+        provider = _Scripted(
+            {
+                aid_a: _judgment(aid_a, Verdict.BELONGS),
+                aid_b: _judgment(aid_b, Verdict.BELONGS),
+            }
+        )
+        monkeypatch.setattr(rerank, "get_provider", lambda: provider)
+
+        pool = [{"artifact_id": aid_a, "title": "A"}, {"artifact_id": aid_b, "title": "B"}]
+        first = rerank.rerank("joints that move", pool, keep=2)
+        second = rerank.rerank("joints that move", list(reversed(pool)), keep=2)
+
+        assert provider.calls == 2  # both judgments came from the first run
+        assert {r["artifact_id"] for r in second["relevant"]} == {aid_a, aid_b}
+        assert first["hits"] == 0 and second["hits"] == 2
+
     def test_model_change_rejudges(self, store, quiet_queue, monkeypatch):
         note = notes.create(_BODY)
         aid = note["artifact"]["id"]

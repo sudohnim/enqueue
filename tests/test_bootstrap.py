@@ -21,10 +21,10 @@ import time
 
 import sqlite_vec
 from fastapi.testclient import TestClient
-from enqueue.index import bootstrap
-from enqueue.index.store import get_store
 
 from enqueue import api, config, db
+from enqueue.index import bootstrap
+from enqueue.index.store import get_store
 
 
 def _seed_one_chunked_artifact() -> None:

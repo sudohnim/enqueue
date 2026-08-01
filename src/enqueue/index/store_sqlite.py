@@ -136,15 +136,17 @@ CHUNK_INDEX_TEXT = "{title}\n\n{text}"
 
 
 def _fts_query(text: str) -> str:
-    """Make arbitrary user text a valid FTS5 query.
+    """Make arbitrary user text a valid FTS5 prefix query.
 
     Every whitespace-separated token is quoted, with embedded quotes doubled,
     so operators (AND, OR, NOT, NEAR, *) and punctuation are treated as
-    literal terms instead of query syntax. An empty string stays empty, and
-    the caller treats that as "match nothing".
+    literal terms instead of query syntax. Each token then gets a prefix
+    star *outside* the quotes, so a partial word matches ("hydr" finds
+    "hydroponics") while quoted terms stay literal. An empty string stays
+    empty, and the caller treats that as "match nothing".
     """
     tokens = text.split()
-    return " ".join('"' + token.replace('"', '""') + '"' for token in tokens)
+    return " ".join('"' + token.replace('"', '""') + '"*' for token in tokens)
 
 
 class SqliteVecStore(VectorStore):

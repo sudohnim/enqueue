@@ -7,7 +7,6 @@ their shelf above both sections and are not bucketed.
 
 from __future__ import annotations
 
-
 import pytest
 
 from enqueue import db, notes

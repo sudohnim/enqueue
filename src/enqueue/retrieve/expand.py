@@ -7,6 +7,7 @@ have to fail for retrieval to miss.
 
 from __future__ import annotations
 
+from .. import config
 from ..prompts import LENS_EXPANSION
 from ..providers.base import get_provider
 from ..schemas import LensExpansion
@@ -16,7 +17,9 @@ def expand(lens: str) -> list[str]:
     """Return the lens plus its restatements and hypothetical passages.
 
     Falls back to the bare lens if the model fails, so a bad expansion degrades
-    retrieval rather than breaking it.
+    retrieval rather than breaking it. `config.EXPANSION_CAP` (0 = no cap)
+    bounds the number of sub-queries, so retrieval cost stays visible and
+    capped; the default reproduces the behavior the baseline was measured at.
     """
     try:
         result = get_provider().complete(
@@ -25,6 +28,9 @@ def expand(lens: str) -> list[str]:
             response_model=LensExpansion,
         )
     except Exception:  # noqa: BLE001 - degrade, do not break
-        return [lens]
+        queries = [lens]
+    else:
+        queries = [lens, *result.restatements, *result.passages]
 
-    return [lens, *result.restatements, *result.passages]
+    cap = config.EXPANSION_CAP
+    return queries[:cap] if cap else queries

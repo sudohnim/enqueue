@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Gate: run enq eval and fail if recall@10 drops more than 2 points.
+
+Compares a fresh eval against the committed baseline
+(evals/results/sqlite-vec.json). The gate does not overwrite the baseline:
+the eval is written to a temp file and only read back for comparison. The
+threshold is an absolute 2-percentage-point drop (e.g. 0.84 -> below 0.82),
+matching the plan's "fail CI if recall@10 drops more than 2 percent".
+
+Usage: bin/check-eval [--engine sqlite-vec]
+Exit 0 on pass, 1 on regression or if the baseline is missing/unreadable.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+SRC = "bin/check-eval"
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASELINE = os.path.join(HERE, "evals", "results", "sqlite-vec.json")
+RECALL_DROP = 0.02  # absolute percentage points
+
+
+def _run(cmd: list[str], timeout: int = 600) -> int:
+    print(f"  $ {' '.join(cmd)}")
+    return subprocess.run(cmd, cwd=HERE, timeout=timeout).returncode
+
+
+def _read_mode(path: str, label: str) -> dict:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    mode = data.get("modes", {}).get(label)
+    if mode is None:
+        raise KeyError(f"no mode {label!r} in {path}")
+    return mode
+
+
+def main() -> int:
+    engine = "sqlite-vec"
+    if len(sys.argv) > 1 and sys.argv[1].startswith("--engine="):
+        engine = sys.argv[1].split("=", 1)[1]
+
+    if not os.path.exists(BASELINE):
+        print(f"{SRC}: baseline not found at {BASELINE}", file=sys.stderr)
+        return 1
+    try:
+        base = _read_mode(BASELINE, engine)
+    except (OSError, ValueError, KeyError) as e:
+        print(f"{SRC}: could not read baseline: {e}", file=sys.stderr)
+        return 1
+    base_recall10 = float(base["recall@10"])
+
+    # Ensure the test library exists (idempotent; regenerates if stale/missing).
+    print(f"=== {SRC}: enq test-corpus load ===")
+    if _run(["uv", "run", "enq", "test-corpus", "load"]) != 0:
+        print(f"{SRC}: could not build the test corpus", file=sys.stderr)
+        return 1
+
+    # Fresh eval into a temp file; never touch the committed baseline.
+    print(f"=== {SRC}: enq eval (engine {engine}) ===")
+    fd, tmp = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    try:
+        if _run(["uv", "run", "enq", "eval", "--engine", engine, "--json-path", tmp]) != 0:
+            print(f"{SRC}: eval run failed", file=sys.stderr)
+            return 1
+        try:
+            new = _read_mode(tmp, engine)
+        except (OSError, ValueError, KeyError) as e:
+            print(f"{SRC}: could not read eval output: {e}", file=sys.stderr)
+            return 1
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+    new_recall10 = float(new["recall@10"])
+    floor = base_recall10 - RECALL_DROP
+
+    print("")
+    print(f"=== {SRC}: delta vs baseline ===")
+    for key in ("pass", "recall@1", "recall@10", "MRR"):
+        b = base.get(key)
+        n = new.get(key)
+        if b is None or n is None:
+            continue
+        print(f"  {key:>9}: baseline {b!s:>6}  now {n!s:>6}")
+
+    if new_recall10 >= floor:
+        print(
+            f"{SRC}: recall@10 {new_recall10:.3f} >= floor {floor:.3f} (baseline "
+            f"{base_recall10:.3f} minus {RECALL_DROP:.0%}): OK"
+        )
+        return 0
+    print(
+        f"{SRC}: FAIL recall@10 {new_recall10:.3f} dropped below floor {floor:.3f} "
+        f"(baseline {base_recall10:.3f})",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -159,3 +159,13 @@ try:
     LENS_JUDGE_TOP_MAX = int(_LENS_JUDGE_TOP_MAX)
 except (TypeError, ValueError):
     LENS_JUDGE_TOP_MAX = 100
+
+# The cap on expansion sub-queries (the restatements + passages a lens
+# expands into, plus the lens itself). 0 = no cap, which is the behavior the
+# retrieval baseline was measured at; a positive number bounds retrieval cost
+# at the price of a narrower net. Phase 22.
+_EXPANSION_CAP = os.getenv("ENQ_EXPANSION_CAP", "0")
+try:
+    EXPANSION_CAP = int(_EXPANSION_CAP)
+except (TypeError, ValueError):
+    EXPANSION_CAP = 0

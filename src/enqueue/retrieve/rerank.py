@@ -6,10 +6,19 @@ wasteful and a chance to drift from the reasoning that earned the judgment.
 
 Bounded concurrency, not sequential. A full evaluation is a judgment per artifact per
 lens, and sequential turns that into hours, which produces an evaluation nobody runs.
+
+The pooled result is cached keyed on the lens, the sorted candidate id list, and the
+artifacts' `updated_at` signatures, so re-applying an unchanged lens to an unchanged
+pool costs nothing, while an edit (which bumps `updated_at`) makes the next call
+rebuild. The per-artifact judgment cache already makes re-judging cheap; this cache
+skips the pool assembly and sorting on top of it. Bounded to a small LRU.
 """
 
 from __future__ import annotations
 
+import copy
+import json
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 
@@ -19,6 +28,49 @@ from ..providers.base import get_provider
 from ..schemas import Judgment, Verdict
 from . import judgments
 from .candidates import artifact_text
+
+# Bounded pooled-result cache. key = (lens, sorted (id, updated_at) pairs).
+_RERANK_CACHE_MAX = 32
+_rerank_cache: OrderedDict[tuple, dict] = OrderedDict()
+
+
+def _pool_signature(candidates: list[dict]) -> tuple[tuple[str, str], ...]:
+    """(artifact_id, updated_at) per candidate, sorted.
+
+    `updated_at` moves on every content change, so a pool that was edited is a
+    different key and the pooled result is never served stale. The ids are
+    sorted so two calls with the same pool in a different order hit the same
+    entry.
+    """
+    ids = [c["artifact_id"] for c in candidates]
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, updated_at FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(ids),),
+        ).fetchall()
+        by_id = {r["id"]: r["updated_at"] for r in rows}
+    finally:
+        conn.close()
+    return tuple(sorted((aid, by_id.get(aid, "")) for aid in ids))
+
+
+def _cache_get(key: tuple) -> dict | None:
+    if key not in _rerank_cache:
+        return None
+    _rerank_cache.move_to_end(key)
+    return copy.deepcopy(_rerank_cache[key])
+
+
+def _cache_put(key: tuple, result: dict) -> None:
+    _rerank_cache[key] = copy.deepcopy(result)
+    _rerank_cache.move_to_end(key)
+    while len(_rerank_cache) > _RERANK_CACHE_MAX:
+        _rerank_cache.popitem(last=False)
+
+
+def _cache_clear() -> None:
+    _rerank_cache.clear()
 
 
 def _judge(lens: str, candidate: dict, text: str) -> tuple[Judgment | None, bool]:
@@ -87,6 +139,9 @@ def _judge_fresh(lens: str, candidate: dict, text: str) -> Judgment | None:
             judgment.placard,
             judgment.evidence,
         )
+        # A fresh judgment means the artifact changed or was never judged;
+        # any pooled result built from this pool is stale now.
+        _cache_clear()
     return judgment
 
 
@@ -105,6 +160,24 @@ def judge_one(lens: str, candidate: dict) -> tuple[Judgment | None, bool]:
 
 
 def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
+    key = (lens, _pool_signature(candidates))
+    cached = _cache_get(key)
+    if cached is not None:
+        # Re-validate before serving. An edit that did not change the key
+        # (raw SQL, or any other path that skips the updated_at bump) and a
+        # model switch must re-judge, not get the old pooled result. `_judge`
+        # costs nothing for rows that still validate; a stale row falls
+        # through to the normal path below, which re-judges it exactly once.
+        conn = db.get_conn()
+        try:
+            texts = {c["artifact_id"]: artifact_text(conn, c["artifact_id"]) for c in candidates}
+        finally:
+            conn.close()
+        if all(_judge(lens, c, texts[c["artifact_id"]])[1] for c in candidates):
+            cached["hits"] = len(candidates)
+            return cached
+        _cache_clear()  # stale pool; rebuild below
+
     conn = db.get_conn()
     try:
         texts = {c["artifact_id"]: artifact_text(conn, c["artifact_id"]) for c in candidates}
@@ -151,7 +224,7 @@ def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
         )
 
     belongs.sort(key=lambda j: j["strength"], reverse=True)
-    return {
+    result = {
         "kept": belongs[:keep],
         # Everything that passed, before the cutoff threw the tail away. The wall's
         # topic view needs the whole passing list, not just the top of it.
@@ -165,3 +238,5 @@ def rerank(lens: str, candidates: list[dict], keep: int = 15) -> dict:
         "hits": hits,
         "considered": len(candidates),
     }
+    _cache_put(key, result)
+    return result

@@ -7,7 +7,6 @@ a test that reports green while checking nothing.
 
 from __future__ import annotations
 
-
 import pytest
 
 from enqueue.ingest.facets import proper_nouns

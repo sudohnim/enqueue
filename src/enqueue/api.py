@@ -698,6 +698,7 @@ def doctor() -> dict:
 @app.get("/search")
 def search(q: str, limit: int = 20) -> dict:
     from .index import bootstrap
+    from .retrieve.candidates import search_results
 
     if not bootstrap.search_allowed():
         # The index is missing, rebuilding, or built with a different embedding
@@ -707,30 +708,9 @@ def search(q: str, limit: int = 20) -> dict:
             status_code=503,
             detail="Updating your search index. This will take a moment.",
         )
-    store = get_store()
-    hits = store.search(store.CHUNKS, q, limit=limit)
-    conn = db.get_conn()
-    try:
-        out = []
-        for hit in hits:
-            row = conn.execute(
-                "SELECT a.title, a.kind, c.text FROM chunks c"
-                " JOIN artifacts a ON a.id = c.artifact_id WHERE c.id = ?",
-                (hit["chunk_id"],),
-            ).fetchone()
-            if row:
-                out.append(
-                    {
-                        "score": round(hit["score"], 4),
-                        "artifact_id": hit["artifact_id"],
-                        "title": row["title"],
-                        "kind": row["kind"],
-                        "snippet": " ".join(row["text"].split())[:200],
-                    }
-                )
-        return {"query": q, "hits": out}
-    finally:
-        conn.close()
+    # Chunk and facet hits rolled up to one row per artifact (deduplicated),
+    # so an artifact whose six chunks match does not occupy every slot.
+    return {"query": q, "hits": search_results(q, limit=limit)}
 
 
 # --------------------------------------------------------------------------- chats

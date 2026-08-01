@@ -14,9 +14,9 @@ import sqlite3
 import pytest
 import sqlite_vec
 import typer
-from enqueue.index.store import get_store
 
 from enqueue import cli, config, db
+from enqueue.index.store import get_store
 
 
 def _seed_library() -> None:

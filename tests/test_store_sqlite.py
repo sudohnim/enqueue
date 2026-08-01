@@ -224,6 +224,23 @@ class TestSearch:
         assert hits[0]["level"] == 3
         assert hits[0]["trust"] == 0.8
 
+    def test_three_character_prefix_finds_the_longer_word(self, sqlite_store):
+        """Phase 22: FTS5 prefix matching makes partial words findable."""
+        conn = db.get_conn()
+        try:
+            _artifact(conn, "a1", "Hydroponics", _BODY_A)
+            _chunk(conn, "c1", "a1", 0, _BODY_A)
+            _write(conn)
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+        # "hyd" is a prefix of "hydroponics": a 3-character partial word matches.
+        hits = sqlite_store.search(sqlite_store.CHUNKS, "hyd", limit=5)
+        assert hits and hits[0]["chunk_id"] == "c1"
+        # The full word still matches, with the prefix star outside the quotes.
+        hits_full = sqlite_store.search(sqlite_store.CHUNKS, "hydroponics", limit=5)
+        assert hits_full and hits_full[0]["chunk_id"] == "c1"
+
     @pytest.mark.parametrize(
         "text",
         ['"', "AND", "foo-bar", "NEAR", "*", "", "x" * 500],
