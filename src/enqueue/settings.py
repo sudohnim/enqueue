@@ -161,7 +161,6 @@ def storage() -> dict:
         "data_dir": str(config.DATA_DIR),
         "database": {"path": str(config.DB_PATH), "bytes": size(config.DB_PATH)},
         "blobs": {"path": str(config.BLOB_DIR), "bytes": size(config.BLOB_DIR)},
-        "index": {"path": str(config.QDRANT_PATH), "bytes": size(config.QDRANT_PATH)},
         "counts": {
             table: db.count(table)
             for table in ("artifacts", "chunks", "facets", "chats", "exhibits")

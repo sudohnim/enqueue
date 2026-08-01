@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from enqueue import config, db, notes
+from enqueue import db, notes
 from enqueue.api import LensRequest, _consume_lens
 from enqueue.index.store import get_store
 from enqueue.ingest import chunk as chunk_mod
@@ -24,10 +24,7 @@ _PLACARD = "The claim outlasts the occasion that produced it."
 
 
 @pytest.fixture
-def scored_store(store, monkeypatch):
-    qdrant = store / "qdrant"
-    qdrant.mkdir(exist_ok=True)
-    monkeypatch.setattr(config, "QDRANT_PATH", qdrant)
+def scored_store(store):
     get_store.cache_clear()
     s = get_store()
     s.ensure()

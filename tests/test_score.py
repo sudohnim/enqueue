@@ -9,18 +9,15 @@ from __future__ import annotations
 
 import pytest
 
-from enqueue import config, db, notes
+from enqueue import db, notes
 from enqueue.index.store import get_store
 from enqueue.ingest import chunk as chunk_mod
 from enqueue.retrieve import score
 
 
 @pytest.fixture
-def scored_store(store, monkeypatch):
-    """An isolated vector store for one test, on a temp Qdrant path."""
-    qdrant = store / "qdrant"
-    qdrant.mkdir(exist_ok=True)
-    monkeypatch.setattr(config, "QDRANT_PATH", qdrant)
+def scored_store(store):
+    """An isolated vector store for one test."""
     get_store.cache_clear()
     s = get_store()
     s.ensure()  # both collections, so a facets search does not 404

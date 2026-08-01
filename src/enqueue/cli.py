@@ -91,20 +91,21 @@ def facets(limit: int = 0, redo: bool = False) -> None:
 
 @app.command()
 def index() -> None:
-    """Embed chunks and facets into the vector store."""
+    """Rebuild the search index from the database."""
     _echo(_call("POST", "/index", timeout=None))
 
 
 @app.command()
 def reindex() -> None:
-    """Rebuild the search index from the database. Never reads Qdrant.
+    """Rebuild the search index from the database.
 
     Both collections are rebuilt in place from the `chunks` and `facets`
-    tables already in SQLite; Qdrant is never consulted, so no vector data is
-    ever copied between engines. Progress prints every 500 rows. Re-running
-    is safe: a rebuild clears its collection first, so an interrupted run is
-    repaired on the next attempt and rows are never duplicated. When both
-    collections finish, the embedding version is written to `index_meta`.
+    tables already in SQLite; the store never reads external state, so no
+    vector data is ever copied between engines. Progress prints every 500
+    rows. Re-running is safe: a rebuild clears its collection first, so an
+    interrupted run is repaired on the next attempt and rows are never
+    duplicated. When both collections finish, the embedding version is
+    written to `index_meta`.
     """
     from .index.store import get_store
 
@@ -560,10 +561,10 @@ def _run_verify() -> None:
 
 
 def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
-    """Load corpus artifacts, chunk them, and index into an isolated Qdrant.
+    """Load corpus artifacts, chunk them, and index into an isolated store.
 
-    The test database and Qdrant index live under test_dir, completely separate
-    from the real library. Returns (artifact_count, chunk_count).
+    The test database and search index live under test_dir, completely
+    separate from the real library. Returns (artifact_count, chunk_count).
     """
     from . import config as cfg
     from . import db as db_mod
@@ -571,23 +572,19 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
     from .ingest.chunk import chunk_artifact
 
     test_db = test_dir / "enqueue.db"
-    test_qdrant = test_dir / "qdrant"
     test_blobs = test_dir / "blobs"
     test_blobs.mkdir(parents=True, exist_ok=True)
-    test_qdrant.mkdir(parents=True, exist_ok=True)
 
     # Point config to the test directory
     originals = {
         "DATA_DIR": cfg.DATA_DIR,
         "DB_PATH": cfg.DB_PATH,
         "BLOB_DIR": cfg.BLOB_DIR,
-        "QDRANT_PATH": cfg.QDRANT_PATH,
     }
 
     cfg.DATA_DIR = test_dir
     cfg.DB_PATH = test_db
     cfg.BLOB_DIR = test_blobs
-    cfg.QDRANT_PATH = test_qdrant
 
     try:
         db_mod.reset_migration_state()
@@ -660,13 +657,19 @@ def eval(
 ) -> None:
     """Run every query from evals/queries.yaml against the test library.
 
-    Runs locally against the isolated test database + test Qdrant index.
-    Does not require the engine to be running.
+    Runs locally against the isolated test database + test search index.
+    Does not require the engine to be running. `engine` labels the report;
+    after the cutover the only backend is sqlite-vec.
     """
     import math
     import time
 
     import yaml as _yaml
+
+    if engine not in ("sqlite-vec", "sqlite_vec"):
+        raise typer.BadParameter(
+            f"unknown engine {engine!r}; only sqlite-vec exists after the cutover"
+        )
 
     if not QUERIES_PATH.exists():
         typer.secho(f"queries not found at {QUERIES_PATH}", fg=typer.colors.RED)
@@ -692,20 +695,16 @@ def eval(
         )
         raise typer.Exit(1)
 
-    # Point config at the test data. The engine parameter selects the backend;
-    # the index lives inside the test database for sqlite-vec and in the test
-    # qdrant directory for qdrant, so the readiness check below is per-engine.
+    # Point config at the test data. The engine is sqlite-vec; the index
+    # lives inside the test database, so the readiness check below reads the
+    # sqlite-vec table counts.
     from . import config as cfg
     from .index.store import get_store
 
     originals: dict[str, object] = {"DB_PATH": cfg.DB_PATH}
     cfg.DB_PATH = test_db
-    if engine == "sqlite-vec":
-        originals["VECTOR_STORE"] = cfg.VECTOR_STORE
-        cfg.VECTOR_STORE = "sqlite-vec"
-    else:
-        originals["QDRANT_PATH"] = cfg.QDRANT_PATH
-        cfg.QDRANT_PATH = test_dir / "qdrant"
+    originals["VECTOR_STORE"] = cfg.VECTOR_STORE
+    cfg.VECTOR_STORE = "sqlite-vec"
 
     # A fresh store instance so it re-opens against the test path
     get_store.cache_clear()
@@ -721,7 +720,7 @@ def eval(
         raise typer.Exit(1)
 
     def _run_search(text: str, limit: int = 10, mode: str = "hybrid") -> list[dict]:
-        """Run search against the test Qdrant, return deduplicated artifact IDs."""
+        """Run search against the test index, return deduplicated artifact IDs."""
         if mode == "dense":
             hits = store.search_dense(store.CHUNKS, text, limit=limit * 3)
         else:
@@ -986,11 +985,8 @@ def lens_eval(
             raise typer.Exit(1)
         originals = {"DB_PATH": cfg.DB_PATH}
         cfg.DB_PATH = test_db
-        # The index lives inside the test database for sqlite-vec and in the
-        # test qdrant directory for qdrant; readiness is checked per engine.
-        if (cfg.VECTOR_STORE or "sqlite-vec") == "qdrant":
-            originals["QDRANT_PATH"] = cfg.QDRANT_PATH
-            cfg.QDRANT_PATH = test_dir / "qdrant"
+        # The index lives inside the test database; readiness is the sqlite-vec
+        # table counts.
         get_store.cache_clear()
         counts = get_store().counts()
         if counts.get("chunks") is None or counts.get("facets") is None:

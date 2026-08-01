@@ -15,9 +15,6 @@ EMBED_MODEL = "BAAI/bge-base-en-v1.5"
 EMBED_DIM = 768
 EMBED_VERSION = "bge-base-en-v1.5"
 
-# Sparse retrieval. Dense vectors blur proper nouns; this is what finds names.
-SPARSE_MODEL = "Qdrant/bm25"
-
 # 127.0.0.1, never localhost. This machine runs a second Ollama in Docker bound to
 # the IPv6 wildcard, and localhost resolves to IPv6 first. See docs/PROGRESS.md.
 OLLAMA_URL = os.getenv("ENQ_OLLAMA_URL", "http://127.0.0.1:11434/v1")
@@ -116,19 +113,9 @@ try:
 except ValueError:
     MODEL_RETRIES = 1
 
-# M0 runs Qdrant in process, at QDRANT_PATH. Set ENQ_QDRANT_URL to use a server instead.
-#
-# AGENTS.md specifies a sidecar because in-process mode is documented for roughly
-# 20,000 points, and a real corpus passes that on day one. The POC runs on junk data
-# well under the limit, and dropping the container removes a dependency that was
-# costing more than it gave. Switch to the server before the corpus is real.
-QDRANT_URL = os.getenv("ENQ_QDRANT_URL", "")
-QDRANT_PATH = DATA_DIR / "qdrant-local"
-
 # The vector store backend. sqlite-vec is the default: the index lives inside
 # the SQLite file (one encrypted file later), search is exact, and there is no
-# single-process directory lock. `qdrant` stays available behind the same
-# interface until the cutover deletes it. Read as ENQ_VECTOR_STORE; `get_store()`
+# single-process directory lock. Read as ENQ_VECTOR_STORE; `get_store()`
 # in index/store.py resolves it to an instance.
 VECTOR_STORE = os.getenv("ENQ_VECTOR_STORE", "sqlite-vec")
 

@@ -1,7 +1,7 @@
 """The vector store interface.
 
-The engine's searchable index is the thing the plan bets on twice: Qdrant today,
-sqlite-vec in the pipeline, possibly another backend after that. Every backend
+The engine's searchable index is the thing the plan bets on twice: sqlite-vec today
+(inside the SQLite file), possibly another backend later. Every backend
 must do the same work, so the interface is the contract, and picking a backend
 is a config change rather than a rewrite.
 
@@ -17,8 +17,7 @@ Two deliberate notes on the shape:
 - The bulk rebuilds (`upsert_chunks`, `upsert_facets`) fetch their rows from
   SQLite themselves rather than taking rows as an argument, exactly as the
   Qdrant logic did before the interface existed. "Copy the logic exactly,
-  change no behavior" outranks the sketch; the shape can change when the
-  sqlite-vec backend lands.
+  change no behavior" outranks the sketch.
 """
 
 from __future__ import annotations
@@ -90,29 +89,24 @@ class VectorStore(ABC):
 
 @lru_cache(maxsize=1)
 def get_store(on_progress: Callable[[int, int], None] | None = None) -> VectorStore:
-    """The configured store, cached. One client per process.
+    """The configured store, cached. One instance per process.
 
-    In-process backends (Qdrant local mode) hold a lock on their storage
-    directory, so the singleton is not an optimisation, it is the rule: the
-    engine must be the only client touching a given storage path.
+    The cache exists so the engine holds one instance for its lifetime;
+    sqlite-vec opens its own connection per operation, so there is no
+    directory lock to protect - the singleton is a stability rule, not a
+    locking rule. `get_store.cache_clear()` exists for the eval harness,
+    which repoints the store at an isolated test index within the same
+    process.
 
     `on_progress(indexed, total)` is called every 500 rows of a bulk rebuild;
     backends without a rebuild progress path ignore it. `enq reindex` uses it
     for the progress indicator.
-
-    `get_store.cache_clear()` exists for the eval harness, which repoints the
-    store at an isolated test index within the same process.
     """
     name = (config.VECTOR_STORE or "sqlite-vec").strip().lower()
-    if name == "qdrant":
-        from .store_qdrant import QdrantStore
-
-        return QdrantStore()
     if name in ("sqlite-vec", "sqlite_vec"):
         from .store_sqlite import SqliteVecStore
 
         return SqliteVecStore(on_progress=on_progress)
     raise ValueError(
-        f"unknown VECTOR_STORE {config.VECTOR_STORE!r}; "
-        "set ENQ_VECTOR_STORE=qdrant or sqlite-vec"
+        f"unknown VECTOR_STORE {config.VECTOR_STORE!r}; " "set ENQ_VECTOR_STORE=sqlite-vec"
     )

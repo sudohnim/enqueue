@@ -30,10 +30,7 @@ _BODY_E = "A lens is a question the library answers at full strength."
 
 
 @pytest.fixture
-def scored_store(store, monkeypatch):
-    qdrant = store / "qdrant"
-    qdrant.mkdir(exist_ok=True)
-    monkeypatch.setattr(config, "QDRANT_PATH", qdrant)
+def scored_store(store):
     get_store.cache_clear()
     s = get_store()
     s.ensure()
