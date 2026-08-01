@@ -387,10 +387,11 @@ both engines from the same rows. Full write-up in
 
 Phase 19 passed. Phase 20 cutover next.
 
-## Phase 20 — Cut over to sqlite-vec (in progress)
+## Phase 20 — Cut over to sqlite-vec (done)
 
-Steps 1-5 landed; step 6 ([HUMAN] confirm before the irreversible deletions)
-is the current stop.
+Steps 1-5 landed first (178 tests green before the deletions); step 6 ([HUMAN]
+confirm before the irreversible deletions) was confirmed; steps 7-14 then
+removed the Qdrant backend for good.
 
 - [x] Default `VECTOR_STORE` is now `sqlite-vec`. `get_store()` falls back to
       it, and the eval / lens-eval defaults follow the app default so
@@ -417,6 +418,30 @@ is the current stop.
       and a single `healthy` bit. Tests: synced-current reports healthy;
       a chunk the index never saw flips sync off; a stale embed version
       flips version-current off while row sync stays true. (3 tests)
+- [x] Qdrant removed: `store_qdrant.py` deleted, `qdrant-client` out of
+      `pyproject.toml`/`uv.lock`, `QDRANT_URL`/`QDRANT_PATH`/`SPARSE_MODEL`
+      out of config, the qdrant branches out of `get_store()` (it now raises
+      a clear error for `ENQ_VECTOR_STORE=qdrant`), the dead sparse-embedding
+      functions out of `embed.py`, and the eval / lens-eval / fixture
+      scaffolding out of `cli.py` and the tests. `ENQ_VECTOR_STORE` remains
+      the one knob, with `sqlite-vec` the only value. (186 tests green)
+- [x] `remove_legacy_qdrant_dir()` in `bootstrap.py` deletes a leftover
+      `~/.enqueue-poc/qdrant-local` on the first successful run after
+      cutover, logging the path, file count, and size; it never raises and is
+      naturally one-time. Wired into `serve()` after the index check, so the
+      new index is confirmed before derived data is deleted. (1 test)
+- [x] Docs rewritten for the sqlite-vec engine: README (install, CLI table,
+      env vars, data-lives table, layout, known gaps), AGENTS.md (module
+      map, index tables, hybrid search, invariants, gotchas, decisions),
+      the score.py "heavy query shape" note (whole-library scoring measured
+      at 23-25 ms - now a natural shape), the eval "test Qdrant" docstrings,
+      and a note in the human test that there is no Qdrant to switch back to.
+- [x] Contrast check made honest while fixing a real gap: accent is used as
+      text in two places (aside.dirty, title-action.lit) at 1.63:1 - far
+      below the 4.5:1 standard. New `--accent-text` ink clears 4.5:1 on
+      every surface; the check now applies 4.5:1 only to actual text inks
+      (kind hues are decorative dots, accent fills carry a --text edge).
+      `bin/verify` is fully green.
 
 Next: step 6 [HUMAN] STOP - confirm with the maintainer before the four
 irreversible deletions (store_qdrant.py, qdrant-client dep, QDRANT_URL/
