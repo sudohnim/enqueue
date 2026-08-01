@@ -67,8 +67,6 @@ Question: What was my max squat?
 Answer: GOOD
 Actual response:Your squat is listed at 350, per the stats in your workout note (updated 7/6). For context, that note also tracks Bench at 240, Deadlift at 410, Press at 167, and Pedley Row at 190, and the squat number appears to be the training max your 5/3/1 percentages are based on.
 
-
-
 ## Test 3 - Find something by an exact code or unusual word
 
 Think of an item that has an unusual word in it. A product name,
@@ -85,8 +83,6 @@ Actual REsponse You haven't saved anything that says what the Lumo mascot was. T
 Question: What was the Lumo mascot?
 Answer: OK
 Actual response: Lumo was the mascot of Proton's Lumo AI assistant — a character created to be the face of the product and to embody its values: private, approachable, and easy to use, described as 'a trusted and independent mascot that protects your personal conversations.' The original design was playful and welcoming — apparently kitten-like, since the article about the Lumo 2.0 redesign is headed 'Lumo's not a kitten anymore.' With Lumo 2.0, Proton chose to evolve the character rather than replace it, giving it a stronger, more confident presence to match the product's growing sophistication, plus new illustrations, subtle reactive animations, and a sticker library for messaging platforms. The mascot's name stayed Lumo even as the wordmark changed to 'Lumo AI.'
-
-
 
 ## Test 4 - Find something by its title only
 
@@ -130,7 +126,6 @@ Question: Do I have notes regarding making my own sourdough bread?
 Answer: GOOD
 Actual response: You haven't saved anything about making your own sourdough bread. Bread does come up in your collection, but only in passing and in unrelated contexts: a piece on medieval agriculture discusses grain storage, bread prices, and caloric content, and a book on utopian communes mentions that baking bread held spiritual meaning for the Shakers. Neither contains anything about actually baking bread yourself — no starter, recipe, or technique — and nothing in your notes touches on sourdough at all.
 
-
 ## Test 6 - Same words, different order
 
 Pick any item. Search for three words from it, in the wrong order.
@@ -146,8 +141,6 @@ Actual REsponse: A boxer's greatest advantage comes from their sparring partner�
 Question: What is a boxer's advantage?
 Answer: GOOD
 Actual response: According to what you've saved, a boxer's greatest advantage is their sparring partner. The idea is that adversity functions as input rather than obstacle — the partner is the mechanism by which that adversity compounds into growth. What looks like harm (getting hit) is actually the process working as intended.
-
-
 
 ## Test 7 - Does it feel fast
 
@@ -190,3 +183,11 @@ If you wrote BAD for any test, also write down:
 - what came up instead
 
 That last part is the most useful thing you can give us.
+
+---
+
+**Outcome (Phase 20, recorded 2025):** sqlite-vec matched or beat Qdrant on every
+test above (Test 3 went BAD to OK, the Test 4 second-query went BAD to GOOD, the
+rest stayed GOOD; Test 7 latencies were equal). The bake-off then switched the
+engine to sqlite-vec and removed the Qdrant backend, so "Engine 2: Qdrant" above
+no longer exists - there is nothing to switch back to.

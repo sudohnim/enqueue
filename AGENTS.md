@@ -19,7 +19,7 @@ They are recorded here so the next agent does not re-litigate them.
 The database is plain `sqlite3` today.
 Encryption at rest is a planned milestone.
 Do not assume any specific scheme (SQLCipher, Argon2id, AES-256-GCM, envelope encryption) - none is chosen yet.
-Until it exists, treat the store as plaintext and keep secret material out of Qdrant payloads.
+Until it exists, treat the store as plaintext and keep secret material out of the search index.
 
 2. **Sync is planned, not built.**
 There is zero sync code in the repo.
@@ -101,7 +101,7 @@ Tauri shell (desktop/)          native window, global hotkey, capture overlay
 Engine (src/enqueue/)           FastAPI + background ingest worker, one process
     |
     +-- SQLite (~/.enqueue-poc/enqueue.db)    artifacts, text, chats, exhibits
-    +-- Qdrant (~/.enqueue-poc/qdrant-local)  vectors + opaque ids, in-process
+    +-- SQLite search index (vec0 + FTS5 tables inside enqueue.db)  vectors + text + ids
     +-- Blobs (~/.enqueue-poc/blobs/)         original files, content-addressed
 ```
 
@@ -116,13 +116,12 @@ No broker, no Redis, no second container.
 | --- | --- | --- |
 | `enqueue-desktop` | Tauri shell. Native window, global hotkey, tray. | nothing |
 | `enq serve` | Python engine. FastAPI plus a background worker. | `127.0.0.1:8787` |
-| Qdrant | vector store, in-process by default | embedded in engine |
+| sqlite-vec | search index inside the SQLite file | embedded in engine |
 | Ollama | local LLM backend (default) | `127.0.0.1:11434` |
 
-Qdrant runs in-process (`QdrantClient(path=...)`) by default.
-Set `ENQ_QDRANT_URL` to use a server instead.
-The old AGENTS.md specified a sidecar because in-process mode is documented for roughly 20,000 points.
-The POC runs on small data well under that limit.
+The search index is sqlite-vec, living inside the SQLite file as vec0 + FTS5 tables.
+There is no separate store directory, no sidecar, and no single-process directory lock.
+Search is exact (brute-force) rather than approximate.
 
 ### Why Python
 
@@ -200,8 +199,11 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
-| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5) + sparse (BM25). |
-| `index/qdrant.py` | Qdrant collection management. Hybrid search with RRF. Payloads hold ids only. |
+| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). |
+| `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
+| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables, hybrid search fused with RRF (k=1). |
+| `index/fusion.py` | Reciprocal rank fusion as a pure function. |
+| `index/bootstrap.py` | Startup index build (no manual reindex) + cutover cleanup. |
 
 ### Providers
 
@@ -257,15 +259,15 @@ One line per file, describing its job.
 
 1. **Capture** (`capture.py` or `notes.py`): create an artifact row, write blob if applicable, return immediately.
 2. **Queue** (`ingest/queue.py`): `submit(artifact_id)` puts it on an in-memory queue. Returns before processing.
-3. **Worker thread**: for links, optionally fetch preview; for PDFs, extract text via pymupdf; chunk the text; index into Qdrant.
+3. **Worker thread**: for links, optionally fetch preview; for PDFs, extract text via pymupdf; chunk the text; index into the sqlite-vec store.
 4. **Chunk** (`ingest/chunk.py`): markdown-aware splitting. Headings, lists, code fences are coherent units. Loose prose merged to a floor of 120 words. Long chunks split at 380 words with 60-word overlap.
-5. **Index** (`index/qdrant.py`): embed chunks (dense + sparse), upsert into Qdrant. Title prepended for indexing only.
+5. **Index** (`index/store_sqlite.py`): embed chunks (dense), upsert into `vec_chunks` and `fts_chunks`. Title prepended for indexing only.
 
 ### Facet generation
 
 1. **Eligibility gate** (`ingest/facets.py`): `apply_eligibility_gate()` marks artifacts that should not get facets (too short, not a note, text_only status).
 2. **Generate** (`ingest/facets.py`): `generate_all()` iterates eligible artifacts, calls provider with `FACET_GENERATION` prompt, stores facets with trust=0.5.
-3. **Index** (`index/qdrant.py`): `index_facets()` embeds facet statements, upserts into Qdrant FACETS collection.
+3. **Index** (`index/store_sqlite.py`): `upsert_facets()` embeds facet statements, upserts into `vec_facets` and `fts_facets`.
 
 ### Curate (retrieve pipeline)
 
@@ -333,7 +335,11 @@ Migrations run automatically at startup via Alembic.
 
 These are enforced by the schema or by code, and breaking them breaks the product.
 
-1. **Qdrant payloads hold ids only.** No text, no titles, no URLs. Qdrant writes payloads unencrypted to disk. Text lives in SQLite and is fetched by id after retrieval.
+1. **The index holds ids, embeddings, and search text, all in the one SQLite file.**
+The vec0 tables carry id + embedding; the FTS5 tables carry the text they index.
+Unlike the old Qdrant directory there is no second unencrypted store to leak: the
+index lives inside `enqueue.db`, the same file as the library. Text is fetched by id
+after retrieval.
 2. **A capture's body is NULL.** Enforced by a CHECK constraint: `kind = 'note' OR body IS NULL`. Captures are frozen because fidelity to the source is why they were saved.
 3. **No user-authored text is ever destroyed.** Editing a note appends to `artifact_versions` before updating `artifacts.body`. Annotations are append-only. Purge is the only destructive operation, and only on trashed artifacts.
 4. **Every vector is stamped with its embedding model version.** A model change means re-embedding, and stamping makes that incremental.
@@ -342,16 +348,18 @@ These are enforced by the schema or by code, and breaking them breaks the produc
 7. **Schema changes are Alembic revisions.** Never a `CREATE TABLE` in application code, never a hand edit. A pre-migration database is stamped at baseline and upgraded, never rebuilt.
 8. **An answer states whether it is grounded, and the citations must back it.** Enforced in `schemas.Answer`.
 
-### Qdrant collections
+### Index tables
 
-| Collection | Vectors | Payload |
-| --- | --- | --- |
-| `chunks` | dense + sparse (BM25) | `{artifact_id, chunk_id, embed_version}` |
-| `facets` | dense + sparse | `{artifact_id, facet_id, level, trust, embed_version}` |
+| Table | What it holds |
+| --- | --- |
+| `vec_chunks` / `vec_facets` | sqlite-vec (vec0) tables: id + 768-dim embedding |
+| `fts_chunks` / `fts_facets` | FTS5 tables: the indexed text, with the id as an unindexed reference |
+| `index_meta` | key/value: the embedding version the index was built at |
 
-Search uses Qdrant's native hybrid query with Reciprocal Rank Fusion (RRF).
-Sparse matters because dense embeddings blur proper nouns.
-"Find that thing from Epictetus" is a proper noun, and BM25 nails it while dense does not.
+Search runs both branches and fuses with Reciprocal Rank Fusion (RRF, k=1 so scores
+stay on the same scale the lens threshold was tuned against). Sparse matters because
+dense embeddings blur proper nouns: "Find that thing from Epictetus" is a proper noun,
+and FTS5 BM25 nails it while dense does not.
 
 ### Migration story
 
@@ -379,7 +387,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_LLM_MODEL` | `llama3.1:8b` | The model id (placeholder, known to be bad at structured output) |
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | LLM endpoint URL |
 | `ENQ_LLM_API_KEY` | `ollama` (ignored by Ollama) | API key for hosted backends |
-| `ENQ_QDRANT_URL` | empty (in-process) | Set to use a Qdrant server instead |
+| `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
 | `ENQ_MODEL_RETRIES` | `1` | Retries after first attempt (1 = two tries) |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (...)` | User agent for preview fetches |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
@@ -463,7 +471,9 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq health` | Engine status and row counts |
 | `enq migrate` | Bring the database to head (engine does this at startup too) |
 | `enq facets [--limit N] [--redo]` | Generate facets for eligible artifacts |
-| `enq index` | Embed chunks and facets into Qdrant |
+| `enq index` | Rebuild the search index from the database |
+| `enq reindex` | Rebuild the search index with visible progress; resumable |
+| `enq doctor` | Index health: counts, embedding version, sync with the chunks table |
 | `enq search <query> [--limit N]` | Hybrid search, no model calls |
 | `enq curate <lens> [--keep N] [--pool N] [--save]` | Build a room on a theme |
 | `enq lens-eval [--corpus] [--baseline F]` | Measure threshold placement of true matches |
@@ -510,7 +520,7 @@ GET    /exhibits                    saved rooms
 GET    /exhibits/{id}               room with members
 GET    /settings                    all settings + storage + backends
 GET    /secrets                     credential scan hits
-GET    /index/counts                Qdrant point counts
+GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
 GET    /fonts/{name}                font files (cached 1 year)
 ```
@@ -540,7 +550,7 @@ POST   /exhibits                     save a room that was already built
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
 POST   /facets                       generate facets
-POST   /index                        embed into Qdrant
+POST   /index                        rebuild the search index
 POST   /reprocess                    re-extract, re-chunk, re-index everything
 POST   /ingest/wait                  block until queue drains (for tests)
 PUT    /settings/api-key             store key in Keychain
@@ -592,7 +602,7 @@ Per curate:
 
 ### Hybrid search
 
-Sparse and dense together, fused with RRF, using Qdrant's native support for both in one index.
+Sparse and dense together, fused with RRF, both in the one SQLite file.
 
 - **Search**: hybrid, weighted toward sparse.
 - **Curate**: dense plus facets, sparse as a minor channel.
@@ -616,7 +626,7 @@ If the engine dies with work outstanding, that work is lost and the artifact is 
 That is the right trade for derived data: nothing the person wrote is ever at risk.
 
 One worker thread, not a pool.
-In-process Qdrant holds a lock on its directory and embedding models are large enough that a second copy is not free.
+The search index lives inside the SQLite file and embedding models are large enough that a second engine is not free.
 
 ### Per type
 
@@ -783,10 +793,12 @@ If the engine crashes, queued work is lost.
 The artifact is unindexed until the next `enq index` or `enq reprocess`.
 This is acceptable for derived data.
 
-### Qdrant in-process holds a directory lock
+### The search index lives inside the database
 
-The engine must be the only process touching `~/.enqueue-poc/qdrant-local`.
-The client is cached via `lru_cache` so the lock is held for the process lifetime.
+The vec0 and FTS5 tables live in `enqueue.db`, so there is no separate index
+directory to keep in sync or lock. `get_store()` is still cached via `lru_cache`
+so the engine holds one instance for its lifetime; the eval harness repoints it
+via `get_store.cache_clear()`.
 
 ### The title is prepended for indexing only
 
@@ -819,8 +831,8 @@ See the Resolved decisions section above for the status of each of these.
 | instructor | structured LLM output | Mode.JSON for all adapters. Wraps the OpenAI client. |
 | openai | LLM client | Used for all OpenAI-compatible endpoints. |
 | chonkie | chunking | Not currently imported in code. The chunker in `ingest/chunk.py` is hand-written markdown splitting. |
-| fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d) + Qdrant/bm25 (sparse). |
-| qdrant-client | vector store | In-process by default. Hybrid dense+sparse with RRF. |
+| fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d). |
+| sqlite-vec | search index | vec0 + FTS5 tables inside the SQLite file; hybrid fused with RRF (k=1). |
 | pymupdf (fitz) | PDF parsing | Text extraction, page rendering, page counting, phrase search. |
 | beautifulsoup4 + lxml | HTML parsing | For link preview metadata extraction. |
 | httpx | HTTP client | HTTP/2 enabled for preview fetches. |

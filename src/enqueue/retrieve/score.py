@@ -6,10 +6,11 @@ ids the same way the curate path does, one score per artifact. Instant by
 construction: a couple of searches and no language model anywhere in this
 file.
 
-Whole-library scoring is a heavy query shape on the current engine: a search
-whose limit is the library size rather than a page size. The limit is set
-from the counts rather than guessed, so the coverage claim the lens makes
-later (Phase 10) stays true. This becomes a natural shape after Part 3.
+Whole-library scoring used to be a heavy query shape on the old engine: a
+search whose limit is the library size rather than a page size. Since the
+sqlite-vec cutover (Part 3) it is a natural shape - measured at 23-25 ms on
+the 50-artifact eval corpus. The limit is still set from the counts rather
+than guessed, so the coverage claim the lens makes (D3) stays true.
 """
 
 from __future__ import annotations

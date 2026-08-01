@@ -29,7 +29,7 @@ cd enqueue
 uv sync
 ```
 
-This installs all Python dependencies from `pyproject.toml`, including `fastembed` and `qdrant-client` for the vector index.
+This installs all Python dependencies from `pyproject.toml`, including `fastembed` and `sqlite-vec` for the search index.
 There is no separate `--extra index` install step; the index dependencies are in the main dependency list.
 
 If you want to build the desktop shell:
@@ -103,7 +103,9 @@ All commands except `serve`, `migrate`, and `version` are thin HTTP clients over
 | `enq lens-cache clear\|stats` | Clear or inspect the lens judgment cache. |
 | `enq facets --limit 0 --redo` | Generate conceptual facets for eligible artifacts. Slow, resumable. |
 | `enq facet-gate` | Decide which artifacts are eligible for facet generation. |
-| `enq index` | Embed all chunks and facets into the Qdrant vector store. |
+| `enq index` | Rebuild the search index from the database. |
+| `enq reindex` | Rebuild the search index with visible progress. Resumable. |
+| `enq doctor` | Index health: artifact/chunk counts, index row counts, embedding version, sync with the chunks table. |
 | `enq chunk` | Rebuild text chunks from note bodies. |
 
 Every command takes `--help` for full argument details.
@@ -171,7 +173,7 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | URL for the Ollama backend. Also used as `llm_url` in settings. |
 | `ENQ_LLM_API_KEY` | `ollama` (placeholder) | API key for non-local backends. Falls back to the macOS Keychain if not set. |
 | `ENQ_MODEL_RETRIES` | `1` | Extra retry attempts after the first model call (1 = two tries total). |
-| `ENQ_QDRANT_URL` | (empty) | If set, use a remote Qdrant server instead of the in-process local store. |
+| `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (personal link preview; one request per saved link)` | User agent string sent when fetching link previews. |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey. |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link automatically fetches its preview. |
@@ -210,9 +212,8 @@ Everything is stored under `~/.enqueue-poc`:
 
 | Path | Contents |
 | --- | --- |
-| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, chats, exhibits, trash, secrets. |
+| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, chats, exhibits, trash, secrets, and the search index (sqlite-vec + FTS5 tables). |
 | `blobs/` | Original uploaded files, unmodified. |
-| `qdrant-local/` | The vector index (dense + sparse). Rebuildable; safe to delete. |
 | `settings.json` | User preferences (not secrets). |
 | `repo` | One-line pointer to the repo path, written by `bin/relaunch` so the desktop shell can find the engine. |
 | `capture-position` | Last screen position of the capture overlay. |
@@ -254,8 +255,11 @@ enqueue/
       queue.py         # Background ingest queue
       secrets.py       # Credential scanning
     index/
-      embed.py         # Dense + sparse embeddings (fastembed)
-      qdrant.py        # Qdrant vector store operations
+      embed.py         # Dense embeddings (fastembed)
+      store.py         # VectorStore interface + get_store() factory
+      store_sqlite.py  # sqlite-vec backend (vec0 + FTS5, RRF fusion)
+      fusion.py        # Reciprocal rank fusion, pure
+      bootstrap.py     # Startup index build + cutover cleanup
     retrieve/
       candidates.py    # Candidate retrieval for curation
       curate.py        # Room/exhibit building
@@ -316,7 +320,7 @@ Key endpoints:
 - `PATCH /settings` - Update settings
 - `PUT /settings/api-key` - Store API key in Keychain
 - `DELETE /settings/api-key` - Remove API key from Keychain
-- `POST /index` - Build the vector index
+- `POST /index` - Rebuild the search index
 - `POST /reprocess` - Re-ingest everything
 - `GET /trash` - List trashed artifacts
 - `DELETE /trash/{id}` - Permanently destroy one artifact
@@ -332,7 +336,7 @@ Key endpoints:
 - **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
 - **No sync (planned).** One machine only today. Sync is a planned milestone.
 - **The default local model (`llama3.1:8b`) is weak.** Roughly three of four rerank judgments fail their validators. Conversations work; rooms are unreliable until you point at a better model.
-- **Qdrant runs in-process.** The in-process mode is documented for roughly 20,000 points. A real corpus should switch to a Qdrant server via `ENQ_QDRANT_URL`.
+- **Search is brute-force.** sqlite-vec does exact nearest-neighbour search over the 768-dim embeddings in `enqueue.db`. At this library's scale that is fast (Phase 19 measured p95 21 ms); at a few hundred thousand chunks it will need quantization or an approximate index.
 - **No Windows or Linux support.** The desktop shell uses macOS-specific AppKit calls (activation, hiding). The Keychain wrapper is macOS-only.
 
 ---
