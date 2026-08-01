@@ -98,3 +98,23 @@ class TestExtraHeaders:
     def test_empty_means_no_headers(self, store):
         settings.update({"llm_headers": ""})
         assert _extra_headers() == {}
+
+
+class TestNothingIsWrittenUntilUpdate:
+    """The contract the settings forms rely on: the file changes only when an
+    explicit update() lands, and then only by the named changes - never as a side
+    effect of reading settings or re-rendering a form."""
+
+    def test_no_settings_file_exists_until_an_update_is_called(self, store):
+        assert not settings.settings_path().exists()
+
+    def test_update_writes_only_the_named_changes(self, store):
+        settings.update({"llm_model": "some-model"})
+        written = json.loads(settings.settings_path().read_text(encoding="utf-8"))
+        assert written == {"llm_model": "some-model"}
+
+    def test_update_merges_into_what_is_already_stored(self, store):
+        settings.update({"llm_model": "some-model"})
+        settings.update({"user_agent": "Enqueue/0.2"})
+        written = json.loads(settings.settings_path().read_text(encoding="utf-8"))
+        assert written == {"llm_model": "some-model", "user_agent": "Enqueue/0.2"}

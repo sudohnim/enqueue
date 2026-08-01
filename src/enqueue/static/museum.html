@@ -1284,6 +1284,11 @@
     gap: var(--sp-3);
     margin-top: var(--sp-4);
   }
+  /* The author flex rule above would beat the UA's [hidden] rule, so the unsaved
+     bar needs its own explicit hidden state to collapse to nothing. */
+  .actions[hidden] {
+    display: none;
+  }
 
   /* Keeping something is a small decision, so the control behaves like one: it settles
      rather than springs. Ease-out only, no bounce. */
@@ -4411,6 +4416,9 @@
     faceWatch = null;
     ctx = null;
     chat = null;
+    // Unsaved settings edits are staging on a form, not a decision. Leaving the form
+    // drops them, so stale values never follow the user between screens.
+    pendingSettings = null;
   }
 
   async function startChat(text) {
@@ -4944,7 +4952,7 @@
       const accelerator = [...held, key].join("+");
       label.textContent = keyLabel(accelerator);
       stop();
-      saveSetting("hotkey", accelerator);
+      stageSetting("hotkey", accelerator);
     };
 
     recording = onKey;
@@ -5005,27 +5013,18 @@
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
-  // Switching backend moves the endpoint with it, because leaving the old URL behind
 
   // ---- AI sub-page ---------------------------------------------------------
   async function showSettingsAI() {
     teardown();
     restorePill("inside");
     view.innerHTML = '<div class="state">...</div>';
+    currentSettingsView = showSettingsAI;
     const d = await api("/settings");
-    if (pendingAI) {
-      for (const [name, value] of Object.entries(pendingAI)) {
-        if (d.settings[name]) d.settings[name].value = value;
-      }
-    }
     let html =
-      '<button class="settings-back" onclick="showSettings()"' +
-      (pendingAI ? ' title="Discard unsaved changes and go back"' : "") +
-      ">" +
+      '<button id="settingsBack" class="settings-back" onclick="showSettings()">' +
       '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
-      '<div class="h2">AI' +
-      (pendingAI ? ' <span class="aside dirty">unsaved</span>' : "") +
-      "</div>";
+      '<div class="h2">AI</div>';
 
     html += '<div class="shelf">The model</div><div class="group">';
     const chosen = d.settings.llm_backend;
@@ -5124,58 +5123,95 @@
       '<div class="aside">One <b>Name: value</b> per line.</div></div>';
 
     html += '<div id="settingState" class="aside"></div>';
-    if (pendingAI && Object.keys(pendingAI).length > 0) {
-      html +=
-        '<div class="actions">' +
-        '<button class="btn primary" onclick="saveAIChanges()">Save</button>' +
-        '<button class="btn ghost" onclick="discardAIChanges()">Discard</button>' +
-        "</div>";
-    }
+    html += settingsActionsBar();
     view.innerHTML = html;
+    refreshDirtyBar();
     window.scrollTo(0, 0);
   }
 
-  // Staged settings that the user has changed in the AI form but not saved yet.
-  // null when nothing is pending. Cleared by Save or Discard, or by navigating
-  // away (deliberate: unsaved means unsaved).
-  let pendingAI = null;
+  // Settings changed in any settings form but not saved yet. One staging area for
+  // the whole settings section, because Save commits the form in one PATCH. null
+  // when nothing is pending. Cleared by Save or Discard, or by navigating away
+  // from the form (deliberate: unsaved means unsaved).
+  let pendingSettings = null;
 
-  async function stageBackend(name) {
-    const list = (await api("/settings")).backends;
-    const spec = list.find((b) => b.name === name);
-    if (!pendingAI) pendingAI = {};
-    pendingAI.llm_backend = name;
-    if (spec && spec.url) pendingAI.llm_url = spec.url;
-    if (BACKEND_MODELS[name]) pendingAI.llm_model = BACKEND_MODELS[name];
-    showSettingsAI();
+  function isDirty() {
+    return !!pendingSettings && Object.keys(pendingSettings).length > 0;
+  }
+
+  // The settings form currently on screen, so Save and Discard can re-render it
+  // against the config once the staging is resolved.
+  let currentSettingsView = null;
+
+  // Staging never re-renders the form: re-rendering would reset a text field and
+  // lose the very edit that staged it. The control itself already shows the edit in
+  // place; all that reacts here is the unsaved bar and the back button's tooltip.
+  function refreshDirtyBar() {
+    const bar = document.getElementById("settingsActions");
+    if (bar) bar.hidden = !isDirty();
+    const back = document.getElementById("settingsBack");
+    if (back) back.title = isDirty() ? "Discard unsaved changes and go back" : "";
   }
 
   function stageSetting(name, value) {
-    if (!pendingAI) pendingAI = {};
-    pendingAI[name] = value;
-    showSettingsAI();
+    if (!pendingSettings) pendingSettings = {};
+    pendingSettings[name] = value;
+    refreshDirtyBar();
   }
 
-  async function saveAIChanges() {
-    if (!pendingAI || Object.keys(pendingAI).length === 0) return;
+  // The preview toggle's look is driven by aria-checked, which a plain click does
+  // not change, so the click flips it by hand and then stages like any other
+  // control. The aside beneath it catches up on Save or Discard, when the form
+  // re-renders against the config.
+  function stagePreviewToggle(button) {
+    const on = button.getAttribute("aria-checked") !== "true";
+    button.setAttribute("aria-checked", String(on));
+    stageSetting("auto_preview", on ? "on" : "off");
+  }
+
+  // Switching backend moves the endpoint with it, because leaving the old URL
+  // behind would point a hosted model at localhost and fail in a way nobody could
+  // read. The move is staged with the choice, committed by the same Save.
+  async function stageBackend(name) {
+    const list = (await api("/settings")).backends;
+    const spec = list.find((b) => b.name === name);
+    stageSetting("llm_backend", name);
+    if (spec && spec.url) stageSetting("llm_url", spec.url);
+    if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
+  }
+
+  async function saveSettings() {
+    if (!isDirty()) return;
     const state = document.getElementById("settingState");
     try {
       await api("/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes: pendingAI }),
+        body: JSON.stringify({ changes: pendingSettings }),
       });
-      pendingAI = null;
+      pendingSettings = null;
       toast("Settings saved.");
-      showSettingsAI();
+      if (currentSettingsView) currentSettingsView();
     } catch (err) {
       if (state) state.textContent = String(err.message || err);
     }
   }
 
-  function discardAIChanges() {
-    pendingAI = null;
-    showSettingsAI();
+  function discardSettings() {
+    pendingSettings = null;
+    if (currentSettingsView) currentSettingsView();
+  }
+
+  // The one Save/Discard bar every editable settings form ends with. Hidden until
+  // something is staged; refreshDirtyBar shows it.
+  function settingsActionsBar() {
+    return (
+      '<div id="settingsActions" class="actions" hidden>' +
+      '<span class="aside dirty">unsaved</span>' +
+      '<button class="btn primary" onclick="saveSettings()">Save</button>' +
+      '<button class="btn ghost" onclick="discardSettings()">Discard</button>' +
+      "</div>"
+    );
   }
 
   // ---- Features sub-page ---------------------------------------------------
@@ -5183,9 +5219,10 @@
     teardown();
     restorePill("inside");
     view.innerHTML = '<div class="state">...</div>';
+    currentSettingsView = showSettingsFeatures;
     const d = await api("/settings");
     let html =
-      '<button class="settings-back" onclick="showSettings()">' +
+      '<button id="settingsBack" class="settings-back" onclick="showSettings()">' +
       '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
       '<div class="h2">Features</div>';
 
@@ -5213,7 +5250,7 @@
       esc(String(ua.value ?? "")) +
       '"' +
       (ua.locked ? " disabled" : "") +
-      " onchange=\"saveSetting('user_agent', this.value)\">" +
+      " onchange=\"stageSetting('user_agent', this.value)\">" +
       '<div class="aside">Some publishers refuse a client with no contact URL.</div></div>';
     const ap = d.settings.auto_preview;
     const apOn = String(ap.value).toLowerCase() !== "off";
@@ -5237,13 +5274,13 @@
       esc(SETTING_LABELS.auto_preview) +
       '"' +
       (ap.locked ? ' disabled aria-disabled="true"' : "") +
-      " onclick=\"saveSetting('auto_preview', '" +
-      (apOn ? "off" : "on") +
-      '\').then(showSettingsFeatures)"><span class="knob"></span></button>' +
+      " onclick=\"stagePreviewToggle(this)\"><span class=\"knob\"></span></button>" +
       "</div></div></div>";
 
     html += '<div id="settingState" class="aside"></div>';
+    html += settingsActionsBar();
     view.innerHTML = html;
+    refreshDirtyBar();
     window.scrollTo(0, 0);
   }
 
@@ -5254,7 +5291,7 @@
     view.innerHTML = '<div class="state">...</div>';
     const d = await api("/settings");
     let html =
-      '<button class="settings-back" onclick="showSettings()">' +
+      '<button id="settingsBack" class="settings-back" onclick="showSettings()">' +
       '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
       '<div class="h2">Storage</div>';
 
@@ -5300,12 +5337,13 @@
     teardown();
     restorePill("inside");
     view.innerHTML = '<div class="state">...</div>';
+    currentSettingsView = showSettingsTrash;
     const [d, trash] = await Promise.all([
       api("/settings"),
       api("/trash").catch(() => ({ items: [], retention_days: 30 })),
     ]);
     let html =
-      '<button class="settings-back" onclick="showSettings()">' +
+      '<button id="settingsBack" class="settings-back" onclick="showSettings()">' +
       '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
       '<div class="h2">Trash</div>';
 
@@ -5319,7 +5357,7 @@
       esc(String(td.value)) +
       '"' +
       (td.locked ? " disabled" : "") +
-      " onchange=\"saveSetting('trash_days', this.value)\">" +
+      " onchange=\"stageSetting('trash_days', this.value)\">" +
       (td.locked
         ? '<div class="pinned">pinned by ' + esc(td.env_var) + "</div>"
         : '<div class="aside">Only things you delete are ever removed.</div>') +
@@ -5375,37 +5413,17 @@
     }
 
     html += '<div id="settingState" class="aside"></div>';
+    html += settingsActionsBar();
     view.innerHTML = html;
+    refreshDirtyBar();
     window.scrollTo(0, 0);
   }
-  // would point a hosted model at localhost and fail in a way nobody could read.
   const BACKEND_MODELS = {
     ollama: "llama3.1:8b",
     openrouter: "google/gemini-3-flash",
     opencode: "opencode-model",
     "opencode-go": "kimi-k3",
   };
-
-  async function chooseBackend(name) {
-    const list = (await api("/settings")).backends;
-    const spec = list.find((b) => b.name === name);
-    const changes = { llm_backend: name };
-    if (spec && spec.url) changes.llm_url = spec.url;
-    if (BACKEND_MODELS[name]) changes.llm_model = BACKEND_MODELS[name];
-
-    try {
-      await api("/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes }),
-      });
-    } catch (err) {
-      const state = document.getElementById("settingState");
-      if (state) state.textContent = String(err);
-      return;
-    }
-    showSettings();
-  }
 
   // The value is sent once and never read back. What returns is whether a key now
   // exists and its last four characters, so the field can be cleared immediately.
@@ -5444,25 +5462,6 @@
     }
     showSettings();
     toast("Key forgotten.");
-  }
-
-  async function saveSetting(name, value) {
-    const state = document.getElementById("settingState");
-    try {
-      await api("/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ changes: { [name]: value } }),
-      });
-      if (state) {
-        state.textContent = "saved";
-        setTimeout(() => {
-          state.textContent = "";
-        }, 2000);
-      }
-    } catch (err) {
-      if (state) state.textContent = String(err);
-    }
   }
 
   async function rebuildIndex(button) {
