@@ -4084,7 +4084,29 @@
   async function doSearch(q) {
     teardown();
     view.innerHTML = '<div class="state thinking">searching...</div>';
-    const r = await api("/search?limit=20&q=" + encodeURIComponent(q));
+    let r;
+    try {
+      r = await api("/search?limit=20&q=" + encodeURIComponent(q));
+    } catch (err) {
+      const msg = String((err && err.message) || err);
+      if (msg.includes("Updating your search index")) {
+        // The index is being rebuilt (version mismatch or first run). Show the
+        // required message, then poll /doctor and re-run the search when the
+        // rebuild lands - the index is never queried in its stale state.
+        view.innerHTML =
+          '<div class="state thinking">' + esc(msg) + "</div>";
+        const timer = setInterval(async () => {
+          const d = await api("/doctor").catch(() => null);
+          if (d && d.index_state === "ready") {
+            clearInterval(timer);
+            doSearch(q);
+          }
+        }, 1000);
+        return;
+      }
+      view.innerHTML = '<div class="state">' + esc(msg) + "</div>";
+      return;
+    }
     view.innerHTML =
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="shelf">' +
@@ -4750,11 +4772,12 @@
     }
     let html =
       '<button class="settings-back" onclick="showSettings()"' +
-      (pendingAI ? ' title="Discard unsaved changes and go back"' : '') + '>' +
+      (pendingAI ? ' title="Discard unsaved changes and go back"' : "") +
+      ">" +
       '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8L10 13"/></svg> Settings</button>' +
       '<div class="h2">AI' +
-      (pendingAI ? ' <span class="aside dirty">unsaved</span>' : '') +
-      '</div>';
+      (pendingAI ? ' <span class="aside dirty">unsaved</span>' : "") +
+      "</div>";
 
     html += '<div class="shelf">The model</div><div class="group">';
     const chosen = d.settings.llm_backend;

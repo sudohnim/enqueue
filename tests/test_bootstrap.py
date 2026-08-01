@@ -8,17 +8,23 @@ Phase 20 steps 3 and 4 turn the "verify a fresh install" and "verify an
 existing install upgrades" checkboxes into the assertions below: the index
 ends up built, the embed version is recorded, search works, and the source
 chunks are untouched (no data loss).
+
+Phase 21 adds the version-mismatch case: an index built by an older model
+must rebuild and block search until it does.
 """
 
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 
 import sqlite_vec
+from fastapi.testclient import TestClient
 from enqueue.index import bootstrap
 from enqueue.index.store import get_store
 
-from enqueue import config, db
+from enqueue import api, config, db
 
 
 def _seed_one_chunked_artifact() -> None:
@@ -139,10 +145,101 @@ def test_needs_reindex_false_after_a_version_is_recorded(store, monkeypatch):
     _seed_one_chunked_artifact()
 
     assert bootstrap.ensure_index() is True
-    # The recorded version is a stand-in for "an index exists"; this file only
-    # reindexes when there is no version at all. (A version mismatch is Phase 21.)
+    # The recorded version is the "index exists" signal: once it matches the
+    # running model, no rebuild is needed and `ensure_index` is a no-op.
     assert bootstrap.needs_reindex() is False
     assert bootstrap.ensure_index() is False
+    get_store.cache_clear()
+
+
+def test_stale_embed_version_needs_rebuild(store, monkeypatch):
+    """A recorded version that no longer matches EMBED_VERSION needs a rebuild.
+
+    This is the Phase 21 shape: the index exists but was built by an older
+    model, so its results would differ from another device's. `needs_reindex`
+    says rebuild, search is blocked, and `ensure_index` rebuilds and records
+    the new version.
+    """
+    monkeypatch.setattr(config, "VECTOR_STORE", "sqlite-vec")
+    get_store.cache_clear()
+    _seed_one_chunked_artifact()
+    assert bootstrap.ensure_index() is True
+
+    conn = db.get_conn()
+    try:
+        conn.execute(
+            "UPDATE index_meta SET value = ? WHERE key = 'embed_version'",
+            ("bge-base-en-v1.5-old",),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert bootstrap.needs_reindex() is True
+    assert bootstrap.search_allowed() is False  # state ready but version stale
+
+    assert bootstrap.ensure_index() is True  # the rebuild ran
+    assert bootstrap.read_embed_version() == config.EMBED_VERSION
+    assert bootstrap.needs_reindex() is False
+    assert bootstrap.search_allowed() is True
+    get_store.cache_clear()
+
+
+def test_phase21_stale_index_blocks_search_then_recovers(store, monkeypatch):
+    """Start the app with a stale index: search is blocked and a rebuild runs.
+
+    The serve() startup path detects the version mismatch, blocks /search
+    with the required message, rebuilds in the background, and re-enables
+    search only after the new version is written. The rebuild is gated on an
+    event so the blocked-state assertions cannot race the fast rebuild.
+    """
+    monkeypatch.setattr(config, "VECTOR_STORE", "sqlite-vec")
+    get_store.cache_clear()
+    _seed_one_chunked_artifact()
+    assert bootstrap.ensure_index() is True
+
+    # Pretend the index was built by an older embedding model.
+    conn = db.get_conn()
+    try:
+        conn.execute(
+            "UPDATE index_meta SET value = ? WHERE key = 'embed_version'",
+            ("bge-base-en-v1.5-old",),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    release = threading.Event()
+    real_rebuild = bootstrap.rebuild_index
+
+    def _gated(store_obj):
+        assert release.wait(15)
+        return real_rebuild(store_obj)
+
+    monkeypatch.setattr(bootstrap, "rebuild_index", _gated)
+
+    api._bootstrap_index()  # the serve() startup path
+
+    assert bootstrap.needs_reindex() is True
+    assert bootstrap.search_allowed() is False
+
+    with TestClient(api.app) as client:
+        resp = client.get("/search?q=rooftop")
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == ("Updating your search index. This will take a moment.")
+
+        release.set()
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            resp = client.get("/search?q=rooftop")
+            if resp.status_code == 200:
+                break
+            time.sleep(0.05)
+        assert resp.status_code == 200
+        assert resp.json()["hits"][0]["artifact_id"] == "a1"
+
+    assert bootstrap.read_embed_version() == config.EMBED_VERSION
+    assert bootstrap.search_allowed() is True
     get_store.cache_clear()
 
 

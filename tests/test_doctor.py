@@ -52,6 +52,7 @@ def test_doctor_reports_a_synced_current_index(doctor_store, quiet_queue):
     assert report["index_counts"]["chunks"] == report["chunk_count"]
     assert report["embed_version"] == config.EMBED_VERSION
     assert report["embed_version_current"] is True
+    assert report["index_state"] == "ready"
     assert report["index_in_sync"] is True
     assert report["healthy"] is True
 

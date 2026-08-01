@@ -632,12 +632,11 @@ def generate_facets(req: FacetRequest) -> dict:
 
 @app.post("/index")
 def build_index() -> dict:
-    from .index.store import get_store
+    from .index import bootstrap
 
-    store = get_store()
-    result = {"chunks": store.upsert_chunks(), "facets": store.upsert_facets()}
-    store.write_embed_version()
-    return result
+    # Rebuild synchronously through the lifecycle: search is blocked for the
+    # duration and re-enabled only after the version is written.
+    return bootstrap.rebuild_now()
 
 
 @app.post("/reprocess")
@@ -677,6 +676,8 @@ def doctor() -> dict:
     index_chunks = index_counts.get("chunks")
     in_sync = index_chunks is not None and index_chunks == chunk_count
     version_current = embed_version == config.EMBED_VERSION
+    index_state = bootstrap.index_state()
+    state_ready = index_state["state"] == "ready"
     return {
         "artifact_count": db.count("artifacts"),
         "chunk_count": chunk_count,
@@ -684,8 +685,10 @@ def doctor() -> dict:
         "index_counts": index_counts,
         "embed_version": embed_version,
         "embed_version_current": version_current,
+        "index_state": index_state["state"],
+        "index_progress": index_state["progress"],
         "index_in_sync": in_sync,
-        "healthy": in_sync and version_current,
+        "healthy": in_sync and version_current and state_ready,
     }
 
 
@@ -694,6 +697,16 @@ def doctor() -> dict:
 
 @app.get("/search")
 def search(q: str, limit: int = 20) -> dict:
+    from .index import bootstrap
+
+    if not bootstrap.search_allowed():
+        # The index is missing, rebuilding, or built with a different embedding
+        # version. Serving results now would silently differ from another
+        # device's results (Phase 21): block instead, and never fall back.
+        raise HTTPException(
+            status_code=503,
+            detail="Updating your search index. This will take a moment.",
+        )
     store = get_store()
     hits = store.search(store.CHUNKS, q, limit=limit)
     conn = db.get_conn()
@@ -975,24 +988,26 @@ def serve() -> None:
 
 
 def _bootstrap_index() -> None:
-    """Build the search index on the first run, so search works immediately.
+    """Make the index exist and be current on startup, without blocking it.
 
-    A fresh install and an upgrade from the Qdrant era both reach startup with
-    chunks in SQLite but no sqlite-vec index and no recorded embedding
-    version. Rebuild once, with progress to the engine log, then never again:
-    the recorded version makes later starts a cheap no-op. Phase 21 will give
-    the in-app surface the "Updating your search index" message; for now the
-    progress lives in the engine log.
+    The version compare (Phase 21) happens here: if `index_meta` has no
+    embedding version, or its version no longer matches the running model, a
+    background rebuild starts and search is blocked until it completes. If
+    the index is already current, nothing starts and search is live from the
+    first request. A failed rebuild leaves search blocked (no silent
+    fallback) and prints to the engine log.
     """
-    from .index.bootstrap import ensure_index, needs_reindex, remove_legacy_qdrant_dir
+    from .index.bootstrap import remove_legacy_qdrant_dir, start_rebuild_if_needed
 
     def _progress(indexed: int, total: int) -> None:
         print(f"[engine] building search index: {indexed}/{total} rows", flush=True)
 
-    if needs_reindex():
-        print("[engine] building search index for the first time...", flush=True)
-        ensure_index(on_progress=_progress)
-        print("[engine] search index ready", flush=True)
+    if start_rebuild_if_needed(on_progress=_progress):
+        print(
+            "[engine] search index rebuilding in the background; "
+            "search is enabled when it completes",
+            flush=True,
+        )
 
     # The cutover: the new index now lives inside enqueue.db, so a leftover
     # qdrant-local directory is dead data. Remove it once a run has confirmed
