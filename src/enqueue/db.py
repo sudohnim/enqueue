@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib import resources
-from typing import Iterator
 
 from . import config
 
@@ -50,8 +50,8 @@ def _tables() -> set[str]:
         conn.close()
 
 
-def migrate() -> None:
-    """Bring the database to head. Safe to call repeatedly and from either client."""
+def _migrate_unlocked() -> None:
+    """Bring the database to head, assuming the migration lock is held."""
     from alembic import command
 
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,6 +64,18 @@ def migrate() -> None:
     command.upgrade(cfg, "head")
 
 
+def migrate() -> None:
+    """Bring the database to head. Safe to call repeatedly and from either client.
+
+    The lock lives here, not only in `_ensure_migrated`, because tests repoint
+    `config.DB_PATH` and call `migrate` directly while the ingest worker thread may
+    be migrating the same fresh file at the same moment. Two alembic upgrades on one
+    file used to race to a segmentation fault.
+    """
+    with _lock:
+        _migrate_unlocked()
+
+
 def _ensure_migrated() -> None:
     global _migrated
     if _migrated:
@@ -71,7 +83,7 @@ def _ensure_migrated() -> None:
     with _lock:
         if _migrated:
             return
-        migrate()
+        _migrate_unlocked()
         _migrated = True
 
 
