@@ -789,13 +789,24 @@ def chat_passages(q: str, scope_kind: str = "everything", scope_id: str | None =
 
 @app.post("/chats", status_code=201)
 def create_chat(req: ChatCreate) -> dict:
+    if req.text:
+        # A conversation exists only once there is an answer to write with it: the
+        # row, the exchange, the citations, and the name are written together after
+        # the model has answered. A timed-out or failing model leaves nothing behind,
+        # not an empty chat on the wall.
+        try:
+            return chats.ask(req.text, scope_kind=req.scope_kind, scope_id=req.scope_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 - a model failure is a 503, not a crash
+            raise HTTPException(
+                status_code=503, detail=f"the curator could not answer: {exc}"
+            ) from None
+
     try:
         made = chats.create(scope_kind=req.scope_kind, scope_id=req.scope_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-
-    if req.text:
-        return send_to_chat(made["chat"]["id"], ChatSend(text=req.text))
     return made
 
 

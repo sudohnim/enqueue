@@ -396,6 +396,53 @@ def _append(conn, chat_id: str, role: str, text: str, grounded: bool = False) ->
     return message_id
 
 
+def ask(question: str, scope_kind: str = "everything", scope_id: str | None = None) -> dict:
+    """One exchange from nothing: the conversation is written only once the answer is.
+
+    Asking used to create the row first and call the model afterwards, so a
+    timed-out or failing model left an empty conversation behind that popped up on
+    the wall despite never being answered. Nothing is written until the model has
+    answered: retrieval and the model call run first, and only a successful answer
+    creates the chat row, the exchange, the citations, the title, and the topics.
+    """
+    question = question.strip()
+    if not question:
+        raise ValueError("say something")
+    if scope_kind not in ("everything", "artifact", "exhibit"):
+        raise ValueError(f"unknown scope {scope_kind!r}")
+    if scope_kind != "everything" and not scope_id:
+        raise ValueError(f"a {scope_kind} chat needs something to be scoped to")
+
+    found = passages(question, scope_kind, scope_id)
+    empty_reason = empty_scope_reason(scope_kind, scope_id) if not found else None
+    answer = _ask_model(question, "", found, empty_reason)
+
+    chat_id = str(uuid.uuid4())
+    now = _now()
+    by_artifact = {p["artifact_id"]: p for p in found}
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO chats (id, title, scope_kind, scope_id, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?)",
+            (chat_id, UNTITLED, scope_kind, scope_id, now, now),
+        )
+        _append(conn, chat_id, "user", question)
+        message_id = _append(conn, chat_id, "assistant", answer.answer, answer.grounded)
+        for rank, artifact_id in enumerate(dict.fromkeys(answer.cited)):
+            if artifact_id in by_artifact:
+                conn.execute(
+                    "INSERT OR IGNORE INTO chat_citations (message_id, artifact_id, rank)"
+                    " VALUES (?,?,?)",
+                    (message_id, artifact_id, rank),
+                )
+        conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
+
+    _name(chat_id, question, answer.answer)
+    _retopic(chat_id)
+
+    return get(chat_id)
+
+
 def send(chat_id: str, text: str) -> dict:
     """One turn: the question and its answer, written together or not at all.
 

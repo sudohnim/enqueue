@@ -273,6 +273,116 @@ class TestScope:
         assert found and all(p["artifact_id"] == note["artifact"]["id"] for p in found)
 
 
+class TestOnlyAfterResponse:
+    """A conversation is written only once the model has answered.
+
+    Starting a chat used to create the row first and then call the model, so a
+    timed-out or failing model left an empty 'New chat' on the wall that was never
+    answered. Nothing may exist until the answer does.
+    """
+
+    def test_a_failed_first_question_leaves_no_conversation(self, store, quiet_queue, answered):
+        answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
+        answered(Answer=RuntimeError("the model timed out"))
+
+        with pytest.raises(RuntimeError):
+            chats.ask("what outlasts what?")
+
+        assert chats.listing()["items"] == []
+
+    def test_the_api_returns_503_and_no_conversation_on_model_failure(
+        self, store, quiet_queue, answered
+    ):
+        answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
+        answered(Answer=RuntimeError("the model timed out"))
+
+        client = TestClient(api.app)
+        resp = client.post("/chats", json={"text": "what outlasts what?"})
+
+        assert resp.status_code == 503
+        assert "could not answer" in resp.json()["detail"]
+        assert client.get("/chats").json()["items"] == []
+
+    def test_a_successful_first_question_creates_exactly_one_conversation(
+        self, store, quiet_queue, answered
+    ):
+        answered.passages = []
+        answered(
+            Answer=Answer(
+                answer="Nothing you have saved speaks to that yet.", grounded=False, cited=[]
+            ),
+            ChatTitle=ChatTitle(title="Movement over rigidity"),
+            ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
+        )
+
+        made = chats.ask("what outlasts what?")
+        chat_id = made["chat"]["id"]
+
+        assert [m["role"] for m in made["messages"]] == ["user", "assistant"]
+        assert [c["id"] for c in chats.listing()["items"]] == [chat_id]
+
+    def test_a_successful_first_question_via_the_api(self, store, quiet_queue, answered):
+        note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
+        answered.passages = [
+            {
+                "artifact_id": note["artifact"]["id"],
+                "title": "Joints",
+                "text": "A joint that moves outlasts one that does not.",
+                "kind": "note",
+            }
+        ]
+        answered(
+            Answer=Answer(
+                answer="Movement outlasts rigidity.",
+                grounded=True,
+                cited=[note["artifact"]["id"]],
+            ),
+            ChatTitle=ChatTitle(title="Movement over rigidity"),
+            ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
+        )
+
+        client = TestClient(api.app)
+        resp = client.post("/chats", json={"text": "what outlasts what?"})
+
+        assert resp.status_code == 201
+        made = resp.json()
+        assert [m["role"] for m in made["messages"]] == ["user", "assistant"]
+        assert made["messages"][-1]["cited"][0]["title"] == "Joints"
+        assert [c["id"] for c in client.get("/chats").json()["items"]] == [made["chat"]["id"]]
+
+    def test_a_failed_second_turn_leaves_the_conversation_untouched(
+        self, store, quiet_queue, answered
+    ):
+        answered.passages = []
+        answered(
+            Answer=Answer(
+                answer="Nothing you have saved speaks to that yet.", grounded=False, cited=[]
+            ),
+            ChatTitle=ChatTitle(title="Movement over rigidity"),
+            ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
+        )
+        chat_id = chats.ask("what outlasts what?")["chat"]["id"]
+
+        answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
+        answered(Answer=RuntimeError("the model timed out"))
+        with pytest.raises(RuntimeError):
+            chats.send(chat_id, "and what else?")
+
+        after = chats.get(chat_id)
+        assert [m["role"] for m in after["messages"]] == ["user", "assistant"]
+        assert [c["id"] for c in chats.listing()["items"]] == [chat_id]
+
+    def test_an_empty_question_is_rejected_before_any_write(self, store, quiet_queue, answered):
+        with pytest.raises(ValueError, match="say something"):
+            chats.ask("   ")
+        assert chats.listing()["items"] == []
+
+    def test_a_bad_scope_is_rejected_before_any_write(self, store, quiet_queue, answered):
+        with pytest.raises(ValueError, match="unknown scope"):
+            chats.ask("what outlasts what?", scope_kind="everything else")
+        assert chats.listing()["items"] == []
+
+
 class TestDeletion:
     def test_deleting_a_chat_takes_its_messages_and_topics(self, store, quiet_queue, answered):
         chat = chats.create()
@@ -307,13 +417,9 @@ class TestConversationsShareTheWall:
         conn = db.get_conn()
         try:
             if artifact:
-                conn.execute(
-                    "UPDATE artifacts SET updated_at = ? WHERE id = ?", (iso, artifact)
-                )
+                conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (iso, artifact))
             if chat:
-                conn.execute(
-                    "UPDATE chats SET updated_at = ? WHERE id = ?", (iso, chat)
-                )
+                conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (iso, chat))
             conn.commit()
         finally:
             conn.close()
