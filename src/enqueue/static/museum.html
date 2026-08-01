@@ -134,6 +134,9 @@
     --kind-pdf: var(--peach);
     --kind-image: var(--pink);
     --kind-file: var(--teal);
+    /* A conversation is its own kind of kept thing, so it earns its own hue: a
+       desaturated violet, the one patch of the band the five kinds do not occupy. */
+    --kind-chat: #6a4a8f;
 
     --focus: #23251d;
     /* Tinted with --text rather than black so it warms the cream rather than greying it. */
@@ -646,6 +649,9 @@
   }
   [data-kind="file"] {
     --kind: var(--kind-file);
+  }
+  [data-kind="chat"] {
+    --kind: var(--kind-chat);
   }
 
   /* The dot carries the hue, the word beside it carries the meaning, and they always
@@ -3121,6 +3127,12 @@
     if (a.status === "text_only" && a.kind === "note")
       bits.push("holds a credential");
 
+    // A conversation is a sixth kind on the wall: same card, same dot, same clock,
+    // but it opens the thread instead of the artifact. The word is the app's own
+    // name for the kind, not the storage table's.
+    const word = a.kind === "chat" ? "conversation" : a.kind;
+    const open = a.kind === "chat" ? "showChat" : "openArtifact";
+
     // "pending" is the engine's word for an artifact nothing has read yet, which is
     // the one thing the wall marks in the accent.
     const unread = a.status === "pending";
@@ -3134,14 +3146,14 @@
         flag +
         '<div class="cardband">' +
         kindRow +
-        esc(a.kind) +
+        esc(word) +
         "</span></span>" +
         '<div class="title">' +
         esc(a.title || "Untitled") +
         "</div></div>"
       : '<div class="cardfoot" style="margin-top:0">' +
         kindRow +
-        esc(a.kind) +
+        esc(word) +
         "</span></span>" +
         flag +
         "</div>" +
@@ -3171,7 +3183,7 @@
       esc(
         (a.title || "Untitled") +
           ", " +
-          a.kind +
+          word +
           ", " +
           bits.join(", ") +
           (unread ? ", not read yet" : "") +
@@ -3179,10 +3191,14 @@
       ) +
       '"' +
       (i < 18 ? ' style="animation-delay:' + i * 22 + 'ms"' : "") +
-      " onclick=\"openArtifact('" +
+      " onclick=\"" +
+      open +
+      "('" +
       a.id +
       "')\"" +
-      " onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();openArtifact('" +
+      " onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();" +
+      open +
+      "('" +
       a.id +
       "')}\">" +
       inside +
@@ -3268,11 +3284,10 @@
     restorePill("wall");
     view.innerHTML = '<div class="state">opening...</div>';
 
-    const [kept, first, exs, chats] = await Promise.all([
+    const [kept, first, exs] = await Promise.all([
       api("/artifacts?pinned=true&order=touched&limit=200"),
       api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
       api("/exhibits"),
-      api("/chats?limit=40"),
     ]);
 
     if (!kept.total && !first.total) {
@@ -3317,19 +3332,11 @@
         "</div>";
     }
 
-    // Chat cards use the same visual as artifact cards but open the chat view.
-    const chatItems = (chats && chats.items) || [];
-    const chatCard = (c) =>
-      '<div class="card" tabindex="0" role="button" onclick="showChat(\'' +
-      c.id +
-      "')\">" +
-      '<div class="item-body"><div class="title">' +
-      esc(c.title) +
-      '</div><div class="excerpt">conversation</div></div></div>';
-
+    // One wall, one clock. Conversations arrive through the same listing and are
+    // sorted into the grid by last touch like any other card, so a capture made a
+    // minute ago is never behind a conversation nobody touched this week.
     html +=
       '<div class="shelf">Everything else</div><div class="wall" id="wall">' +
-      chatItems.map(chatCard).join("") +
       first.items.map(card).join("") +
       '</div><div id="wallEnd" class="aside"></div>';
 

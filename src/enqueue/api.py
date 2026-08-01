@@ -271,21 +271,42 @@ def list_artifacts(
     elif pinned is not None:
         where += " AND pinned = 0"
 
+    # A conversation is the same kind of thing on the wall as a capture: something
+    # you come back to, ordered by when you last touched it. So it lives in the same
+    # list, sorted by the same clock - never ahead of everything else, which is what
+    # made a fresh capture land behind a conversation nobody touched this week.
+    # `pinned` filters it the same way it filters artifacts: kept conversations sit
+    # on the saved shelf, the rest join the wall. The NULL-or-match test keeps the
+    # query parameterized whether or not the filter is applied; named parameters,
+    # because SQLite renumbers anonymous `?` placeholders across a UNION's limbs.
     conn = db.get_conn()
     try:
         rows = conn.execute(
             "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
             " updated_at, local_only, pinned, status, pages FROM artifacts"
             f" WHERE {where}"
-            f" ORDER BY {ORDERINGS[order]} LIMIT ? OFFSET ?",
-            (limit, offset),
+            " UNION ALL"
+            " SELECT id, 'chat', title, NULL, NULL, NULL, NULL, created_at,"
+            " updated_at, 0, pinned, NULL, NULL FROM chats"
+            " WHERE (:pinned IS NULL OR pinned = :pinned)"
+            f" ORDER BY {ORDERINGS[order]} LIMIT :limit OFFSET :offset",
+            {"pinned": pinned, "limit": limit, "offset": offset},
         ).fetchall()
 
         with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
 
         items = [_wall_item(conn, row, with_image) for row in rows]
+        for item in items:
+            if item["kind"] == "chat":
+                # A conversation's face is its kind: the title is the thread's name
+                # and the excerpt is the fixed label, the same as any other card.
+                item["excerpt"] = "conversation"
 
         total = conn.execute(f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}").fetchone()["n"]
+        total += conn.execute(
+            "SELECT COUNT(*) AS n FROM chats WHERE (:pinned IS NULL OR pinned = :pinned)",
+            {"pinned": pinned},
+        ).fetchone()["n"]
         return {
             "total": total,
             "order": order,

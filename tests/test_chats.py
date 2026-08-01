@@ -8,9 +8,10 @@ those are precisely the ones a real model produces at random.
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from enqueue import chats, notes
+from enqueue import api, chats, db, notes
 from enqueue.schemas import Answer, ChatTitle, ChatTopics
 
 
@@ -251,10 +252,9 @@ class TestScope:
         self, store, quiet_queue, monkeypatch
     ):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
-        from enqueue import db as db_mod
         from enqueue.ingest import chunk as chunk_mod
 
-        with db_mod.transaction() as conn:
+        with db.transaction() as conn:
             chunk_mod.chunk_artifact(conn, note["artifact"]["id"])
 
         def explode(*a, **k):
@@ -289,3 +289,67 @@ class TestDeletion:
         with pytest.raises(KeyError):
             chats.get(chat_id)
         assert chats.listing()["items"] == []
+
+
+class TestConversationsShareTheWall:
+    """A conversation is the same kind of thing on the wall as a capture.
+
+    It sorts into the same /artifacts listing by last touch, so a fresh capture is
+    never behind a conversation nobody touched this week, and the saved shelf
+    treats a kept conversation exactly like a kept artifact.
+    """
+
+    def _wall(self, **params):
+        return TestClient(api.app).get("/artifacts", params=params).json()
+
+    def _rewrite_updated(self, artifact: str | None, chat: str | None, iso: str) -> None:
+        """Set updated_at by hand so ordering is deterministic, not clock-racy."""
+        conn = db.get_conn()
+        try:
+            if artifact:
+                conn.execute(
+                    "UPDATE artifacts SET updated_at = ? WHERE id = ?", (iso, artifact)
+                )
+            if chat:
+                conn.execute(
+                    "UPDATE chats SET updated_at = ? WHERE id = ?", (iso, chat)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_conversations_sort_by_last_touch_not_ahead_of_captures(self, store):
+        old = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
+        chat = chats.create()
+        fresh = notes.create(body="# Rooftops\n\nA city can feed itself from its rooftops.")
+        old_id = old["artifact"]["id"]
+        chat_id = chat["chat"]["id"]
+        fresh_id = fresh["artifact"]["id"]
+
+        self._rewrite_updated(old_id, None, "2024-01-01T00:00:00+00:00")
+        self._rewrite_updated(None, chat_id, "2024-06-01T00:00:00+00:00")
+        self._rewrite_updated(fresh_id, None, "2024-07-01T00:00:00+00:00")
+
+        wall = self._wall(order="touched", pinned=False)
+        assert [i["id"] for i in wall["items"]] == [fresh_id, chat_id, old_id]
+
+        chat_row = next(i for i in wall["items"] if i["kind"] == "chat")
+        assert chat_row["id"] == chat_id
+        assert chat_row["excerpt"] == "conversation"
+        assert wall["total"] == 3
+
+    def test_a_kept_conversation_moves_to_the_saved_shelf(self, store):
+        note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
+        chat = chats.create()
+        note_id = note["artifact"]["id"]
+        chat_id = chat["chat"]["id"]
+        self._rewrite_updated(note_id, None, "2024-01-01T00:00:00+00:00")
+        self._rewrite_updated(None, chat_id, "2024-02-01T00:00:00+00:00")
+        chats.pin(chat_id)
+
+        wall = self._wall(order="touched", pinned=False)
+        assert [i["id"] for i in wall["items"]] == [note_id]
+
+        kept = self._wall(order="touched", pinned=True)
+        assert [i["id"] for i in kept["items"]] == [chat_id]
+        assert kept["items"][0]["pinned"] == 1
