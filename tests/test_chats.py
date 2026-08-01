@@ -307,13 +307,9 @@ class TestConversationsShareTheWall:
         conn = db.get_conn()
         try:
             if artifact:
-                conn.execute(
-                    "UPDATE artifacts SET updated_at = ? WHERE id = ?", (iso, artifact)
-                )
+                conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (iso, artifact))
             if chat:
-                conn.execute(
-                    "UPDATE chats SET updated_at = ? WHERE id = ?", (iso, chat)
-                )
+                conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (iso, chat))
             conn.commit()
         finally:
             conn.close()
