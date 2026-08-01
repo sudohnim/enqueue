@@ -231,7 +231,7 @@ artifact gets an entry.
 Note: the running engine predates this phase; restart it (`bin/relaunch`) for
 the cache to go live.
 
-## Part 3 — sqlite-vec engine migration (in progress)
+## Part 3 — sqlite-vec engine migration (done)
 
 ## Phase 18A — Index tables inside the database ✅
 
@@ -443,7 +443,55 @@ removed the Qdrant backend for good.
       (kind hues are decorative dots, accent fills carry a --text edge).
       `bin/verify` is fully green.
 
-Next: step 6 [HUMAN] STOP - confirm with the maintainer before the four
-irreversible deletions (store_qdrant.py, qdrant-client dep, QDRANT_URL/
-QDRANT_PATH config, the on-disk Qdrant data), then the doc updates (single-
-process note, whole-library heavy-query note, README/AGENTS engine rewrite).
+## Phase 21 — Index version consistency across devices (done)
+
+A stale index (built with a different embedding version) is never queried: it
+is rebuilt automatically, and search is gated until the rebuild lands.
+
+- [x] `index/bootstrap.py` `needs_reindex()` is true on a version mismatch
+      (`read_embed_version() != config.EMBED_VERSION`), not just a missing
+      version. A thread-safe lifecycle state machine (`building` / `ready` /
+      `failed` + progress) drives `search_allowed()`, `rebuild_now()`
+      (sync, for tests), `ensure_index()` (sync), and
+      `start_rebuild_if_needed()` (a background daemon thread from
+      `api.serve()`), so a stale version triggers an automatic reindex.
+- [x] `api.py`: `GET /search` returns HTTP 503 "Updating your search index.
+      This will take a moment." while `search_allowed()` is false; `/doctor`
+      reports `index_state` and `index_progress`; `POST /index` uses
+      `rebuild_now()`; `_bootstrap_index()` starts the async background
+      rebuild.
+- [x] `museum.html` `doSearch` catches the 503, shows the required message,
+      polls `/doctor` until `index_state === "ready"`, then re-runs the
+      search - the index is never read in its stale state.
+- [x] Tests: a stale version triggers a rebuild; app-start blocks search then
+      recovers once the rebuild lands (gated Event); doctor state
+      assertions. (188 tests green)
+
+## Phase 22 — Search quality improvements (done)
+
+- [x] FTS5 prefix matching: each quoted token gets a prefix star *outside the
+      quotes, so a partial word finds the longer word while operators stay
+      literal. Test: a three-character prefix finds a longer word.
+- [x] `/search` rollup (`retrieve/candidates.search_results`): chunk and facet
+      hits are fused into one ranked row per artifact (six chunks of one note
+      return it once; a facet-only match still surfaces, with the artifact
+      face as its snippet). Tests: six-chunk dedup, chunk/facet fusion, the
+      `/search` endpoint, the prefix tests.
+- [x] `candidates()` logs the sub-query count per search so expansion cost is
+      visible; `ENQ_EXPANSION_CAP` bounds expansion sub-queries (default 0 =
+      the behavior the baseline was measured at). Tests: cap bounds, cap of 1
+      keeps only the lens, model failure degrades to the bare lens.
+- [x] Rerank result cache keyed on the lens plus the sorted candidate ids and
+      each artifact's `updated_at` signature, with staleness re-validation on
+      hit so an artifact edit or a model switch re-judges rather than serving
+      a stale pooled result. Tests: replay zero calls, reordered pool still
+      hits the cache, edited artifact re-judges, model change re-judges.
+- [x] `enq eval` in CI: `bin/check-eval` runs a fresh eval against the
+      committed baseline (`evals/results/sqlite-vec.json`) and fails if
+      recall@10 drops more than 2 points; a GitHub Actions workflow
+      (`.github/workflows/ci.yml`) runs black, ruff, pytest, and
+      `bin/check-eval` on push/PR.
+- [x] `enq lens-eval` re-run (with `--corpus`, baseline guard): correct
+      placement 0.9111 at the operating threshold 0.1 - no lens regression.
+      The eval also re-confirmed 42/50, recall@10 0.84, unchanged. (198 tests
+      green)
