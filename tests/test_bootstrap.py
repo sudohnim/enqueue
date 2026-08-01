@@ -146,6 +146,23 @@ def test_needs_reindex_false_after_a_version_is_recorded(store, monkeypatch):
     get_store.cache_clear()
 
 
+def test_remove_legacy_qdrant_dir_deletes_once(store, monkeypatch):
+    """The cutover deletes the old qdrant-local directory, once, with a report."""
+    legacy = config.DATA_DIR / "qdrant-local"
+    (legacy / "collection").mkdir(parents=True)
+    (legacy / "collection" / "0.db").write_bytes(b"x" * 100)
+    (legacy / "meta.json").write_text("{}", encoding="utf-8")
+
+    report = bootstrap.remove_legacy_qdrant_dir()
+    assert report is not None
+    assert report["files"] == 2
+    assert report["bytes"] == 102
+    assert not legacy.exists()
+
+    # Nothing left to remove on the next run: the cleanup is one-time.
+    assert bootstrap.remove_legacy_qdrant_dir() is None
+
+
 def test_bootstrap_is_safe_when_vec_tables_are_absent(store, monkeypatch):
     """An adopted database that predates migration 0010 has no vec tables.
 

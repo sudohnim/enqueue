@@ -20,9 +20,10 @@ from `config.EMBED_VERSION`): block search and rebuild. Here we only handle
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 
-from .. import db
+from .. import config, db
 from .store import VectorStore, get_store
 
 
@@ -79,3 +80,23 @@ def ensure_index(on_progress: Callable[[int, int], None] | None = None) -> bool:
     rebuild_index(get_store(on_progress=on_progress))
     get_store.cache_clear()
     return True
+
+
+def remove_legacy_qdrant_dir() -> dict | None:
+    """Delete the pre-cutover Qdrant data directory, once.
+
+    The old engine kept its vector index at `DATA_DIR/qdrant-local`. After
+    the cutover the index lives inside enqueue.db, so a leftover directory is
+    dead data. Returns a small report of what was removed, or None when there
+    was nothing to remove. Never raises: cleanup must not block startup.
+    """
+    legacy = config.DATA_DIR / "qdrant-local"
+    if not legacy.exists():
+        return None
+    try:
+        files = [p for p in legacy.rglob("*") if p.is_file()]
+        size = sum(p.stat().st_size for p in files)
+        shutil.rmtree(legacy)
+        return {"path": str(legacy), "files": len(files), "bytes": size}
+    except OSError as exc:
+        return {"path": str(legacy), "error": str(exc)}

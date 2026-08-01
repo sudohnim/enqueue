@@ -984,7 +984,7 @@ def _bootstrap_index() -> None:
     the in-app surface the "Updating your search index" message; for now the
     progress lives in the engine log.
     """
-    from .index.bootstrap import ensure_index, needs_reindex
+    from .index.bootstrap import ensure_index, needs_reindex, remove_legacy_qdrant_dir
 
     def _progress(indexed: int, total: int) -> None:
         print(f"[engine] building search index: {indexed}/{total} rows", flush=True)
@@ -993,3 +993,22 @@ def _bootstrap_index() -> None:
         print("[engine] building search index for the first time...", flush=True)
         ensure_index(on_progress=_progress)
         print("[engine] search index ready", flush=True)
+
+    # The cutover: the new index now lives inside enqueue.db, so a leftover
+    # qdrant-local directory is dead data. Remove it once a run has confirmed
+    # the sqlite-vec index (the check above), and log what was deleted.
+    removed = remove_legacy_qdrant_dir()
+    if removed:
+        if "error" in removed:
+            print(
+                f"[engine] could not remove the legacy qdrant index at "
+                f"{removed['path']}: {removed['error']}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[engine] removed the legacy qdrant index at {removed['path']} "
+                f"({removed['files']} files, {removed['bytes'] / 1024:.0f} KiB); "
+                "the search index now lives inside enqueue.db",
+                flush=True,
+            )
