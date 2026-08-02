@@ -704,6 +704,44 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  /* A note's preview is its opening rendered as markdown, clamped to the same
+     three lines as the plain text it replaces. The md typography is brought
+     back down to the card's compact scale: no block margins, list indent only,
+     headings capped at the preview size so a mid-opening heading cannot blow
+     the teaser up. */
+  .card .preview.md :is(p, ul, ol, blockquote, pre, h1, h2, h3) {
+    margin: 0;
+  }
+  /* List items drop their 4px vertical margin inside the teaser: the box holds
+     exactly three 22px lines, and a margin on each item would steal the third. */
+  .card .preview.md li {
+    margin: 0;
+  }
+  .card .preview.md ul,
+  .card .preview.md ol {
+    padding-left: var(--sp-4);
+  }
+  .card .preview.md :is(h1, h2, h3) {
+    font-size: 15px;
+    line-height: 22px;
+    letter-spacing: 0;
+  }
+  /* The clamp stops painting its ellipsis when the clamped content is block
+     children rather than a text run, so a cut-off teaser fades into the card
+     instead of hard-clipping. Only previews that actually overflow get it. */
+  .card .preview.md {
+    position: relative;
+  }
+  .card .preview.md.clamped::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 8px;
+    background: linear-gradient(transparent, var(--surface));
+    pointer-events: none;
+  }
   .cardfoot {
     display: flex;
     align-items: center;
@@ -3263,6 +3301,14 @@
     '<span class="kindrow"><span class="kindmark"></span>' +
     '<span class="kindword">';
 
+  // A markdown teaser that overflows its three lines gets a bottom fade, because
+  // the line-clamp ellipsis does not paint over block children. Runs after every
+  // card batch lands so newly appended previews are marked too.
+  function markClampedPreviews(root) {
+    for (const p of (root || document).querySelectorAll(".card .preview.md"))
+      if (p.scrollHeight > p.clientHeight) p.classList.add("clamped");
+  }
+
   function card(a, i) {
     const bits = [since(a.created_at)];
     if (a.local_only) bits.push("local only");
@@ -3302,8 +3348,12 @@
         '<div class="title">' +
         esc(a.title || "Untitled") +
         "</div>" +
-        '<div class="preview">' +
-        esc(a.excerpt || (a.kind === "link" ? host(a.source_url) : "")) +
+        '<div class="preview' +
+        (a.kind === "note" ? " md" : "") +
+        '">' +
+        (a.kind === "note"
+          ? md(a.excerpt || "")
+          : esc(a.excerpt || (a.kind === "link" ? host(a.source_url) : ""))) +
         "</div>" +
         '<div class="cardfoot"><span class="meta">' +
         bits.map(esc).join(" ") +
@@ -3486,6 +3536,7 @@
     wallStamp = first.total + ":" + ((first.items[0] || {}).id || "");
 
     view.innerHTML = html;
+    markClampedPreviews();
     watchWallEnd();
     if (keepAt !== null) window.scrollTo(0, keepAt);
     else if (wasReading) window.scrollTo(0, 0);
@@ -3654,8 +3705,10 @@
     }
 
     const grid = document.getElementById("wall");
-    if (grid)
+    if (grid) {
       grid.insertAdjacentHTML("beforeend", next.items.map(card).join(""));
+      markClampedPreviews(grid);
+    }
 
     wall.offset += next.items.length;
     wall.more = next.more;

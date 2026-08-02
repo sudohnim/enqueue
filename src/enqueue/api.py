@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import Iterator
 from importlib import resources
 
@@ -64,22 +63,29 @@ def health() -> dict:
 # --------------------------------------------------------------------------- read
 
 
-def _excerpt(body: str, title: str, limit: int = 280) -> str:
-    """The line under a title in the museum.
+def _excerpt(body: str, title: str, limit: int = 600) -> str:
+    """The opening of a note, kept as markdown so the wall renders its structure.
 
-    A note's face is its own opening, so it is shown as prose rather than as source.
-    Two things get in the way: the markdown characters, which are instructions and not
-    words, and the opening heading, which is already the title directly above it.
+    The face is the note's own opening, not a paraphrase: a bullet list stays a
+    bullet list and a paragraph keeps its line breaks. The opening heading is
+    dropped because the card title above it already carries that line. The slice
+    stops at a line boundary so no list item or sentence is cut mid-line; the
+    client renders the slice with the same markdown renderer the editor uses.
     """
     lines = body.splitlines()
     if lines and lines[0].lstrip("#").strip() == title.strip():
         lines = lines[1:]
+    while lines and not lines[0].strip():
+        lines.pop(0)
 
-    text = " ".join(" ".join(lines).split())
-    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)  # links keep their words
-    text = re.sub(r"^[#>\s]+", "", text)
-    text = re.sub(r"[*_`#]+", "", text)
-    return text[:limit].strip()
+    out: list[str] = []
+    used = 0
+    for ln in lines:
+        used += len(ln) + 1
+        if used > limit and out:
+            break
+        out.append(ln)
+    return "\n".join(out).strip()
 
 
 class ArtifactFlags(BaseModel):
