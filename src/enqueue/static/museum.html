@@ -3196,7 +3196,7 @@
       ) +
       '"' +
       (i < 18 ? ' style="animation-delay:' + i * 22 + 'ms"' : "") +
-      " onclick=\"" +
+      ' onclick="' +
       open +
       "('" +
       a.id +
@@ -5150,7 +5150,8 @@
     const bar = document.getElementById("settingsActions");
     if (bar) bar.hidden = !isDirty();
     const back = document.getElementById("settingsBack");
-    if (back) back.title = isDirty() ? "Discard unsaved changes and go back" : "";
+    if (back)
+      back.title = isDirty() ? "Discard unsaved changes and go back" : "";
   }
 
   function stageSetting(name, value) {
@@ -5274,7 +5275,7 @@
       esc(SETTING_LABELS.auto_preview) +
       '"' +
       (ap.locked ? ' disabled aria-disabled="true"' : "") +
-      " onclick=\"stagePreviewToggle(this)\"><span class=\"knob\"></span></button>" +
+      ' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
       "</div></div></div>";
 
     html += '<div id="settingState" class="aside"></div>';
@@ -5311,9 +5312,6 @@
       "</span><br>" +
       '<b>files</b> <span class="mono">' +
       bytes(s0.blobs.bytes) +
-      "</span><br>" +
-      '<b>index</b> <span class="mono">' +
-      bytes(s0.index.bytes) +
       "</span><br>" +
       Object.entries(s0.counts)
         .map(
