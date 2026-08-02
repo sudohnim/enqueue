@@ -680,10 +680,13 @@
 
   .card .title {
     margin-top: var(--sp-3);
-    font-size: 20px;
+    /* The H3 step (17px / 500 / 22px / -2%) is the card-title scale: still the
+       strongest line on the card, but quiet next to the 15px preview and the
+       14px kind label instead of shouting over them. */
+    font-size: 17px;
     font-weight: 500;
-    line-height: 26px;
-    letter-spacing: -0.4px;
+    line-height: 22px;
+    letter-spacing: -0.34px;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
@@ -1433,6 +1436,15 @@
   .editor ol {
     margin: var(--sp-4) 0 0;
     padding-left: var(--sp-4);
+  }
+  /* A list nested inside an item is a continuation of the line above it, not a new
+     block: the 20px list gap would otherwise appear between a parent item and its
+     Tab-indented child, twice the spacing of every other line. */
+  .md li ul,
+  .md li ol,
+  .editor li ul,
+  .editor li ol {
+    margin-top: 0;
   }
   .md li,
   .editor li {
@@ -2400,46 +2412,77 @@
     t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
 
     const out = [];
-    let list = null;
-    const close = () => {
-      if (list) {
-        out.push("</" + list + ">");
-        list = null;
+    const items = [];
+    const flushList = () => {
+      if (!items.length) return;
+      // Build the list tree from indented items, then render it. Two spaces of
+      // indentation is one level, matching what the editor's indent command and the
+      // markdown serializer produce, so a nested list round-trips unchanged.
+      const root = { lists: [] };
+      const stack = [];
+      for (const it of items) {
+        while (stack.length && stack[stack.length - 1].depth > it.depth)
+          stack.pop();
+        let top = stack[stack.length - 1];
+        if (top && top.depth === it.depth && top.tag !== it.tag) {
+          stack.pop();
+          top = stack[stack.length - 1];
+        }
+        let list =
+          top && top.depth === it.depth && top.tag === it.tag ? top : null;
+        if (!list) {
+          list = { tag: it.tag, depth: it.depth, items: [] };
+          // A jumped indentation (more than one level at once) has no item to hang
+          // the new list under, so it degrades to nesting under the nearest shallower
+          // item rather than dropping content or crashing.
+          const parent =
+            top && top.depth < it.depth
+              ? top.items[top.items.length - 1]
+              : null;
+          const owner = parent ? (parent.lists ||= []) : root.lists;
+          owner.push(list);
+          stack.push(list);
+        }
+        const item = { content: it.content };
+        list.items.push(item);
       }
+      const renderList = (list) => {
+        let h = "<" + list.tag + ">";
+        for (const it of list.items) {
+          h += "<li>" + it.content;
+          if (it.lists) for (const sub of it.lists) h += renderList(sub);
+          h += "</li>";
+        }
+        return h + "</" + list.tag + ">";
+      };
+      for (const list of root.lists) out.push(renderList(list));
+      items.length = 0;
     };
     for (const raw of t.split("\n")) {
       const line = raw.trimEnd();
       const h = line.match(/^(#{1,3})\s+(.*)$/);
-      const li = line.match(/^\s*[-*+]\s+(.*)$/);
-      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      const li = line.match(/^(\s*)([-*+])\s+(.*)$/);
+      const ol = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
       const bq = line.match(/^(?:&gt;|>)\s?(.*)$/);
       if (h) {
-        close();
+        flushList();
         out.push("<h" + h[1].length + ">" + h[2] + "</h" + h[1].length + ">");
-      } else if (li) {
-        if (list !== "ul") {
-          close();
-          out.push("<ul>");
-          list = "ul";
-        }
-        out.push("<li>" + li[1] + "</li>");
-      } else if (ol) {
-        if (list !== "ol") {
-          close();
-          out.push("<ol>");
-          list = "ol";
-        }
-        out.push("<li>" + ol[1] + "</li>");
+      } else if (li || ol) {
+        items.push({
+          depth: Math.min(Math.floor((li || ol)[1].length / 2), 8),
+          tag: li ? "ul" : "ol",
+          content: (li || ol)[3],
+        });
       } else if (bq) {
-        close();
+        flushList();
         out.push("<blockquote>" + bq[1] + "</blockquote>");
-      } else if (!line.trim()) close();
+      } else if (!line.trim()) flushList();
       else {
-        close();
+        flushList();
         out.push("<p>" + line + "</p>");
       }
     }
-    close();
+    flushList();
     return out.join("").replace(/ (\d+) /g, (m, i) => held[+i]);
   }
 
@@ -2469,6 +2512,39 @@
       }
     };
 
+    // Lists are written indented, two spaces per level, so a nested list survives
+    // the round trip. An item's sub-lists sit inside its <li> (or directly under the
+    // list, which some engines produce) and are serialised one level deeper.
+    const listToMd = (node, depth) => {
+      const pad = "  ".repeat(depth);
+      const ordered = node.tagName === "OL";
+      let n = 1;
+      const out = [];
+      for (const child of node.childNodes) {
+        if (child.nodeType !== 1) continue;
+        if (child.tagName === "UL" || child.tagName === "OL") {
+          out.push(...listToMd(child, depth + 1));
+          continue;
+        }
+        if (child.tagName !== "LI") continue;
+        const parts = [];
+        const nested = [];
+        for (const cc of child.childNodes) {
+          if (cc.nodeType === 1 && (cc.tagName === "UL" || cc.tagName === "OL"))
+            nested.push(cc);
+          else parts.push(cc);
+        }
+        const text = parts
+          .map(inline)
+          .join("")
+          .replace(/\u00a0/g, " ")
+          .trim();
+        out.push(pad + (ordered ? n++ + ". " : "- ") + text);
+        for (const sub of nested) out.push(...listToMd(sub, depth + 1));
+      }
+      return out;
+    };
+
     const lines = [];
     for (const node of root.childNodes) {
       if (node.nodeType === 3) {
@@ -2489,13 +2565,8 @@
           lines.push("### " + inline(node).trim(), "");
           break;
         case "UL":
-          for (const li of node.children) lines.push("- " + inline(li).trim());
-          lines.push("");
-          break;
         case "OL": {
-          let i = 1;
-          for (const li of node.children)
-            lines.push(i++ + ". " + inline(li).trim());
+          lines.push(...listToMd(node, 0));
           lines.push("");
           break;
         }
@@ -2523,7 +2594,7 @@
       .filter((l) => l !== null)
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
-      .trim();
+      .replace(/^\n+|\n+$/g, "");
   }
 
   // Structural markdown typed at the start of a line becomes the real thing, the way
@@ -2535,12 +2606,48 @@
     [/^>\s$/, () => "blockquote"],
   ];
 
+  // Tab indents/un-indents a list item. These are DOM moves rather than
+  // execCommand("indent"), because the exec command swaps out the text node under
+  // the caret (the old one comes back detached and empty), so the caret can't be
+  // restored and lands on the line above. Moving the <li> wholesale keeps the text
+  // node alive, and produces the canonical nested shape the serializer expects.
+  function indentItem(li) {
+    const list = li.parentElement;
+    const prev = li.previousElementSibling;
+    if (!prev) return false; // first item: nothing to nest under
+    const nested = document.createElement(list.tagName);
+    list.removeChild(li);
+    nested.appendChild(li);
+    prev.appendChild(nested);
+    return true;
+  }
+
+  function outdentItem(li) {
+    const list = li.parentElement;
+    if (!list) return false;
+    const grand = list.parentElement;
+    if (!grand || grand.tagName !== "LI") return false; // top level: no-op
+    grand.parentElement.insertBefore(li, grand.nextSibling);
+    if (!list.children.length) list.remove();
+    return true;
+  }
+
   function applyInputRules(ed) {
     const sel = window.getSelection();
     if (!sel.rangeCount) return;
     let block = sel.anchorNode;
     while (block && block.parentNode !== ed) block = block.parentNode;
-    if (!block || block.nodeType !== 1) return;
+    if (!block) return;
+    // The first keystroke of an empty note lands in a bare text node with no block
+    // for the structural rules to convert. Give it a paragraph so "- ", "# ", "1. "
+    // and "> " work on the very first line too.
+    if (block.nodeType !== 1) {
+      if (block.nodeType !== 3) return;
+      const p = document.createElement("p");
+      block.parentNode.insertBefore(p, block);
+      p.appendChild(block);
+      block = p;
+    }
     if (["UL", "OL", "PRE", "BLOCKQUOTE"].includes(block.tagName)) return;
 
     const text = block.textContent;
@@ -2557,16 +2664,46 @@
         false,
         tag === "ul" || tag === "ol" ? null : tag,
       );
-      // The marker characters were the instruction, not the content.
-      const target = window.getSelection().anchorNode;
-      const host = target && target.nodeType === 3 ? target : null;
+      // Find the element this rule produced. A list command nests the new list
+      // inside the paragraph it converted (`<p><ul><li>...`), which is invalid
+      // nesting: htmlToMd reads that wrapper as a paragraph and flattens the items
+      // to plain text, silently deleting the bullet on save. Unwrap until the list
+      // is a direct child of the editor, the shape the serializer expects.
+      const isList = tag === "ul" || tag === "ol";
+      let made = isList ? block.querySelector("ul, ol") : null;
+      if (isList && !made) {
+        // Some engines replace the paragraph with the list instead of nesting it,
+        // detaching block; fall back to the list under the caret.
+        const caret = window.getSelection().anchorNode;
+        const el =
+          caret && caret.nodeType === 1 ? caret : caret && caret.parentElement;
+        made = el && el.closest ? el.closest("ul, ol") : null;
+      }
+      if (isList) {
+        while (made && made.parentNode && made.parentNode !== ed) {
+          const wrap = made.parentNode;
+          wrap.parentNode.insertBefore(made, wrap);
+          wrap.remove();
+        }
+      } else {
+        // formatBlock replaces the block in place; find it from the caret.
+        const caret = window.getSelection().anchorNode;
+        const el =
+          caret && caret.nodeType === 1 ? caret : caret && caret.parentElement;
+        made = el && el.closest ? el.closest("h1, h2, h3, blockquote") : null;
+      }
+      // The marker characters were the instruction, not the content. The caret does
+      // not reliably land inside the converted block's text (Chrome collapses it
+      // onto the list container), so strip from the block's own first text node.
+      const first =
+        made && made.firstElementChild
+          ? made.firstElementChild.firstChild
+          : made
+            ? made.firstChild
+            : null;
+      const host = first && first.nodeType === 3 ? first : null;
       if (host)
-        host.nodeValue = host.nodeValue.replace(
-          re.source.replace(/[\^$]/g, "") === ""
-            ? ""
-            : /^(#{1,3}|[-*+]|1\.|>)\s/,
-          "",
-        );
+        host.nodeValue = host.nodeValue.replace(/^(#{1,3}|[-*+]|1\.|>)\s/, "");
       return;
     }
   }
@@ -4211,6 +4348,56 @@
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         saveBody();
+      }
+      // Tab indents: inside a list it nests the item one level deeper (Shift+Tab
+      // un-nests it), everywhere else it inserts a tab at the caret. Either way the
+      // key never jumps focus to the pill. Outside a list, Shift+Tab keeps the
+      // browser default so keyboard users can still move focus backward.
+      if (e.key === "Tab") {
+        const node = window.getSelection().anchorNode;
+        const el =
+          node && node.nodeType === 1 ? node : node && node.parentElement;
+        const li = el && el.closest ? el.closest("li") : null;
+        if (li) {
+          e.preventDefault();
+          // Indenting the first item of a list has nothing to nest under (matching
+          // Word/Notion); outdent at the top level is likewise a no-op. The moves
+          // keep the caret's text node alive; Chrome still re-anchors the selection
+          // on the list container, so put the caret back where it was afterwards.
+          const sel = window.getSelection();
+          const saved =
+            sel.rangeCount && sel.getRangeAt(0)
+              ? {
+                  node: sel.getRangeAt(0).startContainer,
+                  offset: sel.getRangeAt(0).startOffset,
+                }
+              : null;
+          const moved = e.shiftKey
+            ? outdentItem(li)
+            : li.parentElement.firstElementChild !== li && indentItem(li);
+          if (moved) {
+            const restoreCaret = () => {
+              if (!saved || !saved.node || !saved.node.parentNode) return;
+              try {
+                const range = document.createRange();
+                range.setStart(
+                  saved.node,
+                  Math.min(saved.offset, saved.node.length || 0),
+                );
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              } catch {
+                /* anchor node detached; nothing to restore */
+              }
+            };
+            restoreCaret();
+            setTimeout(restoreCaret, 0);
+          }
+        } else if (!e.shiftKey) {
+          e.preventDefault();
+          document.execCommand("insertText", false, "\t");
+        }
       }
     });
     // Paste as plain text. Pasting styled HTML from a browser would smuggle in tags the

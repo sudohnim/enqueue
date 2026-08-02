@@ -190,8 +190,8 @@ The markdown/editor roles (md h1, md h2, md h3) apply inside rendered markdown c
 | Display | `.display` | 32px | 500 | 36px (1.125) | -0.64px (-2%) | none | Empty wall first-run copy. At most one per view. |
 | H1 | `.h1` | 26px | 500 | 31px (1.19) | -0.52px (-2%) | none | Artifact detail title. |
 | H2 | `.h2` | 20px | 500 | 25px (1.25) | -0.4px (-2%) | none | Modal title, settings section heading. |
-| H3 | `.h3` | 17px | 500 | 22px (1.29) | -0.34px (-2%) | Not used in current chrome; card title overrides this. |
-| Card title | `.card .title` | 20px | 500 | 26px (1.30) | -0.4px (-2%) | none | Artifact card title on the wall. Clamped to 3 lines (2 for pictorial). |
+| H3 | `.h3` | 17px | 500 | 22px (1.29) | -0.34px (-2%) | none | Not used directly in rendered HTML; the card title runs on this scale. |
+| Card title | `.card .title` | 17px | 500 | 22px (1.29) | -0.34px (-2%) | none | Artifact card title on the wall, on the H3 step. The strongest line on the card but quiet above the 15px preview and the 14px kind label. Clamped to 3 lines (2 for pictorial). |
 | Eyebrow | `.shelf` | 14px | 700 | 1 (1.0) | 0.56px (+4%) | uppercase | Section category label. Always preceded by a leading 8px accent dot drawn via `::before`. |
 | Body | `body` | 14px | 450 (rounds to 400) | 1.4 | -0.08px | none | Default paragraph, base text. |
 | Title (inline) | `.title` | 16px | 600 | 22.4px (1.40) | 0 | none | Inline emphasis, settings nav row label. |
@@ -727,5 +727,4 @@ The overlay owns this token locally.
 8. **The capture overlay uses `--r-sm` (6px) for its card** while the main app uses `--r-lg` (40px).
 The tight radius is because the overlay is a small floating window, not a page card.
 9. **Settings nav rows use `border-bottom: 1px solid var(--line)`** with an explicit `border: none` reset, a slightly different pattern from the `.group` card's `--line-soft` internal dividers.
-10. **The `.h3` role (17px / 500) appears unused** in the rendered HTML.
-The card title overrides `.title` to 20px and the modal uses `.h2`.
+10. **The `.h3` role (17px / 500) is used indirectly**: the card title runs on the H3 step and the modal uses `.h2`.
