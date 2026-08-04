@@ -165,6 +165,7 @@ One line per file, describing its job.
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
+| `greeting.py` | The wall's greeting: one model phrase per four-hour bucket, generated in the background. |
 | `schemas.py` | Pydantic models for every model call. Validators are the quality floor. |
 | `prompts.py` | System prompts. Authoritative copies are in docs/CURATION.md. |
 | `keyring.py` | macOS Keychain for the API key. `/usr/bin/security`. No-op on non-macOS. |
@@ -503,6 +504,7 @@ All endpoints on `127.0.0.1:8787`.
 GET    /                            museum HTML
 GET    /capture                     capture overlay HTML
 GET    /health                      status + row counts
+GET    /greeting                    the wall's greeting for the current four-hour bucket (cached or fallback)
 GET    /artifacts                   list, newest first. ?limit&offset&order&pinned
 GET    /artifacts/{id}              detail, body, annotations, facets, versions
 GET    /artifacts/{id}/text         readable text, with page numbers for PDFs

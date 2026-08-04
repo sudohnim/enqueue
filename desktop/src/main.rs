@@ -53,7 +53,10 @@ fn wait_for_engine(timeout: Duration) -> bool {
         if already_running() {
             return true;
         }
-        thread::sleep(Duration::from_millis(150));
+        // A tight poll: a connection refused returns at once, so this only adds a
+        // small slice of dead time between the engine binding its port and the window
+        // being built. 150ms here was up to a seventh of a second wasted after ready.
+        thread::sleep(Duration::from_millis(30));
     }
     false
 }
@@ -350,23 +353,33 @@ fn open_external(url: String) -> Result<(), String> {
 }
 
 fn main() {
+    // Spawn the engine but do NOT wait for it here. The wait used to sit between the
+    // spawn and the Tauri builder, so Tauri's own init - event loop, plugins, the
+    // webview runtime - ran serially after the engine's ~0.7s boot, and the window
+    // appeared only once everything was done. Returning immediately lets that Tauri
+    // init overlap the engine boot; the wait moves into setup, right before the one
+    // window that actually needs the engine's URL.
     let child = if already_running() {
         eprintln!("[shell] engine already listening on {HOST_PORT}, attaching");
         None
     } else {
-        let spawned = spawn_engine();
-        if spawned.is_some() && !wait_for_engine(Duration::from_secs(30)) {
-            eprintln!("[shell] engine did not come up within 30s");
-        }
-        spawned
+        spawn_engine()
     };
+    let spawned_here = child.is_some();
 
     tauri::Builder::default()
         .manage(Engine(Mutex::new(child)))
         .manage(CameFromMuseum(AtomicBool::new(false)))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![capture_dismiss, capture_drag, open_external, window_drag])
-        .setup(|app| {
+        .setup(move |app| {
+            // The webview loads the engine's URL, so it cannot be built until the
+            // engine answers. By now Tauri has already initialised concurrently with
+            // the boot, so this waits only for whatever time the engine still needs.
+            if spawned_here && !wait_for_engine(Duration::from_secs(30)) {
+                eprintln!("[shell] engine did not come up within 30s");
+            }
+
             let window = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",

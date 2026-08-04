@@ -17,7 +17,17 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from . import capture, chats, config, db, notes, preview, settings, trash
+from . import (
+    capture,
+    chats,
+    config,
+    db,
+    greeting,
+    notes,
+    preview,
+    settings,
+    trash,
+)
 from .index.store import get_store
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
@@ -978,6 +988,16 @@ def write_settings(req: SettingsUpdate) -> dict:
 
 
 @app.get("/secrets")
+@app.get("/greeting")
+def get_greeting() -> dict:
+    """The wall's greeting for the current four-hour bucket, cached or fallback.
+
+    Never blocks on the model: a missing phrase returns the time-based fallback
+    and starts a background generation for the bucket.
+    """
+    return greeting.get()
+
+
 def secret_report() -> dict:
     conn = db.get_conn()
     try:
@@ -999,6 +1019,11 @@ def serve() -> None:
             print(f"[engine] purged {expired['purged']} artifact(s) past the trash window")
     except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
         print(f"[engine] could not purge the trash: {exc}")
+
+    # The wall's greeting is generated in the background so the first render usually
+    # finds a phrase already waiting; the page falls back to a time-based one either
+    # way, so this never holds the engine open.
+    greeting.ensure()
 
     _bootstrap_index()
 

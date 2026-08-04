@@ -195,7 +195,8 @@
   /* The sticky period heading would otherwise cover the focus ring of anything reached
      by keyboard from below. */
   html {
-    scroll-padding-top: 72px;
+    /* 32px drag strip plus a hair of air for focus rings. */
+    scroll-padding-top: calc(32px + var(--sp-1));
   }
   body {
     margin: 0;
@@ -218,21 +219,18 @@
      the capture overlay uses. Everything at this height and above is draggable except
      the search field itself. */
   .topbar {
+    /* A slim drag strip now that the search lives in the home header below. */
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
-    height: 68px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 var(--sp-5);
+    height: 32px;
     background: var(--bg);
     z-index: calc(var(--z-pill) - 1);
   }
   .searchbar {
-    width: 75%;
-    max-width: 900px;
+    width: 100%;
+    max-width: 640px;
     display: flex;
     align-items: center;
     gap: var(--sp-2);
@@ -272,11 +270,143 @@
     color: var(--text-mute);
   }
 
+  /* The home header: a time-of-day greeting with the search bar tucked under it,
+     one tight group, then a generous step down to the first shelf. */
+  .homehead {
+    margin-bottom: var(--sp-6);
+  }
+  .homehead .display {
+    margin: 0;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .homehead .searchbar {
+    margin-top: var(--sp-4);
+  }
+  /* The wall's composition is centered: the greeting above the search, and the
+     section labels beneath. The cards keep their full-width grid - a card has no
+     center, and the grid already spans the centered column. Detail views stay
+     left-aligned because they are reading surfaces. */
+  .homehead {
+    text-align: center;
+  }
+  .homehead .searchbar {
+    margin-inline: auto;
+  }
+  .shelf.center {
+    justify-content: center;
+  }
+  /* The keycap hint is the discoverability for Cmd+K: it disappears the moment the
+     field is focused or holds text, because that is the moment it is no longer
+     needed. */
+  .searchbar kbd.hint {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    color: var(--text-mute);
+    background: var(--surface-doc);
+  }
+  .searchbar:focus-within kbd.hint,
+  .searchbar:has(input:not(:placeholder-shown)) kbd.hint {
+    display: none;
+  }
+  /* The greeting settles in each time the home renders - a 200ms rise, nothing
+     more. The reduced-motion block above crushes its duration to 1ms. */
+  @keyframes greet {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .homehead {
+    animation: greet var(--dur-slow) var(--ease) backwards;
+  }
+  /* The model's phrase replaces the fallback with the same settle the header used
+     on render - a pop, not a reflow. */
+  .greeting.swap {
+    animation: greet var(--dur-slow) var(--ease) backwards;
+  }
+
+  /* The time-of-day emblem: an amber disc holding a sun or a moon, above the
+     greeting. It reuses the primary fill (accent disc, ink icon), so it reads as the
+     app's own mark rather than a stray decoration, and the faint ring around it
+     echoes the concentric eye of the app icon - looking again at what you keep. */
+  /* Emblem and greeting on one line, the pair centered as a group. */
+  .greetline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+  }
+  .greet-emblem {
+    position: relative;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    box-shadow: 0 6px 18px color-mix(in oklab, var(--accent) 38%, transparent);
+    animation: emblem-in var(--dur-slow) var(--ease) backwards;
+  }
+  .greet-emblem::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: var(--r-full);
+    border: 1.5px solid color-mix(in oklab, var(--accent) 34%, transparent);
+  }
+  .greet-emblem svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke: var(--accent-ink);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* The sun turns its rays in by a few degrees on arrival, once. The moon holds
+     still - a moon that spins is a novelty, and this is meant to age well. */
+  .greet-emblem.sun svg,
+  .greet-emblem.sunrise svg,
+  .greet-emblem.sunset svg {
+    transform-origin: center;
+    animation: sun-rays 1.1s var(--ease) 120ms backwards;
+  }
+  @keyframes emblem-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.86);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes sun-rays {
+    from {
+      transform: rotate(-16deg);
+    }
+    to {
+      transform: rotate(0);
+    }
+  }
+
   /* No chrome beyond the search strip. Content clears the fixed top bar. */
   main {
     max-width: 1200px;
     margin: 0 auto;
-    padding: calc(68px + var(--sp-4)) var(--sp-5) 160px;
+    /* 32px drag strip plus a full breathing step before the greeting. */
+    padding: calc(32px + var(--sp-5)) var(--sp-5) 160px;
   }
 
   /* ---- type roles --------------------------------------------------------
@@ -396,7 +526,7 @@
     padding: var(--sp-5) 0;
     max-width: 62ch;
   }
-  /* At most one display line per view, and this is the only place it appears. */
+  /* At most one display line per view: the empty state's, or the home greeting's. */
   .empty {
     text-align: center;
     padding-top: var(--sp-section);
@@ -2363,21 +2493,7 @@
   }
 </style>
 
-<div class="topbar" id="topbar">
-  <div class="searchbar">
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-    <input
-      id="topsearch"
-      type="search"
-      placeholder="Search everything"
-      autocomplete="off"
-      spellcheck="false"
-    />
-  </div>
-</div>
+<div class="topbar" id="topbar"></div>
 <main id="view"><div class="state">opening...</div></main>
 <div class="pill" id="pill"></div>
 
@@ -2830,6 +2946,16 @@
       '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-7 7"/>',
     rail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/>',
     gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/>',
+    // The greeting emblem, one per part of the day. A sun climbing, a sun high, a
+    // moon: the one warm human beat in an app that otherwise stays out of the way.
+    sunrise:
+      '<path d="M4 18h16"/><path d="M8 18a4 4 0 0 1 8 0"/><path d="M12 4v2.5M5.6 8.6l1.6 1.6M18.4 8.6l-1.6 1.6"/>',
+    sun: '<circle cx="12" cy="12" r="3.6"/><path d="M12 3v2.3M12 18.7V21M3 12h2.3M18.7 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/>',
+    // Sunset: the same half-sun on the horizon as sunrise, but the arrow reads down.
+    // A dipping sun is the evening; the moon is saved for real night.
+    sunset:
+      '<path d="M4 18h16"/><path d="M8 18a4 4 0 0 1 8 0"/><path d="M12 4v5M9.5 6.5L12 9l2.5-2.5"/>',
+    moon: '<path d="M20 13.5A7.5 7.5 0 1 1 10.4 4 6 6 0 0 0 20 13.5z"/><path d="M18.4 4.3l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/>',
   };
   const svg = (k) => '<svg viewBox="0 0 24 24">' + ICONS[k] + "</svg>";
 
@@ -2964,6 +3090,16 @@
 
   function openField(mode) {
     closeMenu();
+    // The wall's home search is the one search surface it shows, so the pill's
+    // magnifier and Cmd+K both route here instead of popping a second field.
+    if (mode === "search") {
+      const hs = document.getElementById("homesearch");
+      if (hs) {
+        hs.focus();
+        hs.select();
+        return;
+      }
+    }
     const hint = {
       search: "find something",
       ask: "ask about " + scope.label,
@@ -2994,6 +3130,15 @@
       else saveLink(v);
     };
   }
+
+  // Cmd+K (or Ctrl+K) jumps to search from anywhere: the home search on the wall,
+  // the pill's inline field on any other view. A search never costs a person their
+  // place.
+  document.addEventListener("keydown", (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
+    e.preventDefault();
+    openField("search");
+  });
 
   // Capture is the one act the whole product rests on, and it used to fail in silence:
   // a link that errored and an upload that 500ed both re-rendered the wall exactly like
@@ -3192,24 +3337,6 @@
       toast(String(err && err.message ? err.message : err), true),
     );
   });
-
-  // The persistent search bar. Enter runs the same search the pill's magnifier does;
-  // an emptied field returns to the wall so clearing a search is a way back.
-  const topsearch = document.getElementById("topsearch");
-  if (topsearch) {
-    topsearch.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        topsearch.value = "";
-        topsearch.blur();
-        home();
-        return;
-      }
-      if (e.key !== "Enter") return;
-      const q = topsearch.value.trim();
-      if (q) doSearch(q);
-      else home();
-    });
-  }
 
   // Drag the window by the top strip. `-webkit-app-region` is inert in this WKWebView,
   // so the move is done by invoking the Rust `window_drag` on mousedown, the same path
@@ -3554,10 +3681,50 @@
       return;
     }
 
-    let html = "";
+    const hour = new Date().getHours();
+    // One emblem per part of the day, matched to the greeting bucket. The icon is
+    // decorative, so it is hidden from the accessibility tree; the greeting says it.
+    // Five parts of the day, matched to greeting.py's _daypart so the icon and the
+    // phrase never disagree. A dipping sun for the evening, the moon for real night
+    // and the small hours.
+    const daypart =
+      hour < 5
+        ? "moon"
+        : hour < 12
+          ? "sunrise"
+          : hour < 17
+            ? "sun"
+            : hour < 21
+              ? "sunset"
+              : "moon";
+    const fallback =
+      hour < 12
+        ? "Good morning"
+        : hour < 17
+          ? "Good afternoon"
+          : "Good evening";
+    let html =
+      '<div class="homehead">' +
+      '<div class="greetline">' +
+      '<div class="greet-emblem ' +
+      daypart +
+      '" aria-hidden="true">' +
+      svg(daypart) +
+      "</div>" +
+      '<h1 class="display greeting">' +
+      fallback +
+      "</h1>" +
+      "</div>" +
+      '<div class="searchbar">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
+      '<input id="homesearch" type="search" placeholder="Search everything" autocomplete="off" spellcheck="false" />' +
+      '<kbd class="hint" aria-hidden="true">&#8984;K</kbd>' +
+      "</div>" +
+      "</div>";
     if (exs.items.length) {
       html +=
-        '<div class="shelf">Collections</div>' +
+        '<div class="shelf center">Collections</div>' +
         exs.items
           .map(
             (e) =>
@@ -3579,7 +3746,7 @@
     // Kept and fresh share the same grid so every card is the same size.
     if (kept.total) {
       html +=
-        '<div class="shelf">saved</div>' +
+        '<div class="shelf center">saved</div>' +
         '<div class="wall" style="margin-bottom:var(--sp-5)">' +
         kept.items.map(card).join("") +
         "</div>";
@@ -3589,7 +3756,7 @@
     // sorted into the grid by last touch like any other card, so a capture made a
     // minute ago is never behind a conversation nobody touched this week.
     html +=
-      '<div class="shelf">Everything else</div><div class="wall" id="wall">' +
+      '<div class="shelf center">Everything else</div><div class="wall" id="wall">' +
       first.items.map(card).join("") +
       '</div><div id="wallEnd" class="aside"></div>';
 
@@ -3597,11 +3764,59 @@
     wallStamp = first.total + ":" + ((first.items[0] || {}).id || "");
 
     view.innerHTML = html;
+    // The home search lives inside the greeting header and is re-created on every
+    // home render, so its keys are bound here, not once at startup. Enter searches;
+    // Escape clears so an emptied field is a way back to the wall.
+    const hs = view.querySelector(".homehead input");
+    if (hs) {
+      hs.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          hs.value = "";
+          hs.blur();
+        } else if (e.key === "Enter") {
+          const q = hs.value.trim();
+          if (q) doSearch(q);
+        }
+      });
+    }
     markClampedPreviews();
     watchWallEnd();
+    refreshGreeting();
     if (keepAt !== null) window.scrollTo(0, keepAt);
     else if (wasReading) window.scrollTo(0, 0);
   }
+
+  // The greeting is generated by the engine's model on a four-hour bucket. The
+  // time-based fallback is already on screen, so this is a quiet swap, never a
+  // wait: the engine answers from cache without a model call, and a cold model is
+  // retried a few times in the background before giving up until the next render.
+  let greetTries = 0;
+  async function refreshGreeting() {
+    const el = document.querySelector(".homehead .greeting");
+    if (!el) return;
+    try {
+      const r = await api("/greeting");
+      if (!r || !r.text) return;
+      if (r.generated) greetTries = 0;
+      if (r.text !== el.textContent) {
+        el.textContent = r.text;
+        el.classList.remove("swap");
+        void el.offsetWidth;
+        el.classList.add("swap");
+      }
+      if (!r.generated && greetTries < 3) {
+        greetTries += 1;
+        setTimeout(refreshGreeting, 8000);
+      }
+    } catch (err) {
+      // The wall keeps its fallback; a failed greeting is not worth an error state.
+    }
+  }
+
+  // The phrase lives in four-hour buckets; when a bucket rolls over while the app
+  // is open, the next check swaps in the new phrase. The check is a localhost GET
+  // of a cached value, and it early-returns whenever the wall is not on screen.
+  setInterval(refreshGreeting, 60000);
 
   /// Drag-and-drop ingestion.
   ///
@@ -4742,7 +4957,7 @@
     }
     view.innerHTML =
       '<div class="back" onclick="home()">&larr; everything</div>' +
-      '<div class="shelf">' +
+      '<div class="shelf center">' +
       r.hits.length +
       " result" +
       (r.hits.length === 1 ? "" : "s") +
