@@ -118,8 +118,13 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         return _results_for_ids(tag_ids, limit)
 
     if tag_ids:
-        # Mixed: hybrid search on the free text, then keep only tagged hits.
-        return [h for h in _hybrid_results(free_text, limit) if h["artifact_id"] in tag_ids]
+        # Mixed: hybrid search on the free text, then keep only tagged hits. The
+        # filter runs on a wider window than `limit` and truncates afterward -
+        # filtering the top `limit` first would drop a tagged match that ranked just
+        # past the cutoff, so "kubernetes #work" could miss a work-tagged kubernetes
+        # note purely because plain "kubernetes" outranked it.
+        tagged = [h for h in _hybrid_results(free_text, limit * 5) if h["artifact_id"] in tag_ids]
+        return tagged[:limit]
 
     return _hybrid_results(q, limit)
 
