@@ -4316,6 +4316,13 @@
       '<div class="titlerow"><div class="h1" style="view-transition-name:artifact-title">' +
       esc(a.title || "Untitled") +
       "</div>" +
+      (["pdf", "image", "file"].includes(a.kind)
+        ? '<a class="title-action" href="/artifacts/' +
+          a.id +
+          '/blob" download aria-label="Download a copy" title="Download a copy">' +
+          svg("down") +
+          "</a>"
+        : "") +
       '<button class="title-action' +
       (a.pinned ? " lit" : "") +
       '" aria-label="' +
@@ -4342,11 +4349,6 @@
         ? '<a class="btn secondary" href="' +
           esc(a.source_url) +
           '" target="_blank" rel="noopener">Open original</a>'
-        : "") +
-      (["pdf", "image", "file"].includes(a.kind)
-        ? '<a class="btn tertiary" href="/artifacts/' +
-          a.id +
-          '/blob" download>Download a copy</a>'
         : "") +
       "</div>";
 
