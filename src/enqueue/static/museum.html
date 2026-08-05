@@ -1464,6 +1464,160 @@
     display: none;
   }
 
+  /* Tags: optional labels on an artifact, added after it exists. The row hugs
+     the header; the reading pane's own top margin gives the generous gap below. */
+  /* The artifact page: body on the left, tags on the right. The rail is the one
+     place the layout departs from the single column, and only because tags are
+     metadata, not content. The grid is capped so the rail sits beside the body
+     rather than at the far edge of the window; sticky keeps it reachable through
+     a long note. Below the cap the rail disappears rather than squeezing the
+     reading pane. */
+  .bodygrid {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-4);
+    max-width: 930px;
+    margin-top: var(--sp-6);
+  }
+  .bodycol {
+    flex: 1;
+    min-width: 0;
+  }
+  .bodycol > :first-child {
+    margin-top: 0;
+  }
+  .tagrail {
+    flex: none;
+    width: 190px;
+    position: sticky;
+    top: var(--sp-6);
+  }
+  .tagrail-title {
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.56px;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    margin-bottom: var(--sp-2);
+  }
+  .tagrow {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-1);
+  }
+  .tagrow .tagchip {
+    max-width: 100%;
+  }
+  .tagrow .taglabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tagrow .tagadd {
+    width: 100%;
+    min-width: 0;
+  }
+  @media (max-width: 820px) {
+    .tagrail {
+      display: none;
+    }
+  }
+  .tagchip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2);
+    background: var(--surface-2);
+    border-radius: var(--r-full);
+    border: 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--text);
+  }
+  .tagx {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: none;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .tagx:hover {
+    color: var(--text);
+    background: var(--line-soft);
+  }
+  .tagx svg {
+    width: 12px;
+    height: 12px;
+    stroke: currentColor;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+  }
+  .tagadd {
+    min-width: 90px;
+    padding: var(--sp-1) 0;
+    border: 0;
+    border-bottom: 1.5px solid var(--line-strong);
+    border-radius: 0;
+    background: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+  }
+  .tagadd::placeholder {
+    color: var(--text-mute);
+  }
+  .tagadd:focus {
+    border-color: var(--accent);
+  }
+
+  /* The home tag bar: the same chips, secondary and smaller than the searchbar.
+     The searchbar stays visually primary; these answer to the wall, not to it. */
+  .tagbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1);
+    margin-top: var(--sp-3);
+  }
+  .tagbar .tagchip {
+    cursor: pointer;
+    color: var(--text-mute);
+  }
+  .tagbar .tagchip:hover {
+    color: var(--text);
+    background: var(--line-soft);
+  }
+
+  /* The clear control on a Tagged header: a quiet text button, not an action. */
+  .tagclear {
+    border: 0;
+    background: none;
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: var(--r-full);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .tagclear:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
   /* Keeping something is a small decision, so the control behaves like one: it settles
      rather than springs. Ease-out only, no bounce. */
   .pin {
@@ -3664,10 +3818,11 @@
     restorePill("wall");
     view.innerHTML = '<div class="state">opening...</div>';
 
-    const [kept, first, exs] = await Promise.all([
+    const [kept, first, exs, tagcloud] = await Promise.all([
       api("/artifacts?pinned=true&order=touched&limit=200"),
       api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
       api("/exhibits"),
+      api("/tags"),
     ]);
 
     if (!kept.total && !first.total) {
@@ -3720,8 +3875,41 @@
       '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
       '<input id="homesearch" type="search" placeholder="Search everything" autocomplete="off" spellcheck="false" />' +
       '<kbd class="hint" aria-hidden="true">&#8984;K</kbd>' +
-      "</div>" +
       "</div>";
+    // The tag bar is a set of exact filters, secondary to the searchbar: the top
+    // tags as chips, an all-tags chip only when the top eight do not cover them.
+    const allTags = tagcloud.tags || [];
+    if (allTags.length) {
+      const top = allTags.slice(0, 8);
+      const rest = allTags.slice(8);
+      html +=
+        '<div class="tagbar">' +
+        top
+          .map(
+            (t) =>
+              '<button class="tagchip" data-tag="' +
+              esc(t.name) +
+              '" type="button">#' +
+              esc(t.name) +
+              "</button>",
+          )
+          .join("") +
+        (rest.length
+          ? '<button class="tagchip all" type="button" aria-expanded="false">all tags</button>' +
+            rest
+              .map(
+                (t) =>
+                  '<button class="tagchip more" data-tag="' +
+                  esc(t.name) +
+                  '" type="button" hidden>#' +
+                  esc(t.name) +
+                  "</button>",
+              )
+              .join("")
+          : "") +
+        "</div>";
+    }
+    html += "</div>";
     if (exs.items.length) {
       html +=
         '<div class="shelf center">Collections</div>' +
@@ -3778,6 +3966,29 @@
           if (q) doSearch(q);
         }
       });
+    }
+    // A tag chip runs the same search the searchbar runs: the input shows the
+    // `#name` query and the results come back filtered. The all-tags chip
+    // reveals whatever the top eight did not cover.
+    const tagbar = view.querySelector(".tagbar");
+    if (tagbar) {
+      tagbar.querySelectorAll(".tagchip[data-tag]").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          const q = "#" + chip.dataset.tag;
+          if (hs) hs.value = q;
+          doSearch(q);
+        });
+      });
+      const all = tagbar.querySelector(".tagchip.all");
+      if (all) {
+        all.addEventListener("click", () => {
+          const show = all.getAttribute("aria-expanded") !== "true";
+          all.setAttribute("aria-expanded", String(show));
+          tagbar
+            .querySelectorAll(".tagchip.more")
+            .forEach((c) => (c.hidden = !show));
+        });
+      }
     }
     markClampedPreviews();
     watchWallEnd();
@@ -4000,6 +4211,82 @@
   let faceTries = 0;
   const FACE_LIMIT = 8;
 
+  // ---- tags ---------------------------------------------------------------
+  // A tag is an optional, later act on an artifact that already exists. It is
+  // added here, on the artifact page, never at capture time and never required.
+  // Each chip's remove is one small x - undoing a label is not a big decision.
+  function tagRowHtml(tags) {
+    return (
+      '<div class="tagrow">' +
+      (tags || [])
+        .map(
+          (t) =>
+            '<span class="tagchip" data-tag="' +
+            esc(t) +
+            '"><span class="taglabel">' +
+            esc(t) +
+            "</span>" +
+            '<button class="tagx" aria-label="Remove tag ' +
+            esc(t) +
+            '" title="Remove tag">' +
+            svg("close") +
+            "</button></span>",
+        )
+        .join("") +
+      '<input class="tagadd" type="text" placeholder="add tag" autocomplete="off" ' +
+      'aria-label="Add a tag" spellcheck="false" />' +
+      "</div>"
+    );
+  }
+
+  // The chip names and the input are bound here, not in inline onclick: a tag name
+  // is user text, so it travels in a data attribute and is read at click time.
+  function mountTagRow(id) {
+    const row = view.querySelector(".tagrow");
+    if (!row) return;
+    row.querySelectorAll(".tagx").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        removeTag(id, btn.closest(".tagchip").dataset.tag);
+      });
+    });
+    const input = row.querySelector(".tagadd");
+    if (input) {
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") addTag(id, input.value);
+        else if (e.key === "Escape") {
+          input.value = "";
+          input.blur();
+        }
+      });
+    }
+  }
+
+  async function addTag(id, raw) {
+    const name = (raw || "").trim();
+    if (!name) return;
+    try {
+      await api("/artifacts/" + id + "/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      showArtifact(id);
+    } catch (err) {
+      toast(String((err && err.message) || err), true);
+    }
+  }
+
+  async function removeTag(id, name) {
+    try {
+      await api("/artifacts/" + id + "/tags/" + encodeURIComponent(name), {
+        method: "DELETE",
+      });
+      showArtifact(id);
+    } catch (err) {
+      toast(String((err && err.message) || err), true);
+    }
+  }
+
   async function showArtifact(id, focus, scrollY) {
     const arriving = !ctx || ctx.id !== id;
     teardown();
@@ -4078,12 +4365,16 @@
         d.secrets.map((s) => esc(s.excerpt)).join("<br>") +
         "</p></div>";
 
+    // The body builds separately from the header so the two can sit side by side:
+    // content on the left, the tag rail on the right.
+    let body = "";
+
     if (a.kind === "note") {
       // The body is yours. Edited in place, with every version kept.
       const n = d.versions.length;
       // Long-form sits on the warm reading white rather than the raised white, so a
       // whole page of it does not glare against the cream.
-      html +=
+      body +=
         '<div class="docpane">' +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
@@ -4103,23 +4394,23 @@
       };
     } else {
       if (a.kind === "pdf") {
-        html += reader(a, d.pages);
+        body += reader(a, d.pages);
       } else if (a.kind === "file") {
-        html +=
+        body +=
           fileFacts(d.file) + '<div class="md" id="plain">reading...</div>';
       } else if (a.kind === "image") {
-        html +=
+        body +=
           '<div class="docpane"><img class="page" src="/artifacts/' +
           a.id +
           '/blob" alt="' +
           esc(a.title) +
           '"></div>';
       } else if (a.kind === "link") {
-        html += linkFace(a, d.preview);
+        body += linkFace(a, d.preview);
       }
       const current = d.annotations.filter((x) => x.current);
       const last = current.length ? current[current.length - 1] : null;
-      html +=
+      body +=
         '<div class="shelf">Your note on this</div>' +
         '<div class="docpane">' +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
@@ -4138,18 +4429,29 @@
     // How the app keeps its central promise visible: what the model made of this, and
     // the fact that it made it here. Never behind a disclosure.
     if (d.facet_skip_reason)
-      html +=
+      body +=
         '<div class="callout note"><div class="shelf">Read locally</div>' +
         "<p>" +
         esc(whyNoFacets(d.facet_skip_reason)) +
         "</p></div>";
     else if (d.facets.length)
-      html +=
+      body +=
         '<div class="callout note"><div class="shelf">Read locally</div>' +
         d.facets.map((f) => "<p>" + esc(f.statement) + "</p>").join("") +
         "</div>";
 
+    html +=
+      '<div class="bodygrid">' +
+      '<div class="bodycol">' +
+      body +
+      "</div>" +
+      '<aside class="tagrail" aria-label="Tags">' +
+      '<div class="tagrail-title">Tags</div>' +
+      tagRowHtml(d.tags) +
+      "</aside></div>";
+
     view.innerHTML = html;
+    mountTagRow(id);
     mountEditor(focus);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
     if (a.kind === "file") mountPlain(a.id);
@@ -4930,6 +5232,25 @@
     window.scrollTo(0, 0);
   }
 
+  // A pure `#tag` or `tag:name` query (the tag bar, or one typed by hand) gets
+  // the Tagged header with a clear control; anything with free text keeps the
+  // ordinary results header.
+  function tagFilterName(q) {
+    const tokens = q.trim().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return null;
+    const names = [];
+    for (const t of tokens) {
+      const rest = t.startsWith("#")
+        ? t.slice(1)
+        : t.startsWith("tag:")
+          ? t.slice(4)
+          : null;
+      if (rest && rest.trim()) names.push(rest.trim().toLowerCase());
+      else return null;
+    }
+    return names.join(" ");
+  }
+
   async function doSearch(q) {
     teardown();
     view.innerHTML = '<div class="state thinking">searching...</div>';
@@ -4955,15 +5276,25 @@
       view.innerHTML = '<div class="state">' + esc(msg) + "</div>";
       return;
     }
+    const tagName = tagFilterName(q);
     view.innerHTML =
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="shelf center">' +
-      r.hits.length +
-      " result" +
-      (r.hits.length === 1 ? "" : "s") +
-      " for &ldquo;" +
-      esc(q) +
-      "&rdquo;</div>" +
+      (tagName
+        ? "Tagged #" +
+          esc(tagName) +
+          " &middot; " +
+          r.hits.length +
+          " result" +
+          (r.hits.length === 1 ? "" : "s") +
+          ' <button class="tagclear" type="button" onclick="home()">clear filter</button>'
+        : r.hits.length +
+          " result" +
+          (r.hits.length === 1 ? "" : "s") +
+          " for &ldquo;" +
+          esc(q) +
+          "&rdquo;") +
+      "</div>" +
       (r.hits.length
         ? r.hits
             .map(

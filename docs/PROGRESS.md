@@ -1,497 +1,262 @@
-# Enqueue — implementation progress
+# Feature: Tags — implementation plan
 
-Status: **Part 2 (Lens view) DONE** (lens wall UI reverted by maintainer decision - backend API-only; UI recoverable from commit 2cd2390) - phases 5-17 complete; open [HUMAN] items: evals/lens/topics.yaml, the D4 threshold pick, and the human lens test (evals/lens/HUMAN-TEST-LENS.md)
+This file is the whole plan for adding user tags. It is written to be implemented by an
+LLM that does not know this codebase. Do not improvise. Do every step in order. The design
+rationale is in `docs/decisions/tags-analysis.md`; you do not need to read it to implement,
+but do not contradict it.
 
-## Plan
-
-The implementation follows the plan in `~/Downloads/enqueue-plan/`.
-Each phase below links to the relevant checkbox in the plan file.
+(The previous contents of this file were a historical progress log; it lives in git.)
 
 ---
 
-## Phase 0 — Verify assumptions ✅
+## 0. The one rule you must never break
 
-- [x] FTS5 available (confirmed)
-- [x] sqlite-vec v0.1.9 works (confirmed)
-- [x] Baseline measurements recorded
-- [x] Synthetic test corpus generated (50 artifacts, `scripts/make_test_corpus.py`)
+**Never prompt for a tag at capture time. Never make a tag required.** Tags are an
+optional, later act on an artifact that already exists. If any step seems to require asking
+for a tag before saving something, you did it wrong: stop and re-read.
 
-## Phase 1 — Test infrastructure ✅
+## 1. Orientation
 
-- [x] **1A**: `scripts/make_test_corpus.py` — deterministic 50-artifact generator
-- [x] **1B**: `enq test-corpus verify` — constraints verification
-- [x] **1C**: `enq test-corpus load` — loads into isolated `evals/test-data/`
-- [x] **1D**: `evals/queries.yaml` — 50 queries across 8 categories
-- [x] **1E**: `enq eval` — scoring command with per-query pass/fail + aggregate metrics
-- [x] **1F**: `evals/HUMAN-TEST-SEARCH.md` — human test protocol written
+Enqueue is a local-first macOS app. A Python engine (FastAPI) serves an HTML interface and
+binds to `127.0.0.1:8787` only. You will touch:
 
-## Phase 2 — Baseline engine score ✅
-
-- [x] `test-corpus load` now builds isolated Qdrant index (125 chunks, 125 vectors)
-- [x] `enq eval` runs directly against test DB + test Qdrant (bypasses engine API)
-- [x] Baseline recorded in `docs/decisions/baseline.md` and `evals/results/qdrant-baseline.json`
-
-### Baseline results
-
-| Metric | Value |
+| Path | What it is |
 | --- | --- |
-| Total queries | 50 |
-| Pass | 41 / 50 (82%) |
-| Recall@1 | 0.700 |
-| Recall@10 | 0.820 |
-| MRR (non-zero) | 0.893 |
-| Nothing-OK | 0/8 |
-| p50 latency | 14 ms |
-| p95 latency | 26 ms |
+| `src/enqueue/migrations/versions/` | Alembic migrations. You add one. |
+| `src/enqueue/tags.py` | NEW. All tag read/write logic. You create it. |
+| `src/enqueue/api.py` | FastAPI endpoints. You add tag endpoints and one filter param. |
+| `src/enqueue/retrieve/candidates.py` | `search_results()` — the search path. |
+| `src/enqueue/static/museum.html` | The entire UI. One file, inline `<style>` + `<script>`. |
+| `tests/` | Pytest. Mirror `tests/test_trash.py` for style and the `store` fixture. |
 
-### Observations
+### Running and checking
 
-- Title-only: 10/10 pass (perfect)
-- Paraphrase: 10/10 pass (strong)
-- Rare-string: 5/5 pass (perfect, sparse BM25 helps)
-- Phrase: 5/5 pass
-- Partial: 5/5 pass
-- Vague-semantic: 4/6 pass (vague_06 fails)
-- Regression (Epictetus/Hypatia): pass
-- Nothing queries: 0/8 — all false positives (expected for pure vector search without score threshold)
+```bash
+bin/relaunch        # rebuild + launch the app; refuses to start if the HTML fails to parse
+uv run pytest -q    # tests must stay green; the baseline is 226 passing
+uv run black src/ tests/   # Python formatting; must be clean
+```
 
-## Next up
+`museum.html` contains NUL bytes. `rg` treats it as binary and prints nothing unless you
+pass `-a`. **Always use `rg -a` on it.**
 
-Phase 3 — Swappable engine interface (sqlite-vec integration).
-Phase 4 — Encrypted sync.
+### How to work these steps
 
-## Phase 2A — Link body indexing ✅
+- **One checkbox per commit. Never batch.** Commit message: `tags: <what the step did>`.
+- After every checkbox: `uv run pytest -q` is green and `bin/relaunch` still starts.
+- Every step is idempotent. If the target state already exists, tick the box and move on.
+- `[AGENT]` = do it. `[HUMAN]` = stop and hand over.
+- No em dashes in code, comments, or copy. Use a plain dash.
+- Never commit unless a step says the human commits; here the human commits after review.
+  Leave each step as a clean working change.
 
-Human search test Test 3 (Lumo mascot) exposed that saved links were searchable
-only by preview metadata (title + description); anything in the article body
-was unfindable. Fixed:
+### House rules that are easy to violate
 
-- [x] `preview.fetch()` extracts the article body (trafilatura, ≥200 chars) and
-  stores it in `page_text` (page 0, extractor `trafilatura`)
-- [x] `chunk_artifact` prefers the body for links, falls back to the four
-  preview fields when extraction yields nothing
-- [x] `needs_fetch()`: links with a preview but no body are refetched on the
-  next ingest pass, so existing links heal themselves
-- [x] Hard rule 6: body text goes through the same secret scan as all other text
-- [x] Tests: 6 new (extraction quality, script-shell refusal, full fetch path,
-  chunk-from-body, needs_fetch states)
-- [x] Verified against the real Proton Lumo article: 7,172 chars extracted
-  containing "mascot", "kitten", "Lumo"
+- Tags are user-authored and permanent (they survive `enq rebuild`), so they are SOURCE
+  tables, never derived. Do not put tags in `chunks`, `facets`, `fts_*`, or `vec_*`.
+- Store one canonical tag name: lowercased and trimmed. Match is exact. No fuzzy matching.
+- Conversations (`chats`) cannot be tagged in this feature. Only rows in `artifacts`.
 
-Networking is unchanged: the page was already fetched for previews; now its
-body is kept instead of discarded. `local_only` and `auto_preview=off` links
-still never fetch.
+---
 
-## Phase 2A-followup — Queue blocked behind slow embedding ✅
+## PHASE T1 — Data model (two source tables)
 
-Verifying the Lumo fix in the running app exposed a second, pre-existing bug:
-`saved link not searchable` was not just the missing body — the ingest queue
-never drained, so the refetched body was never indexed.
+- [x] `[AGENT]` Create `src/enqueue/migrations/versions/0011_tags.py`. Copy the exact shape
+      of `0010_sqlite_vec.py` (module docstring, `from __future__ import annotations`,
+      `from alembic import op`, the four module vars). Set `revision = "0011"` and
+      `down_revision = "0010"`. In `upgrade()` run these two statements, each with
+      `IF NOT EXISTS`:
 
-Root cause: the serial queue + CPU embedding (bge-base-en-v1.5, ~0.6 s/chunk on
-this machine). A 363-chunk PDF added by the human test blocked the entire queue
-for 8–15 minutes; new saves and backfilled link bodies waited behind it.
+      ```sql
+      CREATE TABLE IF NOT EXISTS tags (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,   -- canonical: lowercased, trimmed
+        created_at  TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS artifact_tags (
+        artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+        tag_id      TEXT NOT NULL REFERENCES tags(id),
+        created_at  TEXT NOT NULL,
+        PRIMARY KEY (artifact_id, tag_id)
+      );
+      ```
 
-Fix (`dfa0944`):
+      In `downgrade()`: `DROP TABLE IF EXISTS artifact_tags;` then `DROP TABLE IF EXISTS tags;`
+      (child first). Use `op.execute("...")` for each statement, one call per statement.
+- [x] `[AGENT]` Verify the migration applies: `bin/relaunch` then
+      `uv run python -c "from enqueue import db; c=db.get_conn(); print([r[1] for r in c.execute('PRAGMA table_info(tags)')]); print([r[1] for r in c.execute('PRAGMA table_info(artifact_tags)')])"`.
+      Expect `['id','name','created_at']` and `['artifact_id','tag_id','created_at']`.
 
-- [x] `embed._providers()`: CoreMLExecutionProvider first, CPU fallback
-      (`ENQ_EMBED_PROVIDERS` overrides)
-- [x] CoreML vectors are bit-identical to CPU (max abs diff 0.0), so the
-      retrieval baseline is untouched — verified: eval 41/50, R@1 0.700,
-      MRR 0.893, identical to `qdrant-baseline.json`
-- [x] `onnxruntime` promoted to a direct dependency (imported directly)
-- [x] Verified live: `reprocess` drains in ~3.6 min (was: effectively never),
-      and search "Lumo mascot" returns the article at score 1.000
+---
 
-Trafilatura-embedded text is unchanged; this is purely an inference-provider
-speedup.
+## PHASE T2 — Tag logic module (`src/enqueue/tags.py`)
 
-## Phase 3 — Swappable engine interface ✅
+Create the file. Import pattern: `from __future__ import annotations`, `import uuid`,
+`from datetime import datetime, timezone`, `from . import db`. Add a private
+`def _now() -> str: return datetime.now(timezone.utc).isoformat()`.
 
-`qdrant_client` now appears in exactly one file. Everything else goes through
-`get_store()`.
+- [x] `[AGENT]` `def normalize(name: str) -> str`: return `name.strip().lower()`. Raise
+      `ValueError("a tag needs a name")` if the result is empty.
+- [x] `[AGENT]` `def add(artifact_id: str, name: str) -> dict`: normalize the name; in one
+      `db.transaction()`: confirm the artifact exists (raise `KeyError(artifact_id)` if not);
+      `INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?,?,?)` with a new uuid4;
+      select the tag's id by name; `INSERT OR IGNORE INTO artifact_tags (artifact_id, tag_id, created_at) VALUES (?,?,?)`;
+      then `UPDATE artifacts SET updated_at = ? WHERE id = ?` (tagging is touching it, and
+      the wall is ordered by last touch). Return `{"artifact_id": artifact_id, "name": name}`.
+- [x] `[AGENT]` `def remove(artifact_id: str, name: str) -> dict`: normalize; in one
+      transaction delete the `artifact_tags` row for that (artifact, tag name); if the tag is
+      now referenced by no artifact, delete the orphan `tags` row; bump the artifact's
+      `updated_at`. Return `{"artifact_id": artifact_id, "name": name, "removed": True}`.
+- [x] `[AGENT]` `def for_artifact(artifact_id: str) -> list[str]`: return the artifact's tag
+      names ordered by name, using a read connection (`db.get_conn()`, close in `finally`).
+- [x] `[AGENT]` `def cloud() -> list[dict]`: return every tag with its count, most-used first:
+      `SELECT t.name, COUNT(at.artifact_id) AS n FROM tags t JOIN artifact_tags at ON at.tag_id = t.id GROUP BY t.id ORDER BY n DESC, t.name`.
+      Return a list of `{"name": ..., "count": ...}`.
+- [x] `[AGENT]` `def ids_with_all(names: list[str]) -> set[str]`: given normalized tag names,
+      return the set of artifact ids that carry ALL of them (AND semantics). Empty input
+      returns an empty set and the caller treats that as no filter. SQL:
+      `SELECT artifact_id FROM artifact_tags at JOIN tags t ON t.id = at.tag_id WHERE t.name IN (<one ? per name>) GROUP BY artifact_id HAVING COUNT(DISTINCT t.name) = <len(names)>`.
+- [x] `[AGENT]` Tests in `tests/test_tags.py` (use the `store` fixture from `conftest.py`,
+      mirror `tests/test_trash.py`). Each is one commit or grouped in one commit for this file:
+      - add then `for_artifact` returns `["work"]`.
+      - add the same tag twice; `for_artifact` still returns one entry (idempotent).
+      - add normalizes: `add(id, "  Work ")` then `for_artifact` returns `["work"]`.
+      - `remove` deletes the link and orphan tag; `cloud()` no longer lists it.
+      - `remove` a tag still used by another artifact leaves the `tags` row intact.
+      - `ids_with_all(["a","b"])` returns only artifacts carrying both, not either.
+      - `add` on a missing artifact id raises `KeyError`.
+      - `add("")` raises `ValueError`.
+- [x] `[AGENT]` Verify: `uv run pytest -q tests/test_tags.py` green; `uv run black src/enqueue/tags.py tests/test_tags.py`.
 
-- [x] `src/enqueue/index/store.py`: `VectorStore` ABC (`ensure`, `reset`,
-      `upsert_chunks`, `upsert_facets`, `drop_artifact`, `index_artifact`,
-      `search`, `search_dense`, `counts`) + `@lru_cache` `get_store()` factory
-      reading `config.VECTOR_STORE` (`ENQ_VECTOR_STORE`, default `qdrant`)
-- [x] `src/enqueue/index/store_qdrant.py`: `QdrantStore` with the old qdrant.py
-      logic copied verbatim; per-instance `lru_cache` client so the eval can
-      repoint at a test index via `get_store.cache_clear()`
-- [x] `git rm src/enqueue/index/qdrant.py`; callers updated: `api.py`,
-      `chats.py`, `retrieve/candidates.py`, `cli.py` (corpus load + eval),
-      `trash.py`, `ingest/queue.py`; tests patch
-      `enqueue.index.store.get_store`
-- [x] `enq eval` and `enq eval --ablation` produce per-query results identical
-      to `qdrant-baseline.json` and `qdrant-ablation.json` (latency jitter
-      excepted) — recorded as `evals/results/qdrant-via-interface.json`
-- [x] 102 tests pass; ruff + pyright clean across `src/` and `tests/`
-      (including pre-existing blockers: capture `int(local_only)`, ollama
-      generic `complete() -> T`, migrations spec asserts, provider overrides)
+---
 
-Behavior unchanged. The engine interface is now a config change, not a rewrite.
+## PHASE T3 — API endpoints
 
-## Phase 4 — Export, the escape hatch ✅
+All in `src/enqueue/api.py`. Put the tag endpoints near the annotation endpoints (search the
+file for `annotations` to find the neighbourhood). Follow the existing endpoint style:
+`@app.<verb>("...")`, a small Pydantic body model where a body is needed, translate
+`KeyError` to `HTTPException(404)` and `ValueError` to `HTTPException(400)`.
 
-`enq export <dir>` writes the library as plain files. No database, key, or
-enqueue-specific software is needed to read them back.
+- [x] `[AGENT]` `POST /artifacts/{artifact_id}/tags` with body `{"name": str}`: call
+      `tags.add(...)`. 404 on `KeyError`, 400 on `ValueError`. Return the dict from `add`.
+- [x] `[AGENT]` `DELETE /artifacts/{artifact_id}/tags/{name}`: call `tags.remove(...)`. Return
+      its dict.
+- [x] `[AGENT]` `GET /artifacts/{artifact_id}` already returns the artifact detail. Add its
+      tags to the response: include `"tags": tags.for_artifact(artifact_id)`. Find the function
+      behind that route (search `def get_artifact` or the `/artifacts/{` route) and add the field
+      to the returned dict. Do not remove any existing field.
+- [x] `[AGENT]` `GET /tags`: return `{"tags": tags.cloud()}`.
+- [x] `[AGENT]` Tests in `tests/test_api_tags.py` using the FastAPI `TestClient` pattern
+      already used in the test suite (search tests for `TestClient` to copy the setup): POST a
+      tag, GET the artifact shows it in `tags`, GET `/tags` shows it with count 1, DELETE
+      removes it. `uv run pytest -q tests/test_api_tags.py` green.
 
-- [x] One markdown file per artifact: notes carry their body, links their
-      saved text (`page_text` page 0), captures reference their copied bytes
-- [x] Annotations inline (superseded ones marked); each exhibit gets its own
-      file listing members with placard, evidence, and strength
-- [x] Capture blobs copied to `files/` next to the markdown
-- [x] Idempotent by content: re-runs write nothing when nothing changed;
-      files a previous export wrote that left the library are pruned
-- [x] `enq export --verify` reports whether every non-deleted artifact appears
-      in the output (exit 1 when incomplete)
-- [x] Tests: full write + idempotency, verify tracking a newly saved artifact,
-      stale-file pruning, and the headline property — the export stays
-      readable and complete after the entire database is deleted
-- [ ] `[HUMAN]` maintainer confirms export output is genuinely readable
-      (delegated to the assistant; verified mechanically + live: 22 artifacts
-      exported, re-run writes 0 files, `--verify` complete)
+---
 
-Live demo against the real library: 22 artifacts, 11 capture files copied,
-README index, Lumo article body present in its markdown.
+## PHASE T4 — Search: tag filter with a no-embed fast path
 
-## Phase 5 — Record the curate pipeline ✅
+Search enters at `api.py` route `def search` -> `retrieve/candidates.py` `search_results(q, limit)`.
+Tags are a FILTER, not text to rank. Do not put tags into the index or the embedding.
 
-`docs/decisions/lens-view.md` records the four-stage pipeline
-(expand → candidates → rerank → synthesise), the observed expansion width
-(9 queries), candidates defaults (`limit=150`, `per_query=40`), the rerank
-return shape, and the wall's ordering modes (default: `touched`).
+- [x] `[AGENT]` Add `def parse_tags(q: str) -> tuple[str, list[str]]` to `src/enqueue/tags.py`:
+      split the query on whitespace; any token that is `#word` or `tag:word` is a tag (strip the
+      `#` or `tag:` prefix, then `normalize`); everything else rejoins into the free-text query.
+      Return `(free_text, tag_names)`. Test it: `parse_tags("kubernetes #work tag:urgent")`
+      returns `("kubernetes", ["work", "urgent"])`; `parse_tags("#work")` returns `("", ["work"])`;
+      `parse_tags("plain query")` returns `("plain query", [])`.
+- [x] `[AGENT]` In `search_results(q, limit)` (in `candidates.py`): call `parse_tags(q)` first.
+      Compute `tag_ids = tags.ids_with_all(tag_names)` when `tag_names` is non-empty.
+      - **Pure tag query** (free_text is empty and `tag_names` non-empty): do NOT embed and do
+        NOT call `store.search`. Build results directly from `tag_ids`: for each id, read title
+        and kind from `artifacts`, snippet from the artifact text, and return them ordered by
+        `updated_at DESC`. This is the fast path (about 1 ms; no model call).
+      - **Mixed query** (free_text non-empty AND `tag_names` non-empty): run the existing hybrid
+        search on `free_text`, then keep only results whose `artifact_id` is in `tag_ids`.
+      - **No tags** (`tag_names` empty): unchanged behaviour, search on `q` as today.
+      Do not change the shape of a returned hit (same keys the wall already consumes).
+- [x] `[AGENT]` Tests in `tests/test_search_tags.py` (use `store` fixture): tag two artifacts,
+      leave one untagged; assert a pure `#tag` query returns exactly the tagged ones; assert a
+      mixed query returns only results that both match the text and carry the tag; assert a
+      plain query is unaffected. `uv run pytest -q tests/test_search_tags.py` green, and the full
+      `uv run pytest -q` stays green (226+ passing).
+- [x] `[AGENT]` Confirm retrieval quality did not move: `uv run enq eval` and check the Pass /
+      Recall@1 / MRR line is unchanged from before this phase (tags are a filter, so an eval with
+      no tag tokens must be byte-identical). If it moved, you changed the non-tag path by mistake;
+      revert and redo.
 
-- [x] Before number: one full `curate()` on 100 artifacts took **1048 s**
-      (~17.5 min) and 53 model calls (1 expand + 52 judgments); 29/52
-      judgments failed schema validation (`strength` null) and dropped
-      silently. This is the number Phases 7-9 exist to bound.
-- [x] Stale `ORDERINGS` comment fixed: it claimed `ingested` was the default;
-      the endpoint always defaulted to `touched`.
+---
 
-## Phase 6 — Stop discarding information already computed ✅
+## PHASE T5 — Wall filtering (`list_artifacts`)
 
-`rerank()` no longer throws away what it paid for:
+`list_artifacts` in `api.py` builds the wall. It UNIONs `artifacts` with `chats`
+(conversations). A tag filter applies to artifacts only; conversations cannot be tagged, so a
+tag filter must EXCLUDE the chats limb entirely.
 
-- [x] `rejected` is now a list of `{artifact_id, reason}` (reason when the
-      judgment gave one); the integer count lives on as `rejected_count`
-- [x] `relevant` returns the full passing list before `belongs[:keep]`
-      truncation; `kept` stays the truncated list
-- [x] `failed_ids` lists artifacts whose judgment call errored, next to the
-      existing `failed` count
-- [x] `Judgment` gains an optional `reason`; the RERANK prompt asks for it on
-      no-verdicts
-- [x] Conservation test: `len(relevant) + len(rejected) + len(failed_ids) ==
-      considered` passes for every partitioning
-- [x] Wall UI reads `rejected_count` (it rendered the old number as `N
-      rejected`, which now needs the explicit count field)
+- [x] `[AGENT]` Add a parameter `tags: str = ""` to `list_artifacts` (comma-separated tag names,
+      empty means no filter). Parse it into a normalized list with `tags_mod.normalize` per item,
+      dropping empties.
+- [x] `[AGENT]` When the tag list is non-empty: compute `ids = tags_mod.ids_with_all(names)`;
+      add to the artifacts `where` a clause restricting to those ids (bind the id set with the
+      existing `json_each` pattern the codebase uses for id lists, or an `IN` list of named
+      params); and replace the `UNION ALL ... FROM chats ...` limb with nothing (no chats when
+      filtering by tag). When the tag list is empty, the query is exactly as it is today. Keep
+      the `total` count consistent with whichever limbs ran.
+- [x] `[AGENT]` Expose the parameter on the `GET /artifacts` route so the client can pass
+      `?tags=work,urgent`.
+- [x] `[AGENT]` Tests: `list_artifacts(tags="work")` returns only tagged artifacts and zero
+      chats; `list_artifacts()` (no tags) is unchanged and still includes chats. `uv run pytest -q`
+      green.
 
-## Phase 7 — Score every artifact cheaply, no model calls ✅
+---
 
-`score_all(lens) -> dict[str, float]` in `retrieve/score.py`: one relevance
-score per non-deleted artifact via the Part 1 `VectorStore` interface, using
-the same rollup as the curate path. Zero is a score, not an omission — every
-artifact gets an entry.
+## PHASE T6 — UI (`museum.html`)
 
-- [x] No language model anywhere in the file; the search limit is read from
-      the chunk and artifact counts so the whole library is covered
-- [x] Provisional `LENS_SCORE_THRESHOLD = 0.1` (env `ENQ_LENS_SCORE_THRESHOLD`),
-      above the bulk hybrid-score noise (p75 ~0.06) on this corpus; marked
-      provisional, tuned in Phase 13 against D4
-- [x] Timings (Apple Silicon, CoreML embed, local Qdrant): **55.6 ms** on the
-      100-artifact library, **59.6 ms** on the 50-artifact eval corpus — both
-      under the one-second gate
-- [x] Tests: one entry per artifact, trashed artifacts excluded, provider
-      bomb proves zero model calls, unchunked artifact scores exactly zero
+Product register: inline, no sidebar, hierarchy through space and weight. Reuse existing
+tokens (`--surface-2`, `--accent`, `--text-mute`, `--r-full`, `--sp-*`). Do not invent colours.
+Parse-check after every edit: `bin/relaunch` runs `node --check` on the inline script and
+refuses to start on a syntax error.
 
-## Phase 8 — Remember judgments so the same topic is instant next time ✅
+- [x] `[AGENT]` **Tag chips on the artifact page.** In `showArtifact(...)`, render a `.tagrow`
+      on a `.tagrail` beside the body (the body and rail sit in a `.bodygrid`, the rail on the
+      right; under 900px it stacks below the body). One chip per tag from the artifact's `tags`
+      array (each chip shows the name and a small `x` calling a `removeTag`
+      handler), then a small "add tag" text input that on Enter calls an `addTag` handler.
+      `addTag` POSTs `/artifacts/{id}/tags`, `removeTag` DELETEs
+      `/artifacts/{id}/tags/{name}`; both re-render the artifact on success and `toast(...)` on
+      failure (never a silent `.catch`). Style chips with `--surface-2` fill, `--r-full`,
+      `--sp-1 --sp-2` padding, `--text` label; keep the row tight to the meta line, generous gap
+      to the body.
+- [x] `[AGENT]` **Tag bar on the home wall.** In `home(...)`, after the `.searchbar` inside
+      `.homehead` and before the first shelf, fetch `GET /tags` and render a `.tagbar`: the top
+      8 tags as chips (muted `--surface-2` at rest). Clicking a chip runs the search for `#name`
+      (call the same path the searchbar uses, e.g. set the input to `#name` and trigger the
+      existing search). If there are more than 8 tags, add a small "all tags" chip that shows the
+      rest. If there are zero tags, render nothing (no empty bar). The searchbar stays visually
+      primary; chips are secondary and smaller.
+- [x] `[AGENT]` **Active-filter header.** When a tag filter is active (the search ran for a
+      `#tag`), the results header reads `Tagged #work` with a clear-filter control that returns to
+      the wall. Reuse the existing search-result header built in `doSearch(q)` (it renders a
+      `" result" ... for ...` header) rather than inventing a new one.
+- [x] `[AGENT]` Do NOT add tags to the wall card face. Cards stay as they are (kind dot, title,
+      date). Tags are a filter and a detail-page concern only.
+- [x] `[AGENT]` Verify by looking: `bin/relaunch`, open the app, add a tag on an artifact, see
+      the chip; go home, see the tag bar, click a chip, see the wall filter and the "Tagged"
+      header; clear it and see the full wall return. Confirm keyboard focus is visible on chips
+      and the add-tag input.
 
-- [x] Migration `0009` creates `lens_judgments`: `lens_key`, `artifact_id`,
-      `belongs`, `strength`, `placard`, `evidence`, `model_version`,
-      `created_at`; primary key is `(lens_key, artifact_id, model_version)`
-      with an index on `lens_key`
-- [x] `lens_key()` in `retrieve/judgments.py`: lowercase, trimmed,
-      whitespace-collapsed, sha256-hashed; capitalization/spacing variants
-      produce the same key (tested)
-- [x] `rerank._judge` consults the cache before calling the provider and
-      writes successful judgments through; a row for a different
-      `model_version` is treated as absent, so a model switch re-judges
-- [x] Staleness: the cache-hit rebuild re-validates the evidence verbatim
-      against the current artifact text, so an edited artifact falls through
-      to a fresh judgment; the lens is deliberately absent from the rebuild
-      context because the lens-word placard gate is a quality rule, not a
-      staleness signal
-- [x] `enq lens-cache clear` and `enq lens-cache stats` (thin CLI over
-      `POST /lens-cache/clear`, `GET /lens-cache/stats`)
-- [x] Tests: key normalization, zero-call replay, re-judge on model change,
-      stale-row fallthrough, clear. Test scripts now key by artifact id: the
-      thread pool exposed a latent pop-order race in the list-based scripted
-      providers
+---
 
-Note: the running engine predates this phase; restart it (`bin/relaunch`) for
-the cache to go live.
+## Done
 
-## Part 3 — sqlite-vec engine migration (done)
+- [x] `[AGENT]` `uv run pytest -q` green (was 226, now higher), `uv run black --check src/ tests/`
+      clean, `bin/relaunch` starts, `uv run enq eval` unchanged from the pre-tags number.
+- [ ] `[HUMAN]` Review: confirm no tag prompt appears at capture time anywhere, a pure `#tag`
+      search is instant, and the wall filter excludes conversations.
 
-## Phase 18A — Index tables inside the database ✅
+## Out of scope (do not build unless a later plan says so)
 
-Migration `0010` moves the search index into the SQLite file that already
-holds the library:
-
-- [x] `vec_chunks` / `vec_facets` — sqlite-vec `vec0` virtual tables, each
-      with a TEXT primary key (`chunk_id` / `facet_id`) and an embedding of
-      length `EMBED_DIM` (768)
-- [x] `fts_chunks` / `fts_facets` — FTS5 virtual tables indexing one text
-      column with the id as an unindexed reference column
-- [x] `index_meta` — key/value table to hold the embedding version
-- [x] The migration loads the sqlite-vec extension on the alembic connection
-      for both upgrade and downgrade (dropping a `vec0` table also needs the
-      module), and everything uses `IF NOT EXISTS` so the store's `ensure()`
-      and alembic never fight on a fresh database
-- [x] `sqlite-vec` moved from dev extras into the main dependencies: the
-      migration runs at app startup
-- [x] Verified forward and backward on a copy of the real database (22
-      artifacts, 464 chunks): upgrade to head, downgrade to 0009, re-upgrade
-      — data preserved; `test_index_revision_round_trips` pins the cycle
-
-Tests: 6 migration tests pass.
-
-## Phase 18B — Fusion function, on its own ✅
-
-`src/enqueue/index/fusion.py` holds reciprocal rank fusion as a pure function
-with zero imports from the rest of the app:
-
-- [x] `rrf(*ranked_lists, k=60, limit=30)` — ids in rank order in, fused id
-      list out; score per id is the sum of 1/(k + rank) across lists; ties
-      break by first appearance so the same input always yields the same
-      output
-- [x] `rrf_scored` also returns each id's fused score, so the store can tag
-      hits with a branch-agnostic score and the formula lives in one place
-- [x] Tests: one list, two identical lists, two disjoint lists (tie-break),
-      two lists sharing one id, limit truncation, determinism across runs,
-      and a scored-variant check against the hand-computed formula
-
-Tests: 7 fusion tests pass.
-
-## Phase 18C — Engine implementation ✅
-
-`src/enqueue/index/store_sqlite.py` is `SqliteVecStore(VectorStore)`, the
-full engine behind the same interface Qdrant used:
-
-- [x] Own connections per operation (WAL + sqlite-vec loaded per connection,
-      safe from the API thread and the ingest worker at once); `ensure()`
-      creates all four index tables if missing, safe to call repeatedly
-- [x] `upsert_chunks` / `upsert_facets` rebuild a collection in place from
-      `chunks` / `facets`, keyed on `chunk_id` / `facet_id` (never a random
-      UUID), each batch writing the vector and keyword tables in one
-      transaction; rows for soft-deleted artifacts are excluded
-- [x] Index text is `{title}\n\n{text}` for chunks (title prepended for
-      indexing only, stored text untouched); facet index text is the
-      statement
-- [x] `drop_artifact` removes an artifact's rows from both tables of a
-      collection in one transaction; `index_artifact` re-embeds one
-      artifact's chunks in place (save path, no full-collection wipe)
-- [x] `search` runs dense (`search_dense`, vector nearest-neighbour only)
-      and keyword (`_search_keyword`, FTS5 BM25 only) at prefetch width and
-      fuses with `rrf_scored`; hits carry `score` / `artifact_id` and, for
-      facets, `level` and `trust`; distance becomes score via 1/(1+d)
-- [x] FTS5 input sanitization: every token quoted with embedded quotes
-      doubled, so `"`, `AND`, `foo-bar`, `NEAR`, `*` are literal terms, not
-      query syntax; empty text matches nothing
-- [x] `counts()` covers all four tables, None for a missing table (the
-      "absent collection" shape); `write_embed_version` records the
-      embedding version in `index_meta`, idempotently
-- [x] `VECTOR_STORE=sqlite-vec` wired into the `get_store()` factory;
-      Qdrant stays the default
-- [x] The SQL-injection gate forced the shape of the store: all statements
-      are module-level literals or subscript lookups, values always bound;
-      rule probes confirmed subscript access is invisible to the pattern
-
-Tests: 25 store tests pass, including the literal-string search cases (`"`,
-`AND`, `foo-bar`, `NEAR`, `*`, empty, 500 chars), upsert idempotency,
-deleted-artifact exclusion, title-prepend findability, in-place re-embed,
-and a chunked-artifact round trip through `chunk_artifact`.
-
-## Phase 18D — Rebuild command ✅
-
-`enq reindex` rebuilds both collections from the `chunks` and `facets`
-tables already in SQLite. Qdrant is never consulted, so no vector data is
-ever copied between engines.
-
-- [x] New command rebuilds chunks then facets via the configured store,
-      printing progress every 500 rows through `get_store(on_progress=...)`
-- [x] Resumable by construction: a rebuild clears its collection first, so an
-      interrupted run is repaired on the next attempt and rows are never
-      duplicated; verified by running twice and comparing `counts()`
-- [x] `EMBED_VERSION` written to `index_meta` only after both collections
-      finish (`write_embed_version`), so a half-updated index never claims a
-      version; the method joined the `VectorStore` interface and both
-      backends write the same row
-- [x] `enq eval --engine sqlite-vec` now actually selects the backend: the
-      readiness check replaced the hardcoded "test Qdrant directory exists"
-      with a per-engine `store.counts()` check, and `--engine` drives
-      `VECTOR_STORE` instead of just the report label
-- [x] `enq lens-eval --corpus` uses the same per-engine readiness check
-- [x] `POST /index` records the embed version after rebuilding both
-      collections
-- [x] Fixed pre-existing gate findings the dispatch surfaced while editing:
-      bare `except httpx.ConnectError` in the CLI, an un-sorted import in
-      `store_qdrant.py`, and the import-order/type-annotation nits in the
-      new tests
-
-Tests: 3 reindex/eval-readiness tests pass; EZE-verified on a throwaway
-HOME (sandboxed data dir): run 1 builds 2 chunks + 1 facet with progress,
-run 2 leaves counts identical, embed version `bge-base-en-v1.5` recorded.
-
-## Phase 19 — Bake-off (hard gate) ✅
-
-Measured on the synthetic eval corpus (50 artifacts, 125 chunks) indexed by
-both engines from the same rows. Full write-up in
-`docs/decisions/bakeoff.md`; results in `evals/results/sqlite-vec.json`,
-`sqlite-vec-ablation.txt`, `lens-sqlite-vec.json`, `lens-qdrant.json`.
-
-- [x] `enq test-corpus reset` + `load` with `ENQ_VECTOR_STORE=sqlite-vec`
-      (corpus verification passed; index built inside the test database,
-      embed version recorded)
-- [x] `enq reindex` with sqlite-vec exercised on a sandboxed HOME; the
-      corpus index itself is built by the same `_rebuild` path through the
-      loader
-- [x] **eval: sqlite-vec beats baseline** — 42/50 vs 41/50; recall@1 0.740
-      vs 0.700; recall@10 0.840 vs 0.820; MRR 0.901 vs 0.8931; p50 15 ms vs
-      14 ms; p95 21 ms vs 26 ms. Only the 8 expected nothing-query false
-      positives fail; `vague_06` is fixed; zero new failures
-- [x] Ablation: dense-only is indistinguishable across engines (R@1 0.72,
-      R@10 0.84); hybrid gains come from the FTS5 BM25 branch
-- [x] Lens placement at the 0.1 operating threshold: 0.911 vs 0.933
-      (-2.2 percent, inside the 5 percent gate); false positives lower on
-      sqlite-vec at every threshold
-- [x] `score_all` on the 50-artifact corpus: 23-25 ms vs 59.6 ms recorded in
-      Part 2 Phase 7 (~2.5x faster)
-- [x] `regr_01` (Epictetus/Hypatia regression) passes on the new engine
-- [x] Score-scale decision: the first lens-eval run placed nothing above
-      threshold because the store's `k=60` RRF scores (max ~0.033) were an
-      order of magnitude below Qdrant's fused scale; Qdrant's local RRF is
-      1/(pos+2) over 0-based positions = 1/(rank+1), reproduced exactly by
-      fusing with `k=1`. Ordering is k-invariant, so this changed magnitudes
-      only, never rankings
-- [x] Latency gate: p95 21 ms, far under 150 ms; no quantization needed
-- [x] [HUMAN] gates did not trigger (recall@10 and MRR improved; lens
-      within 2.2 percent; p95 under gate)
-- [x] [HUMAN] human search test (`evals/HUMAN-TEST-SEARCH.md`) run against
-      sqlite-vec; answers recorded next to the baseline. sqlite-vec is equal
-      or better on every test: Test 3 (Lumo mascot) BAD -> OK, Test 4 second
-      query (page count) BAD -> GOOD; Tests 1, 2, 4-first, 5, 6 GOOD on both;
-      Test 7 same speed (p95 21 ms); Test 8 skipped (single device). No
-      regressions. (Still open separately from Part 2: the human lens test
-      and the D4 threshold pick.)
-
-Phase 19 passed. Phase 20 cutover next.
-
-## Phase 20 — Cut over to sqlite-vec (done)
-
-Steps 1-5 landed first (178 tests green before the deletions); step 6 ([HUMAN]
-confirm before the irreversible deletions) was confirmed; steps 7-14 then
-removed the Qdrant backend for good.
-
-- [x] Default `VECTOR_STORE` is now `sqlite-vec`. `get_store()` falls back to
-      it, and the eval / lens-eval defaults follow the app default so
-      `enq eval` and `enq lens-eval --corpus` run against the production
-      engine with no flag. Qdrant stays selectable behind the interface until
-      the cutover deletes it. (178 tests green before the next step)
-- [x] `index/bootstrap.py`: `read_embed_version()` reads `index_meta` via
-      plain SQLite; `needs_reindex()` is true when no version is recorded;
-      `ensure_index()` rebuilds both collections through the configured
-      VectorStore and records the version, then clears the store cache so the
-      long-lived search path gets a clean instance. `api.serve()` runs it
-      before uvicorn with row progress to the engine log. Fresh installs and
-      qdrant-era upgrades both reach a working index with no manual reindex;
-      later starts are a cheap read and a no-op.
-- [x] Verified fresh install end-to-end through `serve()` on a throwaway
-      HOME: bootstrap messages printed, empty index built, `embed_version`
-      recorded. Unit tests cover the empty fresh DB, the seeded upgrade
-      (index built from existing chunks, search finds the artifact, source
-      chunks untouched - no data loss), a missing-vec-tables adoption, and
-      idempotency. (4 tests)
-- [x] `enq doctor` / `GET /doctor`: artifact/chunk/facet counts, the four
-      index table counts, recorded embedding version, whether it matches the
-      running model, `index_in_sync` (index chunk rows vs the chunks table),
-      and a single `healthy` bit. Tests: synced-current reports healthy;
-      a chunk the index never saw flips sync off; a stale embed version
-      flips version-current off while row sync stays true. (3 tests)
-- [x] Qdrant removed: `store_qdrant.py` deleted, `qdrant-client` out of
-      `pyproject.toml`/`uv.lock`, `QDRANT_URL`/`QDRANT_PATH`/`SPARSE_MODEL`
-      out of config, the qdrant branches out of `get_store()` (it now raises
-      a clear error for `ENQ_VECTOR_STORE=qdrant`), the dead sparse-embedding
-      functions out of `embed.py`, and the eval / lens-eval / fixture
-      scaffolding out of `cli.py` and the tests. `ENQ_VECTOR_STORE` remains
-      the one knob, with `sqlite-vec` the only value. (186 tests green)
-- [x] `remove_legacy_qdrant_dir()` in `bootstrap.py` deletes a leftover
-      `~/.enqueue-poc/qdrant-local` on the first successful run after
-      cutover, logging the path, file count, and size; it never raises and is
-      naturally one-time. Wired into `serve()` after the index check, so the
-      new index is confirmed before derived data is deleted. (1 test)
-- [x] Docs rewritten for the sqlite-vec engine: README (install, CLI table,
-      env vars, data-lives table, layout, known gaps), AGENTS.md (module
-      map, index tables, hybrid search, invariants, gotchas, decisions),
-      the score.py "heavy query shape" note (whole-library scoring measured
-      at 23-25 ms - now a natural shape), the eval "test Qdrant" docstrings,
-      and a note in the human test that there is no Qdrant to switch back to.
-- [x] Contrast check made honest while fixing a real gap: accent is used as
-      text in two places (aside.dirty, title-action.lit) at 1.63:1 - far
-      below the 4.5:1 standard. New `--accent-text` ink clears 4.5:1 on
-      every surface; the check now applies 4.5:1 only to actual text inks
-      (kind hues are decorative dots, accent fills carry a --text edge).
-      `bin/verify` is fully green.
-
-## Phase 21 — Index version consistency across devices (done)
-
-A stale index (built with a different embedding version) is never queried: it
-is rebuilt automatically, and search is gated until the rebuild lands.
-
-- [x] `index/bootstrap.py` `needs_reindex()` is true on a version mismatch
-      (`read_embed_version() != config.EMBED_VERSION`), not just a missing
-      version. A thread-safe lifecycle state machine (`building` / `ready` /
-      `failed` + progress) drives `search_allowed()`, `rebuild_now()`
-      (sync, for tests), `ensure_index()` (sync), and
-      `start_rebuild_if_needed()` (a background daemon thread from
-      `api.serve()`), so a stale version triggers an automatic reindex.
-- [x] `api.py`: `GET /search` returns HTTP 503 "Updating your search index.
-      This will take a moment." while `search_allowed()` is false; `/doctor`
-      reports `index_state` and `index_progress`; `POST /index` uses
-      `rebuild_now()`; `_bootstrap_index()` starts the async background
-      rebuild.
-- [x] `museum.html` `doSearch` catches the 503, shows the required message,
-      polls `/doctor` until `index_state === "ready"`, then re-runs the
-      search - the index is never read in its stale state.
-- [x] Tests: a stale version triggers a rebuild; app-start blocks search then
-      recovers once the rebuild lands (gated Event); doctor state
-      assertions. (188 tests green)
-
-## Phase 22 — Search quality improvements (done)
-
-- [x] FTS5 prefix matching: each quoted token gets a prefix star *outside the
-      quotes, so a partial word finds the longer word while operators stay
-      literal. Test: a three-character prefix finds a longer word.
-- [x] `/search` rollup (`retrieve/candidates.search_results`): chunk and facet
-      hits are fused into one ranked row per artifact (six chunks of one note
-      return it once; a facet-only match still surfaces, with the artifact
-      face as its snippet). Tests: six-chunk dedup, chunk/facet fusion, the
-      `/search` endpoint, the prefix tests.
-- [x] `candidates()` logs the sub-query count per search so expansion cost is
-      visible; `ENQ_EXPANSION_CAP` bounds expansion sub-queries (default 0 =
-      the behavior the baseline was measured at). Tests: cap bounds, cap of 1
-      keeps only the lens, model failure degrades to the bare lens.
-- [x] Rerank result cache keyed on the lens plus the sorted candidate ids and
-      each artifact's `updated_at` signature, with staleness re-validation on
-      hit so an artifact edit or a model switch re-judges rather than serving
-      a stale pooled result. Tests: replay zero calls, reordered pool still
-      hits the cache, edited artifact re-judges, model change re-judges.
-- [x] `enq eval` in CI: `bin/check-eval` runs a fresh eval against the
-      committed baseline (`evals/results/sqlite-vec.json`) and fails if
-      recall@10 drops more than 2 points; a GitHub Actions workflow
-      (`.github/workflows/ci.yml`) runs black, ruff, pytest, and
-      `bin/check-eval` on push/PR.
-- [x] `enq lens-eval` re-run (with `--corpus`, baseline guard): correct
-      placement 0.9111 at the operating threshold 0.1 - no lens regression.
-      The eval also re-confirmed 42/50, recall@10 0.84, unchanged. (198 tests
-      green)
+- Renaming or merging tags.
+- Showing tags on the wall card face.
+- A full dedicated "all tags" page (the top-8 bar plus overflow is enough).
+- Folding tags into the search index for un-prefixed ranking (Option A in the analysis).
+- OR-semantics multi-tag filtering (AND only for now).

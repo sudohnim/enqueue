@@ -19,7 +19,7 @@ One session = one phase. Finish it, commit, update `PROGRESS.md`, start a new se
 | `00-README.md` | this operating manual | everyone, every session |
 | `01-DECISIONS.md` | questions a human must answer before coding | the maintainer, once |
 | `PROGRESS.md` | which phase and step we are on | everyone, every session |
-| `E2E.md` | encrypted sync. Phases 23-31 | agent, with review |
+| `E2E.md` | encrypted, provider-agnostic sync (per-artifact snapshot model). Phases E1-E8 | agent, with review |
 
 
 ## Step tags

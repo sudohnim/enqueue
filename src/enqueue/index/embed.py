@@ -47,5 +47,18 @@ def embed(texts: list[str]) -> list[list[float]]:
     return [vector.tolist() for vector in _model().embed(texts)]
 
 
+@lru_cache(maxsize=512)
 def embed_one(text: str) -> list[float]:
+    """Embed a single string, memoized.
+
+    A hybrid search embeds its query once for the chunk branch and once for the facet
+    branch, so the same string was run through the model twice per search - measured at
+    ~11 ms each, the largest single cost in a ~40 ms query. Query text is deterministic
+    under a fixed model, so the second run is pure waste, and repeated queries (paging,
+    re-searching, a chat follow-up in the same scope) become free.
+
+    The returned list is shared across cache hits and must not be mutated in place; the
+    only caller serialises it read-only. Indexing uses `embed()` (the batch path), which
+    is deliberately uncached because its texts are unique and would only bloat the cache.
+    """
     return embed([text])[0]

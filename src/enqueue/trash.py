@@ -136,10 +136,18 @@ def purge(artifact_id: str) -> dict:
             "secret_hits",
             "link_previews",
             "annotations",
+            "artifact_tags",
             "artifact_versions",
         ):
             column = "artifact_id"
             conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (artifact_id,))
+        # A tag the purged artifact was the last user of has nothing left to
+        # reference it; drop the orphan so the cloud never lists a dead tag.
+        conn.execute(
+            "DELETE FROM tags WHERE NOT EXISTS ("
+            "  SELECT 1 FROM artifact_tags WHERE tag_id = tags.id"
+            ")"
+        )
         conn.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
 
         # Content-addressed blobs are shared. Unlink only when nothing else points at
@@ -150,10 +158,8 @@ def purge(artifact_id: str) -> dict:
 
     if not still_used:
         blob = config.BLOB_DIR / row["content_hash"]
-        try:
+        with contextlib.suppress(OSError):
             blob.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     _drop_from_index(artifact_id)
     return {"id": artifact_id, "purged": True}

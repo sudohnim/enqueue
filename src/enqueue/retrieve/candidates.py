@@ -13,6 +13,7 @@ slot), with a snippet, fused chunk + facet scores, and the matched-facet marker.
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 
 from .. import db
@@ -102,7 +103,29 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     slot: six chunks of one note come back as one row. The snippet is the
     text of the best matching chunk; a facet-only match shows the artifact
     face instead.
+
+    Tags are a filter, not text to rank: `#work` or `tag:work` tokens in the
+    query become an exact id filter, never an embedding. A query that is
+    only tags skips the index entirely and reads straight from SQLite.
     """
+    from .. import tags
+
+    free_text, tag_names = tags.parse_tags(q)
+    tag_ids = tags.ids_with_all(tag_names) if tag_names else set()
+
+    # Pure tag query: no embedding, no store search. Roughly 1 ms.
+    if not free_text and tag_ids:
+        return _results_for_ids(tag_ids, limit)
+
+    if tag_ids:
+        # Mixed: hybrid search on the free text, then keep only tagged hits.
+        return [h for h in _hybrid_results(free_text, limit) if h["artifact_id"] in tag_ids]
+
+    return _hybrid_results(q, limit)
+
+
+def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
+    """The chunk + facet rollup for a free-text query."""
     store = get_store()
     # A wider per-branch window than the final limit, so the dedup rolls up
     # from enough chunk and facet hits to rank fairly.
@@ -156,6 +179,42 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
                     "title": title,
                     "kind": kind,
                     "why": info["why"],
+                    "snippet": " ".join(snippet.split())[:200],
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
+    """A pure `#tag` query: results straight from the tag filter, newest touch first.
+
+    There is no relevance to rank by - the person asked for a set, so the set
+    is ordered by the same last-touch clock as the wall. Score is constant
+    because nothing was matched, only filtered.
+    """
+    if not ids:
+        return []
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, kind FROM artifacts"
+            " WHERE id IN (SELECT value FROM json_each(?))"
+            " AND deleted_at IS NULL"
+            " ORDER BY updated_at DESC LIMIT ?",
+            (json.dumps(sorted(ids)), limit),
+        ).fetchall()
+        out = []
+        for row in rows:
+            snippet = artifact_text(conn, row["id"], max_words=40)
+            out.append(
+                {
+                    "score": 0.0,
+                    "artifact_id": row["id"],
+                    "title": row["title"],
+                    "kind": row["kind"],
+                    "why": "tag",
                     "snippet": " ".join(snippet.split())[:200],
                 }
             )

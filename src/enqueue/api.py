@@ -17,17 +17,9 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from . import (
-    capture,
-    chats,
-    config,
-    db,
-    greeting,
-    notes,
-    preview,
-    settings,
-    trash,
-)
+from . import capture, chats, config, db, greeting, notes, preview, settings
+from . import tags as tags_mod
+from . import trash
 from .index.store import get_store
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
@@ -260,12 +252,17 @@ def list_artifacts(
     offset: int = 0,
     order: str = "touched",
     pinned: bool | None = None,
+    tags: str = "",
 ) -> dict:
     """Newest first, each with enough content to render rather than a blank.
 
     Nothing about where an artifact came from is returned. Import provenance is a
     folder by another name, and surfacing it would put the folder metaphor back into
     a product built to refuse it.
+
+    `tags` is a comma-separated filter: only artifacts carrying ALL of the named
+    tags come back. Conversations cannot be tagged, so a tag filter drops the
+    chats limb entirely - a filtered wall is an artifact wall.
     """
     if order not in ORDERINGS:
         raise HTTPException(
@@ -287,6 +284,15 @@ def list_artifacts(
     elif pinned is not None:
         where += " AND pinned = 0"
 
+    # A tag filter is AND semantics across the names, and it applies to artifacts
+    # only. The ids are bound with the json_each IN pattern; the filter is part of
+    # the artifacts WHERE, and the chats limb below is dropped when it is active.
+    tag_names = [tags_mod.normalize(t) for t in tags.split(",") if t.strip()] if tags else []
+    tag_ids = tags_mod.ids_with_all(tag_names) if tag_names else None
+    if tag_ids is not None:
+        where += " AND id IN (SELECT value FROM json_each(:tag_ids))"
+    tag_ids_param = json.dumps(sorted(tag_ids)) if tag_ids is not None else None
+
     # A conversation is the same kind of thing on the wall as a capture: something
     # you come back to, ordered by when you last touched it. So it lives in the same
     # list, sorted by the same clock - never ahead of everything else, which is what
@@ -295,18 +301,36 @@ def list_artifacts(
     # on the saved shelf, the rest join the wall. The NULL-or-match test keeps the
     # query parameterized whether or not the filter is applied; named parameters,
     # because SQLite renumbers anonymous `?` placeholders across a UNION's limbs.
-    conn = db.get_conn()
-    try:
-        rows = conn.execute(
-            "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
-            " updated_at, local_only, pinned, status, pages FROM artifacts"
-            f" WHERE {where}"
+    # A tag filter excludes the chats limb: conversations cannot be tagged.
+    chats_limb = (
+        (
             " UNION ALL"
             " SELECT id, 'chat', title, NULL, NULL, NULL, NULL, created_at,"
             " updated_at, 0, pinned, NULL, NULL FROM chats"
             " WHERE (:pinned IS NULL OR pinned = :pinned)"
+        )
+        if tag_ids is None
+        else ""
+    )
+
+    conn = db.get_conn()
+    try:
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
+        # `where` and `chats_limb` are assembled only from allowlisted literals
+        # plus one fully parameterized json_each clause; tag names and pinned
+        # travel as bound parameters, never in the SQL text.
+        rows = conn.execute(
+            "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
+            " updated_at, local_only, pinned, status, pages FROM artifacts"
+            f" WHERE {where}"
+            f"{chats_limb}"
             f" ORDER BY {ORDERINGS[order]} LIMIT :limit OFFSET :offset",
-            {"pinned": pinned, "limit": limit, "offset": offset},
+            {
+                "pinned": pinned,
+                "limit": limit,
+                "offset": offset,
+                "tag_ids": tag_ids_param,
+            },
         ).fetchall()
 
         with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
@@ -318,11 +342,19 @@ def list_artifacts(
                 # and the excerpt is the fixed label, the same as any other card.
                 item["excerpt"] = "conversation"
 
-        total = conn.execute(f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}").fetchone()["n"]
-        total += conn.execute(
-            "SELECT COUNT(*) AS n FROM chats WHERE (:pinned IS NULL OR pinned = :pinned)",
-            {"pinned": pinned},
+        total = conn.execute(
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
+            # `where` is assembled only from allowlisted literals plus one
+            # fully parameterized json_each clause; tag names and pinned
+            # travel as bound parameters, never in the SQL text.
+            f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}",
+            {"tag_ids": tag_ids_param},
         ).fetchone()["n"]
+        if tag_ids is None:
+            total += conn.execute(
+                "SELECT COUNT(*) AS n FROM chats WHERE (:pinned IS NULL OR pinned = :pinned)",
+                {"pinned": pinned},
+            ).fetchone()["n"]
         return {
             "total": total,
             "order": order,
@@ -474,6 +506,7 @@ def get_artifact(artifact_id: str) -> dict:
         detail["pages"] = capture.page_count(artifact_id)
     if kind == "link":
         detail["preview"] = preview.get(artifact_id)
+    detail["tags"] = tags_mod.for_artifact(artifact_id)
     return detail
 
 
@@ -563,6 +596,10 @@ class AnnotationCreate(BaseModel):
     supersedes_id: str | None = None
 
 
+class TagCreate(BaseModel):
+    name: str
+
+
 class LinkCreate(BaseModel):
     url: str
     local_only: bool = False
@@ -592,6 +629,32 @@ def add_annotation(artifact_id: str, req: AnnotationCreate) -> dict:
         raise HTTPException(status_code=404, detail="no such artifact") from None
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@app.post("/artifacts/{artifact_id}/tags", status_code=201)
+def add_tag(artifact_id: str, req: TagCreate) -> dict:
+    """Attach a tag. A tag is an optional, later act on an artifact that exists."""
+    try:
+        return tags_mod.add(artifact_id, req.name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such artifact") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.delete("/artifacts/{artifact_id}/tags/{name}")
+def remove_tag(artifact_id: str, name: str) -> dict:
+    """Detach a tag by its canonical name."""
+    try:
+        return tags_mod.remove(artifact_id, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.get("/tags")
+def get_tags() -> dict:
+    """Every tag with its artifact count, most-used first."""
+    return {"tags": tags_mod.cloud()}
 
 
 @app.post("/capture/link", status_code=201)
@@ -1025,9 +1088,34 @@ def serve() -> None:
     # way, so this never holds the engine open.
     greeting.ensure()
 
+    _warm_embeddings()
+
     _bootstrap_index()
 
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
+
+
+def _warm_embeddings() -> None:
+    """Load the embedding model in the background so the first search is not cold.
+
+    The dense model loads lazily on its first use, which is ~2.9 s on this machine
+    (ONNX plus the CoreML session). Nothing at startup touches it when the index is
+    already current, so that whole cost landed on the person's first search. A person
+    looks at the wall before they search, so warming here on a daemon thread hides it
+    behind that gap. It never blocks the engine: a failure is a slower first query,
+    not an error.
+    """
+    import threading
+
+    def _warm() -> None:
+        try:
+            from .index.embed import embed_one
+
+            embed_one("warm")
+        except Exception as exc:  # noqa: BLE001 - a cold first query is the worst case
+            print(f"[engine] embedding warm-up skipped: {exc}")
+
+    threading.Thread(target=_warm, name="embed-warm", daemon=True).start()
 
 
 def _bootstrap_index() -> None:
