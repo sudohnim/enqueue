@@ -596,7 +596,7 @@
     color: var(--bg);
   }
   .btn.secondary:hover {
-    background: #14150f;
+    background: color-mix(in oklab, var(--text) 86%, #000);
   }
   .btn.tertiary {
     background: var(--surface);
@@ -619,8 +619,8 @@
     color: #ffffff;
   }
   .btn.danger:hover {
-    background: #82221a;
-    border-color: #82221a;
+    background: color-mix(in oklab, var(--danger) 82%, #000);
+    border-color: color-mix(in oklab, var(--danger) 82%, #000);
   }
   /* The fill change is the boundary, so --line-strong is not required around it. */
   .btn.icon {
