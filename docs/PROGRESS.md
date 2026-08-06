@@ -177,7 +177,7 @@ class _Buckets(BaseModel):
 Add three module constants. They are TEMPLATES with `{placeholders}`; they must never name a
 domain. The caller fills `{attribute}`, `{instruction}`, `{text}`, `{values}`.
 
-- [ ] `[AGENT]` `EXTRACT_ATTRIBUTE`: instruct the model to read the given artifact text and return
+- [x] `[AGENT]` `EXTRACT_ATTRIBUTE`: instruct the model to read the given artifact text and return
       ONLY the value of the named attribute described by the instruction, or an empty string if the
       text does not support one. Tell it not to guess beyond the text (this call is grounded). Reply
       as the `_One` JSON shape.
