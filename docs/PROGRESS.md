@@ -247,7 +247,7 @@ A **spec** is a plain dict:
       is rejected. Use the book/author/region example as ONE fixture; assert the same code groups a
       second, unrelated fixture (e.g. recipes by cuisine) with zero code changes - this is the
       generalization guard.
-- [ ] `[AGENT]` `uv run pytest -q tests/test_pivot.py` green; black clean.
+- [x] `[AGENT]` `uv run pytest -q tests/test_pivot.py` green; black clean.
 
 ---
 
