@@ -225,3 +225,62 @@ def bucketize(values: list[str], instruction: str) -> dict:
     for value in distinct:
         mapping.setdefault(value, value)
     return mapping
+
+
+def override(scope: str, subject: str, attribute: str, value: str) -> dict:
+    """Write a user correction for a derived value. source='user', model_version=''.
+
+    This is how a wrong value gets fixed. The user's value is written with
+    source='user', which always wins over the model row on read (rule 2: the
+    director beats the curator). The grounded flag is carried over unchanged from
+    the model row being corrected (or defaults to grounded when no model row
+    exists): the user is correcting the value, not the provenance, so whether the
+    original came from the artifact's content or from world knowledge stays
+    honest.
+
+    Returns the stored row.
+    """
+    attribute = attribute.strip().lower()
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT grounded FROM derived_values"
+            " WHERE scope = ? AND subject = ? AND attribute = ? AND source = 'model'",
+            (scope, subject, attribute),
+        ).fetchone()
+    finally:
+        conn.close()
+    grounded = bool(row["grounded"]) if row is not None else True
+
+    _write(
+        scope,
+        subject,
+        attribute,
+        value,
+        grounded=grounded,
+        source="user",
+        model_version="",
+    )
+
+    conn = db.get_conn()
+    try:
+        stored = conn.execute(
+            "SELECT scope, subject, attribute, value, grounded, source, model_version, created_at"
+            " FROM derived_values WHERE scope = ? AND subject = ? AND attribute = ? AND source = 'user'",
+            (scope, subject, attribute),
+        ).fetchone()
+    finally:
+        conn.close()
+    if stored is None:  # pragma: no cover - the write above just happened
+        raise RuntimeError("override did not persist")
+    return {
+        "scope": stored["scope"],
+        "subject": stored["subject"],
+        "attribute": stored["attribute"],
+        "value": stored["value"],
+        "grounded": bool(stored["grounded"]),
+        "source": stored["source"],
+        "model_version": stored["model_version"],
+        "created_at": stored["created_at"],
+    }

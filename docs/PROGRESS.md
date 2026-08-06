@@ -157,7 +157,7 @@ class _Buckets(BaseModel):
       `instruction` and the value list, for `_Buckets`; return its `mapping`, defaulting any value
       the model omitted to itself. This call is not cached (it is one call and its input set
       changes).
-- [ ] `[AGENT]` `override(scope, subject, attribute, value) -> dict`: write a user correction,
+- [x] `[AGENT]` `override(scope, subject, attribute, value) -> dict`: write a user correction,
       `source='user'`, `grounded` unchanged from any existing model row (or `1` if none), `model_version=''`.
       This is how a wrong value gets fixed. Return the stored row.
 - [ ] `[AGENT]` Tests in `tests/test_derive.py` (use `store` fixture; stub the provider the way
