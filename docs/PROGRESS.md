@@ -160,7 +160,7 @@ class _Buckets(BaseModel):
 - [x] `[AGENT]` `override(scope, subject, attribute, value) -> dict`: write a user correction,
       `source='user'`, `grounded` unchanged from any existing model row (or `1` if none), `model_version=''`.
       This is how a wrong value gets fixed. Return the stored row.
-- [ ] `[AGENT]` Tests in `tests/test_derive.py` (use `store` fixture; stub the provider the way
+- [x] `[AGENT]` Tests in `tests/test_derive.py` (use `store` fixture; stub the provider the way
       the existing tests stub it, search tests for `get_provider` or a provider fixture). Assert:
       `extract` caches (second call makes no model call), `extract` returns `grounded=True`,
       `enrich` returns `grounded=False` and caches by value (two artifacts with the same input value
