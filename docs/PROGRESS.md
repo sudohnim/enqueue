@@ -258,7 +258,7 @@ A **spec** is a plain dict:
 - [x] `[AGENT]` `POST /pivot/run` body `{"spec": <spec>}` returns `pivot.run(spec)`, then hydrate each
       group's `artifact_ids` into wall items (reuse `_wall_item` the way `list_artifacts` does) so the
       client can render cards without a second round trip. Keep `grounded` and `truncated` in the response.
-- [ ] `[AGENT]` `POST /derived/override` body `{"scope","subject","attribute","value"}` calls
+- [x] `[AGENT]` `POST /derived/override` body `{"scope","subject","attribute","value"}` calls
       `derive.override(...)` so a user can correct a wrong derived value. Return the stored row.
 - [ ] `[AGENT]` Tests in `tests/test_api_pivot.py` (TestClient): plan then run returns groups; override
       then re-run shows the corrected value winning. Green.

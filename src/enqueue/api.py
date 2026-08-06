@@ -22,6 +22,7 @@ from . import (
     chats,
     config,
     db,
+    derive,
     greeting,
     notes,
     pivot,
@@ -1137,6 +1138,26 @@ def run_pivot(req: PivotRunRequest) -> dict:
     for group in result["groups"]:
         group["items"] = [wall.get(aid, {}) for aid in group["artifact_ids"]]
     return result
+
+
+class DerivedOverrideRequest(BaseModel):
+    scope: str
+    subject: str
+    attribute: str
+    value: str
+
+
+@app.post("/derived/override")
+def derived_override(req: DerivedOverrideRequest) -> dict:
+    """Write a user correction for a derived value and return the stored row.
+
+    The correction is stored with source='user', which always wins over the
+    model row on read (rule 2: the director beats the curator), so re-running
+    the same pivot shows the corrected value. This is how a misfiled item gets
+    moved to the right group; it must stay visible because a misfiled item is
+    otherwise invisible.
+    """
+    return derive.override(req.scope, req.subject, req.attribute, req.value)
 
 
 def serve() -> None:
