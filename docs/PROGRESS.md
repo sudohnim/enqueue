@@ -229,7 +229,7 @@ A **spec** is a plain dict:
          lens's D3 honesty).
       6. Return `{"groups": [{"key": k, "artifact_ids": v, "grounded": <False if any step was enrich else True>} ...],
          "truncated": <bool>, "group_by": spec["group_by"]}`, groups ordered by size descending.
-- [ ] `[AGENT]` `run` must be resumable and cheap on re-run: because every `derive` call is cached,
+- [x] `[AGENT]` `run` must be resumable and cheap on re-run: because every `derive` call is cached,
       calling `run(spec)` twice makes model calls only for artifacts or values not seen before.
 - [ ] `[AGENT]` `plan(request) -> dict`: one model call turning a natural-language request into a
       spec. Use a new `prompts.PIVOT_PLAN` template and a Pydantic model matching the spec shape.
