@@ -240,7 +240,7 @@ A **spec** is a plain dict:
 - [x] `[AGENT]` Add `PIVOT_PLAN` to `prompts.py`: instruct the model to convert a request into the
       spec JSON, choosing `extract` when the value is in the note and `enrich` when it needs world
       knowledge, and to write a short `bucketize_instruction` when the group keys will be messy.
-- [ ] `[AGENT]` Tests in `tests/test_pivot.py` (stub the provider): a two-step spec (extract then
+- [x] `[AGENT]` Tests in `tests/test_pivot.py` (stub the provider): a two-step spec (extract then
       enrich) over a small fixture produces the expected groups; enrich is called once per distinct
       value not once per artifact; an empty derived key lands in the `""` group and is not dropped;
       `resolve_subset` truncates past the cap; a spec whose last step attribute differs from `group_by`
