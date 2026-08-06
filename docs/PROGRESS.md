@@ -253,7 +253,7 @@ A **spec** is a plain dict:
 
 ## PHASE P5 — API
 
-- [ ] `[AGENT]` `POST /pivot/plan` body `{"request": str}` returns `{"spec": <spec>}` from
+- [x] `[AGENT]` `POST /pivot/plan` body `{"request": str}` returns `{"spec": <spec>}` from
       `pivot.plan`. 400 with the sentence on `PivotError`.
 - [ ] `[AGENT]` `POST /pivot/run` body `{"spec": <spec>}` returns `pivot.run(spec)`, then hydrate each
       group's `artifact_ids` into wall items (reuse `_wall_item` the way `list_artifacts` does) so the

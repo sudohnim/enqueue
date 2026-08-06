@@ -17,9 +17,19 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from . import capture, chats, config, db, greeting, notes, preview, settings
+from . import (
+    capture,
+    chats,
+    config,
+    db,
+    greeting,
+    notes,
+    pivot,
+    preview,
+    settings,
+    trash,
+)
 from . import tags as tags_mod
-from . import trash
 from .index.store import get_store
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
@@ -1071,6 +1081,24 @@ def secret_report() -> dict:
         return {"count": len(rows), "hits": [dict(r) for r in rows]}
     finally:
         conn.close()
+
+
+class PivotPlanRequest(BaseModel):
+    request: str
+
+
+@app.post("/pivot/plan")
+def plan_pivot(req: PivotPlanRequest) -> dict:
+    """Turn a natural-language request into a pivot spec, in one planner call.
+
+    The returned spec is a plain dict the client can send straight back to
+    POST /pivot/run. A request the planner cannot turn into a runnable spec
+    comes back as a 400 with a sentence the UI can show, never a traceback.
+    """
+    try:
+        return {"spec": pivot.plan(req.request)}
+    except pivot.PivotError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 def serve() -> None:
