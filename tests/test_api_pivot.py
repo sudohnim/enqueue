@@ -64,6 +64,32 @@ def _extract_spec(ids: list[str], attribute: str = "author") -> dict:
     }
 
 
+def _two_step_spec(ids: list[str]) -> dict:
+    """An extract-then-enrich spec, the shape the UI's move control targets.
+
+    The group key is the enrich step's attribute, so a correction on that
+    attribute is what moves a card in a two-step pivot.
+    """
+    return {
+        "subset": {"kind": "ids", "value": " ".join(ids)},
+        "steps": [
+            {
+                "op": "extract",
+                "attribute": "author",
+                "instruction": "the author of the book the note is about",
+            },
+            {
+                "op": "enrich",
+                "attribute": "region",
+                "instruction": "the region the author is from",
+            },
+        ],
+        "group_by": "region",
+        "bucketize": False,
+        "bucketize_instruction": "",
+    }
+
+
 class TestPlanThenRun:
     def test_plan_then_run_returns_hydrated_groups(self, store, quiet_queue, monkeypatch):
         first = _note("A note about One Hundred Years of Solitude by Gabriel Garcia Marquez.")
@@ -144,6 +170,58 @@ class TestPlanThenRun:
 
 
 class TestOverrideWins:
+    def test_override_wins_after_an_enrich_step(self, store, quiet_queue, monkeypatch):
+        """The UI's move control on an enriched group, end to end.
+
+        The correction is written scope='artifact' on the group_by attribute -
+        exactly what museum.html sends - and the re-run must land the card in
+        the corrected group even though that attribute comes from an enrich
+        step, whose cache is keyed per value, not per artifact (rule 2: the
+        director beats the curator).
+        """
+        first = _note("A note about One Hundred Years of Solitude by Gabriel Garcia Marquez.")
+        second = _note("A note about The Stranger by Albert Camus.")
+        spec = _two_step_spec([first, second])
+
+        provider = _FakeProvider(
+            [
+                {"value": "Gabriel Garcia Marquez"},  # extract: first
+                {"value": "Albert Camus"},  # extract: second
+                # enrich runs once per DISTINCT value, in sorted order:
+                # Albert Camus before Gabriel Garcia Marquez
+                {"value": "Europe"},  # enrich: Albert Camus
+                {"value": "South America"},  # enrich: Gabriel Garcia Marquez
+            ]
+        )
+        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+
+        client = TestClient(app)
+
+        first_run = client.post("/pivot/run", json={"spec": spec}).json()
+        by_key = {group["key"]: group for group in first_run["groups"]}
+        assert by_key["South America"]["artifact_ids"] == [first]
+        assert by_key["Europe"]["artifact_ids"] == [second]
+
+        # The reader decides the first note belongs in Europe after all.
+        corrected = client.post(
+            "/derived/override",
+            json={
+                "scope": "artifact",
+                "subject": first,
+                "attribute": "region",
+                "value": "Europe",
+            },
+        )
+        assert corrected.status_code == 200
+
+        calls_before = provider.calls
+        re_run = client.post("/pivot/run", json={"spec": spec}).json()
+        by_key = {group["key"]: group for group in re_run["groups"]}
+        assert set(by_key) == {"Europe"}
+        assert by_key["Europe"]["artifact_ids"] == [first, second]
+        # everything served from the caches: zero new model calls
+        assert provider.calls == calls_before
+
     def test_override_then_rerun_shows_the_corrected_value(self, store, quiet_queue, monkeypatch):
         first = _note("A note about One Hundred Years of Solitude by Gabriel Garcia Marquez.")
         second = _note("A note about The Stranger by Albert Camus.")

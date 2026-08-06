@@ -135,7 +135,15 @@ def run(spec: dict) -> dict:
             for value in sorted({key_of[artifact_id] for artifact_id in ids})
         }
         for artifact_id in ids:
-            key_of[artifact_id] = remap.get(key_of[artifact_id], "")
+            # A user correction on this artifact wins over the inferred value
+            # (rule 2: the director beats the curator). The move control writes
+            # scope='artifact' on the group attribute, so the enrich step must
+            # consult that cache too, not only the per-value one.
+            corrected = derive._read("artifact", artifact_id, step["attribute"])
+            if corrected is not None and corrected["source"] == "user":
+                key_of[artifact_id] = corrected["value"]
+            else:
+                key_of[artifact_id] = remap.get(key_of[artifact_id], "")
 
     if spec.get("bucketize"):
         mapping = derive.bucketize(
