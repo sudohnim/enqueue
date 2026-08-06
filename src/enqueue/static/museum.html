@@ -501,6 +501,73 @@
   .meta .sep {
     color: var(--line-strong);
   }
+  /* Pivot groups: the same title-and-count rhythm as every other view, one step
+     apart so a long grouping reads as shelves rather than one wall. */
+  .pivotgroup {
+    margin-top: var(--sp-5);
+  }
+  /* Grounding note. When any step inferred a value from world knowledge, the whole
+     grouping is the assistant's guess, not text from the notes. It has to be read,
+     not decoration, so it is ink on a raised ground - quiet, never the accent, which
+     is reserved for instructions the person can act on. */
+  .groundnote {
+    margin-top: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    color: var(--text-mute);
+    font-size: 14px;
+    line-height: 18px;
+    max-width: 64ch;
+  }
+  /* A misfiled card is invisible unless it can be moved, so every pivot card carries
+     the move control. It stays hidden until the card is hovered or the control itself
+     takes keyboard focus, so it never competes with the card face it sits on. */
+  .pivotcard {
+    position: relative;
+  }
+  .movebtn {
+    position: absolute;
+    top: var(--sp-2);
+    right: var(--sp-2);
+    z-index: 2;
+    min-height: 0;
+    padding: 4px 12px;
+    border-radius: var(--r-full);
+    border: 1.5px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: -0.39px;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
+  }
+  .movebtn:hover {
+    background: var(--surface-2);
+  }
+  .pivotcard:hover .movebtn,
+  .movebtn:focus {
+    opacity: 1;
+  }
+  /* The move picker's group choices stack full-width so a long key is never clipped. */
+  .pickgroups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin: var(--sp-3) 0;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .pickgroups .btn {
+    justify-content: flex-start;
+    text-align: left;
+  }
   .aside {
     font-size: 15px;
     line-height: 22px;
@@ -3084,6 +3151,9 @@
     // The eye, not a question mark. Asking here is not a support request; it is looking
     // at what you already own and seeing what is in it.
     ask: '<path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.8"/>',
+    // Organize: four panes over the whole library, answering like search and ask do.
+    // Search narrows, ask converses, organize rearranges.
+    grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     back: '<path d="M14.5 6.5L9 12l5.5 5.5"/>',
     chev: '<path d="M6.5 14.5L12 9l5.5 5.5"/>',
     down: '<path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>',
@@ -3142,7 +3212,7 @@
     pill.classList.remove("wide");
     const inside = place === "inside";
 
-    // Wall: Plus + Search + Eye (chat) + Settings.
+    // Wall: Plus + Search + Organize + Eye (chat) + Settings.
     // Inside: Back + Eye (context-aware).
     let html = "";
     if (inside) {
@@ -3164,6 +3234,9 @@
         "</span></button>" +
         '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
         svg("find") +
+        "</button>" +
+        '<button class="round" aria-label="Organize by..." onclick="openField(\'organize\')">' +
+        svg("grid") +
         "</button>" +
         '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
         svg("ask") +
@@ -3257,6 +3330,7 @@
     const hint = {
       search: "find something",
       ask: "ask about " + scope.label,
+      organize: "organize by...",
       link: "paste a url",
     }[mode];
     pill.classList.add("wide");
@@ -3281,6 +3355,7 @@
       restorePill();
       if (mode === "search") doSearch(v);
       else if (mode === "ask") startChat(v);
+      else if (mode === "organize") startPivot(v);
       else saveLink(v);
     };
   }
@@ -5322,6 +5397,229 @@
         : '<div class="state">Nothing matched those words.<br><br>Search finds things you can ' +
           "name. If you are chasing an idea rather than a phrase, ask instead and let the room " +
           "assemble itself.</div>");
+  }
+
+  // ---- pivot ---------------------------------------------------------------
+  // Organize is search's sibling on the pill: search narrows to what matches,
+  // organize rearranges a subset by an attribute the model derives. The planner
+  // decides whether a request is organizable at all and what the subset is; the
+  // engine never dresses a guessed group key as the user's own data.
+  async function startPivot(text) {
+    teardown();
+    view.innerHTML =
+      '<div class="state thinking">planning the grouping...</div>';
+    let spec;
+    try {
+      const planned = await api("/pivot/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request: text }),
+      });
+      spec = planned.spec;
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    view.innerHTML =
+      '<div class="state thinking">grouping what you saved...</div>';
+    let d;
+    try {
+      d = await api("/pivot/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec }),
+      });
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    renderPivot(d, text, spec);
+  }
+
+  function pivotFailed(err) {
+    view.innerHTML =
+      back() +
+      '<div class="state">That could not be organized.<br><br><span class="strongtext">' +
+      esc(String((err && err.message) || err)) +
+      "</span><br><br>Nothing was lost; your library is untouched.</div>";
+  }
+
+  // The last pivot, kept so a correction can re-run the exact same spec (cheap,
+  // because every derive call is cached) instead of re-planning from the words.
+  let pivotState = null;
+
+  function renderPivot(d, request, spec) {
+    pivotState = { d, request, spec };
+
+    // The grouping is inferred when any step read a value from world knowledge
+    // rather than the note itself; the run marks that per group (they share the
+    // one value, since one enrich taints the whole run). That is a guess about the
+    // person's things, not a fact read from them, so it is said once at the top and
+    // never buried (rule 2).
+    const inferred = d.groups.some((g) => g.grounded === false);
+
+    let html =
+      back() +
+      '<div class="h1">' +
+      esc(request) +
+      "</div>" +
+      '<div class="meta">' +
+      d.groups.length +
+      " group" +
+      (d.groups.length === 1 ? "" : "s") +
+      " &middot; grouped by " +
+      esc(d.group_by) +
+      (d.truncated ? " &middot; first 200 only" : "") +
+      "</div>";
+
+    if (inferred) {
+      html +=
+        '<div class="groundnote" role="note">These groups come from the ' +
+        "assistant's knowledge, not from text in your notes.</div>";
+    }
+
+    for (const g of d.groups) {
+      const items = g.items || [];
+      html +=
+        '<section class="pivotgroup">' +
+        '<div class="h2">' +
+        esc(g.key || "Not determined") +
+        "</div>" +
+        '<div class="meta">' +
+        items.length +
+        " item" +
+        (items.length === 1 ? "" : "s") +
+        "</div>" +
+        '<div class="wall">' +
+        items
+          .map(
+            (a, i) =>
+              '<div class="pivotcard">' +
+              card(a, i) +
+              '<button class="movebtn" aria-label="Move ' +
+              esc(a.title || "Untitled") +
+              ' to another group" onclick="pivotMove(\'' +
+              esc(a.id) +
+              "')\">move</button>" +
+              "</div>",
+          )
+          .join("") +
+        "</div>" +
+        "</section>";
+    }
+    view.innerHTML = html;
+    window.scrollTo(0, 0);
+  }
+
+  // Correct a misfiled card: write a user override on the grouping attribute for
+  // this one artifact, then re-run the same spec so the card lands where the
+  // person put it. The override always wins over the model on read (rule 2: the
+  // director beats the curator), so the move survives every later re-run. Every
+  // field here comes from the run's own data - no attribute name is hardcoded.
+  async function pivotMove(id) {
+    if (!pivotState) return;
+    const d = pivotState.d;
+
+    let current = "";
+    for (const g of d.groups) {
+      if ((g.artifact_ids || []).includes(id)) {
+        current = g.key;
+        break;
+      }
+    }
+    const keys = d.groups.map((g) => g.key);
+
+    const target = await pickGroup(keys, current);
+    if (target === null) return;
+
+    try {
+      await api("/derived/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "artifact",
+          subject: id,
+          attribute: d.group_by,
+          value: target,
+        }),
+      });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+
+    view.innerHTML = '<div class="state thinking">moving it...</div>';
+    let next;
+    try {
+      next = await api("/pivot/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: pivotState.spec }),
+      });
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    renderPivot(next, pivotState.request, pivotState.spec);
+    toast("Moved to " + (target || "Not determined") + ".");
+  }
+
+  // A small modal picker: pick which existing group a card belongs in. Resolves the
+  // chosen group key, or null on cancel. Built like `ask` (WKWebView ships no
+  // window.prompt), with the keys captured in closures so no value is round-tripped
+  // through an HTML attribute.
+  function pickGroup(keys, currentKey) {
+    return new Promise((resolve) => {
+      const box = document.createElement("dialog");
+      box.className = "ask";
+      box.setAttribute("aria-labelledby", "pickTitle");
+      box.innerHTML =
+        '<h2 id="pickTitle">Move to which group?</h2>' +
+        '<div class="pickgroups"></div>' +
+        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>';
+
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true;
+        try {
+          box.close();
+        } catch (_) {
+          // Already closed by the platform; the node still has to go.
+        }
+        box.remove();
+        resolve(answer);
+      };
+
+      const list = box.querySelector(".pickgroups");
+      const others = keys.filter((k) => k !== currentKey);
+      for (const k of others) {
+        const b = document.createElement("button");
+        b.className = "btn tertiary";
+        b.textContent = k || "Not determined";
+        b.onclick = () => finish(k);
+        list.appendChild(b);
+      }
+      if (!others.length) {
+        const only = document.createElement("div");
+        only.className = "aside";
+        only.textContent = "There is no other group to move it to yet.";
+        list.appendChild(only);
+      }
+
+      box.querySelector('[value="no"]').onclick = () => finish(null);
+      box.addEventListener("cancel", (e) => {
+        e.preventDefault();
+        finish(null);
+      });
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          finish(null);
+        }
+      });
+
+      document.body.appendChild(box);
+      box.showModal();
+      // Cancel takes focus first, so a stray Return never files a card at random.
+      box.querySelector('[value="no"]').focus();
+    });
   }
 
   // ---- chats ---------------------------------------------------------------

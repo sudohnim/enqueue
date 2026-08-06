@@ -270,22 +270,22 @@ A **spec** is a plain dict:
 Product register: inline, no sidebar, hierarchy through space. Reuse existing tokens. Parse-check
 after every edit (`bin/relaunch` gates on `node --check`).
 
-- [ ] `[AGENT]` **Entry.** Add an "organize by..." affordance. The lightest place is the search/ask
+- [x] `[AGENT]` **Entry.** Add an "organize by..." affordance. The lightest place is the search/ask
       surface: a request like "organize book notes by author region" typed into the ask field is sent
       to `POST /pivot/plan` then `POST /pivot/run` when the model reads it as an organize request; or add
       a small explicit control. Choose the lighter option and keep it consistent with how search and ask
       already look.
-- [ ] `[AGENT]` **Grouped render.** Generalize the lens's two-section view to N sections: one section
+- [x] `[AGENT]` **Grouped render.** Generalize the lens's two-section view to N sections: one section
       per group, header = the group key (or "Not determined" for the empty key), then that group's cards
       in the existing wall grid. Order groups as the API returned them (largest first). The whole response
       is grounded=false when any enrich ran: show a small, quiet marker on the group headers reading that
       the grouping uses the assistant's knowledge, not text from your notes (rule 2). Do not bury it.
-- [ ] `[AGENT]` **Correction.** On a group header (or a per-card affordance), allow moving an item to a
+- [x] `[AGENT]` **Correction.** On a group header (or a per-card affordance), allow moving an item to a
       different group, which calls `POST /derived/override` and re-runs. This is how a wrong value gets
       fixed; it must be visible, because a misfiled item is otherwise invisible.
-- [ ] `[AGENT]` Do NOT change the plain wall, search, or the artifact card face. The pivot is a distinct
+- [x] `[AGENT]` Do NOT change the plain wall, search, or the artifact card face. The pivot is a distinct
       view, entered deliberately and left by returning to the wall.
-- [ ] `[AGENT]` Verify by looking: run an organize request, see N groups, see the "assistant's knowledge"
+- [x] `[AGENT]` Verify by looking: run an organize request, see N groups, see the "assistant's knowledge"
       marker when enrichment ran, correct one item and see it move and persist. Confirm keyboard focus on
       the new controls.
 
