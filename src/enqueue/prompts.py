@@ -247,7 +247,7 @@ Rules:
 - Do not invent buckets for raw values that are absent from the list.
 - Do not explain, justify, or add commentary. Reply with one JSON object only:
 
-  {"mapping": {"raw value": "bucket", "raw value": "bucket"}}
+  {{"mapping": {{"raw value": "bucket", "raw value": "bucket"}}}}
 
 Raw values:
 {values}\

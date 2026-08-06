@@ -151,7 +151,7 @@ class _Buckets(BaseModel):
       subject is the exact `input_value` string, `grounded=0`, and the prompt is
       `prompts.ENRICH_ATTRIBUTE`. An empty `input_value` returns `{"value": "", "grounded": False}`
       without a model call.
-- [ ] `[AGENT]` `bucketize(values, instruction) -> dict`: collapse many raw values into fewer
+- [x] `[AGENT]` `bucketize(values, instruction) -> dict`: collapse many raw values into fewer
       canonical buckets. De-duplicate and sort `values`; if there are 0 or 1 distinct values return
       the identity map; otherwise call the model once with `prompts.BUCKETIZE` filled with the
       `instruction` and the value list, for `_Buckets`; return its `mapping`, defaulting any value

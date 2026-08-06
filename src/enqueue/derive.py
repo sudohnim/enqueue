@@ -190,3 +190,38 @@ def enrich(input_value: str, attribute: str, instruction: str) -> dict:
         model_version=provider.model,
     )
     return {"value": value, "grounded": False, "source": "model"}
+
+
+def bucketize(values: list[str], instruction: str) -> dict:
+    """Collapse many raw values into fewer canonical buckets.
+
+    De-duplicates and sorts the values; with zero or one distinct values the
+    mapping is the identity. Otherwise the model groups them once, per the
+    instruction, and the result is NOT cached: this is one call whose input set
+    changes between pivots. Every distinct value maps to a bucket, defaulting to
+    itself when the model omits it, so downstream grouping never hits a missing
+    key. On model failure the identity map is returned with an 'error' key set,
+    so a slow or wrong model never crashes a pivot.
+    """
+    distinct = sorted(set(values))
+    if len(distinct) <= 1:
+        return {value: value for value in distinct}
+
+    from .prompts import BUCKETIZE
+
+    try:
+        provider = get_provider()
+        result = provider.complete(
+            system=BUCKETIZE.format(instruction=instruction, values="\n".join(distinct)),
+            user="",
+            response_model=_Buckets,
+        )
+    except Exception as exc:  # noqa: BLE001 - the caller reports and continues
+        mapping = {value: value for value in distinct}
+        mapping["error"] = str(exc)
+        return mapping
+
+    mapping = dict(result.mapping)
+    for value in distinct:
+        mapping.setdefault(value, value)
+    return mapping
