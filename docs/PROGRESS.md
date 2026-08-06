@@ -211,7 +211,7 @@ A **spec** is a plain dict:
 }
 ```
 
-- [ ] `[AGENT]` `resolve_subset(subset) -> list[str]`: return artifact ids. `kind='ids'` splits the
+- [x] `[AGENT]` `resolve_subset(subset) -> list[str]`: return artifact ids. `kind='ids'` splits the
       value; `kind='tags'` calls `tags.ids_with_all(...)`; `kind='search'` runs
       `candidates.search_results(value, limit=MAX)` and takes the artifact ids. Cap at
       `MAX_PIVOT_ARTIFACTS = 200`; if more match, take the first 200 and record that it was truncated.
