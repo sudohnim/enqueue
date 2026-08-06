@@ -67,3 +67,28 @@ def _read(scope: str, subject: str, attribute: str) -> dict | None:
     if row is None:
         return None
     return {"value": row["value"], "grounded": bool(row["grounded"]), "source": row["source"]}
+
+
+def _write(
+    scope: str,
+    subject: str,
+    attribute: str,
+    value: str,
+    grounded: bool,
+    source: str,
+    model_version: str,
+) -> None:
+    """Store a derived value, replacing any row for the same cache key.
+
+    INSERT OR REPLACE keys on (scope, subject, attribute, source), so a user
+    correction and a model row for the same key never coexist: writing one
+    replaces the other. The write and its commit happen inside one
+    db.transaction().
+    """
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO derived_values"
+            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (scope, subject, attribute, value, int(grounded), source, model_version, _now()),
+        )
