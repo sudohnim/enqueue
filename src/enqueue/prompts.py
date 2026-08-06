@@ -252,3 +252,38 @@ Rules:
 Raw values:
 {values}\
 """
+
+PIVOT_PLAN = """\
+You convert a user's natural-language request into a grouping plan for their saved notes.
+
+The plan is a JSON object a code pipeline will execute: it selects which notes are
+involved, derives one attribute per note, then groups the notes by that attribute.
+
+Rules:
+- Choose the subset the request implies. 'search' for a query, 'tags' for comma-separated
+  tag names, 'ids' for a list of artifact ids. Every request names or implies one of these.
+- Build a chain of steps that ends in the attribute the user wants to group by. The first
+  step is always 'extract': read the value of an attribute out of a note's own text. Use
+  'enrich' for a later step that infers an attribute from a previous step's value using
+  general knowledge, not the note's text.
+- Give each step a short lowercased attribute name and a one-sentence instruction that
+  tells the pipeline what to pull from the note ('extract') or what to infer from the
+  prior value ('enrich').
+- Set 'group_by' to the last step's attribute name, so the chain ends where the grouping
+  happens.
+- Set 'bucketize' to true when the final values will be messy, overlapping, or many, and
+  write a short 'bucketize_instruction' saying how to collapse them into a few canonical
+  buckets. Otherwise set it to false and leave 'bucketize_instruction' an empty string.
+- Do not invent attributes the request never asked for, and do not add steps that do not
+  lead to the grouping the request wants.
+- Do not explain, justify, or add commentary. Reply with one JSON object only:
+
+  {{"subset": {{"kind": "search" | "tags" | "ids", "value": "..."}},
+    "steps": [{{"op": "extract" | "enrich", "attribute": "...", "instruction": "..."}}],
+    "group_by": "...",
+    "bucketize": true | false,
+    "bucketize_instruction": "..."}}
+
+Request:
+{request}\
+"""

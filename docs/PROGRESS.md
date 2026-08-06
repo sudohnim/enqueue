@@ -237,7 +237,7 @@ A **spec** is a plain dict:
       `enrich` (world knowledge). Validate the returned spec: last step's attribute equals `group_by`;
       at least one step; every `enrich` follows an `extract` or another `enrich`. On an invalid or
       failed plan, raise a `PivotError` with a sentence the UI can show.
-- [ ] `[AGENT]` Add `PIVOT_PLAN` to `prompts.py`: instruct the model to convert a request into the
+- [x] `[AGENT]` Add `PIVOT_PLAN` to `prompts.py`: instruct the model to convert a request into the
       spec JSON, choosing `extract` when the value is in the note and `enrich` when it needs world
       knowledge, and to write a short `bucketize_instruction` when the group keys will be messy.
 - [ ] `[AGENT]` Tests in `tests/test_pivot.py` (stub the provider): a two-step spec (extract then
