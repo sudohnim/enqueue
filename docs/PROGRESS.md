@@ -187,7 +187,7 @@ domain. The caller fills `{attribute}`, `{instruction}`, `{text}`, `{values}`.
 - [x] `[AGENT]` `BUCKETIZE`: instruct the model to group the given list of raw values into a smaller
       set of canonical buckets per the instruction, returning a mapping of every raw value to its
       bucket. Reply as `_Buckets`.
-- [ ] `[AGENT]` No test needed for the strings alone; they are exercised by Phase P2 and P4 tests.
+- [x] `[AGENT]` No test needed for the strings alone; they are exercised by Phase P2 and P4 tests.
 
 ---
 
