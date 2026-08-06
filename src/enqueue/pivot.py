@@ -18,10 +18,39 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
+from pydantic import BaseModel
+
 from . import db, derive  # noqa: F401 - db for later phases; derive used by run()
-from .providers.base import get_provider  # noqa: F401 - used by the planner (P4.4)
+from .providers.base import get_provider  # the planner's one model call
 
 MAX_PIVOT_ARTIFACTS = 200
+
+
+class PivotError(Exception):
+    """A request that could not be turned into a runnable pivot spec.
+
+    The message is a sentence the UI can show (P5.1 maps it to a 400), so it
+    must read like a message to a person, not a traceback.
+    """
+
+
+class _PlannedStep(BaseModel):
+    op: str  # 'extract' reads the note; 'enrich' infers from a prior value
+    attribute: str
+    instruction: str
+
+
+class _PlannedSubset(BaseModel):
+    kind: str  # 'search', 'tags', or 'ids'
+    value: str
+
+
+class _PlannedSpec(BaseModel):
+    subset: _PlannedSubset
+    steps: list[_PlannedStep]
+    group_by: str
+    bucketize: bool = False
+    bucketize_instruction: str = ""
 
 
 def resolve_subset(subset: dict) -> tuple[list[str], bool]:
@@ -127,3 +156,75 @@ def run(spec: dict) -> dict:
     groups.sort(key=lambda group: len(group["artifact_ids"]), reverse=True)
 
     return {"groups": groups, "truncated": truncated, "group_by": spec["group_by"]}
+
+
+def plan(request: str) -> dict:
+    """Turn a natural-language request into a runnable pivot spec.
+
+    One model call: the planner reads the request and returns the whole spec -
+    the subset, the step chain (extract reads from the note, enrich infers from
+    world knowledge), the group_by attribute, and the bucketize settings. The
+    model decides all of it; this function parses the reply and validates that
+    run() can execute it.
+
+    A plan that cannot be run - no steps, an unknown subset kind or op, an
+    inference step leading the chain, or a group_by that is not the last step's
+    attribute - raises PivotError with a sentence the UI can show, and so does a
+    failed model call. Nothing domain-specific is assumed: the request, the
+    attributes, and the instructions are all runtime parameters.
+    """
+    request = request.strip()
+    if not request:
+        raise PivotError("Tell me what to group and how, and I will plan it.")
+
+    from .prompts import PIVOT_PLAN
+
+    try:
+        provider = get_provider()
+        result = provider.complete(
+            system=PIVOT_PLAN.format(request=request),
+            user="",
+            response_model=_PlannedSpec,
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed plan is reported, not crashed
+        raise PivotError(
+            f"I could not turn that request into a grouping plan " f"({type(exc).__name__}: {exc})."
+        ) from exc
+
+    spec = result.model_dump()
+
+    # Canonical attribute names: the derive cache keys on lowercased attributes.
+    for step in spec["steps"]:
+        step["attribute"] = step["attribute"].strip().lower()
+    spec["group_by"] = spec["group_by"].strip().lower()
+
+    _validate_plan(spec)
+    return spec
+
+
+def _validate_plan(spec: dict) -> None:
+    """Reject a planned spec that run() could not execute, with a UI sentence."""
+    steps = spec["steps"]
+    if not steps:
+        raise PivotError("The plan came back with no steps, so there is nothing to group by.")
+    if spec["subset"]["kind"] not in ("search", "tags", "ids"):
+        raise PivotError(
+            f"The plan selects the notes with '{spec['subset']['kind']}', "
+            "which is not a selection I know how to run."
+        )
+    for index, step in enumerate(steps):
+        if step["op"] not in ("extract", "enrich"):
+            raise PivotError(
+                f"Step {index + 1} of the plan uses '{step['op']}', "
+                "which is not a step I know how to run."
+            )
+        if step["op"] == "enrich" and index == 0:
+            raise PivotError(
+                "The plan starts by inferring a value from world knowledge, but the first "
+                "step has to read the value from the note itself."
+            )
+    if spec["group_by"] != steps[-1]["attribute"]:
+        raise PivotError(
+            f"The plan groups by '{spec['group_by']}', but the last step computes "
+            f"'{steps[-1]['attribute']}'; the group key has to be the last step's attribute."
+        )

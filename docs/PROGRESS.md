@@ -231,7 +231,7 @@ A **spec** is a plain dict:
          "truncated": <bool>, "group_by": spec["group_by"]}`, groups ordered by size descending.
 - [x] `[AGENT]` `run` must be resumable and cheap on re-run: because every `derive` call is cached,
       calling `run(spec)` twice makes model calls only for artifacts or values not seen before.
-- [ ] `[AGENT]` `plan(request) -> dict`: one model call turning a natural-language request into a
+- [x] `[AGENT]` `plan(request) -> dict`: one model call turning a natural-language request into a
       spec. Use a new `prompts.PIVOT_PLAN` template and a Pydantic model matching the spec shape.
       The model decides the subset, the step chain, and whether a step is `extract` (from the note) or
       `enrich` (world knowledge). Validate the returned spec: last step's attribute equals `group_by`;
