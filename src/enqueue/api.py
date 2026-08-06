@@ -1101,6 +1101,44 @@ def plan_pivot(req: PivotPlanRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
+class PivotRunRequest(BaseModel):
+    spec: dict
+
+
+@app.post("/pivot/run")
+def run_pivot(req: PivotRunRequest) -> dict:
+    """Run a pivot spec and return each group's cards, no second round trip.
+
+    The groups come back exactly as pivot.run produced them (key, artifact_ids,
+    grounded, largest first) with each group's artifact_ids hydrated into wall
+    items so the client renders cards without a second call. `grounded` and
+    `truncated` stay in the response: an enrich step means the grouping uses
+    the assistant's knowledge rather than the notes' own text, and a truncated
+    subset means the largest groups may not be the complete picture.
+    """
+    result = pivot.run(req.spec)
+
+    conn = db.get_conn()
+    try:
+        ids = [aid for group in result["groups"] for aid in group["artifact_ids"]]
+        wall: dict[str, dict] = {}
+        if ids:
+            rows = conn.execute(
+                f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts"
+                " WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps(ids),),
+            ).fetchall()
+            with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
+            for row in rows:
+                wall[row["id"]] = _wall_item(conn, row, with_image)
+    finally:
+        conn.close()
+
+    for group in result["groups"]:
+        group["items"] = [wall.get(aid, {}) for aid in group["artifact_ids"]]
+    return result
+
+
 def serve() -> None:
     import uvicorn
 
