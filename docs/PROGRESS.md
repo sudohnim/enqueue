@@ -1,262 +1,310 @@
-# Feature: Tags — implementation plan
+# Feature: Pivot — group a subset of the library by a computed attribute
 
-This file is the whole plan for adding user tags. It is written to be implemented by an
-LLM that does not know this codebase. Do not improvise. Do every step in order. The design
-rationale is in `docs/decisions/tags-analysis.md`; you do not need to read it to implement,
-but do not contradict it.
+This file is the whole plan. It is written to be implemented by an LLM that does not know
+this codebase. Do not improvise. Do every step in order.
 
-(The previous contents of this file were a historical progress log; it lives in git.)
+The motivating example is "organize my book notes by the region the author is from." **You
+must NOT build that query.** You build a general engine for which that query is one input.
+Nothing you write may contain the words book, author, or region as a code path. They appear
+only inside test fixtures.
+
+(The previous contents of this file were the tags plan, now shipped; git has it.)
 
 ---
 
-## 0. The one rule you must never break
+## 0. The two rules you must never break
 
-**Never prompt for a tag at capture time. Never make a tag required.** Tags are an
-optional, later act on an artifact that already exists. If any step seems to require asking
-for a tag before saving something, you did it wrong: stop and re-read.
+1. **Nothing is hardcoded to a domain.** Every attribute name, instruction, and subset is a
+   PARAMETER that arrives at runtime. If you find yourself writing `if attribute == "author"`
+   or a prompt that mentions books, you did it wrong: stop and re-read.
+2. **An inferred value is never dressed as the user's data.** Every derived value carries a
+   `grounded` flag: true when it came from the artifact's own content, false when it came
+   from the model's world knowledge. The flag travels with the value everywhere, and the UI
+   shows it. This is the product's "show your work" promise; breaking it is the one thing this
+   app refuses to do.
 
-## 1. Orientation
+## 1. The idea in one paragraph
 
-Enqueue is a local-first macOS app. A Python engine (FastAPI) serves an HTML interface and
-binds to `127.0.0.1:8787` only. You will touch:
+A **pivot** groups a chosen set of artifacts by an attribute the model computes. An
+**attribute** is a named, cached, model-derived value with two ways to produce it: `extract`
+(read it from an artifact's content, grounded) and `enrich` (infer it from another value using
+world knowledge, not grounded). A pivot is a short pipeline of those, ending in a group key,
+then a plain code-level group-by. The model does only the per-item judgments; ordinary code
+does the selecting, caching, grouping, and rendering. The library never groups itself in one
+giant prompt.
+
+Worked example (a test, not a code path): subset = "notes about books"; step 1 `extract`
+attribute `author` from each note; step 2 `enrich` attribute `region` from each distinct
+author; group by `region`. The code knows none of those words; they come from a spec.
+
+## 2. Orientation
+
+Local-first macOS app. Python engine (FastAPI) on `127.0.0.1:8787`. You will touch:
 
 | Path | What it is |
 | --- | --- |
-| `src/enqueue/migrations/versions/` | Alembic migrations. You add one. |
-| `src/enqueue/tags.py` | NEW. All tag read/write logic. You create it. |
-| `src/enqueue/api.py` | FastAPI endpoints. You add tag endpoints and one filter param. |
-| `src/enqueue/retrieve/candidates.py` | `search_results()` — the search path. |
-| `src/enqueue/static/museum.html` | The entire UI. One file, inline `<style>` + `<script>`. |
-| `tests/` | Pytest. Mirror `tests/test_trash.py` for style and the `store` fixture. |
+| `src/enqueue/migrations/versions/` | Alembic migrations. You add `0012_derived.py`. |
+| `src/enqueue/derive.py` | NEW. The three model primitives + the cache. You create it. |
+| `src/enqueue/pivot.py` | NEW. The code orchestrator and the planner. You create it. |
+| `src/enqueue/prompts.py` | Prompt templates live here as module constants. You add three. |
+| `src/enqueue/api.py` | FastAPI endpoints. You add the pivot endpoints. |
+| `src/enqueue/static/museum.html` | The whole UI. One file, inline `<style>` + `<script>`. |
+| `tests/` | Pytest. Mirror `tests/test_tags.py` for style and the `store` fixture. |
+
+Reference shapes to copy (read them, do not import their specifics blindly):
+
+- Model call: `get_provider().complete(system, user, ResponseModel, context=None)` returns a
+  Pydantic instance. See `src/enqueue/ingest/facets.py` `generate_for_artifact`.
+- Cache table with model-version invalidation: `lens_judgments` in `0009_lens_judgments.py`
+  (its PK includes `model_version`, so a model change does not serve stale rows).
+- The artifact's text for extraction: `retrieve.candidates.artifact_text(conn, artifact_id, max_words=...)`.
 
 ### Running and checking
 
 ```bash
-bin/relaunch        # rebuild + launch the app; refuses to start if the HTML fails to parse
-uv run pytest -q    # tests must stay green; the baseline is 226 passing
-uv run black src/ tests/   # Python formatting; must be clean
+bin/relaunch        # rebuild + launch; refuses to start if the HTML fails to parse
+uv run pytest -q    # tests must stay green; baseline is 260 passing
+uv run black src/ tests/   # must be clean
 ```
 
-`museum.html` contains NUL bytes. `rg` treats it as binary and prints nothing unless you
-pass `-a`. **Always use `rg -a` on it.**
+`museum.html` has NUL bytes; `rg` needs `-a` on it or it silently prints nothing.
 
 ### How to work these steps
 
-- **One checkbox per commit. Never batch.** Commit message: `tags: <what the step did>`.
-- After every checkbox: `uv run pytest -q` is green and `bin/relaunch` still starts.
-- Every step is idempotent. If the target state already exists, tick the box and move on.
-- `[AGENT]` = do it. `[HUMAN]` = stop and hand over.
-- No em dashes in code, comments, or copy. Use a plain dash.
-- Never commit unless a step says the human commits; here the human commits after review.
-  Leave each step as a clean working change.
-
-### House rules that are easy to violate
-
-- Tags are user-authored and permanent (they survive `enq rebuild`), so they are SOURCE
-  tables, never derived. Do not put tags in `chunks`, `facets`, `fts_*`, or `vec_*`.
-- Store one canonical tag name: lowercased and trimmed. Match is exact. No fuzzy matching.
-- Conversations (`chats`) cannot be tagged in this feature. Only rows in `artifacts`.
+- One checkbox per commit. Never batch. Message: `pivot: <what the step did>`.
+- After every checkbox: `uv run pytest -q` green and `bin/relaunch` still starts.
+- Every step is idempotent. If the target already exists, tick the box and move on.
+- `[AGENT]` do it. `[HUMAN]` stop and hand over.
+- No em dashes anywhere. Plain dash.
+- The model backend is slow and sometimes wrong. Every model call is `try/except`: on failure
+  return a clear result the caller can handle, never a crash and never a silent wrong value.
 
 ---
 
-## PHASE T1 — Data model (two source tables)
+## PHASE P1 — The cache table (one table serves everything)
 
-- [x] `[AGENT]` Create `src/enqueue/migrations/versions/0011_tags.py`. Copy the exact shape
-      of `0010_sqlite_vec.py` (module docstring, `from __future__ import annotations`,
-      `from alembic import op`, the four module vars). Set `revision = "0011"` and
-      `down_revision = "0010"`. In `upgrade()` run these two statements, each with
-      `IF NOT EXISTS`:
+- [x] `[AGENT]` Create `src/enqueue/migrations/versions/0012_derived.py`, copying the shape of
+      `0009_lens_judgments.py` (docstring, `from __future__`, `from alembic import op`, the four
+      module vars). Set `revision = "0012"`, `down_revision = "0011"`. In `upgrade()`:
 
       ```sql
-      CREATE TABLE IF NOT EXISTS tags (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL UNIQUE,   -- canonical: lowercased, trimmed
-        created_at  TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS artifact_tags (
-        artifact_id TEXT NOT NULL REFERENCES artifacts(id),
-        tag_id      TEXT NOT NULL REFERENCES tags(id),
-        created_at  TEXT NOT NULL,
-        PRIMARY KEY (artifact_id, tag_id)
+      CREATE TABLE IF NOT EXISTS derived_values (
+        scope         TEXT NOT NULL,       -- 'artifact' or 'value'
+        subject       TEXT NOT NULL,       -- an artifact id, or the exact input string
+        attribute     TEXT NOT NULL,       -- canonical attribute name, lowercased
+        value         TEXT NOT NULL,       -- the derived value (empty string = "none found")
+        grounded      INTEGER NOT NULL,    -- 1 from content, 0 from world knowledge
+        source        TEXT NOT NULL,       -- 'model' or 'user'
+        model_version TEXT NOT NULL,       -- '' when source = 'user'
+        created_at    TEXT NOT NULL,
+        PRIMARY KEY (scope, subject, attribute, source)
       );
       ```
 
-      In `downgrade()`: `DROP TABLE IF EXISTS artifact_tags;` then `DROP TABLE IF EXISTS tags;`
-      (child first). Use `op.execute("...")` for each statement, one call per statement.
-- [x] `[AGENT]` Verify the migration applies: `bin/relaunch` then
-      `uv run python -c "from enqueue import db; c=db.get_conn(); print([r[1] for r in c.execute('PRAGMA table_info(tags)')]); print([r[1] for r in c.execute('PRAGMA table_info(artifact_tags)')])"`.
-      Expect `['id','name','created_at']` and `['artifact_id','tag_id','created_at']`.
+      In `downgrade()`: `DROP TABLE IF EXISTS derived_values;`. One `op.execute` per statement.
+- [ ] `[AGENT]` Verify: `bin/relaunch`, then
+      `uv run python -c "from enqueue import db; c=db.get_conn(); print([r[1] for r in c.execute('PRAGMA table_info(derived_values)')])"`
+      prints the eight columns.
+
+Notes for the implementer: `source='user'` is a correction and always wins over `source='model'`
+on read (rule 2, the director beats the curator). Two scopes because an attribute of an
+artifact is cached per artifact, but an attribute inferred from a value (world knowledge) is
+cached per value: fifty notes by twenty authors need twenty region lookups, not fifty, and a
+region does not change.
 
 ---
 
-## PHASE T2 — Tag logic module (`src/enqueue/tags.py`)
+## PHASE P2 — The three model primitives (`src/enqueue/derive.py`)
 
-Create the file. Import pattern: `from __future__ import annotations`, `import uuid`,
-`from datetime import datetime, timezone`, `from . import db`. Add a private
-`def _now() -> str: return datetime.now(timezone.utc).isoformat()`.
+Create the file. Header: `from __future__ import annotations`, `import uuid`, `import json`,
+`from datetime import datetime, timezone`, `from . import db`, `from .providers.base import get_provider`.
+Add `_now()` returning an ISO-8601 UTC string. Every model call is wrapped so a failure returns
+a sentinel, never raises out of the module.
 
-- [x] `[AGENT]` `def normalize(name: str) -> str`: return `name.strip().lower()`. Raise
-      `ValueError("a tag needs a name")` if the result is empty.
-- [x] `[AGENT]` `def add(artifact_id: str, name: str) -> dict`: normalize the name; in one
-      `db.transaction()`: confirm the artifact exists (raise `KeyError(artifact_id)` if not);
-      `INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?,?,?)` with a new uuid4;
-      select the tag's id by name; `INSERT OR IGNORE INTO artifact_tags (artifact_id, tag_id, created_at) VALUES (?,?,?)`;
-      then `UPDATE artifacts SET updated_at = ? WHERE id = ?` (tagging is touching it, and
-      the wall is ordered by last touch). Return `{"artifact_id": artifact_id, "name": name}`.
-- [x] `[AGENT]` `def remove(artifact_id: str, name: str) -> dict`: normalize; in one
-      transaction delete the `artifact_tags` row for that (artifact, tag name); if the tag is
-      now referenced by no artifact, delete the orphan `tags` row; bump the artifact's
-      `updated_at`. Return `{"artifact_id": artifact_id, "name": name, "removed": True}`.
-- [x] `[AGENT]` `def for_artifact(artifact_id: str) -> list[str]`: return the artifact's tag
-      names ordered by name, using a read connection (`db.get_conn()`, close in `finally`).
-- [x] `[AGENT]` `def cloud() -> list[dict]`: return every tag with its count, most-used first:
-      `SELECT t.name, COUNT(at.artifact_id) AS n FROM tags t JOIN artifact_tags at ON at.tag_id = t.id GROUP BY t.id ORDER BY n DESC, t.name`.
-      Return a list of `{"name": ..., "count": ...}`.
-- [x] `[AGENT]` `def ids_with_all(names: list[str]) -> set[str]`: given normalized tag names,
-      return the set of artifact ids that carry ALL of them (AND semantics). Empty input
-      returns an empty set and the caller treats that as no filter. SQL:
-      `SELECT artifact_id FROM artifact_tags at JOIN tags t ON t.id = at.tag_id WHERE t.name IN (<one ? per name>) GROUP BY artifact_id HAVING COUNT(DISTINCT t.name) = <len(names)>`.
-- [x] `[AGENT]` Tests in `tests/test_tags.py` (use the `store` fixture from `conftest.py`,
-      mirror `tests/test_trash.py`). Each is one commit or grouped in one commit for this file:
-      - add then `for_artifact` returns `["work"]`.
-      - add the same tag twice; `for_artifact` still returns one entry (idempotent).
-      - add normalizes: `add(id, "  Work ")` then `for_artifact` returns `["work"]`.
-      - `remove` deletes the link and orphan tag; `cloud()` no longer lists it.
-      - `remove` a tag still used by another artifact leaves the `tags` row intact.
-      - `ids_with_all(["a","b"])` returns only artifacts carrying both, not either.
-      - `add` on a missing artifact id raises `KeyError`.
-      - `add("")` raises `ValueError`.
-- [x] `[AGENT]` Verify: `uv run pytest -q tests/test_tags.py` green; `uv run black src/enqueue/tags.py tests/test_tags.py`.
+Define the response models near the top:
 
----
+```python
+from pydantic import BaseModel
 
-## PHASE T3 — API endpoints
+class _One(BaseModel):
+    value: str          # the derived value, or "" when there is none
 
-All in `src/enqueue/api.py`. Put the tag endpoints near the annotation endpoints (search the
-file for `annotations` to find the neighbourhood). Follow the existing endpoint style:
-`@app.<verb>("...")`, a small Pydantic body model where a body is needed, translate
-`KeyError` to `HTTPException(404)` and `ValueError` to `HTTPException(400)`.
+class _Buckets(BaseModel):
+    mapping: dict[str, str]   # raw value -> canonical bucket name
+```
 
-- [x] `[AGENT]` `POST /artifacts/{artifact_id}/tags` with body `{"name": str}`: call
-      `tags.add(...)`. 404 on `KeyError`, 400 on `ValueError`. Return the dict from `add`.
-- [x] `[AGENT]` `DELETE /artifacts/{artifact_id}/tags/{name}`: call `tags.remove(...)`. Return
-      its dict.
-- [x] `[AGENT]` `GET /artifacts/{artifact_id}` already returns the artifact detail. Add its
-      tags to the response: include `"tags": tags.for_artifact(artifact_id)`. Find the function
-      behind that route (search `def get_artifact` or the `/artifacts/{` route) and add the field
-      to the returned dict. Do not remove any existing field.
-- [x] `[AGENT]` `GET /tags`: return `{"tags": tags.cloud()}`.
-- [x] `[AGENT]` Tests in `tests/test_api_tags.py` using the FastAPI `TestClient` pattern
-      already used in the test suite (search tests for `TestClient` to copy the setup): POST a
-      tag, GET the artifact shows it in `tags`, GET `/tags` shows it with count 1, DELETE
-      removes it. `uv run pytest -q tests/test_api_tags.py` green.
+- [ ] `[AGENT]` `_read(scope, subject, attribute) -> dict | None`: return the cached row as
+      `{"value", "grounded", "source"}`, preferring `source='user'` over `source='model'`. Read
+      connection, closed in `finally`. Returns `None` when nothing is cached.
+- [ ] `[AGENT]` `_write(scope, subject, attribute, value, grounded, source, model_version)`:
+      `INSERT OR REPLACE INTO derived_values (...)`. One `db.transaction()`.
+- [ ] `[AGENT]` `extract(artifact_id, attribute, instruction) -> dict`: derive an attribute from
+      ONE artifact's content, grounded. Steps: normalize `attribute` (lowercased, stripped);
+      return the cache hit if present (`_read('artifact', artifact_id, attribute)`); otherwise read
+      the artifact text (`artifact_text(conn, artifact_id, max_words=400)`), build a prompt from
+      `prompts.EXTRACT_ATTRIBUTE` (Phase P3) filled with `attribute` and `instruction`, call the
+      model for `_One`, `_write('artifact', artifact_id, attribute, value, grounded=1, source='model', model_version=provider.model)`,
+      return `{"value", "grounded": True, "source": "model"}`. On any model error, return
+      `{"value": "", "grounded": True, "source": "model", "error": str(exc)}` and do NOT cache.
+- [ ] `[AGENT]` `enrich(input_value, attribute, instruction) -> dict`: derive an attribute from a
+      VALUE using world knowledge, NOT grounded. Same shape as `extract` but scope `'value'`,
+      subject is the exact `input_value` string, `grounded=0`, and the prompt is
+      `prompts.ENRICH_ATTRIBUTE`. An empty `input_value` returns `{"value": "", "grounded": False}`
+      without a model call.
+- [ ] `[AGENT]` `bucketize(values, instruction) -> dict`: collapse many raw values into fewer
+      canonical buckets. De-duplicate and sort `values`; if there are 0 or 1 distinct values return
+      the identity map; otherwise call the model once with `prompts.BUCKETIZE` filled with the
+      `instruction` and the value list, for `_Buckets`; return its `mapping`, defaulting any value
+      the model omitted to itself. This call is not cached (it is one call and its input set
+      changes).
+- [ ] `[AGENT]` `override(scope, subject, attribute, value) -> dict`: write a user correction,
+      `source='user'`, `grounded` unchanged from any existing model row (or `1` if none), `model_version=''`.
+      This is how a wrong value gets fixed. Return the stored row.
+- [ ] `[AGENT]` Tests in `tests/test_derive.py` (use `store` fixture; stub the provider the way
+      the existing tests stub it, search tests for `get_provider` or a provider fixture). Assert:
+      `extract` caches (second call makes no model call), `extract` returns `grounded=True`,
+      `enrich` returns `grounded=False` and caches by value (two artifacts with the same input value
+      cause one `enrich` call), `override` wins over a model row on `_read`, a model failure yields
+      an empty value and no cache row, `bucketize` maps `["Colombia","Argentina","France"]` onto
+      fewer buckets given an instruction. Keep the fixtures domain-neutral where you can; the
+      book/author/region words may appear ONLY inside these test fixtures, never in `derive.py`.
+- [ ] `[AGENT]` `uv run pytest -q tests/test_derive.py` green; `uv run black src/enqueue/derive.py tests/test_derive.py`.
 
 ---
 
-## PHASE T4 — Search: tag filter with a no-embed fast path
+## PHASE P3 — The prompt templates (`src/enqueue/prompts.py`)
 
-Search enters at `api.py` route `def search` -> `retrieve/candidates.py` `search_results(q, limit)`.
-Tags are a FILTER, not text to rank. Do not put tags into the index or the embedding.
+Add three module constants. They are TEMPLATES with `{placeholders}`; they must never name a
+domain. The caller fills `{attribute}`, `{instruction}`, `{text}`, `{values}`.
 
-- [x] `[AGENT]` Add `def parse_tags(q: str) -> tuple[str, list[str]]` to `src/enqueue/tags.py`:
-      split the query on whitespace; any token that is `#word` or `tag:word` is a tag (strip the
-      `#` or `tag:` prefix, then `normalize`); everything else rejoins into the free-text query.
-      Return `(free_text, tag_names)`. Test it: `parse_tags("kubernetes #work tag:urgent")`
-      returns `("kubernetes", ["work", "urgent"])`; `parse_tags("#work")` returns `("", ["work"])`;
-      `parse_tags("plain query")` returns `("plain query", [])`.
-- [x] `[AGENT]` In `search_results(q, limit)` (in `candidates.py`): call `parse_tags(q)` first.
-      Compute `tag_ids = tags.ids_with_all(tag_names)` when `tag_names` is non-empty.
-      - **Pure tag query** (free_text is empty and `tag_names` non-empty): do NOT embed and do
-        NOT call `store.search`. Build results directly from `tag_ids`: for each id, read title
-        and kind from `artifacts`, snippet from the artifact text, and return them ordered by
-        `updated_at DESC`. This is the fast path (about 1 ms; no model call).
-      - **Mixed query** (free_text non-empty AND `tag_names` non-empty): run the existing hybrid
-        search on `free_text`, then keep only results whose `artifact_id` is in `tag_ids`.
-      - **No tags** (`tag_names` empty): unchanged behaviour, search on `q` as today.
-      Do not change the shape of a returned hit (same keys the wall already consumes).
-- [x] `[AGENT]` Tests in `tests/test_search_tags.py` (use `store` fixture): tag two artifacts,
-      leave one untagged; assert a pure `#tag` query returns exactly the tagged ones; assert a
-      mixed query returns only results that both match the text and carry the tag; assert a
-      plain query is unaffected. `uv run pytest -q tests/test_search_tags.py` green, and the full
-      `uv run pytest -q` stays green (226+ passing).
-- [x] `[AGENT]` Confirm retrieval quality did not move: `uv run enq eval` and check the Pass /
-      Recall@1 / MRR line is unchanged from before this phase (tags are a filter, so an eval with
-      no tag tokens must be byte-identical). If it moved, you changed the non-tag path by mistake;
-      revert and redo.
+- [ ] `[AGENT]` `EXTRACT_ATTRIBUTE`: instruct the model to read the given artifact text and return
+      ONLY the value of the named attribute described by the instruction, or an empty string if the
+      text does not support one. Tell it not to guess beyond the text (this call is grounded). Reply
+      as the `_One` JSON shape.
+- [ ] `[AGENT]` `ENRICH_ATTRIBUTE`: instruct the model to return the named attribute for the given
+      input value using general knowledge, or an empty string if it does not know. State plainly that
+      this is a knowledge lookup, not a fact from the user's data. Reply as `_One`.
+- [ ] `[AGENT]` `BUCKETIZE`: instruct the model to group the given list of raw values into a smaller
+      set of canonical buckets per the instruction, returning a mapping of every raw value to its
+      bucket. Reply as `_Buckets`.
+- [ ] `[AGENT]` No test needed for the strings alone; they are exercised by Phase P2 and P4 tests.
 
 ---
 
-## PHASE T5 — Wall filtering (`list_artifacts`)
+## PHASE P4 — The orchestrator and the planner (`src/enqueue/pivot.py`)
 
-`list_artifacts` in `api.py` builds the wall. It UNIONs `artifacts` with `chats`
-(conversations). A tag filter applies to artifacts only; conversations cannot be tagged, so a
-tag filter must EXCLUDE the chats limb entirely.
+This is CODE. The only model calls it makes are through `derive` (P2) and the one planner call.
+It never groups with the model. Header imports `derive`, `db`, and the provider.
 
-- [x] `[AGENT]` Add a parameter `tags: str = ""` to `list_artifacts` (comma-separated tag names,
-      empty means no filter). Parse it into a normalized list with `tags_mod.normalize` per item,
-      dropping empties.
-- [x] `[AGENT]` When the tag list is non-empty: compute `ids = tags_mod.ids_with_all(names)`;
-      add to the artifacts `where` a clause restricting to those ids (bind the id set with the
-      existing `json_each` pattern the codebase uses for id lists, or an `IN` list of named
-      params); and replace the `UNION ALL ... FROM chats ...` limb with nothing (no chats when
-      filtering by tag). When the tag list is empty, the query is exactly as it is today. Keep
-      the `total` count consistent with whichever limbs ran.
-- [x] `[AGENT]` Expose the parameter on the `GET /artifacts` route so the client can pass
-      `?tags=work,urgent`.
-- [x] `[AGENT]` Tests: `list_artifacts(tags="work")` returns only tagged artifacts and zero
-      chats; `list_artifacts()` (no tags) is unchanged and still includes chats. `uv run pytest -q`
-      green.
+A **spec** is a plain dict:
+
+```python
+{
+  "subset": {"kind": "search" | "tags" | "ids", "value": "<query or comma tags or id list>"},
+  "steps": [
+    {"op": "extract", "attribute": "<name>", "instruction": "<what to pull from the note>"},
+    {"op": "enrich",  "attribute": "<name>", "instruction": "<what to infer from the prior value>"}
+  ],
+  "group_by": "<attribute name; must be the last step's attribute>",
+  "bucketize": true | false,
+  "bucketize_instruction": "<how to canonicalize the group keys>"
+}
+```
+
+- [ ] `[AGENT]` `resolve_subset(subset) -> list[str]`: return artifact ids. `kind='ids'` splits the
+      value; `kind='tags'` calls `tags.ids_with_all(...)`; `kind='search'` runs
+      `candidates.search_results(value, limit=MAX)` and takes the artifact ids. Cap at
+      `MAX_PIVOT_ARTIFACTS = 200`; if more match, take the first 200 and record that it was truncated.
+- [ ] `[AGENT]` `run(spec) -> dict`: the orchestration. In order:
+      1. `ids = resolve_subset(spec["subset"])`.
+      2. Maintain a dict `key_of[artifact_id]`. For the FIRST step (always `extract`): for each id,
+         `derive.extract(id, step.attribute, step.instruction)`; set `key_of[id]` to its value.
+      3. For each later step (`enrich`): collect the DISTINCT current values across all ids; call
+         `derive.enrich(value, step.attribute, step.instruction)` once per distinct value (this is the
+         per-value caching that keeps calls bounded); then remap `key_of[id]` through those results.
+      4. If `spec["bucketize"]`: `mapping = derive.bucketize(list(set(key_of.values())), spec["bucketize_instruction"])`;
+         remap `key_of` through `mapping`.
+      5. Group: a `defaultdict(list)` from final key to artifact ids. An empty key becomes the bucket
+         `""` rendered as "not determined" by the UI (never dropped, never hidden - rule 2 and the
+         lens's D3 honesty).
+      6. Return `{"groups": [{"key": k, "artifact_ids": v, "grounded": <False if any step was enrich else True>} ...],
+         "truncated": <bool>, "group_by": spec["group_by"]}`, groups ordered by size descending.
+- [ ] `[AGENT]` `run` must be resumable and cheap on re-run: because every `derive` call is cached,
+      calling `run(spec)` twice makes model calls only for artifacts or values not seen before.
+- [ ] `[AGENT]` `plan(request) -> dict`: one model call turning a natural-language request into a
+      spec. Use a new `prompts.PIVOT_PLAN` template and a Pydantic model matching the spec shape.
+      The model decides the subset, the step chain, and whether a step is `extract` (from the note) or
+      `enrich` (world knowledge). Validate the returned spec: last step's attribute equals `group_by`;
+      at least one step; every `enrich` follows an `extract` or another `enrich`. On an invalid or
+      failed plan, raise a `PivotError` with a sentence the UI can show.
+- [ ] `[AGENT]` Add `PIVOT_PLAN` to `prompts.py`: instruct the model to convert a request into the
+      spec JSON, choosing `extract` when the value is in the note and `enrich` when it needs world
+      knowledge, and to write a short `bucketize_instruction` when the group keys will be messy.
+- [ ] `[AGENT]` Tests in `tests/test_pivot.py` (stub the provider): a two-step spec (extract then
+      enrich) over a small fixture produces the expected groups; enrich is called once per distinct
+      value not once per artifact; an empty derived key lands in the `""` group and is not dropped;
+      `resolve_subset` truncates past the cap; a spec whose last step attribute differs from `group_by`
+      is rejected. Use the book/author/region example as ONE fixture; assert the same code groups a
+      second, unrelated fixture (e.g. recipes by cuisine) with zero code changes - this is the
+      generalization guard.
+- [ ] `[AGENT]` `uv run pytest -q tests/test_pivot.py` green; black clean.
 
 ---
 
-## PHASE T6 — UI (`museum.html`)
+## PHASE P5 — API
 
-Product register: inline, no sidebar, hierarchy through space and weight. Reuse existing
-tokens (`--surface-2`, `--accent`, `--text-mute`, `--r-full`, `--sp-*`). Do not invent colours.
-Parse-check after every edit: `bin/relaunch` runs `node --check` on the inline script and
-refuses to start on a syntax error.
+- [ ] `[AGENT]` `POST /pivot/plan` body `{"request": str}` returns `{"spec": <spec>}` from
+      `pivot.plan`. 400 with the sentence on `PivotError`.
+- [ ] `[AGENT]` `POST /pivot/run` body `{"spec": <spec>}` returns `pivot.run(spec)`, then hydrate each
+      group's `artifact_ids` into wall items (reuse `_wall_item` the way `list_artifacts` does) so the
+      client can render cards without a second round trip. Keep `grounded` and `truncated` in the response.
+- [ ] `[AGENT]` `POST /derived/override` body `{"scope","subject","attribute","value"}` calls
+      `derive.override(...)` so a user can correct a wrong derived value. Return the stored row.
+- [ ] `[AGENT]` Tests in `tests/test_api_pivot.py` (TestClient): plan then run returns groups; override
+      then re-run shows the corrected value winning. Green.
 
-- [x] `[AGENT]` **Tag chips on the artifact page.** In `showArtifact(...)`, render a `.tagrow`
-      on a `.tagrail` beside the body (the body and rail sit in a `.bodygrid`, the rail on the
-      right; under 900px it stacks below the body). One chip per tag from the artifact's `tags`
-      array (each chip shows the name and a small `x` calling a `removeTag`
-      handler), then a small "add tag" text input that on Enter calls an `addTag` handler.
-      `addTag` POSTs `/artifacts/{id}/tags`, `removeTag` DELETEs
-      `/artifacts/{id}/tags/{name}`; both re-render the artifact on success and `toast(...)` on
-      failure (never a silent `.catch`). Style chips with `--surface-2` fill, `--r-full`,
-      `--sp-1 --sp-2` padding, `--text` label; keep the row tight to the meta line, generous gap
-      to the body.
-- [x] `[AGENT]` **Tag bar on the home wall.** In `home(...)`, after the `.searchbar` inside
-      `.homehead` and before the first shelf, fetch `GET /tags` and render a `.tagbar`: the top
-      8 tags as chips (muted `--surface-2` at rest). Clicking a chip runs the search for `#name`
-      (call the same path the searchbar uses, e.g. set the input to `#name` and trigger the
-      existing search). If there are more than 8 tags, add a small "all tags" chip that shows the
-      rest. If there are zero tags, render nothing (no empty bar). The searchbar stays visually
-      primary; chips are secondary and smaller.
-- [x] `[AGENT]` **Active-filter header.** When a tag filter is active (the search ran for a
-      `#tag`), the results header reads `Tagged #work` with a clear-filter control that returns to
-      the wall. Reuse the existing search-result header built in `doSearch(q)` (it renders a
-      `" result" ... for ...` header) rather than inventing a new one.
-- [x] `[AGENT]` Do NOT add tags to the wall card face. Cards stay as they are (kind dot, title,
-      date). Tags are a filter and a detail-page concern only.
-- [x] `[AGENT]` Verify by looking: `bin/relaunch`, open the app, add a tag on an artifact, see
-      the chip; go home, see the tag bar, click a chip, see the wall filter and the "Tagged"
-      header; clear it and see the full wall return. Confirm keyboard focus is visible on chips
-      and the add-tag input.
+---
+
+## PHASE P6 — UI (`museum.html`)
+
+Product register: inline, no sidebar, hierarchy through space. Reuse existing tokens. Parse-check
+after every edit (`bin/relaunch` gates on `node --check`).
+
+- [ ] `[AGENT]` **Entry.** Add an "organize by..." affordance. The lightest place is the search/ask
+      surface: a request like "organize book notes by author region" typed into the ask field is sent
+      to `POST /pivot/plan` then `POST /pivot/run` when the model reads it as an organize request; or add
+      a small explicit control. Choose the lighter option and keep it consistent with how search and ask
+      already look.
+- [ ] `[AGENT]` **Grouped render.** Generalize the lens's two-section view to N sections: one section
+      per group, header = the group key (or "Not determined" for the empty key), then that group's cards
+      in the existing wall grid. Order groups as the API returned them (largest first). The whole response
+      is grounded=false when any enrich ran: show a small, quiet marker on the group headers reading that
+      the grouping uses the assistant's knowledge, not text from your notes (rule 2). Do not bury it.
+- [ ] `[AGENT]` **Correction.** On a group header (or a per-card affordance), allow moving an item to a
+      different group, which calls `POST /derived/override` and re-runs. This is how a wrong value gets
+      fixed; it must be visible, because a misfiled item is otherwise invisible.
+- [ ] `[AGENT]` Do NOT change the plain wall, search, or the artifact card face. The pivot is a distinct
+      view, entered deliberately and left by returning to the wall.
+- [ ] `[AGENT]` Verify by looking: run an organize request, see N groups, see the "assistant's knowledge"
+      marker when enrichment ran, correct one item and see it move and persist. Confirm keyboard focus on
+      the new controls.
 
 ---
 
 ## Done
 
-- [x] `[AGENT]` `uv run pytest -q` green (was 226, now higher), `uv run black --check src/ tests/`
-      clean, `bin/relaunch` starts, `uv run enq eval` unchanged from the pre-tags number.
-- [ ] `[HUMAN]` Review: confirm no tag prompt appears at capture time anywhere, a pure `#tag`
-      search is instant, and the wall filter excludes conversations.
+- [ ] `[AGENT]` `uv run pytest -q` green (was 260, now higher), `uv run black --check src/ tests/` clean,
+      `bin/relaunch` starts, `uv run enq eval` unchanged from before this feature (pivot must not touch the
+      search ranking path).
+- [ ] `[HUMAN]` Review: confirm no attribute name, subject, or domain word is hardcoded in `derive.py` or
+      `pivot.py`; confirm every enriched value is labeled inferred in the UI; confirm a corrected value
+      survives a re-run; confirm the same engine groups two unrelated example requests with no code change.
 
 ## Out of scope (do not build unless a later plan says so)
 
-- Renaming or merging tags.
-- Showing tags on the wall card face.
-- A full dedicated "all tags" page (the top-8 bar plus overflow is enough).
-- Folding tags into the search index for un-prefixed ranking (Option A in the analysis).
-- OR-semantics multi-tag filtering (AND only for now).
+- Saving a pivot as a permanent view (it is ephemeral, like the lens).
+- Multi-key pivots (group by two attributes at once). One group key for now.
+- Automatic re-derivation when an artifact changes; a stale cached value is acceptable until the user
+  re-runs or overrides.
+- Any domain-specific attribute library. There are no built-in attributes; every one comes from a spec.
+- Numeric or date bucketing helpers. Bucketize is the model's job for now.
