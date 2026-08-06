@@ -138,7 +138,7 @@ class _Buckets(BaseModel):
       connection, closed in `finally`. Returns `None` when nothing is cached.
 - [x] `[AGENT]` `_write(scope, subject, attribute, value, grounded, source, model_version)`:
       `INSERT OR REPLACE INTO derived_values (...)`. One `db.transaction()`.
-- [ ] `[AGENT]` `extract(artifact_id, attribute, instruction) -> dict`: derive an attribute from
+- [x] `[AGENT]` `extract(artifact_id, attribute, instruction) -> dict`: derive an attribute from
       ONE artifact's content, grounded. Steps: normalize `attribute` (lowercased, stripped);
       return the cache hit if present (`_read('artifact', artifact_id, attribute)`); otherwise read
       the artifact text (`artifact_text(conn, artifact_id, max_words=400)`), build a prompt from

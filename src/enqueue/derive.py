@@ -92,3 +92,53 @@ def _write(
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (scope, subject, attribute, value, int(grounded), source, model_version, _now()),
         )
+
+
+def extract(artifact_id: str, attribute: str, instruction: str) -> dict:
+    """Derive one attribute from ONE artifact's content. Grounded.
+
+    Cache-first: a row for ('artifact', artifact_id, attribute) is returned
+    without a model call, so a re-run pays only for artifacts never seen before
+    and a user correction always wins (rule 2). Otherwise the artifact text is
+    read, the model pulls the attribute from it, and the result is cached under
+    source='model'. A model failure returns an empty value with the error and is
+    never cached: the caller can handle it and a wrong value is never written
+    down as if it had been read.
+    """
+    attribute = attribute.strip().lower()
+    cached = _read("artifact", artifact_id, attribute)
+    if cached is not None:
+        return cached
+
+    from .prompts import EXTRACT_ATTRIBUTE
+    from .retrieve.candidates import artifact_text
+
+    conn = db.get_conn()
+    try:
+        text = artifact_text(conn, artifact_id, max_words=400)
+    finally:
+        conn.close()
+
+    try:
+        provider = get_provider()
+        result = provider.complete(
+            system=EXTRACT_ATTRIBUTE.format(
+                attribute=attribute, instruction=instruction, text=text
+            ),
+            user="",
+            response_model=_One,
+        )
+    except Exception as exc:  # noqa: BLE001 - the caller reports and continues
+        return {"value": "", "grounded": True, "source": "model", "error": str(exc)}
+
+    value = result.value
+    _write(
+        "artifact",
+        artifact_id,
+        attribute,
+        value,
+        grounded=True,
+        source="model",
+        model_version=provider.model,
+    )
+    return {"value": value, "grounded": True, "source": "model"}

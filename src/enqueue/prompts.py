@@ -196,7 +196,7 @@ Rules:
 text does not say it, you do not know it.
 - Do not explain, justify, or add commentary. Reply with one JSON object only:
 
-  {"value": "the attribute value, or an empty string"}
+  {{"value": "the attribute value, or an empty string"}}
 
 Artifact text:
 {text}\
