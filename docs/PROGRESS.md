@@ -260,7 +260,7 @@ A **spec** is a plain dict:
       client can render cards without a second round trip. Keep `grounded` and `truncated` in the response.
 - [x] `[AGENT]` `POST /derived/override` body `{"scope","subject","attribute","value"}` calls
       `derive.override(...)` so a user can correct a wrong derived value. Return the stored row.
-- [ ] `[AGENT]` Tests in `tests/test_api_pivot.py` (TestClient): plan then run returns groups; override
+- [x] `[AGENT]` Tests in `tests/test_api_pivot.py` (TestClient): plan then run returns groups; override
       then re-run shows the corrected value winning. Green.
 
 ---
