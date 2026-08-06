@@ -201,3 +201,28 @@ text does not say it, you do not know it.
 Artifact text:
 {text}\
 """
+
+ENRICH_ATTRIBUTE = """\
+You are looking up a single named attribute for a value, using your general knowledge.
+
+This is a knowledge lookup, not a fact taken from the user's data. The value below came
+from their notes, but the attribute value you return comes from what you know about the
+world. Distinguish the two plainly: you are inferring, not reading.
+
+Return ONLY the value of the attribute "{attribute}" for the input value below, as
+described here:
+
+  {instruction}
+
+Rules:
+- Return exactly the attribute value that general knowledge supports for this input value.
+- Return an empty string when you do not know the value.
+- Do not treat the input value's own text as containing the answer. You are enriching
+that value with outside knowledge, so nothing in the input is quoted back.
+- Do not explain, justify, or add commentary. Reply with one JSON object only:
+
+  {"value": "the attribute value, or an empty string"}
+
+Input value:
+{value}\
+"""

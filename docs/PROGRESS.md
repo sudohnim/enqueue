@@ -181,7 +181,7 @@ domain. The caller fills `{attribute}`, `{instruction}`, `{text}`, `{values}`.
       ONLY the value of the named attribute described by the instruction, or an empty string if the
       text does not support one. Tell it not to guess beyond the text (this call is grounded). Reply
       as the `_One` JSON shape.
-- [ ] `[AGENT]` `ENRICH_ATTRIBUTE`: instruct the model to return the named attribute for the given
+- [x] `[AGENT]` `ENRICH_ATTRIBUTE`: instruct the model to return the named attribute for the given
       input value using general knowledge, or an empty string if it does not know. State plainly that
       this is a knowledge lookup, not a fact from the user's data. Reply as `_One`.
 - [ ] `[AGENT]` `BUCKETIZE`: instruct the model to group the given list of raw values into a smaller
