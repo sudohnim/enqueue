@@ -168,7 +168,7 @@ class _Buckets(BaseModel):
       an empty value and no cache row, `bucketize` maps `["Colombia","Argentina","France"]` onto
       fewer buckets given an instruction. Keep the fixtures domain-neutral where you can; the
       book/author/region words may appear ONLY inside these test fixtures, never in `derive.py`.
-- [ ] `[AGENT]` `uv run pytest -q tests/test_derive.py` green; `uv run black src/enqueue/derive.py tests/test_derive.py`.
+- [x] `[AGENT]` `uv run pytest -q tests/test_derive.py` green; `uv run black src/enqueue/derive.py tests/test_derive.py`.
 
 ---
 
