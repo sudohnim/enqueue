@@ -142,3 +142,51 @@ def extract(artifact_id: str, attribute: str, instruction: str) -> dict:
         model_version=provider.model,
     )
     return {"value": value, "grounded": True, "source": "model"}
+
+
+def enrich(input_value: str, attribute: str, instruction: str) -> dict:
+    """Derive one attribute from a VALUE using world knowledge. Not grounded.
+
+    Same shape as extract but the subject is the exact input value string and the
+    scope is 'value', so the cache is per value rather than per artifact: many
+    artifacts that share one input value cost one lookup, not many. The result is
+    never grounded (rule 2): the value came from the model's knowledge of the
+    world, not from the artifact's content, and that distinction travels with it.
+
+    An empty input value returns an empty, ungrounded result without a model
+    call. A model failure returns an empty, ungrounded value with the error and
+    is never cached.
+    """
+    if not input_value:
+        return {"value": "", "grounded": False}
+
+    attribute = attribute.strip().lower()
+    cached = _read("value", input_value, attribute)
+    if cached is not None:
+        return cached
+
+    from .prompts import ENRICH_ATTRIBUTE
+
+    try:
+        provider = get_provider()
+        result = provider.complete(
+            system=ENRICH_ATTRIBUTE.format(
+                attribute=attribute, instruction=instruction, value=input_value
+            ),
+            user="",
+            response_model=_One,
+        )
+    except Exception as exc:  # noqa: BLE001 - the caller reports and continues
+        return {"value": "", "grounded": False, "source": "model", "error": str(exc)}
+
+    value = result.value
+    _write(
+        "value",
+        input_value,
+        attribute,
+        value,
+        grounded=False,
+        source="model",
+        model_version=provider.model,
+    )
+    return {"value": value, "grounded": False, "source": "model"}

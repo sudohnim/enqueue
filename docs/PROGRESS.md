@@ -146,7 +146,7 @@ class _Buckets(BaseModel):
       model for `_One`, `_write('artifact', artifact_id, attribute, value, grounded=1, source='model', model_version=provider.model)`,
       return `{"value", "grounded": True, "source": "model"}`. On any model error, return
       `{"value": "", "grounded": True, "source": "model", "error": str(exc)}` and do NOT cache.
-- [ ] `[AGENT]` `enrich(input_value, attribute, instruction) -> dict`: derive an attribute from a
+- [x] `[AGENT]` `enrich(input_value, attribute, instruction) -> dict`: derive an attribute from a
       VALUE using world knowledge, NOT grounded. Same shape as `extract` but scope `'value'`,
       subject is the exact `input_value` string, `grounded=0`, and the prompt is
       `prompts.ENRICH_ATTRIBUTE`. An empty `input_value` returns `{"value": "", "grounded": False}`
