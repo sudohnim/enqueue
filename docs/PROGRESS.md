@@ -184,7 +184,7 @@ domain. The caller fills `{attribute}`, `{instruction}`, `{text}`, `{values}`.
 - [x] `[AGENT]` `ENRICH_ATTRIBUTE`: instruct the model to return the named attribute for the given
       input value using general knowledge, or an empty string if it does not know. State plainly that
       this is a knowledge lookup, not a fact from the user's data. Reply as `_One`.
-- [ ] `[AGENT]` `BUCKETIZE`: instruct the model to group the given list of raw values into a smaller
+- [x] `[AGENT]` `BUCKETIZE`: instruct the model to group the given list of raw values into a smaller
       set of canonical buckets per the instruction, returning a mapping of every raw value to its
       bucket. Reply as `_Buckets`.
 - [ ] `[AGENT]` No test needed for the strings alone; they are exercised by Phase P2 and P4 tests.

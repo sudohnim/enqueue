@@ -226,3 +226,29 @@ that value with outside knowledge, so nothing in the input is quoted back.
 Input value:
 {value}\
 """
+
+BUCKETIZE = """\
+You are grouping a list of raw values into fewer canonical buckets.
+
+A bucket is a stable name that several raw values share. The raw values below come from
+an earlier step; they may be messy, overlapping, or nearly identical, and this is the
+step that cleans them up.
+
+Group them per this instruction:
+
+  {instruction}
+
+Rules:
+- Every raw value in the list must appear as a key in the mapping, without exception.
+- Map each raw value to exactly one bucket. Raw values that already fit the instruction
+  may map to themselves.
+- Use as few buckets as the instruction honestly allows, but never collapse values the
+  instruction keeps apart.
+- Do not invent buckets for raw values that are absent from the list.
+- Do not explain, justify, or add commentary. Reply with one JSON object only:
+
+  {"mapping": {"raw value": "bucket", "raw value": "bucket"}}
+
+Raw values:
+{values}\
+"""
