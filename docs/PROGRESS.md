@@ -133,7 +133,7 @@ class _Buckets(BaseModel):
     mapping: dict[str, str]   # raw value -> canonical bucket name
 ```
 
-- [ ] `[AGENT]` `_read(scope, subject, attribute) -> dict | None`: return the cached row as
+- [x] `[AGENT]` `_read(scope, subject, attribute) -> dict | None`: return the cached row as
       `{"value", "grounded", "source"}`, preferring `source='user'` over `source='model'`. Read
       connection, closed in `finally`. Returns `None` when nothing is cached.
 - [ ] `[AGENT]` `_write(scope, subject, attribute, value, grounded, source, model_version)`:
