@@ -215,7 +215,7 @@ A **spec** is a plain dict:
       value; `kind='tags'` calls `tags.ids_with_all(...)`; `kind='search'` runs
       `candidates.search_results(value, limit=MAX)` and takes the artifact ids. Cap at
       `MAX_PIVOT_ARTIFACTS = 200`; if more match, take the first 200 and record that it was truncated.
-- [ ] `[AGENT]` `run(spec) -> dict`: the orchestration. In order:
+- [x] `[AGENT]` `run(spec) -> dict`: the orchestration. In order:
       1. `ids = resolve_subset(spec["subset"])`.
       2. Maintain a dict `key_of[artifact_id]`. For the FIRST step (always `extract`): for each id,
          `derive.extract(id, step.attribute, step.instruction)`; set `key_of[id]` to its value.
