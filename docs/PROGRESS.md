@@ -293,7 +293,7 @@ after every edit (`bin/relaunch` gates on `node --check`).
 
 ## Done
 
-- [ ] `[AGENT]` `uv run pytest -q` green (was 260, now higher), `uv run black --check src/ tests/` clean,
+- [x] `[AGENT]` `uv run pytest -q` green (was 260, now higher), `uv run black --check src/ tests/` clean,
       `bin/relaunch` starts, `uv run enq eval` unchanged from before this feature (pivot must not touch the
       search ranking path).
 - [ ] `[HUMAN]` Review: confirm no attribute name, subject, or domain word is hardcoded in `derive.py` or
