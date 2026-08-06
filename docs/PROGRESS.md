@@ -102,7 +102,7 @@ uv run black src/ tests/   # must be clean
       ```
 
       In `downgrade()`: `DROP TABLE IF EXISTS derived_values;`. One `op.execute` per statement.
-- [ ] `[AGENT]` Verify: `bin/relaunch`, then
+- [x] `[AGENT]` Verify: `bin/relaunch`, then
       `uv run python -c "from enqueue import db; c=db.get_conn(); print([r[1] for r in c.execute('PRAGMA table_info(derived_values)')])"`
       prints the eight columns.
 
