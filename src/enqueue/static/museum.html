@@ -3231,10 +3231,14 @@
     // Inside: Back + Eye (context-aware).
     let html = "";
     if (inside) {
+      // Home, not a back arrow: there is no history stack - "out" is always the
+      // wall - so the way out wears the same yellow disc as the plus, and only
+      // the icon changes. One button that always means the same place.
       html =
-        '<button class="round" aria-label="Back to everything" onclick="home()">' +
-        svg("back") +
-        "</button>" +
+        '<button class="keep" aria-label="Home" onclick="home()">' +
+        '<span class="disc">' +
+        svg("home") +
+        "</span></button>" +
         '<button class="round" aria-label="' +
         (scope.kind === "chat" ? "Continue chat" : "Ask about this") +
         '" onclick="chatOrAsk()">' +
@@ -5558,7 +5562,10 @@
       (d.truncated ? " &middot; first 200 only" : "") +
       "</div>";
 
-    html += pivotGroupsHtml(d, (id) => "onclick=\"pivotMove('" + esc(id) + "')\"");
+    html += pivotGroupsHtml(
+      d,
+      (id) => "onclick=\"pivotMove('" + esc(id) + "')\"",
+    );
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
@@ -5694,6 +5701,9 @@
     // is a licence for the old screen to redraw itself over the new one.
     clearTimeout(faceWatch);
     faceWatch = null;
+    // A poller watching this chat's pending turns dies with the surface: a stale
+    // timer must never re-render a view the person has left.
+    stopPolling();
     ctx = null;
     chat = null;
     organizeTurns = {};
@@ -5749,15 +5759,19 @@
       readerWatch.disconnect();
       readerWatch = null;
     }
+    stopPolling();
     const d = preloaded || (await api("/chats/" + id));
     chat = d;
     scope = { kind: "chat", id, label: "this conversation" };
     showRail(id);
     renderChat(d);
     composer();
+    // A person who left during an answer and came back finds the turn still
+    // pending; the poller finishes it without them doing anything (H4.3).
+    if (hasPending(d)) startPolling(id);
   }
 
-  function renderChat(d, pending) {
+  function renderChat(d) {
     // The scope is a constraint, not a subtitle. Rendered as metadata it read like a
     // caption, and a chat silently locked to one empty link answered "nothing you have
     // saved" to a question the museum could answer instantly. Say what it can see, and
@@ -5805,12 +5819,22 @@
       // exactly as today; `organize` renders its label in the bubble and the
       // grouped view below it, hydrated from the stored spec.
       const organize = m.kind === "organize" && m.role === "assistant";
+      // Phase H: the pending turn is a real stored message, not a fake drawn on
+      // top. It renders as a thinking bubble the poller refreshes until the
+      // worker fills it in; a failed turn shows its reason with a way to ask
+      // again (H4.1).
+      const pending = m.status === "pending" && m.role === "assistant";
+      const failed = m.status === "failed" && m.role === "assistant";
       html +=
         '<div class="turn ' +
         (m.role === "user" ? "you" : "curator") +
         '">' +
         '<div class="said md">' +
-        (m.role === "user" ? esc(m.text) : md(m.text));
+        (m.role === "user"
+          ? esc(m.text)
+          : pending
+            ? '<span class="streaming">Reading what you saved...</span>'
+            : md(m.text));
       const echoes =
         d.chat.scope_kind === "artifact" &&
         m.cited &&
@@ -5826,9 +5850,23 @@
             .map((c) => chip(c.kind, c.artifact_id, c.title, "showArtifact"))
             .join("") +
           "</div>";
-      else if (m.role === "assistant" && !m.grounded && !organize)
+      else if (
+        !pending &&
+        !failed &&
+        m.role === "assistant" &&
+        !m.grounded &&
+        !organize
+      )
         html +=
           '<div class="unsourced">Nothing you have saved carried this.</div>';
+
+      // The failed turn is honest about why (Rule 2), and the way out is one
+      // click: ask the same question again as a fresh turn (H4.4).
+      if (failed)
+        html +=
+          '<button class="btn ghost" onclick="retryTurn(\'' +
+          esc(m.id) +
+          "')\">Try again</button>";
       html += "</div>";
 
       // The grouped view is not stored in the turn's text: it re-runs the stored
@@ -5841,13 +5879,6 @@
           '"><div class="state thinking">grouping what you saved...</div></div>';
       html += "</div>";
     }
-
-    if (pending)
-      html +=
-        '<div class="turn you"><div class="said">' +
-        esc(pending) +
-        '</div></div><div class="turn curator">' +
-        '<div class="said streaming">Reading what you saved...</div></div>';
 
     view.innerHTML = html + "</div>";
     for (const m of d.messages)
@@ -6036,7 +6067,9 @@
   // Show a list of all conversations — called from the pill's eye button.
   async function showChatList() {
     teardown();
-    restorePill("wall");
+    // A sub-view, not the wall: show the inside pill so Home is a way out. Without
+    // it an empty list is a dead end with nothing to click back to.
+    restorePill("inside");
     const list = await api("/chats?limit=100").catch(() => ({ items: [] }));
     let html = '<div class="shelf">Conversations</div>';
     if (!list.items.length) {
@@ -6070,7 +6103,9 @@
   // opens this list; a row runs its grouping; the small cross forgets it.
   async function showSavedGroupings() {
     teardown();
-    restorePill("wall");
+    // A sub-view, not the wall: show the inside pill so Home is a way out. This is
+    // the bug fix - an empty saved-groupings list was a dead end with no way back.
+    restorePill("inside");
     const list = await api("/pivots").catch(() => ({ items: [] }));
     let html = '<div class="shelf">Saved groupings</div>';
     if (!list.items.length) {
@@ -6110,7 +6145,8 @@
   // through the same path. The saved name stands in for the words that planned it.
   async function runSavedGrouping(id, name) {
     teardown();
-    view.innerHTML = '<div class="state thinking">grouping what you saved...</div>';
+    view.innerHTML =
+      '<div class="state thinking">grouping what you saved...</div>';
     let saved;
     try {
       saved = await api("/pivots/" + id);
@@ -6189,9 +6225,10 @@
 
   async function sendInChat(text, skill) {
     const id = chat.chat.id;
-    renderChat(chat, text);
     let d;
     try {
+      // Submitting returns immediately with a pending turn; the worker computes
+      // the answer off the request thread. Nothing here awaits the model (H4.2).
       d = await api("/chats/" + id + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6212,6 +6249,89 @@
     renderChat(d);
     showRail(id);
     composer();
+    // The turn is pending; the poller watches it resolve and stops when done.
+    startPolling(id);
+  }
+
+  // ---- pending turns: the poller that watches them resolve -----------------
+  // A submitted answer is computed after the request has returned. While any turn
+  // in the open chat is pending, one poller re-reads the transcript every couple
+  // of seconds and re-renders on change; it stops when none are pending. Leaving
+  // the surface cancels it (teardown), so a stale poller never redraws a screen
+  // it no longer owns, and opening a different chat starts its own.
+  let pollTimer = null;
+  let pollChatId = null;
+
+  function stopPolling() {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    pollChatId = null;
+  }
+
+  function hasPending(d) {
+    return (d.messages || []).some((m) => m.status === "pending");
+  }
+
+  function startPolling(id) {
+    // One poller per chat: opening a different surface (or a different chat)
+    // cancels the old one before the new one starts.
+    if (pollChatId !== id) stopPolling();
+    if (pollTimer) return;
+    pollChatId = id;
+    pollTimer = setTimeout(pollTick, 2000);
+  }
+
+  async function pollTick() {
+    const id = pollChatId;
+    if (!id) return;
+    let d;
+    try {
+      d = await api("/chats/" + id);
+    } catch (err) {
+      // The chat is gone (deleted while we waited): stop, don't thrash.
+      stopPolling();
+      return;
+    }
+    if (pollChatId !== id) return; // canceled while the fetch was in flight
+    const open = chat && chat.chat.id === id;
+    if (open && transcriptChanged(chat, d)) {
+      chat = d;
+      renderChat(d);
+    }
+    if (hasPending(d)) pollTimer = setTimeout(pollTick, 2000);
+    else stopPolling();
+  }
+
+  // Re-render only when the transcript actually moved: a poller that redraws the
+  // whole view on an unchanged tick would yank a person who scrolled up to read
+  // back to the bottom every two seconds.
+  function transcriptChanged(a, b) {
+    if (!a || !b) return true;
+    if (a.chat.title !== b.chat.title) return true;
+    if ((a.topics || []).length !== (b.topics || []).length) return true;
+    if (a.messages.length !== b.messages.length) return true;
+    return a.messages.some((m, i) => {
+      const n = b.messages[i];
+      return (
+        m.id !== n.id ||
+        m.status !== n.status ||
+        m.text !== n.text ||
+        m.kind !== n.kind ||
+        m.grounded !== n.grounded
+      );
+    });
+  }
+
+  // A failed turn's way back: ask the same question again as a fresh turn. The
+  // text is the user message that preceded the failed turn - the question it was
+  // answering (H4.4).
+  function retryTurn(mid) {
+    if (!chat) return;
+    const idx = chat.messages.findIndex((m) => m.id === mid);
+    if (idx < 1) return;
+    const prev = chat.messages[idx - 1];
+    if (prev.role !== "user") return;
+    sendInChat(prev.text);
   }
 
   // ---- the trash -----------------------------------------------------------
@@ -6648,10 +6768,59 @@
       '<div class="aside">One <b>Name: value</b> per line.</div></div>';
 
     html += '<div id="settingState" class="aside"></div>';
+
+    // The concept layer is generated by the model at capture, so switching to a
+    // better model above does not touch what is already stored. This rebuilds it
+    // for everything with the current model. It is its own action, not a staged
+    // setting: it fires now and runs in the background, so it lives outside the
+    // Save/Discard bar below.
+    html +=
+      '<div class="shelf">The concept layer</div><div class="group">' +
+      '<div class="field"><label>Concepts (facets)</label>' +
+      '<button class="btn tertiary" onclick="rebuildFacets()">Rebuild concepts</button>' +
+      '<div class="aside">Re-analyze every item with the current model to rebuild the ' +
+      "concept layer search uses. Switch models above first if you want a better one. " +
+      "Runs in the background; each item's text is sent to the model." +
+      '</div><div id="facetRebuildState" class="aside"></div></div></div>';
+
     html += settingsActionsBar();
     view.innerHTML = html;
     refreshDirtyBar();
     window.scrollTo(0, 0);
+  }
+
+  // Rebuild the whole concept layer with the current model (POST /facets redo).
+  // The run is long - one model call per item - so the button does not block on
+  // it: it fires, reports that it is running, and updates when the run reports
+  // back. Leaving the page does not stop it; generate_all commits per item, so a
+  // closed tab just leaves a resumable, half-rebuilt layer, never a corrupt one.
+  async function rebuildFacets() {
+    const yes = await ask(
+      "Rebuild concepts?",
+      "Every item is re-analyzed with the current model. This runs in the background and can take a while.",
+      "Rebuild",
+    );
+    if (!yes) return;
+    const el = document.getElementById("facetRebuildState");
+    if (el) el.textContent = "Rebuilding in the background...";
+    toast("Rebuilding concepts in the background.");
+    api("/facets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ redo: true }),
+    })
+      .then((r) => {
+        if (el)
+          el.textContent =
+            "Done. " +
+            (r.generated || 0) +
+            " items re-analyzed, " +
+            (r.facets || 0) +
+            " concepts.";
+      })
+      .catch((err) => {
+        if (el) el.textContent = "Rebuild failed: " + String((err && err.message) || err);
+      });
   }
 
   // Settings changed in any settings form but not saved yet. One staging area for

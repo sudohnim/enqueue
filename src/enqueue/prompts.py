@@ -196,7 +196,11 @@ Rules:
 text does not say it, you do not know it.
 - Do not explain, justify, or add commentary. Reply with one JSON object only:
 
-  {{"value": "the attribute value, or an empty string"}}
+  {{"value": "Copenhagen"}}
+
+The value is the answer itself - a name, a place, a category, a word - never a
+description of what to return. "Copenhagen" is only a shape to copy, not the answer.
+Use "" only when the text supports no value; never return the words of this instruction.
 
 Artifact text:
 {text}\
@@ -221,7 +225,11 @@ Rules:
 that value with outside knowledge, so nothing in the input is quoted back.
 - Do not explain, justify, or add commentary. Reply with one JSON object only:
 
-  {{"value": "the attribute value, or an empty string"}}
+  {{"value": "Denmark"}}
+
+The value is the answer itself - a name, a place, a category, a word - never a
+description of what to return. "Denmark" is only a shape to copy, not the answer.
+Use "" only when you do not know the value; never return the words of this instruction.
 
 Input value:
 {value}\
@@ -315,6 +323,25 @@ Rules:
   interpretation. Use 'extract' only for something stated in the item's own text, and
   'enrich' only to infer from a previous value. A 'field' step's attribute must be one of
   the readable fields listed above; 'extract' and 'enrich' attributes are free-form.
+- When the request limits WHICH items to include - "only my book notes", "ignore
+  everything that isn't a recipe", "just the ones about France" - add a 'filter' step.
+  A 'filter' reads the previous step's value and its instruction asks a yes/no question;
+  items answered yes are kept, all others are dropped before grouping. A filter never
+  becomes the group key - it prunes the set, then the chain continues to the attribute you
+  group by. Like 'enrich', a 'filter' works from a prior value, so it is never the first
+  step. Example instruction: "Answer yes or no: is this title a book?"
+- When the grouping attribute is a property of the named thing the item is ABOUT - a
+  book's author, an author's region, a work's era, its genre, whether it is fiction or
+  non-fiction, what subject it covers - do not 'extract' it: a terse note about a book
+  almost never states its author, let alone the author's birthplace. Read the 'title'
+  field (the item names the work), then 'enrich' from there in hops: title to author,
+  author to region; or title straight to the property (title to fiction-or-non-fiction).
+  The world knowledge lives in 'enrich'; the grounded seed is the title you read, never
+  a fact hoped for in the body text.
+- The 'kind' field is the saved FILE's format - note, link, pdf, image, file - not the
+  work's nature. "Fiction vs non-fiction", genre, and topic are properties of the work
+  and are never the 'kind' field; they are an 'enrich' from the title. Only reach for
+  'kind' when the request is literally about file type ("group by whether it is a pdf").
 - Give each step a short lowercased attribute name and a one-sentence instruction that
   tells the pipeline what to pull from the note ('extract'), what to read from the
   stored record ('field'), or what to infer from the prior value ('enrich').
@@ -325,10 +352,16 @@ Rules:
   buckets. Otherwise set it to false and leave 'bucketize_instruction' an empty string.
 - Do not invent attributes the request never asked for, and do not add steps that do not
   lead to the grouping the request wants.
+- The LAST step's attribute must be exactly the property the request asks to group by,
+  in the request's own words. If the request says group by fiction vs non-fiction, the
+  last attribute is "fiction or non-fiction" and the chain ends there - do not add a
+  region hop, an author hop, or any attribute the request did not name. The examples
+  below show the SHAPE of a title-seeded chain; copy the shape, never their specific
+  attributes (region, author) unless the request actually asks for those.
 - Do not explain, justify, or add commentary. Reply with one JSON object only:
 
   {{"subset": {{"kind": "search" | "tags" | "ids", "value": "..."}},
-    "steps": [{{"op": "extract" | "enrich" | "field", "attribute": "...", "instruction": "..."}}],
+    "steps": [{{"op": "extract" | "enrich" | "field" | "filter", "attribute": "...", "instruction": "..."}}],
     "group_by": "...",
     "bucketize": true | false,
     "bucketize_instruction": "..."}}
@@ -343,6 +376,28 @@ Example - request: "organize everything I saved by kind"
 - subset: {{"kind": "search", "value": ""}}
 - step 1 (field, reads the stored record): {{"op": "field", "attribute": "kind", "instruction": "Read the item's own kind from its record."}}
 - group_by: "kind"
+
+Example - request: "organize my book notes by the region the author is from"
+- subset: {{"kind": "search", "value": "book"}}
+- step 1 (field, reads the stored record): {{"op": "field", "attribute": "title", "instruction": "Read the book's title from the item's record."}}
+- step 2 (enrich, infers from step 1's value): {{"op": "enrich", "attribute": "author", "instruction": "From the book title, name the author who wrote it."}}
+- step 3 (enrich, infers from step 2's value): {{"op": "enrich", "attribute": "region", "instruction": "From the author, name the region of the world they are from."}}
+- group_by: "region"
+
+Example - request: "organize my book notes based on whether it is fiction vs non-fiction"
+- subset: {{"kind": "search", "value": "book"}}
+- step 1 (field, reads the stored record): {{"op": "field", "attribute": "title", "instruction": "Read the book's title from the item's record."}}
+- step 2 (enrich, infers from step 1's value): {{"op": "enrich", "attribute": "fiction or non-fiction", "instruction": "From the book title, say whether the book is fiction or non-fiction."}}
+- group_by: "fiction or non-fiction"
+- Note: this groups by a property of the WORK (is it fiction), read from the title by world knowledge - not by the 'kind' file-format field.
+
+Example - request: "group my book notes by fiction vs non-fiction, ignore everything else"
+- subset: {{"kind": "search", "value": "book"}}
+- step 1 (field, reads the stored record): {{"op": "field", "attribute": "title", "instruction": "Read the item's title from its record."}}
+- step 2 (filter, keeps only the books): {{"op": "filter", "attribute": "is a book", "instruction": "Answer yes or no: is this title a published book?"}}
+- step 3 (enrich, infers from the title): {{"op": "enrich", "attribute": "fiction or non-fiction", "instruction": "From the book title, say whether the book is fiction or non-fiction."}}
+- group_by: "fiction or non-fiction"
+- Note: the 'filter' drops everything that is not a book ("ignore everything else"); it never becomes the group key.
 
 The first step of every plan is 'extract' or 'field'. A plan whose first step is 'enrich'
 is invalid.

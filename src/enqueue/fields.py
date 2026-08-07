@@ -63,6 +63,16 @@ def _resolve_captured(row: Mapping[str, object]) -> str:
     return str(row["created_at"])[:7]
 
 
+def _resolve_title(row: Mapping[str, object]) -> str:
+    """The artifact's own title - the one place a named work (a book, a paper)
+    is identified. It is a column, not an inference, so reading it is a `field`,
+    not an `extract`: the value is the user's stored data, no model needed. It is
+    the grounded seed for an `enrich` chain about the named thing - title to
+    author, author to region - where the world knowledge lives in enrich, never
+    here (a `title` field reads the title, it never infers anything from it)."""
+    return str(row["title"] or "")
+
+
 # The registry is the source of truth for readable field names. Nothing else
 # in the planner or run() names a field specially: a fourth field (file size,
 # page-count buckets) is one entry here and one line in derive.field's SELECT,
@@ -82,5 +92,12 @@ FIELDS: dict[str, Field] = {
         name="captured",
         describe="the month it was saved",
         resolve=_resolve_captured,
+    ),
+    "title": Field(
+        name="title",
+        describe="the title of the thing - the name of a book, paper, or page. "
+        "Read this (do not extract) when grouping by a property of the named "
+        "work itself (its author, origin, era), then enrich from it.",
+        resolve=_resolve_title,
     ),
 }

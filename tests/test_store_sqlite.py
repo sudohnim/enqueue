@@ -282,6 +282,25 @@ class TestLifecycle:
         hits = sqlite_store.search(sqlite_store.CHUNKS, _BODY_A, limit=5)
         assert all(h["artifact_id"] != "a1" for h in hits)
 
+    def test_index_facets_artifact_indexes_in_place(self, sqlite_store):
+        conn = db.get_conn()
+        try:
+            _artifact(conn, "a1", "Hydroponics", _BODY_A)
+            _facet(conn, "f1", "a1", 3, "A city can feed itself from its rooftops.", 0.8)
+            _write(conn)
+        finally:
+            conn.close()
+
+        # No whole-collection rebuild: index just this artifact's facets.
+        indexed = sqlite_store.index_facets_artifact("a1")
+        assert indexed == 1
+        assert sqlite_store.counts()["facets"] == 1
+        hits = sqlite_store.search_dense(sqlite_store.FACETS, "rooftop farming", limit=5)
+        assert hits and hits[0]["artifact_id"] == "a1"
+
+    def test_index_facets_artifact_with_none_returns_zero(self, sqlite_store):
+        assert sqlite_store.index_facets_artifact("nope") == 0
+
     def test_drop_artifact_facets(self, sqlite_store):
         conn = db.get_conn()
         try:

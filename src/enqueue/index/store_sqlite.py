@@ -308,6 +308,47 @@ class SqliteVecStore(VectorStore):
             )
         return len(entries)
 
+    def index_facets_artifact(self, artifact_id: str) -> int:
+        """Re-embed one artifact's facets in place, like index_artifact for chunks.
+
+        The facet's statement is the text embedded (the same text upsert_facets
+        indexes). One artifact's facet rows are replaced; the rest of the facet
+        collection is untouched, so a capture can index its own facets without a
+        whole-collection rebuild. The caller generates the facet rows first.
+        """
+        self.ensure()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, statement FROM facets WHERE artifact_id = ? ORDER BY level",
+                (artifact_id,),
+            ).fetchall()
+            conn.execute(
+                "DELETE FROM vec_facets"
+                " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
+                (artifact_id,),
+            )
+            conn.execute(
+                "DELETE FROM fts_facets"
+                " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
+                (artifact_id,),
+            )
+            if not rows:
+                return 0
+            entries = [(row["id"], row["statement"]) for row in rows]
+            vectors = embed([text for _, text in entries])
+            conn.executemany(
+                "INSERT INTO vec_facets (facet_id, embedding) VALUES (?, ?)",
+                [
+                    (item_id, json.dumps(vector))
+                    for (item_id, _), vector in zip(entries, vectors, strict=True)
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO fts_facets (facet_id, text) VALUES (?, ?)",
+                [(item_id, text) for item_id, text in entries],
+            )
+        return len(entries)
+
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove every indexed row belonging to one artifact.
 

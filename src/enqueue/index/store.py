@@ -65,6 +65,15 @@ class VectorStore(ABC):
         """Re-embed one artifact's chunks in place; returns how many were indexed."""
 
     @abstractmethod
+    def index_facets_artifact(self, artifact_id: str) -> int:
+        """Re-embed one artifact's facets in place; returns how many were indexed.
+
+        The per-artifact counterpart to `upsert_facets` (which clears and rebuilds
+        the whole collection): this replaces one artifact's facet vectors and leaves
+        the rest alone, so facets can be indexed on capture without a full rebuild.
+        """
+
+    @abstractmethod
     def search(self, name: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:
         """Hybrid (dense + sparse) retrieval, scored highest first.
 

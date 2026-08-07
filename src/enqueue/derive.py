@@ -246,7 +246,10 @@ def field(artifact_id: str, field_name: str) -> dict:
     finally:
         conn.close()
     if row is None:
-        raise KeyError(artifact_id)
+        # A stale index id (an artifact deleted after the subset was resolved) has
+        # no row to read. It reads as empty - the "not determined" bucket - rather
+        # than raising, so one dangling id never crashes a whole pivot run.
+        return {"value": "", "grounded": True, "source": "field"}
 
     return {
         "value": fields.FIELDS[attribute].resolve(row),

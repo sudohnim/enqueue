@@ -18,6 +18,8 @@ from enqueue.schemas import Answer, AssistantRoute, ChatTitle, ChatTopics
 class FakeProvider:
     """Answers each response_model from a script. Raises when the script says to."""
 
+    router: FakeProvider | None = None
+
     def __init__(self, **byname):
         self.byname = byname
         self.calls = []
@@ -36,9 +38,11 @@ class FakeProvider:
 def answered(monkeypatch):
     """Callable test double: scripts the provider and the passages queue.
 
-    Also scripts the router: since `send` dispatches through the skill registry,
-    every exchange starts with one routing call, and it must pick `answer` for
-    these tests (the model is never consulted; Rule 1's floor is stubbed too).
+    Also scripts the router: since the worker dispatches through the skill registry,
+    resolving a recorded job starts with one routing call, and it must pick `answer`
+    for these tests (the model is never consulted; Rule 1's floor is stubbed too).
+    The request path itself makes zero model calls (Phase H) - these stubs only
+    come alive when a test resolves the recorded job through the worker.
     """
 
     class Answered:
@@ -50,6 +54,9 @@ def answered(monkeypatch):
             monkeypatch.setattr(chats, "passages", lambda *a, **k: self.passages)
             router = FakeProvider(AssistantRoute=AssistantRoute(skill="answer"))
             monkeypatch.setattr(assistant, "get_provider", lambda *a, **k: router)
+            # The router is attached so a test can assert the request path made no
+            # routing call either (Phase H: routing moved to the worker).
+            provider.router = router
             return provider
 
     return Answered()
@@ -118,7 +125,9 @@ class TestNaming:
 
 
 class TestTopicsAreNotDerivedFromNothing:
-    def test_a_conversation_that_found_nothing_gets_no_topics(self, store, quiet_queue, answered):
+    def test_a_conversation_that_found_nothing_gets_no_topics(
+        self, store, quiet_queue, answered, async_turns
+    ):
         """A chat where every answer was a refusal has no concept in it to extract,
         and the model invents one rather than returning none."""
         chat = chats.create()
@@ -131,12 +140,16 @@ class TestTopicsAreNotDerivedFromNothing:
             ChatTopics=ChatTopics(topics=["ceramics", "brittleness"]),
         )
 
-        result = chats.send(chat["chat"]["id"], "what about ceramics?")
+        chats.send(chat["chat"]["id"], "what about ceramics?")
+        async_turns.resolve()
+        result = chats.get(chat["chat"]["id"])
         assert result["topics"] == []
         # Not merely discarded: the call is never made, so a refusal costs nothing.
         assert "ChatTopics" not in provider.calls
 
-    def test_a_grounded_conversation_still_gets_them(self, store, quiet_queue, answered):
+    def test_a_grounded_conversation_still_gets_them(
+        self, store, quiet_queue, answered, async_turns
+    ):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
         chat = chats.create()
         answered.passages = [
@@ -150,7 +163,9 @@ class TestTopicsAreNotDerivedFromNothing:
             ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
         )
 
-        result = chats.send(chat["chat"]["id"], "what outlasts what?")
+        chats.send(chat["chat"]["id"], "what outlasts what?")
+        async_turns.resolve()
+        result = chats.get(chat["chat"]["id"])
         assert {t["topic"] for t in result["topics"]} == {"tolerance", "failure under load"}
 
 
@@ -173,7 +188,9 @@ class TestPinning:
 
 
 class TestTurns:
-    def test_a_question_and_its_answer_are_written_together(self, store, quiet_queue, answered):
+    def test_a_question_and_its_answer_are_written_together(
+        self, store, quiet_queue, answered, async_turns
+    ):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
         chat = chats.create()
         answered.passages = [
@@ -194,26 +211,40 @@ class TestTurns:
             ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
         )
 
-        result = chats.send(chat["chat"]["id"], "what outlasts what?")
+        pending = chats.send(chat["chat"]["id"], "what outlasts what?")
+        # Submit returns with a visible pending turn; the worker fills it in.
+        assert pending["messages"][-1]["status"] == "pending"
+        async_turns.resolve()
 
+        result = chats.get(chat["chat"]["id"])
         assert [m["role"] for m in result["messages"]] == ["user", "assistant"]
+        assert result["messages"][-1]["status"] == "done"
         assert result["messages"][-1]["cited"][0]["title"] == "Joints"
         assert result["chat"]["title"] == "Movement over rigidity"
         assert {t["topic"] for t in result["topics"]} == {"tolerance", "failure under load"}
 
-    def test_a_failed_answer_leaves_no_orphan_question(self, store, quiet_queue, answered):
-        """The bug this guards: the question was written first, the model failed, and
-        asking again appended a second copy of the same question."""
+    def test_a_failed_answer_resolves_to_a_failed_turn(
+        self, store, quiet_queue, answered, async_turns
+    ):
+        """The old bug: the question was written first, the model failed, and asking
+        again appended a second copy of the same question. Phase H keeps both rows at
+        submit time, so a failure resolves the pending turn rather than leaving the
+        question dangling."""
         chat = chats.create()
         answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
         answered(Answer=RuntimeError("the model fell over"))
 
-        with pytest.raises(RuntimeError):
-            chats.send(chat["chat"]["id"], "what outlasts what?")
+        result = chats.send(chat["chat"]["id"], "what outlasts what?")
+        assert [m["role"] for m in result["messages"]] == ["user", "assistant"]
 
-        assert chats.get(chat["chat"]["id"])["messages"] == []
+        async_turns.resolve()
+        after = chats.get(chat["chat"]["id"])
+        assert [m["role"] for m in after["messages"]] == ["user", "assistant"]
+        assert after["messages"][-1]["status"] == "failed"
 
-    def test_a_citation_the_model_invented_is_dropped(self, store, quiet_queue, answered):
+    def test_a_citation_the_model_invented_is_dropped(
+        self, store, quiet_queue, answered, async_turns
+    ):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
         chat = chats.create()
         answered.passages = [
@@ -229,12 +260,16 @@ class TestTurns:
             ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
         )
 
-        result = chats.send(chat["chat"]["id"], "what outlasts what?")
+        chats.send(chat["chat"]["id"], "what outlasts what?")
+        async_turns.resolve()
+        result = chats.get(chat["chat"]["id"])
         assert [c["artifact_id"] for c in result["messages"][-1]["cited"]] == [
             note["artifact"]["id"]
         ]
 
-    def test_naming_failure_does_not_lose_the_answer(self, store, quiet_queue, answered):
+    def test_naming_failure_does_not_lose_the_answer(
+        self, store, quiet_queue, answered, async_turns
+    ):
         """Title and topics are conveniences. Losing them must not lose the exchange."""
         chat = chats.create()
         answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
@@ -244,7 +279,9 @@ class TestTurns:
             ChatTopics=RuntimeError("no"),
         )
 
-        result = chats.send(chat["chat"]["id"], "what about ceramics?")
+        chats.send(chat["chat"]["id"], "what about ceramics?")
+        async_turns.resolve()
+        result = chats.get(chat["chat"]["id"])
         assert result["messages"][-1]["text"] == "Nothing here bears on it."
         assert result["chat"]["title"] == "what about ceramics?"
         assert result["topics"] == []
@@ -280,25 +317,32 @@ class TestScope:
         assert found and all(p["artifact_id"] == note["artifact"]["id"] for p in found)
 
 
-class TestOnlyAfterResponse:
-    """A conversation is written only once the model has answered.
+class TestSubmittingReturnsImmediately:
+    """A conversation exists once a question is submitted, not once it is answered.
 
-    Starting a chat used to create the row first and then call the model, so a
-    timed-out or failing model left an empty 'New chat' on the wall that was never
-    answered. Nothing may exist until the answer does.
+    The request path writes the exchange and returns; the worker resolves the
+    pending turn later. A failed answer is a `failed` turn inside the chat - the
+    question stays, the chat stays, and nothing is lost.
     """
 
-    def test_a_failed_first_question_leaves_no_conversation(self, store, quiet_queue, answered):
+    def test_a_failed_first_question_resolves_inside_the_chat(
+        self, store, quiet_queue, answered, async_turns
+    ):
         answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
         answered(Answer=RuntimeError("the model timed out"))
 
-        with pytest.raises(RuntimeError):
-            chats.ask("what outlasts what?")
+        made = chats.ask("what outlasts what?")
+        assert made["messages"][-1]["status"] == "pending"
 
-        assert chats.listing()["items"] == []
+        async_turns.resolve()
+        after = chats.get(made["chat"]["id"])
+        assert after["messages"][-1]["status"] == "failed"
+        assert after["messages"][-1]["text"] == "That answer could not be completed."
+        # The conversation was not deleted: a failed answer is a failed turn.
+        assert [c["id"] for c in chats.listing()["items"]] == [made["chat"]["id"]]
 
-    def test_the_api_returns_503_and_no_conversation_on_model_failure(
-        self, store, quiet_queue, answered
+    def test_the_api_submits_a_pending_turn_and_the_worker_resolves_it(
+        self, store, quiet_queue, answered, async_turns
     ):
         answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
         answered(Answer=RuntimeError("the model timed out"))
@@ -306,12 +350,17 @@ class TestOnlyAfterResponse:
         client = TestClient(api.app)
         resp = client.post("/chats", json={"text": "what outlasts what?"})
 
-        assert resp.status_code == 503
-        assert "could not answer" in resp.json()["detail"]
-        assert client.get("/chats").json()["items"] == []
+        assert resp.status_code == 201
+        made = resp.json()
+        assert made["messages"][-1]["status"] == "pending"
+
+        async_turns.resolve()
+        reloaded = client.get("/chats/" + made["chat"]["id"]).json()
+        assert reloaded["messages"][-1]["status"] == "failed"
+        assert [c["id"] for c in client.get("/chats").json()["items"]] == [made["chat"]["id"]]
 
     def test_a_successful_first_question_creates_exactly_one_conversation(
-        self, store, quiet_queue, answered
+        self, store, quiet_queue, answered, async_turns
     ):
         answered.passages = []
         answered(
@@ -324,11 +373,15 @@ class TestOnlyAfterResponse:
 
         made = chats.ask("what outlasts what?")
         chat_id = made["chat"]["id"]
+        async_turns.resolve()
+        made = chats.get(chat_id)
 
         assert [m["role"] for m in made["messages"]] == ["user", "assistant"]
         assert [c["id"] for c in chats.listing()["items"]] == [chat_id]
 
-    def test_a_successful_first_question_via_the_api(self, store, quiet_queue, answered):
+    def test_a_successful_first_question_via_the_api(
+        self, store, quiet_queue, answered, async_turns
+    ):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
         answered.passages = [
             {
@@ -354,18 +407,22 @@ class TestOnlyAfterResponse:
         assert resp.status_code == 201
         made = resp.json()
         assert [m["role"] for m in made["messages"]] == ["user", "assistant"]
-        assert made["messages"][-1]["cited"][0]["title"] == "Joints"
-        assert [c["id"] for c in client.get("/chats").json()["items"]] == [made["chat"]["id"]]
+        assert made["messages"][-1]["status"] == "pending"
 
-        # Every turn carries its kind and payload. Pre-router, every turn is an
-        # answer with nothing to re-render.
+        async_turns.resolve()
         reloaded = client.get("/chats/" + made["chat"]["id"]).json()
+        assert reloaded["messages"][-1]["status"] == "done"
+        assert reloaded["messages"][-1]["cited"][0]["title"] == "Joints"
+        assert [c["id"] for c in client.get("/chats").json()["items"]] == [reloaded["chat"]["id"]]
+
+        # Every turn carries its kind, payload, and status.
         for m in reloaded["messages"]:
             assert m["kind"] == "answer"
             assert m["payload"] is None
+            assert m["status"] == "done"
 
     def test_a_failed_second_turn_leaves_the_conversation_untouched(
-        self, store, quiet_queue, answered
+        self, store, quiet_queue, answered, async_turns
     ):
         answered.passages = []
         answered(
@@ -376,14 +433,16 @@ class TestOnlyAfterResponse:
             ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
         )
         chat_id = chats.ask("what outlasts what?")["chat"]["id"]
+        async_turns.resolve()
 
         answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
         answered(Answer=RuntimeError("the model timed out"))
-        with pytest.raises(RuntimeError):
-            chats.send(chat_id, "and what else?")
+        chats.send(chat_id, "and what else?")
+        async_turns.resolve()
 
         after = chats.get(chat_id)
-        assert [m["role"] for m in after["messages"]] == ["user", "assistant"]
+        assert [m["role"] for m in after["messages"]] == ["user", "assistant", "user", "assistant"]
+        assert after["messages"][-1]["status"] == "failed"
         assert [c["id"] for c in chats.listing()["items"]] == [chat_id]
 
     def test_an_empty_question_is_rejected_before_any_write(self, store, quiet_queue, answered):
@@ -397,8 +456,59 @@ class TestOnlyAfterResponse:
         assert chats.listing()["items"] == []
 
 
+class TestRequestPathCallsNoModel:
+    """Phase H: submitting never touches the model. The worker owns routing,
+    answering, naming, and retopic - the request path only writes the skeleton."""
+
+    def test_send_returns_a_pending_turn_without_calling_the_model(
+        self, store, quiet_queue, answered, async_turns
+    ):
+        chat = chats.create()
+        answered.passages = []
+        provider = answered(
+            Answer=Answer(answer="Nothing here.", grounded=False, cited=[]),
+            ChatTitle=ChatTitle(title="Nothing saved"),
+            ChatTopics=ChatTopics(topics=["ceramics", "brittleness"]),
+        )
+
+        result = chats.send(chat["chat"]["id"], "what outlasts what?")
+
+        assert result["messages"][-1]["status"] == "pending"
+        assert result["messages"][-1]["text"] == ""
+        # No router, no answer provider: zero model calls on the request path.
+        assert provider.calls == []
+        assert provider.router.calls == []
+
+        async_turns.resolve()
+        done = chats.get(chat["chat"]["id"])
+        assert done["messages"][-1]["status"] == "done"
+
+    def test_ask_opens_a_chat_with_a_pending_first_turn(
+        self, store, quiet_queue, answered, async_turns
+    ):
+        answered.passages = []
+        provider = answered(
+            Answer=Answer(answer="Nothing here.", grounded=False, cited=[]),
+            ChatTitle=ChatTitle(title="Nothing saved"),
+            ChatTopics=ChatTopics(topics=["ceramics", "brittleness"]),
+        )
+
+        made = chats.ask("what outlasts what?")
+
+        assert [m["role"] for m in made["messages"]] == ["user", "assistant"]
+        assert made["messages"][-1]["status"] == "pending"
+        assert provider.calls == []
+        assert provider.router.calls == []
+
+        async_turns.resolve()
+        done = chats.get(made["chat"]["id"])
+        assert done["messages"][-1]["status"] == "done"
+
+
 class TestDeletion:
-    def test_deleting_a_chat_takes_its_messages_and_topics(self, store, quiet_queue, answered):
+    def test_deleting_a_chat_takes_its_messages_and_topics(
+        self, store, quiet_queue, answered, async_turns
+    ):
         chat = chats.create()
         answered.passages = []
         answered(
@@ -408,6 +518,7 @@ class TestDeletion:
         )
         chat_id = chat["chat"]["id"]
         chats.send(chat_id, "what about ceramics?")
+        async_turns.resolve()
 
         chats.delete(chat_id)
         with pytest.raises(KeyError):

@@ -73,8 +73,57 @@ def process(artifact_id: str) -> dict:
         # An artifact can lose its text: a note emptied, a preview refetched and
         # failed. Its stale points have to go, or search keeps returning it.
         store.drop_artifact(store.CHUNKS, artifact_id)
+        store.drop_artifact(store.FACETS, artifact_id)
 
-    return {"artifact_id": artifact_id, "pages": pages, "chunks": chunks, "indexed": indexed}
+    # Facets are the conceptual layer that lets a question reach an artifact whose
+    # own words never mention it - "notes on a president" reaching a Roosevelt
+    # biography that never says "president". Generating them here, behind the
+    # response, is what keeps them from being a batch nobody remembers to run
+    # (an unfaceted library answers only literal matches). Best effort: a facet
+    # failure never fails the capture, and the artifact is still findable by text.
+    facets_made = _facet_artifact(artifact_id) if chunks else 0
+
+    return {
+        "artifact_id": artifact_id,
+        "pages": pages,
+        "chunks": chunks,
+        "indexed": indexed,
+        "facets": facets_made,
+    }
+
+
+def _facet_artifact(artifact_id: str) -> int:
+    """Generate one artifact's facets and index them. Best effort, never raises.
+
+    A model call sits behind this, so it runs only on the ingest worker, never on
+    the capture path. An artifact the facet gate has excluded is skipped, and a
+    model failure is logged and swallowed - the capture already succeeded.
+    """
+    from .. import db
+    from ..index.store import get_store
+    from . import facets as facets_mod
+
+    conn = db.get_conn()
+    try:
+        gated = conn.execute(
+            "SELECT 1 FROM facet_skips WHERE artifact_id = ?", (artifact_id,)
+        ).fetchone()
+        if gated:
+            return 0
+        count, error = facets_mod.generate_for_artifact(conn, artifact_id)
+        conn.commit()
+    except Exception:  # noqa: BLE001 - facets are derived; a failure never blocks capture
+        log.exception("facet generation failed for %s", artifact_id)
+        return 0
+    finally:
+        conn.close()
+
+    if error:
+        log.warning("facet generation for %s: %s", artifact_id, error)
+        return 0
+    if count:
+        get_store().index_facets_artifact(artifact_id)
+    return count
 
 
 def _run() -> None:

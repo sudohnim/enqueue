@@ -74,6 +74,19 @@ class OpenAICompatibleProvider:
         # instructor >= 1.9 renamed validation_context to context. The keyword is what
         # carries proper_nouns, artifact_text, and lens into the validators, so getting
         # it wrong silently disables every context-dependent check rather than erroring.
+        # Many calls put the whole prompt in `system` and send an empty `user`
+        # (the router, the pivot planner, extract). Ollama accepts that; Gemini and
+        # other providers reject a request whose user contents are empty ("contents
+        # is not specified"). When there is no user turn, fold the system prompt into
+        # the user message so the request always carries content, on every backend.
+        if user.strip():
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ]
+        else:
+            messages = [{"role": "user", "content": system}]
+
         try:
             return cast(
                 T,
@@ -82,10 +95,7 @@ class OpenAICompatibleProvider:
                     response_model=response_model,
                     max_retries=config.MODEL_RETRIES if max_retries is None else max_retries,
                     context=context or {},
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
+                    messages=messages,
                 ),
             )
         # This is the only boundary between somebody else's HTTP endpoint and the rest

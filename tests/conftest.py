@@ -35,3 +35,30 @@ def quiet_queue(monkeypatch):
     done = []
     monkeypatch.setattr(ingest_queue, "submit", done.append)
     return done
+
+
+@pytest.fixture
+def async_turns(monkeypatch):
+    """Record answer-worker submissions and resolve them synchronously on demand.
+
+    Phase H split: submitting returns immediately with a pending turn, and the
+    worker completes it later. These tests exercise both halves - the immediate
+    pending turn from `send`/`ask`, then the worker's compute core run
+    synchronously when the test calls `resolve()` - without any thread timing.
+    """
+    from enqueue import chats_worker
+
+    class Recorder:
+        def __init__(self):
+            self.jobs = []
+
+        def submit(self, job):
+            self.jobs.append(job)
+
+        def resolve(self):
+            for job in self.jobs:
+                chats_worker.compute(job)
+
+    recorder = Recorder()
+    monkeypatch.setattr(chats_worker, "submit", recorder.submit)
+    return recorder

@@ -57,6 +57,13 @@ class TestResolvers:
         assert fields.FIELDS["kind"].resolve(rows["kind"]) == "pdf"
         assert fields.FIELDS["source"].resolve(rows["source"]) == "example.com"
         assert fields.FIELDS["captured"].resolve(rows["captured"]) == "2025-03"
+        assert fields.FIELDS["title"].resolve({"title": "Chip War"}) == "Chip War"
+
+    def test_title_reads_the_column_never_infers(self):
+        """`title` reads the stored title verbatim - it is a field (a fact on the
+        row), never an inference about the named work. A missing title reads ""."""
+        assert fields.FIELDS["title"].resolve({"title": "The Odyssey"}) == "The Odyssey"
+        assert fields.FIELDS["title"].resolve({"title": None}) == ""
 
     def test_no_url_is_the_not_determined_label(self):
         """A row without a url reads "" - the "not determined" bucket, never a crash."""
@@ -112,3 +119,15 @@ class TestField:
 
         with pytest.raises(KeyError):
             derive.field(artifact_id, "flavor")
+
+    def test_missing_row_reads_empty_not_raises(self, store, quiet_queue, monkeypatch):
+        """A stale id (artifact gone after the subset resolved) reads "", never raises.
+
+        One dangling index id must not crash a whole pivot run - it lands in the
+        "not determined" bucket like any other empty value.
+        """
+        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider())
+
+        result = derive.field("does-not-exist", "kind")
+
+        assert result == {"value": "", "grounded": True, "source": "field"}

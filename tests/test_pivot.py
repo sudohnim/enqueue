@@ -328,6 +328,127 @@ class TestRun:
         # the enrich step made the whole response ungrounded, as with an extract lead
         assert all(not group["grounded"] for group in result["groups"])
 
+    def test_title_seeded_enrich_chain_reads_the_title_free(self, store, quiet_queue, monkeypatch):
+        """The "by region" shape: field(title) -> enrich(author) -> enrich(region).
+
+        The author is not in the note's body - a terse book note names the book,
+        not its writer - so the grounded seed is the title (a free field read),
+        and author and region are honest enrich hops. The title read costs zero
+        model calls; only the two enrich steps do, deduped per distinct value.
+        """
+        # Bodies that never name the author: the title is the only handle on the book.
+        odyssey = notes.create(
+            body="A note about a long voyage home and a clever hero.", title="The Odyssey"
+        )["artifact"]["id"]
+        chip_war = notes.create(
+            body="A note about semiconductors, TSMC, and ASML.", title="Chip War"
+        )["artifact"]["id"]
+        provider = _FakeProvider(
+            [
+                # enrich author, once per distinct title (sorted: Chip War, The Odyssey)
+                {"value": "Chris Miller"},
+                {"value": "Homer"},
+                # enrich region, once per distinct author (sorted: Chris Miller, Homer)
+                {"value": "North America"},
+                {"value": "Europe"},
+            ]
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+
+        spec = {
+            "subset": {"kind": "ids", "value": f"{odyssey} {chip_war}"},
+            "steps": [
+                {"op": "field", "attribute": "title", "instruction": ""},
+                {"op": "enrich", "attribute": "author", "instruction": "the author of the book"},
+                {
+                    "op": "enrich",
+                    "attribute": "region",
+                    "instruction": "the region the author is from",
+                },
+            ],
+            "group_by": "region",
+            "bucketize": False,
+        }
+
+        result = pivot.run(spec)
+
+        # Two enrich steps, two distinct values each = four calls. The title read
+        # (a field) added nothing: extract-per-artifact would have cost more and
+        # still found no author in the body.
+        assert provider.calls == 4
+        by_key = {group["key"]: group for group in result["groups"]}
+        assert set(by_key) == {"Europe", "North America"}
+        assert by_key["Europe"]["artifact_ids"] == [odyssey]
+        assert by_key["North America"]["artifact_ids"] == [chip_war]
+        # region is world knowledge: the whole run is honestly ungrounded.
+        assert all(not group["grounded"] for group in result["groups"])
+
+    def test_filter_step_drops_the_items_it_judges_out(self, store, quiet_queue, monkeypatch):
+        """A 'filter' step prunes the set before grouping, keeping only 'yes'.
+
+        The chain reads each title, keeps only the ones judged to be books, then
+        groups the survivors. The dropped item never reaches a group - not even
+        the '' bucket - because a filter removes it from the working set. The
+        filter is world knowledge, so the whole run is honestly ungrounded.
+        """
+        odyssey = notes.create(body="A note about a voyage.", title="The Odyssey")["artifact"]["id"]
+        grocery = notes.create(body="milk, eggs, bread", title="Grocery list")["artifact"]["id"]
+        chip_war = notes.create(body="A note about chips.", title="Chip War")["artifact"]["id"]
+        provider = _FakeProvider(
+            [
+                # filter: is-a-book, once per distinct title (sorted: Chip War,
+                # Grocery list, The Odyssey)
+                {"value": "yes"},  # Chip War
+                {"value": "no"},  # Grocery list -> dropped
+                {"value": "yes"},  # The Odyssey
+                # enrich: fiction or non-fiction, once per surviving distinct title
+                # (sorted: Chip War, The Odyssey)
+                {"value": "non-fiction"},  # Chip War
+                {"value": "fiction"},  # The Odyssey
+            ]
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+
+        spec = {
+            "subset": {"kind": "ids", "value": f"{odyssey} {grocery} {chip_war}"},
+            "steps": [
+                {"op": "field", "attribute": "title", "instruction": ""},
+                {
+                    "op": "filter",
+                    "attribute": "is a book",
+                    "instruction": "Answer yes or no: is this title a book?",
+                },
+                {
+                    "op": "enrich",
+                    "attribute": "fiction or non-fiction",
+                    "instruction": "fiction or non-fiction",
+                },
+            ],
+            "group_by": "fiction or non-fiction",
+            "bucketize": False,
+        }
+
+        result = pivot.run(spec)
+
+        all_ids = {aid for group in result["groups"] for aid in group["artifact_ids"]}
+        assert grocery not in all_ids  # dropped by the filter, in no group at all
+        by_key = {group["key"]: group for group in result["groups"]}
+        assert set(by_key) == {"fiction", "non-fiction"}
+        assert by_key["fiction"]["artifact_ids"] == [odyssey]
+        assert by_key["non-fiction"]["artifact_ids"] == [chip_war]
+        # the run used world knowledge (filter + enrich), so it is ungrounded
+        assert all(not group["grounded"] for group in result["groups"])
+
+    def test_affirmative_reads_yes_and_drops_the_rest(self):
+        assert pivot._affirmative("yes")
+        assert pivot._affirmative("Yes, it is a book")
+        assert pivot._affirmative("TRUE")
+        assert not pivot._affirmative("no")
+        assert not pivot._affirmative("")
+        assert not pivot._affirmative("I do not know")
+
 
 class TestResolveSubset:
     def test_caps_past_the_limit(self):
@@ -490,30 +611,45 @@ class TestPlan:
             pivot.plan("group everything I have saved")
         assert provider.calls == 1
 
-    def test_plan_rejects_unknown_field(self, store, monkeypatch):
-        """A 'field' step on an attribute outside the registry is rejected, not guessed.
+    def test_plan_coerces_a_mislabeled_field_to_enrich(self, store, monkeypatch):
+        """A 'field' step on an attribute outside the registry is repaired to 'enrich'.
 
-        The model reached for 'flavor' - something a note's text might state, but
-        not a column the row holds. A field reads only what the row already
-        carries, so this plan cannot run and is refused with a UI sentence; the
-        planner falls back to extract/enrich for it on a re-plan.
+        A weak planner calls "fiction or non-fiction" a field because it sounds
+        like a property, while correctly reading the title as a real field. An
+        attribute that is not a column cannot be a field, so it can only be an
+        inference: it is coerced to 'enrich' rather than rejected. The real field
+        ('title') is left alone, so the fiction/non-fiction grouping runs as
+        field(title) -> enrich(...) instead of failing on the mislabel.
         """
         provider = _FakeProvider(
             {
-                "subset": {"kind": "search", "value": ""},
+                "subset": {"kind": "search", "value": "book"},
                 "steps": [
-                    {"op": "field", "attribute": "flavor", "instruction": "the flavor"},
+                    {"op": "field", "attribute": "title", "instruction": "Read the title."},
+                    {
+                        "op": "field",  # mislabeled: this is world knowledge, not a column
+                        "attribute": "fiction or non-fiction",
+                        "instruction": "whether the book is fiction or non-fiction",
+                    },
                 ],
-                "group_by": "flavor",
+                "group_by": "fiction or non-fiction",
                 "bucketize": False,
                 "bucketize_instruction": "",
             }
         )
         monkeypatch.setattr(pivot, "get_provider", lambda: provider)
 
-        with pytest.raises(pivot.PivotError, match="field 'flavor'"):
-            pivot.plan("organize everything I saved by flavor")
-        assert provider.calls == 1
+        spec = pivot.plan("organize my book notes by fiction vs non-fiction")
+
+        # The real field stays a field; the mislabeled one becomes an enrich.
+        assert spec["steps"][0] == {
+            "op": "field",
+            "attribute": "title",
+            "instruction": "Read the title.",
+        }
+        assert spec["steps"][1]["op"] == "enrich"
+        assert spec["steps"][1]["attribute"] == "fiction or non-fiction"
+        assert spec["group_by"] == "fiction or non-fiction"
 
     def test_plan_uses_field_for_kind(self, store, monkeypatch):
         """A one-step 'field' plan on 'kind' is accepted as-is and groups by kind.
@@ -550,3 +686,60 @@ class TestPlan:
             },
         ]
         assert spec["group_by"] == "kind"
+
+    def test_plan_drops_a_trailing_filter_and_regroups(self, store, monkeypatch):
+        """A filter cannot be the last step - it prunes, it does not key groups.
+
+        The model ended the chain on a filter, so group_by would have been the
+        filter's own attribute. The trailing filter is dropped and group_by falls
+        back to the real grouping step before it, rather than refusing the plan.
+        """
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "search", "value": "book"},
+                "steps": [
+                    {"op": "field", "attribute": "title", "instruction": "Read the title."},
+                    {
+                        "op": "enrich",
+                        "attribute": "genre",
+                        "instruction": "the genre of the book",
+                    },
+                    {
+                        "op": "filter",
+                        "attribute": "is a book",
+                        "instruction": "Answer yes or no: is this a book?",
+                    },
+                ],
+                "group_by": "is a book",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        spec = pivot.plan("group my book notes by genre")
+
+        assert [s["op"] for s in spec["steps"]] == ["field", "enrich"]
+        assert spec["group_by"] == "genre"
+
+    def test_plan_rejects_a_filter_first_chain(self, store, monkeypatch):
+        """A 'filter' works from a value it has not read yet if it leads: rejected."""
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "search", "value": "book"},
+                "steps": [
+                    {
+                        "op": "filter",
+                        "attribute": "is a book",
+                        "instruction": "Answer yes or no: is this a book?",
+                    },
+                ],
+                "group_by": "is a book",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        with pytest.raises(pivot.PivotError, match="first step"):
+            pivot.plan("keep only my books")

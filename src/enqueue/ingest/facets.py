@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 import uuid
 
+from pydantic import BaseModel
+
 from .. import config, db
 
 _CAP_WORD = re.compile(r"\b([A-Z][a-z]{2,})\b")
@@ -74,11 +76,32 @@ def proper_nouns(text: str, title: str) -> set[str]:
     return {w for w in nouns if w not in _STOPWORDS}
 
 
+class _RawFacet(BaseModel):
+    """A facet as the model returns it, before the quality gate. No validators:
+    the whole point is to accept whatever came back, then judge each one in code."""
+
+    level: int
+    statement: str
+
+
+class _RawFacetSet(BaseModel):
+    facets: list[_RawFacet]
+
+
 def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
-    """Generate and store facets for one artifact. Returns (count, error)."""
+    """Generate and store facets for one artifact. Returns (count, error).
+
+    The quality gate is applied per facet, not to the whole set. A strong model
+    returns a fully valid set; a weak one returns a few good abstract facets
+    among some that name their subject or run long. Rejecting the whole set on
+    one bad facet (the old all-or-nothing) left weak-model libraries with zero
+    facets and no conceptual bridge at all. Instead every facet that clears the
+    same per-facet bar - the climb check, the length, the no-self-reference rule -
+    is kept, and the rest are dropped. Some grounded facets beat none.
+    """
     from ..prompts import FACET_GENERATION
     from ..providers.base import get_provider
-    from ..schemas import FacetSet
+    from ..schemas import Facet
 
     row = conn.execute(
         "SELECT title, body, local_only FROM artifacts WHERE id = ?", (artifact_id,)
@@ -89,23 +112,41 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     nouns = proper_nouns(text, row["title"])
 
     try:
-        result = provider.complete(
+        raw = provider.complete(
             system=FACET_GENERATION,
             user=f"Title: {row['title']}\n\n{text}",
-            response_model=FacetSet,
+            response_model=_RawFacetSet,
             context={"proper_nouns": nouns},
         )
     except Exception as exc:  # noqa: BLE001 - the caller reports and continues
         return 0, f"{type(exc).__name__}: {exc}"[:300]
 
+    # Keep each facet that passes the same per-facet quality bar the strict schema
+    # enforces; drop the ones that do not. One long or subject-naming facet no
+    # longer discards the good ones alongside it.
+    kept: list[Facet] = []
+    for rf in raw.facets:
+        try:
+            kept.append(
+                Facet.model_validate(
+                    {"level": rf.level, "statement": rf.statement},
+                    context={"proper_nouns": nouns},
+                )
+            )
+        except Exception:  # noqa: BLE001 - a facet that fails the bar is simply not kept
+            continue
+
+    if not kept:
+        return 0, "no facet cleared the quality gate"
+
     conn.execute("DELETE FROM facets WHERE artifact_id = ?", (artifact_id,))
-    for facet in result.facets:
+    for facet in kept:
         conn.execute(
             "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
             " VALUES (?,?,?,?,?,0.5)",
             (str(uuid.uuid4()), artifact_id, int(facet.level), facet.statement, provider.model),
         )
-    return len(result.facets), None
+    return len(kept), None
 
 
 def generate_all(limit: int | None = None, redo: bool = False, verbose: bool = False) -> dict:

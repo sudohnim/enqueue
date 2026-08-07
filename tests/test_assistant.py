@@ -81,12 +81,13 @@ class TestRoute:
 
 
 class TestDispatch:
-    """chats.send is a dispatcher: route -> run -> store a typed turn.
+    """The worker is the dispatcher: route -> run -> store a typed turn.
 
-    The router is stubbed through assistant.get_provider, the answer path
-    through chats.get_provider + chats.passages (exactly how test_chats stubs
-    it), and organize's pivot through pivot.plan / pivot.run directly, so no
-    real model call ever happens.
+    Submitting returns a pending turn; resolving the recorded job runs the real
+    dispatch path. The router is stubbed through assistant.get_provider, the
+    answer path through chats.get_provider + chats.passages (exactly how
+    test_chats stubs it), and organize's pivot through pivot.plan / pivot.run
+    directly, so no real model call ever happens.
     """
 
     def _stub_router(self, monkeypatch, skill: str):
@@ -106,19 +107,28 @@ class TestDispatch:
         monkeypatch.setattr(chats, "get_provider", lambda: provider)
         return provider
 
-    def test_send_answer_stores_an_answer_turn(self, store, quiet_queue, monkeypatch):
+    def _resolve(self, async_turns, chat_id):
+        """Run the recorded worker jobs synchronously and re-read the chat."""
+        async_turns.resolve()
+        return chats.get(chat_id)
+
+    def test_send_answer_stores_an_answer_turn(self, store, quiet_queue, monkeypatch, async_turns):
         chat = chats.create()
         self._stub_router(monkeypatch, "answer")
         self._stub_answer(monkeypatch)
 
-        result = chats.send(chat["chat"]["id"], "what outlasts what?")
+        chats.send(chat["chat"]["id"], "what outlasts what?")
+        result = self._resolve(async_turns, chat["chat"]["id"])
 
         stored = result["messages"][-1]
         assert stored["role"] == "assistant"
         assert stored["kind"] == "answer"
         assert stored["payload"] is None
+        assert stored["status"] == "done"
 
-    def test_send_organize_stores_an_organize_turn(self, store, quiet_queue, monkeypatch):
+    def test_send_organize_stores_an_organize_turn(
+        self, store, quiet_queue, monkeypatch, async_turns
+    ):
         chat = chats.create()
         spec = {
             "subset": {"kind": "ids", "value": "a b"},
@@ -137,7 +147,8 @@ class TestDispatch:
         monkeypatch.setattr(pivot, "run", lambda spec: groups)
         self._stub_answer(monkeypatch)
 
-        result = chats.send(chat["chat"]["id"], "organize my notes by author")
+        chats.send(chat["chat"]["id"], "organize my notes by author")
+        result = self._resolve(async_turns, chat["chat"]["id"])
 
         stored = result["messages"][-1]
         assert stored["kind"] == "organize"
@@ -145,7 +156,7 @@ class TestDispatch:
         assert stored["payload"] == spec
         assert stored["text"].startswith("Organized 2 notes by author")
 
-    def test_organize_planerror_falls_to_answer(self, store, quiet_queue, monkeypatch):
+    def test_organize_planerror_falls_to_answer(self, store, quiet_queue, monkeypatch, async_turns):
         # Rule 1: a structured skill that cannot execute lands on the floor.
         chat = chats.create()
         self._stub_router(monkeypatch, "organize")
@@ -156,20 +167,46 @@ class TestDispatch:
         monkeypatch.setattr(pivot, "plan", boom)
         self._stub_answer(monkeypatch)
 
-        result = chats.send(chat["chat"]["id"], "organize my notes by author")
+        chats.send(chat["chat"]["id"], "organize my notes by author")
+        result = self._resolve(async_turns, chat["chat"]["id"])
 
         stored = result["messages"][-1]
         assert stored["kind"] == "answer"
         assert stored["payload"] is None
 
-    def test_force_skill_answer_bypasses_router(self, store, quiet_queue, monkeypatch):
+    def test_organize_runtime_error_falls_to_answer(
+        self, store, quiet_queue, monkeypatch, async_turns
+    ):
+        # Rule 1, the harder case: the plan succeeds but the RUN throws mid-way (a
+        # stale index id, a KeyError). This used to escape as a 500 - "the curator
+        # could not answer: '<uuid>'". It must fall to the floor like any other
+        # organize failure, never crash the turn.
+        chat = chats.create()
+        self._stub_router(monkeypatch, "organize")
+        monkeypatch.setattr(pivot, "plan", lambda text: {"stub": "spec"})
+
+        def boom(spec):
+            raise KeyError("14aaa071-06c6-41a4-bd29-4a59a63af79a")
+
+        monkeypatch.setattr(pivot, "run", boom)
+        self._stub_answer(monkeypatch)
+
+        chats.send(chat["chat"]["id"], "does i have any notes on presidents")
+        result = self._resolve(async_turns, chat["chat"]["id"])
+
+        stored = result["messages"][-1]
+        assert stored["kind"] == "answer"
+        assert stored["payload"] is None
+
+    def test_force_skill_answer_bypasses_router(self, store, quiet_queue, monkeypatch, async_turns):
         # Rule 2: "answer instead" re-sends the same text forcing answer, and the
-        # router is not even consulted.
+        # router is not even consulted - not on the request path, not in the worker.
         chat = chats.create()
         router = self._stub_router(monkeypatch, "organize")
         self._stub_answer(monkeypatch)
 
-        result = chats.send(chat["chat"]["id"], "organize my notes by author", force_skill="answer")
+        chats.send(chat["chat"]["id"], "organize my notes by author", force_skill="answer")
+        result = self._resolve(async_turns, chat["chat"]["id"])
 
         stored = result["messages"][-1]
         assert stored["kind"] == "answer"
@@ -178,12 +215,12 @@ class TestDispatch:
 
 class TestAskRoutesTheFirstMessage(TestDispatch):
     """The eye opens a new chat, so the first message must route like any later
-    turn. `ask` creates the chat and dispatches through `send`; a fresh "organize
-    my notes by X" is grouped, not answered - and a failing first turn leaves no
-    empty conversation on the wall.
+    turn. `ask` creates the chat and submits through the worker; a fresh "organize
+    my notes by X" is grouped, not answered - and a failing first turn resolves to
+    a failed turn inside the chat, never an empty wall entry.
     """
 
-    def test_first_message_routes_to_organize(self, store, quiet_queue, monkeypatch):
+    def test_first_message_routes_to_organize(self, store, quiet_queue, monkeypatch, async_turns):
         spec = {
             "subset": {"kind": "ids", "value": "a b"},
             "steps": [{"op": "extract", "attribute": "author", "instruction": "the author"}],
@@ -201,15 +238,19 @@ class TestAskRoutesTheFirstMessage(TestDispatch):
         monkeypatch.setattr(pivot, "run", lambda spec: groups)
         self._stub_answer(monkeypatch)
 
-        result = chats.ask("organize my notes by author")
+        made = chats.ask("organize my notes by author")
+        result = self._resolve(async_turns, made["chat"]["id"])
 
         stored = result["messages"][-1]
         assert stored["kind"] == "organize"
         assert stored["payload"] == spec
 
-    def test_failed_first_turn_leaves_no_empty_chat(self, store, quiet_queue, monkeypatch):
-        # The old promise still holds through the reroute: a first turn that throws
-        # removes its own husk, so nothing empty appears on the wall.
+    def test_failed_first_turn_resolves_inside_the_chat(
+        self, store, quiet_queue, monkeypatch, async_turns
+    ):
+        # The old promise changed shape: a failing first turn used to delete its
+        # own husk. Now the chat exists from submit time, and the failure is a
+        # `failed` turn inside it - nothing empty on the wall, nothing lost.
         self._stub_router(monkeypatch, "answer")
         self._stub_answer(monkeypatch)
 
@@ -218,9 +259,10 @@ class TestAskRoutesTheFirstMessage(TestDispatch):
 
         monkeypatch.setattr(chats, "run_answer", boom)
 
-        before = len(chats.listing()["items"])
-        try:
-            chats.ask("what outlasts what?")
-        except RuntimeError:
-            pass
-        assert len(chats.listing()["items"]) == before
+        made = chats.ask("what outlasts what?")
+        assert made["messages"][-1]["status"] == "pending"
+
+        async_turns.resolve()
+        after = chats.get(made["chat"]["id"])
+        assert after["messages"][-1]["status"] == "failed"
+        assert [c["id"] for c in chats.listing()["items"]] == [made["chat"]["id"]]

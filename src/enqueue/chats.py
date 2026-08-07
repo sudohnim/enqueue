@@ -15,9 +15,11 @@ Three model calls, in falling order of importance:
   topics   the concepts the conversation is circling
   title    what it is called in the list
 
-Only the first one blocks the reply. A failure in either of the other two leaves a
-chat that works and is named by its first question, which is a bad name and not a
-broken product.
+None of them blocks the reply. Submitting a question writes a pending turn and
+returns immediately; the answer worker (chats_worker) computes all three off the
+request thread and fills the turn in place. A failure in either of the other two
+leaves a chat that works and is named by its first question, which is a bad name
+and not a broken product.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from . import assistant, db, pivot
+from . import chats_worker, db, pivot
 from .prompts import CHAT_ANSWER, CHAT_TITLE, CHAT_TOPICS
 from .providers.base import get_provider
 from .schemas import Answer, ChatTitle, ChatTopics
@@ -37,6 +39,9 @@ log = logging.getLogger(__name__)
 # How many passages an answer is allowed to read. Small on purpose: a local 8B model
 # given twenty passages produces a summary of the passages instead of an answer.
 PASSAGES = 8
+# At most this many chunks from one artifact in a passage set: breadth over depth, so
+# one long note cannot crowd every other note out of the answer's view.
+CHUNKS_PER_ARTIFACT = 2
 PASSAGE_WORDS = 220
 
 # Turns of history sent with a question. The whole transcript would crowd out the
@@ -249,8 +254,21 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
 
         store = get_store()
         found: dict[str, dict] = {}
-        for hit in store.search(store.CHUNKS, question, limit=PASSAGES):
+        # Roll chunk hits up to at most CHUNKS_PER_ARTIFACT per note, over a window
+        # wider than the passage budget. Without the cap, six chunks of one long note
+        # eat the whole budget and every other note is invisible to the answer - the
+        # "do I have notes on a president" case, where three slots went to one book
+        # and the note that answered it never got a slot. The cap spreads the budget
+        # across distinct artifacts so breadth, not one note's length, decides recall.
+        per_artifact: dict[str, int] = {}
+        for hit in store.search(store.CHUNKS, question, limit=PASSAGES * 4):
+            aid = hit["artifact_id"]
+            if per_artifact.get(aid, 0) >= CHUNKS_PER_ARTIFACT:
+                continue
             found[hit["chunk_id"]] = {"score": hit["score"], "why": "passage"}
+            per_artifact[aid] = per_artifact.get(aid, 0) + 1
+            if len(found) >= PASSAGES:
+                break
 
         # The other half of the abstraction gap. A question phrased as a concept can
         # match a facet whose artifact shares no vocabulary with it, which is the case
@@ -395,13 +413,17 @@ def _append(
     grounded: bool = False,
     kind: str = "answer",
     payload: dict | None = None,
+    status: str = "done",
 ) -> str:
     """Write one message row, computing the next ordinal.
 
     `kind` is the skill that produced the turn (default 'answer' backfills the
     pre-router corpus). `payload` is the JSON the turn needs to re-render itself
     - the pivot spec for an organize turn - stored as JSON text, NULL otherwise.
-    Both default so every existing caller is untouched.
+    `status` is how far the turn has got: 'done' is the resting state and every
+    pre-Phase-H caller writes it by omission; a submitted answer writes a pending
+    assistant turn that the worker moves to 'done' or 'failed'.
+    Both (all three) default so every existing caller is untouched.
     """
     ordinal = conn.execute(
         "SELECT COALESCE(MAX(ordinal), -1) + 1 AS n FROM chat_messages WHERE chat_id = ?",
@@ -415,8 +437,8 @@ def _append(
     payload_json = json.dumps(payload) if payload is not None else None
     conn.execute(
         "INSERT INTO chat_messages"
-        " (id, chat_id, ordinal, role, text, grounded, kind, payload, created_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?)",
+        " (id, chat_id, ordinal, role, text, grounded, kind, payload, status, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
             message_id,
             chat_id,
@@ -426,6 +448,7 @@ def _append(
             grounded_int,
             kind,
             payload_json,
+            status,
             _now(),
         ),
     )
@@ -433,31 +456,24 @@ def _append(
 
 
 def ask(question: str, scope_kind: str = "everything", scope_id: str | None = None) -> dict:
-    """Open a conversation with its first turn - routed like every later turn.
+    """Open a conversation with its first turn - submitted, not computed.
 
     The eye opens a new chat, so the first message is where an `organize` request
-    most often lands: it must go through the same route -> run -> write dispatch as
-    a follow-up (`send`), or a fresh "organize my notes by X" would always be
-    answered, never grouped. So `ask` creates the chat and calls `send`; the whole
-    typed-turn machinery is shared, not duplicated.
+    most often lands: it goes through the same submit path as every later turn
+    (`send`), so a fresh "organize my notes by X" is grouped, never answered.
 
-    The old promise still holds: a timed-out or failing first turn leaves no empty
-    conversation behind on the wall. `send` writes nothing until the skill has
-    produced a turn (its transaction rolls back on failure), and if it raises, the
-    just-created husk is removed before the error propagates.
+    The chat is created and the turn is queued; the request returns before the
+    model runs. A failed answer lands as a `failed` turn inside the chat, never as
+    a deleted chat - submitting cannot fail on the model, because the model runs
+    later, on the worker.
     """
     question = question.strip()
     if not question:
         raise ValueError("say something")
     # create() validates the scope; let its ValueError surface before any row exists.
     chat_id = create(scope_kind, scope_id)["chat"]["id"]
-    try:
-        return send(chat_id, question)
-    except Exception:
-        # The first turn failed, so nothing was written under it. Remove the empty
-        # husk so a conversation that never happened does not appear on the wall.
-        delete(chat_id)
-        raise
+    _submit(chat_id, question)
+    return get(chat_id)
 
 
 def run_answer(chat_id: str, text: str) -> dict:
@@ -499,15 +515,16 @@ def run_organize(chat_id: str, text: str) -> dict:
 
     The rendered groups are not stored in text - the frontend re-runs the spec
     from `payload` (S4), so a reload shows the same groups without re-planning.
-    On a PivotError the request cannot be turned into a runnable grouping, so
-    this falls to the answer floor (Rule 1): the person gets a grounded answer,
-    never a broken group stored as a turn.
+    Any failure - a PivotError from a request that will not plan, or a runtime
+    error mid-run (a stale index id, a missing row) - falls to the answer floor
+    (Rule 1): a structured skill that cannot finish is never allowed to crash the
+    turn. The person gets a grounded answer, never a 500 or a half-built group.
     """
     try:
         spec = pivot.plan(text)
         result = pivot.run(spec)
-    except pivot.PivotError as exc:
-        log.warning("could not organize (%s); answering instead", exc)
+    except Exception as exc:  # noqa: BLE001 - Rule 1: organize never crashes the turn
+        log.warning("could not organize (%s: %s); answering instead", type(exc).__name__, exc)
         return run_answer(chat_id, text)
 
     total = sum(len(group["artifact_ids"]) for group in result["groups"])
@@ -525,19 +542,20 @@ def run_organize(chat_id: str, text: str) -> dict:
 
 
 def send(chat_id: str, text: str, force_skill: str | None = None) -> dict:
-    """One turn: route the request, run the chosen skill, write both turns together.
+    """Submit one turn: write the exchange skeleton and return immediately.
 
-    Writing the question first and the answer afterwards looks natural and is wrong.
-    When the model call fails, the question is left in the transcript with nothing
-    under it, and asking again appends a second copy. Measured, on the second turn of
-    the first real conversation: two identical questions, one answer.
+    Asking used to compute inside the request. The browser held the connection
+    open while the local model ground for twenty seconds, and navigating away
+    aborted the fetch and abandoned the answer (Rule 1: the work must outlive the
+    page). Phase H moves the model off the request thread entirely.
 
-    So nothing is written until there is a turn to write with it. The interface
-    shows the question immediately; the log gains it once the exchange is real.
-
-    The middle - what produced the assistant text - is a routed skill (Rule 1:
-    `answer` is the floor, and `force_skill` is the server side of Rule 2's
-    "answer instead": the UI re-sends the same text forcing `answer`).
+    This writes the question plus a visible pending assistant turn in one
+    transaction, hands the work to the answer worker, and returns the chat as it
+    is - it now ends in a pending turn. The worker routes the request, runs the
+    chosen skill (Rule 1's `answer` floor and `force_skill` work exactly as
+    before), and fills the pending turn in place: `done` with the answer, or
+    `failed` with a reason a person can read. Naming and retopic happen there
+    too, best effort, after a successful `done`.
     """
     text = text.strip()
     if not text:
@@ -546,44 +564,29 @@ def send(chat_id: str, text: str, force_skill: str | None = None) -> dict:
     conn = db.get_conn()
     try:
         chat = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
-        if chat is None:
-            raise KeyError(chat_id)
-        first_exchange = (
-            conn.execute(
-                "SELECT COUNT(*) AS n FROM chat_messages WHERE chat_id = ?", (chat_id,)
-            ).fetchone()["n"]
-            == 0
-        )
     finally:
         conn.close()
+    if chat is None:
+        raise KeyError(chat_id)
 
-    skill_name = force_skill if force_skill in assistant.REGISTRY else assistant.route(text)
-    msg = assistant.REGISTRY[skill_name].run(chat_id, text)
+    _submit(chat_id, text, force_skill)
+    return get(chat_id)
 
+
+def _submit(chat_id: str, text: str, force_skill: str | None = None) -> None:
+    """Write the exchange skeleton and hand the answer to the worker.
+
+    The user turn and a pending assistant turn are written together in one
+    transaction, then the job is queued. Nothing here routes, runs a skill, or
+    calls the model - all of that happens on the worker, after the request has
+    returned. The chat's `updated_at` is touched so the thread surfaces on the
+    wall the moment it is asked.
+    """
     with db.transaction() as conn:
         _append(conn, chat_id, "user", text)
-        message_id = _append(
-            conn,
-            chat_id,
-            "assistant",
-            msg["text"],
-            grounded=msg["grounded"],
-            kind=msg["kind"],
-            payload=msg["payload"],
-        )
-        for rank, artifact_id in enumerate(msg["cited"]):
-            conn.execute(
-                "INSERT OR IGNORE INTO chat_citations (message_id, artifact_id, rank)"
-                " VALUES (?,?,?)",
-                (message_id, artifact_id, rank),
-            )
+        message_id = _append(conn, chat_id, "assistant", "", kind="answer", status="pending")
         conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
-
-    if first_exchange:
-        _name(chat_id, text, msg["text"])
-    _retopic(chat_id)
-
-    return get(chat_id)
+    chats_worker.submit(chats_worker.Job(chat_id, message_id, text, force_skill))
 
 
 # --------------------------------------------------------------------------- names

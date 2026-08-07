@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from . import (
     capture,
     chats,
+    chats_worker,
     config,
     db,
     derive,
@@ -884,17 +885,16 @@ def chat_passages(q: str, scope_kind: str = "everything", scope_id: str | None =
 @app.post("/chats", status_code=201)
 def create_chat(req: ChatCreate) -> dict:
     if req.text:
-        # A conversation exists only once there is an answer to write with it: the
-        # row, the exchange, the citations, and the name are written together after
-        # the model has answered. A timed-out or failing model leaves nothing behind,
-        # not an empty chat on the wall.
+        # Submitting returns immediately with a visible pending turn; the answer
+        # worker computes it in the background and fills the turn in place. A model
+        # failure resolves the turn to 'failed' - the chat and the question stay.
         try:
             return chats.ask(req.text, scope_kind=req.scope_kind, scope_id=req.scope_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
-        except Exception as exc:  # noqa: BLE001 - a model failure is a 503, not a crash
+        except Exception as exc:  # noqa: BLE001 - any other submit failure is a 503
             raise HTTPException(
-                status_code=503, detail=f"the curator could not answer: {exc}"
+                status_code=503, detail=f"could not submit the question: {exc}"
             ) from None
 
     try:
@@ -920,9 +920,9 @@ def send_to_chat(chat_id: str, req: ChatSend) -> dict:
         raise HTTPException(status_code=404, detail="no such chat") from None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    except Exception as exc:  # noqa: BLE001 - a model failure is a 503, not a crash
+    except Exception as exc:  # noqa: BLE001 - any other submit failure is a 503
         raise HTTPException(
-            status_code=503, detail=f"the curator could not answer: {exc}"
+            status_code=503, detail=f"could not submit the question: {exc}"
         ) from None
 
 
@@ -1214,6 +1214,17 @@ def serve() -> None:
             print(f"[engine] purged {expired['purged']} artifact(s) past the trash window")
     except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
         print(f"[engine] could not purge the trash: {exc}")
+
+    # Answers interrupted by a restart left pending rows that no worker will ever
+    # finish (the in-memory queue died with the old process). Rule 2: a pending
+    # turn always resolves, so sweep them to `failed` with a reason a person can
+    # read and retry (H5.1).
+    try:
+        orphaned = chats_worker.sweep_orphaned_pending()
+        if orphaned:
+            print(f"[engine] interrupted {orphaned} answer(s) from the previous run")
+    except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
+        print(f"[engine] could not sweep interrupted answers: {exc}")
 
     # The wall's greeting is generated in the background so the first render usually
     # finds a phrase already waiting; the page falls back to a time-based one either

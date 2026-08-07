@@ -92,6 +92,15 @@ def resolve_subset(subset: dict) -> tuple[list[str], bool]:
     return ids[:MAX_PIVOT_ARTIFACTS], truncated
 
 
+def _affirmative(value: str) -> bool:
+    """Read a filter judgment as keep-or-drop. A `filter` step asks the model a
+    yes/no ("is this a book"); the reply is kept when it is affirmative and
+    dropped otherwise. An empty answer ("I do not know") drops - a filter keeps
+    only what it can positively affirm, never what it merely failed to rule out."""
+    head = value.strip().lower()
+    return head.startswith("yes") or head in ("true", "1", "y")
+
+
 def run(spec: dict) -> dict:
     """Execute a pivot spec end to end.
 
@@ -136,16 +145,34 @@ def run(spec: dict) -> dict:
                 artifact_id, first["attribute"], first["instruction"]
             )["value"]
 
-    any_enrich = False
+    # The working set shrinks as `filter` steps prune it; `enrich` remaps the key
+    # of whatever survives. Downstream (bucketize, grouping) sees only `kept`.
+    kept = list(ids)
+    any_inference = False
     for step in steps[1:]:
-        any_enrich = True
-        # One enrich call per DISTINCT current value: the per-value cache keeps
-        # the call count bounded when many artifacts share a value.
+        any_inference = True
+        if step["op"] == "filter":
+            # One yes/no judgment per DISTINCT current value (deduped, world
+            # knowledge, so it reuses enrich's per-value cache): "is this a
+            # book", "is this fiction". Keep only the artifacts whose current
+            # value is judged in. The group key is untouched - a filter prunes
+            # the set, it does not change what the survivors group by. The
+            # membership is inferred, so the whole run reports ungrounded.
+            verdict = {
+                value: _affirmative(
+                    derive.enrich(value, step["attribute"], step["instruction"])["value"]
+                )
+                for value in sorted({key_of[aid] for aid in kept})
+            }
+            kept = [aid for aid in kept if verdict.get(key_of[aid], False)]
+            continue
+
+        # enrich: one call per DISTINCT current value among the survivors.
         remap = {
             value: derive.enrich(value, step["attribute"], step["instruction"])["value"]
-            for value in sorted({key_of[artifact_id] for artifact_id in ids})
+            for value in sorted({key_of[aid] for aid in kept})
         }
-        for artifact_id in ids:
+        for artifact_id in kept:
             # A user correction on this artifact wins over the inferred value
             # (rule 2: the director beats the curator). The move control writes
             # scope='artifact' on the group attribute, so the enrich step must
@@ -158,18 +185,18 @@ def run(spec: dict) -> dict:
 
     if spec.get("bucketize"):
         mapping = derive.bucketize(
-            [key for key in sorted(set(key_of.values())) if key],
+            [key for key in sorted({key_of[aid] for aid in kept}) if key],
             spec.get("bucketize_instruction", ""),
         )
-        for artifact_id in ids:
+        for artifact_id in kept:
             key_of[artifact_id] = mapping.get(key_of[artifact_id], key_of[artifact_id])
 
     grouped: dict[str, list[str]] = defaultdict(list)
-    for artifact_id in ids:
+    for artifact_id in kept:
         grouped[key_of[artifact_id]].append(artifact_id)
 
     groups = [
-        {"key": key, "artifact_ids": artifact_ids, "grounded": not any_enrich}
+        {"key": key, "artifact_ids": artifact_ids, "grounded": not any_inference}
         for key, artifact_ids in grouped.items()
     ]
     groups.sort(key=lambda group: len(group["artifact_ids"]), reverse=True)
@@ -243,6 +270,18 @@ def plan(request: str) -> dict:
     for step in spec["steps"]:
         step["attribute"] = step["attribute"].strip().lower()
 
+    # A 'field' reads a real column; the readable fields are a closed registry. When
+    # the model labels an attribute that is NOT a registered field as a 'field' - a
+    # weak model will call "fiction or non-fiction" or "genre" a field because it
+    # sounds like a property - it cannot be a column read, so it is an inference:
+    # coerce it to 'enrich'. This is semantics-preserving and more honest, not less
+    # (a fake-grounded field becomes an honestly ungrounded enrich), and it turns a
+    # flaky reject into a working grouping. A coerced first step becomes an enrich
+    # lead, which the block below then grounds with a prepended read.
+    for step in spec["steps"]:
+        if step["op"] == "field" and step["attribute"] not in fields.FIELDS:
+            step["op"] = "enrich"
+
     # A model that skips the extract step plans a chain that reads nothing from
     # the note: every value would be inferred from world knowledge, and the first
     # step would be rejected by _validate_plan. Rather than fail the request,
@@ -302,7 +341,7 @@ def _validate_plan(spec: dict) -> None:
             "The plan selects the notes by id but names none, so there is nothing to group."
         )
     for index, step in enumerate(steps):
-        if step["op"] not in ("extract", "enrich", "field"):
+        if step["op"] not in ("extract", "enrich", "field", "filter"):
             raise PivotError(
                 f"Step {index + 1} of the plan uses '{step['op']}', "
                 "which is not a step I know how to run."
@@ -316,14 +355,20 @@ def _validate_plan(spec: dict) -> None:
                 f"The plan reads a field '{step['attribute']}' I do not know how "
                 "to read straight from your items."
             )
-        if step["op"] == "enrich" and index == 0:
+        if step["op"] in ("enrich", "filter") and index == 0:
             raise PivotError(
-                "The plan starts by inferring a value from world knowledge, but the first "
-                "step has to read the value from the item itself: extract it from the "
-                "text, or read a stored field."
+                "The plan starts by working from a value it has not read yet, but the "
+                "first step has to read the value from the item itself: extract it from "
+                "the text, or read a stored field."
             )
-    # `group_by` is coerced to the last step's attribute in plan(), so it can never
-    # disagree here. Left as an assertion of that invariant, not a user-facing reject.
+    # A `filter` prunes the set, it does not produce a group key, so it can never be the
+    # last step - the last step is what the groups are keyed by. When the model ends on a
+    # filter, drop it: the step before it holds the real grouping attribute, and dropping
+    # a trailing filter is more useful than refusing the whole plan.
+    while len(steps) > 1 and steps[-1]["op"] == "filter":
+        steps.pop()
+    spec["group_by"] = steps[-1]["attribute"]
+    # `group_by` now equals the last non-filter step's attribute, always runnable.
     assert spec["group_by"] == steps[-1]["attribute"], "group_by must equal the last step"
 
 
