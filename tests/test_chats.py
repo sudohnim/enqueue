@@ -286,6 +286,60 @@ class TestTurns:
         assert result["chat"]["title"] == "what about ceramics?"
         assert result["topics"] == []
 
+    def test_a_naming_db_write_failure_does_not_lose_a_done_answer(
+        self, store, quiet_queue, answered, async_turns, monkeypatch
+    ):
+        """I8.3: the model-call failure above is caught inside `_name`; the dangerous
+        case is a DB write raising after the answer already committed `done`. That
+        write must never flip the stored turn to failed or overwrite its text."""
+        import contextlib
+
+        chat = chats.create()
+        answered.passages = [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}]
+        answered(
+            Answer=Answer(answer="Nothing here bears on it.", grounded=False, cited=[]),
+            ChatTitle=ChatTitle(title="On ceramics"),
+            ChatTopics=ChatTopics(topics=["kilns", "glazes"]),
+        )
+
+        real_transaction = db.transaction
+
+        class _GuardedConn:
+            """A stand-in for the yielded connection: only `execute` is used on it
+            (the transaction generator commits and closes the real connection), and
+            the title write is the one call that raises."""
+
+            def __init__(self, conn):
+                self._conn = conn
+
+            def execute(self, sql, *args):
+                if sql.startswith("UPDATE chats SET title"):
+                    raise RuntimeError("the title write fell over")
+                # noqa: S608 - the SQL is forwarded verbatim to the connection's
+                # own parameterized execute; this wrapper only intercepts one call.
+                return self._conn.execute(sql, *args)
+
+        @contextlib.contextmanager
+        def _title_write_fails():
+            with real_transaction() as conn:
+                yield _GuardedConn(conn)
+
+        monkeypatch.setattr(db, "transaction", _title_write_fails)
+
+        chats.send(chat["chat"]["id"], "what about ceramics?")
+        async_turns.resolve()
+
+        result = chats.get(chat["chat"]["id"])
+        turn = result["messages"][-1]
+        # The finished answer survives a naming DB-write failure, with its text.
+        assert turn["status"] == "done"
+        assert turn["text"] == "Nothing here bears on it."
+        assert turn["kind"] == "answer"
+        # The title write really did fail: the chat keeps its initial placeholder
+        # rather than the scripted name - and, the point of the test, the failure
+        # never touched the completed turn.
+        assert result["chat"]["title"] == "New chat"
+
 
 class TestScope:
     def test_a_scoped_chat_needs_something_to_be_scoped_to(self, store):

@@ -205,3 +205,87 @@ class TestExhibitValidators:
                 {"suggested_name": "A room", "through_line": "Something was found.", "thin": True},
                 context={"lens": "x", "kept_artifact_ids": []},
             )
+
+
+class TestFacetCoalescing:
+    """I5.1: a burst of saves to one artifact regenerates facets once, not per save.
+
+    The queue is fire-and-forget, so the test drives the worker loop itself:
+    `submit` is patched to skip spawning the thread, the derived steps are
+    scripted to count calls, and the drain simulates the worker picking up the
+    queued items in order. The assertion is on the model-call count, not the
+    thread.
+    """
+
+    def _burst(self, store, monkeypatch, n=5):
+        from enqueue.ingest import entities as entities_mod
+        from enqueue.ingest import facets as facets_mod
+        from enqueue.ingest import queue
+
+        calls = {"facets": 0, "entities": 0}
+        indexed = {"facets": 0, "entities": 0}
+
+        def fake_facets(conn, aid):
+            calls["facets"] += 1
+            return (2, None)
+
+        def fake_entities(conn, aid):
+            calls["entities"] += 1
+            return (1, None)
+
+        monkeypatch.setattr(facets_mod, "generate_for_artifact", fake_facets)
+        monkeypatch.setattr(entities_mod, "generate_for_artifact", fake_entities)
+
+        class _Store:
+            def index_facets_artifact(self, aid):
+                indexed["facets"] += 1
+
+            def index_entities_artifact(self, aid):
+                indexed["entities"] += 1
+
+        import enqueue.index.store as store_mod
+
+        monkeypatch.setattr(store_mod, "get_store", lambda: _Store())
+
+        # `submit` spawns the real worker thread, which drains the queue on its own
+        # schedule and would race other tests' real submissions (it also leaves
+        # behind items when the worker is disabled). This test is about the
+        # coalescing accounting, so it queues through `_queue` directly - the same
+        # bookkeeping `submit` uses - and leaves the work queue alone.
+        for _ in range(n):
+            queue._queue("a")
+        return queue, calls, indexed
+
+    def test_burst_regenerates_facets_and_entities_once(self, store, monkeypatch):
+        queue, calls, indexed = self._burst(store, monkeypatch, n=5)
+
+        # The worker drains the burst in FIFO order; each pickup decrements the
+        # pending count before the derived steps decide whether to spend a call.
+        while queue._pending("a"):
+            queue._dequeue("a")
+            queue._facet_artifact("a")
+            queue._entities_artifact("a")
+
+        assert calls["facets"] == 1
+        assert calls["entities"] == 1
+        assert indexed["facets"] == 1
+        assert indexed["entities"] == 1
+        assert queue._pending("a") == 0
+
+    def test_single_submit_still_regenerates(self, store, monkeypatch):
+        queue, calls, indexed = self._burst(store, monkeypatch, n=1)
+
+        queue._dequeue("a")
+        queue._facet_artifact("a")
+        queue._entities_artifact("a")
+
+        assert calls["facets"] == 1
+        assert calls["entities"] == 1
+
+    def test_pending_clears_after_drain(self, store, monkeypatch):
+        queue, _, _ = self._burst(store, monkeypatch, n=3)
+
+        assert queue._pending("a") == 3
+        for _ in range(3):
+            queue._dequeue("a")
+        assert queue._pending("a") == 0

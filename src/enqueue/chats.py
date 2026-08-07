@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from . import chats_worker, db, pivot
 from .prompts import CHAT_ANSWER, CHAT_TITLE, CHAT_TOPICS
 from .providers.base import get_provider
+from .retrieve.candidates import hit_is_stale
 from .schemas import Answer, ChatTitle, ChatTopics
 
 log = logging.getLogger(__name__)
@@ -273,14 +274,33 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # The other half of the abstraction gap. A question phrased as a concept can
         # match a facet whose artifact shares no vocabulary with it, which is the case
         # the whole facet ladder exists for. Pull the artifact's opening chunk in so
-        # the answer has something literal to stand on.
+        # the answer has something literal to stand on. A facet built from an older
+        # body or by an older model no longer describes the artifact and is skipped.
+        cache: dict = {}
         for hit in store.search(store.FACETS, question, limit=4):
+            if hit_is_stale(conn, hit, cache):
+                continue
             row = conn.execute(
                 "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
                 (hit["artifact_id"],),
             ).fetchone()
             if row and row["id"] not in found:
                 found[row["id"]] = {"score": hit["score"], "why": f"facet L{hit.get('level')}"}
+
+        # The name-side of the same gap: a question phrased in the world's vocabulary
+        # ("presidents") reaches an artifact through its enriched entity line even
+        # when the artifact never says it. Same handling as the facet branch: pull
+        # the opening chunk so the answer has something literal to stand on, and skip
+        # lines built from an older body or by an older model.
+        for hit in store.search(store.ENTITIES, question, limit=4):
+            if hit_is_stale(conn, hit, cache):
+                continue
+            row = conn.execute(
+                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
+                (hit["artifact_id"],),
+            ).fetchone()
+            if row and row["id"] not in found:
+                found[row["id"]] = {"score": hit["score"], "why": "entity"}
 
         if not found:
             return []

@@ -113,6 +113,7 @@ def _drop_from_index(artifact_id: str) -> None:
         store = get_store()
         store.drop_artifact(store.CHUNKS, artifact_id)
         store.drop_artifact(store.FACETS, artifact_id)
+        store.drop_artifact(store.ENTITIES, artifact_id)
 
 
 def purge(artifact_id: str) -> dict:
@@ -132,6 +133,7 @@ def purge(artifact_id: str) -> dict:
             "chunks",
             "page_text",
             "facets",
+            "entities",
             "facet_skips",
             "secret_hits",
             "link_previews",

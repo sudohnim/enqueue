@@ -80,15 +80,26 @@ def compute(job: Job) -> None:
 
         # Naming and retopic are conveniences, best effort as today: a bad name or
         # a failed topic derivation must not undo a completed answer. They run only
-        # after a successful `done`, on the first exchange for the title.
-        if _first_exchange(job.chat_id, job.message_id):
-            chats._name(job.chat_id, job.text, msg["text"])
-        chats._retopic(job.chat_id)
+        # after a successful `done`, on the first exchange for the title. I8.2:
+        # their failure is caught HERE, not by the outer failure handler, so it can
+        # never reach the message-mutating `failed` path (a done answer stays done).
+        # Compute keeps its never-raises contract; `_run` need not log a misleading
+        # "answer failed" for a turn that actually completed.
+        try:
+            if _first_exchange(job.chat_id, job.message_id):
+                chats._name(job.chat_id, job.text, msg["text"])
+            chats._retopic(job.chat_id)
+        except Exception:  # noqa: BLE001 - naming is best effort; the answer already landed
+            log.exception("naming or topic derivation failed for chat %s", job.chat_id)
     except Exception as exc:  # noqa: BLE001 - one bad job must not stop the worker
         log.exception("answer failed for message %s: %s", job.message_id, exc)
         with db.transaction() as conn:
+            # I8.1: guarded so this can only transition a still-pending turn. If the
+            # answer already committed `done` and a best-effort name/topic write
+            # raised after that, this must not clobber the finished answer.
             conn.execute(
-                "UPDATE chat_messages SET status = 'failed', text = ? WHERE id = ?",
+                "UPDATE chat_messages SET status = 'failed', text = ? WHERE id = ?"
+                " AND status = 'pending'",
                 (FAILED_TEXT, job.message_id),
             )
 

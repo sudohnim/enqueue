@@ -31,13 +31,57 @@ def _log_sub_queries(queries: list[str]) -> None:
         print(f"[search] {len(queries)} sub-queries (query expansion)", flush=True)
 
 
+def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
+    """Whether a model-written hit no longer describes the artifact it belongs to.
+
+    A facet is written from a body by a model, and an entity line is extracted
+    from a body by a model, and both are current only while body and model still
+    match. `body_version` is the artifact_versions row the hit was built against
+    (I2.1/I2.2), so any body edit makes every old facet and entity stale
+    instantly - a timestamp comparison, no model call. `model_version` is the
+    provider that wrote it; a model switch makes old rows stale until a targeted
+    refresh regenerates them (I2.4). A hit that cannot prove it was built from
+    the current body must not win a slot: a wrong concept hit costs more trust
+    than a missed one.
+
+    `cache` maps artifact_id to (current_body_version, current_model), so a
+    request with several sub-queries pays for each artifact once.
+    """
+    aid = hit["artifact_id"]
+    if aid not in cache:
+        row = conn.execute(
+            "SELECT local_only,"
+            " (SELECT MAX(created_at) FROM artifact_versions v"
+            "  WHERE v.artifact_id = artifacts.id) AS body_version"
+            " FROM artifacts WHERE id = ?",
+            (aid,),
+        ).fetchone()
+        if row is None:
+            cache[aid] = None
+        else:
+            from ..providers.base import get_provider
+
+            cache[aid] = (
+                row["body_version"],
+                get_provider(local_only=bool(row["local_only"])).model,
+            )
+    current = cache[aid]
+    if current is None:
+        return True
+    body_version, model = current
+    return hit.get("body_version") != body_version or hit.get("model_version") != model
+
+
 def candidates(
     queries: list[str], limit: int = 150, per_query: int = 40, prefetch: int = 100
 ) -> list[dict]:
-    """Artifact ids ordered by best hit across both collections.
+    """Artifact ids ordered by best hit across all three collections.
 
-    Facet hits are weighted by the facet's trust score, so an abstraction that keeps
-    winning matches the director then ejects quietly stops pulling artifacts in.
+    Facet and entity hits are weighted by their trust score, so an abstraction
+    that keeps winning matches the director then ejects quietly stops pulling
+    artifacts in. Entity hits are the name-side of the same gap: a question
+    phrased in the world's vocabulary reaches an artifact through its enriched
+    one-line fact.
 
     `prefetch` widens the per-branch window the store searches before fusion. The
     default keeps ordinary retrieval unchanged; whole-library scoring raises it so
@@ -51,31 +95,51 @@ def candidates(
     matched_facet: dict[str, str] = {}
 
     store = get_store()
-    for query in queries:
-        for hit in store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch):
-            aid = hit["artifact_id"]
-            if hit["score"] > best[aid]:
-                best[aid] = hit["score"]
-                why[aid] = "chunk"
-
-        for hit in store.search(store.FACETS, query, limit=per_query, prefetch=prefetch):
-            aid = hit["artifact_id"]
-            try:
-                trust = float(hit.get("trust") or 0.5)
-            except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
-                trust = 0.5
-            score = hit["score"] * trust * 2.0
-            if score > best[aid]:
-                best[aid] = score
-                why[aid] = f"facet L{hit.get('level')}"
-                facet_id = hit.get("facet_id")
-                if facet_id:
-                    matched_facet[aid] = facet_id
-
-    ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
-
     conn = db.get_conn()
+    cache: dict = {}
     try:
+        for query in queries:
+            for hit in store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch):
+                aid = hit["artifact_id"]
+                if hit["score"] > best[aid]:
+                    best[aid] = hit["score"]
+                    why[aid] = "chunk"
+
+            for hit in store.search(store.FACETS, query, limit=per_query, prefetch=prefetch):
+                # A facet built from an older body or by an older model no longer
+                # describes the artifact; drop it rather than let it win a slot.
+                if hit_is_stale(conn, hit, cache):
+                    continue
+                aid = hit["artifact_id"]
+                try:
+                    trust = float(hit.get("trust") or 0.5)
+                except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
+                    trust = 0.5
+                score = hit["score"] * trust * 2.0
+                if score > best[aid]:
+                    best[aid] = score
+                    why[aid] = f"facet L{hit.get('level')}"
+                    facet_id = hit.get("facet_id")
+                    if facet_id:
+                        matched_facet[aid] = facet_id
+
+            for hit in store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch):
+                # Same provenance discipline as facets: an entity line extracted
+                # from an older body or by an older model is dropped.
+                if hit_is_stale(conn, hit, cache):
+                    continue
+                aid = hit["artifact_id"]
+                try:
+                    trust = float(hit.get("trust") or 0.5)
+                except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
+                    trust = 0.5
+                score = hit["score"] * trust * 2.0
+                if score > best[aid]:
+                    best[aid] = score
+                    why[aid] = "entity"
+
+        ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+
         out = []
         for aid, score in ranked:
             row = conn.execute("SELECT title FROM artifacts WHERE id = ?", (aid,)).fetchone()
@@ -137,21 +201,28 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
 
 
 def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
-    """The chunk + facet rollup for a free-text query."""
+    """The chunk + facet + entity rollup for a free-text query."""
     store = get_store()
     # A wider per-branch window than the final limit, so the dedup rolls up
-    # from enough chunk and facet hits to rank fairly.
+    # from enough chunk, facet, and entity hits to rank fairly.
     per_query = limit * 3
     prefetch = max(100, limit * 5)
     chunk_hits = store.search(store.CHUNKS, q, limit=per_query, prefetch=prefetch)
     facet_hits = store.search(store.FACETS, q, limit=per_query, prefetch=prefetch)
+    entity_hits = store.search(store.ENTITIES, q, limit=per_query, prefetch=prefetch)
 
+    conn = db.get_conn()
+    cache: dict = {}
     best: dict[str, dict] = {}
     for hit in chunk_hits:
         aid = hit["artifact_id"]
         if aid not in best or hit["score"] > best[aid]["score"]:
             best[aid] = {"score": hit["score"], "chunk_id": hit["chunk_id"], "why": "chunk"}
     for hit in facet_hits:
+        # A facet built from an older body or by an older model no longer
+        # describes the artifact; drop it rather than let it win a slot.
+        if hit_is_stale(conn, hit, cache):
+            continue
         aid = hit["artifact_id"]
         try:
             trust = float(hit.get("trust") or 0.5)
@@ -160,10 +231,27 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
         score = hit["score"] * trust * 2.0
         if aid not in best or score > best[aid]["score"]:
             best[aid] = {"score": score, "chunk_id": None, "why": f"facet L{hit.get('level')}"}
+    for hit in entity_hits:
+        # Same provenance discipline as the facets branch: a line extracted from
+        # an older body or by an older model is dropped rather than shown.
+        if hit_is_stale(conn, hit, cache):
+            continue
+        aid = hit["artifact_id"]
+        try:
+            trust = float(hit.get("trust") or 0.5)
+        except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
+            trust = 0.5
+        score = hit["score"] * trust * 2.0
+        if aid not in best or score > best[aid]["score"]:
+            best[aid] = {
+                "score": score,
+                "chunk_id": None,
+                "entity": (hit.get("entity"), hit.get("fact")),
+                "why": "entity",
+            }
 
     ranked = sorted(best.items(), key=lambda kv: kv[1]["score"], reverse=True)[:limit]
 
-    conn = db.get_conn()
     try:
         out = []
         for aid, info in ranked:
@@ -183,7 +271,11 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
                 if row is None:
                     continue
                 title, kind = row["title"], row["kind"]
-                snippet = artifact_text(conn, aid, max_words=40)
+                # An entity-only match shows the enriched line that bridged the
+                # vocabulary gap - "Theodore Roosevelt - 26th US President..." -
+                # which explains the match better than the artifact's face.
+                fact = (info.get("entity") or (None, None))[1]
+                snippet = fact or artifact_text(conn, aid, max_words=40)
             out.append(
                 {
                     "score": round(info["score"], 4),

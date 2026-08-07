@@ -90,7 +90,7 @@ def needs_reindex() -> bool:
 
 
 def rebuild_index(store: VectorStore) -> dict:
-    """Rebuild both collections and record the embed version.
+    """Rebuild all three collections and record the embed version.
 
     The store clears each collection before inserting (idempotent), so an
     interrupted rebuild is repaired on the next run with no duplicated rows.
@@ -102,8 +102,14 @@ def rebuild_index(store: VectorStore) -> dict:
     """
     chunks = store.upsert_chunks()
     facets = store.upsert_facets()
+    entities = store.upsert_entities()
     store.write_embed_version()
-    return {"chunks": chunks, "facets": facets, "counts": store.counts()}
+    return {
+        "chunks": chunks,
+        "facets": facets,
+        "entities": entities,
+        "counts": store.counts(),
+    }
 
 
 def rebuild_now(on_progress: Callable[[int, int], None] | None = None) -> dict:

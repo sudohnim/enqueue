@@ -94,7 +94,14 @@ class TestEnsureAndCounts:
         sqlite_store.ensure()
         sqlite_store.ensure()
         counts = sqlite_store.counts()
-        assert set(counts) == {"chunks", "facets", "fts_chunks", "fts_facets"}
+        assert set(counts) == {
+            "chunks",
+            "facets",
+            "entities",
+            "fts_chunks",
+            "fts_facets",
+            "fts_entities",
+        }
         assert all(v == 0 for v in counts.values())
 
     def test_counts_before_ensure_is_none_for_missing_tables(self, tmp_path, monkeypatch):

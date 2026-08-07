@@ -104,7 +104,11 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     from ..schemas import Facet
 
     row = conn.execute(
-        "SELECT title, body, local_only FROM artifacts WHERE id = ?", (artifact_id,)
+        "SELECT title, body, local_only,"
+        " (SELECT MAX(created_at) FROM artifact_versions v"
+        "  WHERE v.artifact_id = artifacts.id) AS body_version"
+        " FROM artifacts WHERE id = ?",
+        (artifact_id,),
     ).fetchone()
     text = row["body"] or ""
 
@@ -142,18 +146,64 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     conn.execute("DELETE FROM facets WHERE artifact_id = ?", (artifact_id,))
     for facet in kept:
         conn.execute(
-            "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
-            " VALUES (?,?,?,?,?,0.5)",
-            (str(uuid.uuid4()), artifact_id, int(facet.level), facet.statement, provider.model),
+            "INSERT INTO facets"
+            " (id, artifact_id, level, statement, model_version, body_version, trust)"
+            " VALUES (?,?,?,?,?,?,0.5)",
+            (
+                str(uuid.uuid4()),
+                artifact_id,
+                int(facet.level),
+                facet.statement,
+                provider.model,
+                row["body_version"],
+            ),
         )
     return len(kept), None
 
 
-def generate_all(limit: int | None = None, redo: bool = False, verbose: bool = False) -> dict:
+def _artifact_is_model_stale(conn, artifact_id: str, cache: dict) -> bool:
+    """Whether the artifact's stored facets were written by an older model.
+
+    A model upgrade is the only thing that makes facets model-stale; body edits
+    are handled by the per-artifact ingest path, not by a batch refresh. An
+    artifact with no facets is not stale - there is nothing to catch up, and the
+    full `redo` covers it. `cache` maps artifact_id to (has_facets, model) so a
+    run over the library calls the provider once per artifact at most.
+    """
+    if artifact_id not in cache:
+        row = conn.execute(
+            "SELECT local_only,"
+            " (SELECT model_version FROM facets f WHERE f.artifact_id = artifacts.id"
+            "  LIMIT 1) AS model_version"
+            " FROM artifacts WHERE id = ?",
+            (artifact_id,),
+        ).fetchone()
+        if row is None or row["model_version"] is None:
+            cache[artifact_id] = False
+        else:
+            from ..providers.base import get_provider
+
+            cache[artifact_id] = (
+                row["model_version"] != get_provider(local_only=bool(row["local_only"])).model
+            )
+    return cache[artifact_id]
+
+
+def generate_all(
+    limit: int | None = None,
+    redo: bool = False,
+    stale_only: bool = False,
+    verbose: bool = False,
+) -> dict:
     """Generate facets for every eligible artifact.
 
     Commits per artifact so a run of eighty minutes is resumable and does not hold a
     write lock throughout. Artifacts that already have facets are skipped unless redo.
+
+    `stale_only` is the cheap catch-up for a model upgrade: it regenerates only
+    artifacts whose stored facets were written by an older model, leaving current
+    ones untouched. It is distinct from `redo`, which recomputes everything
+    including artifacts that are already current.
 
     Sequential on purpose: this runs once per artifact and is not on the interactive
     path. Reranking is the loop that needed concurrency.
@@ -170,8 +220,13 @@ def generate_all(limit: int | None = None, redo: bool = False, verbose: bool = F
         if limit:
             rows = rows[:limit]
 
+        cache: dict = {}
         for i, row in enumerate(rows, 1):
-            if not redo:
+            if stale_only:
+                if not _artifact_is_model_stale(conn, row["id"], cache):
+                    report["skipped"] += 1
+                    continue
+            elif not redo:
                 have = conn.execute(
                     "SELECT COUNT(*) n FROM facets WHERE artifact_id = ?", (row["id"],)
                 ).fetchone()["n"]

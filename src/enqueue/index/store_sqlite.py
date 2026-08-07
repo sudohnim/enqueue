@@ -40,7 +40,7 @@ from sqlite3 import OperationalError
 
 import sqlite_vec
 
-from .. import config
+from .. import config, db
 from .embed import embed, embed_one
 from .fusion import rrf_scored
 from .store import VectorStore
@@ -73,12 +73,22 @@ _DDL = {
         "DROP TABLE IF EXISTS fts_facets",
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts_facets USING fts5(" " facet_id UNINDEXED, text)",
     ),
+    "vec_entities": (
+        "DROP TABLE IF EXISTS vec_entities",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS vec_entities USING vec0("
+        " entity_id TEXT PRIMARY KEY, embedding float[768])",
+    ),
+    "fts_entities": (
+        "DROP TABLE IF EXISTS fts_entities",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_entities USING fts5(" " entity_id UNINDEXED, text)",
+    ),
 }
 
 # Which index tables make up each collection.
 _COLLECTION_TABLES = {
     "chunks": ("vec_chunks", "fts_chunks"),
     "facets": ("vec_facets", "fts_facets"),
+    "entities": ("vec_entities", "fts_entities"),
 }
 
 # Literal SQL per collection. The id column is selected as `id` so every
@@ -118,13 +128,30 @@ _SQL = {
             " WHERE fts_facets MATCH ? ORDER BY bm25(fts_facets) LIMIT ?"
         ),
     },
+    "entities": {
+        "select_all": "SELECT id, fact FROM entities",
+        "clear_vec": "DELETE FROM vec_entities",
+        "clear_fts": "DELETE FROM fts_entities",
+        "insert_vec": "INSERT INTO vec_entities (entity_id, embedding) VALUES (?, ?)",
+        "insert_fts": "INSERT INTO fts_entities (entity_id, text) VALUES (?, ?)",
+        "dense": (
+            "SELECT entity_id AS id, distance FROM vec_entities"
+            " WHERE embedding MATCH ? ORDER BY distance LIMIT ?"
+        ),
+        "keyword": (
+            "SELECT entity_id AS id, bm25(fts_entities) AS raw FROM fts_entities"
+            " WHERE fts_entities MATCH ? ORDER BY bm25(fts_entities) LIMIT ?"
+        ),
+    },
 }
 
 _COUNT_SQL = {
     "vec_chunks": "SELECT COUNT(*) FROM vec_chunks",
     "vec_facets": "SELECT COUNT(*) FROM vec_facets",
+    "vec_entities": "SELECT COUNT(*) FROM vec_entities",
     "fts_chunks": "SELECT COUNT(*) FROM fts_chunks",
     "fts_facets": "SELECT COUNT(*) FROM fts_facets",
+    "fts_entities": "SELECT COUNT(*) FROM fts_entities",
 }
 
 # The text a chunk is embedded and indexed under. The title is prepended for
@@ -159,9 +186,9 @@ class SqliteVecStore(VectorStore):
     # -- connections ------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(config.DB_PATH)
+        conn = sqlite3.connect(config.DB_PATH, timeout=10)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode = WAL")
+        db.set_wal(conn)
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
@@ -179,6 +206,8 @@ class SqliteVecStore(VectorStore):
             return "chunk_id"
         if name == self.FACETS:
             return "facet_id"
+        if name == self.ENTITIES:
+            return "entity_id"
         raise ValueError(f"unknown collection {name!r}")
 
     def ensure(self) -> None:
@@ -218,6 +247,9 @@ class SqliteVecStore(VectorStore):
 
     def upsert_facets(self, batch_size: int = 64) -> dict:
         return self._rebuild(self.FACETS, lambda row: row["statement"], batch_size)
+
+    def upsert_entities(self, batch_size: int = 64) -> dict:
+        return self._rebuild(self.ENTITIES, lambda row: row["fact"], batch_size)
 
     def _rebuild(self, name: str, text_of, batch_size: int) -> dict:
         """Rebuild one collection from its source table, in place.
@@ -349,6 +381,47 @@ class SqliteVecStore(VectorStore):
             )
         return len(entries)
 
+    def index_entities_artifact(self, artifact_id: str) -> int:
+        """Re-embed one artifact's entity lines in place, like index_facets_artifact.
+
+        The enriched fact line is the text embedded (the same text upsert_entities
+        indexes). One artifact's entity rows are replaced; the rest of the entity
+        collection is untouched, so a capture can index its own entities without a
+        whole-collection rebuild. The caller generates the entity rows first.
+        """
+        self.ensure()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, fact FROM entities WHERE artifact_id = ? ORDER BY entity",
+                (artifact_id,),
+            ).fetchall()
+            conn.execute(
+                "DELETE FROM vec_entities"
+                " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
+                (artifact_id,),
+            )
+            conn.execute(
+                "DELETE FROM fts_entities"
+                " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
+                (artifact_id,),
+            )
+            if not rows:
+                return 0
+            entries = [(row["id"], row["fact"]) for row in rows]
+            vectors = embed([text for _, text in entries])
+            conn.executemany(
+                "INSERT INTO vec_entities (entity_id, embedding) VALUES (?, ?)",
+                [
+                    (item_id, json.dumps(vector))
+                    for (item_id, _), vector in zip(entries, vectors, strict=True)
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO fts_entities (entity_id, text) VALUES (?, ?)",
+                [(item_id, text) for item_id, text in entries],
+            )
+        return len(entries)
+
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove every indexed row belonging to one artifact.
 
@@ -377,6 +450,17 @@ class SqliteVecStore(VectorStore):
                 conn.execute(
                     "DELETE FROM fts_facets"
                     " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
+                    (artifact_id,),
+                )
+            elif name == self.ENTITIES:
+                conn.execute(
+                    "DELETE FROM vec_entities"
+                    " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
+                    (artifact_id,),
+                )
+                conn.execute(
+                    "DELETE FROM fts_entities"
+                    " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
                     (artifact_id,),
                 )
             else:
@@ -471,9 +555,17 @@ class SqliteVecStore(VectorStore):
                 " WHERE id IN (SELECT value FROM json_each(?))",
                 (ids,),
             ).fetchall()
+        elif name == self.ENTITIES:
+            rows = conn.execute(
+                "SELECT id, artifact_id, entity, fact, trust, model_version, body_version"
+                " FROM entities"
+                " WHERE id IN (SELECT value FROM json_each(?))",
+                (ids,),
+            ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, artifact_id, level, trust FROM facets"
+                "SELECT id, artifact_id, level, trust, model_version, body_version"
+                " FROM facets"
                 " WHERE id IN (SELECT value FROM json_each(?))",
                 (ids,),
             ).fetchall()
@@ -487,10 +579,19 @@ class SqliteVecStore(VectorStore):
             hit = {"score": round(score, 6), "artifact_id": row["artifact_id"]}
             if name == self.CHUNKS:
                 hit["chunk_id"] = item_id
+            elif name == self.ENTITIES:
+                hit["entity_id"] = item_id
+                hit["entity"] = row["entity"]
+                hit["fact"] = row["fact"]
+                hit["trust"] = row["trust"]
+                hit["model_version"] = row["model_version"]
+                hit["body_version"] = row["body_version"]
             else:
                 hit["facet_id"] = item_id
                 hit["level"] = row["level"]
                 hit["trust"] = row["trust"]
+                hit["model_version"] = row["model_version"]
+                hit["body_version"] = row["body_version"]
             out.append(hit)
         return out
 
@@ -513,8 +614,10 @@ class SqliteVecStore(VectorStore):
             return {
                 "chunks": _n("vec_chunks"),
                 "facets": _n("vec_facets"),
+                "entities": _n("vec_entities"),
                 "fts_chunks": _n("fts_chunks"),
                 "fts_facets": _n("fts_facets"),
+                "fts_entities": _n("fts_entities"),
             }
         finally:
             conn.close()

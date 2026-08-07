@@ -49,11 +49,11 @@ def _chunk(conn, cid, aid, ordinal, text):
     )
 
 
-def _facet(conn, fid, aid, level, statement, trust):
+def _facet(conn, fid, aid, level, statement, trust, model_version="test-model"):
     conn.execute(
         "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
-        " VALUES (?, ?, ?, ?, 'test-model', ?)",
-        (fid, aid, level, statement, trust),
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (fid, aid, level, statement, model_version, trust),
     )
 
 
@@ -119,6 +119,21 @@ class TestFusion:
             conn.close()
         sqlite_store.upsert_chunks()
         sqlite_store.upsert_facets()
+
+        # The /search rollup now drops a facet written by an older model the way
+        # the candidates path always did (I2.3); seed the facet with the running
+        # model so it proves a current facet-only match still surfaces.
+        from enqueue.providers.base import get_provider
+
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "UPDATE facets SET model_version = ? WHERE id = 'f1'",
+                (get_provider(local_only=False).model,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         hits = search_results("ziggurat", limit=20)
         a2 = [h for h in hits if h["artifact_id"] == "a2"]

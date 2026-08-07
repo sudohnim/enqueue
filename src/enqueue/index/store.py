@@ -34,11 +34,13 @@ class VectorStore(ABC):
 
     `CHUNKS` and `FACETS` are the two collections every backend indexes, and
     their names are part of the contract: payloads carry ids only, so the name
-    is all the caller needs to say which index it means.
+    is all the caller needs to say which index it means. `ENTITIES` is the
+    third: the enriched entity lines, indexed exactly like facets.
     """
 
     CHUNKS = "chunks"
     FACETS = "facets"
+    ENTITIES = "entities"
 
     @abstractmethod
     def ensure(self) -> None:
@@ -57,6 +59,10 @@ class VectorStore(ABC):
         """Rebuild the whole facets index. Returns {"indexed": n, "collection": name}."""
 
     @abstractmethod
+    def upsert_entities(self, batch_size: int = 64) -> dict:
+        """Rebuild the whole entities index. Returns {"indexed": n, "collection": name}."""
+
+    @abstractmethod
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove every vector belonging to one artifact."""
 
@@ -71,6 +77,15 @@ class VectorStore(ABC):
         The per-artifact counterpart to `upsert_facets` (which clears and rebuilds
         the whole collection): this replaces one artifact's facet vectors and leaves
         the rest alone, so facets can be indexed on capture without a full rebuild.
+        """
+
+    @abstractmethod
+    def index_entities_artifact(self, artifact_id: str) -> int:
+        """Re-embed one artifact's entity lines in place; returns how many were indexed.
+
+        The per-artifact counterpart to `upsert_entities`: this replaces one
+        artifact's entity vectors and leaves the rest alone, so entities can be
+        indexed on capture without a full rebuild.
         """
 
     @abstractmethod

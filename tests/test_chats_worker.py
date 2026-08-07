@@ -193,6 +193,50 @@ class TestSweep:
         assert row["text"] == "That answer could not be completed."
         assert _citation_count(message_id) == 0
 
+    def test_a_naming_failure_does_not_clobber_a_done_answer(self, store, quiet_queue, monkeypatch):
+        """I8.1: the failure UPDATE is guarded by status='pending'.
+
+        The exact clobber shape from the Phase H audit: the answer commits `done`,
+        then a best-effort naming write raises; the except block must not flip the
+        finished answer to failed and overwrite its text.
+        """
+        note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
+        chat = chats.create()
+        message_id = _seed_pending(chat["chat"]["id"])
+        _stub_router(monkeypatch)
+        _stub_answer(
+            monkeypatch,
+            [
+                {
+                    "artifact_id": note["artifact"]["id"],
+                    "title": "Joints",
+                    "text": "A joint that moves outlasts one that does not.",
+                    "kind": "note",
+                }
+            ],
+            answer=Answer(
+                answer="Movement outlasts rigidity.",
+                grounded=True,
+                cited=[note["artifact"]["id"]],
+            ),
+        )
+
+        def _boom_name(*a, **k):
+            raise RuntimeError("the name write fell over")
+
+        monkeypatch.setattr(chats, "_name", _boom_name)
+
+        chats_worker.compute(
+            chats_worker.Job(chat["chat"]["id"], message_id, "what outlasts what?", None)
+        )
+
+        row = _row(message_id)
+        # The finished answer survives; the failure handler could not touch it.
+        assert row["status"] == "done"
+        assert row["text"] == "Movement outlasts rigidity."
+        assert row["kind"] == "answer"
+        assert row["grounded"] == 1
+
     def test_worker_runs_off_the_request(self, store, quiet_queue, monkeypatch):
         chat = chats.create()
         message_id = _seed_pending(chat["chat"]["id"])

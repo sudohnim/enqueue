@@ -76,9 +76,15 @@ def get(name: str) -> Any:
 
 
 def backends() -> list[dict]:
-    """The named endpoints, and what choosing each one means."""
-    import os as _os
+    """The named endpoints, and what choosing each one means.
 
+    `key_present` is whether the backend's key actually resolves, from either
+    source - the environment or the Keychain - because `api_key_state` already
+    consults both and the panel's warning must not contradict it (I7.1).
+    Resolved once per call: the Keychain read is a subprocess, so per-backend
+    resolution would pay for it five times over.
+    """
+    key = config.llm_api_key()
     return [
         {
             "name": name,
@@ -86,9 +92,7 @@ def backends() -> list[dict]:
             "url": spec["url"],
             "local": spec["local"],
             "needs_key": bool(spec["key_var"]),
-            "key_present": bool(spec["key_var"])
-            and bool(_os.getenv(spec["key_var"], "").strip())
-            and _os.getenv(spec["key_var"]) != "ollama",
+            "key_present": bool(spec["key_var"]) and bool(key) and key != "ollama",
         }
         for name, spec in config.BACKENDS.items()
     ]

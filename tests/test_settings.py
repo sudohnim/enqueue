@@ -28,6 +28,9 @@ class TestTheKeyNeverTouchesDisk:
         assert not any("sk-" in str(v) for v in written.values())
 
     def test_what_is_reported_is_presence_and_a_hint_only(self, store, monkeypatch):
+        # The env must be cleared or this test reads the real ENQ_LLM_API_KEY and
+        # passes or fails depending on whether the launcher exported one.
+        monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)
         monkeypatch.setattr(keyring, "available", lambda: True)
         monkeypatch.setattr(keyring, "get", lambda: "sk-live-abcdefgh9999")
 
@@ -45,6 +48,29 @@ class TestTheKeyNeverTouchesDisk:
         state = settings.api_key_state()
         assert state["api_key_where"] == "environment"
         assert state["api_key_editable"] is False
+
+    def test_backends_report_a_keychain_key_as_present(self, store, monkeypatch):
+        """I7.1: key_present reflects the resolved key (Keychain or env), so the
+        panel warning cannot contradict what api_key_state reports."""
+        monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)
+        monkeypatch.setattr(keyring, "get", lambda: "sk-live-abcdefgh9999")
+        by_name = {b["name"]: b for b in settings.backends()}
+        assert by_name["openrouter"]["key_present"] is True
+        assert by_name["opencode"]["key_present"] is True
+        assert by_name["ollama"]["key_present"] is False  # needs no key
+
+    def test_backends_with_no_key_report_absent(self, store, monkeypatch):
+        monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)
+        monkeypatch.setattr(keyring, "get", lambda: None)
+        by_name = {b["name"]: b for b in settings.backends()}
+        assert by_name["openrouter"]["key_present"] is False
+        assert by_name["opencode-go"]["key_present"] is False
+
+    def test_backends_environment_key_wins(self, store, monkeypatch):
+        """The environment is still the top of the resolution order (I7.1)."""
+        monkeypatch.setenv("ENQ_LLM_API_KEY", "sk-from-the-environment")
+        by_name = {b["name"]: b for b in settings.backends()}
+        assert by_name["openrouter"]["key_present"] is True
 
     def test_a_hint_is_useless_without_the_key(self, monkeypatch):
         # `hint(None)` means "look it up", so without this the test reads the real

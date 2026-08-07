@@ -84,9 +84,20 @@ def migrate() -> None:
 
 
 @app.command()
-def facets(limit: int = 0, redo: bool = False) -> None:
-    """Generate facets for every eligible artifact. Slow, resumable."""
-    _echo(_call("POST", "/facets", json={"limit": limit or None, "redo": redo}, timeout=None))
+def facets(limit: int = 0, redo: bool = False, stale_only: bool = False) -> None:
+    """Generate facets for every eligible artifact. Slow, resumable.
+
+    --redo recomputes everything; --stale-only regenerates only facets written
+    by an older model (the cheap catch-up after a model upgrade).
+    """
+    _echo(
+        _call(
+            "POST",
+            "/facets",
+            json={"limit": limit or None, "redo": redo, "stale_only": stale_only},
+            timeout=None,
+        )
+    )
 
 
 @app.command()
@@ -113,12 +124,14 @@ def reindex() -> None:
         typer.echo(f"  {indexed}/{total} rows", err=False)
 
     store = get_store(on_progress=_progress)
-    for name in (store.CHUNKS, store.FACETS):
+    jobs = (
+        (store.CHUNKS, store.upsert_chunks),
+        (store.FACETS, store.upsert_facets),
+        (store.ENTITIES, store.upsert_entities),
+    )
+    for name, run in jobs:
         typer.echo(f"Reindexing {name}...")
-        if name == store.CHUNKS:
-            result = store.upsert_chunks()
-        else:
-            result = store.upsert_facets()
+        result = run()
         typer.secho(f"  {result['indexed']} rows indexed", fg=typer.colors.GREEN)
     store.write_embed_version()
     typer.echo("Index rebuilt; embedding version recorded.")

@@ -736,11 +736,12 @@ def facet_gate() -> dict:
 class FacetRequest(BaseModel):
     limit: int | None = None
     redo: bool = False
+    stale_only: bool = False
 
 
 @app.post("/facets")
 def generate_facets(req: FacetRequest) -> dict:
-    return facets_mod.generate_all(limit=req.limit, redo=req.redo)
+    return facets_mod.generate_all(limit=req.limit, redo=req.redo, stale_only=req.stale_only)
 
 
 @app.post("/index")
@@ -778,8 +779,8 @@ def doctor() -> dict:
     path deletes a chunk row and drops its index point together, so a synced
     index stays synced across deletes). `embed_version_current` is true when
     the recorded version matches the running embedding model. `healthy` is
-    both. The raw `index_counts` cover all four index tables, so an FTS or
-    facets drift is visible even when the chunks count matches.
+    both. The raw `index_counts` cover all six index tables, so an FTS,
+    facets, or entities drift is visible even when the chunks count matches.
     """
     from .index import bootstrap
 

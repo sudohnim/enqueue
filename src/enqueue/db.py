@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib import resources
@@ -87,14 +88,38 @@ def _ensure_migrated() -> None:
         _migrated = True
 
 
+def set_wal(conn: sqlite3.Connection) -> None:
+    """Switch the database file to WAL mode, tolerating momentary contention.
+
+    WAL is a property of the file, not the connection, but switching to it needs
+    an exclusive lock that SQLite does not queue behind the busy timeout: if
+    another connection (the ingest worker, the answer worker, a request thread)
+    holds the database at that instant, the PRAGMA throws SQLITE_BUSY instead
+    of waiting. A retry that eventually wins is correct, because once the file
+    is WAL the PRAGMA is a no-op that cannot contend. Anything that is not a
+    lock error is re-raised immediately - a real failure must not be hidden.
+    """
+    for _ in range(200):
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            time.sleep(0.05)
+    # The last attempt is the honest one: a database that stays locked forever
+    # raises, rather than looping silently.
+    conn.execute("PRAGMA journal_mode = WAL")
+
+
 def get_conn() -> sqlite3.Connection:
     """Open the database, migrating it first if this process has not yet."""
     _ensure_migrated()
 
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    set_wal(conn)
     return conn
 
 
