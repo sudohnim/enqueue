@@ -22,11 +22,12 @@ broken product.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from . import db
+from . import assistant, db, pivot
 from .prompts import CHAT_ANSWER, CHAT_TITLE, CHAT_TOPICS
 from .providers.base import get_provider
 from .schemas import Answer, ChatTitle, ChatTopics
@@ -98,6 +99,14 @@ def get(chat_id: str) -> dict:
             (chat_id,),
         ).fetchall()
 
+        def _message(m) -> dict:
+            out = dict(m)
+            # The payload is stored as JSON text; the client gets the dict it can
+            # re-run (the pivot spec), or None for a turn with no payload.
+            raw = out.pop("payload", None)
+            out["payload"] = json.loads(raw) if raw else None
+            return out | {"cited": cited.get(m["id"], [])}
+
         scope_label = "everything"
         if chat["scope_kind"] == "artifact":
             row = conn.execute(
@@ -112,7 +121,7 @@ def get(chat_id: str) -> dict:
 
         return {
             "chat": dict(chat) | {"scope_label": scope_label},
-            "messages": [dict(m) | {"cited": cited.get(m["id"], [])} for m in messages],
+            "messages": [_message(m) for m in messages],
             "topics": [dict(t) for t in topics],
         }
     finally:
@@ -378,7 +387,22 @@ def _ask_model(
     )
 
 
-def _append(conn, chat_id: str, role: str, text: str, grounded: bool = False) -> str:
+def _append(
+    conn,
+    chat_id: str,
+    role: str,
+    text: str,
+    grounded: bool = False,
+    kind: str = "answer",
+    payload: dict | None = None,
+) -> str:
+    """Write one message row, computing the next ordinal.
+
+    `kind` is the skill that produced the turn (default 'answer' backfills the
+    pre-router corpus). `payload` is the JSON the turn needs to re-render itself
+    - the pivot spec for an organize turn - stored as JSON text, NULL otherwise.
+    Both default so every existing caller is untouched.
+    """
     ordinal = conn.execute(
         "SELECT COALESCE(MAX(ordinal), -1) + 1 AS n FROM chat_messages WHERE chat_id = ?",
         (chat_id,),
@@ -388,71 +412,132 @@ def _append(conn, chat_id: str, role: str, text: str, grounded: bool = False) ->
         grounded_int = int(grounded)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"grounded must be an integer: {exc}") from None
+    payload_json = json.dumps(payload) if payload is not None else None
     conn.execute(
-        "INSERT INTO chat_messages (id, chat_id, ordinal, role, text, grounded, created_at)"
-        " VALUES (?,?,?,?,?,?,?)",
-        (message_id, chat_id, ordinal, role, text, grounded_int, _now()),
+        "INSERT INTO chat_messages"
+        " (id, chat_id, ordinal, role, text, grounded, kind, payload, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
+        (
+            message_id,
+            chat_id,
+            ordinal,
+            role,
+            text,
+            grounded_int,
+            kind,
+            payload_json,
+            _now(),
+        ),
     )
     return message_id
 
 
 def ask(question: str, scope_kind: str = "everything", scope_id: str | None = None) -> dict:
-    """One exchange from nothing: the conversation is written only once the answer is.
+    """Open a conversation with its first turn - routed like every later turn.
 
-    Asking used to create the row first and call the model afterwards, so a
-    timed-out or failing model left an empty conversation behind that popped up on
-    the wall despite never being answered. Nothing is written until the model has
-    answered: retrieval and the model call run first, and only a successful answer
-    creates the chat row, the exchange, the citations, the title, and the topics.
+    The eye opens a new chat, so the first message is where an `organize` request
+    most often lands: it must go through the same route -> run -> write dispatch as
+    a follow-up (`send`), or a fresh "organize my notes by X" would always be
+    answered, never grouped. So `ask` creates the chat and calls `send`; the whole
+    typed-turn machinery is shared, not duplicated.
+
+    The old promise still holds: a timed-out or failing first turn leaves no empty
+    conversation behind on the wall. `send` writes nothing until the skill has
+    produced a turn (its transaction rolls back on failure), and if it raises, the
+    just-created husk is removed before the error propagates.
     """
     question = question.strip()
     if not question:
         raise ValueError("say something")
-    if scope_kind not in ("everything", "artifact", "exhibit"):
-        raise ValueError(f"unknown scope {scope_kind!r}")
-    if scope_kind != "everything" and not scope_id:
-        raise ValueError(f"a {scope_kind} chat needs something to be scoped to")
-
-    found = passages(question, scope_kind, scope_id)
-    empty_reason = empty_scope_reason(scope_kind, scope_id) if not found else None
-    answer = _ask_model(question, "", found, empty_reason)
-
-    chat_id = str(uuid.uuid4())
-    now = _now()
-    by_artifact = {p["artifact_id"]: p for p in found}
-    with db.transaction() as conn:
-        conn.execute(
-            "INSERT INTO chats (id, title, scope_kind, scope_id, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?)",
-            (chat_id, UNTITLED, scope_kind, scope_id, now, now),
-        )
-        _append(conn, chat_id, "user", question)
-        message_id = _append(conn, chat_id, "assistant", answer.answer, answer.grounded)
-        for rank, artifact_id in enumerate(dict.fromkeys(answer.cited)):
-            if artifact_id in by_artifact:
-                conn.execute(
-                    "INSERT OR IGNORE INTO chat_citations (message_id, artifact_id, rank)"
-                    " VALUES (?,?,?)",
-                    (message_id, artifact_id, rank),
-                )
-        conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
-
-    _name(chat_id, question, answer.answer)
-    _retopic(chat_id)
-
-    return get(chat_id)
+    # create() validates the scope; let its ValueError surface before any row exists.
+    chat_id = create(scope_kind, scope_id)["chat"]["id"]
+    try:
+        return send(chat_id, question)
+    except Exception:
+        # The first turn failed, so nothing was written under it. Remove the empty
+        # husk so a conversation that never happened does not appear on the wall.
+        delete(chat_id)
+        raise
 
 
-def send(chat_id: str, text: str) -> dict:
-    """One turn: the question and its answer, written together or not at all.
+def run_answer(chat_id: str, text: str) -> dict:
+    """The `answer` skill: retrieve passages, ask the model, compose the turn.
+
+    This is today's answer path, extracted verbatim from the old `send`: read the
+    chat for its scope and history, retrieve the passages it is allowed to read,
+    ask the model, and return the message dict the dispatcher stores. Nothing is
+    written here - the dispatcher writes both turns and the citations together.
+    A citation the model invented is filtered out exactly as before (the Answer
+    validator usually prevents it; this is the same guard, kept byte-identical).
+    """
+    conn = db.get_conn()
+    try:
+        chat = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
+        if chat is None:
+            raise KeyError(chat_id)
+        history = _history(conn, chat_id)
+    finally:
+        conn.close()
+
+    found = passages(text, chat["scope_kind"], chat["scope_id"])
+    empty_reason = empty_scope_reason(chat["scope_kind"], chat["scope_id"]) if not found else None
+    answer = _ask_model(text, history, found, empty_reason)
+
+    by_artifact = {p["artifact_id"] for p in found}
+    return {
+        "role": "assistant",
+        "text": answer.answer,
+        "grounded": answer.grounded,
+        "kind": "answer",
+        "payload": None,
+        "cited": [aid for aid in dict.fromkeys(answer.cited) if aid in by_artifact],
+    }
+
+
+def run_organize(chat_id: str, text: str) -> dict:
+    """The `organize` skill: plan a pivot, run it, compose a one-line summary.
+
+    The rendered groups are not stored in text - the frontend re-runs the spec
+    from `payload` (S4), so a reload shows the same groups without re-planning.
+    On a PivotError the request cannot be turned into a runnable grouping, so
+    this falls to the answer floor (Rule 1): the person gets a grounded answer,
+    never a broken group stored as a turn.
+    """
+    try:
+        spec = pivot.plan(text)
+        result = pivot.run(spec)
+    except pivot.PivotError as exc:
+        log.warning("could not organize (%s); answering instead", exc)
+        return run_answer(chat_id, text)
+
+    total = sum(len(group["artifact_ids"]) for group in result["groups"])
+    return {
+        "role": "assistant",
+        "text": (
+            f"Organized {total} notes by {result['group_by']} "
+            f"into {len(result['groups'])} groups."
+        ),
+        "grounded": all(group["grounded"] for group in result["groups"]),
+        "kind": "organize",
+        "payload": spec,
+        "cited": [],
+    }
+
+
+def send(chat_id: str, text: str, force_skill: str | None = None) -> dict:
+    """One turn: route the request, run the chosen skill, write both turns together.
 
     Writing the question first and the answer afterwards looks natural and is wrong.
     When the model call fails, the question is left in the transcript with nothing
     under it, and asking again appends a second copy. Measured, on the second turn of
     the first real conversation: two identical questions, one answer.
 
-    So nothing is written until there is an answer to write with it. The interface
+    So nothing is written until there is a turn to write with it. The interface
     shows the question immediately; the log gains it once the exchange is real.
+
+    The middle - what produced the assistant text - is a routed skill (Rule 1:
+    `answer` is the floor, and `force_skill` is the server side of Rule 2's
+    "answer instead": the UI re-sends the same text forcing `answer`).
     """
     text = text.strip()
     if not text:
@@ -463,7 +548,6 @@ def send(chat_id: str, text: str) -> dict:
         chat = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if chat is None:
             raise KeyError(chat_id)
-        history = _history(conn, chat_id)
         first_exchange = (
             conn.execute(
                 "SELECT COUNT(*) AS n FROM chat_messages WHERE chat_id = ?", (chat_id,)
@@ -473,25 +557,30 @@ def send(chat_id: str, text: str) -> dict:
     finally:
         conn.close()
 
-    found = passages(text, chat["scope_kind"], chat["scope_id"])
-    empty_reason = empty_scope_reason(chat["scope_kind"], chat["scope_id"]) if not found else None
-    answer = _ask_model(text, history, found, empty_reason)
+    skill_name = force_skill if force_skill in assistant.REGISTRY else assistant.route(text)
+    msg = assistant.REGISTRY[skill_name].run(chat_id, text)
 
-    by_artifact = {p["artifact_id"]: p for p in found}
     with db.transaction() as conn:
         _append(conn, chat_id, "user", text)
-        message_id = _append(conn, chat_id, "assistant", answer.answer, answer.grounded)
-        for rank, artifact_id in enumerate(dict.fromkeys(answer.cited)):
-            if artifact_id in by_artifact:
-                conn.execute(
-                    "INSERT OR IGNORE INTO chat_citations (message_id, artifact_id, rank)"
-                    " VALUES (?,?,?)",
-                    (message_id, artifact_id, rank),
-                )
+        message_id = _append(
+            conn,
+            chat_id,
+            "assistant",
+            msg["text"],
+            grounded=msg["grounded"],
+            kind=msg["kind"],
+            payload=msg["payload"],
+        )
+        for rank, artifact_id in enumerate(msg["cited"]):
+            conn.execute(
+                "INSERT OR IGNORE INTO chat_citations (message_id, artifact_id, rank)"
+                " VALUES (?,?,?)",
+                (message_id, artifact_id, rank),
+            )
         conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
 
     if first_exchange:
-        _name(chat_id, text, answer.answer)
+        _name(chat_id, text, msg["text"])
     _retopic(chat_id)
 
     return get(chat_id)

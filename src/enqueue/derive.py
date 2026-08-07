@@ -1,10 +1,16 @@
 """Derived values for the pivot engine.
 
 A pivot groups artifacts by an attribute the model computes. An attribute has
-two ways to be produced: `extract` reads it from one artifact's content
-(grounded), and `enrich` infers it from another value using world knowledge
-(not grounded). Every derived value is cached in `derived_values` so a pivot
-re-run pays for model calls only for artifacts or values never seen before.
+three ways to be produced: `extract` reads it from one artifact's content
+(grounded), `enrich` infers it from another value using world knowledge
+(not grounded), and `field` reads it straight from the artifact's own row -
+its kind, the site it came from, when it was saved - with zero model calls
+and a `grounded` flag that is always true, because the value is literally the
+user's stored data. `extract` and `enrich` results are cached in
+`derived_values` so a pivot re-run pays for model calls only for artifacts or
+values never seen before; a `field` read is never cached, because it is a
+free SQL read and caching would risk serving a stale label after the row
+changes.
 
 Two rules from the plan hold here:
 
@@ -90,7 +96,16 @@ def _write(
             "INSERT OR REPLACE INTO derived_values"
             " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (scope, subject, attribute, value, int(grounded), source, model_version, _now()),
+            (
+                scope,
+                subject,
+                attribute,
+                value,
+                1 if grounded else 0,
+                source,
+                model_version,
+                _now(),
+            ),
         )
 
 
@@ -190,6 +205,54 @@ def enrich(input_value: str, attribute: str, instruction: str) -> dict:
         model_version=provider.model,
     )
     return {"value": value, "grounded": False, "source": "model"}
+
+
+# The metadata columns the field registry may read. `body` is deliberately
+# excluded: a field read must stay a cheap SQL read, and pulling every note's
+# markdown to read its kind would miss the entire point of the op. A new field
+# that reads a column already listed here is a one-entry registry add; a field
+# on a column not listed adds it to the SELECT in the same change.
+
+
+def field(artifact_id: str, field_name: str) -> dict:
+    """Read one attribute straight from the artifact's own row. Grounded.
+
+    The value is the user's stored data, so this is the most grounded read the
+    engine has - but a user correction still wins (rule 2: the director beats
+    the curator), exactly as it does for extract and enrich. Nothing is cached:
+    a field read is a free SQL read, and caching would risk serving a stale
+    label after the row changes.
+
+    An unknown field_name raises KeyError. The planner's validation is supposed
+    to prevent it reaching here; this is the belt, not the braces.
+    """
+    from . import fields
+
+    attribute = field_name.strip().lower()
+    corrected = _read("artifact", artifact_id, attribute)
+    if corrected is not None and corrected["source"] == "user":
+        return {"value": corrected["value"], "grounded": True, "source": "field"}
+
+    if attribute not in fields.FIELDS:
+        raise KeyError(attribute)
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT kind, title, source_url, mime, filename, created_at, updated_at,"
+            " local_only, status, pages FROM artifacts WHERE id = ?",
+            (artifact_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise KeyError(artifact_id)
+
+    return {
+        "value": fields.FIELDS[attribute].resolve(row),
+        "grounded": True,
+        "source": "field",
+    }
 
 
 def bucketize(values: list[str], instruction: str) -> dict:

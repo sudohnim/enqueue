@@ -506,6 +506,21 @@
   .pivotgroup {
     margin-top: var(--sp-5);
   }
+  /* A typed organize turn: the groups sit below the label bubble, inside the
+     turn, using the same pivot group markup. Tighter than the standalone view
+     so a grouped turn reads as one turn, not a pasted screen. */
+  .turn .org {
+    margin-top: var(--sp-2);
+    min-width: 0;
+  }
+  .turn .org .pivotgroup {
+    margin-top: var(--sp-3);
+  }
+  .org-actions {
+    display: flex;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
   /* Grounding note. When any step inferred a value from world knowledge, the whole
      grouping is the assistant's guess, not text from the notes. It has to be read,
      not decoration, so it is ink on a raised ground - quiet, never the accent, which
@@ -3212,7 +3227,7 @@
     pill.classList.remove("wide");
     const inside = place === "inside";
 
-    // Wall: Plus + Search + Organize + Eye (chat) + Settings.
+    // Wall: Plus + Search + Saved groupings + Eye (chat) + Settings.
     // Inside: Back + Eye (context-aware).
     let html = "";
     if (inside) {
@@ -3235,7 +3250,7 @@
         '<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
         svg("find") +
         "</button>" +
-        '<button class="round" aria-label="Organize by..." onclick="openField(\'organize\')">' +
+        '<button class="round" aria-label="Saved groupings" onclick="showSavedGroupings()">' +
         svg("grid") +
         "</button>" +
         '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
@@ -3330,7 +3345,6 @@
     const hint = {
       search: "find something",
       ask: "ask about " + scope.label,
-      organize: "organize by...",
       link: "paste a url",
     }[mode];
     pill.classList.add("wide");
@@ -3355,7 +3369,6 @@
       restorePill();
       if (mode === "search") doSearch(v);
       else if (mode === "ask") startChat(v);
-      else if (mode === "organize") startPivot(v);
       else saveLink(v);
     };
   }
@@ -3443,6 +3456,68 @@
       box.showModal();
       // Cancel takes focus, so a stray Return cannot destroy anything.
       box.querySelector('[value="no"]').focus();
+    });
+  }
+
+  // A one-line text prompt, same modal shell as ask() but with a field. Resolves
+  // to the trimmed value, or null on cancel/empty. Used to name a saved grouping -
+  // naming is the one place a person types a name, and it is never a browser
+  // prompt(), which the macOS WKWebView renders inconsistently.
+  function askText(title, placeholder, confirmLabel, initial) {
+    return new Promise((resolve) => {
+      const box = document.createElement("dialog");
+      box.className = "ask";
+      box.innerHTML =
+        '<h2 id="askTitle"></h2>' +
+        '<input class="field" id="askField" autocomplete="off">' +
+        '<div class="asked">' +
+        '<button class="btn secondary" value="no">Cancel</button>' +
+        '<button class="btn primary" value="yes"></button>' +
+        "</div>";
+      box.setAttribute("aria-labelledby", "askTitle");
+      box.querySelector("h2").textContent = title;
+      const field = box.querySelector("#askField");
+      field.placeholder = placeholder || "";
+      field.value = initial || "";
+      box.querySelector('[value="yes"]').textContent = confirmLabel;
+
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true;
+        try {
+          box.close();
+        } catch (_) {
+          // Already closed by the platform; the node still has to go.
+        }
+        box.remove();
+        resolve(answer);
+      };
+      const submit = () => {
+        const v = field.value.trim();
+        finish(v || null);
+      };
+
+      box.querySelector('[value="no"]').onclick = () => finish(null);
+      box.querySelector('[value="yes"]').onclick = submit;
+      box.addEventListener("cancel", (e) => {
+        e.preventDefault();
+        finish(null);
+      });
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          finish(null);
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+      });
+
+      document.body.appendChild(box);
+      box.showModal();
+      field.focus();
     });
   }
 
@@ -5400,40 +5475,10 @@
   }
 
   // ---- pivot ---------------------------------------------------------------
-  // Organize is search's sibling on the pill: search narrows to what matches,
-  // organize rearranges a subset by an attribute the model derives. The planner
-  // decides whether a request is organizable at all and what the subset is; the
-  // engine never dresses a guessed group key as the user's own data.
-  async function startPivot(text) {
-    teardown();
-    view.innerHTML =
-      '<div class="state thinking">planning the grouping...</div>';
-    let spec;
-    try {
-      const planned = await api("/pivot/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ request: text }),
-      });
-      spec = planned.spec;
-    } catch (err) {
-      return pivotFailed(err);
-    }
-    view.innerHTML =
-      '<div class="state thinking">grouping what you saved...</div>';
-    let d;
-    try {
-      d = await api("/pivot/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec }),
-      });
-    } catch (err) {
-      return pivotFailed(err);
-    }
-    renderPivot(d, text, spec);
-  }
-
+  // Grouping is no longer its own pill door: the eye routes an "organize ..."
+  // request through the assistant (a typed turn), and the grid button re-runs a
+  // saved grouping. Both reuse renderPivot / pivotGroupsHtml below. pivotFailed
+  // is shared by runSavedGrouping.
   function pivotFailed(err) {
     view.innerHTML =
       back() +
@@ -5446,9 +5491,10 @@
   // because every derive call is cached) instead of re-planning from the words.
   let pivotState = null;
 
-  function renderPivot(d, request, spec) {
-    pivotState = { d, request, spec };
-
+  // The group markup both surfaces share - the standalone pivot view and the
+  // in-chat organize turn. One renderer, two homes: a second grouping renderer
+  // would drift from the first the moment either changed.
+  function pivotGroupsHtml(d, makeMove) {
     // The grouping is inferred when any step read a value from world knowledge
     // rather than the note itself; the run marks that per group (they share the
     // one value, since one enrich taints the whole run). That is a guess about the
@@ -5456,20 +5502,7 @@
     // never buried (rule 2).
     const inferred = d.groups.some((g) => g.grounded === false);
 
-    let html =
-      back() +
-      '<div class="h1">' +
-      esc(request) +
-      "</div>" +
-      '<div class="meta">' +
-      d.groups.length +
-      " group" +
-      (d.groups.length === 1 ? "" : "s") +
-      " &middot; grouped by " +
-      esc(d.group_by) +
-      (d.truncated ? " &middot; first 200 only" : "") +
-      "</div>";
-
+    let html = "";
     if (inferred) {
       html +=
         '<div class="groundnote" role="note">These groups come from the ' +
@@ -5496,15 +5529,36 @@
               card(a, i) +
               '<button class="movebtn" aria-label="Move ' +
               esc(a.title || "Untitled") +
-              ' to another group" onclick="pivotMove(\'' +
-              esc(a.id) +
-              "')\">move</button>" +
+              ' to another group" ' +
+              makeMove(a.id) +
+              ">move</button>" +
               "</div>",
           )
           .join("") +
         "</div>" +
         "</section>";
     }
+    return html;
+  }
+
+  function renderPivot(d, request, spec) {
+    pivotState = { d, request, spec };
+
+    let html =
+      back() +
+      '<div class="h1">' +
+      esc(request) +
+      "</div>" +
+      '<div class="meta">' +
+      d.groups.length +
+      " group" +
+      (d.groups.length === 1 ? "" : "s") +
+      " &middot; grouped by " +
+      esc(d.group_by) +
+      (d.truncated ? " &middot; first 200 only" : "") +
+      "</div>";
+
+    html += pivotGroupsHtml(d, (id) => "onclick=\"pivotMove('" + esc(id) + "')\"");
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
@@ -5642,6 +5696,7 @@
     faceWatch = null;
     ctx = null;
     chat = null;
+    organizeTurns = {};
     // Unsaved settings edits are staging on a form, not a decision. Leaving the form
     // drops them, so stale values never follow the user between screens.
     pendingSettings = null;
@@ -5722,6 +5777,9 @@
       esc(label) +
       "</button>";
 
+    // The view rebuilds every render, so last screen's organize turns are gone.
+    organizeTurns = {};
+
     let html =
       '<div class="transcript">' +
       '<button class="btn ghost back" onclick="home()">' +
@@ -5743,6 +5801,10 @@
         : '<div class="meta">reading everything</div>');
 
     for (const m of d.messages) {
+      // A typed turn (S4): `answer` (and any unknown kind, defensively) renders
+      // exactly as today; `organize` renders its label in the bubble and the
+      // grouped view below it, hydrated from the stored spec.
+      const organize = m.kind === "organize" && m.role === "assistant";
       html +=
         '<div class="turn ' +
         (m.role === "user" ? "you" : "curator") +
@@ -5764,10 +5826,20 @@
             .map((c) => chip(c.kind, c.artifact_id, c.title, "showArtifact"))
             .join("") +
           "</div>";
-      else if (m.role === "assistant" && !m.grounded)
+      else if (m.role === "assistant" && !m.grounded && !organize)
         html +=
           '<div class="unsourced">Nothing you have saved carried this.</div>';
-      html += "</div></div>";
+      html += "</div>";
+
+      // The grouped view is not stored in the turn's text: it re-runs the stored
+      // spec (S4.2), so a reload shows the same groups without re-planning. The
+      // slot starts as a placeholder and hydrates right after this render.
+      if (organize)
+        html +=
+          '<div class="org" id="org-' +
+          esc(m.id) +
+          '"><div class="state thinking">grouping what you saved...</div></div>';
+      html += "</div>";
     }
 
     if (pending)
@@ -5778,7 +5850,154 @@
         '<div class="said streaming">Reading what you saved...</div></div>';
 
     view.innerHTML = html + "</div>";
+    for (const m of d.messages)
+      if (m.kind === "organize" && m.role === "assistant" && m.payload)
+        hydrateOrganize(m, d);
     window.scrollTo(0, document.body.scrollHeight);
+  }
+
+  // ---- typed turns: the in-chat organize view -------------------------------
+  // The organize turns currently on screen: message id -> {d (last run), spec,
+  // userText}. They reuse the same run endpoint and the same group markup as the
+  // standalone pivot; only the home differs. A correction re-runs the turn's own
+  // spec, cheap because every derive call is cached.
+  let organizeTurns = {};
+
+  // Re-run a turn's stored spec and fill its slot. One run endpoint, no fork: the
+  // same POST /pivot/run the standalone pivot used.
+  function hydrateOrganize(m, d) {
+    const slot = document.getElementById("org-" + m.id);
+    if (!slot) return;
+    const idx = d.messages.indexOf(m);
+    const userText =
+      idx > 0 && d.messages[idx - 1].role === "user"
+        ? d.messages[idx - 1].text
+        : m.text;
+
+    api("/pivot/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spec: m.payload }),
+    })
+      .then((result) => {
+        organizeTurns[m.id] = { d: result, spec: m.payload, userText };
+        slot.innerHTML = organizeSlotHtml(m.id);
+      })
+      .catch((err) => {
+        slot.innerHTML =
+          '<div class="state">That grouping could not be re-run: ' +
+          esc(String((err && err.message) || err)) +
+          ".</div>";
+      });
+  }
+
+  // The turn's groups plus its controls (Rule 2: the routing is declared - the
+  // label is in the bubble - and reversible - "Answer instead" is always here).
+  function organizeSlotHtml(mid) {
+    const st = organizeTurns[mid];
+    if (!st) return "";
+    return (
+      pivotGroupsHtml(
+        st.d,
+        (id) => "onclick=\"chatPivotMove('" + mid + "','" + esc(id) + "')\"",
+      ) +
+      '<div class="org-actions">' +
+      '<button class="btn ghost" onclick="saveGrouping(\'' +
+      mid +
+      "')\">Save grouping</button>" +
+      '<button class="btn ghost" onclick="answerInstead(\'' +
+      mid +
+      "')\">Answer instead</button>" +
+      "</div>"
+    );
+  }
+
+  // Keep this arrangement: name the spec that produced the turn and store it, so
+  // the grid button can re-open and re-run it live. The spec is the recipe, not a
+  // snapshot - naming is the only text a person types; grouping never prompts.
+  async function saveGrouping(mid) {
+    const st = organizeTurns[mid];
+    if (!st) return;
+    const name = await askText(
+      "Name this grouping",
+      "e.g. By author region",
+      "Save",
+    );
+    if (!name) return;
+    try {
+      await api("/pivots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, spec: st.spec }),
+      });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+    toast('Saved as "' + name + '". Find it under the grid button.');
+  }
+
+  // Correct a misfiled card inside a chat organize turn: write a user override on
+  // the grouping attribute for this one artifact, then re-run the turn's own spec
+  // so the card lands where the person put it. The override always wins on read,
+  // so the move survives every later re-run (S4.4).
+  async function chatPivotMove(mid, id) {
+    const st = organizeTurns[mid];
+    if (!st) return;
+    const d = st.d;
+
+    let current = "";
+    for (const g of d.groups) {
+      if ((g.artifact_ids || []).includes(id)) {
+        current = g.key;
+        break;
+      }
+    }
+    const keys = d.groups.map((g) => g.key);
+
+    const target = await pickGroup(keys, current);
+    if (target === null) return;
+
+    try {
+      await api("/derived/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "artifact",
+          subject: id,
+          attribute: d.group_by,
+          value: target,
+        }),
+      });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+
+    const slot = document.getElementById("org-" + mid);
+    if (!slot) return;
+    slot.innerHTML = '<div class="state thinking">moving it...</div>';
+    try {
+      st.d = await api("/pivot/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: st.spec }),
+      });
+    } catch (err) {
+      slot.innerHTML =
+        '<div class="state">That grouping could not be re-run: ' +
+        esc(String((err && err.message) || err)) +
+        ".</div>";
+      return;
+    }
+    slot.innerHTML = organizeSlotHtml(mid);
+    toast("Moved to " + (target || "Not determined") + ".");
+  }
+
+  // Rule 2's way back, in one click: re-send the same words forcing `answer`
+  // (the dispatcher's force_skill), appending a fresh answer turn below.
+  function answerInstead(mid) {
+    const st = organizeTurns[mid];
+    if (!st || !chat) return;
+    sendInChat(st.userText, "answer");
   }
 
   // The rail is present on every surface, not only inside a conversation. A thread you
@@ -5844,6 +6063,84 @@
     view.innerHTML = html;
   }
 
+  // ---- saved groupings: the grid button's home -----------------------------
+  // A saved grouping is an arrangement's recipe (the spec), not a frozen result.
+  // Opening one re-runs it live, so a note captured since it was saved lands in
+  // its group - the arrangement stays true as the library grows. The grid button
+  // opens this list; a row runs its grouping; the small cross forgets it.
+  async function showSavedGroupings() {
+    teardown();
+    restorePill("wall");
+    const list = await api("/pivots").catch(() => ({ items: [] }));
+    let html = '<div class="shelf">Saved groupings</div>';
+    if (!list.items.length) {
+      html +=
+        '<div class="aside">Nothing saved yet. Ask the eye to organize your ' +
+        "notes, then save the grouping you want to keep.</div>";
+    } else {
+      html +=
+        '<div class="wall">' +
+        list.items
+          .map(
+            (p) =>
+              '<div class="card" tabindex="0" role="button" onclick="runSavedGrouping(\'' +
+              p.id +
+              "','" +
+              esc(p.name).replace(/'/g, "\\'") +
+              "')\">" +
+              '<div class="frame" style="padding:24px 16px">' +
+              '<div class="title">' +
+              esc(p.name) +
+              "</div>" +
+              '<button class="movebtn" aria-label="Forget ' +
+              esc(p.name) +
+              '" onclick="forgetSavedGrouping(event,\'' +
+              p.id +
+              "')\">forget</button>" +
+              "</div></div>",
+          )
+          .join("") +
+        "</div>";
+    }
+    view.innerHTML = html;
+  }
+
+  // Run a saved grouping: fetch its spec, run it live, and render it in the same
+  // standalone pivot view (renderPivot) the planner produced - so a move works
+  // through the same path. The saved name stands in for the words that planned it.
+  async function runSavedGrouping(id, name) {
+    teardown();
+    view.innerHTML = '<div class="state thinking">grouping what you saved...</div>';
+    let saved;
+    try {
+      saved = await api("/pivots/" + id);
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    let d;
+    try {
+      d = await api("/pivot/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: saved.spec }),
+      });
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    renderPivot(d, name || saved.name, saved.spec);
+  }
+
+  async function forgetSavedGrouping(ev, id) {
+    if (ev) ev.stopPropagation();
+    try {
+      await api("/pivots/" + id, { method: "DELETE" });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+    toast("Grouping forgotten.");
+    showSavedGroupings();
+  }
+
   async function togglePin(id, pinned) {
     try {
       await api("/chats/" + id, {
@@ -5890,7 +6187,7 @@
     };
   }
 
-  async function sendInChat(text) {
+  async function sendInChat(text, skill) {
     const id = chat.chat.id;
     renderChat(chat, text);
     let d;
@@ -5898,7 +6195,9 @@
       d = await api("/chats/" + id + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        // `skill` forces a route (Rule 2's "answer instead"). JSON.stringify
+        // drops an undefined value, so a plain send carries no skill at all.
+        body: JSON.stringify({ text, skill }),
       });
     } catch (err) {
       chat = await api("/chats/" + id);

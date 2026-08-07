@@ -1,310 +1,593 @@
-# Feature: Pivot — group a subset of the library by a computed attribute
+# PROGRESS - The assistant dispatcher (the eye is the one AI door)
 
-This file is the whole plan. It is written to be implemented by an LLM that does not know
-this codebase. Do not improvise. Do every step in order.
+## Orientation - read this first, all of it
 
-The motivating example is "organize my book notes by the region the author is from." **You
-must NOT build that query.** You build a general engine for which that query is one input.
-Nothing you write may contain the words book, author, or region as a code path. They appear
-only inside test fixtures.
+Enqueue has one place a person types an unstructured request to the AI: the eye,
+which opens a chat. Today that chat can do exactly one thing - answer a question
+from the collection (`chats.send` -> retrieve passages -> ask the model -> write
+one assistant message). The pivot engine (grouping the library by a computed
+attribute) is a second, separate door: its own pill, its own view, `pivot.plan`
+and `pivot.run` wired straight to the UI.
 
-(The previous contents of this file were the tags plan, now shipped; git has it.)
+This plan makes the eye the **one** door. A person types anything into the chat.
+A cheap **router** reads the request and picks a **skill** to run. `answer` is
+one skill. `organize` (the pivot engine) is the second. The chosen skill runs,
+and its result is written as a typed turn in the transcript - an answer turn
+reads like today, an organize turn renders the grouped view inline. The
+standalone organize pill goes away. The grid button is repurposed to list
+**saved groupings** - a named pivot spec you can re-run.
+
+Nothing here invents new retrieval, new grouping, or a new model call shape. It
+is a **router in front of two things that already work**, plus a place to store
+a turn's type and a place to save a spec. The whole feature is plumbing and one
+small classification call.
+
+### Why a router and not an if-statement
+
+Two skills today, more later (summarize a set, draft from sources, extract a
+table). An `if "group" in text` branch is a keyword guess that breaks the moment
+a person writes "arrange my book notes by where the author lived" without the
+word group. A registry of skills, each with a one-line description the router
+reads, is the shape that holds when the third and fourth skills arrive: adding a
+skill is adding a registry entry, not editing a branch. The router is one model
+call that returns a skill name from the registry's own list.
+
+### The two rules you must never break
+
+These are the whole ethic of the feature. Every phase below serves them. If a
+change would violate one, the change is wrong, not the rule.
+
+**Rule 1 - `answer` is the floor. A structured skill is never guessed.**
+The router defaults to `answer` on *any* uncertainty: an unrecognized skill
+name, a failed model call, a request that does not clearly match a structured
+skill, a structured skill that then errors. `answer` is grounded and safe - it
+reads the collection and replies, or says it found nothing. It is never wrong to
+fall back to it. It *is* wrong to run `organize` on a request that was really a
+question, produce an empty grouping, and call that an answer. When in doubt,
+answer.
+
+**Rule 2 - the chosen skill is declared and reversible. Never silent.**
+Every non-answer turn says which skill ran ("Organized by region") and offers a
+one-click way back to the floor ("answer instead", which re-sends the same text
+forcing `answer`). A person is never surprised by what the AI decided to do with
+their words, and is never trapped in that decision. Routing you cannot see and
+cannot undo is a routing you cannot trust.
+
+### The house style for this plan (same as the pivot plan before it)
+
+- **Small, atomic, idempotent tasks a dumb LLM can do.** One checkbox = one
+  commit = one green test run. No task assumes cleverness. If a task needs a
+  judgment call, the judgment is written out here, not left to the implementer.
+- **`[AGENT]`** tasks an implementing agent does. **`[HUMAN]`** tasks only Minh
+  does (review gates, running the desktop, committing). The agent never commits.
+- Each task states its **exact** signature / SQL / test names and its
+  **verification command**. Green means done; then check the box.
+- Generalizable, not overfit. `answer` and `organize` are the first two skills,
+  but nothing in the router or the dispatch loop names them specially beyond the
+  registry. A third skill is a registry entry and a runner - no router edit, no
+  dispatch edit, no schema change.
+
+### Anchors (what already exists - do not rebuild)
+
+- `chats.send(chat_id, text)` - the current answer path. Gets history, retrieves
+  `passages()`, `_ask_model`, writes the user turn + assistant turn + citations
+  in one transaction. This becomes the body of the `answer` skill, extracted
+  verbatim. `src/enqueue/chats.py`.
+- `chats._append(conn, chat_id, role, text, grounded=False) -> message_id` -
+  writes one row to `chat_messages`, computes the next ordinal. Gets two new
+  optional params in S1. `src/enqueue/chats.py:381`.
+- `pivot.plan(request) -> spec` and `pivot.run(spec) -> {groups, truncated,
+  group_by}` and `pivot.PivotError`. The organize skill calls these. Do not
+  touch pivot.py's logic. `src/enqueue/pivot.py`.
+- The pivot API render helper `_wall_item` and `POST /pivot/run` in
+  `src/enqueue/api.py` - the organize turn reuses the same group hydration.
+- `renderChat(d, pending)` and `renderPivot(...)` in
+  `src/enqueue/static/museum.html`. The transcript loop is at line ~5745 (`for
+  (const m of d.messages)`). Organize turns render inside that loop.
+- Migrations run via alembic `upgrade head` (`db.py`). Latest is `0012`. Next is
+  `0013`. A new table is a plain `CREATE TABLE`; a new column on `chat_messages`
+  is `ALTER TABLE ... ADD COLUMN`. Nothing else creates these two objects, so no
+  `IF NOT EXISTS` store-race dance is needed (unlike 0011/0012).
 
 ---
 
-## 0. The two rules you must never break
+## Phase S1 - the schema a typed turn needs
 
-1. **Nothing is hardcoded to a domain.** Every attribute name, instruction, and subset is a
-   PARAMETER that arrives at runtime. If you find yourself writing `if attribute == "author"`
-   or a prompt that mentions books, you did it wrong: stop and re-read.
-2. **An inferred value is never dressed as the user's data.** Every derived value carries a
-   `grounded` flag: true when it came from the artifact's own content, false when it came
-   from the model's world knowledge. The flag travels with the value everywhere, and the UI
-   shows it. This is the product's "show your work" promise; breaking it is the one thing this
-   app refuses to do.
+A turn is currently only role + text + grounded. To render an organize turn on
+reload, the transcript must remember two more things: **what kind** of turn it
+was, and, for a structured skill, **the spec that produced it** so the view
+re-runs from stored intent, not from re-classifying the old text. Saved
+groupings need their own tiny table.
 
-## 1. The idea in one paragraph
+- [x] **S1.1 [AGENT]** Migration `0013_assistant_turns.py` (`revision = "0013"`,
+  `down_revision = "0012"`). Two `ALTER TABLE chat_messages ADD COLUMN`:
+  - `kind TEXT NOT NULL DEFAULT 'answer'` - the skill that produced the turn.
+    Defaulting to `'answer'` backfills every existing row correctly: everything
+    written before this feature was an answer.
+  - `payload TEXT` (nullable) - JSON the turn needs to re-render itself. NULL for
+    an answer (its text is the whole turn). For an organize turn, the pivot spec
+    (a dict), so the view re-runs on reload without re-planning.
+  Do **not** add a `CHECK (kind IN (...))`: a CHECK freezes the skill list into
+  the schema and a third skill would need a migration to add a turn type. `kind`
+  stays open; the registry is the source of truth for valid names, not the DB.
+  Write a docstring block like 0012's explaining both columns and why `kind` is
+  unconstrained.
+  Verify: `uv run alembic upgrade head` on a fresh temp DB, then
+  `PRAGMA table_info(chat_messages)` shows both columns.
 
-A **pivot** groups a chosen set of artifacts by an attribute the model computes. An
-**attribute** is a named, cached, model-derived value with two ways to produce it: `extract`
-(read it from an artifact's content, grounded) and `enrich` (infer it from another value using
-world knowledge, not grounded). A pivot is a short pipeline of those, ending in a group key,
-then a plain code-level group-by. The model does only the per-item judgments; ordinary code
-does the selecting, caching, grouping, and rendering. The library never groups itself in one
-giant prompt.
+- [x] **S1.2 [AGENT]** Same migration, new table `saved_pivots`:
 
-Worked example (a test, not a code path): subset = "notes about books"; step 1 `extract`
-attribute `author` from each note; step 2 `enrich` attribute `region` from each distinct
-author; group by `region`. The code knows none of those words; they come from a spec.
+  ```sql
+  CREATE TABLE saved_pivots (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    spec_json  TEXT NOT NULL,   -- the pivot spec, exactly as pivot.run() eats it
+    created_at TEXT NOT NULL
+  )
+  ```
 
-## 2. Orientation
+  No `IF NOT EXISTS` - nothing but this migration creates it. `downgrade()` drops
+  the table and the two columns (SQLite `DROP COLUMN` works on the pinned
+  version; if it rejects, leave a comment that downgrade is dev-only and drop
+  just the table).
+  Verify: `uv run alembic upgrade head && uv run alembic downgrade -1 && uv run
+  alembic upgrade head` round-trips clean.
 
-Local-first macOS app. Python engine (FastAPI) on `127.0.0.1:8787`. You will touch:
+- [x] **S1.3 [AGENT]** Extend `chats._append` to carry the two new fields:
+  `_append(conn, chat_id, role, text, grounded=False, kind="answer",
+  payload=None)`. When `payload` is not None, `json.dumps` it before the INSERT;
+  store NULL otherwise. Both new params default so every existing caller is
+  untouched. Update the INSERT column list + placeholders.
+  Verify: existing chat tests still pass - `uv run pytest tests/test_chats.py
+  -q`. No new test yet; S3 exercises the new params.
 
-| Path | What it is |
-| --- | --- |
-| `src/enqueue/migrations/versions/` | Alembic migrations. You add `0012_derived.py`. |
-| `src/enqueue/derive.py` | NEW. The three model primitives + the cache. You create it. |
-| `src/enqueue/pivot.py` | NEW. The code orchestrator and the planner. You create it. |
-| `src/enqueue/prompts.py` | Prompt templates live here as module constants. You add three. |
-| `src/enqueue/api.py` | FastAPI endpoints. You add the pivot endpoints. |
-| `src/enqueue/static/museum.html` | The whole UI. One file, inline `<style>` + `<script>`. |
-| `tests/` | Pytest. Mirror `tests/test_tags.py` for style and the `store` fixture. |
+- [x] **S1.4 [AGENT]** Wherever a chat message is read back for the API
+  (`get_chat` / the messages serializer feeding `renderChat`), include `kind`
+  and parse `payload` from JSON to a dict (or None). The turn dict the frontend
+  receives gains `kind` and `payload`. Do not change `grounded`, `cited`, etc.
+  Verify: `GET /chats/{id}` on a seeded chat returns messages each with a `kind`
+  of `"answer"` and `payload` null. Add one assertion to the existing chat API
+  test.
 
-Reference shapes to copy (read them, do not import their specifics blindly):
+- [x] **S1.5 [HUMAN]** Review the migration and the `_append` change. Confirm the
+  default-`'answer'` backfill is right for the existing corpus and that no CHECK
+  was added. Then continue.
 
-- Model call: `get_provider().complete(system, user, ResponseModel, context=None)` returns a
-  Pydantic instance. See `src/enqueue/ingest/facets.py` `generate_for_artifact`.
-- Cache table with model-version invalidation: `lens_judgments` in `0009_lens_judgments.py`
-  (its PK includes `model_version`, so a model change does not serve stale rows).
-- The artifact's text for extraction: `retrieve.candidates.artifact_text(conn, artifact_id, max_words=...)`.
+---
 
-### Running and checking
+## Phase S2 - the skill registry and the router
+
+One new module, `src/enqueue/assistant.py`. It holds the registry (a mapping of
+skill name -> a small descriptor) and `route(request) -> skill_name`. It does
+**not** run skills yet - S3 wires dispatch. Keep the classification and the
+registry in one place so adding a skill is a one-file edit.
+
+- [x] **S2.1 [AGENT]** Define the skill descriptor and registry. A skill is a
+  plain dataclass: `name: str`, `describe: str` (one line the router prompt shows
+  the model - "answer a question from the collection", "organize a set of notes
+  into groups by a computed attribute"), and `run: Callable[[str, str], dict]`
+  (chat_id, text) -> the message dict the dispatcher will store (`{role, text,
+  grounded, kind, payload, cited}`). Register two entries: `answer` and
+  `organize`. The `run` callables come from S3; for now point them at stubs that
+  raise `NotImplementedError` so the registry imports clean and the router can
+  list names.
+  Verify: `python -c "from enqueue.assistant import REGISTRY; print(sorted(REGISTRY))"`
+  prints `['answer', 'organize']`.
+
+- [x] **S2.2 [AGENT]** `route(request: str) -> str`. One model call. Prompt is
+  built from the registry: list each skill's name + `describe`, ask the model
+  which single skill best fits the request, and instruct it that when nothing
+  clearly fits a structured skill, it must pick `answer`. Response model is a
+  one-field Pydantic (`skill: str`). Then **clamp to the floor**: if the returned
+  name is not in `REGISTRY`, return `"answer"`. Wrap the whole call in
+  try/except - on any exception return `"answer"`. Empty/whitespace request
+  returns `"answer"` without calling the model. This function can never raise and
+  can never return a name outside the registry (Rule 1, in code).
+  Put the prompt template in `src/enqueue/prompts.py` next to `PIVOT_PLAN`
+  (`ASSISTANT_ROUTE`), built from a `{skills}` block and `{request}`.
+  Verify: unit test below.
+
+- [x] **S2.3 [AGENT]** `tests/test_assistant.py`, router tests, provider stubbed
+  the way `test_pivot.py` stubs it (`monkeypatch.setattr(assistant,
+  "get_provider", lambda: _FakeProvider(...))`):
+  - `test_routes_to_a_named_skill` - stub returns `{"skill": "organize"}`,
+    assert `route(...) == "organize"`.
+  - `test_unknown_skill_name_falls_to_answer` - stub returns `{"skill":
+    "translate"}` (not registered), assert `route(...) == "answer"`. **Rule 1.**
+  - `test_model_error_falls_to_answer` - stub raises, assert `route(...) ==
+    "answer"`. **Rule 1.**
+  - `test_empty_request_falls_to_answer` - `route("")` and `route("   ")` return
+    `"answer"` without calling the model at all.
+  Verify: `uv run pytest tests/test_assistant.py -q`.
+
+- [x] **S2.4 [HUMAN]** Review the router prompt wording and the two clamps.
+  Confirm the prompt tells the model to prefer `answer` under doubt, and that the
+  code enforces it regardless of what the model says. This is Rule 1's home;
+  read it closely.
+
+---
+
+## Phase S3 - dispatch: `chats.send` becomes route -> run -> store typed turn
+
+Now the two skills get real `run` bodies and `chats.send` stops being the answer
+path and becomes the dispatcher.
+
+- [x] **S3.1 [AGENT]** Extract today's `chats.send` body into an `answer` skill
+  runner - move the retrieve-passages -> `_ask_model` -> compose logic into a
+  function `run_answer(chat_id, text) -> dict` that returns `{role:
+  "assistant", text, grounded, kind: "answer", payload: None, cited: [...]}`
+  **without writing to the DB** (the dispatcher writes). Point the registry's
+  `answer.run` at it. Behavior must be byte-identical to today's answer.
+  Verify: existing chat send tests pass unchanged - `uv run pytest
+  tests/test_chats.py -q`.
+
+- [x] **S3.2 [AGENT]** `organize` skill runner `run_organize(chat_id, text) ->
+  dict`. Body: `spec = pivot.plan(text)`; `result = pivot.run(spec)`. Return
+  `{role: "assistant", text: <a one-line human summary, e.g. "Organized {N}
+  notes by {group_by} into {G} groups.">, grounded: <all groups grounded?>,
+  kind: "organize", payload: spec, cited: []}`. The rendered groups are **not**
+  stored in text - the frontend re-runs the spec from `payload` (S4). On
+  `pivot.PivotError`: **do not store an organize turn**. Instead call
+  `run_answer(chat_id, text)` and return that. **Rule 1 in the runner**: a
+  structured skill that cannot execute falls to the floor rather than storing a
+  broken group.
+  Verify: unit test in S3.5.
+
+- [x] **S3.3 [AGENT]** Rewrite `chats.send(chat_id, text)` as the dispatcher:
+  1. `skill_name = assistant.route(text)`.
+  2. `skill = REGISTRY[skill_name]` (route guarantees membership).
+  3. `msg = skill.run(chat_id, text)`.
+  4. In one transaction: `_append(conn, chat_id, "user", text)` then
+     `_append(conn, chat_id, "assistant", msg["text"], grounded=msg["grounded"],
+     kind=msg["kind"], payload=msg["payload"])`, then write `cited` citations
+     for the assistant turn exactly as today.
+  The transaction shape (both turns + citations atomic) is preserved from the
+  current `send`. Only the middle - "what produced the assistant text" - changed
+  from hardcoded answer to routed skill.
+  Verify: S3.5.
+
+- [x] **S3.4 [AGENT]** `chats.send` gains an optional `force_skill: str | None =
+  None`. When set and in `REGISTRY`, skip `route()` and use it directly. This is
+  the server side of Rule 2's "answer instead" - the frontend re-sends the same
+  text with `force_skill="answer"`. When `force_skill` is None or unknown, route
+  normally. The API `POST /chats/{id}/messages` gains an optional `skill` field
+  passed through.
+  Verify: S3.5.
+
+- [x] **S3.5 [AGENT]** `tests/test_assistant.py` dispatch tests (or extend
+  `test_chats.py`), stubbing both `assistant.get_provider` (router) and the
+  skill dependencies (`derive.get_provider` for organize's pivot, the answer
+  model for answer):
+  - `test_send_answer_stores_an_answer_turn` - router picks answer; the stored
+    assistant row has `kind == "answer"`, `payload is None`.
+  - `test_send_organize_stores_an_organize_turn` - router picks organize, pivot
+    stubbed to a real spec+groups; stored row has `kind == "organize"` and
+    `payload` round-trips to the spec.
+  - `test_organize_planerror_falls_to_answer` - router picks organize,
+    `pivot.plan` raises `PivotError`; the stored turn is `kind == "answer"`.
+    **Rule 1.**
+  - `test_force_skill_answer_bypasses_router` - `send(..., force_skill="answer")`
+    stores an answer turn even though the router stub would pick organize.
+    **Rule 2.**
+  Verify: `uv run pytest tests/test_assistant.py tests/test_chats.py -q`.
+
+- [x] **S3.6 [HUMAN]** Review dispatch. Confirm the transaction still writes both
+  turns + citations atomically, that answer behavior is unchanged, and that both
+  fall-to-answer paths (PlanError, force) land correctly. Run the full suite:
+  `uv run pytest -q`. Then `uv run enq eval` - the eval measures answer quality
+  and must be **unchanged** (answer path is byte-identical).
+
+---
+
+## Phase S4 - the transcript renders typed turns (declared + reversible)
+
+The chat view already loops `d.messages`. An `answer` turn renders exactly as
+today. An `organize` turn renders the grouped view inline, labeled, with the way
+back. This is Rule 2's home in the UI.
+
+> **Fixed after S3, found in S4 review:** the *first* message of a chat did not
+> route. The eye opens a new chat via `POST /chats` -> `chats.ask`, which was the
+> old hardcoded answer path - so "organize my notes by X" typed fresh was always
+> answered, never grouped (the exact path the feature is for). `chats.ask` now
+> creates the chat and dispatches through `send`, so the first turn routes like
+> any later one; a failing first turn deletes its own empty husk (the old
+> no-empty-conversation promise, preserved). Regression tests:
+> `TestAskRoutesTheFirstMessage` in `tests/test_assistant.py`.
+
+- [x] **S4.1 [AGENT]** In `renderChat`'s message loop (`museum.html` ~5745),
+  branch on `m.kind`. `answer` (and any unknown kind, defensively): render as
+  today. `organize`: render the assistant bubble with (a) the one-line label
+  from `m.text` ("Organized by region"), (b) the grouped view, (c) the "answer
+  instead" control.
+  Use `rg -a` to read the file (NUL bytes). Keep all styling in the existing
+  inline `<style>` and token vars - no new colors, no CDN.
+
+- [x] **S4.2 [AGENT]** The organize turn's groups: re-run the spec. Reuse `POST
+  /pivot/run` with `{spec: m.payload}` (one run endpoint, no fork) to get the
+  hydrated groups (`_wall_item` per artifact, per-group `grounded`), and render
+  them with the **existing** `renderPivot` group markup - the `.pivotgroup`
+  sections, the `.groundnote` marker when `groups.some(g => g.grounded ===
+  false)`. Do not fork a second grouping renderer; call the same one the
+  standalone pivot used.
+  Verify: seed a chat with an organize turn, load it, confirm the groups render
+  identical to the old standalone pivot for the same spec.
+
+- [x] **S4.3 [AGENT]** The "answer instead" control on every organize turn:
+  a small button in the turn that re-sends the **same** user text with
+  `skill: "answer"` (S3.4's force), appending a fresh answer turn below. Label it
+  plainly ("Answer instead", not an icon-only). This is Rule 2: the routing is
+  reversible in one click, always visible.
+  Verify: clicking it on an organize turn produces an answer turn for the same
+  question.
+
+- [x] **S4.4 [AGENT]** The move/correction control that the standalone pivot had
+  (`pivotMove`/`pickGroup`, writing `POST /derived/override` at scope='artifact')
+  must keep working inside the in-chat organize turn - it is the same rendered
+  groups, so wire the same handlers. A correction re-runs the turn's spec (S4.2)
+  so the moved artifact lands in its new group. Confirm the override still wins
+  after enrich (pivot.py already handles this; this task is only that the UI
+  handler is present in the chat render path).
+  Verify: move an artifact between groups in a chat organize turn; reload; it
+  stays moved (override persisted, spec re-run reflects it).
+
+- [ ] **S4.5 [HUMAN]** Run the desktop (`bin/relaunch`). Type a question - get an
+  answer. Type "organize my notes by ..." - get a labeled, grounded-marked group
+  view inline. Click "answer instead" - get the answer. Move an artifact between
+  groups. Pixel-check the organize turn against the app's editorial theme
+  (cream, yellow accent, IBM Plex): the inline groups must not look like a
+  bolted-on panel. Fix anything that looks off before continuing.
+
+---
+
+## Phase S5 - saved groupings and the grid button
+
+A grouping worth keeping gets a name and a home. The grid button (which used to
+do nothing useful for AI) becomes the saved-groupings list.
+
+- [x] **S5.1 [AGENT]** `src/enqueue/pivots_saved.py`: `save(name, spec) -> id`
+  (uuid, `json.dumps(spec)`, `created_at`), `list() -> [{id, name, created_at}]`
+  (newest first), `get(id) -> {id, name, spec}`, `delete(id)`. Plain SQLite over
+  `saved_pivots`. No model calls.
+  Verify: `tests/test_saved_pivots.py` - save then list then get round-trips the
+  spec; delete removes it. `uv run pytest tests/test_saved_pivots.py -q`.
+
+- [x] **S5.2 [AGENT]** API: `POST /pivots` (body `{name, spec}` -> `{id}`),
+  `GET /pivots` (list), `GET /pivots/{id}` (with spec), `DELETE /pivots/{id}`.
+  Running a saved one reuses `POST /pivot/run` with the fetched spec (no new run
+  path). Wire to S5.1.
+  Verify: curl each; add one API test asserting save->list->run works.
+
+- [x] **S5.3 [AGENT]** "Save this grouping" action on an organize turn (S4):
+  a small control that prompts for a name (the app's own input affordance, never
+  a browser `prompt()` if the app has a nicer one) and `POST /pivots` with the
+  turn's `payload` spec. On success, a quiet confirmation. Naming is the **only**
+  place a person types a name; grouping itself never prompts (consistent with
+  "never prompt for a tag at capture").
+  Verify: save from a turn; it appears in `GET /pivots`.
+
+- [x] **S5.4 [AGENT]** Repurpose the grid button in the ribbon: it opens the
+  saved-groupings list (a view or sheet listing each saved grouping by name +
+  when saved). Clicking one **runs** it - render the same grouped view
+  (`renderPivot` + `POST /pivot/run` on the stored spec) as a standalone result
+  surface (not a chat turn; a saved grouping is a re-openable view, not a
+  conversation). Each row has a delete affordance (`DELETE /pivots/{id}`).
+  Empty state: a plain line telling the person groupings they save from the eye
+  land here. Do not leave the button doing its old thing.
+  Verify: save two groupings, open the grid button, run one, delete the other.
+
+- [ ] **S5.5 [HUMAN]** Desktop review of saved groupings: save from a chat, open
+  the grid list, run it, confirm it matches what the chat turn showed, delete it.
+  Empty state legible. Theme-consistent.
+
+---
+
+## Phase S6 - remove the standalone organize door
+
+The eye is now the only unstructured AI door. The old organize pill and its mode
+are dead weight and a second way to do one thing (the exact maintainability tax
+the one-paradigm rule warns against).
+
+- [x] **S6.1 [AGENT]** Remove the standalone `organize` pill / `openField(
+  'organize')` entry point and its `startPivot` top-level invocation from the
+  ribbon. Keep `renderPivot` and the run endpoint - they are reused by the chat
+  organize turn (S4) and saved groupings (S5). Delete only the *entry point*, not
+  the renderer.
+  Verify: `rg -a "openField\('organize'\)|startPivot" src/enqueue/static/museum.html`
+  returns nothing in an entry-point context; the pill is gone from the ribbon.
+
+- [x] **S6.2 [AGENT]** Sweep for now-dead code the removed pill used and nothing
+  else does (a dedicated organize view container, its show/hide handler). Remove
+  what is provably unreferenced; leave anything the chat turn or saved groupings
+  still call. When unsure whether something is shared, keep it and note it.
+  Verify: `bin/relaunch` parse-gates the JS clean; the app boots; the eye and the
+  grid button are the only two AI-grouping entry points.
+
+- [ ] **S6.3 [HUMAN]** Final desktop pass. Confirm exactly two doors: the eye
+  (type anything -> routed) and the grid button (saved groupings). No orphaned
+  organize pill. Run `uv run pytest -q`, `uv run black --check .`, `uv run enq
+  eval` (answer quality unchanged). Commit each phase's work as its own commit
+  (agent never commits; you do).
+
+---
+
+## Verification commands (the whole feature)
 
 ```bash
-bin/relaunch        # rebuild + launch; refuses to start if the HTML fails to parse
-uv run pytest -q    # tests must stay green; baseline is 260 passing
-uv run black src/ tests/   # must be clean
+uv run pytest -q                 # full suite green
+uv run pytest tests/test_assistant.py tests/test_saved_pivots.py -q
+uv run black --check .           # style
+uv run enq eval                  # answer quality UNCHANGED (answer path byte-identical)
+bin/relaunch                     # desktop boots, JS parse-gates clean
 ```
 
-`museum.html` has NUL bytes; `rg` needs `-a` on it or it silently prints nothing.
+## Out of scope (do not build here)
 
-### How to work these steps
+- A third skill (summarize, draft, extract-table). The registry makes it a
+  one-file add later; adding one now is scope creep.
+- Streaming the organize turn. It renders after the run completes, like the
+  standalone pivot did.
+- A structured `field` op for pivot (grouping by `kind`/pdf-ness without a model
+  call). Independent of the dispatcher - planned as **Phase F** below, to be
+  built after the dispatcher's human gates pass.
+- Router memory / multi-turn skill state. Each `send` routes its own text.
+  A follow-up in an organize thread still routes fresh (and can be an answer).
+- Renaming or re-theming the eye. It is already the door; this plan only makes it
+  the *only* door.
 
-- One checkbox per commit. Never batch. Message: `pivot: <what the step did>`.
-- After every checkbox: `uv run pytest -q` green and `bin/relaunch` still starts.
-- Every step is idempotent. If the target already exists, tick the box and move on.
-- `[AGENT]` do it. `[HUMAN]` stop and hand over.
-- No em dashes anywhere. Plain dash.
-- The model backend is slow and sometimes wrong. Every model call is `try/except`: on failure
-  return a clear result the caller can handle, never a crash and never a silent wrong value.
+## The two rules, restated (paste them into the router and the render review)
 
----
-
-## PHASE P1 — The cache table (one table serves everything)
-
-- [x] `[AGENT]` Create `src/enqueue/migrations/versions/0012_derived.py`, copying the shape of
-      `0009_lens_judgments.py` (docstring, `from __future__`, `from alembic import op`, the four
-      module vars). Set `revision = "0012"`, `down_revision = "0011"`. In `upgrade()`:
-
-      ```sql
-      CREATE TABLE IF NOT EXISTS derived_values (
-        scope         TEXT NOT NULL,       -- 'artifact' or 'value'
-        subject       TEXT NOT NULL,       -- an artifact id, or the exact input string
-        attribute     TEXT NOT NULL,       -- canonical attribute name, lowercased
-        value         TEXT NOT NULL,       -- the derived value (empty string = "none found")
-        grounded      INTEGER NOT NULL,    -- 1 from content, 0 from world knowledge
-        source        TEXT NOT NULL,       -- 'model' or 'user'
-        model_version TEXT NOT NULL,       -- '' when source = 'user'
-        created_at    TEXT NOT NULL,
-        PRIMARY KEY (scope, subject, attribute, source)
-      );
-      ```
-
-      In `downgrade()`: `DROP TABLE IF EXISTS derived_values;`. One `op.execute` per statement.
-- [x] `[AGENT]` Verify: `bin/relaunch`, then
-      `uv run python -c "from enqueue import db; c=db.get_conn(); print([r[1] for r in c.execute('PRAGMA table_info(derived_values)')])"`
-      prints the eight columns.
-
-Notes for the implementer: `source='user'` is a correction and always wins over `source='model'`
-on read (rule 2, the director beats the curator). Two scopes because an attribute of an
-artifact is cached per artifact, but an attribute inferred from a value (world knowledge) is
-cached per value: fifty notes by twenty authors need twenty region lookups, not fifty, and a
-region does not change.
+1. **`answer` is the floor.** Uncertain route, unknown skill, model error, skill
+   error -> `answer`. A structured skill is never guessed. Enforced in code in
+   S2.2 and S3.2, tested in S2.3 and S3.5.
+2. **Declared and reversible.** Every non-answer turn says what ran and offers
+   "answer instead" (S4.1, S4.3). No silent routing, no trap.
 
 ---
 
-## PHASE P2 — The three model primitives (`src/enqueue/derive.py`)
+# Phase F - the `field` op (structured attributes, zero model calls)
 
-Create the file. Header: `from __future__ import annotations`, `import uuid`, `import json`,
-`from datetime import datetime, timezone`, `from . import db`, `from .providers.base import get_provider`.
-Add `_now()` returning an ISO-8601 UTC string. Every model call is wrapped so a failure returns
-a sentinel, never raises out of the module.
+## Why this exists
 
-Define the response models near the top:
+Live-test finding: "organize my saved things by kind" over the whole library
+planned an `extract` step and ran it **per artifact** - ~124 sequential model
+calls, ~40 minutes on a slow local model. But `kind` is not something to read out
+of a note's prose; it is a column already on the row (`note | link | pdf | image
+| file`). The engine paid a model to re-derive a fact it already stored.
 
-```python
-from pydantic import BaseModel
+The fix is a third step op beside `extract` and `enrich`:
 
-class _One(BaseModel):
-    value: str          # the derived value, or "" when there is none
+- `extract` - read an attribute from the artifact's **text**. One model call per
+  artifact. Grounded.
+- `enrich` - infer an attribute from a prior **value** using world knowledge.
+  One model call per distinct value. Not grounded.
+- `field` - read an attribute straight from the artifact's **own structured
+  metadata** (its kind, its source, when it was saved). **Zero** model calls.
+  The most grounded of the three: it is literally the user's stored data.
 
-class _Buckets(BaseModel):
-    mapping: dict[str, str]   # raw value -> canonical bucket name
-```
+"organize by kind" becomes one `field` step: one batched SQL read, instant, over
+any number of artifacts. The 40-minute path disappears for the whole class of
+structured-attribute groupings.
 
-- [x] `[AGENT]` `_read(scope, subject, attribute) -> dict | None`: return the cached row as
-      `{"value", "grounded", "source"}`, preferring `source='user'` over `source='model'`. Read
-      connection, closed in `finally`. Returns `None` when nothing is cached.
-- [x] `[AGENT]` `_write(scope, subject, attribute, value, grounded, source, model_version)`:
-      `INSERT OR REPLACE INTO derived_values (...)`. One `db.transaction()`.
-- [x] `[AGENT]` `extract(artifact_id, attribute, instruction) -> dict`: derive an attribute from
-      ONE artifact's content, grounded. Steps: normalize `attribute` (lowercased, stripped);
-      return the cache hit if present (`_read('artifact', artifact_id, attribute)`); otherwise read
-      the artifact text (`artifact_text(conn, artifact_id, max_words=400)`), build a prompt from
-      `prompts.EXTRACT_ATTRIBUTE` (Phase P3) filled with `attribute` and `instruction`, call the
-      model for `_One`, `_write('artifact', artifact_id, attribute, value, grounded=1, source='model', model_version=provider.model)`,
-      return `{"value", "grounded": True, "source": "model"}`. On any model error, return
-      `{"value": "", "grounded": True, "source": "model", "error": str(exc)}` and do NOT cache.
-- [x] `[AGENT]` `enrich(input_value, attribute, instruction) -> dict`: derive an attribute from a
-      VALUE using world knowledge, NOT grounded. Same shape as `extract` but scope `'value'`,
-      subject is the exact `input_value` string, `grounded=0`, and the prompt is
-      `prompts.ENRICH_ATTRIBUTE`. An empty `input_value` returns `{"value": "", "grounded": False}`
-      without a model call.
-- [x] `[AGENT]` `bucketize(values, instruction) -> dict`: collapse many raw values into fewer
-      canonical buckets. De-duplicate and sort `values`; if there are 0 or 1 distinct values return
-      the identity map; otherwise call the model once with `prompts.BUCKETIZE` filled with the
-      `instruction` and the value list, for `_Buckets`; return its `mapping`, defaulting any value
-      the model omitted to itself. This call is not cached (it is one call and its input set
-      changes).
-- [x] `[AGENT]` `override(scope, subject, attribute, value) -> dict`: write a user correction,
-      `source='user'`, `grounded` unchanged from any existing model row (or `1` if none), `model_version=''`.
-      This is how a wrong value gets fixed. Return the stored row.
-- [x] `[AGENT]` Tests in `tests/test_derive.py` (use `store` fixture; stub the provider the way
-      the existing tests stub it, search tests for `get_provider` or a provider fixture). Assert:
-      `extract` caches (second call makes no model call), `extract` returns `grounded=True`,
-      `enrich` returns `grounded=False` and caches by value (two artifacts with the same input value
-      cause one `enrich` call), `override` wins over a model row on `_read`, a model failure yields
-      an empty value and no cache row, `bucketize` maps `["Colombia","Argentina","France"]` onto
-      fewer buckets given an instruction. Keep the fixtures domain-neutral where you can; the
-      book/author/region words may appear ONLY inside these test fixtures, never in `derive.py`.
-- [x] `[AGENT]` `uv run pytest -q tests/test_derive.py` green; `uv run black src/enqueue/derive.py tests/test_derive.py`.
+### The rule this phase must never break
+
+**A `field` reads only what the row already holds - it never invents.** The set
+of readable fields is a fixed registry of real columns and trivial derivations of
+them (a URL's host, a timestamp's month). No field guesses, infers, or calls a
+model; a request for an attribute not in the registry is not a `field` step (the
+planner falls back to `extract`/`enrich`). `field` is the grounded floor of the
+pivot engine exactly as `answer` is the grounded floor of the dispatcher.
+
+### Anchors
+
+- `derive.extract` / `derive.enrich` / `derive.bucketize` / `derive._read` /
+  `derive.override` - the per-item primitives. `field` joins them as a fourth.
+  `src/enqueue/derive.py`.
+- `pivot.run` first-step loop (`src/enqueue/pivot.py:120-146`) - today the first
+  step is always `extract`. It gains a `field` branch. The enrich correction
+  logic (a user override at scope='artifact' wins) is the pattern to mirror.
+- `pivot.plan` / `_validate_plan` and `PIVOT_PLAN` in `prompts.py` - the planner
+  learns the `field` op and the registry.
+- artifacts columns: `kind, title, source_url, mime, filename, created_at,
+  updated_at, local_only, status, pages`. The registry reads these; it does
+  not add columns.
 
 ---
 
-## PHASE P3 — The prompt templates (`src/enqueue/prompts.py`)
+## F1 - the field registry and `derive.field`
 
-Add three module constants. They are TEMPLATES with `{placeholders}`; they must never name a
-domain. The caller fills `{attribute}`, `{instruction}`, `{text}`, `{values}`.
+- [x] **F1.1 [AGENT]** New module `src/enqueue/fields.py` holding the registry:
+  `FIELDS: dict[str, Field]` where a `Field` is `{name, describe, resolve}`.
+  `describe` is the one line the planner prompt shows (like the skill registry's
+  `describe`). `resolve(row) -> str` maps one artifact row to its label, pure and
+  model-free. Start with exactly three, all from real columns, none hardcoding a
+  domain vocabulary (the *values* come from the data):
+  - `kind` - `row["kind"]` (note/link/pdf/image/file). describe: "what kind of
+    thing it is (note, link, pdf, image, file)".
+  - `source` - the host of `source_url` (`urlsplit(...).hostname or ""`), "" when
+    there is no url. describe: "the website a link or file came from".
+  - `captured` - `row["created_at"][:7]` (the `YYYY-MM` month). describe: "the
+    month it was saved".
+  A resolver returning `""` is legal and becomes the "not determined" bucket,
+  exactly like an empty extract - never dropped.
+  Verify: `tests/test_fields.py::test_resolvers` - build a fake row dict for each
+  field and assert the label. `uv run pytest tests/test_fields.py -q`.
 
-- [x] `[AGENT]` `EXTRACT_ATTRIBUTE`: instruct the model to read the given artifact text and return
-      ONLY the value of the named attribute described by the instruction, or an empty string if the
-      text does not support one. Tell it not to guess beyond the text (this call is grounded). Reply
-      as the `_One` JSON shape.
-- [x] `[AGENT]` `ENRICH_ATTRIBUTE`: instruct the model to return the named attribute for the given
-      input value using general knowledge, or an empty string if it does not know. State plainly that
-      this is a knowledge lookup, not a fact from the user's data. Reply as `_One`.
-- [x] `[AGENT]` `BUCKETIZE`: instruct the model to group the given list of raw values into a smaller
-      set of canonical buckets per the instruction, returning a mapping of every raw value to its
-      bucket. Reply as `_Buckets`.
-- [x] `[AGENT]` No test needed for the strings alone; they are exercised by Phase P2 and P4 tests.
-
----
-
-## PHASE P4 — The orchestrator and the planner (`src/enqueue/pivot.py`)
-
-This is CODE. The only model calls it makes are through `derive` (P2) and the one planner call.
-It never groups with the model. Header imports `derive`, `db`, and the provider.
-
-A **spec** is a plain dict:
-
-```python
-{
-  "subset": {"kind": "search" | "tags" | "ids", "value": "<query or comma tags or id list>"},
-  "steps": [
-    {"op": "extract", "attribute": "<name>", "instruction": "<what to pull from the note>"},
-    {"op": "enrich",  "attribute": "<name>", "instruction": "<what to infer from the prior value>"}
-  ],
-  "group_by": "<attribute name; must be the last step's attribute>",
-  "bucketize": true | false,
-  "bucketize_instruction": "<how to canonicalize the group keys>"
-}
-```
-
-- [x] `[AGENT]` `resolve_subset(subset) -> list[str]`: return artifact ids. `kind='ids'` splits the
-      value; `kind='tags'` calls `tags.ids_with_all(...)`; `kind='search'` runs
-      `candidates.search_results(value, limit=MAX)` and takes the artifact ids. Cap at
-      `MAX_PIVOT_ARTIFACTS = 200`; if more match, take the first 200 and record that it was truncated.
-- [x] `[AGENT]` `run(spec) -> dict`: the orchestration. In order:
-      1. `ids = resolve_subset(spec["subset"])`.
-      2. Maintain a dict `key_of[artifact_id]`. For the FIRST step (always `extract`): for each id,
-         `derive.extract(id, step.attribute, step.instruction)`; set `key_of[id]` to its value.
-      3. For each later step (`enrich`): collect the DISTINCT current values across all ids; call
-         `derive.enrich(value, step.attribute, step.instruction)` once per distinct value (this is the
-         per-value caching that keeps calls bounded); then remap `key_of[id]` through those results.
-      4. If `spec["bucketize"]`: `mapping = derive.bucketize(list(set(key_of.values())), spec["bucketize_instruction"])`;
-         remap `key_of` through `mapping`.
-      5. Group: a `defaultdict(list)` from final key to artifact ids. An empty key becomes the bucket
-         `""` rendered as "not determined" by the UI (never dropped, never hidden - rule 2 and the
-         lens's D3 honesty).
-      6. Return `{"groups": [{"key": k, "artifact_ids": v, "grounded": <False if any step was enrich else True>} ...],
-         "truncated": <bool>, "group_by": spec["group_by"]}`, groups ordered by size descending.
-- [x] `[AGENT]` `run` must be resumable and cheap on re-run: because every `derive` call is cached,
-      calling `run(spec)` twice makes model calls only for artifacts or values not seen before.
-- [x] `[AGENT]` `plan(request) -> dict`: one model call turning a natural-language request into a
-      spec. Use a new `prompts.PIVOT_PLAN` template and a Pydantic model matching the spec shape.
-      The model decides the subset, the step chain, and whether a step is `extract` (from the note) or
-      `enrich` (world knowledge). Validate the returned spec: last step's attribute equals `group_by`;
-      at least one step; every `enrich` follows an `extract` or another `enrich`. On an invalid or
-      failed plan, raise a `PivotError` with a sentence the UI can show.
-- [x] `[AGENT]` Add `PIVOT_PLAN` to `prompts.py`: instruct the model to convert a request into the
-      spec JSON, choosing `extract` when the value is in the note and `enrich` when it needs world
-      knowledge, and to write a short `bucketize_instruction` when the group keys will be messy.
-- [x] `[AGENT]` Tests in `tests/test_pivot.py` (stub the provider): a two-step spec (extract then
-      enrich) over a small fixture produces the expected groups; enrich is called once per distinct
-      value not once per artifact; an empty derived key lands in the `""` group and is not dropped;
-      `resolve_subset` truncates past the cap; a spec whose last step attribute differs from `group_by`
-      is rejected. Use the book/author/region example as ONE fixture; assert the same code groups a
-      second, unrelated fixture (e.g. recipes by cuisine) with zero code changes - this is the
-      generalization guard.
-- [x] `[AGENT]` `uv run pytest -q tests/test_pivot.py` green; black clean.
+- [x] **F1.2 [AGENT]** `derive.field(artifact_id, field_name) -> dict` returning
+  the same shape as `extract` (`{"value", "grounded": True, "source": "field"}`).
+  Body: a user override wins first (`_read("artifact", artifact_id, field_name)`
+  with `source == "user"` - rule 2, mirrors the enrich path); otherwise read the
+  artifact row and apply `FIELDS[field_name].resolve`. **Do not cache** a field
+  read: it is a free SQL read and caching would risk serving a stale label after
+  the row changes. An unknown `field_name` raises `KeyError` (the planner's
+  validation prevents it reaching here; this is the belt).
+  Verify: `tests/test_fields.py::test_field_reads_the_row` and
+  `::test_user_override_wins` (write an override via `derive.override`, assert
+  `derive.field` returns it). No model call happens - assert with a provider that
+  raises if called.
 
 ---
 
-## PHASE P5 — API
+## F2 - `run()` executes a `field` first step
 
-- [x] `[AGENT]` `POST /pivot/plan` body `{"request": str}` returns `{"spec": <spec>}` from
-      `pivot.plan`. 400 with the sentence on `PivotError`.
-- [x] `[AGENT]` `POST /pivot/run` body `{"spec": <spec>}` returns `pivot.run(spec)`, then hydrate each
-      group's `artifact_ids` into wall items (reuse `_wall_item` the way `list_artifacts` does) so the
-      client can render cards without a second round trip. Keep `grounded` and `truncated` in the response.
-- [x] `[AGENT]` `POST /derived/override` body `{"scope","subject","attribute","value"}` calls
-      `derive.override(...)` so a user can correct a wrong derived value. Return the stored row.
-- [x] `[AGENT]` Tests in `tests/test_api_pivot.py` (TestClient): plan then run returns groups; override
-      then re-run shows the corrected value winning. Green.
+- [x] **F2.1 [AGENT]** In `pivot.run`, the first-step loop branches on
+  `first["op"]`: `"extract"` as today; `"field"` reads every artifact's label via
+  `derive.field(artifact_id, first["attribute"])` - no model call. Everything
+  downstream (enrich steps, bucketize, group-by, empty-key bucket, override) is
+  unchanged: a `field` first step is just a cheaper way to fill `key_of`.
+  A run whose only step is a `field` is fully grounded (`any_enrich` stays False).
+  Verify: `tests/test_pivot.py::test_field_step_groups_with_no_model_calls` -
+  three artifacts of two kinds, a one-step `field` spec on `kind`, a provider that
+  raises if `complete` is called; assert the groups are correct and `grounded`,
+  and that the provider was never called.
 
----
-
-## PHASE P6 — UI (`museum.html`)
-
-Product register: inline, no sidebar, hierarchy through space. Reuse existing tokens. Parse-check
-after every edit (`bin/relaunch` gates on `node --check`).
-
-- [x] `[AGENT]` **Entry.** Add an "organize by..." affordance. The lightest place is the search/ask
-      surface: a request like "organize book notes by author region" typed into the ask field is sent
-      to `POST /pivot/plan` then `POST /pivot/run` when the model reads it as an organize request; or add
-      a small explicit control. Choose the lighter option and keep it consistent with how search and ask
-      already look.
-- [x] `[AGENT]` **Grouped render.** Generalize the lens's two-section view to N sections: one section
-      per group, header = the group key (or "Not determined" for the empty key), then that group's cards
-      in the existing wall grid. Order groups as the API returned them (largest first). The whole response
-      is grounded=false when any enrich ran: show a small, quiet marker on the group headers reading that
-      the grouping uses the assistant's knowledge, not text from your notes (rule 2). Do not bury it.
-- [x] `[AGENT]` **Correction.** On a group header (or a per-card affordance), allow moving an item to a
-      different group, which calls `POST /derived/override` and re-runs. This is how a wrong value gets
-      fixed; it must be visible, because a misfiled item is otherwise invisible.
-- [x] `[AGENT]` Do NOT change the plain wall, search, or the artifact card face. The pivot is a distinct
-      view, entered deliberately and left by returning to the wall.
-- [x] `[AGENT]` Verify by looking: run an organize request, see N groups, see the "assistant's knowledge"
-      marker when enrichment ran, correct one item and see it move and persist. Confirm keyboard focus on
-      the new controls.
+- [x] **F2.2 [AGENT]** `tests/test_pivot.py::test_field_then_enrich` - a `field`
+  step (`kind`) followed by an `enrich` step is a valid chain (structured read,
+  then world-knowledge inference on top). Assert the enrich runs once per distinct
+  kind and the run is marked not grounded (an enrich taints the whole run, exactly
+  as with an extract lead). This proves `field` composes, not just stands alone.
 
 ---
 
-## Done
+## F3 - the planner emits `field` ops
 
-- [x] `[AGENT]` `uv run pytest -q` green (was 260, now higher), `uv run black --check src/ tests/` clean,
-      `bin/relaunch` starts, `uv run enq eval` unchanged from before this feature (pivot must not touch the
-      search ranking path).
-- [ ] `[HUMAN]` Review: confirm no attribute name, subject, or domain word is hardcoded in `derive.py` or
-      `pivot.py`; confirm every enriched value is labeled inferred in the UI; confirm a corrected value
-      survives a re-run; confirm the same engine groups two unrelated example requests with no code change.
+- [x] **F3.1 [AGENT]** Extend `PIVOT_PLAN` (`prompts.py`): teach the third op.
+  Add a rule - "If the attribute is a property the item already carries - its
+  kind, the site it came from, when it was saved - use a `field` step, which reads
+  it directly with no interpretation. Use `extract` only for something stated in
+  the item's own text, and `enrich` only to infer from a previous value." Inject
+  the registry the way the router injects skills: a `{fields}` block of
+  `- name: describe` lines, and instruct that a `field` step's attribute must be
+  one of those names. Keep `extract`/`enrich` attributes free-form.
 
-## Out of scope (do not build unless a later plan says so)
+- [x] **F3.2 [AGENT]** `_validate_plan` (`pivot.py`): allow `op == "field"`
+  alongside extract/enrich. A `field` step whose attribute is not in
+  `fields.FIELDS` raises `PivotError` with a UI sentence ("The plan reads a field
+  'X' I do not know how to read straight from your items."). The
+  enrich-cannot-lead rule stays; a `field` **can** lead (it is a grounded read).
+  Verify: `tests/test_pivot.py::test_plan_rejects_unknown_field` (stub the planner
+  to return a `field` on a nonexistent attribute; assert `PivotError`).
 
-- Saving a pivot as a permanent view (it is ephemeral, like the lens).
-- Multi-key pivots (group by two attributes at once). One group key for now.
-- Automatic re-derivation when an artifact changes; a stale cached value is acceptable until the user
-  re-runs or overrides.
-- Any domain-specific attribute library. There are no built-in attributes; every one comes from a spec.
-- Numeric or date bucketing helpers. Bucketize is the model's job for now.
+- [x] **F3.3 [AGENT]** `tests/test_pivot.py::test_plan_uses_field_for_kind` -
+  stub the planner to return a one-step `field` spec on `kind` for "organize by
+  kind"; assert `plan()` accepts it and `group_by == "kind"`. Documents the
+  intended planner behavior even though the stub, not a live model, produces it.
+
+---
+
+## F4 - verify the path is instant
+
+- [ ] **F4.1 [HUMAN]** Desktop: `bin/relaunch`, ask the eye "organize my saved
+  things by kind" over everything. It routes to `organize`, plans a `field` step,
+  and returns groups **immediately** (no per-artifact model wait). Compare against
+  the old 40-minute extract path to confirm the win. Save the grouping; re-open it
+  from the grid button and confirm it re-runs instantly and reflects any newly
+  captured items.
+
+## Out of scope for Phase F
+
+- More fields than the three (tags-as-groups, file size, page-count buckets).
+  Each is a one-line registry add later; three proves the shape.
+- A `field` that computes across artifacts (counts, rankings). `field` is a
+  per-item read, nothing more.
+- Making `extract` fall back to `field` automatically. The planner chooses; the
+  op stays explicit so a spec always says exactly what it read and how.

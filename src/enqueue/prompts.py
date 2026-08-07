@@ -253,22 +253,71 @@ Raw values:
 {values}\
 """
 
+ASSISTANT_ROUTE = """\
+You read one request a person typed into their own collection, and you pick
+which skill to run on it.
+
+Available skills:
+{skills}
+
+Pick the single skill that best fits the request.
+
+Most requests are questions, and a question belongs to `answer` - the safe
+default. But when a request plainly asks to rearrange the collection into
+groups - it names an action like organize, group, arrange, sort, or cluster,
+and says what to group by - that is the `organize` skill, not a question about
+the collection.
+
+Rules:
+- If the request asks to group, organize, arrange, sort, or cluster the saved
+things by some attribute, choose `organize`.
+- Otherwise choose `answer`. Every question, summary, lookup, or open-ended
+request is `answer`.
+- When genuinely in doubt, choose `answer`.
+- Never invent a skill. Only reply with a name from the list above.
+- Do not explain, justify, or add commentary. Reply with one JSON object only:
+
+  {{"skill": "one of the skill names above"}}
+
+Examples:
+- "organize my saved things by kind" -> {{"skill": "organize"}}
+- "group my book notes by the author's region" -> {{"skill": "organize"}}
+- "what did I save about kubernetes?" -> {{"skill": "answer"}}
+- "summarize my notes on stoicism" -> {{"skill": "answer"}}
+
+Request:
+{request}\
+"""
+
 PIVOT_PLAN = """\
 You convert a user's natural-language request into a grouping plan for their saved notes.
 
 The plan is a JSON object a code pipeline will execute: it selects which notes are
 involved, derives one attribute per note, then groups the notes by that attribute.
 
+Readable fields you can read straight from a saved item's own record with a 'field'
+step - zero interpretation, exactly what the record holds:
+{fields}
+
 Rules:
 - Choose the subset the request implies. 'search' for a query, 'tags' for comma-separated
   tag names, 'ids' for a list of artifact ids. Every request names or implies one of these.
+  A request that means all notes - "everything I have saved" - is a 'search' with an
+  empty string value, never an empty 'ids' list.
 - Build a chain of steps that ends in the attribute the user wants to group by. The first
-  step is always 'extract': read the value of an attribute out of a note's own text. Use
-  'enrich' for a later step that infers an attribute from a previous step's value using
-  general knowledge, not the note's text.
+  step reads from the item itself: 'extract' pulls an attribute out of the item's own
+  text, 'field' reads it straight from the item's stored record. Use 'enrich' for a later
+  step that infers an attribute from a previous step's value using general knowledge, not
+  the item's text. A chain that starts with 'enrich' never reads the item, so it cannot
+  run: start by extracting something the item itself says, or by reading a stored field.
+- If the attribute is a property the item already carries - its kind, the site it came
+  from, when it was saved - use a 'field' step, which reads it directly with no
+  interpretation. Use 'extract' only for something stated in the item's own text, and
+  'enrich' only to infer from a previous value. A 'field' step's attribute must be one of
+  the readable fields listed above; 'extract' and 'enrich' attributes are free-form.
 - Give each step a short lowercased attribute name and a one-sentence instruction that
-  tells the pipeline what to pull from the note ('extract') or what to infer from the
-  prior value ('enrich').
+  tells the pipeline what to pull from the note ('extract'), what to read from the
+  stored record ('field'), or what to infer from the prior value ('enrich').
 - Set 'group_by' to the last step's attribute name, so the chain ends where the grouping
   happens.
 - Set 'bucketize' to true when the final values will be messy, overlapping, or many, and
@@ -279,10 +328,24 @@ Rules:
 - Do not explain, justify, or add commentary. Reply with one JSON object only:
 
   {{"subset": {{"kind": "search" | "tags" | "ids", "value": "..."}},
-    "steps": [{{"op": "extract" | "enrich", "attribute": "...", "instruction": "..."}}],
+    "steps": [{{"op": "extract" | "enrich" | "field", "attribute": "...", "instruction": "..."}}],
     "group_by": "...",
     "bucketize": true | false,
     "bucketize_instruction": "..."}}
+
+Example - request: "Group my notes on kitchen gadgets by how much space they take up"
+- subset: {{"kind": "search", "value": "kitchen gadgets"}}
+- step 1 (extract, reads the note's own text): {{"op": "extract", "attribute": "gadget size", "instruction": "From the note's own text, state the gadget's size."}}
+- step 2 (enrich, infers from step 1's value): {{"op": "enrich", "attribute": "space category", "instruction": "From the size, infer whether the gadget is compact, medium, or large."}}
+- group_by: "space category"
+
+Example - request: "organize everything I saved by kind"
+- subset: {{"kind": "search", "value": ""}}
+- step 1 (field, reads the stored record): {{"op": "field", "attribute": "kind", "instruction": "Read the item's own kind from its record."}}
+- group_by: "kind"
+
+The first step of every plan is 'extract' or 'field'. A plan whose first step is 'enrich'
+is invalid.
 
 Request:
 {request}\

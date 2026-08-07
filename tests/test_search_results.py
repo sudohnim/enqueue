@@ -149,3 +149,21 @@ class TestSearchEndpoint:
         assert body["query"] == "rooftops"
         ids = [h["artifact_id"] for h in body["hits"]]
         assert ids.count("a1") == 1
+
+    def test_empty_query_returns_everything(self, sqlite_store):
+        # An empty query means "everything", newest touch first. The embedding
+        # store cannot answer an empty vector, and a request to group the whole
+        # library plans into search(""), so the empty query reads the library
+        # directly instead of crashing (or matching nothing).
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _note(conn, "a2", "The ziggurat", _UNRELATED)
+            conn.commit()
+        finally:
+            conn.close()
+
+        hits = search_results("")
+
+        assert {h["artifact_id"] for h in hits} == {"a1", "a2"}
+        assert all(h["why"] == "all" for h in hits)

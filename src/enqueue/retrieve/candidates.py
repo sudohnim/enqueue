@@ -113,6 +113,13 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     free_text, tag_names = tags.parse_tags(q)
     tag_ids = tags.ids_with_all(tag_names) if tag_names else set()
 
+    # Empty query, no tags: "everything". There is no text to rank and no set to
+    # filter, and the embedding store cannot answer an empty vector (knn rejects
+    # k larger than its max), so read the library directly, newest touch first.
+    # This is what a request to "group everything I have saved" plans into.
+    if not free_text and not tag_ids:
+        return _all_results(limit)
+
     # Pure tag query: no embedding, no store search. Roughly 1 ms.
     if not free_text and tag_ids:
         return _results_for_ids(tag_ids, limit)
@@ -220,6 +227,39 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
                     "title": row["title"],
                     "kind": row["kind"],
                     "why": "tag",
+                    "snippet": " ".join(snippet.split())[:200],
+                }
+            )
+        return out
+    finally:
+        conn.close()
+
+
+def _all_results(limit: int = 20) -> list[dict]:
+    """The "everything" query: every artifact, newest touch first.
+
+    Same shape as `_results_for_ids` - score is constant because nothing was
+    matched, only listed. The wall clock order gives a grouping request that
+    spans the whole library a stable, useful order to work from.
+    """
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, kind FROM artifacts"
+            " WHERE deleted_at IS NULL"
+            " ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        out = []
+        for row in rows:
+            snippet = artifact_text(conn, row["id"], max_words=40)
+            out.append(
+                {
+                    "score": 0.0,
+                    "artifact_id": row["id"],
+                    "title": row["title"],
+                    "kind": row["kind"],
+                    "why": "all",
                     "snippet": " ".join(snippet.split())[:200],
                 }
             )

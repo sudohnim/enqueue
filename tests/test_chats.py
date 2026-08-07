@@ -11,8 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from enqueue import api, chats, db, notes
-from enqueue.schemas import Answer, ChatTitle, ChatTopics
+from enqueue import api, assistant, chats, db, notes
+from enqueue.schemas import Answer, AssistantRoute, ChatTitle, ChatTopics
 
 
 class FakeProvider:
@@ -34,7 +34,12 @@ class FakeProvider:
 
 @pytest.fixture
 def answered(monkeypatch):
-    """Callable test double: scripts the provider and the passages queue."""
+    """Callable test double: scripts the provider and the passages queue.
+
+    Also scripts the router: since `send` dispatches through the skill registry,
+    every exchange starts with one routing call, and it must pick `answer` for
+    these tests (the model is never consulted; Rule 1's floor is stubbed too).
+    """
 
     class Answered:
         passages: list = []
@@ -43,6 +48,8 @@ def answered(monkeypatch):
             provider = FakeProvider(**byname)
             monkeypatch.setattr(chats, "get_provider", lambda *a, **k: provider)
             monkeypatch.setattr(chats, "passages", lambda *a, **k: self.passages)
+            router = FakeProvider(AssistantRoute=AssistantRoute(skill="answer"))
+            monkeypatch.setattr(assistant, "get_provider", lambda *a, **k: router)
             return provider
 
     return Answered()
@@ -349,6 +356,13 @@ class TestOnlyAfterResponse:
         assert [m["role"] for m in made["messages"]] == ["user", "assistant"]
         assert made["messages"][-1]["cited"][0]["title"] == "Joints"
         assert [c["id"] for c in client.get("/chats").json()["items"]] == [made["chat"]["id"]]
+
+        # Every turn carries its kind and payload. Pre-router, every turn is an
+        # answer with nothing to re-render.
+        reloaded = client.get("/chats/" + made["chat"]["id"]).json()
+        for m in reloaded["messages"]:
+            assert m["kind"] == "answer"
+            assert m["payload"] is None
 
     def test_a_failed_second_turn_leaves_the_conversation_untouched(
         self, store, quiet_queue, answered

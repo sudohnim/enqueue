@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import pytest
 
-from enqueue import derive, notes, pivot
+from enqueue import capture, derive, notes, pivot
+from enqueue.providers.base import ProviderError
 
 
 class _FakeProvider:
@@ -221,6 +222,112 @@ class TestRun:
         assert by_key["Spanish"]["artifact_ids"] == [paella, tortilla]
         assert by_key["Japanese"]["artifact_ids"] == [sushi]
 
+    def test_field_step_groups_with_no_model_calls(self, store, quiet_queue, monkeypatch):
+        """A one-step `field` spec groups by a stored column with zero model calls.
+
+        The provider raises if `complete` is ever called: a field lead is a SQL
+        read, not a judgment, so the whole run must not touch a model. The
+        groups are fully grounded - no enrich ran - and the empty-key bucket
+        rule still holds for an artifact whose stored value reads "".
+        """
+        note = _note("A note about the estuary.")
+        link = capture.link("https://example.com/some/page")["id"]
+        pdf = capture.upload(b"%PDF-1.4 fake", "paper.pdf", "application/pdf")["id"]
+        provider = _FakeProvider([])  # any call is a failure
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+
+        spec = {
+            "subset": {"kind": "ids", "value": f"{note} {link} {pdf}"},
+            "steps": [
+                {"op": "field", "attribute": "kind", "instruction": ""},
+            ],
+            "group_by": "kind",
+            "bucketize": False,
+        }
+
+        result = pivot.run(spec)
+
+        assert provider.calls == 0  # no model call anywhere in the run
+        assert result["group_by"] == "kind"
+        assert result["truncated"] is False
+        by_key = {group["key"]: group for group in result["groups"]}
+        assert set(by_key) == {"note", "link", "pdf"}
+        assert by_key["note"]["artifact_ids"] == [note]
+        assert by_key["link"]["artifact_ids"] == [link]
+        assert by_key["pdf"]["artifact_ids"] == [pdf]
+        # no enrich ran, so the grouping is fully grounded
+        assert all(group["grounded"] for group in result["groups"])
+
+    def test_field_step_empty_value_lands_in_the_empty_bucket(
+        self, store, quiet_queue, monkeypatch
+    ):
+        """A stored value that reads "" is never dropped, even from a field lead."""
+        note = _note("A note about the estuary.")
+        provider = _FakeProvider([])
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+
+        spec = {
+            "subset": {"kind": "ids", "value": note},
+            "steps": [
+                {"op": "field", "attribute": "source", "instruction": ""},
+            ],
+            "group_by": "source",
+            "bucketize": False,
+        }
+
+        result = pivot.run(spec)
+
+        assert provider.calls == 0
+        by_key = {group["key"]: group for group in result["groups"]}
+        assert "" in by_key  # the note has no url: the "not determined" bucket
+        assert by_key[""]["artifact_ids"] == [note]
+
+    def test_field_then_enrich(self, store, quiet_queue, monkeypatch):
+        """A field lead composes with an enrich step: structured read, then inference.
+
+        The enrich runs once per distinct kind (not per artifact), and it
+        taints the whole run ungrounded exactly as an extract lead would: an
+        inferred value is never dressed as the user's data.
+        """
+        first_note = _note("A note about the estuary.")
+        second_note = _note("Another note about the delta.")
+        link = capture.link("https://example.com/some/page")["id"]
+        # two distinct kinds -> exactly two enrich calls, in sorted order
+        provider = _FakeProvider(
+            [
+                {"value": "web"},  # enrich: link
+                {"value": "text"},  # enrich: note
+            ]
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+
+        spec = {
+            "subset": {"kind": "ids", "value": f"{first_note} {second_note} {link}"},
+            "steps": [
+                {"op": "field", "attribute": "kind", "instruction": ""},
+                {
+                    "op": "enrich",
+                    "attribute": "medium",
+                    "instruction": "the medium this kind belongs to",
+                },
+            ],
+            "group_by": "medium",
+            "bucketize": False,
+        }
+
+        result = pivot.run(spec)
+
+        assert provider.calls == 2  # one enrich per distinct kind, never per artifact
+        by_key = {group["key"]: group for group in result["groups"]}
+        assert set(by_key) == {"web", "text"}
+        assert by_key["web"]["artifact_ids"] == [link]
+        assert by_key["text"]["artifact_ids"] == [first_note, second_note]
+        # the enrich step made the whole response ungrounded, as with an extract lead
+        assert all(not group["grounded"] for group in result["groups"])
+
 
 class TestResolveSubset:
     def test_caps_past_the_limit(self):
@@ -240,9 +347,11 @@ class TestResolveSubset:
 
 
 class TestPlan:
-    def test_rejects_a_group_by_that_is_not_the_last_step_attribute(self, store, monkeypatch):
-        # The plan is well-formed except for the group key: the last step
-        # computes 'region' but the spec asks to group by 'author'.
+    def test_coerces_group_by_to_the_last_step_attribute(self, store, monkeypatch):
+        # The model named a group_by ('author') that disagrees with its own last
+        # step ('region'). group_by is only a label - run() groups on the last
+        # step's values - so this is coerced, not rejected: the request runs, and
+        # the grouping is by 'region' as the last step actually computes.
         provider = _FakeProvider(
             {
                 "subset": {"kind": "search", "value": "book notes"},
@@ -265,5 +374,179 @@ class TestPlan:
         )
         monkeypatch.setattr(pivot, "get_provider", lambda: provider)
 
-        with pytest.raises(pivot.PivotError, match="group key has to be the last step's attribute"):
-            pivot.plan("organize my book notes by author region")
+        spec = pivot.plan("organize my book notes by author region")
+        assert spec["group_by"] == "region"
+
+    def test_repairs_an_enrich_first_plan(self, store, monkeypatch):
+        # A small model often starts the chain with 'enrich': it plans category
+        # inference but never a step that reads the note, so nothing grounds the
+        # grouping (rule 1). Rather than reject the request, plan() prepends the
+        # one read every chain needs - an extract of the note's own tags/topics -
+        # and the plan becomes runnable without another model call.
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "tags", "value": ""},
+                "steps": [
+                    {
+                        "op": "enrich",
+                        "attribute": "category",
+                        "instruction": "Classify the note's tags into general categories.",
+                    }
+                ],
+                "group_by": "category",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        spec = pivot.plan("group everything I have saved into categories")
+
+        assert [step["op"] for step in spec["steps"]] == ["extract", "enrich"]
+        assert spec["steps"][0]["attribute"] == "tags"
+        # The grouping still happens at the enrich's attribute: the repair only
+        # grounds the chain, it never changes what is being grouped.
+        assert spec["group_by"] == "category"
+
+    def test_repair_keeps_group_by_at_the_last_step(self, store, monkeypatch):
+        # The repair prepends an extract, so the last step - and therefore the
+        # grouping attribute - is unchanged even when the model named a group_by
+        # that disagrees with its own chain.
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "search", "value": "kitchen notes"},
+                "steps": [
+                    {
+                        "op": "enrich",
+                        "attribute": "space category",
+                        "instruction": "From the size, infer the space category.",
+                    }
+                ],
+                "group_by": "size",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        spec = pivot.plan("group my kitchen notes by space")
+
+        assert spec["group_by"] == "space category"
+        assert spec["steps"][0]["op"] == "extract"
+
+    def test_corrective_retry_on_a_validation_failure(self, store, monkeypatch):
+        # A model that cannot hold the format gets one corrective pass: the first
+        # reply fails validation, the second - told exactly what failed - succeeds.
+        # The budget is bounded: exactly one extra call, never a loop.
+        from pydantic import ValidationError
+
+        valid = {
+            "subset": {"kind": "search", "value": "book notes"},
+            "steps": [{"op": "extract", "attribute": "author", "instruction": "the author"}],
+            "group_by": "author",
+            "bucketize": False,
+            "bucketize_instruction": "",
+        }
+        bad = ValidationError.from_exception_data(
+            "_PlannedSpec", [{"type": "missing", "loc": ("steps",), "input": None}]
+        )
+        first = ProviderError("wrong shape")
+        first.__cause__ = bad  # the provider raises with `from exc`; mimic that chain
+        provider = _FakeProvider([first, valid])
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        spec = pivot.plan("organize my book notes by author")
+
+        assert spec["group_by"] == "author"
+        assert provider.calls == 2
+
+    def test_no_retry_on_a_transport_failure(self, store, monkeypatch):
+        # Only a validation failure earns a corrective pass. An endpoint that is
+        # down, a key that is rejected, or a host that is not a model is reported
+        # immediately - retrying those is not a fix, it is a delay.
+        provider = _FakeProvider([RuntimeError("endpoint down")])
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        with pytest.raises(pivot.PivotError):
+            pivot.plan("organize my book notes by author")
+        assert provider.calls == 1
+
+    def test_rejects_an_empty_id_list(self, store, monkeypatch):
+        # A model that reaches for 'ids' as a placeholder and leaves it empty has
+        # planned nothing to group. 'Everything' is a search with an empty value,
+        # not an empty id list, so this plan is rejected, not run.
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "ids", "value": ""},
+                "steps": [{"op": "extract", "attribute": "subject", "instruction": "the subject"}],
+                "group_by": "subject",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        with pytest.raises(pivot.PivotError):
+            pivot.plan("group everything I have saved")
+        assert provider.calls == 1
+
+    def test_plan_rejects_unknown_field(self, store, monkeypatch):
+        """A 'field' step on an attribute outside the registry is rejected, not guessed.
+
+        The model reached for 'flavor' - something a note's text might state, but
+        not a column the row holds. A field reads only what the row already
+        carries, so this plan cannot run and is refused with a UI sentence; the
+        planner falls back to extract/enrich for it on a re-plan.
+        """
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "search", "value": ""},
+                "steps": [
+                    {"op": "field", "attribute": "flavor", "instruction": "the flavor"},
+                ],
+                "group_by": "flavor",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        with pytest.raises(pivot.PivotError, match="field 'flavor'"):
+            pivot.plan("organize everything I saved by flavor")
+        assert provider.calls == 1
+
+    def test_plan_uses_field_for_kind(self, store, monkeypatch):
+        """A one-step 'field' plan on 'kind' is accepted as-is and groups by kind.
+
+        The stub stands in for the live planner: this documents the intended
+        behavior - a request to organize by kind plans a 'field' step, which
+        leads the chain (a field is a grounded read), and group_by is the
+        field's own attribute.
+        """
+        provider = _FakeProvider(
+            {
+                "subset": {"kind": "search", "value": ""},
+                "steps": [
+                    {
+                        "op": "field",
+                        "attribute": "kind",
+                        "instruction": "Read the item's own kind from its record.",
+                    },
+                ],
+                "group_by": "kind",
+                "bucketize": False,
+                "bucketize_instruction": "",
+            }
+        )
+        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+
+        spec = pivot.plan("organize my saved things by kind")
+
+        assert spec["steps"] == [
+            {
+                "op": "field",
+                "attribute": "kind",
+                "instruction": "Read the item's own kind from its record.",
+            },
+        ]
+        assert spec["group_by"] == "kind"

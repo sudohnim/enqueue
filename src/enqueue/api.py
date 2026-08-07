@@ -26,6 +26,7 @@ from . import (
     greeting,
     notes,
     pivot,
+    pivots_saved,
     preview,
     settings,
     trash,
@@ -835,6 +836,9 @@ class ChatCreate(BaseModel):
 
 class ChatSend(BaseModel):
     text: str
+    # Rule 2's server side: the UI re-sends the same text with skill="answer"
+    # to leave a routed (non-answer) turn and get a plain answer.
+    skill: str | None = None
 
 
 class ChatEdit(BaseModel):
@@ -911,7 +915,7 @@ def get_chat(chat_id: str) -> dict:
 @app.post("/chats/{chat_id}/messages")
 def send_to_chat(chat_id: str, req: ChatSend) -> dict:
     try:
-        return chats.send(chat_id, req.text)
+        return chats.send(chat_id, req.text, force_skill=req.skill)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such chat") from None
     except ValueError as exc:
@@ -1158,6 +1162,47 @@ def derived_override(req: DerivedOverrideRequest) -> dict:
     otherwise invisible.
     """
     return derive.override(req.scope, req.subject, req.attribute, req.value)
+
+
+class SavePivotRequest(BaseModel):
+    name: str
+    spec: dict
+
+
+@app.post("/pivots")
+def save_pivot(req: SavePivotRequest) -> dict:
+    """Save a grouping under a name and return its id.
+
+    The spec is the arrangement's recipe, stored as-is; opening it later re-runs
+    it live (POST /pivot/run), so the grouping stays true as the library grows
+    rather than freezing into a snapshot. A missing name is a 400, not a 500.
+    """
+    try:
+        return {"id": pivots_saved.save(req.name, req.spec)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.get("/pivots")
+def list_pivots() -> dict:
+    """Every saved grouping, newest first, name and date only (no spec)."""
+    return {"items": pivots_saved.listing()}
+
+
+@app.get("/pivots/{pivot_id}")
+def get_pivot(pivot_id: str) -> dict:
+    """One saved grouping with its spec, ready to send to POST /pivot/run."""
+    try:
+        return pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No saved grouping by that id.") from None
+
+
+@app.delete("/pivots/{pivot_id}")
+def delete_pivot(pivot_id: str) -> dict:
+    """Forget a saved grouping. Idempotent: deleting one already gone still 200s."""
+    pivots_saved.delete(pivot_id)
+    return {"deleted": pivot_id}
 
 
 def serve() -> None:

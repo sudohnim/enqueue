@@ -378,6 +378,17 @@ class ChatTopics(BaseModel):
         return self
 
 
+class AssistantRoute(BaseModel):
+    """The router's one field: which skill a request should run.
+
+    The model answers with a skill name from the registry's own list. The
+    router clamps whatever comes back to the floor: a name outside the
+    registry is `answer`, never an unknown skill.
+    """
+
+    skill: str
+
+
 class LensExpansion(BaseModel):
     """Query-side move: bring the concept down toward how documents actually talk."""
 
