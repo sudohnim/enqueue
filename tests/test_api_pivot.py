@@ -271,3 +271,88 @@ class TestOverrideWins:
         # The re-run served every extract from the cache (a user row for the
         # corrected note, a model row for the other): zero new model calls.
         assert provider.calls == calls_before
+
+
+class TestPivotAddable:
+    """The add flow's picker source: what a view could still take in.
+
+    A run covers its subset's matches minus exclusions plus inclusions, so the
+    picker must offer only what the view does not already contain (N.3a/N.3b
+    fix: the client used to list the whole library and every pick of a covered
+    artifact toasted "already in this view"). The endpoint resolves the covered
+    set with pure SQL and returns the rest.
+    """
+
+    def test_addable_returns_only_uncovered_artifacts(self, store, quiet_queue, monkeypatch):
+        a = _note("A note about One Hundred Years of Solitude.")
+        b = _note("A note about the atomic bomb.")
+        c = _note("A note about Claude Monet.")
+
+        client = TestClient(app)
+        # The subset covers only [a] via literal ids; b and c are addable.
+        resp = client.post(
+            "/pivot/addable",
+            json={"spec": {"subset": {"kind": "ids", "value": a}}},
+        )
+        assert resp.status_code == 200
+        ids = {item["id"] for item in resp.json()["items"]}
+        assert a not in ids
+        assert b in ids and c in ids
+
+    def test_addable_counts_excluded_and_included(self, store, quiet_queue, monkeypatch):
+        a = _note("A note about One Hundred Years of Solitude.")
+        b = _note("A note about the atomic bomb.")
+
+        client = TestClient(app)
+        # The subset covers both; b is excluded (so it is addable again - a
+        # removed card can come back), and a stays covered.
+        spec = {
+            "subset": {"kind": "ids", "value": f"{a} {b}"},
+            "excluded_ids": [b],
+        }
+        ids = {
+            item["id"]
+            for item in client.post("/pivot/addable", json={"spec": spec}).json()["items"]
+        }
+        assert a not in ids
+        assert b in ids
+
+    def test_addable_everything_subset_is_empty(self, store, quiet_queue, monkeypatch):
+        _note("A note about One Hundred Years of Solitude.")
+        _note("A note about the atomic bomb.")
+
+        client = TestClient(app)
+        # A whole-library view has nothing left to add: the picker says
+        # "Nothing left to add." instead of pretending a pick would work.
+        resp = client.post(
+            "/pivot/addable",
+            json={"spec": {"subset": {"kind": "everything"}}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+
+    def test_run_without_steps_groups_by_kind(self, store, quiet_queue, monkeypatch):
+        # A stale or hand-edited spec can carry an empty step chain (the saved
+        # view "New Name" in the demo library did); before the fix, run()
+        # raised "needs at least one step" and the view could never re-run.
+        # With no steps there is nothing to derive, so the group key is a free
+        # field read of the group_by attribute - zero model calls, grounded.
+        _note("A note about One Hundred Years of Solitude.")
+
+        client = TestClient(app)
+        resp = client.post(
+            "/pivot/run",
+            json={
+                "spec": {
+                    "subset": {"kind": "everything"},
+                    "steps": [],
+                    "group_by": {"attribute": "kind"},
+                }
+            },
+        )
+        assert resp.status_code == 200
+        groups = resp.json()["groups"]
+        by_key = {group["key"]: group for group in groups}
+        assert "note" in by_key
+        assert by_key["note"]["artifact_ids"]
+        assert all(group["grounded"] for group in groups)

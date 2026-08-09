@@ -1,14 +1,14 @@
-"""Saved groupings: a named pivot spec you can re-open and re-run.
+"""Saved views: a named pivot spec you can re-open and re-run.
 
-A saved grouping stores the *spec* (the arrangement's recipe: subset, steps,
+A saved view stores the *spec* (the arrangement's recipe: subset, steps,
 group_by), not a frozen snapshot of the result. Re-running is live - a note
-captured after the grouping was saved lands in its group the next time the
-grouping is opened. That is the right shape for a growing library: the
+captured after the view was saved lands in its group the next time the
+view is opened. That is the right shape for a growing library: the
 arrangement stays true as the collection changes, rather than aging into a
 screenshot of what it used to hold.
 
 The spec is stored as JSON exactly as `pivot.run` eats it, so opening a saved
-grouping is a plain `pivot.run(spec)` with no re-planning. No model call
+view is a plain `pivot.run(spec)` with no re-planning. No model call
 happens in this module; it is storage over the `saved_pivots` table (0013).
 """
 
@@ -34,7 +34,7 @@ def save(name: str, spec: dict) -> str:
     """
     name = name.strip()
     if not name:
-        raise ValueError("a saved grouping needs a name")
+        raise ValueError("a saved view needs a name")
     pivot_id = str(uuid.uuid4())
     with db.transaction() as conn:
         conn.execute(
@@ -45,10 +45,10 @@ def save(name: str, spec: dict) -> str:
 
 
 def listing() -> list[dict]:
-    """Every saved grouping, newest first, without the spec.
+    """Every saved view, newest first, without the spec.
 
     The list is for choosing, so it carries only what a row shows - name and
-    when it was saved. The spec is fetched by `get` when a grouping is opened.
+    when it was saved. The spec is fetched by `get` when a view is opened.
     """
     conn = db.get_conn()
     try:
@@ -61,7 +61,7 @@ def listing() -> list[dict]:
 
 
 def get(pivot_id: str) -> dict:
-    """One saved grouping with its spec parsed back to a dict, ready for pivot.run."""
+    """One saved view with its spec parsed back to a dict, ready for pivot.run."""
     conn = db.get_conn()
     try:
         row = conn.execute(
@@ -80,16 +80,16 @@ def get(pivot_id: str) -> dict:
         # The spec is written by save()/json.dumps, so a row that does not parse
         # is corruption, not a format we do not know. Fail loudly and readably
         # rather than 500ing on a JSONDecodeError the client cannot place.
-        raise ValueError(f"saved grouping {pivot_id} has a corrupt spec") from exc
+        raise ValueError(f"saved view {pivot_id} has a corrupt spec") from exc
     return out
 
 
 def update_spec(pivot_id: str, spec: dict) -> dict:
-    """Replace the stored spec of a saved grouping, returning the updated row.
+    """Replace the stored spec of a saved view, returning the updated row.
 
     This is how the exclude/include actions (L.6b/L.6c) persist: they read the
     stored spec, adjust `excluded_ids` / `included_ids`, and write it back so
-    the next re-run sees the new membership. An unknown grouping is a KeyError;
+    the next re-run sees the new membership. An unknown view is a KeyError;
     the spec is trusted to be runnable (the caller read it from storage).
     """
     with db.transaction() as conn:
@@ -107,15 +107,15 @@ def update_spec(pivot_id: str, spec: dict) -> dict:
 
 
 def rename(pivot_id: str, name: str) -> dict:
-    """Rename a saved grouping, returning the updated row.
+    """Rename a saved view, returning the updated row.
 
     The name is trimmed; an empty or whitespace-only name is a ValueError and an
-    unknown grouping is a KeyError, mirroring `save`. Only the display name
+    unknown view is a KeyError, mirroring `save`. Only the display name
     moves - the spec is the arrangement and is never touched here.
     """
     name = name.strip()
     if not name:
-        raise ValueError("a saved grouping needs a name")
+        raise ValueError("a saved view needs a name")
     with db.transaction() as conn:
         row = conn.execute("SELECT id FROM saved_pivots WHERE id = ?", (pivot_id,)).fetchone()
         if row is None:
@@ -128,6 +128,6 @@ def rename(pivot_id: str, name: str) -> dict:
 
 
 def delete(pivot_id: str) -> None:
-    """Forget a saved grouping. Idempotent: deleting one already gone is not an error."""
+    """Forget a saved view. Idempotent: deleting one already gone is not an error."""
     with db.transaction() as conn:
         conn.execute("DELETE FROM saved_pivots WHERE id = ?", (pivot_id,))

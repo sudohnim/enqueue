@@ -17,8 +17,8 @@ response, so an inferred value is never dressed as the user's data.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 import re
+from collections import defaultdict
 
 from pydantic import BaseModel
 
@@ -73,9 +73,22 @@ def resolve_subset(subset: dict) -> tuple[list[str], bool]:
     subset was truncated, so run() can report `truncated: true` to the client.
     """
     kind = subset["kind"]
-    value = subset["value"]
+    value = subset.get("value", "")
 
-    if kind == "ids":
+    if kind == "everything":
+        # A whole-library subset: every non-chat artifact (a chat has no
+        # group_by attribute to read, so pivots never group them). Older plans
+        # wrote this as {"kind": "search", "value": ""}; a saved view may
+        # carry the literal "everything" form, which must run too.
+        conn = db.get_conn()
+        try:
+            ids = [
+                row["id"]
+                for row in conn.execute("SELECT id FROM artifacts WHERE kind != 'chat'").fetchall()
+            ]
+        finally:
+            conn.close()
+    elif kind == "ids":
         ids = [part for part in re.split(r"[, ]+", value.strip()) if part]
     elif kind == "tags":
         from . import tags
@@ -158,60 +171,76 @@ def run(spec: dict) -> dict:
         ids.extend(row["id"] for row in rows)
 
     steps = spec["steps"]
+
+    # A saved view can legitimately have no steps (a plan never writes one,
+    # but a stale or hand-edited spec may): there is nothing to derive, so the
+    # group key is a free field read of the group_by attribute on every
+    # artifact - zero model calls, fully grounded. Before this branch the run
+    # raised "needs at least one step" and a saved view like that could never
+    # be re-run.
     if not steps:
-        raise ValueError("a pivot spec needs at least one step")
-
-    # The first step fills the key map. An extract is one judgment per
-    # artifact; a field is the same loop with zero model calls - a SQL read
-    # straight off each artifact's own row.
-    key_of: dict[str, str] = {}
-    first = steps[0]
-    if first["op"] == "field":
-        for artifact_id in ids:
-            key_of[artifact_id] = derive.field(artifact_id, first["attribute"])["value"]
+        attr = (
+            spec.get("group_by", {}).get("attribute")
+            if isinstance(spec.get("group_by"), dict)
+            else None
+        )
+        if not attr:
+            raise ValueError("a pivot spec needs at least one step")
+        key_of = {aid: derive.field(aid, attr)["value"] for aid in ids}
+        kept = list(ids)
+        any_inference = False
     else:
-        for artifact_id in ids:
-            key_of[artifact_id] = derive.extract(
-                artifact_id, first["attribute"], first["instruction"]
-            )["value"]
+        # The first step fills the key map. An extract is one judgment per
+        # artifact; a field is the same loop with zero model calls - a SQL read
+        # straight off each artifact's own row.
+        key_of: dict[str, str] = {}
+        first = steps[0]
+        if first["op"] == "field":
+            for artifact_id in ids:
+                key_of[artifact_id] = derive.field(artifact_id, first["attribute"])["value"]
+        else:
+            for artifact_id in ids:
+                key_of[artifact_id] = derive.extract(
+                    artifact_id, first["attribute"], first["instruction"]
+                )["value"]
 
-    # The working set shrinks as `filter` steps prune it; `enrich` remaps the key
-    # of whatever survives. Downstream (bucketize, grouping) sees only `kept`.
-    kept = list(ids)
-    any_inference = False
-    for step in steps[1:]:
-        any_inference = True
-        if step["op"] == "filter":
-            # One yes/no judgment per DISTINCT current value (deduped, world
-            # knowledge, so it reuses enrich's per-value cache): "is this a
-            # book", "is this fiction". Keep only the artifacts whose current
-            # value is judged in. The group key is untouched - a filter prunes
-            # the set, it does not change what the survivors group by. The
-            # membership is inferred, so the whole run reports ungrounded.
-            verdict = {
-                value: _affirmative(
-                    derive.enrich(value, step["attribute"], step["instruction"])["value"]
-                )
+        # The working set shrinks as `filter` steps prune it; `enrich` remaps the key
+        # of whatever survives. Downstream (bucketize, grouping) sees only `kept`.
+        kept = list(ids)
+        any_inference = False
+        for step in steps[1:]:
+            any_inference = True
+            if step["op"] == "filter":
+                # One yes/no judgment per DISTINCT current value (deduped, world
+                # knowledge, so it reuses enrich's per-value cache): "is this a
+                # book", "is this fiction". Keep only the artifacts whose current
+                # value is judged in. The group key is untouched - a filter prunes
+                # the set, it does not change what the survivors group by. The
+                # membership is inferred, so the whole run reports ungrounded.
+                verdict = {
+                    value: _affirmative(
+                        derive.enrich(value, step["attribute"], step["instruction"])["value"]
+                    )
+                    for value in sorted({key_of[aid] for aid in kept})
+                }
+                kept = [aid for aid in kept if verdict.get(key_of[aid], False)]
+                continue
+
+            # enrich: one call per DISTINCT current value among the survivors.
+            remap = {
+                value: derive.enrich(value, step["attribute"], step["instruction"])["value"]
                 for value in sorted({key_of[aid] for aid in kept})
             }
-            kept = [aid for aid in kept if verdict.get(key_of[aid], False)]
-            continue
-
-        # enrich: one call per DISTINCT current value among the survivors.
-        remap = {
-            value: derive.enrich(value, step["attribute"], step["instruction"])["value"]
-            for value in sorted({key_of[aid] for aid in kept})
-        }
-        for artifact_id in kept:
-            # A user correction on this artifact wins over the inferred value
-            # (rule 2: the director beats the curator). The move control writes
-            # scope='artifact' on the group attribute, so the enrich step must
-            # consult that cache too, not only the per-value one.
-            corrected = derive._read("artifact", artifact_id, step["attribute"])
-            if corrected is not None and corrected["source"] == "user":
-                key_of[artifact_id] = corrected["value"]
-            else:
-                key_of[artifact_id] = remap.get(key_of[artifact_id], "")
+            for artifact_id in kept:
+                # A user correction on this artifact wins over the inferred value
+                # (rule 2: the director beats the curator). The move control writes
+                # scope='artifact' on the group attribute, so the enrich step must
+                # consult that cache too, not only the per-value one.
+                corrected = derive._read("artifact", artifact_id, step["attribute"])
+                if corrected is not None and corrected["source"] == "user":
+                    key_of[artifact_id] = corrected["value"]
+                else:
+                    key_of[artifact_id] = remap.get(key_of[artifact_id], "")
 
     if spec.get("bucketize"):
         mapping = derive.bucketize(

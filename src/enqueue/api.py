@@ -45,6 +45,7 @@ app = FastAPI(title="Enqueue engine", version="0.2.0")
 
 
 font_dir = resources.files("enqueue").joinpath("static/fonts")
+static_dir = resources.files("enqueue").joinpath("static")
 
 
 @app.get("/fonts/{name:path}")
@@ -53,6 +54,17 @@ async def serve_font(name: str) -> Response:
     if not os.path.isfile(font_path):
         raise HTTPException(status_code=404, detail="font not found") from None
     return FileResponse(font_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/static/{name:path}")
+async def serve_static(name: str) -> Response:
+    # The one static asset the pages reference by path (eyeball.png, N.14). The
+    # guard keeps the route honest: only real files inside the static dir, never
+    # a ".." escape or a directory listing.
+    target = os.path.realpath(os.path.join(str(static_dir), name))
+    if not os.path.isfile(target) or not target.startswith(str(static_dir) + os.sep):
+        raise HTTPException(status_code=404, detail="no such static file") from None
+    return FileResponse(target)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1138,6 +1150,49 @@ def run_pivot(req: PivotRunRequest) -> dict:
     for group in result["groups"]:
         group["items"] = [wall.get(aid, {}) for aid in group["artifact_ids"]]
     return result
+
+
+class PivotAddableRequest(BaseModel):
+    spec: dict
+
+
+@app.post("/pivot/addable")
+def pivot_addable(req: PivotAddableRequest) -> dict:
+    """The artifacts a pivot could still take in (N.3a/N.3b add flow).
+
+    The picker must offer only artifacts the view does not already contain: a
+    run covers its subset's matches minus exclusions plus inclusions, so an
+    artifact already covered is a no-op add (the client used to list the whole
+    library and every pick of a covered artifact toasted "already in this
+    view" - real, but useless). This resolves the covered set without running
+    the step chain (pure SQL, no model calls) and returns the rest. A view
+    whose subset covers everything comes back empty, and the picker says
+    "Nothing left to add." instead of pretending a pick would do something.
+    """
+    spec = req.spec
+    try:
+        ids, _ = pivot.resolve_subset(spec.get("subset") or {"kind": "search", "value": ""})
+    except (KeyError, ValueError):
+        # A stale or hand-built spec must not 500 the picker; treat it as
+        # covering nothing so the view stays addable.
+        ids = []
+    excluded = set(spec.get("excluded_ids") or [])
+    included = set(spec.get("included_ids") or [])
+    in_view = set(ids) - excluded | included
+
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, title FROM artifacts"
+            " WHERE kind != 'chat' ORDER BY updated_at DESC LIMIT 200"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        "items": [
+            {"id": row["id"], "title": row["title"]} for row in rows if row["id"] not in in_view
+        ]
+    }
 
 
 class DerivedOverrideRequest(BaseModel):

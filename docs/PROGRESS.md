@@ -1,182 +1,479 @@
-# Enqueue Desktop Design Overhaul
+# Enqueue Progress - Phase O (theme + wall headers + eye follow + density)
 
-This file is the agent's work queue.
-Do one task per turn, in order, and verify each with the command in its "Verify" line before checking the box.
+This file is the agent's work queue. Do one task per turn, in order, and verify each with its "Verify" line before checking the box. Do not implement anything that is not listed below.
 
-# Phase K - the eye, centered artifacts, and grouping
+All edits live in `~/enqueue/src/enqueue/static/museum.html` unless a task says otherwise. The whole UI is one inline CSS + inline JS file. Line numbers are approximate; re-anchor on the surrounding code before editing because earlier tasks in this phase shift lines.
 
-Phase K shipped. The tasks below are recorded as the source of the patterns Phase L and M reuse (the eye markup, the wall grouping selector, collapsible pivot groups, the styled name modal, the routing hash). They are not re-opened.
+Prior phases shipped: lavender token system, the eye-with-cursor-follow, 5-up wall grid (desktop default), collapsible pivot/wall section headers (`.wallgroup` + `.grouptoggle`), saved-view rename/move/remove/add, the `view` vocabulary pass, the eyeball PNG cursor-follow via `split_eye.py`. This phase is a small refinement pass from Minh's reports.
 
-- [x] K.1 Bold disc-less eye on the home view.
-- [x] K.2 Eye follows cursor and blinks. (The follow broke again; see L.7 and M.4.)
-- [x] K.3 Centered artifact column, action icons at the content edge.
-- [x] K.4 Styled `askGroupName()` modal for naming a saved grouping.
-- [x] K.5 Add-an-artifact-to-a-grouping drawer (this is the redundant collections path Phase M removes).
-- [x] K.6 Wall grouping selector: Type / Last touch / Tags / Custom. Grid button removed from the pill.
-- [x] K.7 Exhibit rename pencil (this is the redundant collections rename Phase M removes; the saved-pivot rename lives in L.3).
-- [x] K.8 "Save grouping" / "Answer instead" moved above the grouped cards.
-- [x] K.9 Hash router; restore route on reload.
-- [x] K.10 Collapsible pivot group headers, state persisted per spec-hash.
-- [x] K.11 Vision describe at ingest so images are searchable.
+Ground truth sampled before this phase (do not re-derive):
 
-# Phase L - grouping polish pass
+- The wall grid CSS at `museum.html:~1376` is already `repeat(5, minmax(0, 1fr))` at desktop. The breakpoint ladder at `:~1647-1670` is: max-width 1440 -> 4-up, 1280 -> 3-up, 1024 -> 2-up, 768 -> 1-up. Minh sees 3-up, which means his window sits in the 1280 bucket. The fix in O.2 below pushes 5-up down to narrower widths.
+- The eye already sits to the left of the greeting phrase (`.greetline` is a centered flex row with the `.greet-emblem` first, then the `<h1 class="display greeting">`). The placement requirement in O.3 is already satisfied; O.3 only reworks the follow mechanism.
+- `~/enqueue/eyeball.png` is a 1024x1024 image replaced by Minh on 2026-08-09. The purple eye inside it is a roughly 70x69 pixel region, x in [511, 581], y in [367, 436], center about (546, 401). The iris centre pixel samples to `#60079f` (96, 7, 159). The sclera just outside the iris samples to about `#fcfdf6` (253, 254, 246).
+- The design reference at `~/Downloads/DESIGN-kraken.md` pins a bold purple scale: primary `#7132f5`, dark `#5741d8`, deep `#5b1ecf`, subtle `rgba(133, 91, 251, 0.16)`. The macOS app icon `~/enqueue/desktop/icons/icon.png` (the logo) samples to a deep violet around `#7040a0`. All three sources live in the same bold-violet family; O.4 adopts the Kraken scale because it is the only one with explicit hex values, and it falls between the eyeball-iris purple and the logo purple.
 
-Surveyed against the code after Phase K shipped. Most tasks landed. Two did not.
+---
 
-- [x] L.1 Tag bar conditional on Tags mode. `home()` renders `.tagbar` with `hidden` unless `wallGroup === "tags"` at `src/enqueue/static/museum.html:5382-5408`; `setWallGroup()` flips `tagbar.hidden = mode !== "tags"` at `:4893-4894`. Code is in place. Minh reports it does not hide in practice; M.3 audits.
-- [x] L.2 Add-to-grouping chip race fix. The drawer path Phase M deletes; the fix is moot.
-- [x] L.3a `PATCH /pivots/{id}` rename endpoint at `src/enqueue/api.py:1356-1364`; `pivots_saved.rename()` exists.
-- [x] L.3b Rename pencil on each saved grouping inside the L.5 custom modal (`museum.html:4962-4971`) and the `#g` list (`:8361`). `renameSavedGrouping()` at `:7212` posts the PATCH.
-- [x] L.4 Collapsible Type/Tags wall headers. `wallSectionsHtml()` at `:4793`, `wallCollapsedSet()` at `:4826`, `mountWallGroups()` at `:4852`, called from `setWallGroup` at `:4900` and `home()` at `:5451`.
-- [x] L.5 Custom opens a `<dialog>` modal, not inline. `openCustomPicker()` at `:4909`, called from `setWallGroup` at `:4877-4881`. The wall stays on its previous mode behind the dim. Code is in place. Minh reports it still lists inline; M.3 audits.
-- [x] L.6a Move button on pivot cards posts `/derived/override` and re-runs. `pivotMove()` at `:7659`.
-- [x] L.6b Remove-from-grouping: `pivotRemove()` at `:7589`, `removedSection()` at `:7526`, `POST /pivots/{id}/exclude` at `api.py:1383`, `excluded_ids` filtered at `pivot.py:138-140`.
-- [x] L.6c Add-artifact-to-grouping picker: `addArtifactToGrouping()` at `:7660`, `pickArtifact()` at `:7698`, `POST /pivots/{id}/include` at `api.py:1415`, `included_ids` merged at `pivot.py:147-158`.
-- [x] L.7 Eye follow fix. DONE via M.4. Root cause found by E2E: the follow and saccade wrote `translate(3.00 1.00)` - unitless, space-separated, invalid CSS inside the `transform` property, silently dropped by the browser, so the pupil never moved regardless of the reduced-motion guard. Fixed to `translate(X.XXpx, Y.YYpx)` (comma-separated lengths; 1px = 1 viewBox user unit, reach unchanged at 3.6). The `motionOk` guard now gates only the saccade and blink chains; the `pointermove` follow runs unconditionally (M.4). Verified with real CDP mouse moves under both motion settings; reduced-motion emulation keeps the follow and fires no blinks or saccades.
+## O.1 - make the "Last touch" wall headers match the other view headers, and uppercase all wall section labels
 
-# Phase M - remove the redundant collections, finish the eye, audit the wall
+When the wall is grouped by Last touch (`wallGroup === "touched"`), the two section labels are bare `.shelf` caption divs - faint 12/500 text with no chevron, no count, no collapse. The Type and Tags modes render their sections as `.wallgroup` blocks with a `.grouptoggle` header (20/500 Title type, a 2px accent rule, a count, a chevron, and a click-to-fold behaviour). Minh wants the Last touch headers to read as the same control, and he wants all wall section labels in ALL CAPS (the example given: SAVED and EVERYTHING ELSE).
 
-Minh's request: the "collections" model (the `exhibits` + `exhibit_members` tables and every UI that touches them) was introduced by an earlier agent to paper over the L.2 add-to-grouping bug. It is now redundant because saved groupings (`saved_pivots`) carry the same concept and the L.5 custom modal already lists them. Remove the collections surface entirely and rewire the one place that still goes to exhibits (the wall's "Collections" shelf) to the saved groupings system.
+The decision behind the all-caps scope: only wall section headers go uppercase. Pivot-group headers (saved views run through `renderPivot`) are a different surface and stay as-is. The uppercase is applied through one CSS rule on the shared `.wallgroup .grouptoggle .shelf` selector so every wall section - Notes, Links, #tag, SAVED, EVERYTHING ELSE - reads in caps as one set.
 
-Phase M also audits the L.1 and L.5 reports (Minh sees tags not hiding and Custom listing inline despite the code being in place) and finishes L.7 (eye follow).
+- [x] **O.1a [AGENT]** Uppercase every wall section header label via one CSS rule.
 
-Two terms used precisely:
+  Anchor: `.wallgroup .grouptoggle .shelf` CSS at `museum.html:~773-782` (currently `flex: 1; margin: 0; font-size: inherit; ...`).
 
-- **Exhibit / collection** (going away): `exhibits` + `exhibit_members` tables, `showExhibit()`, `#e/<id>` route, the wall "Collections" shelf, the drawer "Add to grouping" row, every `/exhibits*` endpoint, the `renameGrouping()` exhibit-rename function, the curate save path, the chat exhibit scope, the export of exhibits, the CLI curate counters, `schemas.Exhibit`.
-- **Saved grouping** (stays): `saved_pivots` table, `/pivots*` endpoints, `openCustomPicker()`, `runSavedGrouping()`, `#g` and `#g/<id>` routes, `pivotMove` / `pivotRemove` / `pivotRestore` / `addArtifactToGrouping`, the "Save grouping" organize action.
+  Add two declarations to that rule:
 
-## M.1 - remove the collections wall shelf
+  ```css
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  ```
 
-- [x] **M.1 [AGENT]** Stop rendering the "Collections" shelf on the wall and stop fetching `/exhibits` from `home()`. DONE: dropped the `exs` slot from `home()`'s `Promise.all` (kept/first/tagcloud remain) and deleted the whole `if (exs.items.length)` shelf block. Verified in the running build: home load makes exactly three GETs (`/artifacts?pinned=true`, `/artifacts?pinned=false`, `/tags`), and the wall renders no Collections shelf. `showExhibit()` still exists (M.6 deletes it); remaining `/exhibits` fetches live in `showArtifact()` and die in M.2.
-  Anchor: `home()` at `src/enqueue/static/museum.html:5312-5450`.
-  The `Promise.all` at `:5322-5327` fetches `api("/exhibits")` into `exs`; the `if (exs.items.length)` block at `:5413-5432` then renders the shelf with `showExhibit()` click handlers.
-  Drop the `exs` slot from the `Promise.all` (keep `kept`, `first`, `tagcloud`), and delete the entire `if (exs.items.length)` block at `:5413-5432`. The wall header now goes straight from the `</div>` that closes `.homehead` into the `.wallbody` slot.
-  Do NOT remove `showExhibit()` itself yet; it dies in M.9 with the `#e/<id>` route, but the function is referenced by `restoreRoute()` and the old wall markup until M.9 lands in the same pass.
-  Verify: `home()` no longer calls `/exhibits`; the network tab shows three GETs on home load (`/artifacts?pinned=true`, `/artifacts?pinned=false`, `/tags`), not four; the wall renders no "Collections" shelf.
+  The `0.04em` tracking stops the caps from going tight at Title size. Do not change pivot-group `.grouptoggle .shelf` selectors.
 
-## M.2 - remove the "Add to grouping" drawer row
+  Verify: in Type mode the headers read NOTES, LINKS, PDFS, IMAGES, FILES, CONVERSATIONS; in Tags mode they read the tag names in caps (for example #RESEARCH, UNTAGGED); in Last touch they read SAVED and EVERYTHING ELSE once O.1b lands.
 
-- [x] **M.2 [AGENT]** Remove the drawer's grouping row and its handlers. DONE: deleted `groupRowHtml`, `mountGroupRow`, `renderGroupRow`, `addToGrouping`, `removeFromGrouping`, `pickExhibit`, the `artifactExhibits` declaration and both assignments, the `GET /artifacts/{id}/exhibits` fetch in `showArtifact()`, the `groupRowHtml(artifactExhibits)` and `mountGroupRow(id)` calls in the drawer mount, and the now-dead `.grouprow` CSS. Verified in the running build: opening a real (non-chat) artifact renders a drawer with only the Tags row (chips + add-tag input), the Summary, and the close button - no "Add to grouping" control anywhere; no console error references a removed function.
-  Anchor: `groupRowHtml()` at `src/enqueue/static/museum.html:5944-5980`, `mountGroupRow()` at `:5983-5995`, `renderGroupRow()` at `:5998-6010`, `addToGrouping()` at `:6012-6032`, `removeFromGrouping()` at `:6034-6044`, `pickExhibit()` at `:6048-6135`, the module-scope `artifactExhibits` declared at `:5952` and set at `:5996`, `:6178-6181` inside `showArtifact()`, the drawer markup at `:6347-6359` (specifically the `groupRowHtml(artifactExhibits)` call at `:6357` and the `mountGroupRow(id)` call at `:6363`), and the `restorePill`/`teardown` paths that reference the drawer.
-  Delete:
-  1. The `groupRowHtml`, `mountGroupRow`, `renderGroupRow`, `addToGrouping`, `removeFromGrouping`, `pickExhibit` functions in their entirety.
-  2. The `let artifactExhibits = [];` declaration and both assignments.
-  3. The `GET /artifacts/{id}/exhibits` fetch in `showArtifact()` at `:6178-6181`.
-  4. The `groupRowHtml(artifactExhibits)` line at `:6357` and the `mountGroupRow(id)` call at `:6363` in the drawer mount.
-  The drawer becomes Tags + Summary only (the `.drawer-top` "Tags" label, `tagRowHtml`, `summaryHtml`, the close button).
-  Verify: opening an artifact drawer shows only the Tags row and the Summary; there is no "Add to grouping" control; an artifact that was previously a member of an exhibit still opens, and no console error references a removed function.
+- [x] **O.1b [AGENT]** Rebuild the Last touch wall body as two collapsible `.wallgroup` sections with uppercase labels and the same `.grouptoggle` header as Type/Tags.
 
-## M.3 - audit the "tags don't hide" and "Custom lists inline" reports
+  Anchor: `wallBodyHtml()` at `museum.html:~4853-4871`. Today the `if (wallGroup === "type")` / `"tags"` branches call `wallSectionsHtml`. The fall-through branch (Last touch) writes:
 
-- [x] **M.3 [AGENT]** Reproduce L.1 and L.5 in a running build, then either confirm or fix. CONFIRMED AS DESIGNED on a fresh build (`http://127.0.0.1:8787/`, hard reload): **L.1** - clicking Tags shows the tag bar under the grouping bar; clicking Type, Last touch, or Custom all hide it (`tagbar.hidden` toggles; the element stays in the DOM, so no null-capture issue). **L.5** - clicking Custom opens a `dialog.ask` modal titled "Saved groupings" listing the saved pivots, the `::backdrop` dims the page with the `--scrim` colour (`rgba(16,17,20,0.32)`), and the wall behind stays on its previous mode (Last touch), not an inline "Saved groupings" shelf; aria-pressed on the bar is untouched. No code bug found; the reports were a stale WKWebView - the fix is a `bin/relaunch` (kills the window, so the page reloads fresh).
-  The code for both is in place; Minh still sees the old behaviour, so the most likely cause is a stale build OR a runtime bug the audit surfaces. Do both halves before editing:
-  - **Reproduce L.1**: launch the museum (`bin/relaunch` or `uv run enq serve` + open `http://127.0.0.1:8787/`). Click "Tags" in the wall grouping bar: the tag bar should appear under the bar. Click "Type": the tag bar should hide. Click "Last touch": should hide. Click "Custom": should hide. Report what actually happens.
-  - **Reproduce L.5**: click "Custom" in the wall grouping bar. A `<dialog>` modal should open with the saved groupings list, the rest of the app dimmed by the `--scrim` backdrop. The wall behind it should still show the previous mode (Type/Tags/Last touch), not a "Saved groupings" inline shelf. Report what actually happens.
-  If both reproduce as designed, the fix is `bin/relaunch --build` (or whatever Minh uses to hard-refresh the WKWebView); record the outcome and close the task.
-  If L.1 reproduces wrong (tags stay visible after switching away from Tags), the bug is one of:
-    1. `setWallGroup()` at `:4871-4902` is not being called on the click. Verify `groupBarHtml()` buttons are bound. The binding is at the `gbar` block near `:5468` (search for `gbar.querySelectorAll("button")` in `home()`).
-    2. The `tagbar` element captured at `:4893` is null because the initial mode was not `tags`, so `home()` did not render the tag bar markup, so `setWallGroup("tags")` has nothing to show. If this is the case, fix by ALWAYS rendering the `.tagbar` (hidden when `wallGroup !== "tags"`) so the toggle path finds the element. The current home render at `:5377-5409` already gates on `allTags.length` but emits with `(wallGroup === "tags" ? "" : " hidden")`, so the element exists when there are tags. Confirm `allTags.length` is truthy in the repro.
-    3. `tagbar.hidden = mode !== "tags"` at `:4894` runs but a later `home()` re-render on focus restoration resets the attribute. Check `refreshIfStale()` and any `home({ keepScroll: true })` call paths.
-  If L.5 reproduces wrong (Custom lists inline in the wall body instead of opening a modal), the bug is:
-    4. `setWallGroup()` is not the click handler. Verify the groupbar binding.
-    5. `openCustomPicker()` at `:4909` is not being awaited, or the wall body is being replaced before the modal opens. Confirm `setWallGroup` at `:4871-4902` does `if (mode === "custom") { const pick = await openCustomPicker(); ... return; }` and does NOT fall through to `slot.innerHTML = wallBodyHtml()` for the custom case.
-  Edit only if a real bug is found; otherwise record the repro outcome and close.
-  Verify: on a fresh build, switching from Tags to Type hides the tag bar; clicking Custom opens the dimmed modal over an unchanged wall. State both outcomes explicitly.
+  ```
+  '<div class="shelf center">saved</div>' +
+  '<div class="wall wall--saved">' + wallKept.map(card).join("") + '</div>' +
+  '<div class="shelf center">Everything else</div>' +
+  '<div class="wall" id="wall">' + wallFirst.map(card).join("") + '</div><div id="wallEnd" class="aside"></div>';
+  ```
 
-## M.4 - finish L.7: narrow the `motionOk` guard so the eye always follows
+  Replace that fall-through body with two `.wallgroup` sections built through a local helper. Each section reuses the SAME markup shape that `wallSectionsHtml` emits at `:~4927-4957`, so the look and the collapse plumbing are identical. Concretely, replace the fall-through `let body = ""; ... return body;` block with:
 
-- [x] **M.4 [AGENT]** Gate only the saccade and blink cosmetic chains on `prefers-reduced-motion`; the `pointermove` follow runs unconditionally. DONE - see L.7 note. Changes: removed the `if (!motionOk) return;` early return; gated the saccade and blink timer chains on `motionOk`. E2E also found and fixed the real reason the eye never followed: both transform writes emitted unitless space-separated `translate(X.XX Y.YY)`, invalid CSS for the `transform` property (the `translate()` function needs comma-separated lengths), so the browser silently dropped them. Rewrote both writes as `translate(X.XXpx, Y.YYpx)` (1px = 1 viewBox unit, reach stays 3.6).
-  Anchor: `mountEye()` at `src/enqueue/static/museum.html:5516-5660` and `motionOk` at `:5514`.
-  Today `if (!motionOk) return;` at `:5517` blocks the whole function, so under `prefers-reduced-motion: reduce` no `pointermove` listener is bound and the eye sits dead. The follow is functional, not decorative, so it should always be on.
-  Change:
-  1. Remove the `if (!motionOk) return;` early return at `:5517` entirely.
-  2. Keep the `pointermove` binding (`document.addEventListener("pointermove", step, ...)` at `:5597`), the `mouseleave` relax at `:5598`, and the `step` / `relax` closures unconditional.
-  3. Gate the saccade chain: wrap the `saccadeTimer = setTimeout(saccade, ...)` line at `:5646` in `if (motionOk)`. Inside `saccade()` at `:5607`, the existing `el.matches(":hover") || performance.now() - lastMove < 600` early return is fine; nothing else changes.
-  4. Gate the blink chain: wrap the `eyeTimer = setTimeout(blink, ...)` line at `:5659` in `if (motionOk)`. The `blink()` function at `:5647` stays as-is.
-  The `iris.style.transform` direct writes (`:5580`, `:5595`, `:5618`, `:5631`) are already correct and stay; they bypass `var(--pupil)` so WKWebView's SVG custom-property gap is not a problem.
-  Also verify the `:hover` CSS rule at `:503-504` does not fight the follow when the cursor is over the emblem: `step()` at `:5534-5540` already clears `iris.style.transform` while hovering, so the stylesheet `translate(0,0)` takes over. Keep this behaviour.
-  Verify: on a machine with reduced motion ON (System Settings > Accessibility > Display > Reduce motion, OR `defaults read com.apple.universalaccess reduceMotion` returns 1), loading the home view, the eye's pupil still eases toward the cursor as it moves anywhere on the page; no saccades or blinks fire. On a machine with reduced motion OFF, the follow, saccades, and blinks all run as before.
+  ```js
+  const sections = [];
+  if (wallKept.length) sections.push(["SAVED", wallKept, true]);
+  sections.push(["EVERYTHING ELSE", wallFirst, false]);
+  const collapsed = wallCollapsedSet(wallGroup);
+  let body = "";
+  for (const [label, list, isSaved] of sections) {
+    const key = label;
+    const isCollapsed = collapsed.has(key);
+    body +=
+      '<section class="wallgroup' + (isCollapsed ? " collapsed" : "") +
+      '" data-key="' + esc(key) + '">' +
+      '<button class="grouptoggle" type="button" aria-expanded="' + String(!isCollapsed) +
+      '" title="' + esc(isCollapsed ? groupPreview(list) : "") + '">' +
+      '<span class="shelf center">' + esc(label) + '</span>' +
+      '<span class="gmeta">' + list.length + '</span>' +
+      '<span class="gchev" aria-hidden="true">' + svg("chev") + '</span>' +
+      '</button>' +
+      '<div class="wall' + (isSaved ? " wall--saved" : "") +
+      (isSaved ? "" : '" id="wall') + '">' +
+      list.map((a, i) => card(a, i)).join("") +
+      '</div>' +
+      (isSaved ? "" : '<div id="wallEnd" class="aside"></div>') +
+      '</section>';
+  }
+  return body;
+  ```
 
-## M.5 - remove the saved-groupings sub-view (`#g`) is already the replacement; confirm
+  Notes the dumb agent must keep:
 
-- [x] **M.5 [AGENT]** Confirm `showSavedGroupings()` still works after M.1-M.2 removed the wall "Collections" shelf. SMOKE CHECK PASSED in the running build: `#g` renders the "Saved groupings" list (3 rows, rename pencil and forget buttons intact on each); clicking a row runs the grouping and lands on `#g/<id>` (Regions of the World, 3 groups); reload on `#g/<id>` restores the grouping run via `restoreRoute()`; the Custom wall selector still opens the modal (M.3).
-  Anchor: `showSavedGroupings()` (search for the function definition; it powers the `#g` route via `restoreRoute()` at `:5280`), `runSavedGrouping()` at `:8384`-ish (powers `#g/<id>` at `:5281`), and the `openCustomPicker()` at `:4909` which is what M.3's audit concerns.
-  The "Custom" wall selector opens `openCustomPicker()` (the L.5 modal). The `#g` sub-view is a separate route that lists saved groupings full-screen, reached only via `restoreRoute()` on reload. Both must still work after the collections shelf is gone.
-  There is nothing to delete here; the task is a smoke check after M.1 and M.2 land.
-  Verify: in a running build, navigate to `#g` directly; the saved-groupings list renders ( pencils and forget buttons intact ); clicking a row runs the grouping at `#g/<id>`; the "Custom" wall selector still opens the modal; reload on `#g/<id>` restores the grouping run.
+  - The SAVED section keeps the `wall--saved` class and writes NO id.
+  - The EVERYTHING ELSE section keeps `id="wall"` and the trailing `<div id="wallEnd" class="aside"></div>` because the pager (`watchWallEnd` at `:~5666`, only attached when `wallGroup === "touched"`) writes into `#wallEnd` and appends to `#wall`.
+  - The labels are uppercase strings ("SAVED", "EVERYTHING ELSE") in the source. O.1a also uppercases via CSS, which is belt-and-braces; emit them uppercase in JS anyway so screen readers and the `title` tooltip already match.
+  - `groupPreview`, `wallCollapsedSet`, `svg`, `esc`, `card` are all already in scope at this point in the file (used by `wallSectionsHtml` two screens up).
 
-## M.6 - remove the `showExhibit()` page and `#e/<id>` route
+  Verify: with the wall in Last touch mode, the two headers look identical to a Type header - same 20/500 ink, same accent rule, same count chip, same chevron, same hover surface. Clicking SAVED folds just the kept shelf; clicking EVERYTHING ELSE folds the pager wall. The section state survives a mode switch and a reload (sessionStorage `enqueue.collapsedWall.touched`).
 
-- [x] **M.6 [AGENT]** Delete the exhibit page and its route token. DONE: removed `showExhibit()`, the exhibit `renameGrouping(id)` (saved-pivot `renameSavedGrouping` untouched), the `kind === "e" && id` token and its doc-comment line in `restoreRoute()`, plus the two remaining call sites - the `refreshIfStale()` exhibit branch and the chat scoped-chip `showExhibit` branch (the chip now renders the artifact scope only). Also simplified the dead `asked.kind === "exhibit"` chat-scope check to artifact-or-everything. Verified: zero `showExhibit(` / `setRoute("e/` sites in the JS; a real page load on `#e/<old-exhibit-id>` lands on the wall, not an error state (restoreRoute falls back to `home()`, which clears the hash).
-  Anchor: `showExhibit()` (search for the function definition around line 7118-7178), `renameGrouping()` at `:7183-7205` (the EXHIBIT rename function; the saved-pivot rename is `renameSavedGrouping` at `:7212` and stays), the route token `kind === "e" && id` at `:5279` in `restoreRoute()`, the route doc comment at `:5256-5258`, and any `showExhibit` call sites (M.1 has already removed the wall shelf call; search for the rest).
-  Delete:
-  1. The `showExhibit()` function.
-  2. The exhibit `renameGrouping(id)` function (NOT `renameSavedGrouping`).
-  3. The `if (kind === "e" && id) return showExhibit(id);` line at `:5279` inside `restoreRoute()`.
-  4. The `#e/<id>` mention in the route doc comment at `:5257`.
-  5. Any `setRoute("e/" + id)` call site (search for `"e/"`); M.1 already removed the wall shelf's call, but a stray one could exist.
-  The `#e/<id>` route becomes unrecognised; `restoreRoute()` at `:5289` falls back to `home()`, which is the right behaviour for an old bookmark to a deleted concept.
-  Verify: opening `#e/<some-exhibit-id>` in a running build lands on the wall, not an error state; no `showExhibit` call sites remain in the museum JS.
+- [x] **O.1c [AGENT]** Wire the collapse handler into Last touch mode.
 
-## M.7 - remove the exhibit backend endpoints
+  Anchor: the mount line at `museum.html:~5617-5618`:
 
-- [x] **M.7 [AGENT]** Delete every `/exhibits*` route and the `curate` exhibit writers. DONE: removed `artifact_exhibits`, `ExhibitSave`, `POST/GET /exhibits`, `GET/PATCH /exhibits/{id}`, `POST /exhibits/{id}/members`, `DELETE .../members/{artifact_id}`, `ExhibitQuickCreate`, `POST /exhibits/quick`, the `save` param from `CurateRequest`, and the `/curate` save call in `api.py`; deleted `save()`, `_save()`, `add_member()`, `rename_exhibit()`, `eject_member()`, `quick_create()` from `retrieve/curate.py` and dropped `saved_id` from its result; renamed `schemas.Exhibit` -> `Room` (groupings/tensions validators kept) and the `/curate` response key `exhibit` -> `room`; dropped the `exhibit` chat scope from `chats.py` (validation, scope_label, passages, empty_scope_reason); removed the exhibit counters from `cli.py` export/curate echoes and the `--save` flag; removed the exhibit export block from `export.py` (no exhibits file, no manifest exhibits key, verify checks artifacts only); updated the frontend `r.exhibit` -> `r.room`; dropped `exhibit_members` from `trash.py` purge and `exhibits` from `settings.py` counts. Verified on a fresh server: `curl /exhibits` -> 404; `curl -X POST /curate` returns the synthesized room with no `saved_id`; `uv run pytest -q` green (370 passed) with M.8/M.9 landed; zero exhibit references remain in `api.py`, `curate.py`, `schemas.py`, `chats.py`.
-  Anchor: `src/enqueue/api.py` - `GET /artifacts/{id}/exhibits` at `:561-579`, `POST /exhibits` (`save_exhibit`) at `:1047-1054`, `GET /exhibits` (`list_exhibits`) at `:1057-1064`, `GET /exhibits/{id}` (`get_exhibit`) at `:1067-1082`, `PATCH /exhibits/{id}` (`rename_exhibit`) at `:1084-1105`, `POST /exhibits/{id}/members` (`add_exhibit_member`) at `:1108-1122`, `DELETE /exhibits/{id}/members/{artifact_id}` (`eject_exhibit_member`) at `:1125-1134`, `POST /exhibits/quick` (`quick_create_exhibit`) at `:1137-1157`. The Pydantic schemas `ExhibitSave`, `ExhibitRename`, `ExhibitMember`, `ExhibitQuickCreate` live near these endpoints (search for each `class ...BaseModel`).
-  In `src/enqueue/retrieve/curate.py`, delete: `save()` at `:84`, `_save()` at `:98`, `add_member()` at `:130`, `rename_exhibit()` at `:173`, `eject_member()` at `:201`, `quick_create()` at `:218`. The `run()` function at `:22` stays (it returns the synthesized room); drop the `save and exhibit` block at `:79-80` and the `saved_id` key from the result dict at `:75-80` so `/curate` returns the room without persisting anything. The `Exhibit` schema import from `schemas.py` dies with the save path.
-  In `src/enqueue/schemas.py`, delete the `Exhibit` class and any related models only `curate` used (`SuggestedName`, etc., if they have no other consumer; grep before deleting).
-  In `src/enqueue/chats.py`, the `exhibit` scope at `:63, :122-126, :243-252, :398-399` references the `exhibits` table to fetch member artifact ids. Decision: drop the `exhibit` scope entirely. Change the `scope_kind in ("everything", "artifact", "exhibit")` check at `:63` to `("everything", "artifact")`; remove the exhibit branches in the passages and answer paths; existing exhibit-scoped chats in the database become `everything`-scoped on read (or, if migration M.8 adds a column rewrite, they are rewritten). Document the migration behaviour in M.8.
-  In `src/enqueue/cli.py` at `:178, :187, :219-239`, the curate command's counters and export fields reference exhibits. Drop the exhibit-specific output; curate's text result stays, the saved-id line goes.
-  In `src/enqueue/export.py` at `:105-319`, the exhibit export block is removed; the export no longer writes an exhibits file. Saved groupings become the only persisted grouping concept; if export should serialise them, add a `saved_pivots.json` block (out of scope for this task; record as a follow-up in M.11).
-  Keep this task focused on Python deletes; the migration is M.8.
-  Verify: `uv run pytest -q` passes after the deletes (with M.8 landed in the same commit); `curl http://127.0.0.1:8787/exhibits` returns 404; `curl http://127.0.0.1:8787/curate -X POST -d '{"lens":"..."}'` still returns the synthesized room, with no `saved_id` key; no `import curate.add_member` style imports remain in `api.py`.
+  ```
+  if (wallGroup === "type" || wallGroup === "tags")
+    mountWallGroups(wallGroup);
+  ```
 
-## M.8 - drop the `exhibits` and `exhibit_members` tables in a new migration
+  Change the condition to include `touched`:
 
-- [x] **M.8 [AGENT]** Add an Alembic revision that drops the two tables. DONE: created `src/enqueue/migrations/versions/0019_drop_exhibits.py` (down_revision 0018). `upgrade()` rebuilds `chats` without `'exhibit'` in the scope_kind CHECK (SQLite cannot DROP CONSTRAINT, so copy-table -> drop -> rename, preserving the `pinned` column and recreating `idx_chats_updated`), rewrites `scope_kind='exhibit'` rows to `'everything'` with `scope_id=NULL` (the scope_id referenced a row about to be dropped), then drops `exhibit_members` before `exhibits`. `downgrade()` is empty with the "Downgrade not supported" comment. Verified on the real DB: `db.migrate()` advances 0018 -> 0019 without error; `sqlite_master` no longer lists `exhibits`/`exhibit_members`; no `scope_kind='exhibit'` rows remain; all 7 chats survive with messages intact. Fresh-DB path verified via a temp-dir test that builds a seeded 0018 DB (exhibit + members + exhibit-scoped chat + artifact-scoped chat), migrates to head, and asserts tables gone, chat rows rewritten, message rows intact, index recreated, and the new CHECK rejects `'exhibit'`.
-  Anchor: the baseline migration at `src/enqueue/migrations/versions/0001_baseline.py` creates `exhibits` and `exhibit_members` (search the file). The migration runner is `db.migrate()` at `src/enqueue/db.py`. The migrations directory is `src/enqueue/migrations/versions/`; revisions are numbered (`0001_baseline.py`, ..., latest).
-  Create `src/enqueue/migrations/versions/00XX_drop_exhibits.py` (use the next free number).
-  `revision = "00XX_drop_exhibits"` (whatever the next id is), `down_revision = "<current head>"`.
-  `upgrade()`: `op.drop_table("exhibit_members")` then `op.drop_table("exhibits")` (order matters; the members FK on exhibits goes first). SQLite's newer versions support `DROP TABLE` with foreign keys off; if the engine raises on a dangling FK, run `op.execute("PRAGMA foreign_keys=OFF")` before the drops and `PRAGMA foreign_keys=ON` after.
-  `downgrade()`: leave empty (the schema cannot be restored without data). Add a comment: "Downgrade not supported; recreating exhibits would not restore membership".
-  For the chat-scope column rewrite: the `chats.scope_kind` column was a CHECK-constrained string. If the CHECK includes `'exhibit'`, the new migration must drop and recreate the constraint without `'exhibit'`. Inspect `migrations/versions/0003_chats.py` for the constraint definition. SQLite cannot `ALTER TABLE ... DROP CONSTRAINT`; the migration must rebuild the table (the standard Alembic batch mode: `with op.batch_alter_table("chats") as b: ...`). Use `b.drop_constraint` if Alembic's batch mode detects the CHECK; otherwise copy the table, rewrite rows whose `scope_kind = 'exhibit'` to `'everything'`, drop the old, rename the new.
-  Existing exhibit-scoped chat rows become `everything`-scoped during this migration: in `upgrade()`, before the constraint rewrite, `op.execute("UPDATE chats SET scope_kind = 'everything' WHERE scope_kind = 'exhibit'")`.
-  Verify: on a database with existing exhibits, `enq migrate` runs the new revision without error; `SELECT name FROM sqlite_master WHERE name IN ('exhibits', 'exhibit_members')` returns empty; `SELECT scope_kind FROM chats WHERE scope_kind = 'exhibit'` returns empty; a fresh database (delete `~/.enqueue-poc/enqueue.db`, restart) reaches head and starts cleanly.
+  ```js
+  if (wallGroup === "type" || wallGroup === "tags" || wallGroup === "touched")
+    mountWallGroups(wallGroup);
+  ```
 
-## M.9 - delete the exhibit tests
+  `mountWallGroups` at `:~4988` already keyes its fold state on the mode string, so Last touch gets its own sessionStorage key (`enqueue.collapsedWall.touched`) and does not collide with Type or Tags.
 
-- [x] **M.9 [AGENT]** Remove tests that exercise the exhibit surface; rewrite curate / chat tests that touch it. DONE: deleted `tests/test_exhibit_members.py` entirely; rewrote `tests/test_export.py` (dropped the `_exhibit` fixture, the exhibit from `_build_library`, the `first["exhibits"]` / `exhibits/` dir assertions, and the exhibit block of `test_export_survives_database_deletion`); removed the whole `TestSaveLensView` class from `tests/test_lens_api.py` plus the `test_ephemeral_writes_no_exhibits` test, and added `TestCurateHttp.test_curate_returns_room_and_writes_nothing` which asserts `POST /curate` returns the synthesized room (stubbed provider patched at all three `get_provider` import sites: rerank, expand, curate), `keep=2` truncates kept, and the response carries no `saved_id`; renamed `TestExhibitValidators` -> `TestRoomValidators` in `tests/test_ingest.py`, rewiring the two Exhibit tests to the surviving `Room` schema (same validators: through-line restates lens, thin must say why) and tightening the blind `pytest.raises(Exception)` to specific `ValueError` matches. Verified: `uv run pytest -q` green (370 passed); `grep` shows zero references to `add_member`/`eject_member`/`quick_create`/`rename_exhibit`/`save_exhibit`/`/exhibits`/`Exhibit` in `tests/`; `bin/verify` passes (JS parse both pages, pytest, contrast).
-  Anchor: `tests/test_exhibit_members.py` (entire file - tests `add_member`, `eject_member`, `rename_exhibit`, `quick_create`), `tests/test_export.py` (rewrite: drop the exhibit fields from the fixtures and assertions; export tests should cover artifacts and chats, not exhibits), `tests/test_lens_api.py` (the `test_save_this_view_writes_an_exhibit_with_the_lens_as_theme` and `test_ephemeral_writes_no_exhibits` tests at `:99-238` are removed; the curate endpoint no longer saves, so the lens test becomes "the curate response carries the room and writes nothing").
-  Run `uv run pytest -q` after the deletes. Any test that imports `from enqueue.retrieve.curate import save` or `add_member` or any removed symbol must be deleted or rewritten; do not skip-with-warning, just remove.
-  Add one new test in `tests/test_lens_api.py` (or wherever the curate endpoint test lives) that asserts `POST /curate` returns the synthesized room and that `SELECT COUNT(*) FROM exhibits` (if the table existed) is untreated; since the table is gone, assert the response body has no `saved_id` key and `exhibit` is the ephemeral payload only.
-  Verify: `uv run pytest -q` passes; no test references `add_member`, `eject_member`, `quick_create`, `rename_exhibit`, `save_exhibit`, the `/exhibits` endpoint, or the `Exhibit` schema; `bin/verify` (JS parse + pytest + contrast) passes.
+  Verify: folding SAVED in Last touch, switching to Type and back to Last touch, keeps the SAVED fold. Reloading keeps it too.
 
-## M.10 - update AGENTS.md
+---
 
-- [x] **M.10 [AGENT]** Strip the exhibit references from the engineering reference. DONE: removed "exhibits" from the architecture diagram SQLite line; dropped "Saves exhibits." from the curate module map; updated the 0001_baseline row to "...chunks, facets." and added a 0019_drop_exhibits row documenting the drop; rewrote the Lens section (curate is ephemeral, Save This View no longer persists, saved pivots are the only persistent groupings); narrowed chat scope to artifact/everything in Passages, the chats table row, and the scope-dial table ("One exhibit" row deleted); deleted the `exhibits`/`exhibit_members` table rows and invariant 5 (`exhibits.theme` is immutable); dropped "exhibits, exhibit_members" from the sacred-tables sentence; changed the Synthesis row to "The room: through-line, tensions, groupings"; dropped `[--save]` from `enq curate`; removed the three `/exhibits*` lines from the API surface and added the `/pivots*`, `/pivot/plan`, `/pivot/run` lines; "That is the exhibit." -> "That is the room."; tests map -> "facet/judgment validators"; added resolved decision 9 (one grouping concept: the saved pivot). Verify: `grep -n exhibit AGENTS.md` returns only the resolved-decisions entry and the historical 0019 migration row.
-  Anchor: `/Users/minhmai/enqueue/AGENTS.md` lines 103, 194, 221, 296-298, 302, 326-327, 330, 347, 367, 458, 486, 521-522, 551, 596, 617, 708 (grep `exhibit` to find them all; the line numbers shift as you edit).
-  Changes:
-  - The architecture diagram at `:103`: drop "exhibits" from the SQLite list.
-  - `retrieve/curate.py` module map at `:194`: "Orchestrates expand -> candidates -> rerank -> synthesise." drop "Saves exhibits."
-  - `0001_baseline.py` migration map at `:221`: keep the row but change "Core tables: artifacts, versions, annotations, chunks, facets, exhibits." to remove "exhibits" and note the new revision drops them. The migration file itself stays (it is history); the docstring says what it created at the time, but the AGENTS.md map should reflect the current head.
-  - Lens section at `:296-298`: rewrite "An exhibit is the saved form: Save This View posts the lens and its judged related list through the existing `/exhibits` path" to reflect that the curate flow is ephemeral and Save This View no longer persists. If Save This View is removed from the UI as part of M.11, the AGENTS.md description follows.
-  - Chat scope dial at `:302` and `:617`: drop the "One exhibit" row; scopes are now "One artifact" and "Everything" only.
-  - Database tables at `:326-327`: remove `exhibits` and `exhibit_members` rows.
-  - `chats` table row at `:330`: drop "exhibit" from "scoped to everything/artifact/exhibit. pinned."
-  - Invariant 5 at `:347`: delete "`exhibits.theme` is immutable. Reshaping means a new exhibit." (the invariant is gone with the table).
-  - Sacred tables at `:367`: drop "exhibits, exhibit_members" from the additive-only list.
-  - "Synthesis" row in the per-stage table at `:458`: drop "Where exhibit quality is decided" (curate still synthesises, but no exhibit is the output).
-  - CLI map at `:486`: `enq chat` docstring "Ask the collection something" - the lowercase "collection" is fine; leave.
-  - API surface at `:521-522, :551`: remove every `/exhibits*` line. Add the `/pivots*` lines if they are not already listed (the L.3 rename, L.6b exclude, L.6c include).
-  - Tests map at `:708`: drop "facet/judgment/exhibit validators" - rewrite to "facet/judgment validators".
-  Also add a "Resolved decisions" entry: "There is one grouping concept: the saved pivot. The `exhibits` / `exhibit_members` tables and the `/exhibits*` endpoints that an earlier agent introduced to paper over the L.2 add-to-grouping bug are removed. `saved_pivots` and `/pivots*` carry the same concept with a re-runnable spec."
-  Verify: `rtk rg -n "exhibit" /Users/minhmai/enqueue/AGENTS.md` returns only the residual mentions in the resolved-decisions entry and the historical `0001_baseline.py` migration row that calls out the drop.
+## O.2 - push the 5-up wall density down to narrower windows and shrink the cards
 
-## M.11 - decide Save This View's fate (follow-up, not blocking)
+The wall grid is already 5-up at desktop (`museum.html:~1376`), but Minh sees 3-up because his window is in the 1280px breakpoint bucket. The fix widens the 5-up range, tightens the card chrome so 5-up still reads, and steps the ladder down by one rung at every narrower width.
 
-- [x] **M.11 [AGENT, OPTIONAL]** Either remove "Save This View" from the lens/curate UI, or rewire it to save a `saved_pivots` row. DONE - **Option A chosen** (the recommended, simpler option): removed the "Keep this room" button render (the `if (r.kept.length)` block at the end of the room view) and the `keepRoom()` handler that POSTed to the deleted `/exhibits` endpoint. The curate / lens flow is now purely ephemeral - you read the room, you do not keep it; to preserve the shape later, the person asks the assistant to organise and saves that pivot via the existing "Save grouping" action (consistent with the rest of the product: only saved pivots are persistent groupings). Verified in the running build (fresh server, real provider): `doCurate('ontologies and the semantic web, AI agents')` renders a populated room - "AI Agents and Structured Knowledge", "2 kept · 6 rejected · 10 considered", through-line and thin-reason present - with **no "Keep this room" button and no `btnKeep` element**; a thin room (0 kept) also renders clean. `grep` confirms zero `keepRoom`/`btnKeep`/`/exhibits` references remain in museum.html; `node --check` on the extracted JS passes. Follow-up recorded (from M.7): `export.py` does not serialise saved groupings; if export should write them, add a `saved_pivots.json` block later.
-  Anchor: the lens/curate "Keep this room" / "Save This View" UI in `src/enqueue/static/museum.html` (search `keepRoom`, `saveExhibit`); the `POST /exhibits` endpoint at `api.py:1047` that M.7 removed; and the `POST /pivots` endpoint at `api.py:1356` saved-pivot creator that takes `{ name, spec }`.
-  Post-M.7, `POST /exhibits` is gone, so "Save This View" will 404 in a running build. Pick one:
-  - **Option A (simpler, recommended):** Remove the "Save This View" button and its handler. The curate / lens flow becomes purely ephemeral - you read the room, you do not keep it. To preserve the room later, the person asks the assistant to "organize" and saves that pivot via the existing "Save grouping" action. This is consistent with the rest of the product: only saved pivots are persistent groupings.
-  - **Option B (more work):** Rewire "Save This View" to call `POST /pivots` with a minimal spec `{ subset: { kind: "ids", ids: kept_ids }, group_by: null, steps: [], included_ids: kept_ids }` so the saved pivot re-runs by re-hydrating the same ids. This means a saved pivot can now hold a pure id-list with no `group_by`; `pivot.run()` must handle a spec with `included_ids` and no `group_by` (render one group). Verify `_PlannedSpec.group_by` allows `None` and `pivotGroupsHtml` handles a single-group run.
-  Choose A unless Minh says otherwise; record the choice in the task close-out.
-  Verify: under Option A, the lens view shows no "Save This View" button; under Option B, clicking it creates a saved pivot that appears in the Custom modal and re-runs to the same artifacts.
+- [x] **O.2a [AGENT]** Shift the wall breakpoint ladder so 5-up persists through 1281px, and step every narrower rung down by one.
+
+  Anchor: the four `@media (max-width: ...)` rules at `museum.html:~1647-1670`.
+
+  Replace the ladder so it reads, in source order:
+
+  ```css
+  @media (max-width: 1280px) {
+    .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .card { padding: var(--sp-md); }
+  }
+  @media (max-width: 1024px) {
+    .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 768px) {
+    .wall {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--sp-3);
+    }
+    .rail-h { gap: var(--sp-3); }
+    .homehead .display {
+      font-size: 30px;
+      line-height: 35px;
+      letter-spacing: -1px;
+    }
+  }
+  @media (max-width: 480px) {
+    .wall { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  }
+  ```
+
+  Delete the old `@media (max-width: 1440px) { .wall { ... 4-up } }` block (the new 1280 rule supersedes it). Keep the 768 media block's `.rail-h`, `.homehead .display` rules (they were already there - do not drop them). Add the `480 -> 1-up` rung at the bottom so the ladder ends at 1, not 2.
+
+  The net effect: default 5-up (no change), 1281-... keeps 5, 1025-1280 -> 4-up, 769-1024 -> 3-up, 481-768 -> 2-up, <=480 -> 1-up. Minh's 1280-class window now reads 5-up.
+
+  Verify: resize the window across the ladder and confirm the column count steps 5/4/3/2/1 at 1280, 1024, 768, 480. No ladder jump skips a rung.
+
+- [x] **O.2b [AGENT]** Shrink the card chrome so 5-up at the narrower width stays readable.
+
+  Anchor: `.card` CSS at `museum.html:~1382-1420`.
+
+  Change the card default:
+
+  - `padding: var(--sp-md);` (16px) -> `padding: var(--sp-sm);` (12px).
+  - `min-height: 152px;` -> `min-height: 140px;`.
+  - `contain-intrinsic-size: auto 168px;` -> `contain-intrinsic-size: auto 150px;` (the intrinsic-size hint should track the real painted height within ~8px; the tighter padding drops the typical height by ~12-16px).
+
+  The 1280 media rule from O.2a restores `padding: var(--sp-md)` (16px) at 4-up and below, so the denser default does not make every narrower rung feel cramped. Leave `content-visibility: auto`, `border`, `border-radius: var(--r-lg)`, and the hover block alone.
+
+  Verify: at a 1300px-wide window the wall shows 5 cards per row, each card ~248px wide with 12px internal padding and a 140px floor; title and excerpt both still fit without clipping more than the existing line-clamp allows. At 1100px it drops to 4-up with the 16px padding restored.
+
+- [x] **O.2c [AGENT]** Re-measure the card title line-clamp at the new 5-up width.
+
+  Anchor: the `.card .title { -webkit-line-clamp: N }` rule (search `line-clamp` near the card-title CSS, around `:~1430+`).
+
+  At ~248px card width with 12px padding, a title at the Title role (18px) wraps faster than it did at the old 4-up width. Audit the current clamp value. If the clamp is 2, raise it to 3 so a title that previously fit on 2 lines still shows its full text (now wrapped to 3). If it is already 3, leave it - going to 4 would crowd the excerpt.
+
+  Verify: at 5-up, a long note title that previously fit on 2 lines now wraps to 3 and still shows all three lines before the ellipsis; nothing extra is clipped vs. the old 4-up behaviour.
+
+---
+
+## O.3 - the eye: only the purple iris follows the cursor
+
+Minh wants the eyeball mark to sit next to the greeting (already done) and wants ONLY the purple iris to follow the cursor, not a chunk of the bird. The current mechanism (`desktop/icons/split_eye.py`) is clunky because the punched iris ellipse is inset far inside the real iris and the sliding "layer" is the whole eyeball pasted on a canvas-coloured disc, so what visibly travels is a shading patch of the bird, not the eye.
+
+The rebuild in this task produces two clean alpha assets:
+
+- `eye-frame.png` - the full eyeball image with the purple iris region replaced by the local sclera white, so the rest of the bird and the eye outline/lashes/ground stay put and never move.
+- `eye-pupil.png` - ONLY the purple iris, extracted onto a small transparent canvas. This is the only thing that moves in the DOM.
+
+The DOM stacks the clipped pupil under the frame, positioned exactly over the iris socket. `mountEye` translates only the pupil, clipped to a circle the size of the eye opening so the purple never spills past the lid. The frame stays stock-still.
+
+- [x] **O.3a [AGENT]** Rewrite `desktop/icons/split_eye.py` to emit `eye-frame.png` and `eye-pupil.png` from the new `eyeball.png`.
+
+  Anchor: `~/enqueue/desktop/icons/split_eye.py` (rewrite in place). Output paths stay `src/enqueue/static/eye-frame.png` and a new `src/enqueue/static/eye-pupil.png` (delete the old `src/enqueue/static/eye-iris.png` after the rewrite and remove its reference in the DOM - O.3b does that).
+
+  Use these constants (measured from the new image):
+
+  ```py
+  SOURCE = STATIC / "eyeball.png"
+  FRAME  = STATIC / "eye-frame.png"
+  PUPIL  = STATIC / "eye-pupil.png"
+  # Purple eye bbox in source pixels.
+  IRIS_X0, IRIS_X1 = 511, 581
+  IRIS_Y0, IRIS_Y1 = 367, 436
+  # Sclera white sampled just outside the iris (do NOT include the purple fringe).
+  SCLERA = (253, 254, 246, 255)
+  # How far the pupil may travel in source pixels. The eye renders at
+  # ~104 CSS px from an 857 px source (scale ~0.12), so 32 px is ~4 CSS px
+  # of lean - a real iris shift without spilling the lid.
+  SLIDE = 32
+  ```
+
+  Implementation (all in PIL, RGBA):
+
+  1. `img = Image.open(SOURCE).convert("RGBA"); w, h = img.size`.
+
+  2. Build a purple-mask: a boolean array over the resized-IRIS bounding box that marks pixels that are the iris purple. Use a colour gate `b > 110 and b > r + 30 and g < 130` (the iris centre is (96, 7, 159); this gate captures the purple body and rejects the white sclera, the green ground, and the dark lash ink). Feather the mask by 2px (a `GaussianBlur(radius=2)` on the L mask converted to "L" then thresholded at 128) so the frame hole has no hard seam.
+
+  3. `frame = img.copy()`. Where the mask is set, composite `frame` pixels with `SCLERA` using the feathered mask alpha, so the hole fills with sclera white and feather into the lash edge. Save as `eye-frame.png`.
+
+  4. `pupil = Image.new("RGBA", (IRIS_X1 - IRIS_X0 + 2 * SLIDE, IRIS_Y1 - IRIS_Y0 + 2 * SLIDE), (0, 0, 0, 0))`. Paste the iris crop `img.crop((IRIS_X0, IRIS_Y0, IRIS_X1, IRIS_Y1))` at `(SLIDE, SLIDE)`, then apply the SAME feathered purple mask so ONLY the purple pixels land (the rest of the crop - any lash/white fringe - is transparent). Save as `eye-pupil.png`.
+
+  5. Print the two output sizes and the pupil paste offset so O.3b can use them: "wrote eye-frame.png (1024x1024), eye-pupil.png (WxH), pupil offset within frame (505, 335)" (use the real numbers).
+
+  Keep the module docstring, update it to describe the new two-asset contract (frame + pupil, iris-only follow). Delete `eye-iris.png` from disk after the new assets write.
+
+  Verify: `python3 desktop/icons/split_eye.py` writes both files; `eye-frame.png` is 1024x1024 with the iris region visually replaced by sclera white (open it and confirm the bird is intact minus the purple eye); `eye-pupil.png` is a small image whose only opaque pixels are the purple iris, on a transparent surround.
+
+- [x] **O.3b [AGENT]** Rebuild the eye DOM so only the pupil moves, clipped to the eye socket.
+
+  Anchor: the emblem markup at `museum.html:~5542-5547`:
+
+  ```
+  '<div class="greet-emblem eye" id="greetEye" aria-hidden="true">' +
+  '<div class="eye-blinkwrap">' +
+  '<img class="eye-iris" src="/static/eye-iris.png" alt="" draggable="false" />' +
+  '<img class="eye-frame" src="/static/eye-frame.png" alt="" draggable="false" />' +
+  '</div>' +
+  '</div>' +
+  ```
+
+  Replace with:
+
+  ```
+  '<div class="greet-emblem eye" id="greetEye" aria-hidden="true">' +
+  '<div class="eye-blinkwrap">' +
+  '<div class="eye-socket">' +
+  '<img class="eye-pupil" src="/static/eye-pupil.png" alt="" draggable="false" />' +
+  '</div>' +
+  '<img class="eye-frame" src="/static/eye-frame.png" alt="" draggable="false" />' +
+  '</div>' +
+  '</div>' +
+  ```
+
+  The DOM order matters: the `.eye-socket` (with the pupil) renders first, the `.eye-frame` renders after and on top, so the lashes and outline draw over the pupil at the lid edge.
+
+  Notes the dumb agent must keep:
+
+  - The pupil sits BEHIND the frame. The frame carries the eye outline, lashes, and ground; the pupil carries only the purple disk.
+  - The blink squash still wraps both layers through `.eye-blinkwrap` (no change to the blink).
+
+- [x] **O.3c [AGENT]** Re-style the eye CSS for the new two-asset DOM with a clipped socket.
+
+  Anchor: the emblem CSS at `museum.html:~483-532`.
+
+  Replace the `.greet-emblem .eye-iris { ... }` rule at `:~498-505` with this set of rules (keep `.greet-emblem`, `.greet-emblem .eye-blinkwrap`, `.eye-frame`, the blink `@keyframes`, and the hover/blink rules - only the iris layer rules change):
+
+  ```css
+  /* The socket is a circular clip box positioned exactly over the eye
+     opening, so the sliding pupil can never paint past the lid. Its
+     size and centre are set in source-image px as a fraction of the
+     frame's display width, so they scale with the emblem. The frame's
+     own art draws over the socket's edge, so the clip seam is hidden. */
+  .greet-emblem .eye-socket {
+    position: absolute;
+    /* Centre the socket on the iris centre (~546, 401 of a 1024 image). */
+    left: 53.3%;
+    top: 39.2%;
+    width: 9.5%;
+    height: 9.5%;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    border-radius: 50%;
+    /* The socket sits behind the frame (DOM order), no z-index needed. */
+  }
+  .greet-emblem .eye-pupil {
+    position: absolute;
+    /* Rest: centred on the socket. The pupil PNG is sized 2x SLIDE larger
+       than the iris crop, so the -50% centring puts the iris at the
+       socket centre while leaving travel headroom in every direction. */
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    transform: translate(-50%, -50%);
+    will-change: transform;
+  }
+  ```
+
+  Tune the socket's `left/top/width/height` if the pupil does not line up with the hole at rest (see O.3d Verify). The values above use the measured iris centre (546/1024 = 53.3%, 401/1024 = 39.2%) and a socket diameter of roughly 98 source px / 1024 = 9.5% - slightly larger than the 70px purple iris so the pupil has travel room while staying clipped.
+
+  Keep `.eye-frame` unchanged (it stays `width: clamp(84px, 11vw, 104px); height: auto; display: block;`). The blink `.eye-blinkwrap` squash stays unchanged.
+
+  Verify: at rest, the composed eye looks identical to the source `eyeball.png` - the purple pupil fills the hole in the frame with no visible seam. Moving the cursor does not move the frame; only the purple disk slides.
+
+- [x] **O.3d [AGENT]** Rewrite `mountEye` so it moves only `.eye-pupil`, only within the socket.
+
+  Anchor: `mountEye()` at `museum.html:~5682-5772` and `tearDownEye()` at `:~5774`.
+
+  In `mountEye`:
+
+  - Change `const layer = el.querySelector(".eye-iris");` to `const layer = el.querySelector(".eye-pupil");`.
+  - Keep the dead-zone pull logic and the hover-defers-to-blink behaviour exactly as written.
+  - Replace the reach math. The old line:
+
+    ```js
+    const frame = el.querySelector(".eye-frame");
+    const reach = 60 * (frame.getBoundingClientRect().width / 857);
+    ```
+
+    becomes:
+
+    ```js
+    const socket = el.querySelector(".eye-socket");
+    const sock = socket.getBoundingClientRect();
+    // Travel scales with the socket's display: ~30% of its half-width,
+    // so the pupil leans within the lid without ever clearing it. The
+    // clip box guarantees containment even if the math drifts.
+    const reach = Math.min(sock.width, sock.height) * 0.30;
+    ```
+
+  - The `layer.style.transform` write stays a `translate(calc(-50% + Xpx), calc(-50% + Ypx))`; the `-50%` keeps the pupil centred on the socket while the offset slides it. The follow direction check before, keep as-is.
+
+  - Keep `rest`, the rAF coalescing, the `:hover` re-checks, the `pointermove` + `mouseleave` listener registration, and the `eyeMove`/`eyeLeave` exports unchanged.
+
+  - Keep `tearDownEye` unchanged except that it no longer references any `.eye-iris` (it already only clears the timer and the two listeners; verify no selector mentions `eye-iris`).
+
+  Reduced-motion behaviour stays: the follow runs (it is functional, not decorative), only the blink chain is gated by `motionOk`.
+
+  Verify (synthetic): with the wall open and the mouse 300px to the right of the eye, `getComputedStyle(el.querySelector('.eye-pupil')).transform` shows a real translate of roughly `translate(calc(-50% + 9px), calc(-50% + 0px))` (the exact px scales with the rendered socket width); moving to the left mirrors it; hovering the emblem centres the pupil; mouseleave rests it at the centred default. The frame's transform stays `none` throughout. With reduced-motion on, the pupil still follows the cursor; only the blink stops.
+
+---
+
+## O.4 - theme: replace the soft muted lavender with a bold purple
+
+Minh wants the accent stepped up from the muted lavender `#5e6ad2` to a bolder purple. The reference sources are the eyeball.png iris (`#60079f`), the app icon logo (`#7040a0`), and `~/Downloads/DESIGN-kraken.md` (primary `#7132f5`, dark `#5741d8`, deep `#5b1ecf`, subtle `rgba(133, 91, 251, 0.16)`). The Kraken doc is the only source with explicit hex scales, so this task adopts the Kraken scale as the new token family. It is bolder and bluer than the current muted lavender, and it sits in the same bold-violet family as the brand art.
+
+The agent replaces the accent/lavender token family in `:root`, hunts every literal hex and rgba that was the old muted lavender, mirrors the same edits into the three sibling HTML files that keep their own token copies, re-measures the WCAG contrast the comments document, and rewrites those comments to match the measured ratios. `bin/check-contrast` reads tokens live and will fail until the new text shades clear the floors; the agent fixes failures by darkening the text step, never by backing off the bold purple fill.
+
+- [x] **O.4a [AGENT]** Replace the accent and lavender token family in `:root`.
+
+  Anchor: the `:root` token block at `museum.html:~106-148`. Replace these tokens exactly:
+
+  | token | old | new |
+  | --- | --- | --- |
+  | `--accent` | `#5e6ad2` | `#7132f5` |
+  | `--accent-quiet` | `#5e69d1` | `#5741d8` |
+  | `--accent-strong` | `#5e6ad2` | `#7132f5` |
+  | `--accent-ink` | `#101114` | `#101114` (unchanged) |
+  | `--accent-text` | `#4a51a8` | `#5741d8` |
+  | `--lavender` | `#5e6ad2` | `#7132f5` |
+  | `--lavender-hover` | `#828fff` | `#8b5cf6` |
+  | `--lavender-focus` | `#5e69d1` | `#7132f5` |
+  | `--lavender-deep` | `#4a51a8` | `#5b1ecf` |
+  | `--lavender-subtle` | `rgba(94, 106, 210, 0.12)` | `rgba(113, 50, 245, 0.16)` |
+  | `--on-lavender` | `#ffffff` | `#ffffff` (unchanged) |
+  | `--link` | `#4a51a8` | `#5741d8` |
+  | `--tint-note` | `rgba(94, 106, 210, 0.12)` | `rgba(113, 50, 245, 0.14)` |
+
+  Do not change the neutral, surface, semantic, or radius tokens (they are not the purple family).
+
+  Verify: `rtk rg -a -n "5e6ad2|5e69d1|828fff|4a51a8|94, 106, 210" src/enqueue/static/museum.html` returns no hits inside `:root`.
+
+- [x] **O.4b [AGENT]** Replace every remaining literal of the old muted lavender outside `:root`.
+
+  Anchor summary (grep returns the full list): literal `#5e6ad2`, `#5e69d1`, `#828fff`, `#4a51a8`, and `rgba(94, 106, 210, ...)` appear inside CSS comments and (rarely) inside component rules throughout `museum.html`.
+
+  Replace each literal with the same token from the O.4a table:
+
+  - `#5e6ad2` -> `#7132f5`
+  - `#5e69d1` -> `#7132f5` (the focus step now equals the primary)
+  - `#828fff` -> `#8b5cf6`
+  - `#4a51a8` -> `#5741d8`
+  - `rgba(94, 106, 210, 0.12)` -> `rgba(113, 50, 245, 0.16)`
+  - `rgba(94, 106, 210, 0.14)` -> `rgba(113, 50, 245, 0.14)`
+
+  Do it with a single set of `replaceAll`-style edits so every comment that quotes an old hex gets the new hex with it.
+
+  Verify: `rtk rg -a -n "5e6ad2|5e69d1|828fff|4a51a8|94, ?106, ?210" src/enqueue/static/museum.html` returns zero hits anywhere in the file.
+
+- [x] **O.4c [AGENT]** Mirror the same token changes into the three sibling HTML files.
+
+  Anchor: `src/enqueue/static/capture.html:~63-67` and the parallel blocks in `src/enqueue/static/museum-plain.html` and `src/enqueue/static/capture-plain.html`. Each file keeps its own `:root` copy of the accent family.
+
+  Apply the exact same token table from O.4a to each file. Also replace any literal of the old muted lavender in those files (the same literal list as O.4b).
+
+  Verify: `rtk rg -a -n "5e6ad2|5e69d1|828fff|4a51a8|94, ?106, ?210" src/enqueue/static/capture.html src/enqueue/static/museum-plain.html src/enqueue/static/capture-plain.html` returns zero hits.
+
+- [x] **O.4d [AGENT]** Re-measure the documented WCAG ratios and rewrite the `:root` comments to match; fix any `bin/check-contrast` failure by darkening the text step.
+
+  Anchor: the comment blocks at `museum.html:~107-148` that document contrast ratios (eg "`#5e6ad2` clears the 3:1 sole-boundary rule on the canvas (4.70:1)"), and `bin/check-contrast` (the gate that reads the `:root` tokens live and fails the build on any WCAG miss).
+
+  Steps:
+
+  1. Run `bin/check-contrast` from `~/enqueue`. Note every failure line (it names the token and the failing ratio).
+  2. For each text-type token (`--accent-text`, `--link`, any lavender token that the gate treats as text on a ground), if it fails 4.5:1 on its permitted ground, darken THAT token's new value one step at a time until it passes, keeping the value inside the bold-violet family. Suggested fallbacks, in order: `#5741d8` -> `#5b1ecf` -> `#4a1bb8` -> `#3d1299`. Do not darken the fill tokens `--accent`, `--lavender-hover`, `--lavender-subtle`; those are fills/rings/washes and the gate treats them at the 3:1 graphic tier, not the 4.5 text tier.
+  3. For each boundary or graphic-pair failure (the lavender fill as a sole boundary, ink-on-lavender, white-on-lavender), if the bold fill fails the 3:1 sole-boundary tier or the white-on-fill 3:1 graphic tier, darken the fill itself one step (`#7132f5` -> `#6620e0` -> `#5b1ecf`). Prefer keeping `#7132f5` as `--accent` and `--lavender` if it passes; the gate is the source of truth.
+  4. Once the gate passes, re-compute each documented ratio with the actual new hex values and rewrite the prose in the `:root` comments so the numbers match the new scale. The comments at `:~107-148` reference specific ratios (4.70:1, 6.92:1, 4.02:1, 4.38:1, 2.87:1); replace each with the real number for the new hex. Do not invent ratios - use the same WCAG relative-luminance math `bin/check-contrast` uses (`sRGB -> linear -> luminance -> (L1+0.05)/(L2+0.05)`).
+  5. Apply the final (post-gate) `--accent-text` / `--link` / lavender text values back into O.4a/O.4b's replacements in all four HTML files so they stay consistent.
+
+  Verify: `bin/check-contrast` exits 0, and the `:root` comment block quotes ratios that match the actual new hex values when recomputed by hand. `bin/verify` is green overall.
+
+---
+
+## O.X - eyeball measurement corrections (verified against eyeball.png)
+
+Sampled against `~/enqueue/eyeball.png` before the agent starts. These supersede the constants written in O.3:
+
+| value | written in O.3 | verified | notes |
+| --- | --- | --- | --- |
+| iris bbox | x[511,581] y[367,436] | x[512,581] y[368,436] | off by one, immaterial |
+| iris center | (546, 401) | (546, 402) | immaterial |
+| iris size | (not stated) | 70 x 69 px, solid `#60079f` | solid fill, not a gradient blob |
+| violet streak above iris | (not in rewrite) | none exists | the OLD `split_eye.py` referenced `STREAK_CENTER = (411, 197)` against the previous image; the new image has no streak there. O.3a's rewrite is correct to punch ONLY the iris hole. |
+| `SCLERA` constant | (253, 254, 246) | **(252, 253, 252)** | the old sample included a purple pixel; re-sampled a 50px ring around the iris bbox (15687 white pixels) and the average is neutral white with a hair cool tint - (252, 253, 252). Update O.3a's `SCLERA = (253, 254, 246, 255)` to `SCLERA = (252, 253, 252, 255)`. |
+| socket clip box width/height | 9.5% x 9.5% | **18.0% x 13.7%** | 9.5% (~97 px) is the size of the iris itself, which would clip the pupil to barely larger than itself and kill any visible travel. The lid opening - the white sclera run bounded by the lash line - measures ~184 px wide x ~140 px tall at the iris center row/column. Use 184/1024 = 18.0% for width and 140/1024 = 13.7% for height. |
+| socket clip box left/top | 53.3% / 39.2% | 53.3% / 39.3% | unchanged (iris center, where the pupil sits at rest) |
+| travel reach | `min(w,h) * 0.30` | **cap at 25 source px** | with a 184x140 socket and a 70x69 pupil, vertical headroom is (140-69)/2 = 35 px and horizontal headroom is (184-70)/2 = 57 px. `min * 0.30` evaluates to 140 *0.30 = 42 px, which exceeds the 35 px vertical headroom and would visibly clip the pupil at the lower lid. Cap reach at 25 source px - it scales to the rendered socket automatically, and gives ~3 CSS px of lean at the 104 px display size (25/1024* 104 = 2.5 px). |
+| `border-radius: 50%` on socket | (not stated as ellipse) | **keep 50%** | with an 18% x 13.7% box, `border-radius: 50%` produces an eye-shaped ellipse that matches the lid opening. Do NOT use a fixed px radius. |
+| DOM z-index | "no z-index needed" | confirmed | `.greet-emblem` and `.eye-blinkwrap` create no stacking context (verified: no `transform`/`opacity`/`z-index`/`filter`/`will-change` on them), so DOM order is the paint order. The socket (first child) renders behind the frame (second child). The `will-change: transform` on `.eye-pupil` promotes only the pupil, not its parent, so it stays under the frame. |
+
+### Corrected O.3c CSS rule
+
+Replace the `.greet-emblem .eye-socket` rule in O.3c with:
+
+```css
+.greet-emblem .eye-socket {
+  position: absolute;
+  left: 53.3%;
+  top: 39.3%;
+  width: 18.0%;
+  height: 13.7%;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  border-radius: 50%;
+}
+```
+
+### Corrected O.3d reach math
+
+Replace the reach lines in O.3d's `mountEye` with:
+
+```js
+const socket = el.querySelector(".eye-socket");
+const sock = socket.getBoundingClientRect();
+// Cap at 25 source px of travel, scaled by the rendered socket's
+// width vs the 184 px source width. (140 px tall source pupil has
+// 35 px of vertical headroom - 25 px keeps the pupil well inside the
+// lid even when the lean runs along the diagonal.)
+const reach = 25 * (sock.width / (184 * (el.getBoundingClientRect().width / 1024)));
+```
+
+The formula: `sock.width` is the displayed socket width; divide by `(el.displayed_width / 1024)` to recover the source-px scale of the socket, then `25 * (socket_in_source_px / 184)` gives the source-px reach displayed at the rendered scale.
+
+### Mask gate note (no change needed)
+
+The proposed purple gate `b > 110 and b > r + 30 and g < 130` was verified against the whole image - it selects 3775 px, ALL inside the iris bbox x[512,581] y[368,436]. No leakage into any other purple-ish region in the bird body. Keep the gate as written in O.3a. A 1-2 px purple fringe just outside the gate (at the lower lash line, pixels like `#5f347c` and `#4f1375`) will stay in the frame as fixed dark pixels - at the 104 px display size that is sub-pixel and invisible. Do not loosen the gate to catch the fringe; a looser gate picks up body art at y up to 865.
+
+---
+
+## O.5 - verification gate
+
+After every O.x task lands, run from `~/enqueue`:
+
+- `bin/verify` - JS parse on both HTML pages, pytest, and the contrast check (O.4d makes the contrast check green again).
+- `bin/relaunch` (or `uv run enq serve` then open `http://127.0.0.1:8787/`) - manual sweep of each Verify line.
+- `rtk rg -a -ic "5e6ad2|5e69d1|828fff|4a51a8|94, ?106, ?210" src/enqueue/static/museum.html src/enqueue/static/capture.html src/enqueue/static/museum-plain.html src/enqueue/static/capture-plain.html` returns 0 after O.4.
+
+The phase closes when every box is checked and the running build shows:
+
+- The Last touch wall header reads SAVED and EVERYTHING ELSE as the same collapsible Section header control Notes/Links use, and every wall section label is in caps.
+- 5 cards per row at Minh's window width, with tighter card chrome and a correct title line-clamp.
+- The eyeball sits to the left of the greeting; the bird never moves; only the purple iris slides inside the fixed socket as the cursor moves, clipped to the lid.
+- The accent reads as a bold violet (`#7132f5` family) across every purple surface - links, focus rings, fills, hovers, pills, the greeting eye frame - and `bin/check-contrast` stays green.

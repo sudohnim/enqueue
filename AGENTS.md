@@ -58,10 +58,10 @@ PDF parsing uses only pymupdf (fitz).
 They are allowed to differ.
 If you bump one for a release, bump the other to match, but a mismatch is not a bug.
 
-9. **There is one grouping concept: the saved pivot.**
+9. **There is one view concept: the saved pivot.**
 The `exhibits` / `exhibit_members` tables and the `/exhibits*` endpoints that an earlier agent introduced to paper over the L.2 add-to-grouping bug are removed.
 `saved_pivots` and `/pivots*` carry the same concept with a re-runnable spec.
-The curate flow returns an ephemeral room and saves nothing; only a saved pivot persists a grouping.
+The curate flow returns an ephemeral room and saves nothing; only a saved pivot persists a view.
 
 10. **There is no SSE for curate.**
 `/curate` returns a plain JSON response.
@@ -75,6 +75,12 @@ it unless asked.
 No code for either exists in this repo.
 The current capture surfaces are the CLI and the macOS desktop overlay.
 Document them as future if relevant, but do not build against them.
+
+12. **The user-facing concept is "view", not "grouping".**
+We use the word "view" for the user-facing concept that was previously called "grouping", "saved grouping", and "collection".
+The persistence layer keeps its names (`saved_pivots`, `pivots_saved`, `_PlannedSpec`, `/pivots*` endpoints).
+Only user-facing strings and docs say "view".
+This is a vocabulary pass, not a table rename.
 
 ---
 
@@ -281,7 +287,7 @@ One line per file, describing its job.
 1. **Expand** (`retrieve/expand.py`): lens -> 5 restatements + 3 hypothetical passages. Falls back to bare lens on failure.
 2. **Candidates** (`retrieve/candidates.py`): search both CHUNKS and FACETS collections. Facet hits weighted by trust. Roll up to artifacts. Target ~150 candidates.
 3. **Rerank** (`retrieve/rerank.py`): concurrent judgment per candidate. Model returns verdict (belongs/adjacent/no), strength, evidence, placard. Only "belongs" survives.
-4. **Synthesise** (`retrieve/curate.py`): model reads kept artifacts, returns through_line, groupings, tensions, thin flag.
+4. **Synthesise** (`retrieve/curate.py`): model reads kept artifacts, returns through_line, groupings (the on-screen view sections), tensions, thin flag.
 
 ### Lens (two-stage topic view)
 
@@ -301,8 +307,8 @@ One line per file, describing its job.
 A lens is ephemeral: it writes nothing but the judgment cache, bumps no
 `updated_at`, and leaves no room row. The curate flow builds a room and returns
 it; nothing is persisted. To keep the shape of a lens result, the person asks
-the assistant to organise and saves that pivot through the "Save grouping"
-action - saved groupings are the only persistent grouping concept.
+the assistant to organise and saves that pivot through the "Save view"
+action - saved views are the only persistent view concept.
 
 ### Chat
 
@@ -459,7 +465,7 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | Embeddings | always local (fastembed) | No network, strictly more private |
 | Facet generation | the configured backend | The moat. Bad facets are permanent pollution. |
 | Rerank | the configured backend | Low volume, high value |
-| Synthesis | the configured backend | The room: through-line, tensions, groupings |
+| Synthesis | the configured backend | The room: through-line, tensions, view sections (internally grouped) |
 | Chat answer | the configured backend | |
 | Chat title/topics | the configured backend | Best-effort, non-blocking |
 
@@ -522,8 +528,8 @@ GET    /chats                       conversations, pinned first
 GET    /chats/ready                 whether there is anything to answer from
 GET    /chats/passages?q=           what an answer would be allowed to read
 GET    /chats/{id}                  transcript, citations, topics
-GET    /pivots                      saved groupings
-GET    /pivots/{id}                 one saved grouping
+GET    /pivots                      saved views
+GET    /pivots/{id}                 one saved view
 GET    /settings                    all settings + storage + backends
 GET    /secrets                     credential scan hits
 GET    /index/counts                search index table counts
@@ -552,13 +558,13 @@ PATCH  /chats/{id}                   rename / pin
 DELETE /chats/{id}                   the one deletable object
 POST   /curate                       build a room. Returns JSON (not SSE)
 POST   /lens                         stream a topic split: split first, placards as judgments land (SSE)
-POST   /pivot/plan                    plan a saved grouping from a lens result
-POST   /pivot/run                     re-run a saved grouping spec
-POST   /pivots                        create a saved grouping
-PATCH  /pivots/{id}                   rename a saved grouping
-DELETE /pivots/{id}                   forget a saved grouping
-POST   /pivots/{id}/exclude           remove an artifact from a grouping
-POST   /pivots/{id}/include           add an artifact to a grouping
+POST   /pivot/plan                    plan a saved view from a lens result
+POST   /pivot/run                     re-run a saved view spec
+POST   /pivots                        create a saved view
+PATCH  /pivots/{id}                   rename a saved view
+DELETE /pivots/{id}                   forget a saved view
+POST   /pivots/{id}/exclude           remove an artifact from a view
+POST   /pivots/{id}/include           add an artifact to a view
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
 POST   /facets                       generate facets
@@ -603,7 +609,7 @@ Per curate:
 1. Expand the lens into restatements plus hypothetical exemplar passages.
 2. Multi-vector search against both collections. Roll chunks up to artifacts. Target ~150 candidates.
 3. Rerank: the model reads candidates against the lens and keeps 10-20. The placard is generated here, not in a separate call.
-4. Synthesise over survivors: through-line, tensions, groupings. That is the room.
+4. Synthesise over survivors: through-line, tensions, view sections. That is the room.
 
 ### Two granularities
 
