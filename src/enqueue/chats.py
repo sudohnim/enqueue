@@ -60,7 +60,7 @@ def _now() -> str:
 
 
 def create(scope_kind: str = "everything", scope_id: str | None = None) -> dict:
-    if scope_kind not in ("everything", "artifact", "exhibit"):
+    if scope_kind not in ("everything", "artifact"):
         raise ValueError(f"unknown scope {scope_kind!r}")
     if scope_kind != "everything" and not scope_id:
         raise ValueError(f"a {scope_kind} chat needs something to be scoped to")
@@ -119,11 +119,6 @@ def get(chat_id: str) -> dict:
                 "SELECT title FROM artifacts WHERE id = ?", (chat["scope_id"],)
             ).fetchone()
             scope_label = row["title"] if row else "one artifact"
-        elif chat["scope_kind"] == "exhibit":
-            row = conn.execute(
-                "SELECT name FROM exhibits WHERE id = ?", (chat["scope_id"],)
-            ).fetchone()
-            scope_label = row["name"] if row else "one room"
 
         return {
             "chat": dict(chat) | {"scope_label": scope_label},
@@ -240,16 +235,6 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             if scope_id is None:
                 return []
             return _scoped_passages(conn, [scope_id])
-        if scope_kind == "exhibit":
-            members = [
-                r["artifact_id"]
-                for r in conn.execute(
-                    "SELECT artifact_id FROM exhibit_members WHERE exhibit_id = ?"
-                    " AND ejected_at IS NULL ORDER BY rank",
-                    (scope_id,),
-                )
-            ]
-            return _scoped_passages(conn, members)
 
         from .index.store import get_store
 
@@ -394,9 +379,6 @@ def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
                     "nothing in it to read. Ask the whole museum instead"
                 )
             return "this artifact has no text in it yet"
-
-        if scope_kind == "exhibit":
-            return "nothing in this room has any text in it yet"
     finally:
         conn.close()
     return None

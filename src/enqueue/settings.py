@@ -168,10 +168,7 @@ def storage() -> dict:
         "data_dir": str(config.DATA_DIR),
         "database": {"path": str(config.DB_PATH), "bytes": size(config.DB_PATH)},
         "blobs": {"path": str(config.BLOB_DIR), "bytes": size(config.BLOB_DIR)},
-        "counts": {
-            table: db.count(table)
-            for table in ("artifacts", "chunks", "facets", "chats", "exhibits")
-        },
+        "counts": {table: db.count(table) for table in ("artifacts", "chunks", "facets", "chats")},
         **api_key_state(),
     }
 

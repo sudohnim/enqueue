@@ -431,7 +431,7 @@ def apply_lens_view(req: LensRequest) -> Response:
     the two sections before the model has spoken, and placards fill in as
     judgments arrive.
 
-    The lens is stateless: nothing here writes an exhibit, bumps `updated_at`,
+    The lens is stateless: nothing here writes anything, bumps `updated_at`,
     or modifies any artifact (the judgment cache is the one table written, and
     that is its purpose). Clearing the lens is a client-side act - drop the
     lens state and re-request with the normal ordering; the wall returns to
@@ -556,27 +556,6 @@ def get_artifact(artifact_id: str) -> dict:
         detail["preview"] = preview.get(artifact_id)
     detail["tags"] = tags_mod.for_artifact(artifact_id)
     return detail
-
-
-@app.get("/artifacts/{artifact_id}/exhibits")
-def artifact_exhibits(artifact_id: str) -> dict:
-    """The exhibits this artifact belongs to (the drawer's membership chips).
-
-    A cheap scan over exhibit_members, filtered to non-ejected rows, newest first.
-    An unknown artifact simply has no memberships.
-    """
-    conn = db.get_conn()
-    try:
-        rows = conn.execute(
-            "SELECT e.id, e.name FROM exhibit_members m"
-            " JOIN exhibits e ON e.id = m.exhibit_id"
-            " WHERE m.artifact_id = ? AND m.ejected_at IS NULL"
-            " ORDER BY e.created_at DESC",
-            (artifact_id,),
-        ).fetchall()
-        return {"items": [dict(r) for r in rows]}
-    finally:
-        conn.close()
 
 
 @app.get("/artifacts/{artifact_id}/versions/{version_id}")
@@ -1021,143 +1000,13 @@ class CurateRequest(BaseModel):
     lens: str
     keep: int = 15
     pool: int = 150
-    save: bool = False
 
 
 @app.post("/curate")
 def curate(req: CurateRequest) -> dict:
     from .retrieve.curate import curate as run
 
-    return run(req.lens, keep=req.keep, pool=req.pool, save=req.save)
-
-
-class ExhibitSave(BaseModel):
-    """A room that was already built, being kept.
-
-    Curating costs three model passes. Re-running it just to set a flag would make
-    keeping a room as expensive as making one, so the result comes back and is saved
-    as it stands.
-    """
-
-    lens: str
-    exhibit: dict
-    kept: list[dict]
-
-
-@app.post("/exhibits", status_code=201)
-def save_exhibit(req: ExhibitSave) -> dict:
-    from .retrieve.curate import save as run_save
-
-    try:
-        return {"id": run_save(req.lens, req.exhibit, req.kept)}
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-
-
-@app.get("/exhibits")
-def list_exhibits() -> dict:
-    conn = db.get_conn()
-    try:
-        rows = conn.execute("SELECT * FROM exhibits ORDER BY created_at DESC").fetchall()
-        return {"items": [dict(r) for r in rows]}
-    finally:
-        conn.close()
-
-
-@app.get("/exhibits/{exhibit_id}")
-def get_exhibit(exhibit_id: str) -> dict:
-    conn = db.get_conn()
-    try:
-        row = conn.execute("SELECT * FROM exhibits WHERE id = ?", (exhibit_id,)).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="no such exhibit") from None
-        members = conn.execute(
-            "SELECT m.artifact_id, m.placard, m.strength, m.rank, a.title, a.kind"
-            " FROM exhibit_members m JOIN artifacts a ON a.id = m.artifact_id"
-            " WHERE m.exhibit_id = ? AND m.ejected_at IS NULL ORDER BY m.rank",
-            (exhibit_id,),
-        ).fetchall()
-        return {"exhibit": dict(row), "members": [dict(m) for m in members]}
-    finally:
-        conn.close()
-
-
-class ExhibitMember(BaseModel):
-    artifact_id: str
-
-
-class ExhibitRename(BaseModel):
-    name: str | None = None
-    through_line: str | None = None
-
-
-@app.patch("/exhibits/{exhibit_id}")
-def rename_exhibit(exhibit_id: str, req: ExhibitRename) -> dict:
-    """Rename an exhibit, and optionally rewrite its through line (K.7).
-
-    The pencil next to an exhibit title posts here. The name is trimmed and
-    must not be empty; the through line may be set to an empty string to clear
-    it. 404 on an unknown exhibit.
-    """
-    from .retrieve.curate import rename_exhibit as _rename
-
-    try:
-        updated = _rename(exhibit_id, req.name, req.through_line)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="no such exhibit") from None
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    return {"exhibit": updated}
-
-
-@app.post("/exhibits/{exhibit_id}/members", status_code=201)
-def add_exhibit_member(exhibit_id: str, req: ExhibitMember) -> dict:
-    """Add one artifact to an exhibit by hand (the drawer's "Add to grouping").
-
-    Idempotent: re-adding an artifact that is already a member (and not ejected)
-    is a no-op that returns 200. Unknown exhibit is 404, unknown artifact is 400.
-    """
-    from .retrieve.curate import add_member
-
-    try:
-        return {"added": add_member(exhibit_id, req.artifact_id)}
-    except KeyError:
-        raise HTTPException(status_code=404, detail="no such exhibit") from None
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-
-
-@app.delete("/exhibits/{exhibit_id}/members/{artifact_id}")
-def eject_exhibit_member(exhibit_id: str, artifact_id: str) -> dict:
-    """Soft-delete one member of an exhibit (the chip X in the drawer)."""
-    from .retrieve.curate import eject_member
-
-    try:
-        eject_member(exhibit_id, artifact_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="no such exhibit") from None
-    return {"ok": True}
-
-
-class ExhibitQuickCreate(BaseModel):
-    name: str
-    artifact_id: str | None = None
-
-
-@app.post("/exhibits/quick", status_code=201)
-def quick_create_exhibit(req: ExhibitQuickCreate) -> dict:
-    """A hand-made exhibit: a name, optionally seeded with one artifact.
-
-    The smaller create path for the drawer's "Create new" row: the full
-    POST /exhibits takes a lens and a built room, which a hand-made grouping
-    does not have. The theme is the name itself (the theme is immutable).
-    """
-    from .retrieve.curate import quick_create
-
-    try:
-        return {"id": quick_create(req.name, req.artifact_id)}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return run(req.lens, keep=req.keep, pool=req.pool)
 
 
 @app.get("/settings")
@@ -1356,8 +1205,7 @@ def rename_pivot(pivot_id: str, req: PivotRename) -> dict:
     """Rename a saved grouping (the pencil beside its name in the custom wall).
 
     The name is trimmed and must not be empty; the spec (the arrangement) is
-    untouched. 404 on an unknown grouping, 400 on an empty name - the same
-    shape as PATCH /exhibits/{id}.
+    untouched. 404 on an unknown grouping, 400 on an empty name.
     """
     try:
         updated = pivots_saved.rename(pivot_id, req.name)

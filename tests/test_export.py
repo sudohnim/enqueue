@@ -31,24 +31,8 @@ def _link_artifact(conn, title: str, url: str, body: str) -> str:
     return artifact_id
 
 
-def _exhibit(conn, name: str, members: list[tuple[str, str]]) -> str:
-    exhibit_id = str(uuid.uuid4())
-    conn.execute(
-        "INSERT INTO exhibits (id, name, theme, through_line, thin, thin_reason, created_at)"
-        " VALUES (?, ?, 'commons', 'what is shared lasts', 0, NULL, ?)",
-        (exhibit_id, name, NOW),
-    )
-    for rank, (artifact_id, placard) in enumerate(members):
-        conn.execute(
-            "INSERT INTO exhibit_members (exhibit_id, artifact_id, placard, evidence,"
-            " strength, rank, origin) VALUES (?, ?, ?, 'excerpt from the artifact', 3, ?, 'manual')",
-            (exhibit_id, artifact_id, placard, rank),
-        )
-    return exhibit_id
-
-
 def _build_library() -> dict:
-    """Four artifacts, one annotation, one exhibit. Returns the ids."""
+    """Four artifacts, one annotation. Returns the ids."""
     note = notes.create("# Joints\n\nA joint that moves outlasts one that does not.")
     note2 = notes.create("Plain note")
     upload = capture.upload(b"%PDF-1.4 fake bytes", "report.pdf", "application/pdf")
@@ -59,21 +43,12 @@ def _build_library() -> dict:
             "https://example.org/commons",
             "The commons is what we share, and sharing is the point.",
         )
-        exhibit = _exhibit(
-            conn,
-            "What outlasts",
-            [
-                (note["artifact"]["id"], "A joint that moves keeps going."),
-                (link, "Shared land, kept by all."),
-            ],
-        )
     notes.annotate(upload["id"], "The keeper is elected quarterly.")
     return {
         "note": note["artifact"]["id"],
         "note2": note2["artifact"]["id"],
         "upload": upload["id"],
         "link": link,
-        "exhibit": exhibit,
     }
 
 
@@ -84,11 +59,9 @@ class TestExport:
 
         first = export.export(out)
         assert first["artifacts"] == 4
-        assert first["exhibits"] == 1
         assert (out / "README.md").exists()
         assert (out / "manifest.json").exists()
         assert len(list((out / "artifacts").iterdir())) == 4
-        assert len(list((out / "exhibits").iterdir())) == 1
 
         # the capture's bytes are copied next to the markdown
         copies = list((out / "files").iterdir())
@@ -155,12 +128,6 @@ class TestExport:
             assert text.endswith("\n")
             if entry.get("copy"):
                 assert (out / entry["copy"]).read_bytes() == b"%PDF-1.4 fake bytes"
-
-        exhibit_files = list((out / "exhibits").iterdir())
-        assert len(exhibit_files) == 1
-        exhibit_text = exhibit_files[0].read_text(encoding="utf-8")
-        assert "What outlasts" in exhibit_text
-        assert "Shared land, kept by all." in exhibit_text
 
         # completeness is vacuous over an empty library, but the files must exist
         check = export.verify(out)

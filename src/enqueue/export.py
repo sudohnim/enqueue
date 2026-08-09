@@ -2,8 +2,8 @@
 
 The promise that nothing expires is only worth keeping if the library can leave
 this machine. Every artifact becomes a markdown file, every capture keeps its
-bytes next to it in `files/`, every exhibit becomes its own file, and the only
-tool the output needs is a text editor.
+bytes next to it in `files/`, and the only tool the output needs is a text
+editor. Saved groupings (saved_pivots) are not serialised yet - see M.11.
 
 Idempotent by content: a file is rewritten only when its rendered text changed
 and a capture is copied only when its bytes differ, so re-running an export
@@ -102,36 +102,11 @@ def _render_artifact(row: dict, notes: list[dict], page0: str | None, copy_rel: 
     return "\n".join(parts) + "\n"
 
 
-def _render_exhibit(row: dict, members: list[dict], manifest: dict) -> str:
-    parts = [f"# {row['name']}", "", f"Theme: {row['theme']}"]
-    if row.get("through_line"):
-        parts.append(f"Through line: {row['through_line']}")
-    if row.get("thin"):
-        parts.append(f"Thin: {row.get('thin_reason') or 'yes'}")
-    parts.append("")
-    parts.append("## Members")
-    parts.append("")
-    for number, member in enumerate(members, 1):
-        entry = manifest["artifacts"].get(member["artifact_id"])
-        parts.append(f"### {number}. {member['title']}")
-        if entry:
-            parts.append("")
-            parts.append(f"[Open the artifact]({entry['file']})")
-        parts.append("")
-        parts.append(member["placard"])
-        parts.append("")
-        parts.append(f"- Strength: {member['strength']}")
-        if member.get("evidence"):
-            parts.append(f"- Evidence: {member['evidence']}")
-        parts.append("")
-    return "\n".join(parts).rstrip() + "\n"
-
-
-def _render_readme(artifacts: list[dict], exhibits: list[dict], manifest: dict) -> str:
+def _render_readme(artifacts: list[dict], manifest: dict) -> str:
     parts = [
         "# Enqueue library export",
         "",
-        f"{len(artifacts)} artifacts, {len(exhibits)} exhibits.",
+        f"{len(artifacts)} artifacts.",
         "",
         "Everything here is plain text: the markdown files are the library and the",
         "`files/` directory holds the original captures. No database, key, or",
@@ -145,13 +120,6 @@ def _render_readme(artifacts: list[dict], exhibits: list[dict], manifest: dict) 
             entry = manifest["artifacts"][row["id"]]
             parts.append(f"- [{row['title']}]({entry['file']}) ({row['kind']})")
         parts.append("")
-    if exhibits:
-        parts.append("## Exhibits")
-        parts.append("")
-        for row in exhibits:
-            entry = manifest["exhibits"][row["id"]]
-            parts.append(f"- [{row['name']}]({entry['file']}) ({row['theme']})")
-        parts.append("")
     return "\n".join(parts)
 
 
@@ -164,7 +132,6 @@ def _prune_stale(root: Path, previous: dict | None, referenced: set[str]) -> lis
         rels.add(entry["file"])
         if entry.get("copy"):
             rels.add(entry["copy"])
-    rels |= {entry["file"] for entry in previous.get("exhibits", {}).values()}
 
     pruned = []
     for rel in sorted(rels - referenced):
@@ -181,8 +148,7 @@ def export(directory: str | Path) -> dict:
     root = Path(directory)
     artifacts_dir = root / "artifacts"
     files_dir = root / "files"
-    exhibits_dir = root / "exhibits"
-    for target in (artifacts_dir, files_dir, exhibits_dir):
+    for target in (artifacts_dir, files_dir):
         target.mkdir(parents=True, exist_ok=True)
 
     conn = db.get_conn()
@@ -193,13 +159,6 @@ def export(directory: str | Path) -> dict:
         annotations = conn.execute(
             "SELECT id, artifact_id, supersedes_id, text, created_at FROM annotations"
             " ORDER BY artifact_id, created_at, id"
-        ).fetchall()
-        exhibits = conn.execute("SELECT * FROM exhibits ORDER BY created_at, id").fetchall()
-        members = conn.execute(
-            "SELECT m.exhibit_id, m.artifact_id, m.placard, m.evidence, m.strength,"
-            " m.rank, m.origin, a.title, a.kind FROM exhibit_members m"
-            " JOIN artifacts a ON a.id = m.artifact_id"
-            " WHERE m.ejected_at IS NULL ORDER BY m.exhibit_id, m.rank"
         ).fetchall()
         page0 = {
             r["artifact_id"]: r["text"]
@@ -213,7 +172,7 @@ def export(directory: str | Path) -> dict:
         notes_by_artifact.setdefault(entry["artifact_id"], []).append(dict(entry))
 
     previous = _read_manifest(root)
-    manifest: dict = {"version": 1, "artifacts": {}, "exhibits": {}}
+    manifest: dict = {"version": 1, "artifacts": {}}
     written: list[str] = []
     unchanged: list[str] = []
     copied: list[str] = []
@@ -245,22 +204,7 @@ def export(directory: str | Path) -> dict:
             else:
                 missing_blobs.append(aid)
 
-    for row in exhibits:
-        eid = row["id"]
-        rel = f"exhibits/{_slug(row['name'])}-{_id8(eid)}.md"
-        text = _render_exhibit(
-            dict(row),
-            [dict(m) for m in members if m["exhibit_id"] == eid],
-            manifest,
-        )
-        if _put(root / rel, text):
-            written.append(rel)
-        else:
-            unchanged.append(rel)
-        referenced.add(rel)
-        manifest["exhibits"][eid] = {"file": rel, "name": row["name"]}
-
-    readme = _render_readme([dict(r) for r in artifacts], [dict(r) for r in exhibits], manifest)
+    readme = _render_readme([dict(r) for r in artifacts], manifest)
     if _put(root / "README.md", readme):
         written.append("README.md")
     else:
@@ -276,7 +220,6 @@ def export(directory: str | Path) -> dict:
 
     return {
         "artifacts": len(artifacts),
-        "exhibits": len(exhibits),
         "written": written,
         "unchanged": unchanged,
         "copied": copied,
@@ -298,24 +241,20 @@ def verify(directory: str | Path) -> dict:
         expected = [
             r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL")
         ]
-        expected_exhibits = [r["id"] for r in conn.execute("SELECT id FROM exhibits")]
     finally:
         conn.close()
 
     missing = [aid for aid in expected if aid not in manifest.get("artifacts", {})]
-    missing_exhibits = [eid for eid in expected_exhibits if eid not in manifest.get("exhibits", {})]
     gone = [
         aid
         for aid, entry in manifest.get("artifacts", {}).items()
         if not (root / entry["file"]).exists()
     ]
 
-    ok = not missing and not missing_exhibits and not gone
+    ok = not missing and not gone
     return {
         "ok": ok,
         "artifacts": len(expected),
-        "exhibits": len(expected_exhibits),
         "missing": missing,
-        "missing_exhibits": missing_exhibits,
         "missing_files": gone,
     }

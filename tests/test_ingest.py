@@ -167,13 +167,13 @@ class TestJudgmentValidators:
         assert self._judge("", verdict="no", evidence="").verdict.value == "no"
 
 
-class TestExhibitValidators:
+class TestRoomValidators:
     def test_grouping_of_one_is_rejected(self):
         import pytest
 
         from enqueue.schemas import Grouping
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="at least 2 items"):
             Grouping.model_validate({"name": "X", "artifact_ids": ["a"], "claim": "c"})
 
     def test_tension_may_not_be_a_question(self):
@@ -181,16 +181,16 @@ class TestExhibitValidators:
 
         from enqueue.schemas import Tension
 
-        with pytest.raises(Exception, match="question"):
+        with pytest.raises(ValueError, match="question"):
             Tension.model_validate({"between": ("A", "B"), "claim": "Does this imply something?"})
 
     def test_through_line_may_not_restate_the_lens(self):
         import pytest
 
-        from enqueue.schemas import Exhibit
+        from enqueue.schemas import Room
 
         with pytest.raises(Exception, match="restates the lens"):
-            Exhibit.model_validate(
+            Room.model_validate(
                 {"suggested_name": "A room", "through_line": "antifragility."},
                 context={"lens": "antifragility", "kept_artifact_ids": []},
             )
@@ -198,10 +198,10 @@ class TestExhibitValidators:
     def test_thin_room_must_say_why(self):
         import pytest
 
-        from enqueue.schemas import Exhibit
+        from enqueue.schemas import Room
 
         with pytest.raises(Exception, match="why it is thin"):
-            Exhibit.model_validate(
+            Room.model_validate(
                 {"suggested_name": "A room", "through_line": "Something was found.", "thin": True},
                 context={"lens": "x", "kept_artifact_ids": []},
             )

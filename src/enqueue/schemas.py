@@ -199,7 +199,14 @@ class Tension(BaseModel):
         return self
 
 
-class Exhibit(BaseModel):
+class Room(BaseModel):
+    """The synthesized room: the ephemeral output of a curate run.
+
+    Named after the artifact, not the thing that used to be saved from it. The
+    room is returned by /curate and is never persisted; a saved grouping
+    (saved_pivots) is the only persistent grouping concept.
+    """
+
     suggested_name: str = Field(min_length=2)
     through_line: str = Field(description="One or two sentences. The finding.")
     groupings: list[Grouping] = Field(default_factory=list)
@@ -237,8 +244,8 @@ class Exhibit(BaseModel):
                 )
             seen_pairs.add(pair)
 
-        # The report guard. An exhibit that restates the question has told the
-        # director what they already own instead of what they think.
+        # The report guard. A room that restates the question has told the
+        # person what they already own instead of what they think.
         if lens and lens in self.through_line.strip().lower().rstrip("."):
             raise ValueError(
                 "through_line restates the lens; say what the artifacts revealed, "

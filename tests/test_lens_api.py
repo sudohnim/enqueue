@@ -1,6 +1,6 @@
 """The lens endpoint: ephemeral, paged, pins stay pinned (D2).
 
-POST /lens splits the wall for a topic without leaving a trace: no exhibit is
+POST /lens splits the wall for a topic without leaving a trace: no room is
 written, no updated_at moves, no artifact changes. Pinned artifacts stay on
 their shelf above both sections and are not bucketed.
 """
@@ -14,7 +14,7 @@ from enqueue.api import LensRequest, _consume_lens
 from enqueue.index.store import get_store
 from enqueue.ingest import chunk as chunk_mod
 from enqueue.retrieve import rerank
-from enqueue.schemas import Judgment, Verdict
+from enqueue.schemas import Judgment, Room, Verdict
 
 _BODY_A = "Hydroponics feeds the city from a rooftop where the soil never was."
 _BODY_B = "The commons is what we share, and sharing is what keeps it common."
@@ -95,19 +95,6 @@ class TestLensEndpoint:
         finally:
             conn.close()
         assert after == before
-
-    def test_ephemeral_writes_no_exhibits(self, store, quiet_queue, scored_store, monkeypatch):
-        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
-        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
-
-        _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=1))
-
-        conn = db.get_conn()
-        try:
-            n = conn.execute("SELECT COUNT(*) AS n FROM exhibits").fetchone()["n"]
-        finally:
-            conn.close()
-        assert n == 0
 
     def test_pinned_stay_pinned_above_both_sections(
         self, store, quiet_queue, scored_store, monkeypatch
@@ -191,98 +178,63 @@ class TestLensStreamingHttp:
             )
 
 
-class TestSaveLensView:
-    """Save This View reuses the existing exhibit path: the client sends
-    {lens, exhibit, kept} to POST /exhibits exactly as the curate flow does.
-    No second save path exists."""
+class TestCurateHttp:
+    """POST /curate returns the synthesized room and writes nothing.
 
-    def _save_http(self, lens, name, kept):
-        from fastapi.testclient import TestClient
+    The curate flow is ephemeral by design: the room is the response payload and
+    there is no save path, so the response carries no saved_id.
+    """
 
-        from enqueue.api import app
-
-        with TestClient(app) as client:
-            return client.post(
-                "/exhibits",
-                json={
-                    "lens": lens,
-                    "exhibit": {
-                        "suggested_name": name,
-                        "through_line": "The city feeds itself from above.",
-                    },
-                    "kept": kept,
-                },
-            )
-
-    def test_save_this_view_writes_an_exhibit_with_the_lens_as_theme(
+    def test_curate_returns_room_and_writes_nothing(
         self, store, quiet_queue, scored_store, monkeypatch
     ):
         from fastapi.testclient import TestClient
 
         from enqueue.api import app
+        from enqueue.retrieve import curate as curate_mod
+        from enqueue.retrieve import expand as expand_mod
+        from enqueue.retrieve import rerank
 
         arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
-        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
-        out = _consume_lens(
-            LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2)
-        )
 
-        judged = [e for e in out["related"] if e.get("placard")]
-        assert len(judged) >= 1
+        class _Scripted:
+            def complete(self, system, user, response_model, context=None, max_retries=None):
+                if response_model is Room:
+                    return Room(
+                        suggested_name="The rooftop commons",
+                        through_line="The city feeds itself from what it shares.",
+                    )
+                for line in user.splitlines():
+                    if line.startswith("Artifact id: "):
+                        aid = line.removeprefix("Artifact id: ")
+                        break
+                else:
+                    raise AssertionError(f"no artifact id in prompt: {user!r}")
+                return Judgment(
+                    artifact_id=aid,
+                    verdict=Verdict.BELONGS,
+                    strength=4,
+                    placard=_PLACARD,
+                    evidence="Hydroponics feeds the city from a rooftop",
+                )
+
+        # Each stage imports get_provider into its own module, so the stub has
+        # to replace all three bindings the curate flow calls through.
+        for mod in (rerank, expand_mod, curate_mod):
+            monkeypatch.setattr(mod, "get_provider", lambda: _Scripted())
 
         with TestClient(app) as client:
             resp = client.post(
-                "/exhibits",
-                json={
-                    "lens": out["lens"],
-                    "exhibit": {
-                        "suggested_name": "Rooftop gardens",
-                        "through_line": "The city feeds itself from above.",
-                    },
-                    "kept": judged,
-                },
+                "/curate",
+                json={"lens": "hydroponics feeds the city from a rooftop", "keep": 2, "pool": 50},
             )
-            assert resp.status_code == 201, resp.text
-            exhibit_id = resp.json()["id"]
-            got = client.get(f"/exhibits/{exhibit_id}")
-            assert got.status_code == 200
-            body = got.json()
-            # The lens became the immutable theme; the judged related list
-            # became the members, placards intact.
-            assert body["exhibit"]["theme"] == "hydroponics feeds the city from a rooftop"
-            member_ids = [m["artifact_id"] for m in body["members"]]
-            assert member_ids == [e["artifact_id"] for e in judged]
-
-    def test_reshaping_produces_a_new_exhibit(self, store, quiet_queue, scored_store, monkeypatch):
-        from fastapi.testclient import TestClient
-
-        from enqueue.api import app
-
-        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
-        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
-        out = _consume_lens(
-            LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2)
-        )
-        judged = [e for e in out["related"] if e.get("placard")]
-
-        with TestClient(app) as client:
-            # Same lens, saved twice under two names: two exhibits, both
-            # carrying the same immutable theme.
-            a = self._save_http(out["lens"], "Rooftop gardens", judged)
-            b = self._save_http(out["lens"], "Gardens above", judged)
-            assert a.status_code == 201 and b.status_code == 201
-            assert a.json()["id"] != b.json()["id"]
-            exhibits = client.get("/exhibits").json()["items"]
-            assert [e["theme"] for e in exhibits] == [out["lens"], out["lens"]]
-
-    def test_unsaved_lens_leaves_no_trace(self, store, quiet_queue, scored_store, monkeypatch):
-        from fastapi.testclient import TestClient
-
-        from enqueue.api import app
-
-        arts = _make_library(scored_store, [_BODY_A, _BODY_B, _BODY_C])
-        _scripted_for([a["id"] for a in arts], monkeypatch=monkeypatch)
-        _consume_lens(LensRequest(lens="hydroponics feeds the city from a rooftop", judge_top=2))
-
-        with TestClient(app) as client:
-            assert client.get("/exhibits").json()["items"] == []
+            assert resp.status_code == 200
+            body = resp.json()
+            # No persistence path exists, so there is nothing to report as saved.
+            assert "saved_id" not in body
+            room = body["room"]
+            assert room["suggested_name"] == "The rooftop commons"
+            assert room["through_line"] == "The city feeds itself from what it shares."
+            assert len(body["kept"]) == 2
+            kept_ids = [k["artifact_id"] for k in body["kept"]]
+            assert set(kept_ids) <= {a["id"] for a in arts}

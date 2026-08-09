@@ -129,7 +129,6 @@ def purge(artifact_id: str) -> dict:
 
         for table in (
             "chat_citations",
-            "exhibit_members",
             "chunks",
             "page_text",
             "facets",

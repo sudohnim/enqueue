@@ -1367,8 +1367,8 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  /* The saved-grouping card pencil (L.3b): the same rename act as the exhibit
-     pencil, at card scale. It stays visible - the forget control only wakes on
+  /* The saved-grouping card pencil (L.3b): the same rename act as the saved-
+     grouping pencil, at card scale. It stays visible - the forget control only wakes on
      hover, and a rename affordance that hides would defeat having one at all. */
   .card .title-action {
     width: 26px;
@@ -1910,7 +1910,7 @@
   .h1:first-child {
     margin-top: 0;
   }
-  /* The exhibit title row (K.7): the name with a quiet ghost pencil beside it.
+  /* The saved-grouping title row (L.3b): the name with a quiet ghost pencil beside it.
      Renaming is an act on one grouping while you look at it, so the affordance
      lives where the title lives - a pencil next to the name, not a gear or a
      list-row menu. The pencil is a small target, so hover widens it to a disc. */
@@ -2255,18 +2255,6 @@
   }
   .tagadd:focus {
     border-color: var(--accent);
-  }
-
-  /* The drawer's "Add to grouping" section, between Tags and the Summary. The
-     membership chips reuse the tag chips; the add control is a full-width ghost
-     button so it is a real target without competing with the chips above it. */
-  .grouprow {
-    margin-top: var(--sp-4);
-  }
-  .grouprow .addgroup {
-    width: 100%;
-    justify-content: flex-start;
-    margin-top: var(--sp-2);
   }
 
   /* Badges: a fact about a thing, on a tint (DESIGN.md section 7). Four flavours,
@@ -3961,7 +3949,7 @@
       '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-7 7"/>',
     rail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/>',
     gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/>',
-    // The rename pencil (K.7): a quiet ghost beside an exhibit title, not a
+    // The rename pencil (K.7/L.3b): a quiet ghost beside a saved-grouping title, not a
     // gear or a menu - renaming is an act on one grouping while you look at it.
     pencil:
       '<path d="M4 20l4.5-1 10-10-3.5-3.5-10 10z"/><path d="M14 6.5l3.5 3.5"/>',
@@ -4044,7 +4032,7 @@
     pill.innerHTML = html;
   }
 
-  // Context-aware eye action inside an exhibit/chat.
+  // Context-aware eye action inside a chat or the ask field.
   function chatOrAsk() {
     if (scope.kind === "chat" && scope.id) {
       showChat(scope.id);
@@ -5222,7 +5210,7 @@
   // A capture made in the overlay lands in a different window, and this one has no
   // way to hear about it. Without this the museum sits stale until you navigate, so
   // saving something correctly looked like saving nothing. The wall refreshes only
-  // when something actually changed; an open artifact, chat, or exhibit re-fetches
+  // when something actually changed; an open artifact or chat re-fetches
   // its own rows on focus (K.9) so a capture elsewhere never leaves the open page
   // stale - scroll is kept, nothing blinks.
   async function refreshIfStale() {
@@ -5240,8 +5228,6 @@
       showArtifact(scope.id, false, window.scrollY);
     } else if (scope.kind === "chat" && scope.id) {
       showChat(scope.id);
-    } else if (scope.kind === "exhibit" && scope.id) {
-      showExhibit(scope.id);
     }
   }
 
@@ -5254,7 +5240,7 @@
   // so a reload re-inits the page and used to land on the wall no matter what
   // was open. Every navigation now writes a route token to the hash and boot
   // restores the same view. Tokens: empty = wall, #a/<id> = artifact,
-  // #c/<id> = chat, #e/<id> = exhibit, #g = saved-groupings list,
+  // #c/<id> = chat, #g = saved-groupings list,
   // #g/<id> = a saved grouping run, #s/<query> = search results.
   function setRoute(token) {
     const want = token ? "#" + token : "";
@@ -5276,7 +5262,6 @@
     const id = rest.join("/");
     if (kind === "a" && id) return showArtifact(id);
     if (kind === "c" && id) return showChat(id);
-    if (kind === "e" && id) return showExhibit(id);
     if (kind === "g" && !id) return showSavedGroupings();
     if (kind === "g" && id) return runSavedGrouping(id);
     if (kind === "s" && id) {
@@ -5319,10 +5304,9 @@
     setRoute("");
     view.innerHTML = '<div class="state">opening...</div>';
 
-    const [kept, first, exs, tagcloud] = await Promise.all([
+    const [kept, first, tagcloud] = await Promise.all([
       api("/artifacts?pinned=true&order=touched&limit=200"),
       api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
-      api("/exhibits"),
       api("/tags"),
     ]);
 
@@ -5408,28 +5392,8 @@
         "</div>";
     }
     html += "</div>";
-    // Collections stay above every grouping mode: they are the person's own
-    // curated shelves, not wall cards to regroup.
-    if (exs.items.length) {
-      html +=
-        '<div class="shelf center">Collections</div>' +
-        exs.items
-          .map(
-            (e) =>
-              '<div class="item" tabindex="0" role="button" onclick="showExhibit(\'' +
-              e.id +
-              "')\"" +
-              " onkeydown=\"rowKey(event, () => showExhibit('" +
-              e.id +
-              "'))\">" +
-              '<div class="item-body"><div class="title">' +
-              esc(e.name) +
-              '</div><div class="excerpt">' +
-              esc(e.through_line || "") +
-              "</div></div></div>",
-          )
-          .join("");
-    }
+    // M.1: the wall header goes straight from .homehead into the wall body.
+    // The "Collections" shelf is gone; saved groupings own that concept.
 
     wall = { offset: first.items.length, more: first.more, loading: false };
     wallStamp = first.total + ":" + ((first.items[0] || {}).id || "");
@@ -5514,7 +5478,9 @@
   const motionOk = !matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function mountEye() {
-    if (!motionOk) return; // a static open eye under reduced motion
+    // L.7/M.4: the follow is functional, not decorative, so it runs even under
+    // prefers-reduced-motion. Only the cosmetic saccade and blink chains are
+    // gated on motionOk below.
     const el = document.getElementById("greetEye");
     if (!el) return;
     const iris = el.querySelector(".eye-iris");
@@ -5576,13 +5542,18 @@
         // transition (the SVG transform attribute cannot be eased), and setting
         // the transform property directly - instead of routing it through a
         // custom property - keeps the follow working where var() inside
-        // transform is unreliable on SVG elements.
+        // transform is unreliable on SVG elements. M.4: the translate() function
+        // inside the transform property needs comma-separated lengths - a
+        // unitless, space-separated value (translate(3.00 1.00)) is invalid CSS
+        // and the browser silently drops it, which is why the pupil never moved.
+        // The values are viewBox user units; 1px in SVG user space is 1 unit, so
+        // reach stays 3.6 units.
         iris.style.transform =
           "translate(" +
           ((dx / d) * reach * pull).toFixed(2) +
-          " " +
+          "px, " +
           ((dy / d) * reach * pull).toFixed(2) +
-          ")";
+          "px)";
       });
     };
     const relax = () => {
@@ -5618,9 +5589,9 @@
       iris.style.transform =
         "translate(" +
         (Math.cos(ang) * reach * dist).toFixed(2) +
-        " " +
+        "px, " +
         (Math.sin(ang) * reach * dist).toFixed(2) +
-        ")";
+        "px)";
       saccadeTimer = setTimeout(
         () => {
           if (!document.getElementById("greetEye")) return;
@@ -5643,7 +5614,8 @@
         saccadeTimer = null;
       }
     };
-    saccadeTimer = setTimeout(saccade, 1600 + Math.random() * 2200);
+    if (motionOk)
+      saccadeTimer = setTimeout(saccade, 1600 + Math.random() * 2200);
     const blink = () => {
       el.classList.add("blinking");
       setTimeout(() => el.classList.remove("blinking"), 320);
@@ -5654,9 +5626,9 @@
           el.classList.add("blinking");
           setTimeout(() => el.classList.remove("blinking"), 320);
         }, 120);
-      eyeTimer = setTimeout(blink, 5000 + Math.random() * 15000);
+      if (motionOk) eyeTimer = setTimeout(blink, 5000 + Math.random() * 15000);
     };
-    eyeTimer = setTimeout(blink, 5000 + Math.random() * 15000);
+    if (motionOk) eyeTimer = setTimeout(blink, 5000 + Math.random() * 15000);
   }
 
   function tearDownEye() {
@@ -5941,203 +5913,10 @@
     }
   }
 
-  // ---- add to grouping ---------------------------------------------------
-  // "Add to grouping" lives in the drawer, under Tags and above the Summary
-  // (K.5): the exhibits this artifact already belongs to are removable chips,
-  // and the add control opens a picker of the person's collections. The
-  // membership state is kept here so the picker can hide collections the
-  // artifact is already in.
-  let artifactExhibits = [];
-
-  function groupRowHtml(exhibits) {
-    return (
-      '<div class="grouprow" id="grouprow">' +
-      '<div class="shelf">Add to grouping</div>' +
-      '<div class="tagrow">' +
-      (exhibits || [])
-        .map(
-          (e) =>
-            '<span class="tagchip" data-exhibit="' +
-            esc(e.id) +
-            '"><span class="taglabel">' +
-            esc(e.name) +
-            "</span>" +
-            '<button class="tagx" aria-label="Remove from ' +
-            esc(e.name) +
-            '" title="Remove from ' +
-            esc(e.name) +
-            '">' +
-            svg("close") +
-            "</button></span>",
-        )
-        .join("") +
-      "</div>" +
-      '<button class="btn ghost addgroup" type="button">' +
-      svg("plus") +
-      "Add to grouping</button>" +
-      "</div>"
-    );
-  }
-
-  function mountGroupRow(id) {
-    const row = view.querySelector(".grouprow");
-    if (!row) return;
-    row.querySelectorAll(".tagx").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const chip = btn.closest(".tagchip");
-        const name = chip.querySelector(".taglabel").textContent;
-        removeFromGrouping(id, chip.dataset.exhibit, name);
-      });
-    });
-    const add = row.querySelector(".addgroup");
-    if (add) add.addEventListener("click", () => addToGrouping(id));
-  }
-
-  // Refresh the section in place after a membership change, keeping the last
-  // known state if the membership fetch fails. The slot is re-queried AFTER the
-  // await (L.2): a view re-render during the fetch can detach the node captured
-  // earlier, and writing outerHTML into a detached node silently updates nothing.
-  async function renderGroupRow(id) {
-    let items = null;
-    try {
-      const d = await api("/artifacts/" + id + "/exhibits");
-      items = d.items || [];
-    } catch (_) {
-      // keep the last known chips
-    }
-    const slot = document.getElementById("grouprow");
-    if (!slot) return; // the view re-rendered while fetching; nothing to update
-    if (items !== null) artifactExhibits = items;
-    slot.outerHTML = groupRowHtml(artifactExhibits);
-    mountGroupRow(id);
-  }
-
-  async function addToGrouping(id) {
-    const pick = await pickExhibit(
-      id,
-      artifactExhibits.map((e) => e.id),
-    );
-    if (!pick) return;
-    if (!pick.created) {
-      try {
-        await api("/exhibits/" + pick.id + "/members", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ artifact_id: id }),
-        });
-      } catch (err) {
-        return toast(String((err && err.message) || err), true);
-      }
-    }
-    toast('Added to "' + pick.name + '".');
-    await renderGroupRow(id);
-  }
-
-  async function removeFromGrouping(id, exhibitId, name) {
-    try {
-      await api("/exhibits/" + exhibitId + "/members/" + id, {
-        method: "DELETE",
-      });
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    toast('Removed from "' + name + '".');
-    await renderGroupRow(id);
-  }
-
-  // The picker: the same dialog.ask shell as the move picker, listing the
-  // person's exhibits, with a "Create new" row that names a new exhibit and
-  // seeds it with this artifact as its first member (POST /exhibits/quick).
-  function pickExhibit(artifact_id, currentIds) {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask";
-      box.setAttribute("aria-labelledby", "pickTitle");
-      box.innerHTML =
-        '<h2 id="pickTitle">Add to which collection?</h2>' +
-        '<div class="pickgroups"></div>' +
-        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>';
-
-      let done = false;
-      const finish = (answer) => {
-        if (done) return;
-        done = true;
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        resolve(answer);
-      };
-
-      const list = box.querySelector(".pickgroups");
-      api("/exhibits")
-        .then((d) => {
-          const exs = (d.items || []).filter((e) => !currentIds.includes(e.id));
-          if (exs.length) {
-            for (const e of exs) {
-              const b = document.createElement("button");
-              b.className = "btn tertiary";
-              b.textContent = e.name;
-              b.onclick = () =>
-                finish({ id: e.id, name: e.name, created: false });
-              list.appendChild(b);
-            }
-          } else {
-            const none = document.createElement("div");
-            none.className = "aside";
-            none.textContent = "No collections yet.";
-            list.appendChild(none);
-          }
-          const create = document.createElement("button");
-          create.className = "btn ghost addgroup";
-          create.innerHTML = svg("plus") + "Create new";
-          create.onclick = async () => {
-            const name = await askGroupName(
-              "New collection",
-              "e.g. Books to revisit",
-              "Create",
-            );
-            if (!name) return; // cancelled; the picker stays open
-            try {
-              const r = await api("/exhibits/quick", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, artifact_id }),
-              });
-              finish({ id: r.id, name, created: true });
-            } catch (err) {
-              toast(String((err && err.message) || err), true);
-            }
-          };
-          list.appendChild(create);
-        })
-        .catch((err) => {
-          const none = document.createElement("div");
-          none.className = "aside";
-          none.textContent = String((err && err.message) || err);
-          list.appendChild(none);
-        });
-
-      box.querySelector('[value="no"]').onclick = () => finish(null);
-      box.addEventListener("cancel", (e) => {
-        e.preventDefault();
-        finish(null);
-      });
-      box.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          finish(null);
-        }
-      });
-
-      document.body.appendChild(box);
-      box.showModal();
-      // Cancel takes focus first, so a stray Return never files a card at random.
-      box.querySelector('[value="no"]').focus();
-    });
-  }
+  // ---- tags in the drawer --------------------------------------------------
+  // The drawer holds the artifact's tags (editable chips) and the summary. The
+  // "Add to grouping" row (K.5) was the redundant collections path; Phase M
+  // removed it - saved groupings own membership now (M.2).
 
   async function addTag(id, raw) {
     const name = (raw || "").trim();
@@ -6175,10 +5954,6 @@
     if (arriving) faceTries = 0;
     const d = await api("/artifacts/" + id);
     const a = d.artifact;
-    const exs = await api("/artifacts/" + id + "/exhibits").catch(() => ({
-      items: [],
-    }));
-    artifactExhibits = exs.items || [];
     scope = { kind: "artifact", id, label: "this artifact" };
     restorePill("inside");
     setRoute("a/" + id);
@@ -6354,13 +6129,11 @@
       svg("panelout") +
       "</button></div>" +
       tagRowHtml(d.tags) +
-      groupRowHtml(artifactExhibits) +
       summaryHtml +
       "</aside>";
 
     view.innerHTML = html;
     mountTagRow(id);
-    mountGroupRow(id);
     mountEditor(focus);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
     if (a.kind === "file") mountPlain(a.id);
@@ -7115,97 +6888,12 @@
     }, 2200);
   }
 
-  async function showExhibit(id) {
-    teardown();
-    const d = await api("/exhibits/" + id);
-    const e = d.exhibit;
-    scope = { kind: "exhibit", id, label: "this room" };
-    restorePill("inside");
-    setRoute("e/" + id);
-
-    let html =
-      '<div class="h1row">' +
-      '<div class="h1">' +
-      esc(e.name) +
-      "</div>" +
-      '<button class="title-action" aria-label="Rename this collection" ' +
-      'title="Rename this collection" onclick="renameGrouping(\'' +
-      e.id +
-      "')\">" +
-      svg("pencil") +
-      "</button></div>" +
-      '<div class="meta">' +
-      d.members.length +
-      " here</div>";
-    if (e.through_line)
-      html +=
-        '<div class="md" style="margin:var(--sp-4) 0">' +
-        esc(e.through_line) +
-        "</div>";
-    if (e.thin)
-      html +=
-        '<div class="callout warn">thin &middot; ' +
-        esc(e.thin_reason) +
-        "</div>";
-
-    html += d.members
-      .map(
-        (m, j) =>
-          '<div class="item hang" style="animation-delay:' +
-          j * 70 +
-          'ms" ' +
-          'tabindex="0" role="button" onclick="showArtifact(\'' +
-          m.artifact_id +
-          "')\" " +
-          "onkeydown=\"rowKey(event, () => showArtifact('" +
-          m.artifact_id +
-          "'))\">" +
-          '<div class="item-body">' +
-          '<div class="title">' +
-          esc(m.title) +
-          "</div>" +
-          '<div class="md" style="font-size:14px">' +
-          esc(m.placard) +
-          "</div>" +
-          '<div class="meta">match ' +
-          m.strength +
-          "</div></div></div>",
-      )
-      .join("");
-
-    view.innerHTML = html;
-    window.scrollTo(0, 0);
-  }
-
-  // Rename a collection from its own page (K.7): the styled name modal, seeded
-  // with the current name, posts PATCH /exhibits/<id> and re-renders in place.
-  // A save that changed nothing is a no-op; the modal's empty-name guard stays.
-  async function renameGrouping(id) {
-    const head = view.querySelector(".h1row .h1");
-    const current = head ? head.textContent : "";
-    const name = await askGroupName(
-      "Rename this collection",
-      "Collection name",
-      "Save",
-      current,
-      "Renaming changes the label everywhere this collection appears.",
-    );
-    if (!name || name === current) return;
-    try {
-      await api("/exhibits/" + id, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    toast('Renamed to "' + name + '".');
-    showExhibit(id);
-  }
+  // The exhibit page (M.6): `showExhibit()` and its rename pencil were the
+  // redundant collections path Phase M removes. Saved groupings own the
+  // grouping concept now; an old #e/<id> bookmark falls back to the wall.
 
   // Rename a saved grouping (a pivot recipe) from the custom wall or the saved
-  // groupings list (L.3b). Same styled modal as the exhibit pencil, but it posts
+  // groupings list (L.3b). Same styled modal family as the grouping pencils, but it posts
   // PATCH /pivots/<id> - the spec (the arrangement) is untouched, only the label
   // moves. Re-renders whichever surface shows the list: the open saved-groupings
   // modal (L.5), or the saved-groupings sub-view.
@@ -7935,10 +7623,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scope_kind:
-            asked.kind === "artifact" || asked.kind === "exhibit"
-              ? asked.kind
-              : "everything",
+          scope_kind: asked.kind === "artifact" ? "artifact" : "everything",
           scope_id: asked.id || null,
           text,
         }),
@@ -8022,9 +7707,7 @@
       (scoped
         ? '<div class="from scopebar">' +
           '<span class="meta">reading only</span>' +
-          (d.chat.scope_kind === "artifact"
-            ? chip("", d.chat.scope_id, d.chat.scope_label, "showArtifact")
-            : chip("", d.chat.scope_id, d.chat.scope_label, "showExhibit")) +
+          chip("", d.chat.scope_id, d.chat.scope_label, "showArtifact") +
           "</div>"
         : '<div class="meta">reading everything</div>');
 
@@ -9434,8 +9117,6 @@
   // A topic drawn out of a conversation is the same kind of thing a lens is, so it
   // hangs a room. The chat it came from stays in the rail, because the room is a move
   // inside the conversation rather than a departure from it.
-  let room = null;
-
   async function doCurate(lens) {
     const backTo = chat ? chat.chat.id : null;
     const stages = [
@@ -9472,8 +9153,7 @@
     }
     clearInterval(tick);
 
-    const ex = r.exhibit || {};
-    room = { lens, exhibit: ex, kept: r.kept };
+    const ex = r.room || {};
 
     let html =
       back(backTo) +
@@ -9537,12 +9217,6 @@
         "</div></div></div>";
     });
 
-    // A room costs three model passes to build. Keeping one is a decision, not a
-    // default, but re-deriving it later would cost the same again, so the offer is here.
-    if (r.kept.length)
-      html +=
-        '<button class="btn tertiary" id="btnKeep" onclick="keepRoom()">Keep this room</button>';
-
     view.innerHTML = html;
     window.scrollTo(0, 0);
   }
@@ -9553,23 +9227,6 @@
           chatId +
           "')\">&larr; the conversation</div>"
       : '<div class="back" onclick="home()">&larr; everything</div>';
-  }
-
-  async function keepRoom() {
-    const button = document.getElementById("btnKeep");
-    if (!room || !button) return;
-    button.disabled = true;
-    try {
-      await api("/exhibits", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(room),
-      });
-      button.textContent = "saved";
-    } catch (err) {
-      button.disabled = false;
-      button.textContent = "Could not save it: " + String(err);
-    }
   }
 
   // Boot restores whatever was open when the page was reclaimed (K.9): the hash

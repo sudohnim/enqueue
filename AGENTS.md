@@ -58,7 +58,12 @@ PDF parsing uses only pymupdf (fitz).
 They are allowed to differ.
 If you bump one for a release, bump the other to match, but a mismatch is not a bug.
 
-9. **There is no SSE for curate.**
+9. **There is one grouping concept: the saved pivot.**
+The `exhibits` / `exhibit_members` tables and the `/exhibits*` endpoints that an earlier agent introduced to paper over the L.2 add-to-grouping bug are removed.
+`saved_pivots` and `/pivots*` carry the same concept with a re-runnable spec.
+The curate flow returns an ephemeral room and saves nothing; only a saved pivot persists a grouping.
+
+10. **There is no SSE for curate.**
 `/curate` returns a plain JSON response.
 Streaming was discussed but is not built and is not currently planned.
 Do not add SSE plumbing to curate unless asked. The lens view is the one
@@ -66,7 +71,7 @@ streaming surface: `POST /lens` returns a Server-Sent Events stream (split
 first, then placards as judgments land). Do not model other endpoints on
 it unless asked.
 
-10. **Browser extension and Android are future milestones.**
+11. **Browser extension and Android are future milestones.**
 No code for either exists in this repo.
 The current capture surfaces are the CLI and the macOS desktop overlay.
 Document them as future if relevant, but do not build against them.
@@ -100,7 +105,7 @@ Tauri shell (desktop/)          native window, global hotkey, capture overlay
     v
 Engine (src/enqueue/)           FastAPI + background ingest worker, one process
     |
-    +-- SQLite (~/.enqueue-poc/enqueue.db)    artifacts, text, chats, exhibits
+    +-- SQLite (~/.enqueue-poc/enqueue.db)    artifacts, text, chats
     +-- SQLite search index (vec0 + FTS5 tables inside enqueue.db)  vectors + text + ids
     +-- Blobs (~/.enqueue-poc/blobs/)         original files, content-addressed
 ```
@@ -191,7 +196,7 @@ One line per file, describing its job.
 | `retrieve/expand.py` | Query expansion: lens to restatements + hypothetical passages. |
 | `retrieve/candidates.py` | Multi-vector search across chunks and facets. Rolls up to artifacts. |
 | `retrieve/rerank.py` | Concurrent judgment per candidate. Generates placard here, not separately. |
-| `retrieve/curate.py` | Orchestrates expand -> candidates -> rerank -> synthesise. Saves exhibits. |
+| `retrieve/curate.py` | Orchestrates expand -> candidates -> rerank -> synthesise. |
 | `retrieve/score.py` | Stage one of the lens: scores every artifact with vector + keyword search, zero model calls. |
 | `retrieve/lens.py` | The two-stage lens: free scoring over everything, bounded judgments on the top slice. |
 | `retrieve/judgments.py` | The lens judgment cache: per (lens, artifact, model), written through on every judgment. |
@@ -218,7 +223,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `migrations/env.py` | Alembic env. Reads DB path from `enqueue.config`. |
-| `migrations/versions/0001_baseline.py` | Core tables: artifacts, versions, annotations, chunks, facets, exhibits. |
+| `migrations/versions/0001_baseline.py` | Core tables: artifacts, versions, annotations, chunks, facets. |
 | `migrations/versions/0002_link_previews.py` | link_previews table. |
 | `migrations/versions/0003_chats.py` | chats, chat_messages, chat_citations, chat_topics. |
 | `migrations/versions/0004_pinned_chats.py` | chats.pinned column. |
@@ -226,6 +231,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop
 
@@ -293,13 +299,14 @@ One line per file, describing its job.
    label the second section as not related.
 
 A lens is ephemeral: it writes nothing but the judgment cache, bumps no
-`updated_at`, and leaves no exhibit row. An exhibit is the saved form: Save
-This View posts the lens and its judged related list through the existing
-`/exhibits` path, with the lens as the immutable theme.
+`updated_at`, and leaves no room row. The curate flow builds a room and returns
+it; nothing is persisted. To keep the shape of a lens result, the person asks
+the assistant to organise and saves that pivot through the "Save grouping"
+action - saved groupings are the only persistent grouping concept.
 
 ### Chat
 
-1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact/exhibit) do not search. Everything scope uses hybrid search on chunks + facet hits.
+1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact) do not search. Everything scope uses hybrid search on chunks + facet hits.
 2. **Answer** (`chats.py`): model answers from passages. `Answer` schema enforces grounded/cited consistency.
 3. **Title + topics** (`chats.py`): best-effort, non-blocking. Topics regenerated from whole transcript each turn.
 
@@ -323,11 +330,9 @@ Migrations run automatically at startup via Alembic.
 | `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only |
 | `secret_hits` | credential patterns found in artifact text | redacted excerpts only |
 | `page_text` | extracted text per PDF page | derived, rebuildable |
-| `exhibits` | saved curated rooms | theme is immutable after creation |
-| `exhibit_members` | artifact in exhibit | placard, evidence, strength, rank, origin, ejected_at |
 | `lens_judgments` | lens judgment cache | keyed by (lens_key, artifact_id, model_version); rebuilt on edit |
 | `link_previews` | what a saved link turns out to be | status, title, description, site_name, image_hash |
-| `chats` | conversations | scoped to everything/artifact/exhibit. pinned. |
+| `chats` | conversations | scoped to everything/artifact. pinned. |
 | `chat_messages` | one turn | append-only. grounded flag. |
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
@@ -344,10 +349,9 @@ after retrieval.
 2. **A capture's body is NULL.** Enforced by a CHECK constraint: `kind = 'note' OR body IS NULL`. Captures are frozen because fidelity to the source is why they were saved.
 3. **No user-authored text is ever destroyed.** Editing a note appends to `artifact_versions` before updating `artifacts.body`. Annotations are append-only. Purge is the only destructive operation, and only on trashed artifacts.
 4. **Every vector is stamped with its embedding model version.** A model change means re-embedding, and stamping makes that incremental.
-5. **`exhibits.theme` is immutable.** Reshaping means a new exhibit.
-6. **Derived rows carry the model or tool version that produced them.** Anything derived can be regenerated.
-7. **Schema changes are Alembic revisions.** Never a `CREATE TABLE` in application code, never a hand edit. A pre-migration database is stamped at baseline and upgraded, never rebuilt.
-8. **An answer states whether it is grounded, and the citations must back it.** Enforced in `schemas.Answer`.
+5. **Derived rows carry the model or tool version that produced them.** Anything derived can be regenerated.
+6. **Schema changes are Alembic revisions.** Never a `CREATE TABLE` in application code, never a hand edit. A pre-migration database is stamped at baseline and upgraded, never rebuilt.
+7. **An answer states whether it is grounded, and the citations must back it.** Enforced in `schemas.Answer`.
 
 ### Index tables
 
@@ -364,7 +368,7 @@ and FTS5 BM25 nails it while dense does not.
 
 ### Migration story
 
-Migrations are additive-only for sacred tables (artifacts, versions, annotations, exhibits, exhibit_members).
+Migrations are additive-only for sacred tables (artifacts, versions, annotations).
 Derived tables (chunks, facets, page_text, etc.) can be dropped and rebuilt.
 A database that predates Alembic (created by the old `schema.sql`) is stamped at baseline (`0001`) rather than replayed.
 `db.migrate()` is safe to call repeatedly.
@@ -455,7 +459,7 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | Embeddings | always local (fastembed) | No network, strictly more private |
 | Facet generation | the configured backend | The moat. Bad facets are permanent pollution. |
 | Rerank | the configured backend | Low volume, high value |
-| Synthesis | the configured backend | Where exhibit quality is decided |
+| Synthesis | the configured backend | The room: through-line, tensions, groupings |
 | Chat answer | the configured backend | |
 | Chat title/topics | the configured backend | Best-effort, non-blocking |
 
@@ -476,7 +480,7 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq reindex` | Rebuild the search index with visible progress; resumable |
 | `enq doctor` | Index health: counts, embedding version, sync with the chunks table |
 | `enq search <query> [--limit N]` | Hybrid search, no model calls |
-| `enq curate <lens> [--keep N] [--pool N] [--save]` | Build a room on a theme |
+| `enq curate <lens> [--keep N] [--pool N]` | Build a room on a theme (ephemeral, nothing is saved) |
 | `enq lens-eval [--corpus] [--baseline F]` | Measure threshold placement of true matches |
 | `enq lens-cache clear\|stats` | Manage the lens judgment cache |
 | `enq note [--body TEXT]` | Write a note |
@@ -518,8 +522,8 @@ GET    /chats                       conversations, pinned first
 GET    /chats/ready                 whether there is anything to answer from
 GET    /chats/passages?q=           what an answer would be allowed to read
 GET    /chats/{id}                  transcript, citations, topics
-GET    /exhibits                    saved rooms
-GET    /exhibits/{id}               room with members
+GET    /pivots                      saved groupings
+GET    /pivots/{id}                 one saved grouping
 GET    /settings                    all settings + storage + backends
 GET    /secrets                     credential scan hits
 GET    /index/counts                search index table counts
@@ -548,7 +552,13 @@ PATCH  /chats/{id}                   rename / pin
 DELETE /chats/{id}                   the one deletable object
 POST   /curate                       build a room. Returns JSON (not SSE)
 POST   /lens                         stream a topic split: split first, placards as judgments land (SSE)
-POST   /exhibits                     save a room that was already built
+POST   /pivot/plan                    plan a saved grouping from a lens result
+POST   /pivot/run                     re-run a saved grouping spec
+POST   /pivots                        create a saved grouping
+PATCH  /pivots/{id}                   rename a saved grouping
+DELETE /pivots/{id}                   forget a saved grouping
+POST   /pivots/{id}/exclude           remove an artifact from a grouping
+POST   /pivots/{id}/include           add an artifact to a grouping
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
 POST   /facets                       generate facets
@@ -593,7 +603,7 @@ Per curate:
 1. Expand the lens into restatements plus hypothetical exemplar passages.
 2. Multi-vector search against both collections. Roll chunks up to artifacts. Target ~150 candidates.
 3. Rerank: the model reads candidates against the lens and keeps 10-20. The placard is generated here, not in a separate call.
-4. Synthesise over survivors: through-line, tensions, groupings. That is the exhibit.
+4. Synthesise over survivors: through-line, tensions, groupings. That is the room.
 
 ### Two granularities
 
@@ -614,7 +624,6 @@ Sparse and dense together, fused with RRF, both in the one SQLite file.
 | Scope | Retrieval |
 | --- | --- |
 | One artifact | none. The artifact fits in context. |
-| One exhibit | light. Members mostly fit. |
 | Everything | full pipeline |
 
 ---
@@ -705,7 +714,7 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 | --- | --- |
 | `tests/conftest.py` | `store` fixture: real DB per test in tmp_path. `quiet_queue` fixture: runs ingest inline. |
 | `tests/test_chats.py` | Answer contract validators, naming, topics, pinning, turns, scope, deletion. |
-| `tests/test_ingest.py` | Secret scanning, proper noun extraction, facet/judgment/exhibit validators. |
+| `tests/test_ingest.py` | Secret scanning, proper noun extraction, facet/judgment validators. |
 | `tests/test_providers.py` | Malformed HTTP responses, error translation, exception chain walking. |
 | `tests/test_settings.py` | API key never touches disk, keychain guards, extra headers parsing. |
 | `tests/test_migrations.py` | Fresh DB reaches head, pre-migration DB is adopted, capture can never hold a body. |

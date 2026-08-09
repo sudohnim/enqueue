@@ -173,20 +173,14 @@ def export(directory: str, verify: bool = False) -> None:
     if verify:
         result = export_mod.verify(target)
         if result["ok"]:
-            typer.echo(
-                f"export at {target} is complete: {result['artifacts']} artifacts,"
-                f" {result['exhibits']} exhibits"
-            )
+            typer.echo(f"export at {target} is complete: {result['artifacts']} artifacts")
         else:
             typer.secho(result["reason"], fg=typer.colors.RED)
             raise typer.Exit(1)
         return
 
     result = export_mod.export(target)
-    typer.echo(
-        f"exported {result['artifacts']} artifacts and {result['exhibits']} exhibits"
-        f" to {target}"
-    )
+    typer.echo(f"exported {result['artifacts']} artifacts" f" to {target}")
     typer.echo(f"  wrote {len(result['written'])} files, {len(result['unchanged'])} unchanged")
     if result["copied"]:
         typer.echo(f"  copied {len(result['copied'])} capture files")
@@ -208,40 +202,37 @@ def search(query: str, limit: int = 10) -> None:
 
 
 @app.command()
-def curate(lens: str, keep: int = 15, pool: int = 150, save: bool = False) -> None:
-    """Build a room on a theme."""
+def curate(lens: str, keep: int = 15, pool: int = 150) -> None:
+    """Build a room on a theme (ephemeral - nothing is saved)."""
     result = _call(
         "POST",
         "/curate",
-        json={"lens": lens, "keep": keep, "pool": pool, "save": save},
+        json={"lens": lens, "keep": keep, "pool": pool},
         timeout=None,
     )
-    exhibit = result.get("exhibit") or {}
+    room = result.get("room") or {}
 
-    typer.secho(f"\n{exhibit.get('suggested_name', lens)}", fg=typer.colors.YELLOW, bold=True)
+    typer.secho(f"\n{room.get('suggested_name', lens)}", fg=typer.colors.YELLOW, bold=True)
     typer.echo(
         f"{len(result['kept'])} artifacts  ·  {result['rejected']} rejected  ·  {result['considered']} considered"
     )
 
-    if exhibit.get("through_line"):
-        typer.echo(f"\n{exhibit['through_line']}\n")
-    if exhibit.get("thin"):
-        typer.secho(f"thin: {exhibit.get('thin_reason')}\n", fg=typer.colors.RED)
+    if room.get("through_line"):
+        typer.echo(f"\n{room['through_line']}\n")
+    if room.get("thin"):
+        typer.secho(f"thin: {room.get('thin_reason')}\n", fg=typer.colors.RED)
 
     for member in result["kept"]:
         typer.secho(f"  {member['title'][:52]}", fg=typer.colors.CYAN)
         typer.echo(f"    {member['placard']}")
 
-    for group in exhibit.get("groupings", []):
+    for group in room.get("groupings", []):
         typer.secho(f"\n  {group['name']}", bold=True)
         typer.echo(f"    {group['claim']}")
 
-    for tension in exhibit.get("tensions", []):
+    for tension in room.get("tensions", []):
         typer.secho(f"\n  tension: {' vs '.join(tension['between'])}", fg=typer.colors.MAGENTA)
         typer.echo(f"    {tension['claim']}")
-
-    if result.get("saved_id"):
-        typer.echo(f"\nsaved as {result['saved_id']}")
 
 
 @app.command()
