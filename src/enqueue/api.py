@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
+
+# nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from importlib import resources
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -120,6 +122,9 @@ def set_flags(artifact_id: str, req: ArtifactFlags) -> dict:
 
     sets = ", ".join(f"{k} = ?" for k in changes)
     with db.transaction() as conn:
+        # `changes` keys come from the ArtifactFlags model (pinned/local_only only),
+        # so the SET list is assembled from allowlisted literals, never input.
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
         cur = conn.execute(
             f"UPDATE artifacts SET {sets} WHERE id = ?", (*changes.values(), artifact_id)
         )
@@ -240,12 +245,36 @@ def _link_images(conn, link_ids: list[str]) -> set[str]:
     }
 
 
-def _wall_item(conn, row, with_image: set[str] | None = None) -> dict:
+def _wall_tags(conn, artifact_ids: list[str]) -> dict[str, list[str]]:
+    """All tags for a batch of artifacts, one query, name lists per id.
+
+    The wall's Tags grouping needs every row's tags up front (an artifact can
+    sit under several shelves), so the batch comes back as id -> names and
+    `_wall_item` copies its slice into the row.
+    """
+    if not artifact_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT at.artifact_id, t.name FROM artifact_tags at"
+        " JOIN tags t ON t.id = at.tag_id"
+        " WHERE at.artifact_id IN (SELECT value FROM json_each(?))",
+        (json.dumps(sorted(set(artifact_ids))),),
+    ).fetchall()
+    out: dict[str, list[str]] = {}
+    for row in rows:
+        out.setdefault(row["artifact_id"], []).append(row["name"])
+    return out
+
+
+def _wall_item(
+    conn, row, with_image: set[str] | None = None, with_tags: dict[str, list[str]] | None = None
+) -> dict:
     """One wall row, with everything the client renders, no second call.
 
     The page-count lazy fill opens the PDF once, then writes the count back so
     no listing ever pays for that row again (the file cannot change, so the
-    stored count cannot go stale).
+    stored count cannot go stale). Tags ride along for the wall's Tags
+    grouping; conversations cannot be tagged, so their slice is always empty.
     """
     item = dict(row)
     item["excerpt"] = _excerpt(item.pop("body") or "", row["title"])
@@ -256,6 +285,7 @@ def _wall_item(conn, row, with_image: set[str] | None = None) -> dict:
         item["pages"] = capture.page_count(row["id"])
     if row["kind"] == "link":
         item["has_preview_image"] = row["id"] in (with_image or set())
+    item["tags"] = (with_tags or {}).get(row["id"], [])
     return item
 
 
@@ -347,19 +377,20 @@ def list_artifacts(
         ).fetchall()
 
         with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
+        with_tags = _wall_tags(conn, [row["id"] for row in rows if row["kind"] != "chat"])
 
-        items = [_wall_item(conn, row, with_image) for row in rows]
+        items = [_wall_item(conn, row, with_image, with_tags) for row in rows]
         for item in items:
             if item["kind"] == "chat":
                 # A conversation's face is its kind: the title is the thread's name
                 # and the excerpt is the fixed label, the same as any other card.
                 item["excerpt"] = "conversation"
 
+        # `where` is assembled only from allowlisted literals plus one
+        # fully parameterized json_each clause; tag names and pinned
+        # travel as bound parameters, never in the SQL text.
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
         total = conn.execute(
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
-            # `where` is assembled only from allowlisted literals plus one
-            # fully parameterized json_each clause; tag names and pinned
-            # travel as bound parameters, never in the SQL text.
             f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}",
             {"tag_ids": tag_ids_param},
         ).fetchone()["n"]
@@ -456,13 +487,17 @@ def _consume_lens(req: LensRequest) -> dict:
         ids = [e["artifact_id"] for e in result["related"] + result["other"] + result["pinned"]]
         wall: dict[str, dict] = {}
         if ids:
+            with_tags = _wall_tags(conn, ids)
             for r in conn.execute(
                 f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts"
                 " WHERE id IN (SELECT value FROM json_each(?))",
                 (json.dumps(ids),),
             ):
                 wall[r["id"]] = _wall_item(
-                    conn, r, _link_images(conn, [r["id"]] if r["kind"] == "link" else [])
+                    conn,
+                    r,
+                    _link_images(conn, [r["id"]] if r["kind"] == "link" else []),
+                    with_tags,
                 )
     finally:
         conn.close()
@@ -521,6 +556,27 @@ def get_artifact(artifact_id: str) -> dict:
         detail["preview"] = preview.get(artifact_id)
     detail["tags"] = tags_mod.for_artifact(artifact_id)
     return detail
+
+
+@app.get("/artifacts/{artifact_id}/exhibits")
+def artifact_exhibits(artifact_id: str) -> dict:
+    """The exhibits this artifact belongs to (the drawer's membership chips).
+
+    A cheap scan over exhibit_members, filtered to non-ejected rows, newest first.
+    An unknown artifact simply has no memberships.
+    """
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT e.id, e.name FROM exhibit_members m"
+            " JOIN exhibits e ON e.id = m.exhibit_id"
+            " WHERE m.artifact_id = ? AND m.ejected_at IS NULL"
+            " ORDER BY e.created_at DESC",
+            (artifact_id,),
+        ).fetchall()
+        return {"items": [dict(r) for r in rows]}
+    finally:
+        conn.close()
 
 
 @app.get("/artifacts/{artifact_id}/versions/{version_id}")
@@ -757,6 +813,17 @@ def build_index() -> dict:
 def reprocess() -> dict:
     """Re-read, re-chunk, and re-index everything. Nothing authored is touched."""
     return {"queued": ingest_queue.submit_all()}
+
+
+@app.post("/reprocess-images")
+def reprocess_images() -> dict:
+    """Re-queue every image for the vision describe step (K.11).
+
+    The catch-up for images captured before the vision step existed: each one
+    without a description gets one, then flows through chunk, facet, and index
+    like any other artifact.
+    """
+    return {"queued": ingest_queue.submit_images()}
 
 
 @app.post("/ingest/wait")
@@ -1015,6 +1082,84 @@ def get_exhibit(exhibit_id: str) -> dict:
         conn.close()
 
 
+class ExhibitMember(BaseModel):
+    artifact_id: str
+
+
+class ExhibitRename(BaseModel):
+    name: str | None = None
+    through_line: str | None = None
+
+
+@app.patch("/exhibits/{exhibit_id}")
+def rename_exhibit(exhibit_id: str, req: ExhibitRename) -> dict:
+    """Rename an exhibit, and optionally rewrite its through line (K.7).
+
+    The pencil next to an exhibit title posts here. The name is trimmed and
+    must not be empty; the through line may be set to an empty string to clear
+    it. 404 on an unknown exhibit.
+    """
+    from .retrieve.curate import rename_exhibit as _rename
+
+    try:
+        updated = _rename(exhibit_id, req.name, req.through_line)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such exhibit") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"exhibit": updated}
+
+
+@app.post("/exhibits/{exhibit_id}/members", status_code=201)
+def add_exhibit_member(exhibit_id: str, req: ExhibitMember) -> dict:
+    """Add one artifact to an exhibit by hand (the drawer's "Add to grouping").
+
+    Idempotent: re-adding an artifact that is already a member (and not ejected)
+    is a no-op that returns 200. Unknown exhibit is 404, unknown artifact is 400.
+    """
+    from .retrieve.curate import add_member
+
+    try:
+        return {"added": add_member(exhibit_id, req.artifact_id)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such exhibit") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.delete("/exhibits/{exhibit_id}/members/{artifact_id}")
+def eject_exhibit_member(exhibit_id: str, artifact_id: str) -> dict:
+    """Soft-delete one member of an exhibit (the chip X in the drawer)."""
+    from .retrieve.curate import eject_member
+
+    try:
+        eject_member(exhibit_id, artifact_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such exhibit") from None
+    return {"ok": True}
+
+
+class ExhibitQuickCreate(BaseModel):
+    name: str
+    artifact_id: str | None = None
+
+
+@app.post("/exhibits/quick", status_code=201)
+def quick_create_exhibit(req: ExhibitQuickCreate) -> dict:
+    """A hand-made exhibit: a name, optionally seeded with one artifact.
+
+    The smaller create path for the drawer's "Create new" row: the full
+    POST /exhibits takes a lens and a built room, which a hand-made grouping
+    does not have. The theme is the name itself (the theme is immutable).
+    """
+    from .retrieve.curate import quick_create
+
+    try:
+        return {"id": quick_create(req.name, req.artifact_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
 @app.get("/settings")
 def read_settings() -> dict:
     return {
@@ -1135,8 +1280,9 @@ def run_pivot(req: PivotRunRequest) -> dict:
                 (json.dumps(ids),),
             ).fetchall()
             with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
+            with_tags = _wall_tags(conn, [row["id"] for row in rows])
             for row in rows:
-                wall[row["id"]] = _wall_item(conn, row, with_image)
+                wall[row["id"]] = _wall_item(conn, row, with_image, with_tags)
     finally:
         conn.close()
 
@@ -1197,6 +1343,29 @@ def get_pivot(pivot_id: str) -> dict:
         return pivots_saved.get(pivot_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="No saved grouping by that id.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+class PivotRename(BaseModel):
+    name: str
+
+
+@app.patch("/pivots/{pivot_id}")
+def rename_pivot(pivot_id: str, req: PivotRename) -> dict:
+    """Rename a saved grouping (the pencil beside its name in the custom wall).
+
+    The name is trimmed and must not be empty; the spec (the arrangement) is
+    untouched. 404 on an unknown grouping, 400 on an empty name - the same
+    shape as PATCH /exhibits/{id}.
+    """
+    try:
+        updated = pivots_saved.rename(pivot_id, req.name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No saved grouping by that id.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"pivot": updated}
 
 
 @app.delete("/pivots/{pivot_id}")
@@ -1204,6 +1373,70 @@ def delete_pivot(pivot_id: str) -> dict:
     """Forget a saved grouping. Idempotent: deleting one already gone still 200s."""
     pivots_saved.delete(pivot_id)
     return {"deleted": pivot_id}
+
+
+class PivotExclude(BaseModel):
+    artifact_id: str
+    undo: bool = False
+
+
+@app.post("/pivots/{pivot_id}/exclude")
+def exclude_pivot_artifact(pivot_id: str, req: PivotExclude) -> dict:
+    """Exclude (or, with undo, restore) one artifact in a saved grouping.
+
+    A saved grouping is a computed pivot: its members are whatever the spec
+    produces over the current library, so removing a card means excluding its id
+    from the spec. This reads the stored spec, appends `artifact_id` to
+    `excluded_ids` (or removes it when `undo` is true), and saves it back; the
+    next re-run of the grouping leaves the artifact out. The artifact itself is
+    never touched - it still lives on the wall and in the library.
+    """
+    try:
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No saved grouping by that id.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    spec = saved["spec"]
+    excluded = [aid for aid in (spec.get("excluded_ids") or []) if aid != req.artifact_id]
+    if not req.undo:
+        excluded.append(req.artifact_id)
+    spec["excluded_ids"] = excluded
+    pivots_saved.update_spec(pivot_id, spec)
+    return {"pivot_id": pivot_id, "excluded_ids": excluded}
+
+
+class PivotInclude(BaseModel):
+    artifact_id: str
+    undo: bool = False
+
+
+@app.post("/pivots/{pivot_id}/include")
+def include_pivot_artifact(pivot_id: str, req: PivotInclude) -> dict:
+    """Force (or, with undo, un-force) one artifact into a saved grouping.
+
+    A saved grouping's subset filters the library, so an artifact that does not
+    match the subset can only appear by being forced in. This reads the stored
+    spec, appends `artifact_id` to `included_ids` (or removes it when `undo` is
+    true), and saves it back; the next re-run of the grouping places the
+    artifact into whichever group its group_by attribute resolves to. The
+    artifact is never copied or moved - it just joins this arrangement too.
+    """
+    try:
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No saved grouping by that id.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    spec = saved["spec"]
+    included = [aid for aid in (spec.get("included_ids") or []) if aid != req.artifact_id]
+    if not req.undo:
+        included.append(req.artifact_id)
+    spec["included_ids"] = included
+    pivots_saved.update_spec(pivot_id, spec)
+    return {"pivot_id": pivot_id, "included_ids": included}
 
 
 def serve() -> None:

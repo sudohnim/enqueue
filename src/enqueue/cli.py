@@ -101,9 +101,22 @@ def facets(limit: int = 0, redo: bool = False, stale_only: bool = False) -> None
 
 
 @app.command()
-def index() -> None:
-    """Rebuild the search index from the database."""
-    _echo(_call("POST", "/index", timeout=None))
+def index(
+    images: bool = typer.Option(
+        False,
+        "--images",
+        help="Re-queue every image for the vision describe step instead of rebuilding the vector index (K.11).",
+    )
+) -> None:
+    """Rebuild the search index from the database.
+
+    With --images, re-queue every image so the vision step describes the ones
+    captured before it existed; the index rebuild itself is not run.
+    """
+    if images:
+        _echo(_call("POST", "/reprocess-images", timeout=None))
+    else:
+        _echo(_call("POST", "/index", timeout=None))
 
 
 @app.command()

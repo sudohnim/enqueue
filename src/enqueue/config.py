@@ -81,6 +81,13 @@ LLM_BACKEND = os.getenv("ENQ_LLM_BACKEND", "ollama")
 #   ENQ_OLLAMA_URL=https://host/v1  ENQ_LLM_MODEL=glm-5.2  ENQ_LLM_API_KEY=...
 LLM_MODEL = os.getenv("ENQ_LLM_MODEL", "llama3.1:8b")
 
+# The vision model used to describe images at ingest (K.11). Distinct from the
+# text model: most backends answer text with one model and images with another
+# (Ollama: llava or moondream; a hosted endpoint: an OpenRouter vision model).
+# When the configured backend has no such model, the describe step degrades
+# gracefully and the image stays unsearchable rather than failing the capture.
+VISION_MODEL = os.getenv("ENQ_VISION_MODEL", "llava")
+
 
 def llm_api_key() -> str:
     """The key, resolved at call time rather than at import.

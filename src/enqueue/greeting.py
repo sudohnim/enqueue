@@ -28,34 +28,20 @@ from __future__ import annotations
 import random
 from datetime import datetime
 
-# ---------------------------------------------------------------- the phrase buckets
-# Two to five words each, no trailing punctuation (the wall renders them as a display
-# line). Add freely; the leader phrase in each bucket is the safe default.
+# 6AM to noon
+MORNING = ["Good morning", "Top of the morning to ya, guv'nah", "Rise and grind"]
 
-MORNING = [
-    "Good morning",
-    # TODO: morning phrases (06:00 - 12:00), e.g. "Fresh start", "Early and at it"
-]
+# noon to 6PM
+AFTERNOON = ["Good afternoon", "Afternoon, guv'nah"]
 
-AFTERNOON = [
-    "Good afternoon",
-    # TODO: afternoon phrases (12:00 - 18:00), e.g. "Back at it", "Midday stretch"
-]
 
-EVENING = [
-    "Good evening",
-    # TODO: evening phrases (18:00 - 24:00), e.g. "Winding down", "Evening so far"
-]
+# 6PM to midnight
+EVENING = ["Good evening", "Think about winding down", "Evening, guv'nah"]
 
-NIGHT = [
-    "Still up",
-    # TODO: late-night phrases (00:00 - 06:00), e.g. "Up late tonight", "Small hours"
-]
+# midnight to 6AM
+NIGHT = ["Still up?", "Quite the insomniac", "Night owl time"]
 
-GENERIC = [
-    "Welcome back",
-    # TODO: any-time phrases, e.g. "Here again", "Good to see you"
-]
+GENERIC = ["Welcome back", "LFGGGGGGG"]
 
 _BUCKETS = {
     "morning": MORNING,

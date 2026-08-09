@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
-"""Check WCAG contrast of all text-bearing tokens in museum.html's :root block.
+"""Check WCAG contrast of the design tokens in museum.html's :root block.
 
 Reads the palette from the file (not hardcoded) so it stays a real check.
-Text inks must clear 4.5:1 on the worst surface. Non-text tokens (kind hues,
-accent fills) are deliberately not text inks: the design pairs every accent
-fill with a 1.5px --text edge for the 3:1 boundary rule, and kind hues are
-read by a decorative dot only - see the comments in museum.html's :root.
-Exits non-zero if any text ink fails.
+Three tiers, matching the rules documented in the :root comments:
+
+  - Text inks clear 4.5:1 on the worst *permitted* ground. Some inks are not
+    permitted on the darkest grounds (--text-mute fails on --surface-3,
+    --ink-faint fails on --surface-2 and --surface-3, --info fails on
+    --surface-3); those grounds are excluded per token, so the gate enforces
+    the documented usage, not a global floor that every token must clear on
+    every surface.
+  - Sole boundaries clear 3:1: --line-strong on every ground it can sit on,
+    the lavender fills that act as drag/drop boundaries on the canvas, and
+    the kind dots, which are 8px graphics.
+  - Graphic pairs clear 3:1: the ink motif on the lavender disc, white on
+    each lavender fill state that actually carries white text (--accent,
+    --lavender-focus, --lavender-deep; --lavender-hover is non-text-only by
+    design - white on it measures 2.87:1 and fails, so the component rules
+    never put white on it), and the badge inks on their own rgba() washes.
+
+--warning and --success are fill-only by design: each fails 4.5 as text on
+white (3.33 and 3.45) and the component rules only use them as fills,
+boundaries or dots, so the gate checks them at the 3:1 graphic tier.
+Exits non-zero if anything fails.
 """
 import os
 import re
 import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MUSEUM = "src/enqueue/static/museum.html"
+MUSEUM = os.path.join(HERE, "src", "enqueue", "static", "museum.html")
 SRC = "bin/check-contrast"
 
 # --- WCAG relative luminance ---
@@ -22,7 +38,7 @@ def srgb_linear(c):
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 def luminance(hex_str):
-    """Hex like #313238 or #c3b8ee -> relative luminance."""
+    """#rrggbb -> relative luminance."""
     h = hex_str.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return 0.2126 * srgb_linear(r) + 0.7152 * srgb_linear(g) + 0.0722 * srgb_linear(b)
@@ -32,35 +48,116 @@ def contrast_ratio(l1, l2):
     darker = min(l1, l2)
     return (lighter + 0.05) / (darker + 0.05)
 
+def composite_rgba_over_white(rgba):
+    """rgba(r, g, b, a) composited over #ffffff -> hex."""
+    m = re.match(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)", rgba)
+    if not m:
+        raise ValueError("unparseable rgba: " + rgba)
+    r, g, b, a = (int(m.group(1)), int(m.group(2)), int(m.group(3)), float(m.group(4)))
+    ch = lambda c: int(round(a * c + (1 - a) * 255))
+    return "#%02x%02x%02x" % (ch(r), ch(g), ch(b))
+
 def parse_root_palette(text):
-    """Return a dict of token -> hex from the first :root block."""
-    # Find the first :root { ... } block
-    m = re.search(r":root\s*\{([^}]+)\}", text, re.DOTALL)
+    """Return a dict of token -> (value, kind) from the first :root block.
+
+    kind is "hex" or "rgba". var() references are resolved against the same
+    block so --kind-* aliases check the hue they point at.
+    """
+    m = re.search(r":root\s*\{(.*?)\n  \}", text, re.DOTALL)
     if not m:
         print(f"{SRC}: ERROR: no :root block found in {MUSEUM}", file=sys.stderr)
         sys.exit(2)
     body = m.group(1)
-    tokens = {}
+    raw = {}
     for line in body.split("\n"):
         line = line.strip()
         if not line or line.startswith("/*"):
             continue
-        # Match --name: #hex;
-        m2 = re.match(r"(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\s*;", line)
+        m2 = re.match(r"(--[\w-]+)\s*:\s*([^;]+);", line)
         if m2:
-            tokens[m2.group(1)] = m2.group(2)
-    return tokens
+            raw[m2.group(1)] = m2.group(2).strip()
+    palette = {}
+    for name, value in raw.items():
+        if re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            palette[name] = (value, "hex")
+        elif value.startswith("rgba("):
+            palette[name] = (value, "rgba")
+        elif value.startswith("var("):
+            ref = value[4:-1].strip()
+            if ref in palette:
+                palette[name] = palette[ref]
+    return palette
 
-TEXT_BEARING = {
-    "--text", "--text-dim", "--text-mute",
-    "--accent-text",
-}
+def ground_lum(palette, name):
+    value, kind = palette.get(name, (None, None))
+    if value is None:
+        print(f"{SRC}: ERROR: {name} not found in :root", file=sys.stderr)
+        sys.exit(2)
+    if kind == "rgba":
+        value = composite_rgba_over_white(value)
+    return luminance(value)
 
-GROUNDS = ["--bg", "--surface", "--surface-2"]
-LINE_STRONG = "--line-strong"
-ACCENT_INK = "--accent-ink"
-ACCENT = "--accent"
-EXEMPT = {"--line"}  # decorative hairline, never a sole boundary
+def fg_lum(palette, name):
+    value, kind = palette.get(name, (None, None))
+    if value is None:
+        print(f"{SRC}: ERROR: {name} not found in :root", file=sys.stderr)
+        sys.exit(2)
+    return luminance(value if kind == "hex" else composite_rgba_over_white(value))
+
+# The ground ladder, darkest last. --surface-3 is the darkest ground any
+# token is permitted to render on.
+GROUNDS = ["--bg", "--surface", "--surface-2", "--surface-3"]
+
+# Text inks: (token, permitted grounds). Each must clear 4.5:1 on the worst
+# permitted ground.
+TEXT_RULES = [
+    ("--text", GROUNDS),
+    ("--text-dim", GROUNDS),
+    ("--text-mute", ["--bg", "--surface", "--surface-2"]),
+    ("--ink-faint", ["--bg", "--surface"]),
+    ("--accent-text", GROUNDS),
+    ("--link", GROUNDS),
+    ("--code-ink", GROUNDS),
+    ("--danger", GROUNDS),
+    ("--info", ["--bg", "--surface", "--surface-2"]),
+]
+
+# Sole boundaries: 3:1. --line-strong on every ground it can sit on; the
+# lavender fills that double as drag/drop boundaries on the canvas.
+BOUNDARY_RULES = [
+    ("--line-strong", GROUNDS),
+    ("--accent", ["--bg"]),
+    ("--accent-strong", ["--bg"]),
+    ("--lavender", ["--bg"]),
+]
+
+# Kind hues: an 8px dot is a graphic, so 3:1 on the canvas.
+KIND_DOTS = ["--green", "--blue", "--peach", "--pink", "--teal", "--kind-chat"]
+
+# Fill-only hues: allowed as fills and boundaries (3:1 on the canvas), never
+# as text. The gate pins them to the graphic tier so a future "fix" that
+# makes one a text ink somewhere is caught by the 3:1 floor instead of
+# silently shipping 3.33:1 body text.
+FILL_ONLY = ["--warning", "--success"]
+
+# Graphic pairs: foreground on its own fill, 3:1. rgba washes are
+# composited over the canvas. --lavender-hover is deliberately absent: white
+# on it is 2.87:1 and the hover step uses --lavender-focus instead.
+GRAPHIC_PAIRS = [
+    ("--accent-ink", "--accent"),            # ink motif on the lavender disc
+    ("--on-lavender", "--accent"),           # white on the primary fill
+    ("--on-lavender", "--lavender-focus"),   # white on the hover fill
+    ("--on-lavender", "--lavender-deep"),    # white on the pressed fill
+    ("--accent-text", "--lavender-subtle"),  # subtle-button ink on its wash
+    ("--badge-success-ink", "--badge-success-fill"),
+    ("--badge-danger-ink", "--badge-danger-fill"),
+    ("--text-dim", "--badge-neutral-fill"),
+]
+
+# Callout washes carry --text-dim (per the :root comment). Check it on every
+# tint composited over the canvas.
+WASHES = ["--tint-info", "--tint-ok", "--tint-warn", "--tint-note"]
+WASH_TEXT = "--text-dim"
 
 def main():
     os.chdir(HERE)
@@ -72,64 +169,95 @@ def main():
         print(f"{SRC}: ERROR: could not parse any tokens from :root in {MUSEUM}", file=sys.stderr)
         sys.exit(2)
 
-    # Resolve ground luminance
-    grounds = {}
-    for g in GROUNDS:
-        c = palette.get(g)
-        if not c:
-            print(f"{SRC}: ERROR: {g} not found in :root", file=sys.stderr)
-            sys.exit(2)
-        grounds[g] = luminance(c)
-
+    grounds = {g: ground_lum(palette, g) for g in GROUNDS}
     failures = []
+    checks = 0
 
-    # --- Text-bearing tokens: need 4.5:1 against the WORST ground ---
-    for token in sorted(TEXT_BEARING):
-        c = palette.get(token)
-        if not c:
-            print(f"{SRC}: WARNING: {token} not found in :root, skipping", file=sys.stderr)
-            continue
-        l = luminance(c)
-        worst_ground = min(grounds, key=lambda g: contrast_ratio(l, grounds[g]))
-        cr = contrast_ratio(l, grounds[worst_ground])
-        print(f"  {token} {c}  {cr:.2f}:1  (worst ground: {worst_ground})", end="")
-        if cr < 4.5:
-            print(f"  FAIL ({cr:.2f} < 4.5)", end="")
-            failures.append(token)
-        print()
+    # --- Text inks ---
+    print("Text inks (4.5:1 on the worst permitted ground)")
+    for token, permitted in TEXT_RULES:
+        fl = fg_lum(palette, token)
+        worst = min(permitted, key=lambda g: contrast_ratio(fl, grounds[g]))
+        cr = contrast_ratio(fl, grounds[worst])
+        checks += 1
+        ok = cr >= 4.5
+        print(f"  {token:<14} {cr:5.2f}:1  (worst permitted ground: {worst})" + ("" if ok else "  FAIL"))
+        if not ok:
+            failures.append((token, "text", cr))
 
-    # --- --line-strong: 3.0:1 against the WORST ground ---
-    c = palette.get(LINE_STRONG)
-    if c:
-        l = luminance(c)
-        worst_ground = min(grounds, key=lambda g: contrast_ratio(l, grounds[g]))
-        cr = contrast_ratio(l, grounds[worst_ground])
-        print(f"  {LINE_STRONG} {c}  {cr:.2f}:1  (worst ground: {worst_ground})", end="")
-        if cr < 3.0:
-            print(f"  FAIL ({cr:.2f} < 3.0)", end="")
-            failures.append(LINE_STRONG)
-        print()
-    else:
-        print(f"{SRC}: WARNING: {LINE_STRONG} not found in :root", file=sys.stderr)
+    # --- Sole boundaries ---
+    print("\nSole boundaries (3:1)")
+    for token, permitted in BOUNDARY_RULES:
+        fl = fg_lum(palette, token)
+        worst = min(permitted, key=lambda g: contrast_ratio(fl, grounds[g]))
+        cr = contrast_ratio(fl, grounds[worst])
+        checks += 1
+        ok = cr >= 3.0
+        print(f"  {token:<14} {cr:5.2f}:1  (worst ground: {worst})" + ("" if ok else "  FAIL"))
+        if not ok:
+            failures.append((token, "boundary", cr))
 
-    # --- --accent-ink: 4.5:1 against --accent ---
-    ink_hex = palette.get(ACCENT_INK)
-    acc_hex = palette.get(ACCENT)
-    if ink_hex and acc_hex:
-        cr = contrast_ratio(luminance(ink_hex), luminance(acc_hex))
-        print(f"  {ACCENT_INK} {ink_hex} on {ACCENT} {acc_hex}  {cr:.2f}:1", end="")
-        if cr < 4.5:
-            print(f"  FAIL ({cr:.2f} < 4.5)", end="")
-            failures.append(ACCENT_INK)
-        print()
-    else:
-        print(f"{SRC}: WARNING: {ACCENT_INK} or {ACCENT} not found in :root", file=sys.stderr)
+    # --- Kind dots ---
+    print("\nKind dots on the canvas (3:1, graphic)")
+    for token in KIND_DOTS:
+        fl = fg_lum(palette, token)
+        cr = contrast_ratio(fl, grounds["--bg"])
+        checks += 1
+        ok = cr >= 3.0
+        print(f"  {token:<14} {cr:5.2f}:1" + ("" if ok else "  FAIL"))
+        if not ok:
+            failures.append((token, "kind dot", cr))
+
+    # --- Fill-only hues at the graphic tier ---
+    print("\nFill-only hues (3:1 on the canvas, never text)")
+    for token in FILL_ONLY:
+        fl = fg_lum(palette, token)
+        cr = contrast_ratio(fl, grounds["--bg"])
+        checks += 1
+        ok = cr >= 3.0
+        print(f"  {token:<14} {cr:5.2f}:1" + ("" if ok else "  FAIL"))
+        if not ok:
+            failures.append((token, "fill-only", cr))
+
+    # --- Graphic pairs ---
+    print("\nGraphic pairs (3:1)")
+    for fg, bg in GRAPHIC_PAIRS:
+        fgv, fgk = palette.get(fg, (None, None))
+        bgv, bgk = palette.get(bg, (None, None))
+        if fgv is None or bgv is None:
+            print(f"{SRC}: ERROR: pair {fg} on {bg} not found in :root", file=sys.stderr)
+            sys.exit(2)
+        fgl = luminance(fgv if fgk == "hex" else composite_rgba_over_white(fgv))
+        bgl = luminance(bgv if bgk == "hex" else composite_rgba_over_white(bgv))
+        cr = contrast_ratio(fgl, bgl)
+        checks += 1
+        ok = cr >= 3.0
+        print(f"  {fg:<18} on {bg:<20} {cr:5.2f}:1" + ("" if ok else "  FAIL"))
+        if not ok:
+            failures.append((fg + " on " + bg, "graphic pair", cr))
+
+    # --- Callout washes ---
+    print("\nCallout washes (text-dim on each tint over the canvas)")
+    for wash in WASHES:
+        wv, wk = palette.get(wash, (None, None))
+        if wv is None:
+            print(f"{SRC}: ERROR: {wash} not found in :root", file=sys.stderr)
+            sys.exit(2)
+        wl = luminance(wv if wk == "hex" else composite_rgba_over_white(wv))
+        cr = contrast_ratio(fg_lum(palette, WASH_TEXT), wl)
+        checks += 1
+        ok = cr >= 4.5
+        print(f"  {WASH_TEXT:<10} on {wash:<14} {cr:5.2f}:1" + ("" if ok else "  FAIL"))
+        if not ok:
+            failures.append((WASH_TEXT + " on " + wash, "wash text", cr))
 
     if failures:
-        print(f"\n{SRC}: FAILED tokens: {', '.join(failures)}", file=sys.stderr)
+        print(f"\n{SRC}: FAILED ({len(failures)} of {checks} checks):")
+        for name, tier, cr in failures:
+            print(f"  {name} ({tier}): {cr:.2f}:1", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\n{SRC}: all contrast checks passed")
+    print(f"\n{SRC}: all {checks} contrast checks passed")
     sys.exit(0)
 
 if __name__ == "__main__":

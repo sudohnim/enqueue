@@ -19,9 +19,11 @@ from typing import TypeVar, cast
 
 import instructor
 from openai import OpenAI
+from openai.types.chat import ChatCompletionContentPartParam, ChatCompletionMessageParam
 from pydantic import BaseModel
 
 from .. import config
+from ..prompts import IMAGE_DESCRIBE
 from .base import ProviderError, why
 
 T = TypeVar("T", bound=BaseModel)
@@ -80,7 +82,7 @@ class OpenAICompatibleProvider:
         # is not specified"). When there is no user turn, fold the system prompt into
         # the user message so the request always carries content, on every backend.
         if user.strip():
-            messages = [
+            messages: list[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ]
@@ -103,6 +105,43 @@ class OpenAICompatibleProvider:
         # wrong. Everything above it gets one exception type carrying one sentence.
         except Exception as exc:  # noqa: BLE001 - translated, not swallowed
             raise ProviderError(why(exc, self.base_url, self.model)) from exc
+
+    def describe_image(self, image: bytes, mime: str) -> str:
+        """Describe an image in a few factual sentences, for the search index.
+
+        The image travels as a base64 data URL inside an OpenAI vision message,
+        sent to the plain client rather than the instructor-wrapped one: this
+        step wants free text, not a schema. The model is the vision setting this
+        provider was built with, so the caller picks it via `get_vision_provider`.
+        A bare description that comes back empty is a failure like any other:
+        storing it would index a silent nothing.
+        """
+        import base64
+
+        data_url = f"data:{mime};base64,{base64.b64encode(image).decode('ascii')}"
+        client = OpenAI(
+            base_url=self.base_url,
+            api_key=config.llm_api_key(),
+            default_headers=_extra_headers(),
+        )
+        content: list[ChatCompletionContentPartParam] = [
+            {"type": "text", "text": IMAGE_DESCRIBE},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]
+        messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": content}]
+        try:
+            reply = client.chat.completions.create(
+                model=self.model,
+                max_tokens=300,
+                messages=messages,
+            )
+        except Exception as exc:  # noqa: BLE001 - translated, not swallowed
+            raise ProviderError(why(exc, self.base_url, self.model)) from exc
+
+        text = (reply.choices[0].message.content or "").strip()
+        if not text:
+            raise ProviderError(f"the vision model at {self.base_url} answered without any text")
+        return text
 
 
 # The old name, kept so nothing importing it breaks. It was never Ollama-specific.

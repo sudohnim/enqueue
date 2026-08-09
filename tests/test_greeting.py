@@ -28,7 +28,7 @@ def test_fallback_is_the_bucket_leader():
     assert greeting.fallback(datetime(2025, 1, 1, 9)) == "Good morning"
     assert greeting.fallback(datetime(2025, 1, 1, 14)) == "Good afternoon"
     assert greeting.fallback(datetime(2025, 1, 1, 20)) == "Good evening"
-    assert greeting.fallback(datetime(2025, 1, 1, 2)) == "Still up"
+    assert greeting.fallback(datetime(2025, 1, 1, 2)) == "Still up?"
 
 
 def test_get_is_stable_within_the_hour():

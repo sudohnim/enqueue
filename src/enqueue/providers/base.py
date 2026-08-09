@@ -112,6 +112,7 @@ def _name_one(cause: BaseException, base_url: str, model: str) -> str | None:
 class Provider(Protocol):
     name: str
     model: str
+    base_url: str
 
     def complete(
         self,
@@ -121,6 +122,29 @@ class Provider(Protocol):
         context: dict | None = None,
         max_retries: int | None = None,
     ) -> T: ...
+
+    def describe_image(self, image: bytes, mime: str) -> str: ...
+
+
+def get_vision_provider(local_only: bool = False) -> Provider:
+    """The vision-capable provider that describes images at ingest (K.11).
+
+    Same routing rule as `get_provider`: local-only images go to the local
+    backend whatever the default is. The model is the separate vision setting - a
+    backend that answers text and images with different models (Ollama's llava,
+    an OpenRouter vision model) gets both here.
+    """
+    from .. import config, settings
+    from .ollama import OpenAICompatibleProvider
+
+    name = "ollama" if local_only else settings.get("llm_backend")
+    backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
+
+    url = settings.get("llm_url") if not local_only else config.BACKENDS["ollama"]["url"]
+    return OpenAICompatibleProvider(
+        model=settings.get("vision_model") if not local_only else config.VISION_MODEL,
+        base_url=url or backend["url"],
+    )
 
 
 def get_provider(local_only: bool = False) -> Provider:

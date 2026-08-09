@@ -3,9 +3,9 @@
 <title>Enqueue capture</title>
 <link
   rel="preload"
-  href="fonts/IBMPlexSans-Regular.ttf"
+  href="fonts/IBM-Plex-Sans-400.woff2"
   as="font"
-  type="font/ttf"
+  type="font/woff2"
   crossorigin
 />
 <style>
@@ -14,64 +14,65 @@
     font-weight: 400;
     font-style: normal;
     font-display: swap;
-    src: url("fonts/IBMPlexSans-Regular.ttf") format("truetype");
+    src:
+      url("fonts/IBM-Plex-Sans-400.woff2") format("woff2"),
+      url("fonts/IBMPlexSans-Regular.ttf") format("truetype");
   }
   @font-face {
     font-family: "IBM Plex Sans";
     font-weight: 500;
     font-style: normal;
     font-display: swap;
-    src: url("fonts/IBMPlexSans-Medium.ttf") format("truetype");
+    src:
+      url("fonts/IBM-Plex-Sans-500.woff2") format("woff2"),
+      url("fonts/IBMPlexSans-Medium.ttf") format("truetype");
   }
   @font-face {
     font-family: "IBM Plex Sans";
     font-weight: 600;
     font-style: normal;
     font-display: swap;
-    src: url("fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+    src:
+      url("fonts/IBM-Plex-Sans-600.woff2") format("woff2"),
+      url("fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
   }
   @font-face {
     font-family: "IBM Plex Sans";
     font-weight: 700;
     font-style: normal;
     font-display: swap;
-    src: url("fonts/IBMPlexSans-Bold.ttf") format("truetype");
+    src:
+      url("fonts/IBM-Plex-Sans-700.woff2") format("woff2"),
+      url("fonts/IBMPlexSans-Bold.ttf") format("truetype");
   }
-  /* The overlay is self-contained on purpose. It is served from the same engine as
-     the museum but it is a different surface with a different lifetime, and having
-     it depend on the museum's stylesheet would mean a layout change over there can
-     silently break the thing you press when you are mid-sentence somewhere else.
-     The tokens below are the small subset of museum.html the overlay actually uses,
-     copied rather than shared. */
   :root {
     /* The overlay is self-contained on purpose. It is served from the same engine as
        the museum but it is a different surface with a different lifetime, and having
        it depend on the museum's stylesheet would mean a layout change over there can
        silently break the thing you press when you are mid-sentence somewhere else.
        The tokens below are the small subset of museum.html the overlay actually uses,
-       copied rather than shared. */
-    --bg: #eeefe9;
-    --surface: #ffffff;
-    --surface-2: #e5e7e0;
-    --line: #bfc1b7;
-    --line-strong: #7d7b73;
-    --text: #23251d;
-    --text-dim: #4d4f46;
-    --text-mute: #63655b;
-    --accent: #f7a501;
-    /* The yellow is unreadable as text or a lone border on cream (1.63:1). The deep
-       gold is its legible companion, used for the drag-drop boundary at 3.02:1. */
-    --accent-strong: #b17816;
+       copied rather than shared, at the same values as the museum's :root (Phase A). */
+    --bg: #ffffff;
+    --surface: #f6f7f9;
+    --surface-2: #eef0f3;
+    --line: #dedee5;
+    --line-strong: #7f8296;
+    --text: #101114;
+    --text-dim: #4d5061;
+    --text-mute: #686b82;
+    --accent: #5e6ad2;
+    /* The drag-over boundary. Lavender clears the 3:1 sole-boundary rule on the
+       canvas (4.70:1), so the drop affordance reads the same in the capture window
+       and on the museum wall, and no amber survives. */
+    --accent-strong: #5e6ad2;
     --pink: #8f4273;
 
-    --sans:
-      "IBM Plex Sans", system-ui, -apple-system, "Segoe UI",
-      sans-serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
     --r-sm: 6px;
-    --r-full: 999px;
-    --shadow-1: 0 4px 24px rgba(35, 37, 29, 0.05);
+    --r-full: 9999px;
+    --shadow-1: 0 4px 16px rgba(16, 17, 20, 0.06);
 
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
     --dur: 160ms;

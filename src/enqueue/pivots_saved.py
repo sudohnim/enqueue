@@ -73,8 +73,58 @@ def get(pivot_id: str) -> dict:
     if row is None:
         raise KeyError(pivot_id)
     out = dict(row)
-    out["spec"] = json.loads(out.pop("spec_json"))
+    raw = out.pop("spec_json")
+    try:
+        out["spec"] = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        # The spec is written by save()/json.dumps, so a row that does not parse
+        # is corruption, not a format we do not know. Fail loudly and readably
+        # rather than 500ing on a JSONDecodeError the client cannot place.
+        raise ValueError(f"saved grouping {pivot_id} has a corrupt spec") from exc
     return out
+
+
+def update_spec(pivot_id: str, spec: dict) -> dict:
+    """Replace the stored spec of a saved grouping, returning the updated row.
+
+    This is how the exclude/include actions (L.6b/L.6c) persist: they read the
+    stored spec, adjust `excluded_ids` / `included_ids`, and write it back so
+    the next re-run sees the new membership. An unknown grouping is a KeyError;
+    the spec is trusted to be runnable (the caller read it from storage).
+    """
+    with db.transaction() as conn:
+        row = conn.execute("SELECT id FROM saved_pivots WHERE id = ?", (pivot_id,)).fetchone()
+        if row is None:
+            raise KeyError(pivot_id)
+        conn.execute(
+            "UPDATE saved_pivots SET spec_json = ? WHERE id = ?",
+            (json.dumps(spec), pivot_id),
+        )
+        updated = conn.execute(
+            "SELECT id, name, created_at FROM saved_pivots WHERE id = ?", (pivot_id,)
+        ).fetchone()
+        return dict(updated)
+
+
+def rename(pivot_id: str, name: str) -> dict:
+    """Rename a saved grouping, returning the updated row.
+
+    The name is trimmed; an empty or whitespace-only name is a ValueError and an
+    unknown grouping is a KeyError, mirroring `save`. Only the display name
+    moves - the spec is the arrangement and is never touched here.
+    """
+    name = name.strip()
+    if not name:
+        raise ValueError("a saved grouping needs a name")
+    with db.transaction() as conn:
+        row = conn.execute("SELECT id FROM saved_pivots WHERE id = ?", (pivot_id,)).fetchone()
+        if row is None:
+            raise KeyError(pivot_id)
+        conn.execute("UPDATE saved_pivots SET name = ? WHERE id = ?", (name[:120], pivot_id))
+        updated = conn.execute(
+            "SELECT id, name, created_at FROM saved_pivots WHERE id = ?", (pivot_id,)
+        ).fetchone()
+        return dict(updated)
 
 
 def delete(pivot_id: str) -> None:

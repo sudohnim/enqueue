@@ -16,8 +16,9 @@ response, so an inferred value is never dressed as the user's data.
 
 from __future__ import annotations
 
-import re
+import json
 from collections import defaultdict
+import re
 
 from pydantic import BaseModel
 
@@ -52,6 +53,8 @@ class _PlannedSpec(BaseModel):
     group_by: str
     bucketize: bool = False
     bucketize_instruction: str = ""
+    excluded_ids: list[str] = []
+    included_ids: list[str] = []
 
 
 def resolve_subset(subset: dict) -> tuple[list[str], bool]:
@@ -126,6 +129,33 @@ def run(spec: dict) -> dict:
     never sees it, so the model cannot merge it away).
     """
     ids, truncated = resolve_subset(spec["subset"])
+
+    # A saved grouping can exclude artifacts a person removed (L.6b): the ids
+    # are filtered out of the subset's match before anything else runs, so a
+    # removed card never comes back on re-run. The exclusion is part of the
+    # stored spec (`excluded_ids`), not a membership table - a pivot is a
+    # computed arrangement, and this is how a computed arrangement stays told.
+    excluded = set(spec.get("excluded_ids") or [])
+    if excluded:
+        ids = [aid for aid in ids if aid not in excluded]
+
+    # A saved grouping can force artifacts in (L.6c): ids a person added that
+    # the subset does not match. They join the working set before the step
+    # chain so they get the same extract/field/enrich treatment as the subset's
+    # own matches. Ids that no longer exist are dropped silently, so a stale
+    # inclusion can never break the run.
+    included = [aid for aid in (spec.get("included_ids") or []) if aid and aid not in ids]
+    if included:
+        conn = db.get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL"
+                " AND id IN (SELECT value FROM json_each(?))",
+                (json.dumps(sorted(included)),),
+            ).fetchall()
+        finally:
+            conn.close()
+        ids.extend(row["id"] for row in rows)
 
     steps = spec["steps"]
     if not steps:

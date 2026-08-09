@@ -152,7 +152,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
             (
                 str(uuid.uuid4()),
                 artifact_id,
-                int(facet.level),
+                facet.level,
                 facet.statement,
                 provider.model,
                 row["body_version"],
@@ -270,18 +270,26 @@ def apply_eligibility_gate() -> dict[str, int]:
 
     with db.transaction() as conn:
         conn.execute("DELETE FROM facet_skips")
-        rows = conn.execute("SELECT id, kind, status, body FROM artifacts").fetchall()
+        rows = conn.execute(
+            "SELECT a.id, a.kind, a.status, a.body,"
+            " (SELECT COALESCE(SUM(LENGTH(p.text) - LENGTH(REPLACE(p.text, ' ', ''))"
+            " + 1), 0) FROM page_text p WHERE p.artifact_id = a.id) AS page_words"
+            " FROM artifacts a"
+        ).fetchall()
 
         for row in rows:
             reason = None
+            words = _word_count(row["body"] or "") + row["page_words"]
 
             if row["status"] == "text_only":
                 reason = "text_only"
-            elif row["kind"] != "note":
-                # A capture has no extracted text yet, so there is nothing to abstract
-                # from. This relaxes once extraction exists.
+            elif words == 0:
+                # Nothing to abstract from: a PDF before text extraction ran, an
+                # image before the vision step described it (K.11). The gate is on
+                # text, not on kind, so the moment the body or page text lands the
+                # same row is eligible - a note, a PDF, an image alike.
                 reason = "kind"
-            elif _word_count(row["body"]) < config.MIN_WORDS_FOR_FACETS:
+            elif words < config.MIN_WORDS_FOR_FACETS:
                 reason = "too_short"
 
             if reason:

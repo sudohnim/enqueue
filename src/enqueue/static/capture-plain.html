@@ -2,22 +2,160 @@
 <meta charset="utf-8" />
 <title>Enqueue capture</title>
 <style>
+  :root {
+    /* The same token set the capture window carries (A.1), so the plaintext
+       fallback paints with the same cool surfaces and the same lavender accent. */
+    color-scheme: light;
+
+    --bg: #ffffff;
+    --surface: #f6f7f9;
+    --surface-doc: #fbfbfd;
+    --surface-2: #eef0f3;
+    --surface-3: #e4e6eb;
+
+    --text: #101114;
+    --text-dim: #4d5061;
+    --text-mute: #686b82;
+    --ink-faint: #6c6f84;
+
+    --accent: #5e6ad2;
+    --accent-quiet: #5e69d1;
+    --accent-strong: #5e6ad2;
+    --accent-ink: #101114;
+    --accent-text: #4a51a8;
+
+    --lavender: #5e6ad2;
+    --lavender-hover: #828fff;
+    --lavender-focus: #5e69d1;
+    --lavender-deep: #4a51a8;
+    --lavender-subtle: rgba(94, 106, 210, 0.12);
+    --on-lavender: #ffffff;
+
+    --line: #dedee5;
+    --line-soft: #eceef2;
+    --line-strong: #7f8296;
+
+    --link: #4a51a8;
+    --code-ink: #0a5270;
+
+    --danger: #b4332b;
+    --success: #149e61;
+    --warning: #c47d1f;
+    --info: #3b6bb5;
+
+    --tint-info: rgba(59, 107, 181, 0.14);
+    --tint-ok: rgba(20, 158, 97, 0.16);
+    --tint-warn: rgba(196, 125, 31, 0.16);
+    --tint-note: rgba(94, 106, 210, 0.12);
+
+    --badge-success-fill: rgba(20, 158, 97, 0.16);
+    --badge-success-ink: #026b3f;
+    --badge-neutral-fill: rgba(104, 107, 130, 0.12);
+    --badge-danger-fill: rgba(180, 51, 43, 0.14);
+    --badge-danger-ink: #7a241c;
+
+    --green: #30804b;
+    --blue: #376899;
+    --peach: #ad5a31;
+    --pink: #8f4273;
+    --teal: #755c12;
+
+    --kind-note: var(--green);
+    --kind-link: var(--blue);
+    --kind-pdf: var(--peach);
+    --kind-image: var(--pink);
+    --kind-file: var(--teal);
+    --kind-chat: #7f6ad4;
+
+    --focus: #101114;
+    --scrim: rgba(16, 17, 20, 0.32);
+
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+    --sp-6: 32px;
+    --sp-7: 48px;
+    --sp-md: 16px;
+    --sp-lg: 24px;
+    --sp-section: 96px;
+
+    --r-xs: 4px;
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+    --r-full: 9999px;
+    --r-pill: 9999px;
+
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    --z-base: 1;
+    --z-raised: 2;
+    --z-pill: 40;
+    --z-menu: 50;
+    --z-drawer: 30;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-fast: 140ms;
+    --dur: 160ms;
+    --dur-slow: 200ms;
+
+    --shadow-micro: 0 1px 3px rgba(16, 17, 20, 0.04);
+    --shadow-card: 0 4px 16px rgba(16, 17, 20, 0.06);
+    --shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08);
+  }
+
+  /* Palette application: this fallback's CSS is layout-only, so this is where
+     the shared tokens actually paint it, mirroring the capture window's own
+     rules so the fallback reads as the same product. */
+  body {
+    background: var(--bg);
+    color: var(--text-dim);
+    font-family: var(--sans);
+    font-size: 14px;
+  }
+  #card {
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+  }
+  #card.hovering {
+    border-color: var(--accent-strong);
+  }
+  #field {
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    caret-color: var(--accent);
+    background: transparent;
+  }
+  #field::placeholder {
+    color: var(--ink-faint);
+  }
+  .label {
+    color: var(--text-mute);
+  }
+  #status.problem {
+    color: var(--danger);
   }
   * {
     box-sizing: border-box;
-}
+  }
   html,
   body {
     height: 100%;
     margin: 0;
     overflow: hidden;
-}
+  }
   #card {
     height: 100%;
     display: flex;
     flex-direction: column;
     transition: border-color 0.16s ease;
-}
+  }
   #bar {
     display: flex;
     align-items: center;
@@ -28,17 +166,17 @@
     flex: 0 0 30px;
     user-select: none;
     cursor: default;
-}
+  }
   .label {
     white-space: nowrap;
-}
+  }
   #field {
     flex: 1 1 auto;
     display: block;
     width: 100%;
     padding: 11px 12px 0;
     resize: none;
-}
+  }
   #foot {
     display: flex;
     align-items: center;
@@ -46,14 +184,14 @@
     gap: 12px;
     padding: 0 12px 9px;
     flex: 0 0 auto;
-}
+  }
   #status {
     overflow: hidden;
     text-overflow: ellipsis;
-}
+  }
   .busy {
     opacity: 0.55;
-}
+  }
 </style>
 
 <div id="card">
@@ -86,7 +224,8 @@
   // bare host.tld with no whitespace anywhere. The engine fills in https:// for the
   // last two, so being permissive here costs nothing and saves the person from
   // having to type a scheme they never type anywhere else.
-  const URLISH = /^(?:[a-z][a-z0-9+.-]*:\/\/\S+|www\.\S+|[\w-]+(?:\.[\w-]+)+(?:[/?#]\S*)?)$/i;
+  const URLISH =
+    /^(?:[a-z][a-z0-9+.-]*:\/\/\S+|www\.\S+|[\w-]+(?:\.[\w-]+)+(?:[/?#]\S*)?)$/i;
 
   function looksLikeLink(text) {
     const t = text.trim();
@@ -111,7 +250,10 @@
     const inside = at !== 0 && at !== words.length - 1;
     const note = inside
       ? text.trim()
-      : words.filter((_, i) => i !== at).join(" ").trim();
+      : words
+          .filter((_, i) => i !== at)
+          .join(" ")
+          .trim();
 
     return { url, note };
   }
@@ -266,7 +408,9 @@
   // most obviously absurd, so it is captured on arrival rather than pasted as a
   // filename the person then has to explain.
   field.addEventListener("paste", async (event) => {
-    const items = Array.from(event.clipboardData ? event.clipboardData.items : []);
+    const items = Array.from(
+      event.clipboardData ? event.clipboardData.items : [],
+    );
     const images = items
       .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
       .map((item) => item.getAsFile())
@@ -280,10 +424,16 @@
       const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
       await keepFiles(
         images.map((file, index) => {
-          const suffix = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "");
-          const name = images.length > 1 ? `pasted-${stamp}-${index + 1}` : `pasted-${stamp}`;
+          const suffix = (file.type.split("/")[1] || "png").replace(
+            /[^a-z0-9]/gi,
+            "",
+          );
+          const name =
+            images.length > 1
+              ? `pasted-${stamp}-${index + 1}`
+              : `pasted-${stamp}`;
           return new File([file], `${name}.${suffix}`, { type: file.type });
-        })
+        }),
       );
       say("");
       dismiss();
@@ -306,7 +456,7 @@
   window.addEventListener("dragenter", (event) => {
     depth += 1;
     pending = Array.from(event.dataTransfer.items || []).filter(
-      (item) => item.kind === "file"
+      (item) => item.kind === "file",
     ).length;
     card.classList.add("hovering");
     paint();

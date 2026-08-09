@@ -67,6 +67,7 @@ def compute(job: Job) -> None:
     bad job must not stop the worker.
     """
     from . import assistant, chats, db
+    from .providers.base import ProviderError
 
     try:
         skill_name = (
@@ -93,14 +94,20 @@ def compute(job: Job) -> None:
             log.exception("naming or topic derivation failed for chat %s", job.chat_id)
     except Exception as exc:  # noqa: BLE001 - one bad job must not stop the worker
         log.exception("answer failed for message %s: %s", job.message_id, exc)
+        # The cause is the actionable part (a rejected key, a dead endpoint), so it
+        # is stored beside the turn (CR.2) and the chat view renders it with a path
+        # to the fix. Only a ProviderError carries a sentence worth showing: it is
+        # already human - "the endpoint at ... rejected the API key..." - while a
+        # genuine bug must not leak its exception text into the interface.
+        cause = str(exc)[:300] if isinstance(exc, ProviderError) else None
         with db.transaction() as conn:
             # I8.1: guarded so this can only transition a still-pending turn. If the
             # answer already committed `done` and a best-effort name/topic write
             # raised after that, this must not clobber the finished answer.
             conn.execute(
-                "UPDATE chat_messages SET status = 'failed', text = ? WHERE id = ?"
-                " AND status = 'pending'",
-                (FAILED_TEXT, job.message_id),
+                "UPDATE chat_messages SET status = 'failed', text = ?, error = ?"
+                " WHERE id = ? AND status = 'pending'",
+                (FAILED_TEXT, cause, job.message_id),
             )
 
 
@@ -200,7 +207,8 @@ def sweep_orphaned_pending() -> int:
 
     with db.transaction() as conn:
         cur = conn.execute(
-            "UPDATE chat_messages SET status = 'failed', text = ? WHERE status = 'pending'",
-            (INTERRUPTED_TEXT,),
+            "UPDATE chat_messages SET status = 'failed', text = ?, error = ?"
+            " WHERE status = 'pending'",
+            (INTERRUPTED_TEXT, "The app restarted while this answer was running."),
         )
         return cur.rowcount

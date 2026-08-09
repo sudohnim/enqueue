@@ -85,3 +85,63 @@ def test_api_save_without_name_is_400(store):
     client = TestClient(api.app)
     resp = client.post("/pivots", json={"name": "  ", "spec": _SPEC})
     assert resp.status_code == 400
+
+
+def test_exclude_appends_to_the_stored_spec_and_undo_removes_it(store):
+    """L.6b: the exclude endpoint writes `excluded_ids` into the stored spec, and
+    undo takes the id back out. The artifact itself is never touched."""
+    from fastapi.testclient import TestClient
+
+    from enqueue import api
+
+    client = TestClient(api.app)
+    pivot_id = client.post("/pivots", json={"name": "By author", "spec": _SPEC}).json()["id"]
+
+    resp = client.post(f"/pivots/{pivot_id}/exclude", json={"artifact_id": "a"})
+    assert resp.status_code == 200
+    assert resp.json()["excluded_ids"] == ["a"]
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["a"]
+
+    # Excluding the same id again stays idempotent (no duplicate entries).
+    client.post(f"/pivots/{pivot_id}/exclude", json={"artifact_id": "a"})
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["a"]
+
+    undo = client.post(f"/pivots/{pivot_id}/exclude", json={"artifact_id": "a", "undo": True})
+    assert undo.status_code == 200
+    assert undo.json()["excluded_ids"] == []
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == []
+
+    # Excluding never deletes the grouping itself - it is still fetchable.
+    assert client.get("/pivots/" + pivot_id).status_code == 200
+
+
+def test_exclude_on_an_unknown_pivot_is_404(store):
+    from fastapi.testclient import TestClient
+
+    from enqueue import api
+
+    client = TestClient(api.app)
+    resp = client.post("/pivots/nope/exclude", json={"artifact_id": "a"})
+    assert resp.status_code == 404
+
+
+def test_include_appends_to_the_stored_spec_and_undo_removes_it(store):
+    """L.6c: the include endpoint writes `included_ids` into the stored spec, and
+    undo takes the id back out."""
+    from fastapi.testclient import TestClient
+
+    from enqueue import api
+
+    client = TestClient(api.app)
+    pivot_id = client.post("/pivots", json={"name": "By author", "spec": _SPEC}).json()["id"]
+
+    resp = client.post(f"/pivots/{pivot_id}/include", json={"artifact_id": "c"})
+    assert resp.status_code == 200
+    assert resp.json()["included_ids"] == ["c"]
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["included_ids"] == ["c"]
+
+    undo = client.post(f"/pivots/{pivot_id}/include", json={"artifact_id": "c", "undo": True})
+    assert undo.status_code == 200
+    assert undo.json()["included_ids"] == []
+
+    assert client.post("/pivots/nope/include", json={"artifact_id": "c"}).status_code == 404

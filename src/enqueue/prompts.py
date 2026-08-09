@@ -451,3 +451,16 @@ is invalid.
 Request:
 {request}\
 """
+
+
+# The instruction for the vision step at ingest (K.11): what an image's stored
+# description must contain so the image is findable by search and by ask. It is
+# retrieval text, not a caption - the subject, the scene, and any visible text,
+# in three to six factual sentences. The image is data, never instructions.
+IMAGE_DESCRIBE = """\
+Describe this image factually and concisely for a text search index.
+
+Say what the image shows and its subject; include any text visible in the image
+word for word; name people, objects, and setting only when you are confident.
+Three to six sentences. Do not guess beyond what is visible.\
+"""

@@ -191,7 +191,36 @@ class TestSweep:
         assert row["status"] == "failed"
         # A short human sentence a person can read, never the raw exception.
         assert row["text"] == "That answer could not be completed."
+        # A non-provider failure is a bug, not a cause: nothing is stored for it,
+        # so a stack trace can never reach the interface (CR.2).
+        assert row["error"] is None
         assert _citation_count(message_id) == 0
+
+    def test_a_provider_failure_stores_its_cause(self, store, quiet_queue, monkeypatch):
+        """CR.2: a ProviderError carries a sentence worth acting on, so the failed
+        turn stores it and the chat view can offer a path to the fix."""
+        from enqueue.providers.base import ProviderError
+
+        chat = chats.create()
+        message_id = _seed_pending(chat["chat"]["id"])
+        _stub_router(monkeypatch)
+        monkeypatch.setattr(
+            chats,
+            "passages",
+            lambda *a, **k: [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}],
+        )
+        provider = _ByNameProvider(
+            Answer=ProviderError("the endpoint at 127.0.0.1 rejected the API key")
+        )
+        monkeypatch.setattr(chats, "get_provider", lambda: provider)
+
+        chats_worker.compute(
+            chats_worker.Job(chat["chat"]["id"], message_id, "what outlasts what?", None)
+        )
+
+        row = _row(message_id)
+        assert row["status"] == "failed"
+        assert row["error"] == "the endpoint at 127.0.0.1 rejected the API key"
 
     def test_a_naming_failure_does_not_clobber_a_done_answer(self, store, quiet_queue, monkeypatch):
         """I8.1: the failure UPDATE is guarded by status='pending'.

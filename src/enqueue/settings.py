@@ -40,6 +40,9 @@ def settings_path():
 FIELDS: dict[str, tuple[str, Any, bool]] = {
     "llm_backend": ("ENQ_LLM_BACKEND", config.LLM_BACKEND, True),
     "llm_model": ("ENQ_LLM_MODEL", config.LLM_MODEL, True),
+    # The vision model used to describe images at ingest (K.11). Separate from
+    # the text model: most backends answer text and images with different models.
+    "vision_model": ("ENQ_VISION_MODEL", config.VISION_MODEL, True),
     "llm_url": ("ENQ_OLLAMA_URL", config.OLLAMA_URL, True),
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
     "user_agent": ("ENQ_USER_AGENT", None, True),

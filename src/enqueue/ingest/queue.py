@@ -96,6 +96,13 @@ def process(artifact_id: str) -> dict:
     # its own text by the time it gets here.
     pages = capture.extract_text(artifact_id)
 
+    # An image is bytes with no text until a vision model reads it (K.11). The
+    # description becomes the artifact body, so the rest of the pipeline - chunk,
+    # facet, entity, search - treats it like any other text. Best effort like
+    # facets: no vision model on the backend, and the image simply stays
+    # unsearchable; the capture itself already succeeded.
+    described = _describe_image_if_needed(artifact_id)
+
     with db.transaction() as conn:
         chunks = chunk_mod.chunk_artifact(conn, artifact_id)
 
@@ -126,11 +133,92 @@ def process(artifact_id: str) -> dict:
     return {
         "artifact_id": artifact_id,
         "pages": pages,
+        "described": described,
         "chunks": chunks,
         "indexed": indexed,
         "facets": facets_made,
         "entities": entities_made,
     }
+
+
+def _describe_image_if_needed(artifact_id: str) -> str:
+    """Give an image a searchable description (K.11). Best effort, never raises.
+
+    A captured image is bytes with no text: it cannot be chunked, faceted, or
+    searched, so it is invisible to everything except a filename match. This
+    reads it with the vision model and stores the description - plus any OCR
+    text, when tesseract is installed - as the artifact body. The image then
+    flows through the pipeline exactly like a note. A failure (no vision model
+    on the backend, a bad file) is logged and swallowed: the capture already
+    succeeded, and `enq index --images` re-runs this for every image later.
+    """
+    from .. import capture, db
+    from ..providers.base import get_vision_provider
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT kind, body, local_only FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None or row["kind"] != "image":
+        return ""
+    if (row["body"] or "").strip():
+        # Already described. A re-run of the pipeline (enq reprocess) must not
+        # pay a vision call to describe the same image twice.
+        return ""
+
+    found = capture.blob_path(artifact_id)
+    if found is None:
+        return ""
+    path, mime, _ = found
+    try:
+        text = get_vision_provider(local_only=bool(row["local_only"])).describe_image(
+            path.read_bytes(), mime
+        )
+    except Exception:  # noqa: BLE001 - derived text; never fails the capture
+        log.warning("image describe failed for %s", artifact_id)
+        return ""
+
+    ocr = _ocr_text(path)
+    body = text if not ocr else f"{text}\n\n{ocr}"
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE artifacts SET body = ?, status = 'ok' WHERE id = ?",
+            (body, artifact_id),
+        )
+    return body
+
+
+def _ocr_text(path) -> str:
+    """OCR text via tesseract when it is installed; empty string otherwise.
+
+    The vision description already asks for visible text word for word, so OCR
+    is a bonus for exact-word retrieval, never a requirement. Tesseract keys
+    file format detection off the file extension, so the blob is copied to a
+    temp file with the right one before it is asked.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not shutil.which("tesseract"):
+        return ""
+    suffix = path.suffix or ".png"
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+            tmp.write(path.read_bytes())
+            tmp.flush()
+            out = subprocess.run(
+                ["tesseract", tmp.name, "stdout"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return (out.stdout or "").strip()
 
 
 def _facet_artifact(artifact_id: str) -> int:
@@ -259,6 +347,33 @@ def submit_all() -> int:
     conn = db.get_conn()
     try:
         ids = [r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL")]
+    finally:
+        conn.close()
+
+    for artifact_id in ids:
+        submit(artifact_id)
+    return len(ids)
+
+
+def submit_images() -> int:
+    """Re-queue every image for the vision describe step (K.11).
+
+    The one-line catch-up for images captured before the vision step existed: a
+    `kind='image'` artifact with no body never had a description, and nothing
+    else will ever give it one. Re-running the pipeline describes it (or skips
+    it if a vision model still is not available) and then chunks, facets, and
+    indexes it like any other artifact.
+    """
+    from .. import db
+
+    conn = db.get_conn()
+    try:
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM artifacts WHERE kind = 'image' AND deleted_at IS NULL"
+            )
+        ]
     finally:
         conn.close()
 
