@@ -14,7 +14,9 @@ slot), with a snippet, fused chunk + facet scores, and the matched-facet marker.
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from .. import db
@@ -27,6 +29,38 @@ from ..index.store import get_store
 # fuzzy match wins the merge only when the hybrid's answer was itself weak.
 FUZZY_RATIO = 0.75
 FUZZY_BASE_SCORE = 0.6
+
+
+# R.8 recency weighting: a free-text hit's score is multiplied by
+# 1 + RECENCY_WEIGHT * exp(-age_days / RECENCY_TAU_DAYS), so a note touched
+# today scores 1.5x and one from 180 days ago is unchanged. The decay is a
+# small nudge, not a filter: relevance still dominates (a weak fresh hit
+# cannot outrank a strong old one), and the golden-set eval is unaffected
+# because a freshly seeded corpus is uniformly "now".
+RECENCY_WEIGHT = 0.5
+RECENCY_TAU_DAYS = 30
+
+
+def _age_days(updated_at: str) -> float:
+    """Days since `updated_at`, clamped at zero.
+
+    The column is written two ways across the codebase - sqlite's
+    `datetime('now')` (UTC, "YYYY-MM-DD HH:MM:SS") and ISO with a timezone
+    offset - so both parse here; an unparseable value counts as age zero
+    (never penalize a row the clock cannot date).
+    """
+    try:
+        dt = datetime.fromisoformat(updated_at.replace(" ", "T"))
+    except ValueError:
+        return 0.0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 86400)
+
+
+def _recency_score(score: float, age_days: float) -> float:
+    """The R.8 time-decay multiplier applied to a free-text hit score."""
+    return score * (1.0 + RECENCY_WEIGHT * math.exp(-age_days / RECENCY_TAU_DAYS))
 
 
 def _fuzzy_ratio(query: str, candidate: str) -> float:
@@ -372,6 +406,17 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
                 "entity": (hit.get("entity"), hit.get("fact")),
                 "why": "entity",
             }
+
+    # R.8 recency: one batched fetch of the ranked artifacts' touch times,
+    # then multiply before the final sort so a fresh artifact can overtake a
+    # stale one with the same base score. The decay keeps relevance dominant.
+    rows = conn.execute(
+        "SELECT id, updated_at FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(sorted(best)),),
+    ).fetchall()
+    age = {row["id"]: _age_days(row["updated_at"]) for row in rows}
+    for aid, info in best.items():
+        info["score"] = _recency_score(info["score"], age.get(aid, 0.0))
 
     ranked = sorted(best.items(), key=lambda kv: kv[1]["score"], reverse=True)[:limit]
 

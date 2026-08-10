@@ -260,3 +260,55 @@ class TestTrigramRecall:
         assert sqlite_store._search_trigram(sqlite_store.CHUNKS, "to", 20) == []
         hits = search_results("to", limit=20)
         assert [h["artifact_id"] for h in hits] == ["a1"]
+
+
+class TestRecency:
+    def test_newer_note_breaks_identical_body_tie(self, sqlite_store, monkeypatch):
+        # Two notes with identical bodies: the dense and keyword branches split
+        # the pair one-to-one, so the fused base scores are exactly equal - a
+        # genuine tie. The R.8 decay must break it toward the note touched
+        # recently, and must not reorder when RECENCY_WEIGHT is zeroed (the
+        # order ties out to the base score).
+        #
+        # Construction notes. With fully identical notes the branches rank
+        # them 1-2 in lockstep, and the k=1 RRF gap (1.0 vs 0.667, a 1.5x
+        # ratio) exactly equals the maximum recency boost (1.5x at age 0), so
+        # the older note can never be overtaken. The titles here are
+        # distinct-but-neutral so the branches disagree: the dense branch
+        # (embedding similarity) ranks old first, while the keyword branch
+        # ranks new first - its FTS row was written first, because the
+        # rebuild's select_all follows idx_artifacts_live, whose (deleted_at,
+        # created_at DESC) order puts the freshly-created note ahead. Both
+        # notes then fuse to 0.8333 each and recency is the only tie-breaker
+        # that can separate them.
+        #
+        # The spec's "updated_at 180 days ago" is set on both timestamps:
+        # created_at participates in the index order above, and a note that
+        # old naturally has both.
+        from enqueue.retrieve import candidates
+
+        conn = db.get_conn()
+        try:
+            _note(conn, "old", "Field notes", _BODY)
+            _chunk(conn, "oldc", "old", 0, _BODY)
+            conn.execute(
+                "UPDATE artifacts SET created_at = datetime('now', '-180 days'),"
+                " updated_at = datetime('now', '-180 days') WHERE id = 'old'"
+            )
+            _note(conn, "new", "City farming", _BODY)
+            _chunk(conn, "newc", "new", 0, _BODY)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("rooftops", limit=20)
+        ids = [h["artifact_id"] for h in hits]
+        assert ids[0] == "new", f"newer note should rank first, got {ids}"
+        assert "old" in ids
+
+        monkeypatch.setattr(candidates, "RECENCY_WEIGHT", 0.0)
+        hits = search_results("rooftops", limit=20)
+        ids = [h["artifact_id"] for h in hits]
+        assert ids[0] == "old", f"weight 0 ties out to base score, got {ids}"
+        assert ids[1] == "new"

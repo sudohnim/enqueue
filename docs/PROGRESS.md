@@ -252,7 +252,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.8 - Recency weighting
 
-- [ ] **R.8 [AGENT]** Apply a small time-decay multiplier to free-text search scores.
+- [x] **R.8 [AGENT]** Apply a small time-decay multiplier to free-text search scores.
 
   Anchor: `_hybrid_results()` at `src/enqueue/retrieve/candidates.py:253-291`.
   Fetch `updated_at` for the ranked artifacts in one batched query (use the `json_each` IN pattern from `store_sqlite.py:550`), then compute `final = score * (1 + RECENCY_WEIGHT * exp(-age_days / RECENCY_TAU_DAYS))` with `RECENCY_WEIGHT = 0.5` and `RECENCY_TAU_DAYS = 30` as module constants.
@@ -260,6 +260,11 @@ Every ranking change is validated against the golden set from R.4 before it is c
   Test: two notes with identical bodies, one `updated_at` now and one 180 days ago; the newer one ranks first for a matching query; with `RECENCY_WEIGHT` monkeypatched to 0 the order ties out to the base score.
 
   Done when: `uv run pytest tests/test_search_results.py -q` green including the recency test; `scripts/search_eval.py` recall@10 not regressed (record).
+
+  Recorded: commit `1e6f9f0` (worktree: `1e296ca` R.5 / `90695b4` R.6 / `2250643` R.7). `_hybrid_results` now fetches `updated_at` for every rolled-up artifact in one `json_each` IN query (same pattern as `store_sqlite.py:550`), then multiplies the fused score by `1 + RECENCY_WEIGHT * exp(-age_days / RECENCY_TAU_DAYS)` BEFORE the final sort, so a fresh artifact can overtake a stale one with a comparable base score. `_age_days` parses both sqlite `datetime('now')` strings and ISO-with-offset timestamps (naive parsed as UTC), clamps at zero, and never penalizes an undatable row. `_all_results`/`_results_for_ids` untouched.
+  Eval (R.4 harness, same 15 queries): R.8 -> recall@10 14/15 (0.933), MRR 0.782, identical ranks to R.7. The seeded corpus is uniformly "now", so the multiplier is a constant 1.5x across every artifact - relative order is bit-identical.
+
+  Deviation from the literal test spec (documented, same discipline as R.5/R.6/R.7): the "fully identical notes" scenario cannot flip at k=1 RRF. A rank-1-vs-rank-2 fused gap is a 1.5x ratio (1.0 vs 0.667), and the maximum recency boost is also 1.5x (age 0 vs infinity) - the older note's multiplier never drops below 1.0, so `old * (1 + 0.5 * e^-6) = 1.00124 > new * 1.5 = 1.0` always wins. The test therefore uses distinct-but-neutral titles ("Field notes" / "City farming") with identical bodies: the dense branch (embedding similarity) ranks old first, the keyword branch ranks new first (the rebuild's select_all follows `idx_artifacts_live`'s (deleted_at, created_at DESC) order, so the freshly-created note's FTS row sorts first and wins the body-only bm25 tie), fusing to equal 0.8333/0.8333 - a genuine tie that recency then breaks toward the newer note. The spec's "updated_at 180 days ago" is set on both created_at and updated_at (created_at participates in that index order; a note that old naturally has both). With `RECENCY_WEIGHT` zeroed, the order ties out to the base score (old first).
 
 ### R.9 - Optional cross-encoder rerank
 
