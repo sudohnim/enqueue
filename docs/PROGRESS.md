@@ -155,7 +155,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
   Done when: `uv run pytest tests/test_annotation_search.py -q` is fully green, including the submit-spy and supersede tests.
 
-- [ ] **R.2c [AGENT]** Backfill existing annotations.
+- [x] **R.2c [AGENT]** Backfill existing annotations.
 
   Anchor: `submit_all()` in `src/enqueue/ingest/queue.py` (near line 358) already re-queues every artifact.
   No new code: the existing `POST /reprocess` / `enq index` path rebuilds chunks, which now include annotations.
@@ -165,7 +165,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.3 - Images without a body stay findable
 
-- [ ] **R.3a [AGENT]** Surface describe failures instead of swallowing them silently.
+- [x] **R.3a [AGENT]** Surface describe failures instead of swallowing them silently.
 
   Anchor: `_describe_image_if_needed()` at `src/enqueue/ingest/queue.py:176-182`.
   In the `except` branch, after the existing `log.warning`, also mark the artifact: `UPDATE artifacts SET status = 'failed' WHERE id = ?` inside a `db.transaction()`.
@@ -175,7 +175,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
   Done when: `uv run pytest tests/test_annotation_search.py tests/test_doctor.py -q` is green and the new doctor field appears in `uv run enq doctor` output against a dev database.
 
-- [ ] **R.3b [AGENT]** Index title and filename for bodyless captures.
+- [x] **R.3b [AGENT]** Index title and filename for bodyless captures.
 
   Anchor: `chunk_artifact()` in `src/enqueue/ingest/chunk.py`, after the body fallbacks and the R.2a annotation append.
   If `body` is still empty and the artifact kind is not `note`, set the chunk source to `row["title"]` plus `filename` when present (select `filename` in the initial query at chunk.py:148-150).
@@ -186,7 +186,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.4 - Golden-set search eval harness
 
-- [ ] **R.4 [AGENT]** Add a deterministic recall harness for `/search`, then record the baseline.
+- [x] **R.4 [AGENT]** Add a deterministic recall harness for `/search`, then record the baseline.
 
   Create `scripts/search_eval.py`: loads `evals/search/queries.json` (new file, create it), runs each query through `retrieve.candidates.search_results`, and prints recall@10 and MRR, exiting non-zero if the file is missing.
   Seed `evals/search/queries.json` with 12-16 cases as `{"query": ..., "expect_id_substring": ...}` pairs covering: the evals/corpus notes (reuse known content from `evals/queries.yaml`), plus three needle cases for the Chopper class: an exact annotation string, a one-edit typo (`tony tony copper`), and a conceptual query against a fake-vision-described image.
