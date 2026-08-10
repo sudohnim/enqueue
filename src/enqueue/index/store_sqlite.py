@@ -72,6 +72,11 @@ _DDL = {
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5("
         " chunk_id UNINDEXED, title, text)",
     ),
+    "fts_chunks_tri": (
+        "DROP TABLE IF EXISTS fts_chunks_tri",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks_tri USING fts5("
+        " chunk_id UNINDEXED, text, tokenize='trigram')",
+    ),
     "fts_facets": (
         "DROP TABLE IF EXISTS fts_facets",
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts_facets USING fts5(" " facet_id UNINDEXED, text)",
@@ -89,7 +94,7 @@ _DDL = {
 
 # Which index tables make up each collection.
 _COLLECTION_TABLES = {
-    "chunks": ("vec_chunks", "fts_chunks"),
+    "chunks": ("vec_chunks", "fts_chunks", "fts_chunks_tri"),
     "facets": ("vec_facets", "fts_facets"),
     "entities": ("vec_entities", "fts_entities"),
 }
@@ -105,8 +110,10 @@ _SQL = {
         ),
         "clear_vec": "DELETE FROM vec_chunks",
         "clear_fts": "DELETE FROM fts_chunks",
+        "clear_fts_tri": "DELETE FROM fts_chunks_tri",
         "insert_vec": "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)",
         "insert_fts": "INSERT INTO fts_chunks (chunk_id, title, text) VALUES (?, ?, ?)",
+        "insert_fts_tri": "INSERT INTO fts_chunks_tri (chunk_id, text) VALUES (?, ?)",
         "dense": (
             "SELECT chunk_id AS id, distance FROM vec_chunks"
             " WHERE embedding MATCH ? ORDER BY distance LIMIT ?"
@@ -114,6 +121,10 @@ _SQL = {
         "keyword": (
             "SELECT chunk_id AS id, bm25(fts_chunks, 1.0, 10.0, 1.0) AS raw FROM fts_chunks"
             " WHERE fts_chunks MATCH ? ORDER BY bm25(fts_chunks, 1.0, 10.0, 1.0) LIMIT ?"
+        ),
+        "keyword_tri": (
+            "SELECT chunk_id AS id, bm25(fts_chunks_tri) AS raw FROM fts_chunks_tri"
+            " WHERE fts_chunks_tri MATCH ? ORDER BY bm25(fts_chunks_tri) LIMIT ?"
         ),
     },
     "facets": {
@@ -153,6 +164,7 @@ _COUNT_SQL = {
     "vec_facets": "SELECT COUNT(*) FROM vec_facets",
     "vec_entities": "SELECT COUNT(*) FROM vec_entities",
     "fts_chunks": "SELECT COUNT(*) FROM fts_chunks",
+    "fts_chunks_tri": "SELECT COUNT(*) FROM fts_chunks_tri",
     "fts_facets": "SELECT COUNT(*) FROM fts_facets",
     "fts_entities": "SELECT COUNT(*) FROM fts_entities",
 }
@@ -222,6 +234,20 @@ def _fts_query(text: str) -> str:
     """
     tokens = text.split()
     return " ".join('"' + token.replace('"', '""') + '"*' for token in tokens)
+
+
+def _trigram_query(text: str) -> str:
+    """Make arbitrary user text a trigram FTS5 recall query.
+
+    Trigram matching covers substrings unicode61 cannot see ("hopper"
+    inside "chopper"). Tokens shorter than three characters cannot form a
+    trigram, so they are dropped; an empty result means "no trigram branch"
+    and the caller skips it. Tokens are quoted like `_fts_query` so operators
+    stay literal, and OR-joined so any token matching is a recall hit (RRF
+    does the ranking).
+    """
+    tokens = [t for t in text.split() if len(t) >= 3]
+    return " OR ".join('"' + token.replace('"', '""') + '"' for token in tokens)
 
 
 class SqliteVecStore(VectorStore):
@@ -332,6 +358,8 @@ class SqliteVecStore(VectorStore):
         with self._connect() as conn:
             conn.execute(sql["clear_vec"])
             conn.execute(sql["clear_fts"])
+            if name == self.CHUNKS:
+                conn.execute(sql["clear_fts_tri"])
 
         total = 0
         for start in range(0, len(entries), batch_size):
@@ -346,6 +374,10 @@ class SqliteVecStore(VectorStore):
                     ],
                 )
                 conn.executemany(sql["insert_fts"], [(entry[0], *entry[2]) for entry in batch])
+                if name == self.CHUNKS:
+                    conn.executemany(
+                        sql["insert_fts_tri"], [(entry[0], entry[2][1]) for entry in batch]
+                    )
             total += len(batch)
             if self._on_progress and (total % 500 == 0 or total == len(entries)):
                 self._on_progress(total, len(entries))
@@ -385,6 +417,11 @@ class SqliteVecStore(VectorStore):
                 " WHERE chunk_id IN (SELECT id FROM chunks WHERE artifact_id = ?)",
                 (artifact_id,),
             )
+            conn.execute(
+                "DELETE FROM fts_chunks_tri"
+                " WHERE chunk_id IN (SELECT id FROM chunks WHERE artifact_id = ?)",
+                (artifact_id,),
+            )
             conn.executemany(
                 "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)",
                 [
@@ -395,6 +432,10 @@ class SqliteVecStore(VectorStore):
             conn.executemany(
                 "INSERT INTO fts_chunks (chunk_id, title, text) VALUES (?, ?, ?)",
                 [(entry[0], *entry[2]) for entry in entries],
+            )
+            conn.executemany(
+                "INSERT INTO fts_chunks_tri (chunk_id, text) VALUES (?, ?)",
+                [(entry[0], entry[2][1]) for entry in entries],
             )
         return len(entries)
 
@@ -499,6 +540,11 @@ class SqliteVecStore(VectorStore):
                     " WHERE chunk_id IN (SELECT id FROM chunks WHERE artifact_id = ?)",
                     (artifact_id,),
                 )
+                conn.execute(
+                    "DELETE FROM fts_chunks_tri"
+                    " WHERE chunk_id IN (SELECT id FROM chunks WHERE artifact_id = ?)",
+                    (artifact_id,),
+                )
             elif name == self.FACETS:
                 conn.execute(
                     "DELETE FROM vec_facets"
@@ -566,6 +612,31 @@ class SqliteVecStore(VectorStore):
         finally:
             conn.close()
 
+    def _search_trigram(self, name: str, text: str, limit: int) -> list[dict]:
+        """Trigram FTS5 recall branch: substrings unicode61 cannot see.
+
+        `_trigram_query` drops tokens shorter than three characters (they
+        cannot form a trigram), so a two-character query produces no query
+        here and the caller skips the branch entirely.
+
+        A database upgraded to this version without a rebuild has no
+        `fts_chunks_tri` table yet (it is created by `ensure`, which only
+        the write path runs); treat that as "no trigram hits" rather than
+        failing the whole search.
+        """
+        query = _trigram_query(text)
+        if not query:
+            return []
+        conn = self._connect()
+        try:
+            rows = conn.execute(self._sql(name)["keyword_tri"], (query, limit)).fetchall()
+            ranked = [(row["id"], -row["raw"]) for row in rows]
+            return self._fetch_hits(conn, name, ranked)
+        except OperationalError:
+            return []
+        finally:
+            conn.close()
+
     def search(self, name: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:
         """Hybrid retrieval: dense and keyword, fused with reciprocal rank fusion.
 
@@ -580,9 +651,10 @@ class SqliteVecStore(VectorStore):
         keyword_ids = [hit[id_col] for hit in keyword]
         keyword_score = {hit[id_col]: hit["score"] for hit in keyword}
 
+        lists = [dense_ids, keyword_ids]
+
         fused = rrf_scored(
-            dense_ids,
-            keyword_ids,
+            *lists,
             # k=1 reproduces the Qdrant backend's fused score scale: their RRF
             # is 1/(pos + 2) over 0-based positions, which is 1/(rank + 1)
             # over 1-based ranks. The lens score threshold was calibrated on
@@ -621,6 +693,29 @@ class SqliteVecStore(VectorStore):
                             entry for entry in run if entry[0] != winner
                         ]
             ordered.extend(run)
+
+        # The trigram recall net: substrings unicode61 cannot see ("hopper"
+        # inside "chopper"). Fusing it into the RRF above would hand extra
+        # rank credit to body matches the title-only note lacks - the R.5
+        # title-weight test regresses (a2 beats a1) - and appending with the
+        # branch's bm25 score lets substring noise ("grow" inside "growing"
+        # matches half the corpus) outrank real hits where a caller re-sorts
+        # by score (the /search rollup does). So the trigram branch only
+        # ADDS hits the hybrid missed, appended after it with a zero score
+        # that sorts below every fused hit: it can never reorder the
+        # dense+keyword verdict, and only surfaces when the hybrid returned
+        # fewer than the limit. Only chunks have a trigram table, and only
+        # when the query has a token of at least three characters.
+        if name == self.CHUNKS:
+            trigram = self._search_trigram(name, text, limit=prefetch)
+            if trigram:
+                by_id.update({hit[id_col]: hit for hit in trigram})
+                known = {item_id for item_id, _ in ordered}
+                for hit in trigram:
+                    item_id = hit[id_col]
+                    if item_id not in known:
+                        ordered.append((item_id, 0.0))
+                        known.add(item_id)
         return [
             {**by_id[item_id], "score": round(score, 6)}
             for item_id, score in ordered
@@ -685,7 +780,7 @@ class SqliteVecStore(VectorStore):
         return out
 
     def counts(self) -> dict:
-        """Row counts for all four index tables.
+        """Row counts for all index tables.
 
         Keyed by collection for the interface consumers (`chunks`, `facets`)
         with the keyword tables alongside; a table that does not exist counts
@@ -705,6 +800,7 @@ class SqliteVecStore(VectorStore):
                 "facets": _n("vec_facets"),
                 "entities": _n("vec_entities"),
                 "fts_chunks": _n("fts_chunks"),
+                "fts_chunks_tri": _n("fts_chunks_tri"),
                 "fts_facets": _n("fts_facets"),
                 "fts_entities": _n("fts_entities"),
             }

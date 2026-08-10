@@ -211,7 +211,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.6 - Substring matching via a trigram FTS table
 
-- [ ] **R.6 [AGENT]** Add a trigram branch and fuse it.
+- [x] **R.6 [AGENT]** Add a trigram branch and fuse it.
 
   Guard first: `uv run python -c "import sqlite3; print(sqlite3.sqlite_version)"` must be >= 3.34; if older, stop and report before touching code.
   Anchors: `_DDL` and `_COLLECTION_TABLES` at `store_sqlite.py:57-92`, `search()` at 511-539.
@@ -222,6 +222,13 @@ Every ranking change is validated against the golden set from R.4 before it is c
   Tests: a note containing `tony tony chopper` is found by `tony chopp` (prefix of a word, unicode61 prefix handles it) and by `hopper` (infix, only trigram handles it); a two-char query still works and exercises only the dense + unicode61 branches.
 
   Done when: `uv run pytest tests/test_store_sqlite.py tests/test_search_results.py -q` green including the `hopper` infix test; `uv run python scripts/search_eval.py` recall@10 is >= the R.4 baseline (record both).
+
+  **Deviations from the literal spec** (both forced by the committed gates):
+  - Not fused into the RRF call. Pure three-list fusion regressed the R.5 title-weight test (a2's body trigrams outrank a1's title-only match) AND the eval: appended hits carried flipped-bm25 scores of 5-20, and the /search rollup re-sorts by score, so substring noise ("grow" matching half the corpus) displaced real hits (recall@10 fell 14/15 -> 12/15). The branch is a recall net: hits the hybrid missed are appended after it with score 0.0, so they sort below every fused hit and only surface when the hybrid returned fewer than the limit.
+  - The trigram table indexes `text` only (not title), per the spec's DDL; a bodyless capture whose title is the only text is covered by the R.3b title+filename chunk source.
+  - `_search_trigram` tolerates a missing table (upgraded DBs that have not rebuilt yet); the write path creates it via `ensure()`.
+
+  Eval (R.4 harness, same 15 queries): R.6 -> recall@10 14/15 (0.933), MRR 0.782, bit-identical ranks to R.5 (the append-only recall net cannot move a fused hit).
 
 ### R.7 - Typo tolerance over short fields
 

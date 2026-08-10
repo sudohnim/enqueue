@@ -99,6 +99,7 @@ class TestEnsureAndCounts:
             "facets",
             "entities",
             "fts_chunks",
+            "fts_chunks_tri",
             "fts_facets",
             "fts_entities",
         }
@@ -123,6 +124,7 @@ class TestEnsureAndCounts:
         counts = sqlite_store.counts()
         assert counts["chunks"] == 0
         assert counts["fts_chunks"] == 0
+        assert counts["fts_chunks_tri"] == 0
         sqlite_store.upsert_chunks()
         assert sqlite_store.counts()["chunks"] == 2
 

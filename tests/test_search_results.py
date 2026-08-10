@@ -16,6 +16,7 @@ from enqueue import config, db
 from enqueue.api import app
 from enqueue.index import bootstrap
 from enqueue.index.store import get_store
+from enqueue.index.store_sqlite import _trigram_query
 from enqueue.retrieve.candidates import search_results
 
 _BODY = "A city can feed itself from its rooftops, one tray of greens at a time."
@@ -205,3 +206,57 @@ class TestTitleWeight:
         ids = [h["artifact_id"] for h in hits]
         assert ids[0] == "a1", f"title match should rank first, got {ids}"
         assert "a2" in ids
+
+
+class TestTrigramRecall:
+    def test_prefix_query_finds_chunk(self, sqlite_store):
+        # "tony chopp" is a prefix of "chopper". unicode61 with the prefix
+        # star already covers this; the trigram branch must not disturb it.
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Field notes", "tony tony chopper appears once in the body.")
+            _chunk(conn, "c1", "a1", 0, "tony tony chopper appears once in the body.")
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("tony chopp", limit=20)
+        ids = [h["artifact_id"] for h in hits]
+        assert "a1" in ids
+
+    def test_infix_query_finds_chunk(self, sqlite_store):
+        # The trigram branch exists for substrings unicode61 cannot see:
+        # "hopper" sits inside "chopper", and no unicode61 prefix star can
+        # match the middle of a word. Only trigram tokens (hop/opp/ppe/per)
+        # see it, so this test fails without the branch.
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Field notes", "tony tony chopper appears once in the body.")
+            _chunk(conn, "c1", "a1", 0, "tony tony chopper appears once in the body.")
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("hopper", limit=20)
+        ids = [h["artifact_id"] for h in hits]
+        assert "a1" in ids
+
+    def test_two_char_query_skips_trigram_branch(self, sqlite_store):
+        # Tokens under three characters cannot form a trigram, so the query
+        # is empty and the branch is skipped entirely - not an error. The
+        # other branches still run (dense matches the chunk for "to").
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Field notes", "tony tony chopper appears once in the body.")
+            _chunk(conn, "c1", "a1", 0, "tony tony chopper appears once in the body.")
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        assert _trigram_query("to") == ""
+        assert sqlite_store._search_trigram(sqlite_store.CHUNKS, "to", 20) == []
+        hits = search_results("to", limit=20)
+        assert [h["artifact_id"] for h in hits] == ["a1"]

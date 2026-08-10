@@ -73,6 +73,13 @@ def upgrade() -> None:
         )
         """)
     op.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks_tri USING fts5(
+          chunk_id UNINDEXED,
+          text,
+          tokenize='trigram'
+        )
+        """)
+    op.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS fts_facets USING fts5(
           facet_id UNINDEXED,
           text
@@ -92,6 +99,7 @@ def downgrade() -> None:
     _load_vec(op.get_bind())
     op.execute("DROP TABLE IF EXISTS index_meta")
     op.execute("DROP TABLE IF EXISTS fts_facets")
+    op.execute("DROP TABLE IF EXISTS fts_chunks_tri")
     op.execute("DROP TABLE IF EXISTS fts_chunks")
     op.execute("DROP TABLE IF EXISTS vec_facets")
     op.execute("DROP TABLE IF EXISTS vec_chunks")
