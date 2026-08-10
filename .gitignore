@@ -242,5 +242,9 @@ qdrant-local/
 # Test corpus generated data (isolated eval DB + Qdrant index)
 evals/test-data/
 
+# Search eval fixture database and its blobs (built by scripts/seed_search_eval.py)
+evals/search/eval.db*
+evals/search/blobs/
+
 # pi harness
 .pi-subagents/*
