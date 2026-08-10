@@ -870,9 +870,18 @@ def doctor() -> dict:
     version_current = embed_version == config.EMBED_VERSION
     index_state = bootstrap.index_state()
     state_ready = index_state["state"] == "ready"
+    conn = db.get_conn()
+    try:
+        images_without_body = conn.execute(
+            "SELECT COUNT(*) AS n FROM artifacts"
+            " WHERE kind = 'image' AND deleted_at IS NULL AND (body IS NULL OR body = '')"
+        ).fetchone()["n"]
+    finally:
+        conn.close()
     return {
         "artifact_count": db.count("artifacts"),
         "chunk_count": chunk_count,
+        "images_without_body": images_without_body,
         "facet_count": db.count("facets"),
         "index_counts": index_counts,
         "embed_version": embed_version,

@@ -167,7 +167,7 @@ class TestDescribeAtIngest:
         assert result["described"] == ""
         assert calls == []
 
-    def test_no_vision_model_degrades_without_failing(self, store, quiet_queue, monkeypatch):
+    def test_no_vision_model_marks_the_image_failed(self, store, quiet_queue, monkeypatch):
         from enqueue.ingest import queue as ingest_queue
         from enqueue.providers.base import ProviderError
 
@@ -194,7 +194,10 @@ class TestDescribeAtIngest:
             ).fetchone()["status"]
         finally:
             conn.close()
-        assert status == "text_only"
+        # R.3a: a describe failure is no longer silent. The artifact is marked
+        # 'failed' so the doctor report and the wall can surface it, instead of
+        # staying 'text_only' as if nothing went wrong.
+        assert status == "failed"
 
     def test_ocr_text_is_appended_when_tesseract_is_installed(
         self, store, quiet_queue, monkeypatch

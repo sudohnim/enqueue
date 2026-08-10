@@ -240,3 +240,24 @@ class TestAnnotateRequeues:
             conn.close()
         assert rows, "the current annotation must produce at least one chunk"
         assert all("tony tony chopper" not in c["text"] for c in rows)
+
+
+class TestDescribeFailure:
+    def test_failed_describe_marks_artifact_failed(self, store, quiet_queue, monkeypatch):
+        """A describe failure is surfaced, not swallowed: status becomes 'failed'."""
+        from enqueue.ingest import queue as ingest_queue
+
+        aid = _image(monkeypatch)
+        _broken_vision(monkeypatch)
+        _quiet_derived(monkeypatch)
+
+        ingest_queue.process(aid)
+
+        conn = db.get_conn()
+        try:
+            status = conn.execute("SELECT status FROM artifacts WHERE id = ?", (aid,)).fetchone()[
+                "status"
+            ]
+        finally:
+            conn.close()
+        assert status == "failed"

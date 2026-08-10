@@ -98,3 +98,38 @@ def test_doctor_detects_a_stale_embedding_version(doctor_store, quiet_queue):
     # The index is still in sync row-for-row; it is just out of date.
     assert report["index_in_sync"] is True
     assert report["healthy"] is False
+
+
+def test_doctor_reports_images_without_body(doctor_store, quiet_queue, monkeypatch):
+    """R.3a: bodyless images are surfaced in the doctor report."""
+    import hashlib
+    import uuid
+
+    from enqueue.providers import base as providers_base
+    from enqueue.providers.base import ProviderError
+
+    # An image artifact whose vision describe failed has no body, and the
+    # doctor must count it so the failure is visible.
+    artifact_id = str(uuid.uuid4())
+    data = b"\x89PNG\r\n\x1a\n" + artifact_id.encode()
+    digest = hashlib.sha256(data).hexdigest()
+    blob = config.BLOB_DIR / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(data)
+    now = "2024-01-01T00:00:00+00:00"
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO artifacts (id, kind, title, body, content_hash, mime, filename,"
+            " created_at, updated_at, status) VALUES (?, 'image', 'A capture', NULL, ?,"
+            " 'image/png', 'capture.png', ?, ?, 'text_only')",
+            (artifact_id, digest, now, now),
+        )
+
+    def _broken(local_only=False):
+        raise ProviderError("no vision model")
+
+    monkeypatch.setattr(providers_base, "get_vision_provider", _broken)
+
+    with TestClient(app) as client:
+        report = _doctor(client)
+    assert report["images_without_body"] >= 1

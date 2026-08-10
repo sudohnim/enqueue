@@ -179,6 +179,13 @@ def _describe_image_if_needed(artifact_id: str) -> str:
         )
     except Exception:  # noqa: BLE001 - derived text; never fails the capture
         log.warning("image describe failed for %s", artifact_id)
+        # The failure used to be silent: the artifact stayed 'text_only' and
+        # nothing anywhere surfaced the images that were invisible to search.
+        # 'failed' marks it so the doctor report and the wall can say so.
+        with db.transaction() as conn:
+            conn.execute(
+                "UPDATE artifacts SET status = 'failed' WHERE id = ?", (artifact_id,)
+            )
         return ""
 
     ocr = _ocr_text(path)
