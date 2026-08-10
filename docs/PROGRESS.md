@@ -1,479 +1,456 @@
-# Enqueue Progress - Phase O (theme + wall headers + eye follow + density)
+# Enqueue Progress - Phase S (view persistence, copy cleanup, header freeze + fade, ribbon colorize, gradient alignment)
 
 This file is the agent's work queue. Do one task per turn, in order, and verify each with its "Verify" line before checking the box. Do not implement anything that is not listed below.
 
-All edits live in `~/enqueue/src/enqueue/static/museum.html` unless a task says otherwise. The whole UI is one inline CSS + inline JS file. Line numbers are approximate; re-anchor on the surrounding code before editing because earlier tasks in this phase shift lines.
+All edits live in `~/enqueue/src/enqueue/static/museum.html` unless a task says otherwise. Line numbers are approximate; re-anchor on surrounding code before editing because earlier tasks in this phase shift lines.
 
-Prior phases shipped: lavender token system, the eye-with-cursor-follow, 5-up wall grid (desktop default), collapsible pivot/wall section headers (`.wallgroup` + `.grouptoggle`), saved-view rename/move/remove/add, the `view` vocabulary pass, the eyeball PNG cursor-follow via `split_eye.py`. This phase is a small refinement pass from Minh's reports.
+Prior phases shipped: bold Kraken-purple theme, 5-up wall, eyeball PNG with iris-only cursor-follow (no blink), per-artifact add-to-view drawer, transparent eyeball background, ribbon delight (lavender hover on round buttons, keep disc glow), settings human touch, pivot card icon buttons, section-delete from saved views, vertical bar removal, settings containerization.
 
 Ground truth sampled before this phase (do not re-derive):
 
-- The wall grid CSS at `museum.html:~1376` is already `repeat(5, minmax(0, 1fr))` at desktop. The breakpoint ladder at `:~1647-1670` is: max-width 1440 -> 4-up, 1280 -> 3-up, 1024 -> 2-up, 768 -> 1-up. Minh sees 3-up, which means his window sits in the 1280 bucket. The fix in O.2 below pushes 5-up down to narrower widths.
-- The eye already sits to the left of the greeting phrase (`.greetline` is a centered flex row with the `.greet-emblem` first, then the `<h1 class="display greeting">`). The placement requirement in O.3 is already satisfied; O.3 only reworks the follow mechanism.
-- `~/enqueue/eyeball.png` is a 1024x1024 image replaced by Minh on 2026-08-09. The purple eye inside it is a roughly 70x69 pixel region, x in [511, 581], y in [367, 436], center about (546, 401). The iris centre pixel samples to `#60079f` (96, 7, 159). The sclera just outside the iris samples to about `#fcfdf6` (253, 254, 246).
-- The design reference at `~/Downloads/DESIGN-kraken.md` pins a bold purple scale: primary `#7132f5`, dark `#5741d8`, deep `#5b1ecf`, subtle `rgba(133, 91, 251, 0.16)`. The macOS app icon `~/enqueue/desktop/icons/icon.png` (the logo) samples to a deep violet around `#7040a0`. All three sources live in the same bold-violet family; O.4 adopts the Kraken scale because it is the only one with explicit hex values, and it falls between the eyeball-iris purple and the logo purple.
+- **View persistence bug**: `refreshIfStale()` at `museum.html:~5548-5564` runs on `window.focus` and `visibilitychange`. It handles three cases: `place === "wall"` (refreshes the wall), `scope.kind === "artifact"` (re-fetches the artifact), `scope.kind === "chat"` (re-fetches the chat). It does NOT handle the saved-view case. When a user opens a saved view via `runSavedGrouping(id)` at `:~8587`, that function calls `teardown()` + `setRoute("g/" + id)` + `renderPivot(...)` but NEVER calls `restorePill("inside")` and NEVER updates `scope`. So `place` stays `"wall"` (whatever it was before the view opened). When the app loses focus (user switches to another app) and regains it, `refreshIfStale` fires, sees `place === "wall"`, checks the artifact stamp, and if anything changed (or even if the stamp logic fires), calls `home({ keepScroll: true })` - which navigates back to the wall, abandoning the saved view. The route IS saved in the hash (`#g/<id>`) and `restoreRoute()` at `:~5590` handles it on a full page reload, but `refreshIfStale` short-circuits before the reload path. The fix: (1) call `restorePill("inside")` in `runSavedGrouping` so `place` becomes `"inside"`, and (2) add a pivot case to `refreshIfStale` that re-runs the current saved view if `pivotState` is active.
+- **"These groups come from the assistant's knowledge"**: the text is at `museum.html:~7421-7422` inside `pivotGroupsHtml()`, gated by `const inferred = d.groups.some((g) => g.grounded === false)` at `:~7416`. The `.groundnote` CSS is at `:~862`. Both the JS block that emits the div and the CSS rule are to be removed.
+- **"Add artifact to this view"**: the button is at `museum.html:~7576` inside `renderPivot()`: `'<div class="pivotactions"><button class="btn ghost" onclick="addArtifactToGrouping()">Add artifact to this view</button></div>'`, gated by `pivot_id` being truthy. The `addArtifactToGrouping()` function at `:~7803` becomes dead after removal. The `.pivotactions` CSS at `:~1038` also becomes dead.
+- **Gradient + traffic lights**: the `.topbar` at `museum.html:~307-315` is a fixed 32px strip at the top of the window with `background: var(--bg)` (white). The macOS traffic light buttons (close/minimize/fullscreen) live in this 32px zone. The `main` element at `:~561-565` has `padding: calc(32px + var(--sp-5)) var(--sp-5) 160px` - that is `32px + 24px = 56px` of top padding before any content. The `.homehead` gradient at `:~380-384` starts at the top of `.homehead`, which sits 56px below the window top. Between the 32px topbar and the start of `.homehead` there is 24px of white space (`--sp-5`). The user wants the gradient to start right below the 32px traffic-light strip, eliminating that 24px gap, so the gradient meets the traffic lights with a natural demarcation.
+- **Greeting + bird position**: the `.homehead` has `padding-top: var(--sp-6)` (32px) at `:~385`. The greeting + bird sit inside `.homehead` at the top. Moving the gradient up (S.4) also moves the greeting up because the gradient is the `.homehead` background. The user also wants the greeting + bird moved up "a bit" beyond what the gradient move alone does - this is a `padding-top` reduction on `.homehead`.
+- **Sticky header with fade**: the user wants everything above a line a few pixels below the tagbar to freeze when scrolling. The frozen zone includes: the greeting, the bird, the searchbar, the groupbar (Last touch / Type / Tags / Custom), and the tagbar. The wall cards below should scroll under the frozen header with a fade effect (cards fade in/out as they enter/leave the header boundary) rather than a hard line. This requires `position: sticky` on `.homehead` plus a CSS `mask-image` gradient on the wall body to create the fade.
+- **Ribbon button (pill) background + shadow**: the `.pill` at `museum.html:~1798-1815` has `background: var(--surface)` (white) and `box-shadow: var(--shadow-lifted)` (`0 8px 28px rgba(16,17,20,0.08)`). The user wants the pill to have a non-white background to denote it floats above the artifacts, plus a stronger shadow. The fix: change `background` to a slightly tinted surface (or `--surface-1`/`--surface-2`) and increase the shadow.
+- **Tags + artifacts outside gradient bounds**: the `main` element has `padding: ... var(--sp-5) 160px` - that is 24px horizontal padding. The `.homehead` gradient fills the `.homehead` element, which is inside `main` and inherits the 24px horizontal padding. But the `.groupbar` at `:~2573` is `display: inline-flex` and sits centered (because `.homehead` has `text-align: center` at `:~407`). The wall grid (`.wall`) at `:~1384` spans the full `main` width (1200px - 48px padding = 1152px). The `.homehead` gradient is as wide as `.homehead`, which is as wide as `main`'s content area. The user perceives the tags and artifacts as "slightly outside" the gradient - likely because the gradient has `border-radius: var(--r-lg)` (12px) at `:~387` which rounds the corners, while the wall cards have square corners that extend to the full width. The fix: either remove the `border-radius` on `.homehead` or add horizontal `padding-inline` to the wall body to match the gradient's visual bounds.
 
 ---
 
-## O.1 - make the "Last touch" wall headers match the other view headers, and uppercase all wall section labels
+## S.1 - persist the saved view when the app regains focus
 
-When the wall is grouped by Last touch (`wallGroup === "touched"`), the two section labels are bare `.shelf` caption divs - faint 12/500 text with no chevron, no count, no collapse. The Type and Tags modes render their sections as `.wallgroup` blocks with a `.grouptoggle` header (20/500 Title type, a 2px accent rule, a count, a chevron, and a click-to-fold behaviour). Minh wants the Last touch headers to read as the same control, and he wants all wall section labels in ALL CAPS (the example given: SAVED and EVERYTHING ELSE).
+- [x] **S.1a [AGENT]** Call `restorePill("inside")` in `runSavedGrouping` so `place` reflects the view.
 
-The decision behind the all-caps scope: only wall section headers go uppercase. Pivot-group headers (saved views run through `renderPivot`) are a different surface and stay as-is. The uppercase is applied through one CSS rule on the shared `.wallgroup .grouptoggle .shelf` selector so every wall section - Notes, Links, #tag, SAVED, EVERYTHING ELSE - reads in caps as one set.
+  Anchor: `runSavedGrouping(id, name)` at `museum.html:~8587-8608`.
 
-- [x] **O.1a [AGENT]** Uppercase every wall section header label via one CSS rule.
-
-  Anchor: `.wallgroup .grouptoggle .shelf` CSS at `museum.html:~773-782` (currently `flex: 1; margin: 0; font-size: inherit; ...`).
-
-  Add two declarations to that rule:
-
-  ```css
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  ```
-
-  The `0.04em` tracking stops the caps from going tight at Title size. Do not change pivot-group `.grouptoggle .shelf` selectors.
-
-  Verify: in Type mode the headers read NOTES, LINKS, PDFS, IMAGES, FILES, CONVERSATIONS; in Tags mode they read the tag names in caps (for example #RESEARCH, UNTAGGED); in Last touch they read SAVED and EVERYTHING ELSE once O.1b lands.
-
-- [x] **O.1b [AGENT]** Rebuild the Last touch wall body as two collapsible `.wallgroup` sections with uppercase labels and the same `.grouptoggle` header as Type/Tags.
-
-  Anchor: `wallBodyHtml()` at `museum.html:~4853-4871`. Today the `if (wallGroup === "type")` / `"tags"` branches call `wallSectionsHtml`. The fall-through branch (Last touch) writes:
-
-  ```
-  '<div class="shelf center">saved</div>' +
-  '<div class="wall wall--saved">' + wallKept.map(card).join("") + '</div>' +
-  '<div class="shelf center">Everything else</div>' +
-  '<div class="wall" id="wall">' + wallFirst.map(card).join("") + '</div><div id="wallEnd" class="aside"></div>';
-  ```
-
-  Replace that fall-through body with two `.wallgroup` sections built through a local helper. Each section reuses the SAME markup shape that `wallSectionsHtml` emits at `:~4927-4957`, so the look and the collapse plumbing are identical. Concretely, replace the fall-through `let body = ""; ... return body;` block with:
+  Today the function calls `teardown()` then `setRoute("g/" + id)` but never sets `place`. Add `restorePill("inside")` right after `teardown()`:
 
   ```js
-  const sections = [];
-  if (wallKept.length) sections.push(["SAVED", wallKept, true]);
-  sections.push(["EVERYTHING ELSE", wallFirst, false]);
-  const collapsed = wallCollapsedSet(wallGroup);
-  let body = "";
-  for (const [label, list, isSaved] of sections) {
-    const key = label;
-    const isCollapsed = collapsed.has(key);
-    body +=
-      '<section class="wallgroup' + (isCollapsed ? " collapsed" : "") +
-      '" data-key="' + esc(key) + '">' +
-      '<button class="grouptoggle" type="button" aria-expanded="' + String(!isCollapsed) +
-      '" title="' + esc(isCollapsed ? groupPreview(list) : "") + '">' +
-      '<span class="shelf center">' + esc(label) + '</span>' +
-      '<span class="gmeta">' + list.length + '</span>' +
-      '<span class="gchev" aria-hidden="true">' + svg("chev") + '</span>' +
-      '</button>' +
-      '<div class="wall' + (isSaved ? " wall--saved" : "") +
-      (isSaved ? "" : '" id="wall') + '">' +
-      list.map((a, i) => card(a, i)).join("") +
-      '</div>' +
-      (isSaved ? "" : '<div id="wallEnd" class="aside"></div>') +
-      '</section>';
-  }
-  return body;
+  async function runSavedGrouping(id, name) {
+    teardown();
+    restorePill("inside");
+    setRoute("g/" + id);
+    view.innerHTML = '<div class="state thinking">Building the view...</div>';
+    // ... rest unchanged
   ```
 
-  Notes the dumb agent must keep:
+  This sets `place = "inside"` so `refreshIfStale`'s `place === "wall"` branch does not fire and navigate away.
 
-  - The SAVED section keeps the `wall--saved` class and writes NO id.
-  - The EVERYTHING ELSE section keeps `id="wall"` and the trailing `<div id="wallEnd" class="aside"></div>` because the pager (`watchWallEnd` at `:~5666`, only attached when `wallGroup === "touched"`) writes into `#wallEnd` and appends to `#wall`.
-  - The labels are uppercase strings ("SAVED", "EVERYTHING ELSE") in the source. O.1a also uppercases via CSS, which is belt-and-braces; emit them uppercase in JS anyway so screen readers and the `title` tooltip already match.
-  - `groupPreview`, `wallCollapsedSet`, `svg`, `esc`, `card` are all already in scope at this point in the file (used by `wallSectionsHtml` two screens up).
+  Verify: open a saved view, switch to another app, switch back. The saved view stays on screen - `refreshIfStale` does not call `home()`.
 
-  Verify: with the wall in Last touch mode, the two headers look identical to a Type header - same 20/500 ink, same accent rule, same count chip, same chevron, same hover surface. Clicking SAVED folds just the kept shelf; clicking EVERYTHING ELSE folds the pager wall. The section state survives a mode switch and a reload (sessionStorage `enqueue.collapsedWall.touched`).
+- [x] **S.1b [AGENT]** Add a pivot re-run case to `refreshIfStale`.
 
-- [x] **O.1c [AGENT]** Wire the collapse handler into Last touch mode.
+  Anchor: `refreshIfStale()` at `museum.html:~5548-5564`.
 
-  Anchor: the mount line at `museum.html:~5617-5618`:
-
-  ```
-  if (wallGroup === "type" || wallGroup === "tags")
-    mountWallGroups(wallGroup);
-  ```
-
-  Change the condition to include `touched`:
+  Today:
 
   ```js
-  if (wallGroup === "type" || wallGroup === "tags" || wallGroup === "touched")
-    mountWallGroups(wallGroup);
+  async function refreshIfStale() {
+    if (document.hidden || !view) return;
+    if (place === "wall") {
+      // ... wall refresh
+      return;
+    }
+    if (scope.kind === "artifact" && scope.id) {
+      showArtifact(scope.id, false, window.scrollY);
+    } else if (scope.kind === "chat" && scope.id) {
+      showChat(scope.id);
+    }
+  }
   ```
 
-  `mountWallGroups` at `:~4988` already keyes its fold state on the mode string, so Last touch gets its own sessionStorage key (`enqueue.collapsedWall.touched`) and does not collide with Type or Tags.
+  Add a pivot case before the artifact/chat cases:
 
-  Verify: folding SAVED in Last touch, switching to Type and back to Last touch, keeps the SAVED fold. Reloading keeps it too.
+  ```js
+  async function refreshIfStale() {
+    if (document.hidden || !view) return;
+    if (place === "wall") {
+      const peek = await api("/artifacts?limit=1&order=ingested").catch(
+        () => null,
+      );
+      if (!peek) return;
+      const stamp = peek.total + ":" + ((peek.items[0] || {}).id || "");
+      if (stamp !== wallStamp) home({ keepScroll: true });
+      return;
+    }
+    if (pivotState && pivotState.pivot_id) {
+      // A saved view is open: re-run it with the current spec so a
+      // capture elsewhere is reflected, keeping scroll position.
+      const scrollY = window.scrollY;
+      let next;
+      try {
+        next = await api("/pivot/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spec: pivotState.spec }),
+        });
+      } catch (err) {
+        return;
+      }
+      if (pivotState && pivotState.pivot_id) {
+        renderPivot(next, pivotState.request, pivotState.spec, pivotState.pivot_id);
+        window.scrollTo(0, scrollY);
+      }
+      return;
+    }
+    if (scope.kind === "artifact" && scope.id) {
+      showArtifact(scope.id, false, window.scrollY);
+    } else if (scope.kind === "chat" && scope.id) {
+      showChat(scope.id);
+    }
+  }
+  ```
+
+  The pivot case re-runs the saved view's spec (which picks up any new artifacts that match the lens) and re-renders via `renderPivot`, preserving scroll position. The `pivotState` guard (`if (pivotState && pivotState.pivot_id)`) ensures this only fires when a saved view is actually open, not when the user is on the saved-views list (`showSavedGroupings` sets `place = "inside"` but `pivotState` stays `null` because `renderPivot` was never called).
+
+  Verify: open a saved view, switch to another app, capture a note there, switch back. The saved view re-runs and the new artifact appears in the appropriate group if it matches the lens. Scroll position is preserved. If no capture happened, the view is unchanged.
 
 ---
 
-## O.2 - push the 5-up wall density down to narrower windows and shrink the cards
+## S.2 - remove "These groups come from the assistant's knowledge" text
 
-The wall grid is already 5-up at desktop (`museum.html:~1376`), but Minh sees 3-up because his window is in the 1280px breakpoint bucket. The fix widens the 5-up range, tightens the card chrome so 5-up still reads, and steps the ladder down by one rung at every narrower width.
+- [x] **S.2 [AGENT]** Delete the groundnote block and its CSS.
 
-- [x] **O.2a [AGENT]** Shift the wall breakpoint ladder so 5-up persists through 1281px, and step every narrower rung down by one.
+  Anchor: `museum.html:~7416-7422` inside `pivotGroupsHtml()`:
 
-  Anchor: the four `@media (max-width: ...)` rules at `museum.html:~1647-1670`.
+  ```js
+  const inferred = d.groups.some((g) => g.grounded === false);
 
-  Replace the ladder so it reads, in source order:
-
-  ```css
-  @media (max-width: 1280px) {
-    .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .card { padding: var(--sp-md); }
-  }
-  @media (max-width: 1024px) {
-    .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  }
-  @media (max-width: 768px) {
-    .wall {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--sp-3);
-    }
-    .rail-h { gap: var(--sp-3); }
-    .homehead .display {
-      font-size: 30px;
-      line-height: 35px;
-      letter-spacing: -1px;
-    }
-  }
-  @media (max-width: 480px) {
-    .wall { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  let html = "";
+  if (inferred) {
+    html +=
+      '<div class="groundnote" role="note">These groups come from the ' +
+      "assistant's knowledge, not from text in your notes.</div>";
   }
   ```
 
-  Delete the old `@media (max-width: 1440px) { .wall { ... 4-up } }` block (the new 1280 rule supersedes it). Keep the 768 media block's `.rail-h`, `.homehead .display` rules (they were already there - do not drop them). Add the `480 -> 1-up` rung at the bottom so the ladder ends at 1, not 2.
+  Delete the `const inferred = ...` line, the `let html = "";` stays, and delete the entire `if (inferred) { ... }` block. The `html` variable is already initialized to `""` before the `if`, so removing the `if` block is safe.
 
-  The net effect: default 5-up (no change), 1281-... keeps 5, 1025-1280 -> 4-up, 769-1024 -> 3-up, 481-768 -> 2-up, <=480 -> 1-up. Minh's 1280-class window now reads 5-up.
+  Also delete the `.groundnote` CSS rule at `:~862` (search for `.groundnote {`).
 
-  Verify: resize the window across the ladder and confirm the column count steps 5/4/3/2/1 at 1280, 1024, 768, 480. No ladder jump skips a rung.
-
-- [x] **O.2b [AGENT]** Shrink the card chrome so 5-up at the narrower width stays readable.
-
-  Anchor: `.card` CSS at `museum.html:~1382-1420`.
-
-  Change the card default:
-
-  - `padding: var(--sp-md);` (16px) -> `padding: var(--sp-sm);` (12px).
-  - `min-height: 152px;` -> `min-height: 140px;`.
-  - `contain-intrinsic-size: auto 168px;` -> `contain-intrinsic-size: auto 150px;` (the intrinsic-size hint should track the real painted height within ~8px; the tighter padding drops the typical height by ~12-16px).
-
-  The 1280 media rule from O.2a restores `padding: var(--sp-md)` (16px) at 4-up and below, so the denser default does not make every narrower rung feel cramped. Leave `content-visibility: auto`, `border`, `border-radius: var(--r-lg)`, and the hover block alone.
-
-  Verify: at a 1300px-wide window the wall shows 5 cards per row, each card ~248px wide with 12px internal padding and a 140px floor; title and excerpt both still fit without clipping more than the existing line-clamp allows. At 1100px it drops to 4-up with the 16px padding restored.
-
-- [x] **O.2c [AGENT]** Re-measure the card title line-clamp at the new 5-up width.
-
-  Anchor: the `.card .title { -webkit-line-clamp: N }` rule (search `line-clamp` near the card-title CSS, around `:~1430+`).
-
-  At ~248px card width with 12px padding, a title at the Title role (18px) wraps faster than it did at the old 4-up width. Audit the current clamp value. If the clamp is 2, raise it to 3 so a title that previously fit on 2 lines still shows its full text (now wrapped to 3). If it is already 3, leave it - going to 4 would crowd the excerpt.
-
-  Verify: at 5-up, a long note title that previously fit on 2 lines now wraps to 3 and still shows all three lines before the ellipsis; nothing extra is clipped vs. the old 4-up behaviour.
+  Verify: `rtk rg -an "groundnote\|assistant.*knowledge\|grounded" src/enqueue/static/museum.html` returns zero hits outside comments. A saved view with inferred groups renders without the disclaimer.
 
 ---
 
-## O.3 - the eye: only the purple iris follows the cursor
+## S.3 - remove "Add artifact to this view" button from saved view
 
-Minh wants the eyeball mark to sit next to the greeting (already done) and wants ONLY the purple iris to follow the cursor, not a chunk of the bird. The current mechanism (`desktop/icons/split_eye.py`) is clunky because the punched iris ellipse is inset far inside the real iris and the sliding "layer" is the whole eyeball pasted on a canvas-coloured disc, so what visibly travels is a shading patch of the bird, not the eye.
+- [x] **S.3a [AGENT]** Delete the pivotactions button from `renderPivot`.
 
-The rebuild in this task produces two clean alpha assets:
+  Anchor: `museum.html:~7576` inside `renderPivot()`:
 
-- `eye-frame.png` - the full eyeball image with the purple iris region replaced by the local sclera white, so the rest of the bird and the eye outline/lashes/ground stay put and never move.
-- `eye-pupil.png` - ONLY the purple iris, extracted onto a small transparent canvas. This is the only thing that moves in the DOM.
-
-The DOM stacks the clipped pupil under the frame, positioned exactly over the iris socket. `mountEye` translates only the pupil, clipped to a circle the size of the eye opening so the purple never spills past the lid. The frame stays stock-still.
-
-- [x] **O.3a [AGENT]** Rewrite `desktop/icons/split_eye.py` to emit `eye-frame.png` and `eye-pupil.png` from the new `eyeball.png`.
-
-  Anchor: `~/enqueue/desktop/icons/split_eye.py` (rewrite in place). Output paths stay `src/enqueue/static/eye-frame.png` and a new `src/enqueue/static/eye-pupil.png` (delete the old `src/enqueue/static/eye-iris.png` after the rewrite and remove its reference in the DOM - O.3b does that).
-
-  Use these constants (measured from the new image):
-
-  ```py
-  SOURCE = STATIC / "eyeball.png"
-  FRAME  = STATIC / "eye-frame.png"
-  PUPIL  = STATIC / "eye-pupil.png"
-  # Purple eye bbox in source pixels.
-  IRIS_X0, IRIS_X1 = 511, 581
-  IRIS_Y0, IRIS_Y1 = 367, 436
-  # Sclera white sampled just outside the iris (do NOT include the purple fringe).
-  SCLERA = (253, 254, 246, 255)
-  # How far the pupil may travel in source pixels. The eye renders at
-  # ~104 CSS px from an 857 px source (scale ~0.12), so 32 px is ~4 CSS px
-  # of lean - a real iris shift without spilling the lid.
-  SLIDE = 32
+  ```js
+  (pivot_id
+    ? '<div class="pivotactions"><button class="btn ghost" onclick="addArtifactToGrouping()">Add artifact to this view</button></div>'
+    : "");
   ```
 
-  Implementation (all in PIL, RGBA):
+  Delete this entire ternary expression. The `let html = back() + '<div class="h1">' ...` continues directly into the `'<div class="meta">'` line.
 
-  1. `img = Image.open(SOURCE).convert("RGBA"); w, h = img.size`.
+  Verify: a saved view no longer shows the "Add artifact to this view" button. Adding artifacts to a view is still possible from the artifact drawer's Views section (Phase P.1).
 
-  2. Build a purple-mask: a boolean array over the resized-IRIS bounding box that marks pixels that are the iris purple. Use a colour gate `b > 110 and b > r + 30 and g < 130` (the iris centre is (96, 7, 159); this gate captures the purple body and rejects the white sclera, the green ground, and the dark lash ink). Feather the mask by 2px (a `GaussianBlur(radius=2)` on the L mask converted to "L" then thresholded at 128) so the frame hole has no hard seam.
+- [x] **S.3b [AGENT]** Delete the dead `addArtifactToGrouping` function and `.pivotactions` CSS.
 
-  3. `frame = img.copy()`. Where the mask is set, composite `frame` pixels with `SCLERA` using the feathered mask alpha, so the hole fills with sclera white and feather into the lash edge. Save as `eye-frame.png`.
+  Anchor: `addArtifactToGrouping()` at `museum.html:~7803` (the entire function body) and `.pivotactions` CSS at `:~1038`.
 
-  4. `pupil = Image.new("RGBA", (IRIS_X1 - IRIS_X0 + 2 * SLIDE, IRIS_Y1 - IRIS_Y0 + 2 * SLIDE), (0, 0, 0, 0))`. Paste the iris crop `img.crop((IRIS_X0, IRIS_Y0, IRIS_X1, IRIS_Y1))` at `(SLIDE, SLIDE)`, then apply the SAME feathered purple mask so ONLY the purple pixels land (the rest of the crop - any lash/white fringe - is transparent). Save as `eye-pupil.png`.
+  Delete both. Grep first to confirm no other call site references `addArtifactToGrouping`:
 
-  5. Print the two output sizes and the pupil paste offset so O.3b can use them: "wrote eye-frame.png (1024x1024), eye-pupil.png (WxH), pupil offset within frame (505, 335)" (use the real numbers).
-
-  Keep the module docstring, update it to describe the new two-asset contract (frame + pupil, iris-only follow). Delete `eye-iris.png` from disk after the new assets write.
-
-  Verify: `python3 desktop/icons/split_eye.py` writes both files; `eye-frame.png` is 1024x1024 with the iris region visually replaced by sclera white (open it and confirm the bird is intact minus the purple eye); `eye-pupil.png` is a small image whose only opaque pixels are the purple iris, on a transparent surround.
-
-- [x] **O.3b [AGENT]** Rebuild the eye DOM so only the pupil moves, clipped to the eye socket.
-
-  Anchor: the emblem markup at `museum.html:~5542-5547`:
-
-  ```
-  '<div class="greet-emblem eye" id="greetEye" aria-hidden="true">' +
-  '<div class="eye-blinkwrap">' +
-  '<img class="eye-iris" src="/static/eye-iris.png" alt="" draggable="false" />' +
-  '<img class="eye-frame" src="/static/eye-frame.png" alt="" draggable="false" />' +
-  '</div>' +
-  '</div>' +
+  ```bash
+  rtk rg -an "addArtifactToGrouping" src/enqueue/static/museum.html
   ```
 
-  Replace with:
+  If the only hits are the function definition and the (now-deleted) button onclick, delete the function. If other call sites exist, do NOT delete it.
 
-  ```
-  '<div class="greet-emblem eye" id="greetEye" aria-hidden="true">' +
-  '<div class="eye-blinkwrap">' +
-  '<div class="eye-socket">' +
-  '<img class="eye-pupil" src="/static/eye-pupil.png" alt="" draggable="false" />' +
-  '</div>' +
-  '<img class="eye-frame" src="/static/eye-frame.png" alt="" draggable="false" />' +
-  '</div>' +
-  '</div>' +
-  ```
+  Verify: `rtk rg -an "addArtifactToGrouping\|pivotactions" src/enqueue/static/museum.html` returns zero hits.
 
-  The DOM order matters: the `.eye-socket` (with the pupil) renders first, the `.eye-frame` renders after and on top, so the lashes and outline draw over the pupil at the lid edge.
+---
 
-  Notes the dumb agent must keep:
+## S.4 - move the gradient up to sit right below the macOS traffic-light buttons
 
-  - The pupil sits BEHIND the frame. The frame carries the eye outline, lashes, and ground; the pupil carries only the purple disk.
-  - The blink squash still wraps both layers through `.eye-blinkwrap` (no change to the blink).
+The 32px `.topbar` (fixed, white, `--bg`) houses the macOS traffic lights. Below it is 24px of `main` padding (`--sp-5`), then `.homehead` starts with its gradient. The user wants the gradient to start right below the 32px strip, eliminating the 24px white gap.
 
-- [x] **O.3c [AGENT]** Re-style the eye CSS for the new two-asset DOM with a clipped socket.
+- [x] **S.4a [AGENT]** Reduce `main`'s top padding so `.homehead` starts right below the 32px topbar.
 
-  Anchor: the emblem CSS at `museum.html:~483-532`.
-
-  Replace the `.greet-emblem .eye-iris { ... }` rule at `:~498-505` with this set of rules (keep `.greet-emblem`, `.greet-emblem .eye-blinkwrap`, `.eye-frame`, the blink `@keyframes`, and the hover/blink rules - only the iris layer rules change):
+  Anchor: `main` CSS at `museum.html:~561-565`:
 
   ```css
-  /* The socket is a circular clip box positioned exactly over the eye
-     opening, so the sliding pupil can never paint past the lid. Its
-     size and centre are set in source-image px as a fraction of the
-     frame's display width, so they scale with the emblem. The frame's
-     own art draws over the socket's edge, so the clip seam is hidden. */
-  .greet-emblem .eye-socket {
-    position: absolute;
-    /* Centre the socket on the iris centre (~546, 401 of a 1024 image). */
-    left: 53.3%;
-    top: 39.2%;
-    width: 9.5%;
-    height: 9.5%;
-    transform: translate(-50%, -50%);
-    overflow: hidden;
-    border-radius: 50%;
-    /* The socket sits behind the frame (DOM order), no z-index needed. */
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: calc(32px + var(--sp-5)) var(--sp-5) 160px;
   }
-  .greet-emblem .eye-pupil {
-    position: absolute;
-    /* Rest: centred on the socket. The pupil PNG is sized 2x SLIDE larger
-       than the iris crop, so the -50% centring puts the iris at the
-       socket centre while leaving travel headroom in every direction. */
+  ```
+
+  Change the top padding from `calc(32px + var(--sp-5))` (56px) to `32px`:
+
+  ```css
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px var(--sp-5) 160px;
+  }
+  ```
+
+  Now `main`'s content starts at 32px from the window top - right below the topbar. The `.homehead` gradient begins immediately below the traffic-light strip.
+
+  The horizontal padding (`var(--sp-5)` = 24px) and bottom padding (`160px` - clears the fixed pill) stay unchanged.
+
+  Verify: the home page's lavender gradient starts right below the 32px traffic-light strip. No white gap between the traffic lights and the gradient. The greeting and bird sit at the top of the gradient.
+
+- [x] **S.4b [AGENT]** Move the greeting and bird up by reducing `.homehead`'s top padding.
+
+  Anchor: `.homehead` CSS at `museum.html:~385`:
+
+  ```css
+  padding-top: var(--sp-6);
+  ```
+
+  Change from `var(--sp-6)` (32px) to `var(--sp-3)` (12px):
+
+  ```css
+  padding-top: var(--sp-3);
+  ```
+
+  The greeting + bird now sit 12px below the top of the gradient (which itself starts at 32px from the window top). The total distance from window top to greeting is `32px + 12px = 44px` - tight to the traffic lights without being cramped. The `padding-bottom` stays `var(--sp-6)` (32px) so the gradient still fades gracefully before the wall.
+
+  Verify: the greeting and bird sit visibly higher on the page, just below the traffic-light zone. The gradient wraps them tightly. No visual crowding - the 12px padding gives a breath between the traffic lights and the greeting.
+
+---
+
+## S.5 - sticky header with fade effect on scroll
+
+The user wants the home header (greeting + bird + searchbar + groupbar + tagbar) to freeze when scrolling, with the wall cards fading in/out as they scroll under the header boundary. No hard line.
+
+- [x] **S.5a [AGENT]** Make `.homehead` sticky so it stays visible on scroll.
+
+  Anchor: `.homehead` CSS at `museum.html:~373-388`.
+
+  Add `position: sticky` and `top: 0` to `.homehead`, plus a `z-index` so it sits above the wall cards:
+
+  ```css
+  .homehead {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    margin-bottom: var(--sp-7);
+    background: linear-gradient(
+      180deg,
+      var(--lavender-subtle) 0%,
+      transparent 100%
+    );
+    padding-top: var(--sp-3);
+    padding-bottom: var(--sp-6);
+    border-radius: var(--r-lg);
+  }
+  ```
+
+  Add a `--z-sticky` token to the `:root` block if one does not exist. Check the existing z-index tokens (search for `--z-` in the `:root` block). Set `--z-sticky` to a value above the wall cards but below the pill and modal. The pill is `--z-pill` (search for its value); set `--z-sticky: 5;` or whatever sits below `--z-pill`.
+
+  The sticky header's background gradient is semi-transparent (the lavender-subtle at the top is 16% opacity, fading to transparent). When the wall scrolls under it, the cards will show through the gradient's transparent bottom - which is the fade effect the user wants. The cards appear to fade as they pass under the gradient's bottom edge.
+
+  BUT: a semi-transparent sticky header means the wall cards show through the ENTIRE header, not just the bottom. The greeting and searchbar would have cards visible behind them. To prevent that, the header needs an opaque or near-opaque background on its main area, with the fade only at the bottom edge.
+
+  Revise: use a two-layer background - an opaque surface for the header content, plus a fade gradient at the bottom edge:
+
+  ```css
+  .homehead {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    margin-bottom: var(--sp-7);
+    /* The header sits on the canvas colour, with the lavender wash on top.
+       The bottom fade is a separate gradient that blends the header's
+       bottom edge into the page so scrolling cards fade under it. */
+    background:
+      linear-gradient(180deg, var(--bg) 0%, var(--bg) 85%, transparent 100%),
+      linear-gradient(180deg, var(--lavender-subtle) 0%, transparent 60%);
+    padding-top: var(--sp-3);
+    padding-bottom: var(--sp-6);
+  }
+  ```
+
+  The first gradient layer is opaque `--bg` (white) from the top to 85% down, then fades to transparent in the last 15% - this is the fade effect. The second gradient layer is the lavender wash, visible through the first layer's opaque portion (the first layer covers it from 0-85%, but the lavender is at the top where the first layer is fully opaque white, so the lavender is hidden). Wait - this does not work because the first layer paints OVER the lavender.
+
+  Correct approach: use the lavender wash as the base, then an opaque fade ONLY at the bottom:
+
+  ```css
+  .homehead {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    margin-bottom: var(--sp-7);
+    background: linear-gradient(
+      180deg,
+      var(--lavender-subtle) 0%,
+      var(--bg) 40%,
+      var(--bg) 85%,
+      transparent 100%
+    );
+    padding-top: var(--sp-3);
+    padding-bottom: var(--sp-6);
+  }
+  ```
+
+  This gradient: lavender-subtle at the very top, fading to `--bg` (white) by 40% down, staying white through 85%, then fading to transparent in the last 15%. The top portion has the lavender tint; the middle is opaque white (hides scrolling cards behind the searchbar/groupbar/tagbar); the bottom 15% fades to transparent (cards scroll through a soft fade, no hard line).
+
+  Remove the `border-radius: var(--r-lg)` from `.homehead` - a sticky element with rounded top corners would look odd when the scroll content meets it. The gradient should go edge-to-edge.
+
+  Verify: scroll down on the home page. The greeting, bird, searchbar, groupbar, and tagbar stay fixed at the top. The wall cards scroll under the header and fade out as they pass behind the header's bottom edge. No hard line - the fade is a smooth gradient. The lavender tint is visible at the very top of the header.
+
+- [x] **S.5b [AGENT]** Add a fade mask to the wall body so cards fade as they enter the sticky header zone.
+
+  Anchor: the `.wallbody` element (the container that holds the wall cards, rendered at `museum.html:~5742`). There is no `.wallbody` CSS rule today - add one.
+
+  Add a CSS rule for `.wallbody` that applies a `mask-image` gradient at the top, so cards fading behind the sticky header get a CSS mask fade:
+
+  ```css
+  .wallbody {
+    /* The sticky header fades its own bottom edge. This mask on the wall
+       body adds a complementary fade at the top of the card area, so
+       cards appear to dissolve as they scroll under the header rather
+       than clipping at a hard boundary. The mask is only at the very top
+       (8px) so it does not affect cards in the body of the scroll. */
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 8px);
+    mask-image: linear-gradient(180deg, transparent 0%, black 8px);
+  }
+  ```
+
+  This mask makes the top 8px of the wall body fully transparent, fading to fully visible by 8px down. As cards scroll up under the sticky header, their top edges fade out through this mask, complementing the header's own bottom fade. The effect is a soft dissolve, not a hard clip.
+
+  If the mask makes the first row of cards partially invisible when NOT scrolling (the top 8px of the first row is masked), adjust the mask start to `black 0px` and the fade to `transparent 0%, black 8px` - the first 8px is always faded, but since the sticky header covers that zone, the fade is only visible during scrolling.
+
+  Verify: scroll the wall. Cards fade smoothly as they pass under the sticky header. No hard line between the header and the scrolling content. When not scrolling, the first row of cards is fully visible (the mask zone is hidden behind the sticky header).
+
+- [x] **S.5c [AGENT]** Ensure the sticky header does not break the wall's infinite scroll.
+
+  Anchor: `watchWallEnd()` at `museum.html:~5755` (the IntersectionObserver that triggers the next page fetch when the sentinel comes into view).
+
+  The sticky header changes the scroll context but should NOT affect the IntersectionObserver - the observer watches `#wallEnd` which is at the bottom of the wall body, far below the sticky header. Confirm the observer still fires by scrolling to the bottom of a wall with many cards and verifying the next page loads.
+
+  If the sticky header's `z-index` or `position: sticky` interferes with the observer (it should not - sticky elements are in the normal flow, unlike fixed elements), add `pointer-events: none` to the `.homehead`'s bottom fade zone. But this should not be necessary.
+
+  Verify: with a library of 100+ artifacts, scrolling to the bottom of the wall loads the next page. The sticky header stays fixed throughout. No scroll jumps or observer failures.
+
+---
+
+## S.6 - ribbon pill: non-white background + stronger shadow
+
+- [x] **S.6 [AGENT]** Give the pill a tinted background and a bolder shadow.
+
+  Anchor: `.pill` CSS at `museum.html:~1798-1815`.
+
+  Today:
+
+  ```css
+  .pill {
+    position: fixed;
     left: 50%;
-    top: 50%;
-    width: 100%;
-    height: 100%;
-    transform: translate(-50%, -50%);
-    will-change: transform;
+    bottom: var(--sp-5);
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 56px;
+    padding: 0 var(--sp-4);
+    z-index: var(--z-pill);
+    background: var(--surface);
+    border: 0;
+    border-radius: var(--r-full);
+    box-shadow: var(--shadow-lifted);
+  ```
+
+  Change:
+
+  ```css
+  .pill {
+    position: fixed;
+    left: 50%;
+    bottom: var(--sp-5);
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 56px;
+    padding: 0 var(--sp-4);
+    z-index: var(--z-pill);
+    /* S.6: a tinted surface, not pure white, so the pill reads as a
+       distinct object floating above the artifacts. --surface-1 is the
+       first elevated rung - cool, not grey, slightly raised from the
+       canvas. */
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    /* A bolder shadow than the default --shadow-lifted so the pill pops
+       above the card grid. The extra spread and opacity make it read as
+       a physical object, not a CSS panel. */
+    box-shadow:
+      0 4px 12px rgba(16, 17, 20, 0.06),
+      0 12px 36px rgba(16, 17, 20, 0.12);
   }
   ```
 
-  Tune the socket's `left/top/width/height` if the pupil does not line up with the hole at rest (see O.3d Verify). The values above use the measured iris centre (546/1024 = 53.3%, 401/1024 = 39.2%) and a socket diameter of roughly 98 source px / 1024 = 9.5% - slightly larger than the 70px purple iris so the pupil has travel room while staying clipped.
+  Changes from the old CSS:
+  - `background: var(--surface)` -> `var(--surface-1)` (a slightly raised, cool-tinted surface, not pure white).
+  - `border: 0` -> `border: 1px solid var(--line)` (a hairline edge so the pill reads as a defined object against the artifacts, not just a shadow blur).
+  - `box-shadow: var(--shadow-lifted)` -> a two-layer shadow: a tight 4px/12px for the contact shadow, and a wider 12px/36px for the elevation. The wider shadow's 0.12 opacity is 50% stronger than the old 0.08, making the pill pop.
 
-  Keep `.eye-frame` unchanged (it stays `width: clamp(84px, 11vw, 104px); height: auto; display: block;`). The blink `.eye-blinkwrap` squash stays unchanged.
+  Do NOT change the hover lift (`:~1815-1817`) or the focus ring (`:~1821-1824`) - those stay. The hover lift's `translateY(-2px)` still works on top of the new shadow.
 
-  Verify: at rest, the composed eye looks identical to the source `eyeball.png` - the purple pupil fills the hole in the frame with no visible seam. Moving the cursor does not move the frame; only the purple disk slides.
-
-- [x] **O.3d [AGENT]** Rewrite `mountEye` so it moves only `.eye-pupil`, only within the socket.
-
-  Anchor: `mountEye()` at `museum.html:~5682-5772` and `tearDownEye()` at `:~5774`.
-
-  In `mountEye`:
-
-  - Change `const layer = el.querySelector(".eye-iris");` to `const layer = el.querySelector(".eye-pupil");`.
-  - Keep the dead-zone pull logic and the hover-defers-to-blink behaviour exactly as written.
-  - Replace the reach math. The old line:
-
-    ```js
-    const frame = el.querySelector(".eye-frame");
-    const reach = 60 * (frame.getBoundingClientRect().width / 857);
-    ```
-
-    becomes:
-
-    ```js
-    const socket = el.querySelector(".eye-socket");
-    const sock = socket.getBoundingClientRect();
-    // Travel scales with the socket's display: ~30% of its half-width,
-    // so the pupil leans within the lid without ever clearing it. The
-    // clip box guarantees containment even if the math drifts.
-    const reach = Math.min(sock.width, sock.height) * 0.30;
-    ```
-
-  - The `layer.style.transform` write stays a `translate(calc(-50% + Xpx), calc(-50% + Ypx))`; the `-50%` keeps the pupil centred on the socket while the offset slides it. The follow direction check before, keep as-is.
-
-  - Keep `rest`, the rAF coalescing, the `:hover` re-checks, the `pointermove` + `mouseleave` listener registration, and the `eyeMove`/`eyeLeave` exports unchanged.
-
-  - Keep `tearDownEye` unchanged except that it no longer references any `.eye-iris` (it already only clears the timer and the two listeners; verify no selector mentions `eye-iris`).
-
-  Reduced-motion behaviour stays: the follow runs (it is functional, not decorative), only the blink chain is gated by `motionOk`.
-
-  Verify (synthetic): with the wall open and the mouse 300px to the right of the eye, `getComputedStyle(el.querySelector('.eye-pupil')).transform` shows a real translate of roughly `translate(calc(-50% + 9px), calc(-50% + 0px))` (the exact px scales with the rendered socket width); moving to the left mirrors it; hovering the emblem centres the pupil; mouseleave rests it at the centred default. The frame's transform stays `none` throughout. With reduced-motion on, the pupil still follows the cursor; only the blink stops.
+  Verify: the pill at the bottom of the screen reads as a distinct floating object - its background is slightly cooler/darker than the cards behind it, the hairline border defines its edge, and the bolder shadow lifts it off the page. It no longer blends into the wall as a white-on-white shape.
 
 ---
 
-## O.4 - theme: replace the soft muted lavender with a bold purple
+## S.7 - align tags and artifacts with the gradient's horizontal bounds
 
-Minh wants the accent stepped up from the muted lavender `#5e6ad2` to a bolder purple. The reference sources are the eyeball.png iris (`#60079f`), the app icon logo (`#7040a0`), and `~/Downloads/DESIGN-kraken.md` (primary `#7132f5`, dark `#5741d8`, deep `#5b1ecf`, subtle `rgba(133, 91, 251, 0.16)`). The Kraken doc is the only source with explicit hex scales, so this task adopts the Kraken scale as the new token family. It is bolder and bluer than the current muted lavender, and it sits in the same bold-violet family as the brand art.
+The `.homehead` gradient has `border-radius: var(--r-lg)` (12px) which rounds its corners. The wall grid and groupbar extend to the full `main` content width, making them appear to stick out past the gradient's rounded edges. The fix: remove the border-radius on `.homehead` (since it is now sticky and edge-to-edge from S.5), and add a small horizontal inset to the wall body so cards align with the gradient's visual bounds.
 
-The agent replaces the accent/lavender token family in `:root`, hunts every literal hex and rgba that was the old muted lavender, mirrors the same edits into the three sibling HTML files that keep their own token copies, re-measures the WCAG contrast the comments document, and rewrites those comments to match the measured ratios. `bin/check-contrast` reads tokens live and will fail until the new text shades clear the floors; the agent fixes failures by darkening the text step, never by backing off the bold purple fill.
+- [x] **S.7a [AGENT]** Remove the `border-radius` from `.homehead`.
 
-- [x] **O.4a [AGENT]** Replace the accent and lavender token family in `:root`.
+  Anchor: `.homehead` CSS at `museum.html:~387`.
 
-  Anchor: the `:root` token block at `museum.html:~106-148`. Replace these tokens exactly:
+  In S.5a, the `border-radius: var(--r-lg)` was already removed from the sticky header. Confirm it is gone. If it is still there, delete it. A sticky header that goes edge-to-edge should not have rounded corners - the rounding creates a visual gap between the header and the viewport edges.
 
-  | token | old | new |
-  | --- | --- | --- |
-  | `--accent` | `#5e6ad2` | `#7132f5` |
-  | `--accent-quiet` | `#5e69d1` | `#5741d8` |
-  | `--accent-strong` | `#5e6ad2` | `#7132f5` |
-  | `--accent-ink` | `#101114` | `#101114` (unchanged) |
-  | `--accent-text` | `#4a51a8` | `#5741d8` |
-  | `--lavender` | `#5e6ad2` | `#7132f5` |
-  | `--lavender-hover` | `#828fff` | `#8b5cf6` |
-  | `--lavender-focus` | `#5e69d1` | `#7132f5` |
-  | `--lavender-deep` | `#4a51a8` | `#5b1ecf` |
-  | `--lavender-subtle` | `rgba(94, 106, 210, 0.12)` | `rgba(113, 50, 245, 0.16)` |
-  | `--on-lavender` | `#ffffff` | `#ffffff` (unchanged) |
-  | `--link` | `#4a51a8` | `#5741d8` |
-  | `--tint-note` | `rgba(94, 106, 210, 0.12)` | `rgba(113, 50, 245, 0.14)` |
+  Verify: `.homehead` has no `border-radius`. The gradient goes edge-to-edge horizontally.
 
-  Do not change the neutral, surface, semantic, or radius tokens (they are not the purple family).
+- [x] **S.7b [AGENT]** Add a small horizontal inset to the wall body so cards and tags align inside the gradient's bounds.
 
-  Verify: `rtk rg -a -n "5e6ad2|5e69d1|828fff|4a51a8|94, 106, 210" src/enqueue/static/museum.html` returns no hits inside `:root`.
+  Anchor: the `main` CSS at `museum.html:~561-565` has `padding: 32px var(--sp-5) 160px` - that is 24px horizontal padding. The `.homehead` is inside `main`, so it is 24px inset from the viewport edges. The wall grid (`.wall`) is also inside `main` and uses the same 24px inset.
 
-- [x] **O.4b [AGENT]** Replace every remaining literal of the old muted lavender outside `:root`.
+  But the user perceives the tags and artifacts as "slightly outside" the gradient. This is likely because the gradient's `border-radius` (now removed in S.7a) made the gradient narrower at the corners, while the cards extended full-width. With the radius removed, the gradient and the cards should align.
 
-  Anchor summary (grep returns the full list): literal `#5e6ad2`, `#5e69d1`, `#828fff`, `#4a51a8`, and `rgba(94, 106, 210, ...)` appear inside CSS comments and (rarely) inside component rules throughout `museum.html`.
+  If they still appear misaligned, add `padding-inline: var(--sp-2)` (8px) to `.wallbody`:
 
-  Replace each literal with the same token from the O.4a table:
+  ```css
+  .wallbody {
+    padding-inline: var(--sp-2);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 8px);
+    mask-image: linear-gradient(180deg, transparent 0%, black 8px);
+  }
+  ```
 
-  - `#5e6ad2` -> `#7132f5`
-  - `#5e69d1` -> `#7132f5` (the focus step now equals the primary)
-  - `#828fff` -> `#8b5cf6`
-  - `#4a51a8` -> `#5741d8`
-  - `rgba(94, 106, 210, 0.12)` -> `rgba(113, 50, 245, 0.16)`
-  - `rgba(94, 106, 210, 0.14)` -> `rgba(113, 50, 245, 0.14)`
+  The 8px horizontal padding on `.wallbody` nudges the card grid inward so it sits inside the gradient's visual bounds. The groupbar and tagbar, which are centered inside `.homehead`, already sit inside the gradient.
 
-  Do it with a single set of `replaceAll`-style edits so every comment that quotes an old hex gets the new hex with it.
-
-  Verify: `rtk rg -a -n "5e6ad2|5e69d1|828fff|4a51a8|94, ?106, ?210" src/enqueue/static/museum.html` returns zero hits anywhere in the file.
-
-- [x] **O.4c [AGENT]** Mirror the same token changes into the three sibling HTML files.
-
-  Anchor: `src/enqueue/static/capture.html:~63-67` and the parallel blocks in `src/enqueue/static/museum-plain.html` and `src/enqueue/static/capture-plain.html`. Each file keeps its own `:root` copy of the accent family.
-
-  Apply the exact same token table from O.4a to each file. Also replace any literal of the old muted lavender in those files (the same literal list as O.4b).
-
-  Verify: `rtk rg -a -n "5e6ad2|5e69d1|828fff|4a51a8|94, ?106, ?210" src/enqueue/static/capture.html src/enqueue/static/museum-plain.html src/enqueue/static/capture-plain.html` returns zero hits.
-
-- [x] **O.4d [AGENT]** Re-measure the documented WCAG ratios and rewrite the `:root` comments to match; fix any `bin/check-contrast` failure by darkening the text step.
-
-  Anchor: the comment blocks at `museum.html:~107-148` that document contrast ratios (eg "`#5e6ad2` clears the 3:1 sole-boundary rule on the canvas (4.70:1)"), and `bin/check-contrast` (the gate that reads the `:root` tokens live and fails the build on any WCAG miss).
-
-  Steps:
-
-  1. Run `bin/check-contrast` from `~/enqueue`. Note every failure line (it names the token and the failing ratio).
-  2. For each text-type token (`--accent-text`, `--link`, any lavender token that the gate treats as text on a ground), if it fails 4.5:1 on its permitted ground, darken THAT token's new value one step at a time until it passes, keeping the value inside the bold-violet family. Suggested fallbacks, in order: `#5741d8` -> `#5b1ecf` -> `#4a1bb8` -> `#3d1299`. Do not darken the fill tokens `--accent`, `--lavender-hover`, `--lavender-subtle`; those are fills/rings/washes and the gate treats them at the 3:1 graphic tier, not the 4.5 text tier.
-  3. For each boundary or graphic-pair failure (the lavender fill as a sole boundary, ink-on-lavender, white-on-lavender), if the bold fill fails the 3:1 sole-boundary tier or the white-on-fill 3:1 graphic tier, darken the fill itself one step (`#7132f5` -> `#6620e0` -> `#5b1ecf`). Prefer keeping `#7132f5` as `--accent` and `--lavender` if it passes; the gate is the source of truth.
-  4. Once the gate passes, re-compute each documented ratio with the actual new hex values and rewrite the prose in the `:root` comments so the numbers match the new scale. The comments at `:~107-148` reference specific ratios (4.70:1, 6.92:1, 4.02:1, 4.38:1, 2.87:1); replace each with the real number for the new hex. Do not invent ratios - use the same WCAG relative-luminance math `bin/check-contrast` uses (`sRGB -> linear -> luminance -> (L1+0.05)/(L2+0.05)`).
-  5. Apply the final (post-gate) `--accent-text` / `--link` / lavender text values back into O.4a/O.4b's replacements in all four HTML files so they stay consistent.
-
-  Verify: `bin/check-contrast` exits 0, and the `:root` comment block quotes ratios that match the actual new hex values when recomputed by hand. `bin/verify` is green overall.
+  Verify: the wall cards, groupbar, and tagbar all sit within the horizontal bounds of the gradient. No card or tag extends past the gradient's left or right edge. The alignment is consistent from the greeting at the top through the cards at the bottom.
 
 ---
 
-## O.X - eyeball measurement corrections (verified against eyeball.png)
+## S.8 - verification gate
 
-Sampled against `~/enqueue/eyeball.png` before the agent starts. These supersede the constants written in O.3:
+After every S.x task lands, run from `~/enqueue`:
 
-| value | written in O.3 | verified | notes |
-| --- | --- | --- | --- |
-| iris bbox | x[511,581] y[367,436] | x[512,581] y[368,436] | off by one, immaterial |
-| iris center | (546, 401) | (546, 402) | immaterial |
-| iris size | (not stated) | 70 x 69 px, solid `#60079f` | solid fill, not a gradient blob |
-| violet streak above iris | (not in rewrite) | none exists | the OLD `split_eye.py` referenced `STREAK_CENTER = (411, 197)` against the previous image; the new image has no streak there. O.3a's rewrite is correct to punch ONLY the iris hole. |
-| `SCLERA` constant | (253, 254, 246) | **(252, 253, 252)** | the old sample included a purple pixel; re-sampled a 50px ring around the iris bbox (15687 white pixels) and the average is neutral white with a hair cool tint - (252, 253, 252). Update O.3a's `SCLERA = (253, 254, 246, 255)` to `SCLERA = (252, 253, 252, 255)`. |
-| socket clip box width/height | 9.5% x 9.5% | **18.0% x 13.7%** | 9.5% (~97 px) is the size of the iris itself, which would clip the pupil to barely larger than itself and kill any visible travel. The lid opening - the white sclera run bounded by the lash line - measures ~184 px wide x ~140 px tall at the iris center row/column. Use 184/1024 = 18.0% for width and 140/1024 = 13.7% for height. |
-| socket clip box left/top | 53.3% / 39.2% | 53.3% / 39.3% | unchanged (iris center, where the pupil sits at rest) |
-| travel reach | `min(w,h) * 0.30` | **cap at 25 source px** | with a 184x140 socket and a 70x69 pupil, vertical headroom is (140-69)/2 = 35 px and horizontal headroom is (184-70)/2 = 57 px. `min * 0.30` evaluates to 140 *0.30 = 42 px, which exceeds the 35 px vertical headroom and would visibly clip the pupil at the lower lid. Cap reach at 25 source px - it scales to the rendered socket automatically, and gives ~3 CSS px of lean at the 104 px display size (25/1024* 104 = 2.5 px). |
-| `border-radius: 50%` on socket | (not stated as ellipse) | **keep 50%** | with an 18% x 13.7% box, `border-radius: 50%` produces an eye-shaped ellipse that matches the lid opening. Do NOT use a fixed px radius. |
-| DOM z-index | "no z-index needed" | confirmed | `.greet-emblem` and `.eye-blinkwrap` create no stacking context (verified: no `transform`/`opacity`/`z-index`/`filter`/`will-change` on them), so DOM order is the paint order. The socket (first child) renders behind the frame (second child). The `will-change: transform` on `.eye-pupil` promotes only the pupil, not its parent, so it stays under the frame. |
-
-### Corrected O.3c CSS rule
-
-Replace the `.greet-emblem .eye-socket` rule in O.3c with:
-
-```css
-.greet-emblem .eye-socket {
-  position: absolute;
-  left: 53.3%;
-  top: 39.3%;
-  width: 18.0%;
-  height: 13.7%;
-  transform: translate(-50%, -50%);
-  overflow: hidden;
-  border-radius: 50%;
-}
-```
-
-### Corrected O.3d reach math
-
-Replace the reach lines in O.3d's `mountEye` with:
-
-```js
-const socket = el.querySelector(".eye-socket");
-const sock = socket.getBoundingClientRect();
-// Cap at 25 source px of travel, scaled by the rendered socket's
-// width vs the 184 px source width. (140 px tall source pupil has
-// 35 px of vertical headroom - 25 px keeps the pupil well inside the
-// lid even when the lean runs along the diagonal.)
-const reach = 25 * (sock.width / (184 * (el.getBoundingClientRect().width / 1024)));
-```
-
-The formula: `sock.width` is the displayed socket width; divide by `(el.displayed_width / 1024)` to recover the source-px scale of the socket, then `25 * (socket_in_source_px / 184)` gives the source-px reach displayed at the rendered scale.
-
-### Mask gate note (no change needed)
-
-The proposed purple gate `b > 110 and b > r + 30 and g < 130` was verified against the whole image - it selects 3775 px, ALL inside the iris bbox x[512,581] y[368,436]. No leakage into any other purple-ish region in the bird body. Keep the gate as written in O.3a. A 1-2 px purple fringe just outside the gate (at the lower lash line, pixels like `#5f347c` and `#4f1375`) will stay in the frame as fixed dark pixels - at the 104 px display size that is sub-pixel and invisible. Do not loosen the gate to catch the fringe; a looser gate picks up body art at y up to 865.
-
----
-
-## O.5 - verification gate
-
-After every O.x task lands, run from `~/enqueue`:
-
-- `bin/verify` - JS parse on both HTML pages, pytest, and the contrast check (O.4d makes the contrast check green again).
-- `bin/relaunch` (or `uv run enq serve` then open `http://127.0.0.1:8787/`) - manual sweep of each Verify line.
-- `rtk rg -a -ic "5e6ad2|5e69d1|828fff|4a51a8|94, ?106, ?210" src/enqueue/static/museum.html src/enqueue/static/capture.html src/enqueue/static/museum-plain.html src/enqueue/static/capture-plain.html` returns 0 after O.4.
+- `bin/verify` - JS parse + pytest + contrast check.
+- `bin/relaunch` - manual sweep.
+- `rtk rg -an "groundnote\|assistant.*knowledge" src/enqueue/static/museum.html` returns zero hits after S.2.
+- `rtk rg -an "addArtifactToGrouping\|pivotactions" src/enqueue/static/museum.html` returns zero hits after S.3.
+- `rtk rg -an "border-radius.*r-lg" src/enqueue/static/museum.html | rtk rg homehead` returns zero hits after S.7a (the homehead border-radius is removed).
 
 The phase closes when every box is checked and the running build shows:
 
-- The Last touch wall header reads SAVED and EVERYTHING ELSE as the same collapsible Section header control Notes/Links use, and every wall section label is in caps.
-- 5 cards per row at Minh's window width, with tighter card chrome and a correct title line-clamp.
-- The eyeball sits to the left of the greeting; the bird never moves; only the purple iris slides inside the fixed socket as the cursor moves, clipped to the lid.
-- The accent reads as a bold violet (`#7132f5` family) across every purple surface - links, focus rings, fills, hovers, pills, the greeting eye frame - and `bin/check-contrast` stays green.
+- Opening a saved view, switching to another app, and switching back keeps the saved view on screen. A capture while away is reflected in the view on return.
+- A saved view no longer shows "These groups come from the assistant's knowledge..." or "Add artifact to this view".
+- The lavender gradient starts right below the 32px traffic-light strip. The greeting and bird sit higher, just below the traffic lights.
+- Scrolling the wall freezes the header (greeting, bird, search, groupbar, tagbar) at the top. Wall cards fade smoothly as they pass under the header - no hard line.
+- The bottom ribbon pill has a non-white background and a bolder shadow that makes it pop above the artifacts.
+- The wall cards and tags align horizontally within the gradient's bounds.
+- `bin/verify` is green overall.

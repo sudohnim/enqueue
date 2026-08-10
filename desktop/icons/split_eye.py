@@ -40,12 +40,37 @@ IRIS_Y0, IRIS_Y1 = 367, 436
 # Sclera white sampled just outside the iris (do NOT include the purple fringe).
 # Re-sampled a 50px ring around the iris bbox (15687 white pixels): average is
 # neutral white with a hair cool tint - (252, 253, 252), not the old (253,254,246)
-# which included a purple pixel.
-SCLERA = (252, 253, 252, 255)
+# which included a purple pixel. Q.1 re-bleaches the near-white canvas to fully
+# transparent first, so the iris hole fill is transparent too and the lavender
+# gradient wash on .homehead shows through the frame's surround.
+SCLERA = (0, 0, 0, 0)
 # How far the pupil may travel in source pixels. The eye renders at
 # ~104 CSS px from a 1024 px source (scale ~0.10), so 32 px is ~3-4 CSS px
 # of lean - a real iris shift without spilling the lid.
 SLIDE = 32
+
+
+def bleach_background(img: Image.Image) -> Image.Image:
+    """Repaint the pink-tinted near-white canvas to fully transparent.
+
+    The eyeball's background is #fcf7fe (RGB 252-253, 247-248, 253-254) - a
+    pink-tinted white that reads as a faint halo against the #ffffff page
+    canvas (P.3), and as a white box against the .homehead lavender gradient
+    wash (Q.1). The colour gate captures that near-white (r>248, g>244,
+    b>250, b>=r) and rejects the dark lash ink, the purple iris, and the
+    green ground. A 3px MinFilter erosion shrinks the mask so the soft
+    anti-aliased fringe around the lash ink is NOT bleached - without it the
+    bird's outline would go hard-edged. Returns the background mask (L).
+    """
+    r, g, b, _a = img.split()
+    r_hi = r.point(_gate_gt(248))
+    g_hi = g.point(_gate_gt(244))
+    b_hi = b.point(_gate_gt(250))
+    # b >= r  <=>  NOT (r - b > 0)
+    b_ge_r = ImageChops.subtract(r, b).point(_gate_gt(0)).point(lambda v: 255 - v)
+    mask = ImageChops.multiply(r_hi, ImageChops.multiply(g_hi, ImageChops.multiply(b_hi, b_ge_r)))
+    # Erode by 3px so the anti-aliased fringe around lash ink survives.
+    return mask.filter(ImageFilter.MinFilter(size=3))
 
 
 def _gate_gt(threshold: int) -> Callable[[int], int]:
@@ -86,6 +111,14 @@ def purple_mask(img: Image.Image) -> Image.Image:
 
 def main() -> None:
     img = Image.open(SOURCE).convert("RGBA")
+    # P.3/Q.1: bleach the off-white canvas to fully transparent so the
+    # composite eye reads flush against the page and lets the .homehead
+    # lavender gradient wash show through. The source is overwritten so the
+    # delivered eyeball.png and the generated assets stay consistent.
+    bg = bleach_background(img)
+    transparent = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    img = Image.composite(transparent, img, bg)
+    img.save(SOURCE)
     w, h = img.size
     mask = purple_mask(img)
 

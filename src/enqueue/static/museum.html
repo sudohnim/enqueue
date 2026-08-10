@@ -247,6 +247,9 @@
 
     --z-base: 1;
     --z-raised: 2;
+    /* S.5: the frozen home header sits above the wall cards but below the
+       drawer, pill, and drag strip. */
+    --z-sticky: 5;
     --z-pill: 40;
     --z-menu: 50;
     /* The tags-and-summary drawer sits above the artifact content but below the
@@ -336,6 +339,12 @@
     box-shadow: 0 0 0 2px
       color-mix(in oklab, var(--lavender-focus) 50%, transparent);
   }
+  /* P.7: on hover the searchbar's border warms to lavender - a hint that the
+     most-used input belongs to the brand. The 2px focus ring is untouched, so
+     hover and focus read as distinct states. */
+  .searchbar:hover {
+    border-color: var(--lavender-focus);
+  }
   .searchbar svg {
     width: 16px;
     height: 16px;
@@ -365,7 +374,23 @@
      hero-to-content transition is the largest gap on the page (48px below the
      header + the shelf's own 24px top), and every later shelf tightens to 24. */
   .homehead {
+    position: sticky;
+    /* Sticky right below the 32px drag strip: the header freezes in its
+       natural position (the greeting never tucks under the traffic lights)
+       and the wall cards scroll up beneath it. */
+    top: 32px;
+    z-index: var(--z-sticky);
     margin-bottom: var(--sp-7);
+    /* S.5: the frozen header. Two layers: the lavender wash on top, and an
+       opaque white ground beneath. The ground is opaque from the top through
+       85%, then fades to transparent at the bottom edge, so cards scrolling
+       under dissolve there and nowhere else - they never show through the
+       translucent wash at the top (the reappearing-artifacts bug). */
+    background:
+      linear-gradient(180deg, var(--lavender-subtle) 0%, transparent 40%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg) 92%, transparent 100%);
+    padding-top: var(--sp-3);
+    padding-bottom: var(--sp-6);
   }
   .homehead .display {
     margin: 0;
@@ -443,16 +468,20 @@
   .greeting.swap {
     animation: greet var(--dur-slow) var(--ease) backwards;
   }
+  /* P.7: the greeting's trailing period is the one lavender character in the
+     hero text - a single pixel of brand ink that ties the phrase to the eye
+     without recoloring the whole line (the eye owns the saturation). */
+  .greet-mark {
+    color: var(--accent);
+  }
 
   /* The greeting eye: the eye alone is the brand mark now - the lavender disc is
      gone. Ink on the canvas is ~19:1, which clears the 3:1 graphic rule by a wide
      margin, so the eye needs no lavender fill to read: it is the single boldest
      mark on the home view. N.14: the mark is now the supplied eyeball.png - a
      flat image whose white ground was canvas-blended in prep, so it reads as ink
-     on the page exactly like the stroke-only SVG did before it. Because the image
-     cannot be split into a frame and a pupil (the sclera and ground are one
-     white), the cursor-follow is gone with the SVG; the blink stays and squashes
-     the whole image, which still reads as a lid closing. */
+     on the page exactly like the stroke-only SVG did before it. O.3 split the
+     image into a frame and a pupil again, restoring the cursor-follow. */
   /* Emblem and greeting side by side as one centered group: the bold eye to
      the left of the phrase, its vertical centre on the text's. The eye is the
      brand mark at the row's left edge instead of a hero stack above the
@@ -463,7 +492,7 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: var(--sp-3);
+    gap: var(--sp-2);
   }
   .greet-emblem {
     position: relative;
@@ -523,22 +552,6 @@
     height: auto;
     display: block;
   }
-  /* Hovering the emblem wakes the eye: one blink fires. CSS-only, under reduced
-     motion the global block makes it instant. The squash hits the wrapper so
-     both layers (socket and iris) close as one lid. */
-  .greet-emblem:hover .eye-blinkwrap {
-    /* The lid closes from the top, like a real eye: the squash pivots near the
-       lower rim so the top edge comes down to meet it. */
-    transform-origin: 50% 88%;
-    animation: eye-blink 0.24s var(--ease);
-  }
-  /* The blink is a quick vertical squash of the whole eye - fast enough to read
-     as a lid, slow enough to register. JS triggers it, and only when motion is
-     allowed, so a reduced-motion visitor gets a steady open eye. */
-  .greet-emblem.eye.blinking .eye-blinkwrap {
-    transform-origin: 50% 88%;
-    animation: eye-blink 0.24s var(--ease);
-  }
   @keyframes emblem-in {
     from {
       opacity: 0;
@@ -549,28 +562,14 @@
       transform: none;
     }
   }
-  @keyframes eye-blink {
-    0%,
-    38% {
-      transform: scaleY(1);
-    }
-    48% {
-      /* The lid meets; the tiny width bloom is the eye pressing before it
-         reopens. */
-      transform: scaleY(0.06) scaleX(1.05);
-    }
-    58%,
-    100% {
-      transform: scaleY(1);
-    }
-  }
 
   /* No chrome beyond the search strip. Content clears the fixed top bar. */
   main {
     max-width: 1200px;
     margin: 0 auto;
-    /* 32px drag strip plus a full breathing step before the greeting. */
-    padding: calc(32px + var(--sp-5)) var(--sp-5) 160px;
+    /* 32px drag strip only - the gradient starts right below the traffic
+       lights, no extra breathing step between them. */
+    padding: 32px var(--sp-5) 160px;
   }
 
   /* ---- type roles --------------------------------------------------------
@@ -679,6 +678,11 @@
   /* Pivot groups: the same title-and-count rhythm as every other view, one step
      apart so a long grouping reads as shelves rather than one wall. */
   .pivotgroup {
+    /* Flex row so the toggle and the group delete button share the header
+       line; wrap keeps the meta count and the wall on their own rows below. */
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     margin-top: var(--sp-6);
   }
   /* The group header is a button (K.10): the whole row toggles the section, and
@@ -686,6 +690,7 @@
      header reads at the Title rung (N.2a): 20/500, -0.3px, ink - a heading, not
      a caption. The hover lifts the whole row one surface so it reads clickable. */
   .pivotgroup .grouptoggle {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: var(--sp-2);
@@ -705,26 +710,6 @@
   }
   .pivotgroup .grouptoggle:hover {
     background: var(--surface-1);
-  }
-  /* The state marker (N.2b): a short neutral rule beside the label that grows
-     taller and turns lavender when the section opens - the state reads as a
-     shape change, not just a chevron angle. The rule is the first flex item,
-     before the label. */
-  .pivotgroup .grouptoggle::before {
-    content: "";
-    flex-shrink: 0;
-    width: 2px;
-    height: 14px;
-    margin-right: var(--sp-2);
-    border-radius: var(--r-full);
-    background: var(--line-strong);
-    transition:
-      height var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
-  }
-  .pivotgroup:not(.collapsed) .grouptoggle::before {
-    height: 24px;
-    background: var(--lavender-hover);
   }
   .pivotgroup .gchev {
     display: inline-flex;
@@ -747,6 +732,44 @@
   .pivotgroup.collapsed .wall,
   .pivotgroup.collapsed .meta {
     display: none;
+  }
+  /* The count and the wall keep their own rows under the flex header line. */
+  .pivotgroup .meta,
+  .pivotgroup .wall {
+    flex-basis: 100%;
+  }
+  /* The group delete control (R.3): a small round ghost beside the header
+     label, revealed only on saved views. At rest it is quiet; hovering tints
+     it danger red to signal the destructive intent. */
+  .pivotgroup .groupdel {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: none;
+    color: var(--text-mute);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    margin-left: var(--sp-2);
+    transition:
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .pivotgroup .groupdel svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .pivotgroup .groupdel:hover {
+    background: var(--surface-1);
+    color: var(--danger);
   }
   /* Wall sections in the Type and Tags modes get the same collapsible header as
      pivot groups (L.4): the shelf label becomes a button that folds its cards
@@ -779,22 +802,6 @@
   }
   .wallgroup .grouptoggle:hover {
     background: var(--surface-1);
-  }
-  .wallgroup .grouptoggle::before {
-    content: "";
-    flex-shrink: 0;
-    width: 2px;
-    height: 14px;
-    margin-right: var(--sp-2);
-    border-radius: var(--r-full);
-    background: var(--line-strong);
-    transition:
-      height var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
-  }
-  .wallgroup:not(.collapsed) .grouptoggle::before {
-    height: 24px;
-    background: var(--lavender-hover);
   }
   .wallgroup .grouptoggle .shelf {
     flex: 1;
@@ -855,21 +862,6 @@
     gap: var(--sp-2);
     margin-top: var(--sp-3);
   }
-  /* Grounding note. When any step inferred a value from world knowledge, the whole
-     grouping is the assistant's guess, not text from the notes. It has to be read,
-     not decoration, so it is ink on a raised ground - quiet, never the accent, which
-     is reserved for instructions the person can act on. */
-  .groundnote {
-    margin-top: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--r-sm);
-    background: var(--surface-2);
-    color: var(--text-mute);
-    /* Body SM, at the base body's line height. */
-    font-size: 14px;
-    line-height: 21px;
-    max-width: 64ch;
-  }
   /* A misfiled card is invisible unless it can be moved, so every pivot card carries
      the move control. It stays hidden until the card is hovered or the control itself
      takes keyboard focus, so it never competes with the card face it sits on. */
@@ -882,26 +874,34 @@
     right: var(--sp-2);
     /* AU.9: over the card face it sits on, so the raised rung. */
     z-index: var(--z-raised);
-    min-height: 0;
-    padding: 4px 12px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
     border-radius: var(--r-full);
-    border: 1.5px solid var(--line-strong);
     background: var(--surface);
-    color: var(--text);
-    font-family: var(--sans);
-    /* Button: 14px / 500 / 1.20, zero tracking. */
-    font-size: 14px;
-    line-height: 17px;
-    font-weight: 500;
-    letter-spacing: 0;
+    color: var(--text-mute);
+    display: grid;
+    place-items: center;
     cursor: pointer;
     opacity: 0;
     transition:
       opacity var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .movebtn svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .movebtn:hover {
     background: var(--surface-2);
+    color: var(--text);
   }
   .pivotcard:hover .movebtn,
   .movebtn:focus {
@@ -913,27 +913,36 @@
   .removebtn {
     position: absolute;
     top: var(--sp-2);
-    right: 64px;
+    right: 44px;
     z-index: var(--z-raised);
-    min-height: 0;
-    padding: 4px 12px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
     border-radius: var(--r-full);
-    border: 1.5px solid var(--line-strong);
     background: var(--surface);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    line-height: 17px;
-    font-weight: 500;
-    letter-spacing: 0;
+    color: var(--text-mute);
+    display: grid;
+    place-items: center;
     cursor: pointer;
     opacity: 0;
     transition:
       opacity var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .removebtn svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .removebtn:hover {
     background: var(--surface-2);
+    color: var(--danger);
   }
   .pivotcard:hover .removebtn,
   .removebtn:focus {
@@ -1016,11 +1025,6 @@
     box-shadow: 0 0 0 2px
       color-mix(in oklab, var(--lavender-focus) 50%, transparent);
   }
-  /* The saved-groupings view's actions sit above the first group: adding an
-     artifact is an act on the whole arrangement, so it reads before the cards. */
-  .pivotactions {
-    margin: var(--sp-3) 0;
-  }
   /* The saved-groupings picker row (L.5): the name runs the grouping, with the
      rename pencil and the forget control beside it, one row per grouping. The
      name grows to fill the row so the controls sit at the right edge. */
@@ -1046,41 +1050,9 @@
     width: 15px;
     height: 15px;
   }
-  /* The add-artifact control on a saved-view row (N.3b): a quiet plus beside the
-     rename pencil, so a view can be extended from the wall without opening it.
-     Same 32px round icon-button shape as the pencil and the X beside it. */
-  .pickgroups .customrow .addbtn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: none;
-    background: none;
-    border-radius: var(--r-full);
-    color: var(--text-mute);
-    flex-shrink: 0;
-    cursor: pointer;
-    transition:
-      color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
-  }
-  .pickgroups .customrow .addbtn svg {
-    width: 15px;
-    height: 15px;
-    /* Open line-segment paths draw only via stroke; without this the plus
-       would render as a zero-area black fill - invisible (N.3b). */
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .pickgroups .customrow .addbtn:hover {
-    color: var(--text);
-    background: var(--surface-2);
-  }
+  /* The rename pencil and the forget X on a saved-view row (P.6): the row-level
+     add plus is gone - adding to a view happens from the artifact's own drawer
+     now, or from inside a saved view run. */
   .pickgroups .customrow .forgetbtn {
     /* Icon button (N.1a): 32px round, matching the rename pencil beside it. The
        X is the destructive disclosure on this row, so its hover is the danger
@@ -1411,6 +1383,17 @@
   .wall--saved {
     margin-bottom: var(--sp-5);
   }
+  /* S.5: the wall body sits below the sticky header. The top 8px of the slot
+     is a margin gap (the grid's own margin-top), and the mask softens it so
+     the leading edge of the first cards dissolves as they scroll up under the
+     header rather than clipping at a hard line. */
+  /* S.7b: an 8px horizontal inset pulls the card grid inside the gradient's
+     visual bounds, so no card or tag reads as sticking out past the wash. */
+  .wallbody {
+    padding-inline: var(--sp-2);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 8px);
+    mask-image: linear-gradient(180deg, transparent 0%, black 8px);
+  }
   .card {
     position: relative;
     display: flex;
@@ -1494,6 +1477,16 @@
     flex-shrink: 0;
     border-radius: var(--r-full);
     background: var(--kind, var(--line-strong));
+    /* Q.2: the dot is 8px - below touch-target size. The transparent ::after
+       extends the hit area to 44px without changing the visible dot, so a
+       future tap target (eg filter-by-kind) works with no CSS change. */
+    position: relative;
+  }
+  .kindmark::after {
+    content: "";
+    position: absolute;
+    inset: -18px;
+    border-radius: 50%;
   }
   .kindword {
     /* Caption: the kind label travels with its dot and stays smaller than the title. */
@@ -1563,6 +1556,9 @@
     flex-shrink: 0;
     border-radius: var(--r-full);
     background: var(--accent);
+    /* P.7: a soft lavender halo around the unread dot - the pending state reads
+       as a small purple "ping". Decorative, so no contrast requirement. */
+    box-shadow: 0 0 0 4px var(--lavender-subtle);
   }
   /* A card that is being kept says so, but quietly: keeping is a state, not an
      instruction, so it does not get the accent. */
@@ -1719,6 +1715,9 @@
     gap: var(--sp-1);
     overflow-x: auto;
     border-bottom: 1px solid var(--line);
+    /* Q.6: a little air above the bar so it reads as its own row below the
+       "Settings" heading, not a line under it. */
+    margin-top: var(--sp-3);
     margin-bottom: var(--sp-5);
     scrollbar-width: none;
   }
@@ -1746,6 +1745,11 @@
   .settings-tabs button.active {
     color: var(--accent-text);
     border-bottom-color: var(--accent);
+    /* Q.6: a faint lavender wash behind the active tab's label so it reads as
+       a place, not just a line. The top corners round so the wash reads as a
+       tab; the underline stays. */
+    background: var(--lavender-subtle);
+    border-radius: var(--r-md) var(--r-md) 0 0;
   }
   /* The disclosure that holds the trash item list behind a summary, DI.6. */
   .disclosure {
@@ -1800,13 +1804,21 @@
     height: 56px;
     padding: 0 var(--sp-4);
     z-index: var(--z-pill);
-    background: var(--surface);
-    /* AU.3: a floating surface carries its shadow, not a border - the ghost-card
-       pattern (border + a shadow at 16px blur or more) is banned. The pill's edge
-       is the shadow-lifted against the canvas. */
-    border: 0;
+    /* S.6: a tinted surface, not the same white as the cards behind it, so
+       the pill reads as a distinct object floating above the artifacts.
+       --surface-2 is two rungs off the canvas - cool, not grey, clearly
+       darker than the wall cards' --surface. */
+    background: var(--surface-2);
+    /* S.6: a hairline edge so the pill reads as a defined object against the
+       artifacts, not just a shadow blur. */
+    border: 1px solid var(--line);
     border-radius: var(--r-full);
-    box-shadow: var(--shadow-lifted);
+    /* S.6: a bolder shadow than the default --shadow-lifted so the pill pops
+       above the card grid - a tight contact shadow plus a wide elevation one
+       at 50% stronger opacity than the old lifted shadow. */
+    box-shadow:
+      0 4px 12px rgba(16, 17, 20, 0.06),
+      0 12px 36px rgba(16, 17, 20, 0.12);
     transition:
       width var(--dur-slow) ease,
       box-shadow var(--dur-slow) ease,
@@ -1862,12 +1874,19 @@
        scale, never a fill change, because the disc never fills --lavender-deep
        while the ink motif is on it (ink on deep is 2.28:1 and fails). */
     color: var(--accent-ink);
+    /* Q.5: the transform transition gets an ease-out-back so the press
+       releases with a ~3% overshoot pop instead of a linear settle; the
+       background stays on the plain ease. */
     transition:
       background var(--dur-fast) var(--ease),
-      transform var(--dur-fast) var(--ease);
+      transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .pill .keep:hover .disc {
     background: var(--lavender-focus);
+    /* Q.5: a 6px 16%-opacity halo so the disc "warms up" when the cursor
+       approaches - it reads as a glow, not a border (decorative, no contrast
+       requirement). */
+    box-shadow: 0 0 0 6px var(--lavender-subtle);
   }
   .pill .keep:active .disc {
     transform: scale(0.92);
@@ -1891,13 +1910,32 @@
     place-items: center;
     transition:
       background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease),
       transform var(--dur-fast) var(--ease);
   }
+  /* Q.5: on hover the round buttons take the pill's colour language - a faint
+     lavender wash behind a lavender icon, the same accent the keep disc wears. */
   .pill button.round:hover {
-    background: var(--line-soft);
+    background: var(--lavender-subtle);
+    color: var(--accent);
   }
   .pill button.round:active {
     transform: scale(0.94);
+  }
+  /* Q.3: at <380px the pill's 56px height + 44px round buttons risk spilling
+     the viewport. Tighten the padding/gap and hide the keep label if one is
+     present (the disc alone still reads as add via its plus icon). */
+  @media (max-width: 380px) {
+    .pill {
+      padding: 0 var(--sp-2);
+      gap: var(--sp-1);
+    }
+    .pill .keep {
+      padding: 0 var(--sp-1) 0 0;
+    }
+    .pill .keep .label {
+      display: none;
+    }
   }
   .pill svg {
     width: 19px;
@@ -1988,11 +2026,22 @@
     letter-spacing: 0;
     color: var(--text);
     text-align: left;
-    transition: background var(--dur-fast) var(--ease);
+    transition:
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
   }
-  .menu button:hover,
+  /* Q.5: the capture menu shares the pill's colour language - lavender wash +
+     lavender ink/icon on hover, matching the round buttons. Keyboard focus
+     keeps its own surface-2 signal so the two states stay distinct. */
+  .menu button:hover {
+    background: var(--lavender-subtle);
+    color: var(--accent);
+  }
   .menu button:focus-visible {
     background: var(--surface-2);
+  }
+  .menu button:hover .ic {
+    color: var(--accent);
   }
   .menu .ic {
     width: 20px;
@@ -2241,7 +2290,7 @@
     gap: var(--sp-3);
     margin-top: var(--sp-4);
   }
-  /* The author flex rule above would beat the UA's [hidden] rule, so the unsaved
+  /* The author flex rule above would beat the UA's [hidden] rule, so the dirty
      bar needs its own explicit hidden state to collapse to nothing. */
   .actions[hidden] {
     display: none;
@@ -2255,7 +2304,8 @@
      The pin / drawer / trash icons therefore land just to the right of the title
      text, not at the far edge of the app window. The drawer is position:fixed
      and stays anchored to the viewport edge, covering the column only when open. */
-  main[data-kind] .pagecol {
+  main[data-kind] .pagecol,
+  #view > .pagecol {
     max-width: 720px;
     margin: 0 auto;
   }
@@ -2419,6 +2469,51 @@
     border-color: var(--accent);
   }
 
+  .viewsrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: var(--sp-2);
+  }
+  .viewchip {
+    /* Same shape as a tag chip: pill, surface-1 fill, faint border, the
+       view name and an X. Inherits .tagx for the close button. */
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: 4px 4px 4px 10px;
+    border-radius: var(--r-full);
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--text);
+  }
+  .viewchip:hover {
+    border-color: var(--line-strong);
+  }
+  .viewadd {
+    /* A quiet ghost chip - same height as a view chip, no fill, lavender
+       ink on hover. The + signals "add" without competing with the
+       view-name chips. */
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border: 0;
+    background: none;
+    border-radius: var(--r-full);
+    font-size: 13px;
+    color: var(--text-mute);
+    cursor: pointer;
+    transition:
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
+  }
+  .viewadd:hover {
+    color: var(--accent);
+    background: var(--lavender-subtle);
+  }
+
   /* Badges: a fact about a thing, on a tint (DESIGN.md section 7). Four flavours,
      each text clearing 4.5:1 on its own fill (5.49 success, 6.82 neutral, 5.95
      lavender, 8.02 danger). Neutral is the only one with squared corners; the other
@@ -2506,13 +2601,32 @@
       background var(--dur-fast) var(--ease),
       box-shadow var(--dur-fast) var(--ease);
   }
-  .groupbar button:hover {
+  .groupbar button:hover:not([aria-pressed="true"]) {
     color: var(--text);
+    /* Q.2: a quiet hover on inactive tabs so the cursor gets a clickable
+       signal. surface-2 (the app's hovered step, not lavender) keeps it
+       secondary to the active tab's accent; border-radius matches the pill
+       shape. */
+    background: var(--surface-2);
+    border-radius: var(--r-md);
   }
   .groupbar button[aria-pressed="true"] {
     color: var(--text);
     background: var(--surface);
     box-shadow: var(--shadow-micro);
+  }
+  /* P.7: the active tab gets a small lavender disc ahead of its label - the
+     brand colour reads in the tab bar without replacing the underline. A 6px
+     graphic: --accent on the canvas at 6.04:1 clears the 3:1 rule. */
+  .groupbar button[aria-pressed="true"]::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: var(--sp-1);
+    vertical-align: middle;
   }
 
   /* The clear control on a Tagged header: a quiet text button, not an action. */
@@ -3189,7 +3303,11 @@
      recessed block nested inside a card. */
   .group {
     background: var(--surface);
-    border: 1px solid var(--line);
+    /* Q.6: the card's surface fill already separates it from the canvas, so
+       the border can be the lighter --line-soft - less boxed-in, and it
+       matches the .field hairlines inside so the card reads as one calm
+       surface. */
+    border: 1px solid var(--line-soft);
     border-radius: var(--r-lg);
     /* DI.5: card interior padding is 24px per DESIGN.md section 4, and the
        hard-coded 860px cap is gone - a settings card should not be narrower
@@ -4117,6 +4235,9 @@
     trash:
       '<path d="M4 7h16"/><path d="M9.5 7V5h5v2"/><path d="M6.5 7l1 13h9l1-13"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    // Move/redistribute: two horizontal arrows pointing outward - one left, one
+    // right. Reads as "move this artifact to another place".
+    move: '<path d="M3 8h13"/><path d="M12 4l4 4-4 4"/><path d="M21 16H8"/><path d="M12 12l-4 4 4 4"/>',
     note: '<path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/>',
     upload:
       '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 17v3h16v-3"/>',
@@ -4295,7 +4416,7 @@
     // CR.6: the pill field's name is the mode, not the placeholder - a placeholder
     // disappears on focus, so the accessible name has to survive it.
     const label = {
-      search: "Search everything",
+      search: "Search your artifacts",
       ask: "Ask about " + scope.label,
       link: "Paste a URL",
     }[mode];
@@ -4853,8 +4974,8 @@
 
   function groupBarHtml() {
     const labels = [
-      ["type", "Type"],
       ["touched", "Last touch"],
+      ["type", "Type"],
       ["tags", "Tags"],
       ["custom", "Custom"],
     ];
@@ -4882,6 +5003,16 @@
   // sections, kept and fresh together; the pin flag still marks the kept ones.
   function wallBodyHtml() {
     const cards = wallKept.concat(wallFirst);
+    // Q.2: a fresh library has no guidance - show an empty state in every
+    // wall mode instead of empty SAVED / EVERYTHING ELSE sections.
+    if (!wallKept.length && !wallFirst.length) {
+      return (
+        '<div class="state" style="padding: var(--sp-7) var(--sp-4); text-align: center;">' +
+        '<div class="shelf" style="margin-bottom: var(--sp-3)">Nothing kept yet</div>' +
+        '<div class="aside">Press the + below to capture a note, a link, or a file.</div>' +
+        "</div>"
+      );
+    }
     if (wallGroup === "type") return wallSectionsHtml(kindSections(cards));
     if (wallGroup === "tags") return wallSectionsHtml(tagSections(cards));
     // Last touch: the saved shelf and the pager wall render as the same
@@ -5167,17 +5298,6 @@
               };
               row.appendChild(rename);
 
-              const add = document.createElement("button");
-              add.className = "addbtn";
-              add.setAttribute("aria-label", "Add artifact to " + p.name);
-              add.title = "Add artifact to this view";
-              add.innerHTML = svg("plus");
-              add.onclick = (ev) => {
-                ev.stopPropagation();
-                customAddArtifact(p);
-              };
-              row.appendChild(add);
-
               const forget = document.createElement("button");
               forget.className = "forgetbtn";
               forget.innerHTML = svg("close");
@@ -5277,17 +5397,6 @@
       };
       row.appendChild(rename);
 
-      const add = document.createElement("button");
-      add.className = "addbtn";
-      add.setAttribute("aria-label", "Add artifact to " + p.name);
-      add.title = "Add artifact to this view";
-      add.innerHTML = svg("plus");
-      add.onclick = (ev) => {
-        ev.stopPropagation();
-        customAddArtifact(p);
-      };
-      row.appendChild(add);
-
       const forget = document.createElement("button");
       forget.className = "forgetbtn";
       forget.innerHTML = svg("close");
@@ -5300,35 +5409,6 @@
 
       list.appendChild(row);
     }
-  }
-
-  // Add an artifact to a saved view from its picker row (N.3b): open the same
-  // library picker, write the inclusion into the stored spec, then refresh the
-  // row list so the modal stays open for the next add. Clicking the row name
-  // still runs the view.
-  async function customAddArtifact(p) {
-    // The modal's rows carry only id and name; the addable picker needs the
-    // spec to know what the view already covers, so fetch it before offering
-    // the pick (N.3b: the modal stays open for multiple adds).
-    let spec;
-    try {
-      spec = (await api("/pivots/" + p.id)).spec;
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    const id = await pickArtifact(spec);
-    if (!id) return;
-    try {
-      await api("/pivots/" + p.id + "/include", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artifact_id: id }),
-      });
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    toast('Added to "' + p.name + '".');
-    refreshCustomPicker();
   }
 
   function card(a, i) {
@@ -5482,6 +5562,31 @@
       if (stamp !== wallStamp) home({ keepScroll: true });
       return;
     }
+    if (pivotState && pivotState.pivot_id) {
+      // A saved view is open: re-run it with the current spec so a
+      // capture elsewhere is reflected, keeping scroll position.
+      const scrollY = window.scrollY;
+      let next;
+      try {
+        next = await api("/pivot/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spec: pivotState.spec }),
+        });
+      } catch (err) {
+        return;
+      }
+      if (pivotState && pivotState.pivot_id) {
+        renderPivot(
+          next,
+          pivotState.request,
+          pivotState.spec,
+          pivotState.pivot_id,
+        );
+        window.scrollTo(0, scrollY);
+      }
+      return;
+    }
     if (scope.kind === "artifact" && scope.id) {
       showArtifact(scope.id, false, window.scrollY);
     } else if (scope.kind === "chat" && scope.id) {
@@ -5596,7 +5701,7 @@
       // ground) and a small pupil image (only the purple iris, transparent
       // surround), so the cursor-follow the old SVG eye had is restored as a
       // real follow - only the iris leans inside the fixed socket. The blinkwrap
-      // lets the blink squash both layers together.
+      // groups the socket and the frame so the iris stays clipped inside it.
       '<div class="greet-emblem eye" id="greetEye" aria-hidden="true">' +
       '<div class="eye-blinkwrap">' +
       '<div class="eye-socket">' +
@@ -5607,12 +5712,12 @@
       "</div>" +
       '<h1 class="display greeting">' +
       fallback +
-      "</h1>" +
+      '<span class="greet-mark">.</span></h1>' +
       "</div>" +
       '<div class="searchbar">' +
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
-      '<input id="homesearch" type="search" placeholder="Search everything" aria-label="Search everything" autocomplete="off" spellcheck="false" />' +
+      '<input id="homesearch" type="search" placeholder="Search your artifacts" aria-label="Search your artifacts" autocomplete="off" spellcheck="false" />' +
       '<kbd class="hint" aria-hidden="true">&#8984;K</kbd>' +
       "</div>" +
       groupBarHtml();
@@ -5730,24 +5835,22 @@
 
   // The greeting eye is decoration for the greeting phrase: it carries no
   // interaction of its own and is hidden from the accessibility tree. It leans
-  // toward the cursor (the iris and violet streak slide inside the fixed
-  // socket), blinks on a timer that reschedules itself to a fresh random delay
-  // after every blink, and both die with the view - teardown() clears the timer
-  // and the listeners - so no other surface inherits a stray handler.
+  // toward the cursor (the iris slides inside the fixed socket) and dies with
+  // the view - teardown() clears the listeners - so no other surface inherits a
+  // stray handler.
   let eyeTimer = null;
   let eyeMove = null;
   let eyeLeave = null;
-  const motionOk = !matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function mountEye() {
     const el = document.getElementById("greetEye");
     if (!el) return;
     const layer = el.querySelector(".eye-pupil");
     // The follow is functional, not decorative (L.7/M.4), so it runs even under
-    // prefers-reduced-motion; only the blink chain is gated on motionOk below.
-    // The frame (socket: outline, lashes, ground) never moves - only the purple
-    // iris pupil slides inside the clipped socket (O.3), a real follow rather
-    // than a whole-eye fake. The travel scales with the socket's display size.
+    // prefers-reduced-motion. The frame (socket: outline, lashes, ground) never
+    // moves - only the purple iris pupil slides inside the clipped socket (O.3),
+    // a real follow rather than a whole-eye fake. The travel scales with the
+    // socket's display size.
     let raf = 0;
     let rafQueued = 0;
     const rest = () => {
@@ -5760,8 +5863,8 @@
     const step = (e) => {
       if (!document.getElementById("greetEye")) return;
       if (el.matches(":hover")) {
-        // Hovering defers to the CSS hover-wake, which centres the layer and
-        // blinks, so the two never fight over it.
+        // Hovering holds the iris centred (no follow drift while the mouse
+        // rests on the emblem), so the two never fight over it.
         if (layer.style.transform) layer.style.transform = "";
         return;
       }
@@ -5819,22 +5922,6 @@
     document.addEventListener("mouseleave", rest);
     eyeMove = step;
     eyeLeave = rest;
-    // The blink squashes the whole wrapper - both layers close as one lid.
-    // Under reduced motion the eye stays steady and open.
-    if (!motionOk) return;
-    const blink = () => {
-      el.classList.add("blinking");
-      setTimeout(() => el.classList.remove("blinking"), 320);
-      // DL.7: one blink in five is a double - the second lid closes ~120ms after
-      // the first, so the cadence never settles into a metronome.
-      if (Math.random() < 0.15)
-        setTimeout(() => {
-          el.classList.add("blinking");
-          setTimeout(() => el.classList.remove("blinking"), 320);
-        }, 120);
-      eyeTimer = setTimeout(blink, 5000 + Math.random() * 15000);
-    };
-    eyeTimer = setTimeout(blink, 5000 + Math.random() * 15000);
   }
 
   function tearDownEye() {
@@ -5864,8 +5951,11 @@
       const r = await api("/greeting");
       if (!r || !r.text) return;
       if (r.generated) greetTries = 0;
-      if (r.text !== el.textContent) {
-        el.textContent = r.text;
+      // The phrase is the h1's first text node; the P.7 lavender period rides
+      // in a trailing span, so swapping only the text node keeps the mark.
+      const phrase = el.firstChild ? el.firstChild.nodeValue : el.textContent;
+      if (r.text !== phrase) {
+        el.firstChild.nodeValue = r.text;
         el.classList.remove("swap");
         void el.offsetWidth;
         el.classList.add("swap");
@@ -6093,6 +6183,39 @@
     );
   }
 
+  // The drawer's Views section: one chip per saved view the artifact is in,
+  // plus a trailing ghost button that opens the saved-view picker to add it to
+  // another view. Mirrors the tags row's shape - a shelf label above, chips and
+  // the add affordance on one wrapping row.
+  function viewsRowHtml(views, artifactId) {
+    const chips = (views || [])
+      .map(
+        (v) =>
+          '<span class="viewchip" data-pivot="' +
+          v.id +
+          '" data-name="' +
+          esc(v.name) +
+          '"><span class="viewlabel">' +
+          esc(v.name) +
+          "</span>" +
+          '<button class="tagx" aria-label="Remove from ' +
+          esc(v.name) +
+          '" title="Remove from this view">' +
+          svg("close") +
+          "</button></span>",
+      )
+      .join("");
+    return (
+      '<div class="shelf">Views</div>' +
+      '<div class="viewsrow">' +
+      chips +
+      '<button class="viewadd" type="button" onclick="addArtifactToView(\'' +
+      esc(artifactId) +
+      "')\">+ add to a view</button>" +
+      "</div>"
+    );
+  }
+
   // The chip names and the input are bound here, not in inline onclick: a tag name
   // is user text, so it travels in a data attribute and is read at click time.
   function mountTagRow(id) {
@@ -6113,6 +6236,19 @@
         }
       });
     }
+  }
+
+  // The drawer's view chips bind here, not in inline onclick: the pivot id
+  // travels in a data attribute and is read at click time.
+  function mountViewsRow(id) {
+    const row = view.querySelector(".viewsrow");
+    if (!row) return;
+    row.querySelectorAll(".viewchip .tagx").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const chip = btn.closest(".viewchip");
+        removeArtifactFromView(id, chip.dataset.pivot);
+      });
+    });
   }
 
   // ---- tags in the drawer --------------------------------------------------
@@ -6148,6 +6284,45 @@
     } catch (err) {
       toast(String((err && err.message) || err), true);
     }
+  }
+
+  // ---- views in the drawer -------------------------------------------------
+  // The drawer's Views section (P.1): one chip per saved view the artifact is
+  // in, and a ghost button that reuses the saved-view picker to add the
+  // artifact to another view. Both re-render the drawer in place, preserving
+  // its open state, the same pattern addTag/removeTag use.
+  async function addArtifactToView(artifactId) {
+    const pick = await openCustomPicker();
+    if (!pick) return;
+    try {
+      await api("/pivots/" + pick.id + "/include", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artifact_id: artifactId }),
+      });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+    toast('Added to "' + pick.name + '".');
+    const keep = drawerOpen();
+    await showArtifact(artifactId);
+    if (keep) toggleDrawer(true);
+  }
+
+  async function removeArtifactFromView(artifactId, pivotId) {
+    try {
+      await api("/pivots/" + pivotId + "/exclude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artifact_id: artifactId }),
+      });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+    toast("Removed from this view.");
+    const keep = drawerOpen();
+    await showArtifact(artifactId);
+    if (keep) toggleDrawer(true);
   }
 
   async function showArtifact(id, focus, scrollY) {
@@ -6288,11 +6463,10 @@
       const current = d.annotations.filter((x) => x.current);
       const last = current.length ? current[current.length - 1] : null;
       body +=
-        '<div class="shelf">Your note on this</div>' +
         '<div class="docpane">' +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
-        'role="textbox" aria-multiline="true" aria-label="Your note on this" ' +
-        'style="min-height:150px" data-placeholder="What you thought."></div>' +
+        'role="textbox" aria-multiline="true" aria-label="Your notes here" ' +
+        'style="min-height:150px" data-placeholder="Your notes here"></div>' +
         '<div class="bar"><span id="state" class="meta"></span></div></div>';
       ctx = {
         id,
@@ -6331,11 +6505,13 @@
       svg("panelout") +
       "</button></div>" +
       tagRowHtml(d.tags) +
+      viewsRowHtml(d.views, id) +
       summaryHtml +
       "</aside>";
 
     view.innerHTML = html;
     mountTagRow(id);
+    mountViewsRow(id);
     mountEditor(focus);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
     if (a.kind === "file") mountPlain(a.id);
@@ -7262,21 +7438,8 @@
     );
   }
 
-  function pivotGroupsHtml(d, makeMove, makeRemove, spec) {
-    // The grouping is inferred when any step read a value from world knowledge
-    // rather than the note itself; the run marks that per group (they share the
-    // one value, since one enrich taints the whole run). That is a guess about the
-    // person's things, not a fact read from them, so it is said once at the top and
-    // never buried (rule 2).
-    const inferred = d.groups.some((g) => g.grounded === false);
-
+  function pivotGroupsHtml(d, makeMove, makeRemove, spec, pivot_id) {
     let html = "";
-    if (inferred) {
-      html +=
-        '<div class="groundnote" role="note">These groups come from the ' +
-        "assistant's knowledge, not from text in your notes.</div>";
-    }
-
     // Collapsed choices persist per recipe (K.10): the same spec re-run keeps
     // the groups the person folded away, and a different grouping starts open.
     const collapsed = collapsedSet(spec);
@@ -7300,6 +7463,18 @@
         '</span><span class="gchev" aria-hidden="true">' +
         svg("chev") +
         "</span></button>" +
+        (pivot_id
+          ? '<button class="groupdel" aria-label="Delete group ' +
+            esc(key) +
+            ' and all its artifacts from this view" title="Delete this group" ' +
+            "onclick=\"deletePivotGroup('" +
+            esc(pivot_id) +
+            "', '" +
+            esc(key) +
+            "')\">" +
+            svg("trash") +
+            "</button>"
+          : "") +
         '<div class="meta">' +
         items.length +
         " item" +
@@ -7315,13 +7490,17 @@
               esc(a.title || "Untitled") +
               ' to another group" ' +
               makeMove(a.id) +
-              ">move</button>" +
+              '">' +
+              svg("move") +
+              "</button>" +
               (makeRemove
                 ? '<button class="removebtn" aria-label="Remove ' +
                   esc(a.title || "Untitled") +
                   ' from this view" ' +
                   makeRemove(a.id) +
-                  ">remove</button>"
+                  '">' +
+                  svg("close") +
+                  "</button>"
                 : "") +
               "</div>",
           )
@@ -7410,16 +7589,14 @@
       " &middot; grouped by " +
       esc(d.group_by) +
       (d.truncated ? " &middot; first 200 only" : "") +
-      "</div>" +
-      (pivot_id
-        ? '<div class="pivotactions"><button class="btn ghost" onclick="addArtifactToGrouping()">Add artifact to this view</button></div>'
-        : "");
+      "</div>";
 
     html += pivotGroupsHtml(
       d,
       (id) => "onclick=\"pivotMove('" + esc(id) + "')\"",
       pivot_id ? (id) => "onclick=\"pivotRemove('" + esc(id) + "')\"" : null,
       spec,
+      pivot_id,
     );
     view.innerHTML = html;
     mountPivotGroups(spec);
@@ -7532,6 +7709,75 @@
     toast("Removed from this view.");
   }
 
+  // Delete a whole group from a saved view (R.3): exclude every artifact in the
+  // section, then re-run and re-render. The artifacts stay in the library - they
+  // just stop matching this arrangement and move to the Removed shelf, where
+  // they can be restored one at a time. The confirmation names the group and
+  // counts the artifacts before anything is written.
+  async function deletePivotGroup(pivotId, groupKey) {
+    if (!pivotState || !pivotState.pivot_id || pivotState.pivot_id !== pivotId)
+      return;
+    const d = pivotState.d;
+    const group = d.groups.find(
+      (g) => (g.key || "Not determined") === groupKey,
+    );
+    if (!group) return;
+    const ids = group.artifact_ids || [];
+    const count = ids.length;
+    if (!count) return;
+    const yes = await ask(
+      'Delete "' + groupKey + '"?',
+      "This removes " +
+        count +
+        " artifact" +
+        (count === 1 ? "" : "s") +
+        " from this view. They stay in your library - they just no longer appear in this arrangement. You can undo this from the Removed shelf.",
+      "Delete group",
+    );
+    if (!yes) return;
+    view.innerHTML =
+      '<div class="state thinking">removing ' + count + " artifacts...</div>";
+    // Each exclude call returns the stored spec's full excluded_ids; the last
+    // one carries the whole list. Mirroring pivotRemove, the local spec is kept
+    // in sync BEFORE the re-run so the run actually filters the group out.
+    let excluded = pivotState.spec.excluded_ids || [];
+    for (const id of ids) {
+      try {
+        const resp = await api("/pivots/" + pivotId + "/exclude", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artifact_id: id }),
+        });
+        excluded = resp.excluded_ids;
+      } catch (err) {
+        return toast(String((err && err.message) || err), true);
+      }
+    }
+    pivotState.spec = Object.assign({}, pivotState.spec, {
+      excluded_ids: excluded,
+    });
+    let next;
+    try {
+      next = await api("/pivot/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: pivotState.spec }),
+      });
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    renderPivot(next, pivotState.request, pivotState.spec, pivotId);
+    toast(
+      'Deleted "' +
+        groupKey +
+        '" (' +
+        count +
+        " artifact" +
+        (count === 1 ? "" : "s") +
+        " removed).",
+    );
+  }
+
   // Put a removed card back: undo the exclusion and re-run, mirroring pivotRemove.
   async function pivotRestore(id) {
     if (!pivotState || !pivotState.pivot_id) return;
@@ -7563,44 +7809,6 @@
     }
     renderPivot(next, pivotState.request, pivotState.spec, pivotState.pivot_id);
     toast("Restored to this view.");
-  }
-
-  // Force an artifact into this saved grouping (L.6c): pick one from the
-  // library, write the inclusion into the stored spec, re-run, and re-render.
-  // The artifact joins whichever group its group_by attribute resolves to - it
-  // is never copied or moved, it just appears in this arrangement too.
-  async function addArtifactToGrouping() {
-    if (!pivotState || !pivotState.pivot_id) return;
-    const id = await pickArtifact(pivotState.spec);
-    if (!id) return;
-    let included;
-    try {
-      const resp = await api("/pivots/" + pivotState.pivot_id + "/include", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artifact_id: id }),
-      });
-      included = resp.included_ids;
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    pivotState.spec = Object.assign({}, pivotState.spec, {
-      included_ids: included,
-    });
-
-    view.innerHTML = '<div class="state thinking">adding it...</div>';
-    let next;
-    try {
-      next = await api("/pivot/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec: pivotState.spec }),
-      });
-    } catch (err) {
-      return pivotFailed(err);
-    }
-    renderPivot(next, pivotState.request, pivotState.spec, pivotState.pivot_id);
-    toast("Added to this view.");
   }
 
   // Extend a chat organize turn with an artifact (N.3a): pick one from the
@@ -8138,6 +8346,7 @@
         // which called the spec object as a function on every card.
         null,
         st.spec,
+        null,
       )
     );
   }
@@ -8354,6 +8563,7 @@
   // through the same path. The saved name stands in for the words that planned it.
   async function runSavedGrouping(id, name) {
     teardown();
+    restorePill("inside");
     setRoute("g/" + id);
     view.innerHTML = '<div class="state thinking">Building the view...</div>';
     let saved;
@@ -8910,9 +9120,16 @@
     teardown();
     restorePill("inside");
     view.innerHTML =
+      '<div class="pagecol">' +
       '<div class="h1">Settings</div>' +
+      // Q.6: a one-line human orientation - names what settings does in
+      // product terms and when changes land, warming the bare heading.
+      '<p class="aside" style="margin-top: var(--sp-2); margin-bottom: var(--sp-4); max-width: 64ch;">' +
+      "Tune how Enqueue captures, thinks, and remembers. Changes save when you press Save." +
+      "</p>" +
       settingsTabBar() +
-      '<div id="settingsTabPane"></div>';
+      '<div id="settingsTabPane"></div>' +
+      "</div>";
     window.scrollTo(0, 0);
     await renderSettingsTab(currentSettingsTab);
   }
@@ -8948,11 +9165,13 @@
     const picked = d.backends.find((b) => b.name === chosen.value);
     if (picked && !picked.local)
       html +=
-        '<div class="aside caution">The text of whatever is retrieved gets sent to ' +
+        // Q.6: a warmer verb and plain English, same facts. The "yet" and
+        // "add one below" point at the key field instead of an env var.
+        '<div class="aside caution">When you ask a question, the text of whatever is retrieved goes to ' +
         esc(picked.label) +
-        ". Artifacts marked local only never take this path." +
+        ". Anything you marked local only stays here." +
         (picked.needs_key && !picked.key_present
-          ? " <b>No API key is set</b>, so calls will fail until ENQ_LLM_API_KEY is exported."
+          ? " <b>No API key set yet</b>, so calls will fail until you add one below."
           : "") +
         "</div>";
     else if (picked)
@@ -9118,7 +9337,7 @@
   // Settings changed in any settings form but not saved yet. One staging area for
   // the whole settings section, because Save commits the form in one PATCH. null
   // when nothing is pending. Cleared by Save or Discard, or by navigating away
-  // from the form (deliberate: unsaved means unsaved).
+  // from the form (deliberate: uncommitted means uncommitted).
   let pendingSettings = null;
 
   function isDirty() {
@@ -9127,7 +9346,7 @@
 
   // Staging never re-renders the form: re-rendering would reset a text field and
   // lose the very edit that staged it. The control itself already shows the edit in
-  // place; all that reacts here is the unsaved bar.
+  // place; all that reacts here is the dirty bar.
   function refreshDirtyBar() {
     const bar = document.getElementById("settingsActions");
     if (bar) bar.hidden = !isDirty();
@@ -9186,7 +9405,9 @@
   function settingsActionsBar() {
     return (
       '<div id="settingsActions" class="actions" hidden>' +
-      '<span class="aside dirty">unsaved</span>' +
+      // Q.6: "Changes ready" is an invitation - the work is staged, go
+      // ahead and save - not a status report.
+      '<span class="aside dirty">Changes ready</span>' +
       '<button class="btn primary" onclick="saveSettings()">Save</button>' +
       '<button class="btn ghost" onclick="discardSettings()">Discard</button>' +
       "</div>"
@@ -9262,7 +9483,11 @@
 
     const s0 = d.storage;
     html +=
-      '<div class="callout note"><p>Nothing you keep here leaves this machine.</p></div>' +
+      // Q.6: the second sentence reveals portability - the data is the
+      // user's, in a standard format, at a known path (SQLite is the source
+      // of truth per db.py / config.DB_PATH).
+      '<div class="callout note"><p>Nothing you keep here leaves this machine. ' +
+      "Everything you capture lives in one SQLite file you can back up, move, or read with any tool.</p></div>" +
       '<div class="group"><div class="field">' +
       '<span class="rowlabel">Everything lives at</span>' +
       '<div class="mono chip">' +
