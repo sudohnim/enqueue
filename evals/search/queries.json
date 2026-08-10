@@ -1,0 +1,17 @@
+[
+  {"query": "Hypatia", "expect_id_substring": "title_only_0001"},
+  {"query": "Ibn Sina", "expect_id_substring": "title_only_0002"},
+  {"query": "grit", "expect_id_substring": "paraphrase_0001"},
+  {"query": "ERR_QUEUE_4412", "expect_id_substring": "rare_string_0001"},
+  {"query": "travelling post offices where letters were sorted en route", "expect_id_substring": "long_0001"},
+  {"query": "postal", "expect_id_substring": "long_0001"},
+  {"query": "sourd", "expect_id_substring": "long_0003"},
+  {"query": "growing food without soil", "expect_id_substring": "paraphrase_0007"},
+  {"query": "things you can make from clay", "expect_id_substring": "long_0004"},
+  {"query": "keeping records for the future", "expect_id_substring": "paraphrase_0006"},
+  {"query": "building things with your hands", "expect_id_substring": "ordinary_0001"},
+  {"query": "cooking from scratch", "expect_id_substring": "long_0003"},
+  {"query": "tony tony chopper", "expect_id_substring": "chopper_annotated_image"},
+  {"query": "tony tony copper", "expect_id_substring": "chopper_annotated_image"},
+  {"query": "one piece character", "expect_id_substring": "chopper_described_image"}
+]
