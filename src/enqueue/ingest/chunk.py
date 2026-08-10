@@ -184,6 +184,22 @@ def chunk_artifact(conn, artifact_id: str) -> int:
             (artifact_id,),
         ).fetchall()
         body = "\n\n".join(f"## page {p['page'] + 1}\n\n{p['text']}" for p in pages)
+
+    # Annotations are your commentary on a captured artifact, and they are index
+    # source text: the artifact must be findable by what you wrote about it. Only
+    # current annotations are included (a superseded one no longer describes the
+    # artifact), matching the `current` flag logic in notes.get(). The artifacts
+    # body column is not touched; this is index text only.
+    notes = conn.execute(
+        "SELECT a.text FROM annotations a"
+        " WHERE a.artifact_id = ?"
+        " AND NOT EXISTS (SELECT 1 FROM annotations b WHERE b.supersedes_id = a.id)"
+        " ORDER BY a.created_at",
+        (artifact_id,),
+    ).fetchall()
+    if notes:
+        body = (body + "\n\n" if body.strip() else "") + "\n\n".join(n["text"] for n in notes)
+
     if not body.strip():
         return 0
 
@@ -204,7 +220,8 @@ def chunk_all() -> dict:
             for r in conn.execute(
                 "SELECT id FROM artifacts WHERE deleted_at IS NULL AND (body IS NOT NULL"
                 " OR id IN (SELECT artifact_id FROM link_previews WHERE status = 'ok')"
-                " OR id IN (SELECT DISTINCT artifact_id FROM page_text))"
+                " OR id IN (SELECT DISTINCT artifact_id FROM page_text)"
+                " OR id IN (SELECT DISTINCT artifact_id FROM annotations))"
             )
         ]
         for artifact_id in ids:
