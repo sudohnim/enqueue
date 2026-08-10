@@ -22,12 +22,9 @@ drops that line, not the artifact.
 
 from __future__ import annotations
 
-import re
 import uuid
 
 from pydantic import BaseModel
-
-from .. import db
 
 # The cost bound per artifact. Every name costs one enrichment call, so the
 # number of names is capped; the most prominent names come first, and the cap

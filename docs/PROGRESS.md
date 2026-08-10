@@ -197,7 +197,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.5 - Title-weighted keyword branch
 
-- [ ] **R.5 [AGENT]** Give FTS5 a separate title column and weight it.
+- [x] **R.5 [AGENT]** Give FTS5 a separate title column and weight it.
 
   Anchors: `_DDL["fts_chunks"]` at `src/enqueue/index/store_sqlite.py:68-71`, `CHUNK_INDEX_TEXT` at line 162, `upsert_chunks` at 241-246, `index_artifact` at 294-341, the `keyword` SQL at 111-114.
   Change `fts_chunks` to `USING fts5(chunk_id UNINDEXED, title, text)`.

@@ -141,6 +141,7 @@ def purge(artifact_id: str) -> dict:
             "artifact_versions",
         ):
             column = "artifact_id"
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
             conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (artifact_id,))
         # A tag the purged artifact was the last user of has nothing left to
         # reference it; drop the orphan so the cloud never lists a dead tag.

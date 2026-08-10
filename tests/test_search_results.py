@@ -182,3 +182,26 @@ class TestSearchEndpoint:
 
         assert {h["artifact_id"] for h in hits} == {"a1", "a2"}
         assert all(h["why"] == "all" for h in hits)
+
+
+class TestTitleWeight:
+    def test_title_match_outranks_body_match(self, sqlite_store):
+        # The Chopper bug: "tony tony chopper" only found the note whose body
+        # mentioned the name, because the keyword index had no separate title
+        # column and bm25 could not weight it. Here a1's title is the match,
+        # a2's body is; the title must win.
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Tony Tony Chopper", _UNRELATED)
+            _chunk(conn, "c1", "a1", 0, _UNRELATED)
+            _note(conn, "a2", "Field notes", "tony tony chopper appears once in the body.")
+            _chunk(conn, "c2", "a2", 0, "tony tony chopper appears once in the body.")
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("tony tony chopper", limit=20)
+        ids = [h["artifact_id"] for h in hits]
+        assert ids[0] == "a1", f"title match should rank first, got {ids}"
+        assert "a2" in ids

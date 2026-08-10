@@ -68,6 +68,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5(
           chunk_id UNINDEXED,
+          title,
           text
         )
         """)

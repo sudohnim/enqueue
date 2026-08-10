@@ -36,7 +36,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable
+from itertools import groupby
 from sqlite3 import OperationalError
+from typing import Any
 
 import sqlite_vec
 
@@ -67,7 +69,8 @@ _DDL = {
     ),
     "fts_chunks": (
         "DROP TABLE IF EXISTS fts_chunks",
-        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5(" " chunk_id UNINDEXED, text)",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks USING fts5("
+        " chunk_id UNINDEXED, title, text)",
     ),
     "fts_facets": (
         "DROP TABLE IF EXISTS fts_facets",
@@ -103,14 +106,14 @@ _SQL = {
         "clear_vec": "DELETE FROM vec_chunks",
         "clear_fts": "DELETE FROM fts_chunks",
         "insert_vec": "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)",
-        "insert_fts": "INSERT INTO fts_chunks (chunk_id, text) VALUES (?, ?)",
+        "insert_fts": "INSERT INTO fts_chunks (chunk_id, title, text) VALUES (?, ?, ?)",
         "dense": (
             "SELECT chunk_id AS id, distance FROM vec_chunks"
             " WHERE embedding MATCH ? ORDER BY distance LIMIT ?"
         ),
         "keyword": (
-            "SELECT chunk_id AS id, bm25(fts_chunks) AS raw FROM fts_chunks"
-            " WHERE fts_chunks MATCH ? ORDER BY bm25(fts_chunks) LIMIT ?"
+            "SELECT chunk_id AS id, bm25(fts_chunks, 1.0, 10.0, 1.0) AS raw FROM fts_chunks"
+            " WHERE fts_chunks MATCH ? ORDER BY bm25(fts_chunks, 1.0, 10.0, 1.0) LIMIT ?"
         ),
     },
     "facets": {
@@ -160,6 +163,51 @@ _COUNT_SQL = {
 # (measured in Part 1: the Epictetus note is the author's own paraphrase and
 # never contains the word "Epictetus").
 CHUNK_INDEX_TEXT = "{title}\n\n{text}"
+
+# The keyword branch's voice in the dense+keyword RRF fusion. RRF reads
+# ranks only, so the title-weighted bm25 (R.5's 10x title column) can only
+# matter through the keyword branch's ORDER. When dense and keyword rank the
+# same ids symmetrically the fused scores tie and rrf_scored falls back to
+# first-seen order, which is dense order. That is right when the keyword
+# branch is itself undecided, but a title match the keyword branch clearly
+# prefers must beat a body match. So on an RRF tie, let the keyword branch
+# override dense order only when it is confident: its best score must beat
+# the runner-up by at least this relative margin, or the tie keeps dense
+# order. 0.2 = the keyword winner must be 20% more confident.
+KEYWORD_MARGIN = 0.2
+
+
+# How each collection's rows land in its FTS table. The embed text and the
+# keyword columns can differ: a chunk embeds as "title\n\ntext" (the title is
+# the only place some names appear) but indexes title and text as separate
+# FTS columns, so bm25 can weight the title. Facets and entities have no
+# separate title, so their fts row is the same string they embed.
+#
+# Note on bm25 weights: FTS5 maps weights positionally to every column,
+# including UNINDEXED ones. `bm25(fts_chunks, 10.0, 1.0)` on a
+# (chunk_id, title, text) table would apply 10.0 to the unindexed chunk_id
+# (ignored) and 1.0 to the title - silently no weighting. The three-weight
+# form is the one that actually weights the title.
+def _chunk_entries(row) -> tuple[str, tuple[str, str]]:
+    """(embed_text, fts_row) for one chunk row, shared by rebuild and single-artifact index.
+
+    The fts text column drops a leading heading that just restates the
+    artifact title ("# On the Writings of Hypatia"): with that heading in
+    the text too, FTS5 counts the title term in both columns and normalizes
+    by row length, so the title's bm25 weight cannot tell a short title from
+    a long one. The title column alone carries the term then. The embed text
+    keeps the heading - it is still the chunk's context for vectors.
+    """
+    title = row["title"] or ""
+    text = row["text"] or ""
+    fts_text = text
+    heading = f"# {title}"
+    if title and text.startswith(heading):
+        fts_text = text[len(heading) :].lstrip("\n").strip()
+    return (
+        CHUNK_INDEX_TEXT.format(title=title, text=text),
+        (title, fts_text),
+    )
 
 
 def _fts_query(text: str) -> str:
@@ -216,11 +264,21 @@ class SqliteVecStore(VectorStore):
         Safe to call repeatedly. IF NOT EXISTS everywhere means this can also
         run before alembic ever has: migration 0010 uses the same DDL, so the
         two paths cannot fight.
+
+        A database indexed before the title-weight change has the old
+        two-column `fts_chunks` shape; recreate it so the title column and
+        its bm25 weight apply. The recreate only fires once (the next write
+        path after an upgrade), and every caller of `ensure` repopulates the
+        rows it clears, so no data is silently dropped.
         """
         conn = self._connect()
         try:
             for table in _DDL:
                 conn.execute(_DDL[table][1])
+            columns = [row["name"] for row in conn.execute("PRAGMA table_info(fts_chunks)")]
+            if "title" not in columns:
+                conn.execute(_DDL["fts_chunks"][0])
+                conn.execute(_DDL["fts_chunks"][1])
         finally:
             conn.close()
 
@@ -239,24 +297,27 @@ class SqliteVecStore(VectorStore):
     # -- writing ----------------------------------------------------------
 
     def upsert_chunks(self, batch_size: int = 64) -> dict:
-        return self._rebuild(
-            self.CHUNKS,
-            lambda row: CHUNK_INDEX_TEXT.format(title=row["title"], text=row["text"]),
-            batch_size,
-        )
+        return self._rebuild(self.CHUNKS, _chunk_entries, batch_size)
 
     def upsert_facets(self, batch_size: int = 64) -> dict:
-        return self._rebuild(self.FACETS, lambda row: row["statement"], batch_size)
+        return self._rebuild(
+            self.FACETS, lambda row: (row["statement"], (row["statement"],)), batch_size
+        )
 
     def upsert_entities(self, batch_size: int = 64) -> dict:
-        return self._rebuild(self.ENTITIES, lambda row: row["fact"], batch_size)
+        return self._rebuild(self.ENTITIES, lambda row: (row["fact"], (row["fact"],)), batch_size)
 
-    def _rebuild(self, name: str, text_of, batch_size: int) -> dict:
+    def _rebuild(self, name: str, entries_of, batch_size: int) -> dict:
         """Rebuild one collection from its source table, in place.
 
         Clear the collection, then embed and insert in batches of
         `batch_size`. Each batch writes the vector table and the keyword
         table in one transaction, so the two can never diverge mid-write.
+
+        `entries_of(row)` returns `(embed_text, fts_row)`: the embed text is
+        what gets embedded, and `fts_row` is the keyword-table columns after
+        the item id (a single string for facets and entities, `(title, text)`
+        for chunks).
         """
         self.ensure()
         sql = self._sql(name)
@@ -264,7 +325,7 @@ class SqliteVecStore(VectorStore):
         conn = self._connect()
         try:
             rows = conn.execute(sql["select_all"]).fetchall()
-            entries = [(row["id"], text_of(row)) for row in rows]
+            entries = [(row["id"], *entries_of(row)) for row in rows]
         finally:
             conn.close()
 
@@ -275,16 +336,16 @@ class SqliteVecStore(VectorStore):
         total = 0
         for start in range(0, len(entries), batch_size):
             batch = entries[start : start + batch_size]
-            vectors = embed([text for _, text in batch])
+            vectors = embed([entry[1] for entry in batch])
             with self._connect() as conn:
                 conn.executemany(
                     sql["insert_vec"],
                     [
-                        (item_id, json.dumps(vector))
-                        for (item_id, _), vector in zip(batch, vectors, strict=True)
+                        (entry[0], json.dumps(vector))
+                        for entry, vector in zip(batch, vectors, strict=True)
                     ],
                 )
-                conn.executemany(sql["insert_fts"], [(item_id, text) for item_id, text in batch])
+                conn.executemany(sql["insert_fts"], [(entry[0], *entry[2]) for entry in batch])
             total += len(batch)
             if self._on_progress and (total % 500 == 0 or total == len(entries)):
                 self._on_progress(total, len(entries))
@@ -311,11 +372,8 @@ class SqliteVecStore(VectorStore):
             if not rows:
                 return 0
 
-            entries = [
-                (row["id"], CHUNK_INDEX_TEXT.format(title=row["title"], text=row["text"]))
-                for row in rows
-            ]
-            vectors = embed([text for _, text in entries])
+            entries = [(row["id"], *_chunk_entries(row)) for row in rows]
+            vectors = embed([entry[1] for entry in entries])
 
             conn.execute(
                 "DELETE FROM vec_chunks"
@@ -330,13 +388,13 @@ class SqliteVecStore(VectorStore):
             conn.executemany(
                 "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)",
                 [
-                    (item_id, json.dumps(vector))
-                    for (item_id, _), vector in zip(entries, vectors, strict=True)
+                    (entry[0], json.dumps(vector))
+                    for entry, vector in zip(entries, vectors, strict=True)
                 ],
             )
             conn.executemany(
-                "INSERT INTO fts_chunks (chunk_id, text) VALUES (?, ?)",
-                [(item_id, text) for item_id, text in entries],
+                "INSERT INTO fts_chunks (chunk_id, title, text) VALUES (?, ?, ?)",
+                [(entry[0], *entry[2]) for entry in entries],
             )
         return len(entries)
 
@@ -518,10 +576,13 @@ class SqliteVecStore(VectorStore):
         dense = self.search_dense(name, text, limit=prefetch)
         keyword = self._search_keyword(name, text, limit=prefetch)
         id_col = self._id_col(name)
+        dense_ids = [hit[id_col] for hit in dense]
+        keyword_ids = [hit[id_col] for hit in keyword]
+        keyword_score = {hit[id_col]: hit["score"] for hit in keyword}
 
         fused = rrf_scored(
-            [hit[id_col] for hit in dense],
-            [hit[id_col] for hit in keyword],
+            dense_ids,
+            keyword_ids,
             # k=1 reproduces the Qdrant backend's fused score scale: their RRF
             # is 1/(pos + 2) over 0-based positions, which is 1/(rank + 1)
             # over 1-based ranks. The lens score threshold was calibrated on
@@ -530,11 +591,39 @@ class SqliteVecStore(VectorStore):
             k=1,
             limit=limit,
         )
+        # RRF reads ranks only, so the bm25 title weight (10x, R.5) can only
+        # act through the keyword ORDER. On an RRF tie rrf_scored keeps
+        # first-seen order, which is dense order. Let the keyword branch
+        # overturn that only when it is confident - its best score beats the
+        # runner-up by KEYWORD_MARGIN or more; a title match at 10x bm25 is
+        # confidently better than a body match, while two title matches of
+        # the same name ("On the Writings of Hypatia" vs "Teaching the Works
+        # of Hypatia of Alexandria") score within noise of each other and
+        # keep dense order, which is the semantic branch's call.
         by_id = {hit[id_col]: hit for hit in dense}
         by_id.update({hit[id_col]: hit for hit in keyword})
+        ordered: list[tuple[Any, float]] = []
+        # rrf_scored sorts by (-score, first-seen), so equal-score items are
+        # contiguous; groupby folds them into tie runs.
+        for _, group in groupby(fused, key=lambda entry: entry[1]):
+            run = list(group)
+            if len(run) > 1:
+                scored = sorted(
+                    ((item, keyword_score[item]) for item, _ in run if item in keyword_score),
+                    key=lambda pair: pair[1],
+                    reverse=True,
+                )
+                if len(scored) >= 2:
+                    best, second = scored[0][1], scored[1][1]
+                    if best > second and (best - second) / best >= KEYWORD_MARGIN:
+                        winner = scored[0][0]
+                        run = [entry for entry in run if entry[0] == winner] + [
+                            entry for entry in run if entry[0] != winner
+                        ]
+            ordered.extend(run)
         return [
             {**by_id[item_id], "score": round(score, 6)}
-            for item_id, score in fused
+            for item_id, score in ordered
             if item_id in by_id
         ]
 
