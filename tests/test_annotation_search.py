@@ -261,3 +261,17 @@ class TestDescribeFailure:
         finally:
             conn.close()
         assert status == "failed"
+
+    def test_bodyless_image_is_findable_by_its_name(self, sqlite_store, quiet_queue, monkeypatch):
+        """An image with no body is still reachable through its title and filename."""
+        from enqueue.ingest import queue as ingest_queue
+
+        aid = _image(monkeypatch, title="chopper-plush.png")
+        _broken_vision(monkeypatch)
+        _quiet_derived(monkeypatch)
+
+        ingest_queue.process(aid)
+
+        hits = search_results("chopper plush")
+        ids = [h["artifact_id"] for h in hits]
+        assert aid in ids

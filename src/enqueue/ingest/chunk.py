@@ -146,7 +146,7 @@ def chunk_markdown(markdown: str) -> list[tuple[str, str]]:
 def chunk_artifact(conn, artifact_id: str) -> int:
     """Rebuild chunks for one artifact. Derived data, so it is replaced wholesale."""
     row = conn.execute(
-        "SELECT kind, title, body FROM artifacts WHERE id = ?", (artifact_id,)
+        "SELECT kind, title, body, filename FROM artifacts WHERE id = ?", (artifact_id,)
     ).fetchone()
     if row is None:
         return 0
@@ -199,6 +199,16 @@ def chunk_artifact(conn, artifact_id: str) -> int:
     ).fetchall()
     if notes:
         body = (body + "\n\n" if body.strip() else "") + "\n\n".join(n["text"] for n in notes)
+
+    # A capture whose text never materialised (an image whose vision describe
+    # failed, a preview that never arrived) must still be reachable by its own
+    # name: the title and filename are the only words it owns. This guarantees
+    # every artifact has at least one chunk, so it is also eligible for facet
+    # and entity generation, which are gated on chunks existing.
+    if not body.strip() and row["kind"] != "note":
+        name = " ".join(filter(None, (row["title"], row["filename"]))).strip()
+        if name:
+            body = name
 
     if not body.strip():
         return 0
