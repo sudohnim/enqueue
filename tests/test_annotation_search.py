@@ -188,6 +188,58 @@ class TestChopperRepro:
         assert aid in ids
 
 
+class TestFuzzyTypo:
+    def test_one_edit_typo_is_found_via_fuzzy(self, sqlite_store, quiet_queue, monkeypatch):
+        """GT.1's typo: 'tony tony copper' is one edit off the annotation text.
+
+        The trigram branch cannot see it (copper and chopper share too few
+        trigrams), but the fuzzy branch matches the short annotation text at
+        ratio >= FUZZY_RATIO and marks the hit why="fuzzy".
+        """
+        from enqueue.ingest import queue as ingest_queue
+
+        aid = _image(monkeypatch)
+        _broken_vision(monkeypatch)
+        _quiet_derived(monkeypatch)
+        conn = db.get_conn()
+        try:
+            _annotate(conn, aid, "tony tony chopper")
+            conn.commit()
+        finally:
+            conn.close()
+
+        ingest_queue.process(aid)
+
+        hits = search_results("tony tony copper")
+        row = next((h for h in hits if h["artifact_id"] == aid), None)
+        assert row is not None, f"typo query should find the annotated image, got {hits}"
+        assert row["why"] == "fuzzy"
+
+    def test_unrelated_artifact_below_threshold_is_not_fuzzy(self, sqlite_store, monkeypatch):
+        """A title with no real similarity stays below FUZZY_RATIO."""
+        conn = db.get_conn()
+        try:
+            _link(conn, "unrelated")
+            conn.execute(
+                "UPDATE artifacts SET title = 'Field notes on tides' WHERE id = 'unrelated'"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        from enqueue.retrieve.candidates import _fuzzy_hits
+
+        fuzzy = _fuzzy_hits("tony tony copper", 20)
+        assert all(h["artifact_id"] != "unrelated" for h in fuzzy)
+
+    def test_fuzzy_ratio_typo_vs_far(self):
+        """The ratio separates a one-edit typo from an unrelated string."""
+        from enqueue.retrieve.candidates import _fuzzy_ratio
+
+        assert _fuzzy_ratio("tony tony copper", "tony tony chopper") >= 0.75
+        assert _fuzzy_ratio("tony tony copper", "field notes on tides") < 0.75
+
+
 class TestAnnotateRequeues:
     def test_annotate_requeues_ingest(self, store, quiet_queue):
         """Writing an annotation re-queues the artifact so its chunks rebuild."""

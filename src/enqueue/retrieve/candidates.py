@@ -15,9 +15,132 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from difflib import SequenceMatcher
 
 from .. import db
 from ..index.store import get_store
+
+# R.7 fuzzy branch: minimum SequenceMatcher ratio for a candidate to count as
+# a one-edit typo match, and the score a fuzzy hit carries. The score is modest
+# - below a strong lexical hit (a dual-branch rank-1 hit is ~1.0) but above a
+# single-branch rank-1 hit (~0.5), which is all a typo query can muster - so a
+# fuzzy match wins the merge only when the hybrid's answer was itself weak.
+FUZZY_RATIO = 0.75
+FUZZY_BASE_SCORE = 0.6
+
+
+def _fuzzy_ratio(query: str, candidate: str) -> float:
+    """Best of whole-string and best-word-window similarity (R.7).
+
+    One-edit typos ("copper" vs "chopper") score high on the whole string;
+    a query that is a few words of a longer candidate scores high on its best
+    window ("growing food" inside "the technique of growing food without
+    soil"). Windows slide by word, so the shorter text never has to align to
+    word boundaries it does not have.
+    """
+    ql, cl = query.lower(), candidate.lower()
+    best = SequenceMatcher(None, ql, cl).ratio()
+    q_words = ql.split()
+    c_words = cl.split()
+    n = len(q_words)
+    if n and len(c_words) > n:
+        for i in range(len(c_words) - n + 1):
+            best = max(best, SequenceMatcher(None, ql, " ".join(c_words[i : i + n])).ratio())
+    return best
+
+
+def _fuzzy_hits(query: str, limit: int) -> list[dict]:
+    """Short-field fuzzy candidates: titles, entity names, current annotations.
+
+    The trigram branch covers substrings, not one-edit typos: "copper" and
+    "chopper" share too few trigrams for FTS5 to see. Fuzzy matching over the
+    whole corpus's chunk text is too slow, so this branch is scoped to the
+    short fields a name lives in: artifact titles, `entities.entity` values,
+    and current annotation texts (same NOT EXISTS filter as R.2a). The corpus
+    is hundreds to low thousands of rows, so scoring every candidate stays
+    single-digit milliseconds.
+
+    Returns one entry per artifact with a best ratio at or above FUZZY_RATIO,
+    carrying the matched text as the snippet source.
+    """
+    q = query.strip()
+    if len(q) < 3:
+        return []
+    conn = db.get_conn()
+    try:
+        rows = conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL").fetchall()
+        erows = conn.execute("SELECT artifact_id, entity FROM entities").fetchall()
+        arows = conn.execute(
+            "SELECT artifact_id, text FROM annotations a"
+            " WHERE NOT EXISTS (SELECT 1 FROM annotations b WHERE b.supersedes_id = a.id)"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    best: dict[str, tuple[float, str]] = {}
+    for row in rows:
+        _fuzzy_update(best, row["id"], row["title"], q)
+    for row in erows:
+        _fuzzy_update(best, row["artifact_id"], row["entity"], q)
+    for row in arows:
+        _fuzzy_update(best, row["artifact_id"], row["text"], q)
+
+    ranked = sorted(best.items(), key=lambda kv: kv[1][0], reverse=True)[:limit]
+    return [
+        {
+            "artifact_id": aid,
+            "score": FUZZY_BASE_SCORE * ratio,
+            "why": "fuzzy",
+            "matched": matched,
+        }
+        for aid, (ratio, matched) in ranked
+    ]
+
+
+def _fuzzy_update(best: dict[str, tuple[float, str]], aid: str, text: str, q: str) -> None:
+    """Record aid's best (ratio, matched-text) pair for a candidate string."""
+    ratio = _fuzzy_ratio(q, text)
+    if ratio >= FUZZY_RATIO and (aid not in best or ratio > best[aid][0]):
+        best[aid] = (ratio, text)
+
+
+def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dict]:
+    """Merge the fuzzy branch into the hybrid rollup (R.7).
+
+    The fuzzy branch explains why an artifact matches a one-edit typo the
+    lexical and semantic branches cannot cleanly claim. It wins the merge
+    only when its score beats the hybrid's - a strong lexical hit (a title
+    at 10x bm25, a dual-branch rank 1) keeps its own explanation, while a
+    weak dense-only hit yields to "fuzzy". A fuzzy-only artifact is added
+    and ranks by its fuzzy score.
+    """
+    if not fuzzy:
+        return results
+    by_aid = {h["artifact_id"]: h for h in results}
+    conn = db.get_conn()
+    try:
+        for f in fuzzy:
+            aid = f["artifact_id"]
+            if aid in by_aid:
+                if f["score"] > by_aid[aid]["score"]:
+                    by_aid[aid] = {**by_aid[aid], "score": f["score"], "why": "fuzzy"}
+            else:
+                row = conn.execute(
+                    "SELECT title, kind FROM artifacts WHERE id = ?", (aid,)
+                ).fetchone()
+                if row is None:
+                    continue
+                by_aid[aid] = {
+                    "score": f["score"],
+                    "artifact_id": aid,
+                    "title": row["title"],
+                    "kind": row["kind"],
+                    "why": "fuzzy",
+                    "snippet": " ".join(f["matched"].split())[:200],
+                }
+    finally:
+        conn.close()
+    return sorted(by_aid.values(), key=lambda h: h["score"], reverse=True)[:limit]
 
 
 def _log_sub_queries(queries: list[str]) -> None:
@@ -197,7 +320,7 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         tagged = [h for h in _hybrid_results(free_text, limit * 5) if h["artifact_id"] in tag_ids]
         return tagged[:limit]
 
-    return _hybrid_results(q, limit)
+    return _merge_fuzzy(_hybrid_results(q, limit), _fuzzy_hits(free_text, limit), limit)
 
 
 def _hybrid_results(q: str, limit: int = 20) -> list[dict]:

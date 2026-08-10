@@ -232,7 +232,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.7 - Typo tolerance over short fields
 
-- [ ] **R.7 [AGENT]** Add a fuzzy branch over titles, entity names, and annotation lines.
+- [x] **R.7 [AGENT]** Add a fuzzy branch over titles, entity names, and annotation lines.
 
   Rationale: trigram covers substring, not one-edit typos (`copper` vs `chopper` share too few trigrams for FTS5 phrase semantics).
   Full-corpus fuzzy over chunk text is too slow, so scope the branch to short fields only: artifact titles, `entities.entity` values, and current annotation texts (same `NOT EXISTS` filter as R.2a).
@@ -242,6 +242,13 @@ Every ranking change is validated against the golden set from R.4 before it is c
   Tests: artifact annotated `tony tony chopper` is returned for query `tony tony copper` with `why="fuzzy"`; an unrelated artifact below the threshold is not returned.
 
   Done when: `uv run pytest tests/test_annotation_search.py -q` green including the typo test; `scripts/search_eval.py` recall@10 >= R.6 numbers (record both).
+
+  **Deviations/decisions** (forced by the committed unit tests):
+  - The annotations query uses chunk.py's exact R.2a filter (`NOT EXISTS supersedes_id`); the annotations table has no `deleted_at` column.
+  - Merge rule is score-wins, not why-wins: a fuzzy match overrides an artifact's entry only when its score beats the hybrid's. This keeps the R.5 story intact (an exact title match stays `why="chunk"` at 0.83) while a typo query (dense-only, 0.5) yields to `why="fuzzy"` at 0.6 x ratio. The first draft (why flips on any fuzzy match) broke `test_six_chunks` (rooftops/rooftop is a real singular-plural fuzzy match) and mislabeled Hypatia's title match.
+  - `FUZZY_BASE_SCORE = 0.6`: above a single-branch rank-1 hit (0.5, all a typo query can muster) but below a dual-branch rank-1 hit (1.0, a strong lexical hit).
+
+  Eval (R.4 harness, same 15 queries): R.7 -> recall@10 14/15 (0.933), MRR 0.782, bit-identical ranks to R.6; `tony tony copper` is now the fuzzy branch's hit (why="fuzzy") at the same rank 1.
 
 ### R.8 - Recency weighting
 
