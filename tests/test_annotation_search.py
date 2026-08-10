@@ -186,3 +186,57 @@ class TestChopperRepro:
         hits = search_results("tony tony chopper")
         ids = [h["artifact_id"] for h in hits]
         assert aid in ids
+
+
+class TestAnnotateRequeues:
+    def test_annotate_requeues_ingest(self, store, quiet_queue):
+        """Writing an annotation re-queues the artifact so its chunks rebuild."""
+        from enqueue import notes
+
+        aid = str(uuid.uuid4())
+        conn = db.get_conn()
+        try:
+            _link(conn, aid)
+            conn.commit()
+        finally:
+            conn.close()
+
+        notes.annotate(aid, "tony tony chopper")
+
+        # quiet_queue is the submit spy: annotate must put the artifact back
+        # through the ingest queue, or the new text never reaches the index.
+        assert quiet_queue == [aid]
+
+    def test_superseded_annotation_is_not_indexed(self, sqlite_store, quiet_queue, monkeypatch):
+        """A superseded annotation stops describing the artifact: the new text is
+        findable, the superseded text never reaches the index.
+
+        The old-string search cannot assert zero hits on a small corpus: the dense
+        branch returns the nearest neighbor for any query, so the artifact still
+        appears. What R.2a guarantees is that the superseded text is not chunk
+        source, so the assertion is on the index content, not on hit presence.
+        """
+        from enqueue import notes
+        from enqueue.ingest import queue as ingest_queue
+
+        aid = _image(monkeypatch)
+        _broken_vision(monkeypatch)
+        _quiet_derived(monkeypatch)
+
+        first = notes.annotate(aid, "tony tony chopper")
+        notes.annotate(aid, "chopper the reindeer", supersedes_id=first["id"])
+
+        ingest_queue.process(aid)
+
+        # The current annotation is indexed and searchable.
+        hits = search_results("chopper the reindeer")
+        assert aid in [h["artifact_id"] for h in hits]
+
+        # The superseded text never reaches a chunk.
+        conn = db.get_conn()
+        try:
+            rows = conn.execute("SELECT text FROM chunks WHERE artifact_id = ?", (aid,)).fetchall()
+        finally:
+            conn.close()
+        assert rows, "the current annotation must produce at least one chunk"
+        assert all("tony tony chopper" not in c["text"] for c in rows)

@@ -167,6 +167,11 @@ def annotate(artifact_id: str, text: str, supersedes_id: str | None = None) -> d
         # was saved and the person had no way to tell.
         conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, artifact_id))
 
+    # An annotation is index-source text (R.2a): the artifact must be findable by
+    # what was written about it, so its chunks have to rebuild. Same fire-and-forget
+    # discipline as editing a note body.
+    ingest_queue.submit(artifact_id)
+
     return {"id": entry_id, "supersedes_id": supersedes_id}
 
 
