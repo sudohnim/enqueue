@@ -88,11 +88,3 @@ def get(now: datetime | None = None) -> dict:
     seed = f"{moment.date().isoformat()}:{moment.hour}"
     phrase = random.Random(seed).choice(_pool(part))
     return {"text": phrase, "part": part, "generated": False}
-
-
-def ensure(now: datetime | None = None) -> None:
-    """No-op, kept so callers (the engine's startup) need no change.
-
-    Greetings are static now; there is nothing to generate and nothing to warm.
-    """
-    return None

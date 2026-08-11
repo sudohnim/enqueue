@@ -13,17 +13,12 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from datetime import datetime, timezone
 
 from . import db
 from .ingest import queue as ingest_queue
 from .ingest import secrets
 
 UNTITLED = "Untitled"
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def title_from_body(body: str) -> str:
@@ -51,7 +46,7 @@ def _hash(text: str) -> str:
 def create(body: str = "", title: str | None = None, local_only: bool = False) -> dict:
     """Create a note. An empty note is legitimate: capture costs nothing."""
     artifact_id = str(uuid.uuid4())
-    now = _now()
+    now = db.now()
     resolved = (title or title_from_body(body)).strip() or UNTITLED
 
     # The hash is only a dedupe key, and two notes written at different moments are
@@ -105,7 +100,7 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
     Appends the new body to the version log *before* updating the artifact, so a
     crash between the two leaves a spare copy rather than a hole.
     """
-    now = _now()
+    now = db.now()
 
     with db.transaction() as conn:
         row = conn.execute(
@@ -155,7 +150,7 @@ def annotate(artifact_id: str, text: str, supersedes_id: str | None = None) -> d
             if prior is None:
                 raise ValueError("supersedes_id is not an annotation on this artifact")
 
-        now = _now()
+        now = db.now()
         conn.execute(
             "INSERT INTO annotations (id, artifact_id, supersedes_id, text, created_at)"
             " VALUES (?,?,?,?,?)",

@@ -58,7 +58,3 @@ def test_pool_mixes_in_generic():
     pool = greeting._pool("morning")
     assert "Good morning" in pool
     assert set(greeting.GENERIC).issubset(set(pool))
-
-
-def test_ensure_is_a_noop():
-    assert greeting.ensure(datetime(2025, 6, 1, 9)) is None

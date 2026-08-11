@@ -1,10 +1,12 @@
-"""enq reindex, and the engine-aware readiness of the eval commands.
+"""Engine-aware readiness of the eval commands.
 
-The reindex contract: rebuild both collections from the chunks and facets
-tables already in SQLite, never touch Qdrant, print progress every 500 rows,
-be safe to re-run (no duplicated rows), and record the embedding version when
-done. The eval tests cover the per-engine readiness gate that replaced the
-hardcoded "test Qdrant directory exists" check.
+The eval tests cover the per-engine readiness gate that replaced the
+hardcoded "test Qdrant directory exists" check: an engine whose vec tables
+are missing refuses to eval, and a built sqlite-vec index runs queries.
+(The `enq reindex` command this file used to test was deleted in M.3 - it
+touched the database directly and duplicated `enq index`; the idempotent
+rebuild contract it asserted is covered by test_bootstrap and
+test_store_sqlite.)
 """
 
 from __future__ import annotations
@@ -17,58 +19,6 @@ import typer
 
 from enqueue import cli, config, db
 from enqueue.index.store import get_store
-
-
-def _seed_library() -> None:
-    conn = db.get_conn()
-    try:
-        conn.execute(
-            "INSERT INTO artifacts (id, kind, title, body, content_hash, status,"
-            " created_at, updated_at) VALUES ('a1', 'note', 'Hydroponics',"
-            " 'A city can feed itself from its rooftops.', 'h1', 'ok',"
-            " datetime('now'), datetime('now'))"
-        )
-        conn.execute(
-            "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker)"
-            " VALUES ('c1', 'a1', 0, 'A city can feed itself from its rooftops.', 'test')"
-        )
-        conn.execute(
-            "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
-            " VALUES ('f1', 'a1', 3, 'Rooftops can feed a city.', 'test-model', 0.8)"
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def test_reindex_twice_is_identical(store, monkeypatch, capsys):
-    monkeypatch.setattr(config, "VECTOR_STORE", "sqlite-vec")
-    _seed_library()
-    get_store.cache_clear()
-
-    cli.reindex()
-    first = get_store().counts()
-    out = capsys.readouterr().out
-    assert "Reindexing chunks" in out
-    assert "1/1 rows" in out
-    assert "Index rebuilt; embedding version recorded." in out
-
-    cli.reindex()
-    second = get_store().counts()
-    assert first == second
-    assert first["chunks"] == 1
-    assert first["fts_chunks"] == 1
-    assert first["facets"] == 1
-    assert first["fts_facets"] == 1
-
-    conn = db.get_conn()
-    try:
-        value = conn.execute("SELECT value FROM index_meta WHERE key = 'embed_version'").fetchone()[
-            "value"
-        ]
-    finally:
-        conn.close()
-    assert value == config.EMBED_VERSION
 
 
 def _point_evals_at(tmp_path):

@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -33,10 +32,6 @@ MIMES = {
 }
 
 IMAGE_MIMES = {m for m in MIMES.values() if m.startswith("image/")}
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def kind_for(mime: str | None, filename: str) -> str:
@@ -70,7 +65,7 @@ def link(url: str, local_only: bool = False) -> dict:
         url = "https://" + url
 
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    now = _now()
+    now = db.now()
 
     with db.transaction() as conn:
         existing = conn.execute(
@@ -131,7 +126,7 @@ def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool
     digest = hashlib.sha256(data).hexdigest()
     suffix = Path(filename).suffix.lower()
     mime = mime or MIMES.get(suffix, "application/octet-stream")
-    now = _now()
+    now = db.now()
 
     with db.transaction() as conn:
         existing = conn.execute(

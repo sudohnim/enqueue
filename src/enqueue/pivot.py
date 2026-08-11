@@ -22,7 +22,7 @@ from collections import defaultdict
 
 from pydantic import BaseModel
 
-from . import db, derive, fields  # noqa: F401 - db for later phases; derive used by run()
+from . import db, derive, fields
 from .providers.base import get_provider  # the planner's one model call
 
 MAX_PIVOT_ARTIFACTS = 200

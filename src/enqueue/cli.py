@@ -120,37 +120,6 @@ def index(
 
 
 @app.command()
-def reindex() -> None:
-    """Rebuild the search index from the database.
-
-    Both collections are rebuilt in place from the `chunks` and `facets`
-    tables already in SQLite; the store never reads external state, so no
-    vector data is ever copied between engines. Progress prints every 500
-    rows. Re-running is safe: a rebuild clears its collection first, so an
-    interrupted run is repaired on the next attempt and rows are never
-    duplicated. When both collections finish, the embedding version is
-    written to `index_meta`.
-    """
-    from .index.store import get_store
-
-    def _progress(indexed: int, total: int) -> None:
-        typer.echo(f"  {indexed}/{total} rows", err=False)
-
-    store = get_store(on_progress=_progress)
-    jobs = (
-        (store.CHUNKS, store.upsert_chunks),
-        (store.FACETS, store.upsert_facets),
-        (store.ENTITIES, store.upsert_entities),
-    )
-    for name, run in jobs:
-        typer.echo(f"Reindexing {name}...")
-        result = run()
-        typer.secho(f"  {result['indexed']} rows indexed", fg=typer.colors.GREEN)
-    store.write_embed_version()
-    typer.echo("Index rebuilt; embedding version recorded.")
-
-
-@app.command()
 def reprocess() -> None:
     """Re-read, re-chunk, and re-index every artifact.
 
@@ -533,48 +502,12 @@ def reset() -> None:
 
 
 def _run_verify() -> None:
-    """Programmatic verify for use by load."""
+    """Programmatic verify for use by load: the real command, exit code mapped."""
     try:
-        with open(MANIFEST_PATH, encoding="utf-8") as f:
-            manifest = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        raise SystemExit(1) from e
-    artifacts = manifest["artifacts"]
-
-    if len(artifacts) != 50:
-        raise SystemExit(1)
-    for entry in artifacts:
-        fp = CORPUS_DIR / entry["filename"]
-        if not fp.exists():
-            raise SystemExit(1)
-
-        try:
-            content = fp.read_text(encoding="utf-8")
-        except OSError as e:
+        verify()
+    except typer.Exit as e:
+        if e.exit_code != 0:
             raise SystemExit(1) from e
-        parts = content.split("\n\n", 1)
-        body = parts[1] if len(parts) > 1 else ""
-
-        cat = entry["category"]
-        if cat == "title-only":
-            name = entry.get("name", "")
-            name_parts = name.split()
-            if any(p in body for p in name_parts):
-                raise SystemExit(1)
-        elif cat == "paraphrase":
-            term = entry.get("forbidden_term", "")
-            if term and term in content.lower():
-                raise SystemExit(1)
-        elif cat == "rare-string":
-            rare = entry.get("rare_string", "")
-            if rare and rare not in content:
-                raise SystemExit(1)
-        elif cat == "long":
-            if len(content.split()) < 5000:
-                raise SystemExit(1)
-        elif cat == "short":
-            if len(content.split()) > 30:
-                raise SystemExit(1)
 
 
 def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:

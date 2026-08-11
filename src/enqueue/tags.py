@@ -13,13 +13,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 
 from . import db
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def normalize(name: str) -> str:
@@ -33,7 +28,7 @@ def normalize(name: str) -> str:
 def add(artifact_id: str, name: str) -> dict:
     """Attach a tag to an artifact. Idempotent: tagging twice is tagging once."""
     tag_name = normalize(name)
-    now = _now()
+    now = db.now()
     with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
         if exists is None:
@@ -57,7 +52,7 @@ def add(artifact_id: str, name: str) -> dict:
 def remove(artifact_id: str, name: str) -> dict:
     """Detach a tag, and drop the tag itself when nothing references it anymore."""
     tag_name = normalize(name)
-    now = _now()
+    now = db.now()
     with db.transaction() as conn:
         conn.execute(
             "DELETE FROM artifact_tags WHERE artifact_id = ? AND tag_id = ("

@@ -26,14 +26,10 @@ A user correction (`source='user'`) always wins over a model row on read.
 
 from __future__ import annotations
 
-import json  # noqa: F401 - used by later phases (prompt payloads)
-import uuid  # noqa: F401 - used by later phases
-from datetime import datetime, timezone
-
 from pydantic import BaseModel
 
 from . import db
-from .providers.base import get_provider  # noqa: F401 - used by later phases
+from .providers.base import get_provider
 
 
 class _One(BaseModel):
@@ -42,11 +38,6 @@ class _One(BaseModel):
 
 class _Buckets(BaseModel):
     mapping: dict[str, str]  # raw value -> canonical bucket name
-
-
-def _now() -> str:
-    """Return the current time as an ISO-8601 UTC string."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _read(scope: str, subject: str, attribute: str) -> dict | None:
@@ -104,7 +95,7 @@ def _write(
                 1 if grounded else 0,
                 source,
                 model_version,
-                _now(),
+                db.now(),
             ),
         )
 

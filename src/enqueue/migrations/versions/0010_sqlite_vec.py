@@ -3,7 +3,7 @@
 Phase 18A. Qdrant kept vectors and plaintext payloads in a directory next to
 the database; the index now lives in the same SQLite file as the library, in
 tables that are pure derived data and rebuildable from `chunks` and `facets`
-by `enq reindex`:
+(`POST /index` or `enq index`):
 
   vec_chunks, vec_facets   sqlite-vec vec0 virtual tables, dense vectors
   fts_chunks, fts_facets   FTS5 virtual tables, keyword retrieval

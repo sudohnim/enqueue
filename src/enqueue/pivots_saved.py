@@ -16,13 +16,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 
 from . import db
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def save(name: str, spec: dict) -> str:
@@ -39,7 +34,7 @@ def save(name: str, spec: dict) -> str:
     with db.transaction() as conn:
         conn.execute(
             "INSERT INTO saved_pivots (id, name, spec_json, created_at) VALUES (?,?,?,?)",
-            (pivot_id, name[:120], json.dumps(spec), _now()),
+            (pivot_id, name[:120], json.dumps(spec), db.now()),
         )
     return pivot_id
 

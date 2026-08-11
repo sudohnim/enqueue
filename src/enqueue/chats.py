@@ -27,7 +27,6 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 
 from . import chats_worker, db, pivot
 from .prompts import CHAT_ANSWER, CHAT_TITLE, CHAT_TOPICS
@@ -52,10 +51,6 @@ HISTORY_TURNS = 6
 UNTITLED = "New chat"
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 # --------------------------------------------------------------------------- shape
 
 
@@ -66,7 +61,7 @@ def create(scope_kind: str = "everything", scope_id: str | None = None) -> dict:
         raise ValueError(f"a {scope_kind} chat needs something to be scoped to")
 
     chat_id = str(uuid.uuid4())
-    now = _now()
+    now = db.now()
     with db.transaction() as conn:
         conn.execute(
             "INSERT INTO chats (id, title, scope_kind, scope_id, created_at, updated_at)"
@@ -170,7 +165,7 @@ def rename(chat_id: str, title: str) -> dict:
     with db.transaction() as conn:
         cur = conn.execute(
             "UPDATE chats SET title = ?, updated_at = ? WHERE id = ?",
-            (title[:120], _now(), chat_id),
+            (title[:120], db.now(), chat_id),
         )
         if not cur.rowcount:
             raise KeyError(chat_id)
@@ -451,7 +446,7 @@ def _append(
             kind,
             payload_json,
             status,
-            _now(),
+            db.now(),
         ),
     )
     return message_id
@@ -587,7 +582,7 @@ def _submit(chat_id: str, text: str, force_skill: str | None = None) -> None:
     with db.transaction() as conn:
         _append(conn, chat_id, "user", text)
         message_id = _append(conn, chat_id, "assistant", "", kind="answer", status="pending")
-        conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), chat_id))
+        conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (db.now(), chat_id))
     chats_worker.submit(chats_worker.Job(chat_id, message_id, text, force_skill))
 
 
@@ -654,7 +649,7 @@ def _retopic(chat_id: str) -> None:
         log.warning("could not derive topics for chat %s", chat_id)
         return
 
-    now = _now()
+    now = db.now()
     with db.transaction() as conn:
         keep = {t.lower() for t in found.topics}
         for row in conn.execute(

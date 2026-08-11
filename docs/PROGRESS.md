@@ -421,7 +421,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
 ### M.3 - Delete dead Python
 
-- [ ] **M.3 [AGENT]** Verified dead code removal:
+- [x] **M.3 [AGENT]** Verified dead code removal:
   (a) `redact()` in `ingest/secrets.py:57-61` (zero callers).
   (b) Unused imports: `re` and `db` in `ingest/entities.py:25,30`; `json` and `uuid` plus the stale `noqa` comments in `derive.py:29-30`; drop the stale `noqa` on `derive.py:36` and the stale comment in `pivot.py:25`.
   (c) `_stub()` in `assistant.py:43-44`.

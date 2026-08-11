@@ -52,10 +52,3 @@ def scan(text: str) -> list[SecretHit]:
                     redacted = redacted[:157] + "..."
                 hits.append(SecretHit(kind=kind, line=lineno, excerpt=redacted.strip()))
     return hits
-
-
-def redact(text: str) -> str:
-    """Strip detected secret values out of text before it is sent anywhere."""
-    for _, pattern in _PATTERNS:
-        text = pattern.sub(lambda m: m.group(0).replace(m.group("value"), REDACTION), text)
-    return text

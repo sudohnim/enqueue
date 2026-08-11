@@ -40,10 +40,6 @@ class Skill:
     run: Callable[[str, str], dict]
 
 
-def _stub(chat_id: str, text: str) -> dict:  # noqa: ARG001 - S3 supplies real runners
-    raise NotImplementedError("skill runners land in S3")
-
-
 def _run_answer(chat_id: str, text: str) -> dict:
     """The `answer` runner, imported lazily: chats.send imports this module for
     the registry, so a top-level import would be circular."""

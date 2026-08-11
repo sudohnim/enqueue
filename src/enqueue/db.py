@@ -14,6 +14,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from importlib import resources
 
 from . import config
@@ -25,6 +26,11 @@ BASELINE = "0001"
 
 _migrated = False
 _lock = threading.Lock()
+
+
+def now() -> str:
+    """The one clock: UTC now, ISO-8601. Every caller reads time from here."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _alembic_config():

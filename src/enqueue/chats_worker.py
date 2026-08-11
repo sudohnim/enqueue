@@ -23,7 +23,6 @@ import logging
 import queue
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -52,10 +51,6 @@ _idle = threading.Event()
 _idle.set()
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def compute(job: Job) -> None:
     """Compute one answer and write it into its pending turn. Synchronous.
 
@@ -77,7 +72,7 @@ def compute(job: Job) -> None:
 
         with db.transaction() as conn:
             _finish_pending(conn, job.message_id, msg)
-            conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (_now(), job.chat_id))
+            conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (db.now(), job.chat_id))
 
         # Naming and retopic are conveniences, best effort as today: a bad name or
         # a failed topic derivation must not undo a completed answer. They run only

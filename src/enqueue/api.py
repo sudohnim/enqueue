@@ -1392,11 +1392,6 @@ def serve() -> None:
     except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
         print(f"[engine] could not sweep interrupted answers: {exc}")
 
-    # The wall's greeting is generated in the background so the first render usually
-    # finds a phrase already waiting; the page falls back to a time-based one either
-    # way, so this never holds the engine open.
-    greeting.ensure()
-
     _warm_embeddings()
 
     _bootstrap_index()

@@ -11,7 +11,7 @@ out-of-date index (Phase 21).
 
 `index_meta` is a plain table, so reading it goes through `db.get_conn` and
 does not need the sqlite-vec extension. The rebuild itself goes through the
-configured `VectorStore`, the same path `enq reindex` uses, so the engine is
+configured `VectorStore`, the same path a rebuild takes, so the engine is
 never rebuilt two different ways.
 """
 

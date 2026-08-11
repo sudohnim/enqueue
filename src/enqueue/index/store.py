@@ -123,8 +123,8 @@ def get_store(on_progress: Callable[[int, int], None] | None = None) -> VectorSt
     process.
 
     `on_progress(indexed, total)` is called every 500 rows of a bulk rebuild;
-    backends without a rebuild progress path ignore it. `enq reindex` uses it
-    for the progress indicator.
+    backends without a rebuild progress path ignore it. The engine's
+    `POST /index` route uses it for the progress indicator.
     """
     name = (config.VECTOR_STORE or "sqlite-vec").strip().lower()
     if name in ("sqlite-vec", "sqlite_vec"):
