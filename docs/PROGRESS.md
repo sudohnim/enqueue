@@ -287,7 +287,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.10 - Exact-needle escape hatch
 
-- [ ] **R.10 [AGENT]** Pin quoted-phrase matches.
+- [x] **R.10 [AGENT]** Pin quoted-phrase matches.
 
   Anchor: `search_results()` at `src/enqueue/retrieve/candidates.py:162-200`.
   When the free-text query is wrapped in double quotes, run a phrase match against `fts_chunks_tri` (trigram substring semantics) and the unicode61 table, and pin those artifacts at the top with `why="exact"`, above the hybrid results, deduped by artifact id.

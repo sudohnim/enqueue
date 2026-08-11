@@ -112,7 +112,12 @@ class TestFusion:
         try:
             _note(conn, "a1", "Rooftop farming", _BODY)
             _chunk(conn, "c1", "a1", 0, _BODY)
-            _note(conn, "a2", "Trade routes", "Goods moved along the river, season by season.")
+            _note(
+                conn,
+                "a2",
+                "Trade routes",
+                "Goods moved along the river, season by season.",
+            )
             _chunk(conn, "c2", "a2", 0, "Goods moved along the river, season by season.")
             _facet(conn, "f1", "a2", 3, "Ziggurats rose above the mud-brick cities.", 0.9)
             conn.commit()
@@ -260,6 +265,82 @@ class TestTrigramRecall:
         assert sqlite_store._search_trigram(sqlite_store.CHUNKS, "to", 20) == []
         hits = search_results("to", limit=20)
         assert [h["artifact_id"] for h in hits] == ["a1"]
+
+
+class TestExactPhrase:
+    def test_quoted_phrase_pins_exact_note_first(self, sqlite_store):
+        # R.10: `"tony tony chopper"` is a needle, not a bag of tokens. The
+        # note with the phrase verbatim and in order must come first with
+        # why="exact", above the note whose words are scattered - even
+        # though the scattered note matches every token of the query.
+        conn = db.get_conn()
+        try:
+            _note(
+                conn,
+                "a1",
+                "Chopper plush",
+                "tony tony chopper is a small reindeer with a pink hat.",
+            )
+            _chunk(
+                conn,
+                "c1",
+                "a1",
+                0,
+                "tony tony chopper is a small reindeer with a pink hat.",
+            )
+            _note(
+                conn,
+                "a2",
+                "Scattered words",
+                "tony and chopper and tony are just scattered words.",
+            )
+            _chunk(
+                conn,
+                "c2",
+                "a2",
+                0,
+                "tony and chopper and tony are just scattered words.",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results('"tony tony chopper"', limit=20)
+        assert hits[0]["artifact_id"] == "a1"
+        assert hits[0]["why"] == "exact"
+        ids = [h["artifact_id"] for h in hits]
+        assert "a2" in ids
+        # One artifact never occupies two slots: the exact hit and the hybrid
+        # copy of the same note are deduped, not doubled.
+        assert len(ids) == len(set(ids))
+
+    def test_unquoted_query_is_not_exact(self, sqlite_store):
+        # Only a query wrapped ENTIRELY in double quotes activates the exact
+        # branch. The same words without quotes stay a normal hybrid search.
+        conn = db.get_conn()
+        try:
+            _note(
+                conn,
+                "a1",
+                "Chopper plush",
+                "tony tony chopper is a small reindeer with a pink hat.",
+            )
+            _chunk(
+                conn,
+                "c1",
+                "a1",
+                0,
+                "tony tony chopper is a small reindeer with a pink hat.",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("tony tony chopper", limit=20)
+        assert [h["artifact_id"] for h in hits] == ["a1"]
+        assert all(h["why"] != "exact" for h in hits)
 
 
 class TestRecency:

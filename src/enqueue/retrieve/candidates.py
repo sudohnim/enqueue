@@ -19,6 +19,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from functools import lru_cache
+from sqlite3 import OperationalError
 
 from .. import config, db
 from ..index.store import get_store
@@ -232,6 +233,112 @@ def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dic
     return sorted(by_aid.values(), key=lambda h: h["score"], reverse=True)[:limit]
 
 
+# R.10 exact-needle escape hatch: a free-text query wrapped in double quotes
+# is a phrase needle, not a bag of tokens. The phrase match runs against both
+# FTS chunk tables and pins its artifacts above every hybrid answer.
+
+
+def _quoted_phrase(free_text: str) -> str | None:
+    """The phrase inside `free_text` when it is one double-quoted phrase.
+
+    R.10's escape hatch: `"tony tony chopper"` means the exact phrase, in
+    order, verbatim - which the hybrid's token search is not. Only a query
+    that is ENTIRELY one quoted phrase activates the branch; a quote in the
+    middle of free text is a literal character, not a needle.
+    """
+    if len(free_text) >= 2 and free_text.startswith('"') and free_text.endswith('"'):
+        inner = free_text[1:-1]
+        if inner.strip():
+            return inner
+    return None
+
+
+def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
+    """Artifacts containing `phrase` verbatim, in order, with `why="exact"`.
+
+    A phrase query against both FTS chunk tables: the unicode61 table sees
+    the exact token sequence, the trigram table sees the same sequence as
+    contiguous trigrams, so it also catches a phrase sitting inside a longer
+    token run ("tony tony" inside "Xtony tonyY") - the substring corner the
+    token-based table cannot see. The two tokenizers agree on adjacency;
+    unioning them is the point. A database that has not rebuilt since the
+    trigram table was added has no `fts_chunks_tri` yet, so that table is
+    skipped and the unicode61 branch still answers.
+    """
+    query = f'"{phrase.replace(chr(34), chr(34) * 2)}"'
+    conn = db.get_conn()
+    try:
+        chunk_scores: dict[str, float] = {}
+        for table in ("fts_chunks", "fts_chunks_tri"):
+            try:
+                rows = conn.execute(
+                    f"SELECT chunk_id AS id, bm25({table}) AS raw FROM {table}"
+                    f" WHERE {table} MATCH ? ORDER BY bm25({table}) LIMIT ?",
+                    (query, limit),
+                ).fetchall()
+            except OperationalError:
+                continue
+            for row in rows:
+                score = -row["raw"]
+                if row["id"] not in chunk_scores or score > chunk_scores[row["id"]]:
+                    chunk_scores[row["id"]] = score
+        if not chunk_scores:
+            return []
+        rows = conn.execute(
+            "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
+            " JOIN artifacts a ON a.id = c.artifact_id"
+            " WHERE c.id IN (SELECT value FROM json_each(?)) AND a.deleted_at IS NULL",
+            (json.dumps(list(chunk_scores)),),
+        ).fetchall()
+        # One row per artifact, carrying its best matching chunk as the snippet.
+        by_artifact: dict[str, dict] = {}
+        for row in rows:
+            prev = by_artifact.get(row["artifact_id"])
+            if prev is None or chunk_scores[row["id"]] > chunk_scores[prev["chunk_id"]]:
+                by_artifact[row["artifact_id"]] = {
+                    "chunk_id": row["id"],
+                    "score": chunk_scores[row["id"]],
+                    "artifact_id": row["artifact_id"],
+                    "title": row["title"],
+                    "kind": row["kind"],
+                    "text": row["text"],
+                }
+        ranked = sorted(by_artifact.values(), key=lambda h: h["score"], reverse=True)[:limit]
+        return [
+            {
+                "score": round(h["score"], 4),
+                "artifact_id": h["artifact_id"],
+                "title": h["title"],
+                "kind": h["kind"],
+                "why": "exact",
+                "snippet": " ".join(h["text"].split())[:200],
+            }
+            for h in ranked
+        ]
+    finally:
+        conn.close()
+
+
+def _pin_exact(
+    exact: list[dict], results: list[dict], limit: int, tag_ids: set[str] | None = None
+) -> list[dict]:
+    """Prepend R.10 exact-phrase hits above the hybrid results, deduped.
+
+    An artifact that also reached the hybrid keeps only its exact
+    presentation, pinned on top; the hybrid copy is dropped so one artifact
+    never occupies two slots. When the query carries tag filters, an exact
+    hit outside the tag set is dropped like any other non-tagged hit.
+    """
+    if tag_ids:
+        exact = [h for h in exact if h["artifact_id"] in tag_ids]
+    pinned = list(exact)
+    seen = {h["artifact_id"] for h in pinned}
+    for h in results:
+        if h["artifact_id"] not in seen:
+            pinned.append(h)
+    return pinned[:limit]
+
+
 def _log_sub_queries(queries: list[str]) -> None:
     """Make the cost of expansion visible in the engine log.
 
@@ -383,11 +490,25 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     Tags are a filter, not text to rank: `#work` or `tag:work` tokens in the
     query become an exact id filter, never an embedding. A query that is
     only tags skips the index entirely and reads straight from SQLite.
+
+    R.10: a free-text query that is entirely one double-quoted phrase
+    (`"tony tony chopper"`) is an exact needle, not a bag of tokens: the
+    phrase match runs against both FTS tables and pins its hits above every
+    hybrid answer with `why="exact"`.
     """
     from .. import tags
 
     free_text, tag_names = tags.parse_tags(q)
     tag_ids = tags.ids_with_all(tag_names) if tag_names else set()
+
+    # R.10: the exact-phrase escape hatch, computed before the hybrid so its
+    # hits can be pinned on top. Only a query that is ENTIRELY one quoted
+    # phrase activates it; quotes in the middle of free text are literal
+    # characters. The hybrid below searches the bare phrase, so the quotes
+    # never leak into the embedding or the tokenizer.
+    phrase = _quoted_phrase(free_text)
+    query_text = phrase if phrase is not None else free_text
+    exact = _exact_phrase_hits(query_text, limit) if phrase is not None else []
 
     # Empty query, no tags: "everything". There is no text to rank and no set to
     # filter, and the embedding store cannot answer an empty vector (knn rejects
@@ -408,17 +529,28 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         # note purely because plain "kubernetes" outranked it. Tags are a filter, so
         # the R.9 rerank stage does not apply here: the free text is ranked, then
         # the tag set is carved out of that ranking.
-        tagged = [h for h in _hybrid_results(free_text, limit * 5) if h["artifact_id"] in tag_ids]
-        return tagged[:limit]
+        tagged = [h for h in _hybrid_results(query_text, limit * 5) if h["artifact_id"] in tag_ids]
+        ranked = tagged[:limit]
 
-    if config.SEARCH_RERANK:
+    elif config.SEARCH_RERANK:
         # R.9: re-score a wider fused window than the final limit, so the
         # reranker can promote a candidate that ranked just past the cutoff.
         window = max(limit, _RERANK_WINDOW)
-        fused = _merge_fuzzy(_hybrid_results(q, window), _fuzzy_hits(free_text, window), window)
-        return _rerank(q, fused)[:limit]
+        fused = _merge_fuzzy(
+            _hybrid_results(query_text, window), _fuzzy_hits(query_text, window), window
+        )
+        ranked = _rerank(query_text, fused)[:limit]
 
-    return _merge_fuzzy(_hybrid_results(q, limit), _fuzzy_hits(free_text, limit), limit)
+    else:
+        ranked = _merge_fuzzy(
+            _hybrid_results(query_text, limit), _fuzzy_hits(query_text, limit), limit
+        )
+
+    # R.10: the exact needle outranks every hybrid answer, deduped so one
+    # artifact never occupies two slots. With no exact hits this is a no-op.
+    if exact:
+        ranked = _pin_exact(exact, ranked, limit, tag_ids)
+    return ranked
 
 
 def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
