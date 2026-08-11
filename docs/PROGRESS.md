@@ -489,7 +489,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `uv run pytest -q` green with the files gone.
 
-- [ ] **M.5d [AGENT]** Remove the lens settings: `ENQ_LENS_SCORE_THRESHOLD`, `ENQ_LENS_JUDGE_TOP`, `ENQ_LENS_JUDGE_TOP_MAX` from `config.py`, from `settings.py` writable fields, from the settings UI fields in museum.html, and from README/docs mentions.
+- [x] **M.5d [AGENT]** Remove the lens settings: `ENQ_LENS_SCORE_THRESHOLD`, `ENQ_LENS_JUDGE_TOP`, `ENQ_LENS_JUDGE_TOP_MAX` from `config.py`, from `settings.py` writable fields, from the settings UI fields in museum.html, and from README/docs mentions.
 
   Done when: `rg -n "LENS_" src/` returns nothing; settings page renders (manual); `bin/verify` passes.
 
