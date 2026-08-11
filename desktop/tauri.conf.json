@@ -19,7 +19,12 @@
           "remote": {
             "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
           },
-          "permissions": ["allow-capture-dismiss", "allow-capture-drag"]
+          "permissions": [
+            "allow-capture-dismiss",
+            "allow-capture-drag",
+            "core:event:allow-listen",
+            "core:event:allow-unlisten"
+          ]
         },
         {
           "identifier": "museum-links",

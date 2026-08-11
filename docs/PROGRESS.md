@@ -311,7 +311,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
 ### C.1 - Fix the outside-click dismiss regression
 
-- [ ] **C.1 [AGENT]** Grant the event permission the focus listener needs.
+- [x] **C.1 [AGENT]** Grant the event permission the focus listener needs.
 
   Anchor: `desktop/tauri.conf.json`, the `capture-overlay` capability `permissions` array (currently `["allow-capture-dismiss", "allow-capture-drag"]`).
   Add `"core:event:allow-listen"` and `"core:event:allow-unlisten"`.
