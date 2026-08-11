@@ -4716,7 +4716,7 @@
   // saved styling and no pager end-marker; the pager shelf carries the wall
   // id/end-marker instead.
   function wallSectionsHtml(sections) {
-    const collapsed = wallCollapsedSet(wallGroup);
+    const collapsed = collapsedSet("enqueue.collapsedWall." + wallGroup);
     return sections
       .map(([label, list, isSaved]) => {
         const key = label;
@@ -4751,51 +4751,47 @@
       .join("");
   }
 
-  // ---- collapsible wall sections (L.4) --------------------------------
-  // A sibling of the pivot-group collapse plumbing, keyed on the wall mode
-  // instead of a spec hash: Type and Tags each keep their own folds.
-  function wallCollapsedSet(mode) {
+  // ---- collapsible section headers (L.4/K.10) ----------------------------
+  // The wall's Type/Tags shelves and the pivot groups both fold their sections;
+  // they share everything except the sessionStorage key and the section
+  // selector, so one keyed pair of helpers backs both. The wall keys on the
+  // mode, the pivot on a stable hash of the recipe (specHash), so the same
+  // re-run preserves the folds while a different grouping starts open.
+  function collapsedSet(key) {
     try {
-      return new Set(
-        JSON.parse(
-          sessionStorage.getItem("enqueue.collapsedWall." + mode) || "[]",
-        ),
-      );
+      return new Set(JSON.parse(sessionStorage.getItem(key) || "[]"));
     } catch (_) {
       return new Set();
     }
   }
 
-  function wallSaveCollapsed(mode, set) {
+  function saveCollapsed(key, set) {
     try {
-      sessionStorage.setItem(
-        "enqueue.collapsedWall." + mode,
-        JSON.stringify([...set]),
-      );
+      sessionStorage.setItem(key, JSON.stringify([...set]));
     } catch (_) {
-      // Storage unavailable: collapsing still works for this render, it just
-      // does not survive a mode switch.
+      // Storage unavailable (private mode, quota): collapsing still works for
+      // this render, it just does not survive a re-run or a mode switch.
     }
   }
 
-  // Bind the collapsible section headers after a Type/Tags wall renders. The
-  // sections live under `view`, parallel to mountPivotGroups.
-  function mountWallGroups(mode) {
-    // N.10b: one listener per toggle, not delegation - a wall run yields at
-    // most ~10 sections, so the listener count is trivially small, and `view`
-    // is a reused container where a persistent delegation listener would need
-    // its own teardown lifecycle.
-    const collapsed = wallCollapsedSet(mode);
-    view.querySelectorAll(".wallgroup .grouptoggle").forEach((btn) => {
+  // Bind the collapsible section headers after a Type/Tags wall or a pivot
+  // grouping renders. The sections live under `view`.
+  function mountCollapsible(sectionSel, storageKey) {
+    // N.10b: one listener per toggle, not delegation - a wall or pivot run
+    // yields at most ~10 sections, so the listener count is trivially small,
+    // and `view` is a reused container where a persistent delegation listener
+    // would need its own teardown lifecycle.
+    const collapsed = collapsedSet(storageKey);
+    view.querySelectorAll(sectionSel + " .grouptoggle").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const section = btn.closest(".wallgroup");
+        const section = btn.closest(sectionSel);
         const key = section.dataset.key;
         section.classList.toggle("collapsed");
         const nowCollapsed = section.classList.contains("collapsed");
         btn.setAttribute("aria-expanded", String(!nowCollapsed));
         if (nowCollapsed) collapsed.add(key);
         else collapsed.delete(key);
-        wallSaveCollapsed(mode, collapsed);
+        saveCollapsed(storageKey, collapsed);
       });
     });
   }
@@ -4832,7 +4828,8 @@
     slot.innerHTML = wallBodyHtml();
     // The Type and Tags modes fold their shelves (L.4); the toggle headers are
     // re-bound on every body render.
-    if (mode === "type" || mode === "tags") mountWallGroups(mode);
+    if (mode === "type" || mode === "tags")
+      mountCollapsible(".wallgroup", "enqueue.collapsedWall." + mode);
     if (mode === "touched") watchWallEnd();
   }
 
@@ -5311,7 +5308,7 @@
     // demand. The wall body always renders one of the client-side arrangements.
     bodySlot.innerHTML = wallBodyHtml();
     if (wallGroup === "type" || wallGroup === "tags" || wallGroup === "touched")
-      mountWallGroups(wallGroup);
+      mountCollapsible(".wallgroup", "enqueue.collapsedWall." + wallGroup);
     // The home search lives inside the greeting header and is re-created on every
     // home render, so its keys are bound here, not once at startup. Enter searches;
     // Escape clears so an emptied field is a way back to the wall.
@@ -6952,7 +6949,7 @@
     let html = "";
     // Collapsed choices persist per recipe (K.10): the same spec re-run keeps
     // the groups the person folded away, and a different grouping starts open.
-    const collapsed = collapsedSet(spec);
+    const collapsed = collapsedSet("enqueue.collapsedGroups." + specHash(spec));
 
     for (const g of d.groups) {
       const items = g.items || [];
@@ -7033,53 +7030,6 @@
     return h.toString(36);
   }
 
-  function collapsedSet(spec) {
-    try {
-      return new Set(
-        JSON.parse(
-          sessionStorage.getItem("enqueue.collapsedGroups." + specHash(spec)) ||
-            "[]",
-        ),
-      );
-    } catch (_) {
-      return new Set();
-    }
-  }
-
-  function saveCollapsed(spec, set) {
-    try {
-      sessionStorage.setItem(
-        "enqueue.collapsedGroups." + specHash(spec),
-        JSON.stringify([...set]),
-      );
-    } catch (_) {
-      // Storage unavailable (private mode, quota): collapsing still works for
-      // this render, it just does not survive a re-run.
-    }
-  }
-
-  // Bind the collapsible group headers after the grouping renders. The groups
-  // live under `view` in both the standalone pivot view and a chat turn slot.
-  function mountPivotGroups(spec) {
-    // N.10b: one listener per toggle, not delegation - a pivot run yields at
-    // most ~10 buckets, so the listener count is trivially small, and `view`
-    // is a reused container where a persistent delegation listener would need
-    // its own teardown lifecycle.
-    const collapsed = collapsedSet(spec);
-    view.querySelectorAll(".pivotgroup .grouptoggle").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const section = btn.closest(".pivotgroup");
-        const key = section.dataset.key;
-        section.classList.toggle("collapsed");
-        const nowCollapsed = section.classList.contains("collapsed");
-        btn.setAttribute("aria-expanded", String(!nowCollapsed));
-        if (nowCollapsed) collapsed.add(key);
-        else collapsed.delete(key);
-        saveCollapsed(spec, collapsed);
-      });
-    });
-  }
-
   // The standalone pivot view: a saved grouping re-run (or a fresh run behind
   // the grid button) rendered under `view`. `pivot_id` is the saved grouping
   // backing this view when there is one - the remove/restore actions need it;
@@ -7109,7 +7059,7 @@
       pivot_id,
     );
     view.innerHTML = html;
-    mountPivotGroups(spec);
+    mountCollapsible(".pivotgroup", "enqueue.collapsedGroups." + specHash(spec));
     removedSection(spec, pivot_id);
     window.scrollTo(0, 0);
   }
@@ -7736,7 +7686,7 @@
       .then((result) => {
         organizeTurns[m.id] = { d: result, spec: m.payload, userText };
         slot.innerHTML = organizeSlotHtml(m.id);
-        mountPivotGroups(m.payload);
+        mountCollapsible(".pivotgroup", "enqueue.collapsedGroups." + specHash(m.payload));
       })
       .catch((err) => {
         slot.innerHTML =
