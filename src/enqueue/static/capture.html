@@ -36,15 +36,6 @@
       url("fonts/IBM-Plex-Sans-600.woff2") format("woff2"),
       url("fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
   }
-  @font-face {
-    font-family: "IBM Plex Sans";
-    font-weight: 700;
-    font-style: normal;
-    font-display: swap;
-    src:
-      url("fonts/IBM-Plex-Sans-700.woff2") format("woff2"),
-      url("fonts/IBMPlexSans-Bold.ttf") format("truetype");
-  }
   :root {
     /* The overlay is self-contained on purpose. It is served from the same engine as
        the museum but it is a different surface with a different lifetime, and having
@@ -54,14 +45,12 @@
        copied rather than shared, at the same values as the museum's :root (Phase A). */
     --bg: #ffffff;
     --surface: #f6f7f9;
-    --surface-2: #eef0f3;
     /* The keycap's ground (C.3d): the museum's faint-cool reading tint, copied
        with the badge rule because the overlay is standalone on purpose. */
     --surface-doc: #fbfbfd;
     --line: #dedee5;
     --line-strong: #7f8296;
     --text: #101114;
-    --text-dim: #4d5061;
     --text-mute: #686b82;
     --ink-faint: #6c6f84;
     --accent: #7132f5;
@@ -88,7 +77,6 @@
 
     --r-sm: 6px;
     --r-lg: 12px;
-    --r-full: 9999px;
     --shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08);
 
     --ease: cubic-bezier(0.16, 1, 0.3, 1);

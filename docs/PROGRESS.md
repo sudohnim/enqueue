@@ -369,7 +369,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
 ### C.4 - Trim dead overlay tokens
 
-- [ ] **C.4 [AGENT]** Delete what the overlay does not use.
+^- [x] **C.4 [AGENT]** Delete what the overlay does not use.
 
   In capture.html: remove the `@font-face` block for weight 700 (grep the file first: if `700` or `wght..700` appears only in that block, delete it; museum.html is handled separately in M.2, not here).
   Remove unused `:root` tokens after C.2/C.3 land; the known-dead set today is `--accent` (unused, `--accent-strong` carries the hover), `--mono`, `--r-full`, `--surface-2`, `--text-dim`.
