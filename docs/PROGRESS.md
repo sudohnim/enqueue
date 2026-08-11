@@ -587,8 +587,10 @@ Measure first: these are verified smells, each with a deterministic check.
 
 ### P.1 - Index the wall's sort key
 
-- [ ] **P.1 [AGENT]** New migration (next unused revision number; if M.5e already created one, this follows it) adding `CREATE INDEX idx_artifacts_touched ON artifacts(deleted_at, pinned, updated_at DESC)`.
+- [x] **P.1 [AGENT]** New migration (next unused revision number; if M.5e already created one, this follows it) adding `CREATE INDEX idx_artifacts_touched ON artifacts(deleted_at, pinned, updated_at DESC)`.
   The wall default order is `updated_at DESC` (api.py:228) and today every wall page is a scan plus sort.
+
+  Done (`51b5fa4`): migration `0021_idx_artifacts_touched`; the pinned shelves (the UI's actual pages) walk the index with no temp sort (plans in the commit body); `test_head_has_the_wall_sort_index` asserts the index at head; 361 tests pass.
 
   Done when: `uv run pytest tests/test_migrations.py -q` passes; `uv run python -c "import sqlite3; ..."` running `EXPLAIN QUERY PLAN SELECT ... ORDER BY updated_at DESC` on a migrated dev database shows the index used (paste the plan into the commit body).
 
