@@ -499,7 +499,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `uv run pytest tests/test_migrations.py -q` green; the grep returns only corpus prose and migration history.
 
-- [ ] **M.5f [AGENT]** Update `AGENTS.md`: remove the lens/curate rows from the module map, API surface, CLI surface, and config table; rewrite the curate and lens flows under "Key data flows" and "Retrieval architecture"; amend resolved decision 10 to record that the SSE lens surface and curate were removed.
+- [x] **M.5f [AGENT]** Update `AGENTS.md`: remove the lens/curate rows from the module map, API surface, CLI surface, and config table; rewrite the curate and lens flows under "Key data flows" and "Retrieval architecture"; amend resolved decision 10 to record that the SSE lens surface and curate were removed.
 
   Done when: the listed sections read true; `rg -in "lens|curate" AGENTS.md` returns only the removal note.
 

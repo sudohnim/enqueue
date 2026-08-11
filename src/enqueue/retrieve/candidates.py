@@ -26,11 +26,13 @@ from ..index.store import get_store
 
 # R.7 fuzzy branch: minimum SequenceMatcher ratio for a candidate to count as
 # a one-edit typo match, and the score a fuzzy hit carries. The score is modest
-# - below a strong lexical hit (a dual-branch rank-1 hit is ~1.0) but above a
-# single-branch rank-1 hit (~0.5), which is all a typo query can muster - so a
-# fuzzy match wins the merge only when the hybrid's answer was itself weak.
+# - below a strong lexical hit (a dual-branch rank-1 hit is 2/(k+1), ~0.033 at
+# k=60) but above a single-branch rank-1 hit (1/(k+1), ~0.016), which is all a
+# typo query can muster - so a fuzzy match wins the merge only when the
+# hybrid's answer was itself weak. 0.02 is the old 0.6 on the k=1 scale,
+# rescaled when RRF moved to the canonical k=60 (Phase M.5g).
 FUZZY_RATIO = 0.75
-FUZZY_BASE_SCORE = 0.6
+FUZZY_BASE_SCORE = 0.02
 
 
 # R.8 recency weighting: a free-text hit's score is multiplied by

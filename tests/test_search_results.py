@@ -352,16 +352,17 @@ class TestRecency:
         # order ties out to the base score).
         #
         # Construction notes. With fully identical notes the branches rank
-        # them 1-2 in lockstep, and the k=1 RRF gap (1.0 vs 0.667, a 1.5x
-        # ratio) exactly equals the maximum recency boost (1.5x at age 0), so
-        # the older note can never be overtaken. The titles here are
-        # distinct-but-neutral so the branches disagree: the dense branch
+        # them 1-2 in lockstep, and the RRF gap (rank-1 vs rank-2, a
+        # (k+2)/(k+1) ratio) is small at the canonical k=60 (62/61, ~1.016x) -
+        # well under the 1.5x maximum recency boost - so a fresh note could
+        # overtake the older one. The titles here are distinct-but-neutral so
+        # the branches disagree symmetrically instead: the dense branch
         # (embedding similarity) ranks old first, while the keyword branch
         # ranks new first - its FTS row was written first, because the
         # rebuild's select_all follows idx_artifacts_live, whose (deleted_at,
         # created_at DESC) order puts the freshly-created note ahead. Both
-        # notes then fuse to 0.8333 each and recency is the only tie-breaker
-        # that can separate them.
+        # notes then fuse to the same score (1/61 + 1/62 each) and recency is
+        # the only tie-breaker that can separate them.
         #
         # The spec's "updated_at 180 days ago" is set on both timestamps:
         # created_at participates in the index order above, and a note that
