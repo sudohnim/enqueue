@@ -146,6 +146,13 @@ try:
 except (TypeError, ValueError):
     LENS_SCORE_THRESHOLD = 0.1
 
+# R.9 opt-in cross-encoder rerank stage over the fused free-text candidates.
+# The reranker is a ~1 GB local model plus one inference pass per query, so it
+# is never on by default - the fused hybrid has to earn this. Read as
+# ENQ_SEARCH_RERANK; any of 1/true/yes/on flips it.
+_SEARCH_RERANK = os.getenv("ENQ_SEARCH_RERANK", "").strip().lower()
+SEARCH_RERANK = _SEARCH_RERANK in ("1", "true", "yes", "on")
+
 # The lens view, stage two: how many artifacts get a model judgment. The rest
 # of the library is bucketed by the score threshold alone, so the cost of a
 # lens is bounded by this number, never by the library size. Overridable per

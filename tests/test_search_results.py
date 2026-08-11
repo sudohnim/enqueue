@@ -312,3 +312,131 @@ class TestRecency:
         ids = [h["artifact_id"] for h in hits]
         assert ids[0] == "old", f"weight 0 ties out to base score, got {ids}"
         assert ids[1] == "new"
+
+
+class _FakeReranker:
+    """Stands in for the BAAI/bge-reranker-base cross-encoder in tests.
+
+    `rerank` returns the scores it was built with, so a test can pin exactly
+    how the fused order should come out without downloading a gigabyte.
+    """
+
+    def __init__(self, scores: list[float]):
+        self._scores = scores
+
+    def rerank(self, query: str, documents):
+        return self._scores[: len(list(documents))]
+
+
+class TestRerank:
+    def test_flag_off_never_touches_the_reranker(self, sqlite_store, monkeypatch):
+        # The R.9 flag-off path must be byte-identical in behavior to R.8: it
+        # must not construct the cross-encoder, let alone call it. A stub that
+        # raises proves the machinery is unreachable, and the fused order is
+        # exactly the R.8 order (this file's other tests, all written before
+        # R.9, run with the flag off and pass unchanged).
+        from enqueue.retrieve import candidates
+
+        monkeypatch.setattr(config, "SEARCH_RERANK", False)
+
+        def _boom():
+            raise AssertionError("reranker must not load when SEARCH_RERANK is off")
+
+        monkeypatch.setattr(candidates, "_cross_encoder", _boom)
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _chunk(conn, "c1", "a1", 0, _BODY)
+            _note(conn, "a2", "The Ur dig", _UNRELATED)
+            _chunk(conn, "c2", "a2", 0, _UNRELATED)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("rooftops", limit=20)
+        assert hits[0]["artifact_id"] == "a1"
+        assert hits[0]["why"] == "chunk"
+
+    def test_flag_on_reorders_by_cross_encoder_score(self, sqlite_store, monkeypatch):
+        # With the flag on, the fused order is re-scored by the cross-encoder:
+        # the stub's scores invert the fused ranking, and the result follows
+        # the stub. The artifact rows themselves are untouched - only the
+        # order changes, and `why` survives the rerank.
+        from enqueue.retrieve import candidates
+
+        monkeypatch.setattr(config, "SEARCH_RERANK", True)
+        conn = db.get_conn()
+        try:
+            for i in range(3):
+                aid = f"a{i}"
+                _note(conn, aid, f"Rooftop note {i}", _BODY)
+                _chunk(conn, f"c{i}", aid, 0, _BODY)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        # Whatever the fused order is, the stub says relevance runs the other
+        # way: the last fused artifact gets the top score and the first gets
+        # the bottom, so the reranked list must be the fused list reversed.
+        fused = candidates._hybrid_results("rooftops", limit=30)
+        fused_ids = [h["artifact_id"] for h in fused]
+        scores = [round((i + 1) * 0.1, 2) for i in range(len(fused_ids))]
+        monkeypatch.setattr(candidates, "_cross_encoder", lambda: _FakeReranker(scores))
+        hits = search_results("rooftops", limit=20)
+        assert [h["artifact_id"] for h in hits] == list(reversed(fused_ids))
+        assert {h["why"] for h in hits} == {"chunk"}
+
+    def test_flag_on_reranks_a_wider_window_than_limit(self, sqlite_store, monkeypatch):
+        # The rerank stage pulls a wider fused window than the final limit, so
+        # a candidate that ranked just past the cutoff can still be promoted.
+        # With limit=5, the 21st note of 30 is outside the top five fused
+        # results; the stub scoring it top must surface it at rank 1.
+        from enqueue.retrieve import candidates
+
+        monkeypatch.setattr(config, "SEARCH_RERANK", True)
+        conn = db.get_conn()
+        try:
+            for i in range(30):
+                aid = f"a{i:02d}"
+                _note(conn, aid, f"Rooftop note {i:02d}", _BODY)
+                _chunk(conn, f"c{i:02d}", aid, 0, _BODY)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        fused = candidates._hybrid_results("rooftops", limit=30)
+        fused_ids = [h["artifact_id"] for h in fused]
+        assert "a20" in fused_ids, "a20 should be inside the 30-wide fused window"
+        assert "a20" not in fused_ids[:5], "a20 must start outside the top five"
+        scores = [0.0] * len(fused_ids)
+        scores[fused_ids.index("a20")] = 1.0
+        monkeypatch.setattr(candidates, "_cross_encoder", lambda: _FakeReranker(scores))
+        hits = search_results("rooftops", limit=5)
+        assert hits[0]["artifact_id"] == "a20"
+        assert len(hits) == 5
+
+    def test_reranker_failure_degrades_to_fused_order(self, sqlite_store, monkeypatch):
+        # A cross-encoder crash is not a search failure: the fused order is
+        # returned unchanged, exactly what the flag-off path would produce.
+        from enqueue.retrieve import candidates
+
+        monkeypatch.setattr(config, "SEARCH_RERANK", True)
+
+        def _boom():
+            raise RuntimeError("model load failed")
+
+        monkeypatch.setattr(candidates, "_cross_encoder", _boom)
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _chunk(conn, "c1", "a1", 0, _BODY)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("rooftops", limit=20)
+        assert [h["artifact_id"] for h in hits] == ["a1"]

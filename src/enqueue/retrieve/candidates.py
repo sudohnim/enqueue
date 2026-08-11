@@ -18,8 +18,9 @@ import math
 from collections import defaultdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from functools import lru_cache
 
-from .. import db
+from .. import config, db
 from ..index.store import get_store
 
 # R.7 fuzzy branch: minimum SequenceMatcher ratio for a candidate to count as
@@ -61,6 +62,60 @@ def _age_days(updated_at: str) -> float:
 def _recency_score(score: float, age_days: float) -> float:
     """The R.8 time-decay multiplier applied to a free-text hit score."""
     return score * (1.0 + RECENCY_WEIGHT * math.exp(-age_days / RECENCY_TAU_DAYS))
+
+
+# R.9 opt-in cross-encoder rerank: re-score the top fused candidates against
+# the query with BAAI/bge-reranker-base and order by that score. Off by
+# default (config.SEARCH_RERANK); the fused hybrid must win this on its own.
+_RERANK_MODEL = "BAAI/bge-reranker-base"
+_RERANK_WINDOW = 30
+# A missing/failed reranker score sorts below every real score.
+_RERANK_LAST = -math.inf
+
+
+@lru_cache(maxsize=1)
+def _cross_encoder():
+    """The shared cross-encoder model, loaded once per process.
+
+    Imported lazily so the flag-off path never constructs a model, and tests
+    can stub this function instead of downloading a gigabyte. CPU providers
+    only, deliberately: the embedding model already holds a CoreML context,
+    and a second CoreML model in the same process leaks contexts until the
+    OS kills the process (verified empirically - SIGKILL, "Context leak
+    detected"). The reranker is an occasional opt-in pass over ~30 documents,
+    so CPU is not the hot path.
+    """
+    from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+    return TextCrossEncoder(model_name=_RERANK_MODEL, providers=["CPUExecutionProvider"])
+
+
+def _rerank(q: str, fused: list[dict]) -> list[dict]:
+    """Re-order fused candidates by cross-encoder relevance, score descending.
+
+    The stable sort keeps the fused order for ties, and a score of None (the
+    model refused or the text was empty) sorts last rather than first, so a
+    reranker hiccup can scramble the ranking only of the artifacts it actually
+    judged. A hard failure (model load, inference error) degrades to the fused
+    order unchanged - reranking is an enhancement, never a gate.
+    """
+    if not fused:
+        return fused
+    conn = db.get_conn()
+    try:
+        texts = [artifact_text(conn, h["artifact_id"]) for h in fused]
+    finally:
+        conn.close()
+    try:
+        scores = list(_cross_encoder().rerank(q, texts))
+    except Exception:  # noqa: BLE001 - a reranker failure degrades to the fused order
+        return fused
+    ordered = sorted(
+        zip(fused, scores, strict=True),
+        key=lambda fs: fs[1] if fs[1] is not None else _RERANK_LAST,
+        reverse=True,
+    )
+    return [f for f, _ in ordered]
 
 
 def _fuzzy_ratio(query: str, candidate: str) -> float:
@@ -350,9 +405,18 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         # filter runs on a wider window than `limit` and truncates afterward -
         # filtering the top `limit` first would drop a tagged match that ranked just
         # past the cutoff, so "kubernetes #work" could miss a work-tagged kubernetes
-        # note purely because plain "kubernetes" outranked it.
+        # note purely because plain "kubernetes" outranked it. Tags are a filter, so
+        # the R.9 rerank stage does not apply here: the free text is ranked, then
+        # the tag set is carved out of that ranking.
         tagged = [h for h in _hybrid_results(free_text, limit * 5) if h["artifact_id"] in tag_ids]
         return tagged[:limit]
+
+    if config.SEARCH_RERANK:
+        # R.9: re-score a wider fused window than the final limit, so the
+        # reranker can promote a candidate that ranked just past the cutoff.
+        window = max(limit, _RERANK_WINDOW)
+        fused = _merge_fuzzy(_hybrid_results(q, window), _fuzzy_hits(free_text, window), window)
+        return _rerank(q, fused)[:limit]
 
     return _merge_fuzzy(_hybrid_results(q, limit), _fuzzy_hits(free_text, limit), limit)
 

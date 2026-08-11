@@ -268,7 +268,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.9 - Optional cross-encoder rerank
 
-- [ ] **R.9 [AGENT]** Add an opt-in rerank stage over the fused candidates.
+- [x] **R.9 [AGENT]** Add an opt-in rerank stage over the fused candidates.
 
   Skip this task until R.1-R.8 are done and the R.4 harness numbers are recorded.
   In `retrieve/candidates.py::search_results`, when `config.SEARCH_RERANK` is on (new setting, default off, env `ENQ_SEARCH_RERANK`), rerank the top 30 fused artifacts with `fastembed.rerank.cross_encoder.TextCrossEncoder("BAAI/bge-reranker-base")` against their `artifact_text` (truncate to 1200 words, existing helper), and order by reranker score.
@@ -276,6 +276,14 @@ Every ranking change is validated against the golden set from R.4 before it is c
   Measure with `scripts/search_eval.py` before/after and keep the flag whichever way wins; record both numbers in the commit body.
 
   Done when: flag off path is byte-identical in behavior to R.8 (test proves it), flag on path passes tests, eval numbers recorded.
+
+  Recorded: commit `9a49f0e`. `config.SEARCH_RERANK` (default off, env `ENQ_SEARCH_RERANK`, any of 1/true/yes/on). In `search_results`, the free-text path reranks a `max(limit, 30)`-wide fused window with `_rerank(q, fused)` and truncates; the mixed-tag path deliberately does not rerank (tags are a filter, the free text is ranked, then the tag set is carved out). `_rerank` scores each artifact against `artifact_text` (the existing 1200-word helper), sorts by reranker score descending with a stable sort, keeps the fused order for ties, and degrades to the fused order unchanged on any model failure - reranking is an enhancement, never a gate.
+  Two deviations, both verified empirically:
+  - **CPU providers only for the reranker.** `_providers()` (CoreML) is used by the embedding model; loading a SECOND CoreML model in the same process leaks CoreML contexts until the OS SIGKILLs the process (exit 137, "Context leak detected"). Probe: CoreML embedder + CPU reranker coexist fine, scores sane (rooftops doc -1.83 vs unrelated -10.19). The reranker is an occasional opt-in pass over ~30 docs, so CPU is not the hot path.
+  - **Window wider than limit.** The spec says "top 30"; with `limit=5` the reranker could never promote a candidate outside the top 5, so the window is `max(limit, 30)`.
+  Tests (`TestRerank`, stubbing `_cross_encoder`): flag-off never constructs the model (stub raises; fused order is exactly the R.8 order - this file's pre-R.9 tests run flag-off and pass unchanged), flag-on reorders per the stub's inversion of the fused list, flag-on promotes a rank-21-of-30 note with `limit=5` (proves the wider window), reranker crash degrades to the fused order.
+
+  Eval numbers (recorded in the commit body): flag OFF recall@10 14/15 (0.933) MRR 0.782 (bit-identical to R.8); flag ON recall@10 14/15 (0.933) MRR 0.776. The reranker rescued the baseline's known miss (`grit` -> paraphrase_0001, now rank 7) but pushed "building things with your hands" (rank 9 -> outside top 10), a net recall tie and a small MRR loss. **Flag stays OFF by default** - recall ties, MRR favors off.
 
 ### R.10 - Exact-needle escape hatch
 
