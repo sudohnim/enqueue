@@ -553,7 +553,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
 ### M.8 - Split home.html
 
-- [ ] **M.8 [AGENT]** Split the file along the GT.6 plan, after M.2/M.6 deletions are in.
+- [x] **M.8 [AGENT]** Split the file along the GT.6 plan, after M.2/M.6 deletions are in.
 
   Target layout (plain scripts, one global scope exactly as today, no build step, no ES modules):
   `static/home.html` (shell: meta, font preloads, `<link>` tags, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<script src="/static/js/...">` tags),
