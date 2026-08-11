@@ -337,7 +337,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
 ### C.3 - Colorize + delight pass
 
-- [ ] **C.3a [AGENT]** Brand mark at rest.
+- [x] **C.3a [AGENT]** Brand mark at rest.
 
   In the `#bar` (capture.html:194-197), add a 10px lavender disc before the `Enqueue` label: a `<span>` with `background: var(--accent)`, `border-radius: 50%`, matching the keep disc language at museum.html:1863.
   Static element, no animation, no layout shift to the 30px bar.

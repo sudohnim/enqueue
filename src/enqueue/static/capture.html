@@ -147,6 +147,24 @@
     cursor: default;
   }
 
+  /* The brand mark at rest: the same lavender disc as the keep button on the
+     pill, at the overlay's 10px size. Static - no animation, and the 30px bar
+     never shifts. Wrapped with the wordmark so the kind label stays flush
+     right under space-between. */
+  #bar .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #bar .brand .disc {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
   .label {
     font-family: var(--sans);
     font-size: 10px;
@@ -207,7 +225,10 @@
 
 <div id="card">
   <div id="bar">
-    <span class="label">Enqueue</span>
+    <span class="brand">
+      <span class="disc" aria-hidden="true"></span>
+      <span class="label">Enqueue</span>
+    </span>
     <span class="label" id="kind"></span>
   </div>
   <textarea
