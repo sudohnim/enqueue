@@ -527,7 +527,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `uv run pytest tests/test_search_results.py tests/test_rerank.py -q` green.
 
-- [ ] **M.6d [AGENT]** One `Worker` class shared by `ingest/queue.py` and `chats_worker.py` (identical queue/Event/thread lifecycle, ~40 lines each).
+- [x] **M.6d [AGENT]** One `Worker` class shared by `ingest/queue.py` and `chats_worker.py` (identical queue/Event/thread lifecycle, ~40 lines each).
 
   Done when: `uv run pytest tests/test_ingest.py tests/test_chats_worker.py -q` green.
 
