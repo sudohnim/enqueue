@@ -18,9 +18,7 @@ Then ask questions with:
 
     ENQ_VECTOR_STORE=sqlite-vec .venv/bin/enq chat "your question"
 
-or see raw retrieval with `enq search "query"`. To switch back to Qdrant
-later, run `ENQ_VECTOR_STORE=qdrant .venv/bin/enq reindex`; the Qdrant index
-is untouched by the sqlite-vec runs.
+or see raw retrieval with `enq search "query"`.
 
 For every test below, write one of these three answers:
   GOOD    - the thing I wanted was the first result

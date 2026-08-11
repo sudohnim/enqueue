@@ -385,7 +385,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
 ### M.1 - Delete dead files
 
-- [ ] **M.1 [AGENT]** Delete, verifying zero references first.
+^- [x] **M.1 [AGENT]** Delete, verifying zero references first.
 
   For each: run the given grep, expect no matches outside `desktop/target/`, then `git rm`:
   (a) `src/enqueue/static/museum-plain.html` and `src/enqueue/static/capture-plain.html` (`rg -n "plain" src/ desktop/src desktop/tauri.conf.json bin/ scripts/ tests/ | rg -v target`).
