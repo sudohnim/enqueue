@@ -8177,6 +8177,35 @@
   // ---- the trash -----------------------------------------------------------
   // Everything else here is kept on purpose. This is the one surface where something
   // leaves, so it says what is going, when, and how to stop it.
+  // One trash row: kind chip, title, days-left, and the two actions. The
+  // standalone trash page and the settings trash tab render the same row.
+  function trashRow(a) {
+    return (
+      '<div class="item" data-kind="' +
+      esc(a.kind) +
+      '"><div class="item-body">' +
+      '<span class="kindrow"><span class="kindmark"></span>' +
+      '<span class="kindword">' +
+      esc(a.kind) +
+      "</span></span>" +
+      '<div class="title">' +
+      esc(a.title || "Untitled") +
+      "</div></div>" +
+      '<span class="meta">' +
+      (a.days_left > 0
+        ? a.days_left + " day" + (a.days_left === 1 ? "" : "s") + " left"
+        : "goes at the next launch") +
+      "</span>" +
+      '<div class="rowacts">' +
+      '<button class="btn ghost" onclick="restoreArtifact(&#39;' +
+      a.id +
+      '&#39;)">Restore</button>' +
+      '<button class="btn ghost harm" onclick="purgeArtifact(&#39;' +
+      a.id +
+      '&#39;)">Delete now</button></div></div>'
+    );
+  }
+
   async function showTrash() {
     teardown();
     restorePill("inside");
@@ -8212,33 +8241,7 @@
       '<button class="btn danger terminal" onclick="emptyTrash(' +
       d.items.length +
       ')">Empty trash</button></div>';
-    html += d.items
-      .map(
-        (a) =>
-          '<div class="item" data-kind="' +
-          esc(a.kind) +
-          '"><div class="item-body">' +
-          '<span class="kindrow"><span class="kindmark"></span>' +
-          '<span class="kindword">' +
-          esc(a.kind) +
-          "</span></span>" +
-          '<div class="title">' +
-          esc(a.title || "Untitled") +
-          "</div></div>" +
-          '<span class="meta">' +
-          (a.days_left > 0
-            ? a.days_left + " day" + (a.days_left === 1 ? "" : "s") + " left"
-            : "goes at the next launch") +
-          "</span>" +
-          '<div class="rowacts">' +
-          '<button class="btn ghost" onclick="restoreArtifact(&#39;' +
-          a.id +
-          '&#39;)">Restore</button>' +
-          '<button class="btn ghost harm" onclick="purgeArtifact(&#39;' +
-          a.id +
-          '&#39;)">Delete now</button></div></div>',
-      )
-      .join("");
+    html += d.items.map((a) => trashRow(a)).join("");
     html += "</div>";
 
     view.innerHTML = html;
@@ -8951,34 +8954,7 @@
         trash.items.length +
         ')</summary><div class="disclosure-body">' +
         trash.items
-          .map(
-            (a) =>
-              '<div class="item" data-kind="' +
-              esc(a.kind) +
-              '"><div class="item-body"><span class="kindrow">' +
-              '<span class="kindmark"></span>' +
-              '<span class="kindword">' +
-              esc(a.kind) +
-              "</span></span>" +
-              '<div class="title">' +
-              esc(a.title || "Untitled") +
-              "</div></div>" +
-              '<span class="meta">' +
-              (a.days_left > 0
-                ? a.days_left +
-                  " day" +
-                  (a.days_left === 1 ? "" : "s") +
-                  " left"
-                : "goes at the next launch") +
-              "</span>" +
-              '<div class="rowacts">' +
-              '<button class="btn ghost" onclick="restoreArtifact(&#39;' +
-              a.id +
-              '&#39;)">Restore</button>' +
-              '<button class="btn ghost harm" onclick="purgeArtifact(&#39;' +
-              a.id +
-              '&#39;)">Delete now</button></div></div>',
-          )
+          .map((a) => trashRow(a))
           .join("") +
         "</div></div></details>";
     }
