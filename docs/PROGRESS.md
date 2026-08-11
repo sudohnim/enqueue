@@ -473,7 +473,7 @@ Decision (Minh, 2026-08-10): delete. No dead endpoints hang around.
 Facts: `POST /lens` (api.py:434-459) and `POST /curate` have no UI caller (no `EventSource` or `/lens` fetch in museum.html; `doCurate` deleted in M.2a).
 The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval path has no remaining consumer either.
 
-- [ ] **M.5a [AGENT]** Delete the endpoints and their modules.
+- [x] **M.5a [AGENT]** Delete the endpoints and their modules.
   Delete from api.py: the `POST /lens` handler, `_lens_sse`, `_consume_lens` (~427-546; this supersedes M.3j, delete outright), the `POST /curate` handler (chats/curate region ~908-1041), and the two lens-cache endpoints (~785-800).
   Delete the modules: `retrieve/curate.py`, `retrieve/expand.py`, `retrieve/lens.py`, `retrieve/score.py`, `retrieve/judgments.py`.
   Before deleting each module run `rg -n "retrieve\.(curate|expand|lens|score|judgments)|from \.\.?retrieve import" src/ tests/` and confirm no live importer; if `chats.py` or `pivot.py` imports any of them, stop and report instead of deleting blind.
