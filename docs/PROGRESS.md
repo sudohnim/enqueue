@@ -596,7 +596,7 @@ Measure first: these are verified smells, each with a deterministic check.
 
 ### P.2 - Batch the N+1 queries
 
-- [ ] **P.2 [AGENT]** Replace per-row loops with one `json_each` IN-query each:
+- [x] **P.2 [AGENT]** Replace per-row loops with one `json_each` IN-query each:
   (a) candidate titles, `retrieve/candidates.py:144-156` (up to 150 SELECTs per curate);
   (b) the snippet/title fetches in `_hybrid_results`, candidates.py:255-289;
   (c) the `hit_is_stale` probe, candidates.py:50-67 (prefetch all candidate artifacts' `body_version` once per request);
@@ -604,6 +604,8 @@ Measure first: these are verified smells, each with a deterministic check.
   (e) view membership in `GET /artifacts/{id}`, api.py:575-589 (one query for all specs, no per-view `get()`);
   (f) `chat_topics` full-table load in `chats.py:157-159` (filter by the listed chat ids).
   Add one regression test per fix where a count is observable (e.g. assert the wall item query count via a sqlite trace hook or by asserting identical output with 1 vs N artifacts present).
+
+  Done (`a743448`): all six batched (rerank.py was folded into candidates.py since the task was written); trace-hook regression tests assert zero per-row probes in `search_results`/`candidates` and single filtered reads for chats topics and saved_pivots; 365 tests pass.
 
   Done when: `uv run pytest -q` green; behavior identical (existing tests cover the shapes).
 
