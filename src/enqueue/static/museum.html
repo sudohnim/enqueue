@@ -8526,6 +8526,40 @@
   }
 
   // ---- AI tab -------------------------------------------------------------
+  // One settings field: label + input + helper line. The text-ish settings
+  // (model, url, retries, vision model, user agent, trash days) render the
+  // same row shape; only the input attrs and the helper line differ.
+  function fieldRow(name, label, opts) {
+    const f = opts;
+    return (
+      '<div class="field"><label for="s_' +
+      name +
+      '">' +
+      label +
+      "</label>" +
+      '<input id="s_' +
+      name +
+      '"' +
+      (f.type ? ' type="' + f.type + '"' : "") +
+      (f.min !== undefined ? ' min="' + f.min + '"' : "") +
+      (f.max !== undefined ? ' max="' + f.max + '"' : "") +
+      (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : "") +
+      ' value="' +
+      esc(String(f.value ?? "")) +
+      '"' +
+      (f.locked ? " disabled" : "") +
+      " onchange=\"stageSetting('" +
+      name +
+      "', this.value)\">" +
+      (f.locked && f.pinned
+        ? '<div class="pinned">' + f.pinned + "</div>"
+        : f.aside
+          ? '<div class="aside">' + f.aside + "</div>"
+          : "") +
+      "</div>"
+    );
+  }
+
   async function renderSettingsAI() {
     const d = await api("/settings");
     let html = '<div class="h2">AI</div>';
@@ -8569,27 +8603,11 @@
       html += '<div class="aside">Nothing leaves this machine.</div>';
     for (const name of ["llm_model", "llm_url"]) {
       const f = d.settings[name];
-      html +=
-        '<div class="field"><label for="s_' +
-        name +
-        '">' +
-        esc(SETTING_LABELS[name]) +
-        "</label>" +
-        '<input id="s_' +
-        name +
-        '" value="' +
-        esc(String(f.value ?? "")) +
-        '"' +
-        (f.locked ? " disabled" : "") +
-        " onchange=\"stageSetting('" +
-        name +
-        "', this.value)\">" +
-        (f.locked
-          ? '<div class="pinned">pinned by ' +
-            esc(f.env_var) +
-            " in the environment</div>"
-          : "") +
-        "</div>";
+      html += fieldRow(name, esc(SETTING_LABELS[name]), {
+        value: f.value,
+        locked: f.locked,
+        pinned: "pinned by " + esc(f.env_var) + " in the environment",
+      });
     }
 
     const keyed = d.storage.api_key_present;
@@ -8639,27 +8657,11 @@
     html += '<div class="shelf">Behavior</div><div class="group">';
     for (const name of ["model_retries", "vision_model"]) {
       const f = d.settings[name];
-      html +=
-        '<div class="field"><label for="s_' +
-        name +
-        '">' +
-        esc(SETTING_LABELS[name]) +
-        "</label>" +
-        '<input id="s_' +
-        name +
-        '" value="' +
-        esc(String(f.value ?? "")) +
-        '"' +
-        (f.locked ? " disabled" : "") +
-        " onchange=\"stageSetting('" +
-        name +
-        "', this.value)\">" +
-        (f.locked
-          ? '<div class="pinned">pinned by ' +
-            esc(f.env_var) +
-            " in the environment</div>"
-          : "") +
-        "</div>";
+      html += fieldRow(name, esc(SETTING_LABELS[name]), {
+        value: f.value,
+        locked: f.locked,
+        pinned: "pinned by " + esc(f.env_var) + " in the environment",
+      });
     }
     html +=
       '<div class="aside">Images are described by the <b>vision model</b> behind the ' +
@@ -8827,16 +8829,12 @@
         : '<div class="aside">Click, then press the combination you want.</div>') +
       "</div>";
     const ua = d.settings.user_agent;
-    html +=
-      '<div class="field"><label for="s_ua">' +
-      esc(SETTING_LABELS.user_agent) +
-      "</label>" +
-      '<input id="s_ua" placeholder="Enqueue/0.2 (+https://...)" value="' +
-      esc(String(ua.value ?? "")) +
-      '"' +
-      (ua.locked ? " disabled" : "") +
-      " onchange=\"stageSetting('user_agent', this.value)\">" +
-      '<div class="aside">Some publishers refuse a client with no contact URL.</div></div>';
+    html += fieldRow("user_agent", esc(SETTING_LABELS.user_agent), {
+      value: ua.value,
+      locked: ua.locked,
+      placeholder: "Enqueue/0.2 (+https://...)",
+      aside: "Some publishers refuse a client with no contact URL.",
+    });
     const ap = d.settings.auto_preview;
     const apOn = String(ap.value).toLowerCase() !== "off";
     html +=
@@ -8922,18 +8920,16 @@
     const td = d.settings.trash_days;
     html +=
       '<div class="shelf">Retention</div><div class="group">' +
-      '<div class="field"><label for="s_trash">' +
-      esc(SETTING_LABELS.trash_days) +
-      "</label>" +
-      '<input id="s_trash" type="number" min="1" max="3650" value="' +
-      esc(String(td.value)) +
-      '"' +
-      (td.locked ? " disabled" : "") +
-      " onchange=\"stageSetting('trash_days', this.value)\">" +
-      (td.locked
-        ? '<div class="pinned">pinned by ' + esc(td.env_var) + "</div>"
-        : '<div class="aside">Only things you delete are ever removed.</div>') +
-      "</div></div>";
+      fieldRow("trash_days", esc(SETTING_LABELS.trash_days), {
+        type: "number",
+        min: 1,
+        max: 3650,
+        value: td.value,
+        locked: td.locked,
+        pinned: "pinned by " + esc(td.env_var),
+        aside: "Only things you delete are ever removed.",
+      }) +
+      "</div>";
     html +=
       '<div class="shelf">Trash</div><div class="group">' +
       '<div class="aside">Deleted things wait ' +
