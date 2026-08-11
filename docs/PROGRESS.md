@@ -503,7 +503,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: the listed sections read true; `rg -in "lens|curate" AGENTS.md` returns only the removal note.
 
-- [ ] **M.5g [AGENT]** With the lens surface gone, move RRF to the canonical constant.
+- [x] **M.5g [AGENT]** With the lens surface gone, move RRF to the canonical constant.
   Anchor: `store_sqlite.py:522-532` passes `k=1` with a comment tying the score scale to the lens threshold.
   Change `k=1` to `k=60` and rewrite the comment: the threshold it names no longer exists, and k=60 is the value from the RRF paper.
   Record `scripts/search_eval.py` recall@10 before and after in the commit body; ranking is allowed to shift, recall must not drop.
