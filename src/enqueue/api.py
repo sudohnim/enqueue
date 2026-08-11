@@ -1101,7 +1101,6 @@ def write_settings(req: SettingsUpdate) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
-@app.get("/secrets")
 @app.get("/greeting")
 def get_greeting() -> dict:
     """The wall's greeting for the current four-hour bucket, cached or fallback.
@@ -1112,6 +1111,7 @@ def get_greeting() -> dict:
     return greeting.get()
 
 
+@app.get("/secrets")
 def secret_report() -> dict:
     conn = db.get_conn()
     try:

@@ -437,7 +437,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
 ### M.4 - Fix the small bugs found in the sweep
 
-- [ ] **M.4a [AGENT]** `/secrets` route shadowing.
+- [x] **M.4a [AGENT]** `/secrets` route shadowing.
   Anchor: api.py:1095-1097 stacks `@app.get("/secrets")` and `@app.get("/greeting")` on `get_greeting()`, so `GET /secrets` returns the greeting.
   Fix: attach `@app.get("/secrets")` to `secret_report` (1106-1115) instead of deleting it, so the documented endpoint (AGENTS.md API surface) actually works.
   Test: `TestClient(app).get("/secrets")` returns the secrets payload shape, and `/greeting` still returns a greeting.
