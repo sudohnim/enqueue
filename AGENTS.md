@@ -169,7 +169,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `cli.py` | Thin Typer CLI over the engine API. Every command calls `httpx` against localhost. |
-| `api.py` | FastAPI app. All endpoints. Binds 127.0.0.1:8787. Also serves static HTML. |
+| `api/` | FastAPI app split into one router per domain (M.9): `static.py` (shell, capture, health), `artifacts.py` (wall, artifact, tags, capture writes), `wall.py` (shared wall-shaping helpers), `write.py` (re-chunk, facets, index rebuild), `admin.py` (doctor, index counts, ingest wait), `search.py`, `chats.py`, `settings.py`, `pivots.py`. `app.py` has `create_app()` + `serve()` and binds 127.0.0.1:8787. |
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
