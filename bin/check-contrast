@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Check WCAG contrast of the design tokens in home.html's :root block.
+"""Check WCAG contrast of the design tokens in static/css/tokens.css's :root.
 
 Reads the palette from the file (not hardcoded) so it stays a real check.
+The capture overlay copies its tokens from the home page rather than sharing
+(capture.html's :root, Phase A), so a second pass verifies every token the
+overlay defines resolves to the same value as tokens.css - drift between the
+two copies fails here.
 Three tiers, matching the rules documented in the :root comments:
 
   - Text inks clear 4.5:1 on the worst *permitted* ground. Some inks are not
@@ -29,7 +33,8 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HOME_HTML = os.path.join(HERE, "src", "enqueue", "static", "home.html")
+TOKENS_CSS = os.path.join(HERE, "src", "enqueue", "static", "css", "tokens.css")
+CAPTURE_HTML = os.path.join(HERE, "src", "enqueue", "static", "capture.html")
 SRC = "bin/check-contrast"
 
 # --- WCAG relative luminance ---
@@ -65,7 +70,7 @@ def parse_root_palette(text):
     """
     m = re.search(r":root\s*\{(.*?)\n  \}", text, re.DOTALL)
     if not m:
-        print(f"{SRC}: ERROR: no :root block found in {HOME_HTML}", file=sys.stderr)
+        print(f"{SRC}: ERROR: no :root block found in {TOKENS_CSS}", file=sys.stderr)
         sys.exit(2)
     body = m.group(1)
     raw = {}
@@ -161,12 +166,12 @@ WASH_TEXT = "--text-dim"
 
 def main():
     os.chdir(HERE)
-    with open(HOME_HTML) as f:
+    with open(TOKENS_CSS) as f:
         text = f.read()
 
     palette = parse_root_palette(text)
     if not palette:
-        print(f"{SRC}: ERROR: could not parse any tokens from :root in {HOME_HTML}", file=sys.stderr)
+        print(f"{SRC}: ERROR: could not parse any tokens from :root in {TOKENS_CSS}", file=sys.stderr)
         sys.exit(2)
 
     grounds = {g: ground_lum(palette, g) for g in GROUNDS}
@@ -258,6 +263,26 @@ def main():
         sys.exit(1)
 
     print(f"\n{SRC}: all {checks} contrast checks passed")
+
+    # --- Capture overlay token coverage ---
+    # capture.html copies its tokens at the same values rather than sharing
+    # them (Phase A). Values are compared resolved (parse_root_palette follows
+    # var() refs, so capture's concrete --kind-* hexes must equal the hue the
+    # home page aliases point at).
+    with open(CAPTURE_HTML) as f:
+        cap = parse_root_palette(f.read())
+    drift = []
+    for name in sorted(cap):
+        if name not in palette:
+            drift.append(f"{name} defined in capture but missing from tokens.css")
+        elif palette[name] != cap[name]:
+            drift.append(f"{name}: capture={cap[name][0]}, tokens.css={palette[name][0]}")
+    if drift:
+        print(f"\n{SRC}: FAILED ({len(drift)} capture tokens drifted):")
+        for msg in drift:
+            print(f"  {msg}", file=sys.stderr)
+        sys.exit(1)
+    print(f"{SRC}: capture overlay: all {len(cap)} tokens match tokens.css")
     sys.exit(0)
 
 if __name__ == "__main__":

@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Gate: JS parse check on both pages, pytest, contrast check.
 
-Extracts every <script> block, wraps each in { } so const/let scoping
-cannot collide across blocks, then runs node --check on the result.
+home.html has no inline scripts since M.8: its JS lives in static/js/*.js,
+loaded by <script src> in shell order. Each file is checked individually
+(clear per-file errors) and all of them concatenated (catches a top-level
+const/let/function redeclared across two files, which the individual checks
+cannot see - separate classic scripts share the global scope).
+
+capture.html still carries its JS inline: every <script> block is wrapped in
+{ } so const/let scoping cannot collide across blocks, then run through
+node --check.
 """
 import os
 import re
@@ -13,6 +20,22 @@ import tempfile
 SRC = "bin/verify"
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = ["src/enqueue/static/home.html", "src/enqueue/static/capture.html"]
+JS_DIR = os.path.join(HERE, "src", "enqueue", "static", "js")
+JS_ORDER = [
+    "util.js",
+    "icons.js",
+    "md.js",
+    "dialogs.js",
+    "pill.js",
+    "morph.js",
+    "home.js",
+    "artifact.js",
+    "search.js",
+    "pivot.js",
+    "chat.js",
+    "trash.js",
+    "settings.js",
+]
 
 def extract_script_blocks(path):
     with open(path, encoding="utf-8") as f:
@@ -20,15 +43,9 @@ def extract_script_blocks(path):
     blocks = re.findall(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
     return [b.strip() for b in blocks if b.strip()]
 
-def check_js(path):
-    blocks = extract_script_blocks(path)
-    if not blocks:
-        print(f"{SRC}: WARNING: no <script> blocks found in {path}")
-        return True
-    # Wrap each block in { } so const/let are scoped and don't collide
-    wrapped = "\n".join("{" + b + "\n}" for b in blocks)
+def node_check(source, label):
     with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as f:
-        f.write(wrapped)
+        f.write(source)
         tmp = f.name
     try:
         result = subprocess.run(
@@ -36,29 +53,57 @@ def check_js(path):
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
-            print(f"{SRC}: JS parse OK: {path}")
+            print(f"{SRC}: JS parse OK: {label}")
             return True
         else:
-            print(f"{SRC}: JS parse FAILED: {path}", file=sys.stderr)
+            print(f"{SRC}: JS parse FAILED: {label}", file=sys.stderr)
             print(result.stderr, file=sys.stderr)
             return False
     except subprocess.TimeoutExpired:
-        print(f"{SRC}: JS parse TIMEOUT: {path}", file=sys.stderr)
+        print(f"{SRC}: JS parse TIMEOUT: {label}", file=sys.stderr)
         return False
     finally:
         os.unlink(tmp)
+
+def check_home_js():
+    missing = [f for f in JS_ORDER if not os.path.isfile(os.path.join(JS_DIR, f))]
+    if missing:
+        print(f"{SRC}: missing js files: {', '.join(missing)}", file=sys.stderr)
+        return False
+    ok = True
+    for name in JS_ORDER:
+        with open(os.path.join(JS_DIR, name), encoding="utf-8") as f:
+            source = f.read()
+        if not node_check(source, f"static/js/{name}"):
+            ok = False
+    combined = ""
+    for name in JS_ORDER:
+        with open(os.path.join(JS_DIR, name), encoding="utf-8") as f:
+            combined += f.read() + "\n"
+    if not node_check(combined, "static/js/*.js concatenated (cross-file scoping)"):
+        ok = False
+    return ok
+
+def check_inline_js(path):
+    blocks = extract_script_blocks(path)
+    if not blocks:
+        print(f"{SRC}: WARNING: no <script> blocks found in {path}")
+        return True
+    # Wrap each block in { } so const/let are scoped and don't collide
+    wrapped = "\n".join("{" + b + "\n}" for b in blocks)
+    return node_check(wrapped, path)
 
 def main():
     os.chdir(HERE)
     pass_flag = True
 
-    print(f"=== {SRC}: JS parse: {FILES[0]} ===")
-    if not check_js(FILES[0]):
+    print(f"=== {SRC}: JS parse: {FILES[0]} (static/js/*.js) ===")
+    if not check_home_js():
         pass_flag = False
 
     print("")
     print(f"=== {SRC}: JS parse: {FILES[1]} ===")
-    if not check_js(FILES[1]):
+    if not check_inline_js(FILES[1]):
         pass_flag = False
 
     print("")

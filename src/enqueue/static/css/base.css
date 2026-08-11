@@ -1,0 +1,393 @@
+  /* Structural whitespace is the first thing to give when the window is narrow: the
+     content still needs its gutters, but 96px of air above a title does not. Mobile
+     LG per DESIGN.md section 9. */
+  @media (max-width: 768px) {
+    :root {
+      --sp-section: 24px;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  /* The sticky period heading would otherwise cover the focus ring of anything reached
+     by keyboard from below. */
+  html {
+    /* 32px drag strip plus a hair of air for focus rings. */
+    scroll-padding-top: calc(32px + var(--sp-1));
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-dim);
+    font-family: var(--sans);
+    /* Body SM is the app's default body: this is a reference wall of kept things,
+       not a page of prose, so the reading size is one step down from Body. Weight
+       holds at 400 and tracking at zero (DESIGN.md section 3). */
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Every icon in the app is a stroke-drawn line glyph: the svg() helper emits
+     bare paths with no inline styling, so the stroke contract lives here once
+     and the per-context rules below only size and weight. The star flag and the
+     lit title action override fill/stroke where they need to. */
+  svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ---- type roles --------------------------------------------------------
+     One geometric sans, no second family. Headlines lock together at -2% tracking;
+     line-height ratio drops as size rises. Uppercase appears in exactly one role. */
+  .h1,
+  .display,
+  .h2,
+  .h3 {
+    color: var(--text);
+    /* Display holds at 600, never 700; the ladder below steps down through 500 and
+       400. The heading steps override this weight where their rung is lighter. */
+    font-weight: 600;
+    margin: 0;
+  }
+  .display {
+    /* Display MD, the largest rung that fits a 1200px work surface: the marketing
+       page's XL and LG are heroes the app does not have. The -1.0px tracking is the
+       display signature - aggressive, scaling down with size, never zero. */
+    font-size: 30px;
+    line-height: 35px;
+    letter-spacing: -1px;
+  }
+  .h1 {
+    /* Headline: panel titles and section openers. */
+    font-size: 24px;
+    line-height: 29px;
+    letter-spacing: -0.5px;
+  }
+  .h2 {
+    /* Title: the scale's 20px step, at its own 500 weight rather than the shared 600. */
+    font-size: 20px;
+    font-weight: 500;
+    line-height: 25px;
+    letter-spacing: -0.3px;
+  }
+  .h3 {
+    /* Subhead: lead paragraphs, back at body weight. */
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 25px;
+    letter-spacing: -0.2px;
+  }
+
+  /* The section-category signal. The leading accent dot is the identity of the label,
+     not a flourish, so it is drawn here rather than left to each caller to remember. */
+  .shelf {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    /* LY.8/DI.2: a quiet section label, not an eyebrow. Sentence case at 12/500
+       with zero tracking, in the faintest ink that still clears 4.5:1 on the
+       canvas (--ink-faint, 4.62:1 on surface-1). The accent dot and the uppercase
+       tracked eyebrow are gone - DESIGN.md section 8 keeps the accent for brand,
+       CTA, focus and links, and the impeccable eyebrow ban applies here. */
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-faint);
+    margin: var(--sp-5) 0 var(--sp-2);
+  }
+  /* LY.8/DI.2: the decorative accent dot before every section label is gone. */
+  .shelf:first-child {
+    margin-top: 0;
+  }
+
+  .title {
+    /* Title: the 20px / 500 card-title step. */
+    font-size: 20px;
+    font-weight: 500;
+    line-height: 25px;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  .excerpt {
+    /* Body SM: card body and secondary text. */
+    font-size: 14px;
+    line-height: 21px;
+    color: var(--text-dim);
+    margin-top: var(--sp-2);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Metadata only: timestamps, kinds, counts, byte sizes. */
+  .meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    /* Caption: timestamps, kinds, counts and byte sizes are the scale's meta. */
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 17px;
+    letter-spacing: 0;
+    color: var(--text-mute);
+    margin-top: var(--sp-2);
+  }
+  /* The separator is a graphic between labels, so it answers to 3:1 rather than 4.5. */
+  .meta .sep {
+    color: var(--line-strong);
+  }
+  /* At most one display line per view: the empty state's, or the home greeting's. */
+  .empty {
+    text-align: center;
+    padding-top: var(--sp-section);
+  }
+  .empty .state {
+    margin: 0 auto;
+    text-align: left;
+  }
+
+  /* Every focusable element, one ring, no exceptions. A translucent browser default
+     would be the only thing in the app that is not verified against its ground. */
+  :focus-visible {
+    /* One ring, no exceptions: 2px lavender-focus at 50% opacity, per DESIGN.md
+       section 7. Soft enough to sit under the lavender fills it rings, distinct
+       enough against the canvas. */
+    outline: 2px solid
+      color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* ---- buttons ------------------------------------------------------------
+     One geometry for all of them: 8px radius, 14/500 label with zero tracking,
+     8px 14px padding, 40px minimum height. What changes between variants is
+     fill and edge. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    min-height: 40px;
+    /* 8px 14px, per DESIGN.md section 7. */
+    padding: 8px 14px;
+    border-radius: var(--r-md);
+    border: 1px solid transparent;
+    background: transparent;
+    font-family: var(--sans);
+    /* Button: 14px / 500 / 1.20 with zero tracking - the scale's button step. */
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 17px;
+    letter-spacing: 0;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .btn.sm {
+    font-size: 12px;
+    line-height: 15px;
+    letter-spacing: 0;
+  }
+  /* Primary: the one instruction per surface. The old 1.5px --text edge is gone -
+     lavender clears the 3:1 sole-boundary rule on the canvas (6.04:1), so the fill
+     bounds the control on its own, and the label is white on the fill (6.04:1). */
+  .btn.primary {
+    background: var(--accent);
+    color: var(--on-lavender);
+  }
+  .btn.primary:hover {
+    /* DESIGN-kraken.md names #8b5cf6 as the hover, but white on that is 4.23:1 and
+       fails 4.5; the hover step is the lavender-focus that clears 4.5 (6.04:1 with
+       white). */
+    background: var(--lavender-focus);
+  }
+  .btn.primary:active {
+    background: var(--lavender-deep);
+  }
+  .btn.secondary {
+    background: var(--surface);
+    border-color: var(--line-strong);
+    color: var(--text);
+  }
+  .btn.secondary:hover {
+    background: var(--surface-2);
+  }
+  .btn.secondary:active {
+    background: var(--surface-3);
+  }
+  .btn.tertiary {
+    color: var(--text);
+  }
+  .btn.tertiary:hover {
+    background: var(--surface);
+  }
+  .btn.tertiary:active {
+    background: var(--surface-2);
+  }
+  /* The compact text button: same ghost treatment as tertiary, tighter padding. */
+  .btn.ghost {
+    padding: 6px 12px;
+    color: var(--text);
+  }
+  .btn.ghost:hover {
+    background: var(--surface);
+  }
+  .btn.ghost:active {
+    background: var(--surface-2);
+  }
+  /* Subtle: a lavender wash for a secondary brand action. The wash carries the
+     lavender idea without shouting. Its text is the deep lavender that clears 4.5:1
+     on the wash (5.17:1): the primary #7132f5 measures 4.69 there and only just
+     clears, so the wash uses --accent-text, the same ink the badges use. */
+  .btn.subtle {
+    background: var(--lavender-subtle);
+    color: var(--accent-text);
+  }
+  .btn.subtle:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .btn.subtle:active {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+  /* Inverse: white on a lavender or surface-2 banner. On lavender the white fill
+     bounds the control itself (6.04:1 against the banner); on surface-2 the
+     line-strong border carries the 3:1 boundary (3.32:1). */
+  .btn.inverse {
+    background: #ffffff;
+    border-color: var(--line-strong);
+    color: var(--text);
+  }
+  .btn.inverse:hover {
+    background: var(--surface-doc);
+  }
+  .btn.danger {
+    background: var(--danger);
+    color: #ffffff;
+  }
+  .btn.danger:hover {
+    background: color-mix(in oklab, var(--danger) 82%, var(--text));
+    border-color: color-mix(in oklab, var(--danger) 82%, var(--text));
+  }
+  .btn.danger:active {
+    background: color-mix(in oklab, var(--danger) 70%, var(--text));
+    border-color: color-mix(in oklab, var(--danger) 70%, var(--text));
+  }
+  /* Icon-only. The fill change is the boundary, so no line is required around it. */
+  .btn.icon {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .btn.icon:hover {
+    background: var(--surface-3);
+  }
+  /* Disabled is never colour alone: fill, opacity, cursor and aria-disabled together. */
+  .btn[disabled],
+  .btn[aria-disabled="true"] {
+    background: var(--surface-2);
+    border-color: transparent;
+    color: var(--text-mute);
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    stroke-width: 1.8;
+  }
+  .btn.icon svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* ---- callouts -----------------------------------------------------------
+     Inline notices only. No border, no shadow, --text or --text-dim on the tint. */
+  .callout {
+    border-radius: var(--r);
+    padding: var(--sp-4);
+    margin-top: var(--sp-4);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 22.4px;
+    max-width: 68ch;
+  }
+  .callout.info {
+    background: var(--tint-info);
+  }
+  .callout.ok {
+    background: var(--tint-ok);
+  }
+  .callout.warn {
+    background: var(--tint-warn);
+  }
+  .callout.note {
+    background: var(--tint-note);
+  }
+  /* --text-mute measures 4.36 on --tint-note and fails 4.5, so an eyebrow on a tint
+     steps up to --text-dim (6.13) rather than keeping its usual grey. */
+  .callout .shelf {
+    color: var(--text-dim);
+    margin: 0 0 var(--sp-3);
+  }
+  .callout p {
+    margin: 0;
+  }
+  .callout p + p {
+    margin-top: var(--sp-3);
+  }
+
+  /* ---- rows ---------------------------------------------------------------
+     Collections on the wall, trash entries, anything that is a line rather than an
+     object. Lifted onto --surface with a hairline, never a recessed fill inside a card. */
+  .item {
+    display: flex;
+    gap: var(--sp-4);
+    align-items: center;
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-2);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    /* Cards answer to the 12px rung, even the compact list rows. */
+    border-radius: var(--r-lg);
+    transition:
+      background var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease);
+    cursor: pointer;
+  }
+  .item:hover {
+    /* Level 2 lift, same as the wall cards. */
+    background: var(--surface-2);
+    border-color: var(--line-strong);
+  }
+  .item-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .item-body .kindrow {
+    margin-bottom: var(--sp-1);
+  }
+  .item .meta {
+    margin-top: 0;
+    flex-shrink: 0;
+  }
+
