@@ -19,16 +19,11 @@ machine's copy of it.
 from __future__ import annotations
 
 import logging
-import queue
 import threading
 
-log = logging.getLogger(__name__)
+from ..worker import Worker
 
-_work: queue.Queue[str] = queue.Queue()
-_worker: threading.Thread | None = None
-_lock = threading.Lock()
-_idle = threading.Event()
-_idle.set()
+log = logging.getLogger(__name__)
 
 # How many pending queue items each artifact has (I5.1). A burst of saves to one
 # note enqueues that id several times; the worker processes them in order, and
@@ -307,38 +302,15 @@ def _entities_artifact(artifact_id: str) -> int:
     return count
 
 
-def _run() -> None:
-    while True:
-        artifact_id = _work.get()
-        _idle.clear()
-        _dequeue(artifact_id)
-        try:
-            process(artifact_id)
-        except Exception:  # noqa: BLE001 - one bad artifact must not stop the queue
-            log.exception("ingest failed for %s", artifact_id)
-        finally:
-            _work.task_done()
-            if _work.empty():
-                _idle.set()
-
-
-def _ensure_worker() -> None:
-    global _worker
-    if _worker and _worker.is_alive():
-        return
-    with _lock:
-        if _worker and _worker.is_alive():
-            return
-        _worker = threading.Thread(target=_run, name="enqueue-ingest", daemon=True)
-        _worker.start()
+_ingest = Worker("ingest", process, pre=_dequeue)
 
 
 def submit(artifact_id: str) -> None:
     """Queue an artifact for chunking and indexing. Returns immediately."""
-    _ensure_worker()
-    _idle.clear()
+    # I5.1 bookkeeping happens before the put: the counter must be incremented
+    # before the worker could possibly dequeue the item.
     _queue(artifact_id)
-    _work.put(artifact_id)
+    _ingest.submit(artifact_id)
 
 
 def submit_all() -> int:
@@ -390,4 +362,4 @@ def submit_images() -> int:
 
 def wait_idle(timeout: float = 60.0) -> bool:
     """Block until the queue is drained. For tests and for the CLI, not for requests."""
-    return _idle.wait(timeout)
+    return _ingest.wait_idle(timeout)

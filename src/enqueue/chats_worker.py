@@ -20,9 +20,9 @@ read; it never hangs, and it never silently vanishes.
 from __future__ import annotations
 
 import logging
-import queue
-import threading
 from dataclasses import dataclass
+
+from .worker import Worker
 
 log = logging.getLogger(__name__)
 
@@ -42,13 +42,6 @@ class Job:
     message_id: str
     text: str
     force_skill: str | None = None
-
-
-_work: queue.Queue[Job] = queue.Queue()
-_worker: threading.Thread | None = None
-_lock = threading.Lock()
-_idle = threading.Event()
-_idle.set()
 
 
 def compute(job: Job) -> None:
@@ -153,41 +146,17 @@ def json_dumps(payload: dict | None) -> str | None:
     return json.dumps(payload) if payload is not None else None
 
 
-def _run() -> None:
-    while True:
-        job = _work.get()
-        _idle.clear()
-        try:
-            compute(job)
-        except Exception:  # noqa: BLE001 - one bad job must not stop the worker
-            log.exception("answer failed for %s", job)
-        finally:
-            _work.task_done()
-            if _work.empty():
-                _idle.set()
-
-
-def _ensure_worker() -> None:
-    global _worker
-    if _worker and _worker.is_alive():
-        return
-    with _lock:
-        if _worker and _worker.is_alive():
-            return
-        _worker = threading.Thread(target=_run, name="enqueue-answers", daemon=True)
-        _worker.start()
+_worker = Worker("answers", compute)
 
 
 def submit(job: Job) -> None:
     """Queue an answer for computation. Returns immediately."""
-    _ensure_worker()
-    _idle.clear()
-    _work.put(job)
+    _worker.submit(job)
 
 
 def wait_idle(timeout: float = 60.0) -> bool:
     """Block until the queue is drained. For tests and the CLI, not for requests."""
-    return _idle.wait(timeout)
+    return _worker.wait_idle(timeout)
 
 
 def sweep_orphaned_pending() -> int:
