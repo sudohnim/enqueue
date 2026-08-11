@@ -4655,42 +4655,7 @@
     const sections = [];
     if (wallKept.length) sections.push(["SAVED", wallKept, true]);
     sections.push(["EVERYTHING ELSE", wallFirst, false]);
-    const collapsed = wallCollapsedSet(wallGroup);
-    let body = "";
-    for (const [label, list, isSaved] of sections) {
-      const key = label;
-      const isCollapsed = collapsed.has(key);
-      body +=
-        '<section class="wallgroup' +
-        (isCollapsed ? " collapsed" : "") +
-        '" data-key="' +
-        esc(key) +
-        '">' +
-        '<button class="grouptoggle" type="button" aria-expanded="' +
-        String(!isCollapsed) +
-        '" title="' +
-        esc(isCollapsed ? groupPreview(list) : "") +
-        '">' +
-        '<span class="shelf center">' +
-        esc(label) +
-        "</span>" +
-        '<span class="gmeta">' +
-        list.length +
-        "</span>" +
-        '<span class="gchev" aria-hidden="true">' +
-        svg("chev") +
-        "</span>" +
-        "</button>" +
-        '<div class="wall' +
-        (isSaved ? " wall--saved" : "") +
-        (isSaved ? "" : '" id="wall') +
-        '">' +
-        list.map((a, i) => card(a, i)).join("") +
-        "</div>" +
-        (isSaved ? "" : '<div id="wallEnd" class="aside"></div>') +
-        "</section>";
-    }
-    return body;
+    return wallSectionsHtml(sections);
   }
 
   // The kind order the wall itself uses: notes first, then the rest of the
@@ -4743,14 +4708,17 @@
     return sections;
   }
 
-  // Wall sections in the Type and Tags modes (L.4): each shelf is a collapsible
-  // section, the same shape as a pivot group - a toggle header (label + count +
-  // chevron) folding its cards away. Collapsed choices persist per mode in
-  // sessionStorage, so a mode switch and switch back keeps the folds.
+  // Wall sections in every mode (L.4): each shelf is a collapsible section, the
+  // same shape as a pivot group - a toggle header (label + count + chevron)
+  // folding its cards away. Collapsed choices persist per mode in
+  // sessionStorage, so a mode switch and switch back keeps the folds. A section
+  // entry may carry a third flag for the last-touch SAVED shelf, which gets the
+  // saved styling and no pager end-marker; the pager shelf carries the wall
+  // id/end-marker instead.
   function wallSectionsHtml(sections) {
     const collapsed = wallCollapsedSet(wallGroup);
     return sections
-      .map(([label, list]) => {
+      .map(([label, list, isSaved]) => {
         const key = label;
         const isCollapsed = collapsed.has(key);
         return (
@@ -4770,9 +4738,13 @@
           '</span><span class="gchev" aria-hidden="true">' +
           svg("chev") +
           "</span></button>" +
-          '<div class="wall">' +
+          '<div class="wall' +
+          (isSaved ? " wall--saved" : "") +
+          (isSaved ? "" : '" id="wall') +
+          '">' +
           list.map((a, i) => card(a, i)).join("") +
           "</div>" +
+          (isSaved ? "" : '<div id="wallEnd" class="aside"></div>') +
           "</section>"
         );
       })
