@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
 
 # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from importlib import resources
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from . import (
@@ -39,7 +38,6 @@ from .index.store import get_store
 from .ingest import chunk as chunk_mod
 from .ingest import facets as facets_mod
 from .ingest import queue as ingest_queue
-from .retrieve import lens as lens_mod
 
 app = FastAPI(title="Enqueue engine", version="0.2.0")
 
@@ -425,128 +423,6 @@ def list_artifacts(
         conn.close()
 
 
-class LensRequest(BaseModel):
-    lens: str
-    judge_top: int | None = None
-    limit: int = 60
-    offset: int = 0
-
-
-@app.post("/lens")
-def apply_lens_view(req: LensRequest) -> Response:
-    """Split the wall into related and other for a topic, ephemerally, live.
-
-    Returns a Server-Sent Events stream: the `split` event arrives as soon as
-    stage one finishes, with both sections already bucketed by score and the
-    candidates listed in `judging`; `judgment` events follow, one per
-    artifact, carrying the placard and the final placement (`verdict` is
-    belongs, no, or failed); `done` closes with the totals. The person sees
-    the two sections before the model has spoken, and placards fill in as
-    judgments arrive.
-
-    The lens is stateless: nothing here writes anything, bumps `updated_at`,
-    or modifies any artifact (the judgment cache is the one table written, and
-    that is its purpose). Clearing the lens is a client-side act - drop the
-    lens state and re-request with the normal ordering; the wall returns to
-    touched order because the lens left no trace.
-    """
-    return StreamingResponse(
-        _lens_sse(req), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
-    )
-
-
-def _lens_sse(req: LensRequest) -> Iterator[str]:
-    for event in lens_mod.split_and_judge(req.lens, judge_top=req.judge_top):
-        yield f"data: {json.dumps(event)}\n\n"
-
-
-def _consume_lens(req: LensRequest) -> dict:
-    """The synchronous reading of the lens stream, for callers (and tests)
-    that want the final state in one dict rather than a stream of events."""
-    result: dict = {}
-    placements: dict[str, dict] = {}
-    for event in lens_mod.split_and_judge(req.lens, judge_top=req.judge_top):
-        if event["stage"] == "split":
-            result = event
-        elif event["stage"] == "judgment":
-            placements[event["artifact_id"]] = event
-        else:
-            result.update(event)
-
-    # Apply the judgments to the split: move verdicts into place, fill
-    # placards, drop the stage-only fields, and page the two sections
-    # independently, the way pinned and unpinned page on the wall.
-    for entry in result["related"] + result["other"]:
-        event = placements.get(entry["artifact_id"])
-        if not event:
-            continue
-        if event["verdict"] == "belongs":
-            entry.update(
-                {
-                    "judged": True,
-                    "strength": event["strength"],
-                    "placard": event["placard"],
-                    "evidence": event["evidence"],
-                }
-            )
-        elif event["verdict"] == "no":
-            entry["judged"] = True
-        else:
-            entry["judged"] = False
-
-    # Same fields the wall renders, so the client needs no second call.
-    conn = db.get_conn()
-    try:
-        ids = [e["artifact_id"] for e in result["related"] + result["other"] + result["pinned"]]
-        wall: dict[str, dict] = {}
-        if ids:
-            with_tags = _wall_tags(conn, ids)
-            for r in conn.execute(
-                f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts"
-                " WHERE id IN (SELECT value FROM json_each(?))",
-                (json.dumps(ids),),
-            ):
-                wall[r["id"]] = _wall_item(
-                    conn,
-                    r,
-                    _link_images(conn, [r["id"]] if r["kind"] == "link" else []),
-                    with_tags,
-                )
-    finally:
-        conn.close()
-
-    for entry in result["related"] + result["other"] + result["pinned"]:
-        entry.update(wall.get(entry["artifact_id"], {}))
-
-    def page(items: list[dict]) -> tuple[list[dict], int, bool]:
-        return (
-            items[req.offset : req.offset + req.limit],
-            len(items),
-            req.offset + req.limit < len(items),
-        )
-
-    related, related_total, related_more = page(result["related"])
-    other, other_total, other_more = page(result["other"])
-
-    out = dict(result)
-    for key in ("stage", "judging", "judge_total", "cache_hits"):
-        out.pop(key, None)
-    out.update(
-        {
-            "related": related,
-            "related_total": related_total,
-            "related_more": related_more,
-            "other": other,
-            "other_total": other_total,
-            "other_more": other_more,
-            "pinned": result["pinned"],
-            "offset": req.offset,
-            "limit": req.limit,
-        }
-    )
-    return out
-
-
 @app.get("/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str) -> dict:
     try:
@@ -778,22 +654,6 @@ def fetch_preview(artifact_id: str) -> dict:
 @app.post("/chunk")
 def rebuild_chunks() -> dict:
     return chunk_mod.chunk_all()
-
-
-@app.get("/lens-cache/stats")
-def lens_cache_stats() -> dict:
-    """How many judgments are remembered, across how many lenses."""
-    from .retrieve import judgments
-
-    return judgments.stats()
-
-
-@app.post("/lens-cache/clear")
-def lens_cache_clear() -> dict:
-    """Forget every cached judgment. Returns the number of rows removed."""
-    from .retrieve import judgments
-
-    return {"cleared": judgments.clear()}
 
 
 @app.post("/facet-gate")
@@ -1036,19 +896,6 @@ def delete_chat(chat_id: str) -> dict:
         return chats.delete(chat_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such chat") from None
-
-
-class CurateRequest(BaseModel):
-    lens: str
-    keep: int = 15
-    pool: int = 150
-
-
-@app.post("/curate")
-def curate(req: CurateRequest) -> dict:
-    from .retrieve.curate import curate as run
-
-    return run(req.lens, keep=req.keep, pool=req.pool)
 
 
 @app.get("/settings")
