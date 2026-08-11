@@ -149,9 +149,18 @@ def listing(limit: int = 40) -> dict:
         chats = conn.execute(
             "SELECT * FROM chats ORDER BY pinned DESC, updated_at DESC LIMIT ?", (limit,)
         ).fetchall()
+        # P.2f: the topics table was loaded in full for every listing; filter
+        # it to the chats that are actually on this page.
         topics: dict[str, list[str]] = {}
-        for row in conn.execute("SELECT chat_id, topic FROM chat_topics ORDER BY created_at"):
-            topics.setdefault(row["chat_id"], []).append(row["topic"])
+        if chats:
+            ids = [c["id"] for c in chats]
+            for row in conn.execute(
+                "SELECT chat_id, topic FROM chat_topics"
+                " WHERE chat_id IN (SELECT value FROM json_each(?))"
+                " ORDER BY created_at",
+                (json.dumps(ids),),
+            ):
+                topics.setdefault(row["chat_id"], []).append(row["topic"])
 
         return {"items": [dict(c) | {"topics": topics.get(c["id"], [])} for c in chats]}
     finally:

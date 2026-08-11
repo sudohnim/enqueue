@@ -79,6 +79,33 @@ def get(pivot_id: str) -> dict:
     return out
 
 
+def all_specs() -> list[dict]:
+    """Every saved view with its spec, in one query (P.2e).
+
+    The artifact detail endpoint checks membership against every spec; a
+    per-view `get()` was one SELECT per saved view. A row whose spec does not
+    parse is skipped - the same silent omission the per-view loop produced - so
+    one corrupt row never breaks the artifact page.
+    """
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, spec_json, created_at FROM saved_pivots" " ORDER BY created_at DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rows:
+        data = dict(row)
+        raw = data.pop("spec_json")
+        try:
+            data["spec"] = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        out.append(data)
+    return out
+
+
 def update_spec(pivot_id: str, spec: dict) -> dict:
     """Replace the stored spec of a saved view, returning the updated row.
 

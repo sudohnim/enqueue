@@ -270,15 +270,10 @@ def get_artifact(artifact_id: str) -> dict:
     detail["tags"] = tags_mod.for_artifact(artifact_id)
 
     # Saved-view membership: which saved pivots include this artifact. The spec
-    # is stored as JSON with an `included_ids` list; the saved-pivot count is
-    # small (tens at most) and this endpoint is per-artifact (low volume), so a
-    # Python-side filter is fine - no SQL needed for this read-only join.
+    # is stored as JSON with an `included_ids` list; `all_specs` returns every
+    # spec in one query (P.2e) instead of a per-view get().
     views = []
-    for p in pivots_saved.listing():
-        try:
-            saved = pivots_saved.get(p["id"])
-        except (KeyError, ValueError):
-            continue
+    for saved in pivots_saved.all_specs():
         spec = saved["spec"]
         included = set(spec.get("included_ids") or [])
         excluded = set(spec.get("excluded_ids") or [])
@@ -286,7 +281,7 @@ def get_artifact(artifact_id: str) -> dict:
         # inclusion, so a chip the user just X'd out of (which excludes the id)
         # must disappear on re-render.
         if artifact_id in included and artifact_id not in excluded:
-            views.append({"id": p["id"], "name": p["name"]})
+            views.append({"id": saved["id"], "name": saved["name"]})
     detail["views"] = sorted(views, key=lambda v: v["name"])
     return detail
 

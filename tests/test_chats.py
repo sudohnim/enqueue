@@ -638,3 +638,51 @@ class TestConversationsShareTheWall:
         kept = self._wall(order="touched", pinned=True)
         assert [i["id"] for i in kept["items"]] == [chat_id]
         assert kept["items"][0]["pinned"] == 1
+
+
+class TestListingTopicsBatching:
+    """P.2f: listing() filters chat_topics to the page, not the whole table."""
+
+    def test_topics_query_is_filtered_to_the_listed_chats(self, store, monkeypatch):
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO chats (id, title, created_at, updated_at) VALUES"
+                " ('c1', 'one', '2026-01-01', '2026-01-02')"
+            )
+            conn.execute(
+                "INSERT INTO chats (id, title, created_at, updated_at) VALUES"
+                " ('c2', 'two', '2026-01-01', '2026-01-03')"
+            )
+            conn.execute(
+                "INSERT INTO chat_topics (id, chat_id, topic, created_at) VALUES"
+                " ('t1', 'c1', 'rooftops', '2026-01-01')"
+            )
+            conn.execute(
+                "INSERT INTO chat_topics (id, chat_id, topic, created_at) VALUES"
+                " ('t2', 'c2', 'ziggurats', '2026-01-01')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        statements: list[str] = []
+        real = chats.db.get_conn
+
+        def traced(*args, **kwargs):
+            c = real(*args, **kwargs)
+            c.set_trace_callback(lambda sql: statements.append(sql))
+            return c
+
+        monkeypatch.setattr(chats.db, "get_conn", traced)
+
+        items = chats.listing(limit=1)["items"]
+        assert [c["id"] for c in items] == ["c2"]
+        # Only c2's topic is loaded; c1's stays untouched.
+        assert items[0]["topics"] == ["ziggurats"]
+
+        topic_sql = [
+            s for s in statements if "chat_topics" in s and s.lstrip().startswith("SELECT")
+        ]
+        assert len(topic_sql) == 1, f"expected one topics SELECT, saw: {topic_sql}"
+        assert "json_each" in topic_sql[0], "the topics SELECT must filter by listed chat ids"

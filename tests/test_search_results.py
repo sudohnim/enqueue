@@ -522,3 +522,93 @@ class TestRerank:
 
         hits = search_results("rooftops", limit=20)
         assert [h["artifact_id"] for h in hits] == ["a1"]
+
+
+class TestQueryBatching:
+    """P.2: the search rollup is batched, not N+1.
+
+    A trace hook counts every SELECT a search issues. The per-row probes that
+    used to dominate (one title/body SELECT per candidate, one chunk SELECT per
+    text-less artifact, one staleness probe per candidate) must not appear at
+    all; the json_each batches must. The corpus is sized so the old code would
+    have issued dozens of probes here.
+    """
+
+    @staticmethod
+    def _count_statements(monkeypatch):
+        """Trace the connection candidates uses; return the collected SQL list."""
+        from enqueue.retrieve import candidates
+
+        seen: list[str] = []
+        real = candidates.db.get_conn
+
+        def traced(*args, **kwargs):
+            conn = real(*args, **kwargs)
+            conn.set_trace_callback(lambda sql: seen.append(sql))
+            return conn
+
+        monkeypatch.setattr(candidates.db, "get_conn", traced)
+        return seen
+
+    def test_no_per_row_probes_in_the_rollup(self, sqlite_store, monkeypatch):
+        conn = db.get_conn()
+        try:
+            # A matching note with chunks, and a facet-only artifact whose
+            # current-model facet matches the query (exercises the staleness
+            # prefetch and the entity-only body read).
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _chunk(conn, "c1", "a1", 0, _BODY)
+            _note(conn, "a2", "Trade routes", "Goods moved along the river, season by season.")
+            _chunk(conn, "c2", "a2", 0, "Goods moved along the river, season by season.")
+            _facet(conn, "f1", "a2", 3, "Ziggurats rose above the mud-brick cities.", 0.9)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+        sqlite_store.upsert_facets()
+
+        from enqueue.providers.base import get_provider
+
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "UPDATE facets SET model_version = ? WHERE id = 'f1'",
+                (get_provider(local_only=False).model,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        statements = self._count_statements(monkeypatch)
+        hits = search_results("ziggurat rooftops", limit=20)
+        assert any(h["artifact_id"] == "a2" for h in hits), "facet-only match must survive"
+
+        probes = [s for s in statements if " FROM artifacts WHERE id = ?" in s]
+        assert probes == [], f"per-row artifact probes found: {probes[:3]}"
+        chunk_probes = [s for s in statements if " FROM chunks WHERE artifact_id = ?" in s]
+        assert chunk_probes == [], f"per-row chunk probes found: {chunk_probes[:3]}"
+        batches = [s for s in statements if "SELECT value FROM json_each" in s]
+        assert len(batches) >= 2, f"expected batched json_each queries, saw: {batches}"
+
+    def test_candidate_titles_are_one_query_not_one_per_ranked_id(self, sqlite_store, monkeypatch):
+        """The curate path (`candidates`) fetches ranked titles in one batch."""
+        from enqueue.retrieve import candidates
+
+        conn = db.get_conn()
+        try:
+            for i in range(10):
+                _note(conn, f"a{i}", f"Rooftop farming {i}", _BODY)
+                _chunk(conn, f"c{i}", f"a{i}", 0, _BODY)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        statements = self._count_statements(monkeypatch)
+        out = candidates.candidates(["rooftops"], limit=20)
+        assert len(out) == 10
+
+        probes = [s for s in statements if " FROM artifacts WHERE id = ?" in s]
+        assert probes == [], f"per-row title probes found: {probes[:3]}"
+        titles = [s for s in statements if "SELECT id, title FROM artifacts" in s]
+        assert len(titles) == 1, f"expected one batched title query, saw: {titles}"

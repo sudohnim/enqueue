@@ -145,3 +145,35 @@ def test_include_appends_to_the_stored_spec_and_undo_removes_it(store):
     assert undo.json()["included_ids"] == []
 
     assert client.post("/pivots/nope/include", json={"artifact_id": "c"}).status_code == 404
+
+
+def test_artifact_detail_loads_all_specs_in_one_query(store, monkeypatch):
+    """P.2e: view membership on GET /artifacts/{id} is one query, not one per view."""
+    from enqueue import api, db, notes
+    from fastapi.testclient import TestClient
+
+    note = notes.create(body="# Rooftops\n\nA city feeds itself from its rooftops.")
+    aid = note["artifact"]["id"]
+
+    # A couple of saved views: one that includes the artifact, one that does
+    # not, and one that explicitly excludes it (exclusion beats inclusion).
+    keep_a = pivots_saved.save("Keeps a", {**_SPEC, "included_ids": [aid]})
+    pivots_saved.save("Keeps b", {**_SPEC, "included_ids": ["other-id"]})
+    pivots_saved.save("Excludes a", {**_SPEC, "included_ids": [aid], "excluded_ids": [aid]})
+
+    statements: list[str] = []
+    real = db.get_conn
+
+    def traced(*args, **kwargs):
+        conn = real(*args, **kwargs)
+        conn.set_trace_callback(lambda sql: statements.append(sql))
+        return conn
+
+    monkeypatch.setattr(db, "get_conn", traced)
+
+    with TestClient(api.app) as client:
+        detail = client.get(f"/artifacts/{aid}").json()
+
+    assert detail["views"] == [{"id": keep_a, "name": "Keeps a"}], detail["views"]
+    pivots_sql = [s for s in statements if "saved_pivots" in s and s.lstrip().startswith("SELECT")]
+    assert len(pivots_sql) == 1, f"expected one saved_pivots SELECT, saw: {pivots_sql}"

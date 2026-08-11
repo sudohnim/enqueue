@@ -106,7 +106,8 @@ def _rerank(q: str, fused: list[dict]) -> list[dict]:
         return fused
     conn = db.get_conn()
     try:
-        texts = [artifact_text(conn, h["artifact_id"]) for h in fused]
+        batched = artifact_texts(conn, [h["artifact_id"] for h in fused])
+        texts = [batched[h["artifact_id"]] for h in fused]
     finally:
         conn.close()
     try:
@@ -393,6 +394,42 @@ def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
     return hit.get("body_version") != body_version or hit.get("model_version") != model
 
 
+def _prefetch_staleness(conn, cache, ids) -> None:
+    """Fill the staleness cache for unseen artifact ids in one query (P.2c).
+
+    `hit_is_stale` needs each candidate artifact's body_version and provider
+    model; per-hit probes are one SELECT each. Batching turns the request's
+    probes into a single json_each query, and every later probe is a dict
+    read. Providers are deduped by local_only - the model string is the same
+    for the whole shelf, and constructing a provider client per artifact was
+    pure waste.
+    """
+    unseen = list(dict.fromkeys(aid for aid in ids if aid not in cache))
+    if not unseen:
+        return
+    rows = conn.execute(
+        "SELECT id, local_only,"
+        " (SELECT MAX(created_at) FROM artifact_versions v"
+        "  WHERE v.artifact_id = artifacts.id) AS body_version"
+        " FROM artifacts WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(unseen),),
+    ).fetchall()
+    found = {row["id"]: row for row in rows}
+    from ..providers.base import Provider, get_provider
+
+    providers: dict[bool, Provider] = {}
+
+    for aid in unseen:
+        row = found.get(aid)
+        if row is None:
+            cache[aid] = None
+            continue
+        local_only = bool(row["local_only"])
+        if local_only not in providers:
+            providers[local_only] = get_provider(local_only=local_only)
+        cache[aid] = (row["body_version"], providers[local_only].model)
+
+
 def _weighted_hits(conn, hits, cache):
     """Trust-weight a batch of model-written hits, dropping the stale ones.
 
@@ -444,15 +481,24 @@ def candidates(
     cache: dict = {}
     try:
         for query in queries:
-            for hit in store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch):
+            chunk_hits = store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch)
+            facet_hits = store.search(store.FACETS, query, limit=per_query, prefetch=prefetch)
+            entity_hits = store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch)
+            # One staleness query for the whole sub-query's candidates, so a
+            # request that fans out into several sub-queries pays once per
+            # distinct artifact (P.2c).
+            _prefetch_staleness(
+                conn,
+                cache,
+                [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits],
+            )
+            for hit in chunk_hits:
                 aid = hit["artifact_id"]
                 if hit["score"] > best[aid]:
                     best[aid] = hit["score"]
                     why[aid] = "chunk"
 
-            for hit, score in _weighted_hits(
-                conn, store.search(store.FACETS, query, limit=per_query, prefetch=prefetch), cache
-            ):
+            for hit, score in _weighted_hits(conn, facet_hits, cache):
                 aid = hit["artifact_id"]
                 if score > best[aid]:
                     best[aid] = score
@@ -461,9 +507,7 @@ def candidates(
                     if facet_id:
                         matched_facet[aid] = facet_id
 
-            for hit, score in _weighted_hits(
-                conn, store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch), cache
-            ):
+            for hit, score in _weighted_hits(conn, entity_hits, cache):
                 aid = hit["artifact_id"]
                 if score > best[aid]:
                     best[aid] = score
@@ -471,15 +515,26 @@ def candidates(
 
         ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
 
+        # Candidate titles in one query rather than one SELECT per ranked id
+        # (P.2a). A ranked id that is not in the titles map (a row deleted
+        # between search and fetch) is dropped, exactly as the per-row miss was.
+        titles: dict[str, str] = {}
+        if ranked:
+            rows = conn.execute(
+                "SELECT id, title FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps([aid for aid, _ in ranked]),),
+            ).fetchall()
+            titles = {row["id"]: row["title"] for row in rows}
+
         out = []
         for aid, score in ranked:
-            row = conn.execute("SELECT title FROM artifacts WHERE id = ?", (aid,)).fetchone()
-            if row is None:
+            title = titles.get(aid)
+            if title is None:
                 continue
             out.append(
                 {
                     "artifact_id": aid,
-                    "title": row["title"],
+                    "title": title,
                     "score": score,
                     "why": why.get(aid),
                     "matched_facet_id": matched_facet.get(aid),
@@ -578,6 +633,11 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
 
     conn = db.get_conn()
     cache: dict = {}
+    _prefetch_staleness(
+        conn,
+        cache,
+        [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits],
+    )
     best: dict[str, dict] = {}
     for hit in chunk_hits:
         aid = hit["artifact_id"]
@@ -611,29 +671,59 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     ranked = sorted(best.items(), key=lambda kv: kv[1]["score"], reverse=True)[:limit]
 
     try:
+        # P.2b: the snippet/title fetches were one SELECT per result. Now the
+        # chunk-snippet rows come back in one query, the bare artifact faces in
+        # a second, and the entity-only body/chunk reads in one batched pair -
+        # a constant number of queries for the whole result list.
+        chunk_rows: dict[str, tuple[str, str, str]] = {}
+        by_chunk = [info["chunk_id"] for aid, info in ranked if info["chunk_id"]]
+        if by_chunk:
+            rows = conn.execute(
+                "SELECT c.id AS chunk_id, a.title, a.kind, c.text AS snippet"
+                " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
+                " WHERE c.id IN (SELECT value FROM json_each(?))",
+                (json.dumps(by_chunk),),
+            ).fetchall()
+            chunk_rows = {
+                row["chunk_id"]: (row["title"], row["kind"], row["snippet"]) for row in rows
+            }
+
+        face_rows: dict[str, tuple[str, str]] = {}
+        by_face = [aid for aid, info in ranked if not info["chunk_id"]]
+        if by_face:
+            rows = conn.execute(
+                "SELECT id, title, kind FROM artifacts"
+                " WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps(by_face),),
+            ).fetchall()
+            face_rows = {row["id"]: (row["title"], row["kind"]) for row in rows}
+
+        # An entity-only match without a stored fact shows the artifact's own
+        # opening text; those reads batch into two queries for all of them.
+        entity_aids = [
+            aid
+            for aid, info in ranked
+            if not info["chunk_id"] and not (info.get("entity") or (None, None))[1]
+        ]
+        texts = artifact_texts(conn, entity_aids, max_words=40)
+
         out = []
         for aid, info in ranked:
             if info["chunk_id"]:
-                row = conn.execute(
-                    "SELECT a.title, a.kind, c.text AS snippet FROM chunks c"
-                    " JOIN artifacts a ON a.id = c.artifact_id WHERE c.id = ?",
-                    (info["chunk_id"],),
-                ).fetchone()
+                row = chunk_rows.get(info["chunk_id"])
                 if row is None:
                     continue
-                title, kind, snippet = row["title"], row["kind"], row["snippet"]
+                title, kind, snippet = row
             else:
-                row = conn.execute(
-                    "SELECT title, kind FROM artifacts WHERE id = ?", (aid,)
-                ).fetchone()
-                if row is None:
+                face = face_rows.get(aid)
+                if face is None:
                     continue
-                title, kind = row["title"], row["kind"]
+                title, kind = face
                 # An entity-only match shows the enriched line that bridged the
                 # vocabulary gap - "Theodore Roosevelt - 26th US President..." -
                 # which explains the match better than the artifact's face.
                 fact = (info.get("entity") or (None, None))[1]
-                snippet = fact or artifact_text(conn, aid, max_words=40)
+                snippet = fact or texts.get(aid, "")
             out.append(
                 {
                     "score": round(info["score"], 4),
@@ -667,9 +757,10 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
             " ORDER BY updated_at DESC LIMIT ?",
             (json.dumps(sorted(ids)), limit),
         ).fetchall()
+        texts = artifact_texts(conn, [row["id"] for row in rows], max_words=40)
         out = []
         for row in rows:
-            snippet = artifact_text(conn, row["id"], max_words=40)
+            snippet = texts[row["id"]]
             out.append(
                 {
                     "score": 0.0,
@@ -700,9 +791,10 @@ def _all_results(limit: int = 20) -> list[dict]:
             " ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
+        texts = artifact_texts(conn, [row["id"] for row in rows], max_words=40)
         out = []
         for row in rows:
-            snippet = artifact_text(conn, row["id"], max_words=40)
+            snippet = texts[row["id"]]
             out.append(
                 {
                     "score": 0.0,
@@ -718,14 +810,46 @@ def _all_results(limit: int = 20) -> list[dict]:
         conn.close()
 
 
+def artifact_texts(conn, ids, max_words: int = 1200) -> dict[str, str]:
+    """Batched artifact_text: all bodies in one query, all chunk text in one more (P.2d).
+
+    A rollup of N candidates used to cost 2N queries (one body probe, one
+    chunk probe per text-less artifact). The batch reads every body in one
+    json_each query and every missing body's chunks in a second, returning
+    the same per-id text the per-artifact function would, in `ids` order with
+    duplicates dropped.
+    """
+    unique = list(dict.fromkeys(ids))
+    if not unique:
+        return {}
+    bodies: dict[str, str] = {}
+    for row in conn.execute(
+        "SELECT id, body FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(unique),),
+    ):
+        bodies[row["id"]] = row["body"] or ""
+    need = [aid for aid in unique if not bodies.get(aid, "").strip()]
+    chunks: dict[str, list[str]] = {}
+    if need:
+        for row in conn.execute(
+            "SELECT artifact_id, text FROM chunks"
+            " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+            " ORDER BY artifact_id, ordinal",
+            (json.dumps(need),),
+        ):
+            chunks.setdefault(row["artifact_id"], []).append(row["text"])
+    out = {}
+    for aid in unique:
+        text = bodies.get(aid, "")
+        if not text.strip():
+            text = "\n\n".join(chunks.get(aid, []))
+        words = text.split()
+        if len(words) > max_words:
+            text = " ".join(words[:max_words])
+        out[aid] = text
+    return out
+
+
 def artifact_text(conn, artifact_id: str, max_words: int = 1200) -> str:
     """The text a judgment reads. A note has a body; a capture has its chunks."""
-    row = conn.execute("SELECT body FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
-    text = (row["body"] if row else None) or ""
-    if not text.strip():
-        chunks = conn.execute(
-            "SELECT text FROM chunks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
-        ).fetchall()
-        text = "\n\n".join(c["text"] for c in chunks)
-    words = text.split()
-    return text if len(words) <= max_words else " ".join(words[:max_words])
+    return artifact_texts(conn, [artifact_id], max_words)[artifact_id]
