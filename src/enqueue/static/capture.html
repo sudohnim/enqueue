@@ -60,19 +60,25 @@
     --text: #101114;
     --text-dim: #4d5061;
     --text-mute: #686b82;
+    --ink-faint: #6c6f84;
     --accent: #7132f5;
     /* The drag-over boundary. Lavender clears the 3:1 sole-boundary rule on the
        canvas (6.04:1), so the drop affordance reads the same in the capture window
        and on the museum wall, and no amber survives. */
     --accent-strong: #7132f5;
+    --lavender-subtle: rgba(113, 50, 245, 0.16);
+    /* Errors. The same danger hue as the museum; the pink is only the image-kind
+       hue (C.3), never an error color. */
+    --danger: #b4332b;
     --pink: #8f4273;
 
     --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
     --r-sm: 6px;
+    --r-lg: 12px;
     --r-full: 9999px;
-    --shadow-1: 0 4px 16px rgba(16, 17, 20, 0.06);
+    --shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08);
 
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
     --dur: 160ms;
@@ -104,13 +110,23 @@
     flex-direction: column;
     background: var(--bg);
     border: 1px solid var(--line-strong);
-    border-radius: var(--r-sm);
-    box-shadow: var(--shadow-1);
-    transition: border-color var(--dur) var(--ease);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lifted);
+    transition:
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease);
   }
 
   #card.hovering {
     border-color: var(--accent-strong);
+  }
+
+  /* The focus signal is the app's ring, carried by the card so the borderless
+     field can stay borderless. Same lavender ring as every museum input, sized
+     for the card's 12px radius. */
+  #card:focus-within {
+    border-color: var(--accent-strong);
+    box-shadow: 0 0 0 3px var(--lavender-subtle);
   }
 
   /* ------------------------------------------------------------------ title bar */
@@ -145,7 +161,7 @@
   }
 
   .label.problem {
-    color: var(--pink);
+    color: var(--danger);
   }
 
   /* --------------------------------------------------------------------- field */
@@ -157,7 +173,6 @@
     /* Aligned to the title bar's 12px gutter so the caret sits under the wordmark. */
     padding: 11px 12px 0;
     border: 0;
-    outline: none;
     resize: none;
     background: transparent;
     color: var(--text);
@@ -167,7 +182,7 @@
   }
 
   #field::placeholder {
-    color: var(--text-mute);
+    color: var(--ink-faint);
   }
 
   #foot {

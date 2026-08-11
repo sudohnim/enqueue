@@ -323,7 +323,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
 ### C.2 - Align overlay tokens with the app
 
-- [ ] **C.2 [AGENT]** Fix the five drifted values from GT.3.
+- [x] **C.2 [AGENT]** Fix the five drifted values from GT.3.
 
   All in `capture.html`:
   (a) `#card` border-radius (line ~107): `var(--r-sm)` -> `var(--r-lg)`, and add `--r-lg: 12px` to the overlay `:root`.
