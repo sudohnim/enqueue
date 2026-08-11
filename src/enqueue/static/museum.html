@@ -7213,26 +7213,33 @@
   // Remove a card from this saved grouping (L.6b): write the exclusion into the
   // stored spec, re-run, and re-render. The artifact itself is untouched - it
   // still lives on the wall - it just stops matching this grouping.
-  async function pivotRemove(id) {
-    if (!pivotState || !pivotState.pivot_id) return;
-    let excluded;
-    try {
-      const resp = await api("/pivots/" + pivotState.pivot_id + "/exclude", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artifact_id: id }),
-      });
-      excluded = resp.excluded_ids;
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
+  // The shared tail of the exclude flows (L.6b/R.3): write exclusions for one
+  // or several artifact ids into the stored spec, re-run the view, and
+  // re-render it. Each /exclude response carries the full excluded_ids, so the
+  // last call wins, and the local spec is synced BEFORE the run so the run
+  // actually filters them out. The artifact itself is untouched - it still
+  // lives on the wall - it just stops matching this grouping.
+  async function excludeAndRerun(pivotId, ids, undo, busy, done) {
+    let excluded = pivotState.spec.excluded_ids || [];
+    for (const id of ids) {
+      try {
+        const resp = await api("/pivots/" + pivotId + "/exclude", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            undo ? { artifact_id: id, undo: true } : { artifact_id: id },
+          ),
+        });
+        excluded = resp.excluded_ids;
+      } catch (err) {
+        return toast(String((err && err.message) || err), true);
+      }
     }
-    // Keep the local spec in sync with what was just stored, so the re-run
-    // below (and any later move) sees the exclusion.
     pivotState.spec = Object.assign({}, pivotState.spec, {
       excluded_ids: excluded,
     });
 
-    view.innerHTML = '<div class="state thinking">removing it...</div>';
+    view.innerHTML = busy;
     let next;
     try {
       next = await api("/pivot/run", {
@@ -7243,8 +7250,19 @@
     } catch (err) {
       return pivotFailed(err);
     }
-    renderPivot(next, pivotState.request, pivotState.spec, pivotState.pivot_id);
-    toast("Removed from this view.");
+    renderPivot(next, pivotState.request, pivotState.spec, pivotId);
+    done();
+  }
+
+  async function pivotRemove(id) {
+    if (!pivotState || !pivotState.pivot_id) return;
+    await excludeAndRerun(
+      pivotState.pivot_id,
+      [id],
+      false,
+      '<div class="state thinking">removing it...</div>',
+      () => toast("Removed from this view."),
+    );
   }
 
   // Delete a whole group from a saved view (R.3): exclude every artifact in the
@@ -7273,80 +7291,34 @@
       "Delete group",
     );
     if (!yes) return;
-    view.innerHTML =
-      '<div class="state thinking">removing ' + count + " artifacts...</div>";
-    // Each exclude call returns the stored spec's full excluded_ids; the last
-    // one carries the whole list. Mirroring pivotRemove, the local spec is kept
-    // in sync BEFORE the re-run so the run actually filters the group out.
-    let excluded = pivotState.spec.excluded_ids || [];
-    for (const id of ids) {
-      try {
-        const resp = await api("/pivots/" + pivotId + "/exclude", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ artifact_id: id }),
-        });
-        excluded = resp.excluded_ids;
-      } catch (err) {
-        return toast(String((err && err.message) || err), true);
-      }
-    }
-    pivotState.spec = Object.assign({}, pivotState.spec, {
-      excluded_ids: excluded,
-    });
-    let next;
-    try {
-      next = await api("/pivot/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec: pivotState.spec }),
-      });
-    } catch (err) {
-      return pivotFailed(err);
-    }
-    renderPivot(next, pivotState.request, pivotState.spec, pivotId);
-    toast(
-      'Deleted "' +
-        groupKey +
-        '" (' +
-        count +
-        " artifact" +
-        (count === 1 ? "" : "s") +
-        " removed).",
+    await excludeAndRerun(
+      pivotId,
+      ids,
+      false,
+      '<div class="state thinking">removing ' + count + " artifacts...</div>",
+      () =>
+        toast(
+          'Deleted "' +
+            groupKey +
+            '" (' +
+            count +
+            " artifact" +
+            (count === 1 ? "" : "s") +
+            " removed).",
+        ),
     );
   }
 
   // Put a removed card back: undo the exclusion and re-run, mirroring pivotRemove.
   async function pivotRestore(id) {
     if (!pivotState || !pivotState.pivot_id) return;
-    let excluded;
-    try {
-      const resp = await api("/pivots/" + pivotState.pivot_id + "/exclude", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artifact_id: id, undo: true }),
-      });
-      excluded = resp.excluded_ids;
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    pivotState.spec = Object.assign({}, pivotState.spec, {
-      excluded_ids: excluded,
-    });
-
-    view.innerHTML = '<div class="state thinking">restoring it...</div>';
-    let next;
-    try {
-      next = await api("/pivot/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec: pivotState.spec }),
-      });
-    } catch (err) {
-      return pivotFailed(err);
-    }
-    renderPivot(next, pivotState.request, pivotState.spec, pivotState.pivot_id);
-    toast("Restored to this view.");
+    await excludeAndRerun(
+      pivotState.pivot_id,
+      [id],
+      true,
+      '<div class="state thinking">restoring it...</div>',
+      () => toast("Restored to this view."),
+    );
   }
 
   // Extend a chat organize turn with an artifact (N.3a): pick one from the
@@ -8953,9 +8925,7 @@
         '<details class="disclosure"><summary>View deleted items (' +
         trash.items.length +
         ')</summary><div class="disclosure-body">' +
-        trash.items
-          .map((a) => trashRow(a))
-          .join("") +
+        trash.items.map((a) => trashRow(a)).join("") +
         "</div></div></details>";
     }
 
