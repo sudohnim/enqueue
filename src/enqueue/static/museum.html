@@ -3753,9 +3753,6 @@
     }
   }
   @media (min-width: 769px) {
-    #btnRail {
-      display: none;
-    }
     .railscrim {
       display: none;
     }
@@ -4244,7 +4241,6 @@
     link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
     image:
       '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-7 7"/>',
-    rail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16"/>',
     gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1M18.4 18.4l-2.1-2.1M7.7 7.7L5.6 5.6"/>',
     // The rename pencil (K.7/L.3b): a quiet ghost beside a saved-grouping title, not a
     // gear or a menu - renaming is an act on one grouping while you look at it.
@@ -5501,44 +5497,6 @@
   // Ingestion time by default. The promise is that things sit in the order you found
   // them, and sorting by last touched means fixing a typo silently moves a note to the
   // front of your own museum.
-  const MONTHS = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-
-  // "Three weeks ago" is a thing people remember. A date is not. Grouping by how long
-  // ago turns the wall into something you can navigate by memory, which is the only
-  // index this product is willing to ask you to maintain.
-  function bucket(iso) {
-    const then = new Date(iso);
-    if (isNaN(then)) return "Undated";
-    const now = new Date();
-    const midnight = (d) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const days = Math.round((midnight(now) - midnight(then)) / 86400000);
-
-    if (days <= 0) return "Today";
-    if (days === 1) return "Yesterday";
-    if (days < 7) return "Earlier this week";
-    if (days < 14) return "Last week";
-    if (
-      then.getFullYear() === now.getFullYear() &&
-      then.getMonth() === now.getMonth()
-    )
-      return "Earlier this month";
-    if (days < 365) return MONTHS[then.getMonth()];
-    return String(then.getFullYear());
-  }
 
   // What the wall was showing last time it drew. Compared on focus so a refresh only
   // happens when something actually changed, rather than reflowing the grid and
@@ -5838,7 +5796,6 @@
   // toward the cursor (the iris slides inside the fixed socket) and dies with
   // the view - teardown() clears the listeners - so no other surface inherits a
   // stray handler.
-  let eyeTimer = null;
   let eyeMove = null;
   let eyeLeave = null;
 
@@ -5925,10 +5882,6 @@
   }
 
   function tearDownEye() {
-    if (eyeTimer) {
-      clearTimeout(eyeTimer);
-      eyeTimer = null;
-    }
     if (eyeMove) {
       document.removeEventListener("pointermove", eyeMove);
       eyeMove = null;
@@ -8151,7 +8104,6 @@
     const d = preloaded || (await api("/chats/" + id));
     chat = d;
     scope = { kind: "chat", id, label: "this conversation" };
-    showRail(id);
     setRoute("c/" + id);
     renderChat(d);
     composer();
@@ -8439,12 +8391,6 @@
     sendInChat(st.userText, "answer");
   }
 
-  // The rail is present on every surface, not only inside a conversation. A thread you
-  // have to be already reading in order to find is a thread you will not go back to.
-  // Rail removed — conversations are accessed via the pill's eye icon.
-  async function showRail(_activeId) {}
-  function toggleRail() {}
-
   // A conversation is scaffolding around the collection, not part of it, so this
   // removes it outright rather than sending it to the trash: there is no original to
   // recover, and the artifacts it cited are untouched either way.
@@ -8470,38 +8416,6 @@
       home();
     }
     toast("Conversation deleted.");
-  }
-
-  // Show a list of all conversations — called from the pill's eye button.
-  async function showChatList() {
-    teardown();
-    // A sub-view, not the wall: show the inside pill so Home is a way out. Without
-    // it an empty list is a dead end with nothing to click back to.
-    restorePill("inside");
-    const list = await api("/chats?limit=100").catch(() => ({ items: [] }));
-    let html = '<div class="shelf">Conversations</div>';
-    if (!list.items.length) {
-      html += '<div class="aside">No conversations yet.</div>';
-    } else {
-      html +=
-        '<div class="wall">' +
-        list.items
-          .map(
-            (c) =>
-              '<div class="card" tabindex="0" role="button" onclick="showChat(\'' +
-              c.id +
-              "')\">" +
-              '<div class="frame" style="padding:24px 16px">' +
-              '<div class="title">' +
-              esc(c.title) +
-              '</div><div class="excerpt">' +
-              (c.pinned ? "kept" : "") +
-              "</div></div></div>",
-          )
-          .join("") +
-        "</div>";
-    }
-    view.innerHTML = html;
   }
 
   // ---- saved groupings: the grid button's home -----------------------------
@@ -8603,33 +8517,10 @@
     showSavedGroupings();
   }
 
-  async function togglePin(id, pinned) {
-    try {
-      await api("/chats/" + id, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pinned }),
-      });
-    } catch (err) {
-      return toast(String(err.message || err), true);
-    }
-    home();
-  }
-
-  // The composer is drawn before the rail has finished loading, so the toggle looks the
-  // rail up when it is pressed rather than closing over a variable that may still be null.
-  function toggleRail() {
-    const found = document.querySelector(".rail");
-    if (found) found.classList.toggle("open");
-  }
-
   function composer() {
     closeMenu();
     pill.classList.add("wide");
     pill.innerHTML =
-      '<button id="btnRail" aria-label="Conversations" onclick="toggleRail()">' +
-      svg("rail") +
-      "</button>" +
       '<input id="field" placeholder="ask about ' +
       esc(chat.chat.scope_label) +
       '" autocomplete="off">' +
@@ -8673,7 +8564,6 @@
     }
     chat = d;
     renderChat(d);
-    showRail(id);
     composer();
     // The turn is pending; the poller watches it resolve and stops when done.
     startPolling(id);
@@ -8766,7 +8656,6 @@
   async function showTrash() {
     teardown();
     restorePill("inside");
-    showRail(null);
     view.innerHTML = '<div class="state">...</div>';
     const d = await api("/trash");
 
@@ -8939,47 +8828,6 @@
         return hit ? hit[1] : part.trim().toUpperCase();
       })
       .join("");
-  }
-
-  function toAccelerator(label) {
-    // Accepts what the field shows back (glyphs) and what someone might type instead.
-    const parts = [];
-    let rest = String(label || "");
-    for (const [name, glyph] of [
-      ["Control", "⌃"],
-      ["Alt", "⌥"],
-      ["Shift", "⇧"],
-      ["CommandOrControl", "⌘"],
-    ]) {
-      if (rest.includes(glyph)) {
-        parts.push(name);
-        rest = rest.split(glyph).join("");
-      }
-    }
-    for (const spoken of [
-      "Option",
-      "Command",
-      "Cmd",
-      "Ctrl",
-      "Control",
-      "Alt",
-      "Shift",
-    ]) {
-      const re = new RegExp("\\b" + spoken + "\\b\\s*\\+?\\s*", "i");
-      if (re.test(rest)) {
-        rest = rest.replace(re, "");
-        const name = /option|alt/i.test(spoken)
-          ? "Alt"
-          : /cmd|command/i.test(spoken)
-            ? "CommandOrControl"
-            : /ctrl|control/i.test(spoken)
-              ? "Control"
-              : "Shift";
-        if (!parts.includes(name)) parts.push(name);
-      }
-    }
-    const key = rest.replace(/[+\s]/g, "").toUpperCase();
-    return key ? [...parts, key].join("+") : parts.join("+");
   }
 
   // Recorded, not typed. Nobody knows the accelerator spelling of the key they want,
@@ -9657,119 +9505,8 @@
     }
   }
 
-  // A topic drawn out of a conversation is the same kind of thing a lens is, so it
-  // hangs a room. The chat it came from stays in the rail, because the room is a move
-  // inside the conversation rather than a departure from it.
-  async function doCurate(lens) {
-    const backTo = chat ? chat.chat.id : null;
-    const stages = [
-      "expanding the lens into the way documents actually talk",
-      "searching the literal and conceptual layers",
-      "reading each candidate and deciding whether it belongs",
-      "looking for what they share, and where they disagree",
-    ];
-    let i = 0;
-    view.innerHTML =
-      '<div class="state thinking" id="stage">' + stages[0] + "</div>";
-    const tick = setInterval(() => {
-      i = Math.min(i + 1, stages.length - 1);
-      const el = document.getElementById("stage");
-      if (el) el.textContent = stages[i];
-    }, 9000);
-
-    let r;
-    try {
-      r = await api("/curate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lens, keep: 8, pool: 10 }),
-      });
-    } catch (err) {
-      clearInterval(tick);
-      view.innerHTML =
-        back(backTo) +
-        '<div class="state">The curator could not finish.<br><br><span class="strongtext">' +
-        esc(String(err)) +
-        "</span><br><br>Nothing was lost. The artifacts are untouched; only the " +
-        "room failed to hang.</div>";
-      return;
-    }
-    clearInterval(tick);
-
-    const ex = r.room || {};
-
-    let html =
-      back(backTo) +
-      '<div class="h1">' +
-      esc(ex.suggested_name || lens) +
-      "</div>" +
-      '<div class="meta">' +
-      r.kept.length +
-      " kept &middot; " +
-      (r.rejected_count ?? 0) +
-      " rejected &middot; " +
-      r.considered +
-      " considered</div>";
-    if (ex.through_line)
-      html +=
-        '<div class="md" style="margin:var(--sp-4) 0">' +
-        esc(ex.through_line) +
-        "</div>";
-    if (ex.thin)
-      html +=
-        '<div class="callout warn">thin &middot; ' +
-        esc(ex.thin_reason) +
-        "</div>";
-
-    // A room can come back short for two very different reasons: the collection did not
-    // hold it, or the model could not do the job. Saying which is the difference between
-    // a useful answer and a mystery.
-    if (r.failed)
-      html +=
-        '<div class="aside caution">' +
-        r.failed +
-        " of " +
-        r.considered +
-        " judgments failed their checks; those artifacts were dropped without being judged.</div>";
-    if (r.synthesis_error)
-      html +=
-        '<div class="aside caution">no through line: ' +
-        esc(r.synthesis_error) +
-        "</div>";
-
-    r.kept.forEach((k, j) => {
-      html +=
-        '<div class="item hang" style="animation-delay:' +
-        j * 70 +
-        'ms" ' +
-        'tabindex="0" role="button" onclick="showArtifact(\'' +
-        k.artifact_id +
-        "')\" " +
-        "onkeydown=\"rowKey(event, () => showArtifact('" +
-        k.artifact_id +
-        "'))\">" +
-        '<div class="item-body">' +
-        '<div class="title">' +
-        esc(k.title) +
-        "</div>" +
-        '<div class="md" style="font-size:14px">' +
-        esc(k.placard) +
-        "</div>" +
-        '<div class="meta">match ' +
-        k.strength +
-        "</div></div></div>";
-    });
-
-    view.innerHTML = html;
-    window.scrollTo(0, 0);
-  }
-
-  function back(chatId) {
-    return chatId
-      ? '<div class="back" onclick="showChat(\'' +
-          chatId +
-          "')\">&larr; the conversation</div>"
-      : '<div class="back" onclick="home()">&larr; everything</div>';
+  function back() {
+    return '<div class="back" onclick="home()">&larr; everything</div>';
   }
 
   // Boot restores whatever was open when the page was reclaimed (K.9): the hash

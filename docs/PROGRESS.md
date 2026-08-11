@@ -398,7 +398,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
 ### M.2 - Delete dead JS and CSS in museum.html
 
-- [ ] **M.2a [AGENT]** Dead JS functions. For each, verify with `rg -n "NAME" src/enqueue/static/museum.html` that the only matches are the definition and the call sites listed, then delete both:
+^- [x] **M.2a [AGENT]** Dead JS functions. For each, verify with `rg -n "NAME" src/enqueue/static/museum.html` that the only matches are the definition and the call sites listed, then delete both:
   `doCurate` (~9663-9765, zero callers), `showChatList` (~8476-8505), `togglePin` (~8606-8617), `toAccelerator` (~8944-8983), `bucket` + `MONTHS` (~5504-5541), the empty `showRail` stub (~8445) plus its three call sites (~8154, 8676, 8769), the shadowed `toggleRail` stub (~8446), the real `toggleRail` + `#btnRail` button + its media rule (~8621-8630, 3755-3758), the never-assigned `eyeTimer` (~5841, 5928-5931).
   After deleting `doCurate`, simplify `back(chatId)` (~9767-9773): the `chatId` parameter is only used by `doCurate`; make `back()` take no argument and update its remaining callers.
 
