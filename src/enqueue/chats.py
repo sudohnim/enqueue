@@ -241,9 +241,28 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             return _scoped_passages(conn, [scope_id])
 
         from .index.store import get_store
+        from .retrieve.candidates import _floor_verdict, judge_gray_zone
 
         store = get_store()
         found: dict[str, dict] = {}
+        # Q.5: the answer path reads the same relevance floor as /search. The
+        # fused RRF score `store.search` returns can look strong on a gibberish
+        # query - a rank-1 on a low-rank list - so the floor must read the raw
+        # legs, exactly as `_hybrid_results` does: keep a chunk if it has a
+        # lexical hit (keyword/trigram) or a dense neighbor close enough, drop
+        # it otherwise. `dense_similarity` here is the best cosine the dense
+        # branch produced for this chunk; `had_lexical_hit` is set from the
+        # keyword and trigram branches alone (a fused hit can be dense-only).
+        dense_sims: dict[str, float] = {}
+        lexical_chunks: set[str] = set()
+        for hit in store.search_dense(store.CHUNKS, question, limit=PASSAGES * 4):
+            cid = hit["chunk_id"]
+            if hit["score"] > dense_sims.get(cid, 0.0):
+                dense_sims[cid] = hit["score"]
+        for hit in store.search_keyword(store.CHUNKS, question, limit=PASSAGES * 4):
+            lexical_chunks.add(hit["chunk_id"])
+        for hit in store.search_trigram(store.CHUNKS, question, limit=PASSAGES * 4):
+            lexical_chunks.add(hit["chunk_id"])
         # Roll chunk hits up to at most CHUNKS_PER_ARTIFACT per note, over a window
         # wider than the passage budget. Without the cap, six chunks of one long note
         # eat the whole budget and every other note is invisible to the answer - the
@@ -251,14 +270,75 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # and the note that answered it never got a slot. The cap spreads the budget
         # across distinct artifacts so breadth, not one note's length, decides recall.
         per_artifact: dict[str, int] = {}
+        # Q.3b: a chunk in the gray zone (no lexical leg, dense similarity in
+        # [DROP_BELOW, KEEP_ABOVE)) is not decided here - it is collected with
+        # its score and sent to the same judge /search uses, in one batched
+        # call, once its artifact's text can be read for the prompt.
+        gray_chunks: list[str] = []
+        gray_scores: dict[str, float] = {}
+        gray_artifacts: dict[str, str] = {}
         for hit in store.search(store.CHUNKS, question, limit=PASSAGES * 4):
             aid = hit["artifact_id"]
+            # Q.5: the same floor /search applies. A chunk with no lexical leg
+            # and a far dense neighbor is a far neighbor, not evidence an
+            # answer may stand on; dropping it here keeps a no-match question
+            # from grounding on it.
+            verdict = _floor_verdict(
+                {
+                    "dense_similarity": dense_sims.get(hit["chunk_id"], 0.0),
+                    "had_lexical_hit": hit["chunk_id"] in lexical_chunks,
+                }
+            )
+            if verdict == "drop":
+                continue
+            if verdict == "gray":
+                gray_chunks.append(hit["chunk_id"])
+                gray_scores[hit["chunk_id"]] = hit["score"]
+                gray_artifacts[hit["chunk_id"]] = aid
+                continue
             if per_artifact.get(aid, 0) >= CHUNKS_PER_ARTIFACT:
                 continue
             found[hit["chunk_id"]] = {"score": hit["score"], "why": "passage"}
             per_artifact[aid] = per_artifact.get(aid, 0) + 1
             if len(found) >= PASSAGES:
                 break
+
+        # Q.3b: resolve the gray zone through the judge, exactly as /search
+        # does. One batched call over the distinct artifacts involved - each as
+        # `[{kind}] {title}\n{text}` with its id - then the judged-relevant
+        # chunks take their passage slots under the same per-artifact cap and
+        # budget as the direct keeps.
+        if gray_chunks:
+            gray_rows = conn.execute(
+                "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
+                " JOIN artifacts a ON a.id = c.artifact_id"
+                " WHERE c.id IN (SELECT value FROM json_each(?))",
+                (json.dumps(gray_chunks),),
+            ).fetchall()
+            by_aid: dict[str, dict] = {}
+            for r in gray_rows:
+                by_aid.setdefault(
+                    r["artifact_id"],
+                    {
+                        "title": r["title"],
+                        "kind": r["kind"],
+                        "snippet": " ".join(r["text"].split())[:400],
+                    },
+                )
+            kept = judge_gray_zone(
+                question,
+                [{"artifact_id": aid, **info} for aid, info in by_aid.items()],
+            )
+            for cid in gray_chunks:
+                aid = gray_artifacts[cid]
+                if aid not in kept:
+                    continue
+                if per_artifact.get(aid, 0) >= CHUNKS_PER_ARTIFACT:
+                    continue
+                found[cid] = {"score": gray_scores[cid], "why": "passage"}
+                per_artifact[aid] = per_artifact.get(aid, 0) + 1
+                if len(found) >= PASSAGES:
+                    break
 
         # The other half of the abstraction gap. A question phrased as a concept can
         # match a facet whose artifact shares no vocabulary with it, which is the case
@@ -294,11 +374,11 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         if not found:
             return []
 
-        marks = ",".join("?" * len(found))
         rows = conn.execute(
-            f"SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
-            f" JOIN artifacts a ON a.id = c.artifact_id WHERE c.id IN ({marks})",
-            list(found),
+            "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
+            " JOIN artifacts a ON a.id = c.artifact_id"
+            " WHERE c.id IN (SELECT value FROM json_each(?))",
+            (json.dumps(list(found)),),
         ).fetchall()
 
         out = [dict(r) | found[r["id"]] for r in rows]
@@ -402,7 +482,16 @@ def _ask_model(
             cited=[],
         )
 
-    body = "\n\n".join(f"[{p['artifact_id']}] {p['title']}\n{_clip(p['text'])}" for p in found)
+    # L.1: carry the artifact kind into the passage header so the model can tell
+    # an image with a user-supplied note from a standalone text note. The chunk
+    # text already merges annotations, and chunk.py marks those lines with
+    # "(note added by you)" (L.1); the kind prefix lets the model connect the
+    # marker to the right kind of artifact. The artifact_id still rides in
+    # context (offered_artifact_ids below) and in every cited[] the model writes
+    # back; the header is for shape, the id is in the answer's metadata.
+    body = "\n\n".join(
+        f"[{p.get('kind', 'artifact')}] {p['title']}\n{_clip(p['text'])}" for p in found
+    )
     return get_provider().complete(
         system=CHAT_ANSWER,
         user=f"{history}Question: {question}\n\nPassages:\n\n{body}",

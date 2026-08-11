@@ -233,6 +233,50 @@ class TestSearch:
         assert hits[0]["level"] == 3
         assert hits[0]["trust"] == 0.8
 
+    def test_embeddings_are_unit_norm(self, sqlite_store):
+        """Q.2b guards the cosine transform.
+
+        `search_dense` reports cosine as `1 - d^2/2`, an identity that only
+        holds for unit-norm vectors. bge-base via fastembed normalizes; this
+        test pins that so a model change would fail here before it silently
+        corrupts every dense similarity.
+        """
+        import math
+
+        from enqueue.index.embed import embed
+
+        for v in embed(["a sentence about rooftops and rain"]):
+            norm = math.sqrt(sum(x * x for x in v))
+            assert abs(norm - 1.0) < 1e-3
+
+    def test_search_dense_reports_true_cosine(self, sqlite_store):
+        """Q.2b: the dense leg reports cosine on an honest scale, not 1/(1+d).
+
+        vec0's raw column is an L2 distance; for unit-norm embeddings cosine is
+        `1 - d^2/2`. A paraphrase of the indexed body scores ~0.85 - clearly a
+        real match - while a gibberish query against the same body scores ~0.4,
+        below the 0.5 mark the old pseudo-scale happened to agree on at d=1 but
+        diverged from everywhere else. Both values live in [0, 1].
+        """
+        _make_two_artifact_library(sqlite_store)
+        close = sqlite_store.search_dense(
+            sqlite_store.CHUNKS,
+            "Urban farming grows food on rooftops where there is no soil.",
+            limit=5,
+        )
+        far = sqlite_store.search_dense(
+            sqlite_store.CHUNKS,
+            "quantum flux capacitor maintenance schedules",
+            limit=5,
+        )
+        assert close and far
+        assert close[0]["chunk_id"] == "c1"
+        assert 0.0 <= close[0]["score"] <= 1.0
+        assert 0.0 <= far[0]["score"] <= 1.0
+        assert close[0]["score"] >= 0.7  # the known-close paraphrase pair
+        assert far[0]["score"] <= 0.55  # a gibberish query's nearest neighbor
+        assert close[0]["score"] > far[0]["score"]
+
     def test_three_character_prefix_finds_the_longer_word(self, sqlite_store):
         """Phase 22: FTS5 prefix matching makes partial words findable."""
         conn = db.get_conn()

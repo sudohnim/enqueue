@@ -21,11 +21,12 @@ Encryption at rest is a planned milestone.
 Do not assume any specific scheme (SQLCipher, Argon2id, AES-256-GCM, envelope encryption) - none is chosen yet.
 Until it exists, treat the store as plaintext and keep secret material out of the search index.
 
-2. **Sync is planned, not built.**
+2. **Sync is planned and scoped, not built.**
 There is zero sync code in the repo.
-Sync is a planned milestone.
-Do not assume the old event-log / multi-peer design is the plan - no specifics are fixed yet.
+The design IS now fixed on paper: `docs/e2e/E2E.md` specifies encrypted per-artifact snapshots with last-writer-wins per artifact (no event log, no logical clock), and `docs/MOBILE.md` adds a dumb end-to-end-encrypted relay plus an SSE push transport for the mobile client.
+Do not resurrect the old event-log / multi-peer design; LWW-per-snapshot is the chosen model.
 Treat SQLite as the source of truth, not a materialised view of a log.
+Note E2E.md predates two changes: substitute `saved_pivots` for its `exhibits` references (exhibits were dropped in migration 0019), and ignore its `lens_judgments` references (the lens was removed in Phase M).
 
 3. **The data directory is `~/.enqueue-poc` on purpose.**
 The `-poc` suffix is intentional for the current phase.
@@ -564,33 +565,38 @@ This is the semantic-to-conceptual gap, not the lexical-to-semantic gap that RAG
 Two moves from opposite ends.
 
 **Ingest raises artifacts toward concepts.**
-Per artifact, once, re-runnable:
+Per artifact, once, re-runnable, all behind the capture response (`ingest/queue.py::process`):
 
-1. Chunk with the markdown chunker. Embed chunks locally. This is the **literal layer**, powers Search.
-2. Generate a **facet set**: 5-15 statements of what this artifact could be an example of, climbing in abstraction (levels 0-4).
-3. Embed each facet locally. This is the **conceptual layer**.
+1. **Chunks** (the literal layer). Chunk the text with the markdown chunker and embed each chunk locally (bge-base, 768-dim). Chunk text is fed from the note body, PDF page text, link preview text, image annotations (R.2), and a vision model's image description (K.11). The title is prepended for indexing only (see gotchas).
+2. **Facets** (the conceptual layer). 5-15 model-written statements of what the artifact could be an example of, climbing levels 0-4, each embedded. Per-facet quality gate; best effort. Bridges the semantic-to-conceptual gap.
+3. **Entities** (the named-thing layer). Named things in the body, each enriched with a one-line world-knowledge fact and embedded. Bridges a query in the world's vocabulary to a note that never uses it ("presidents" reaching a Roosevelt biography).
+
+Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`); see the index-tables section.
 
 **Query lowers concepts toward artifacts.**
-Per free-text search:
+`retrieve/candidates.py::search_results` runs seven legs, each a ranked list, and fuses them:
 
-1. Dense embedding of the query, searched against chunk vectors.
-2. Keyword: FTS5 BM25 over title (weighted 10x) and chunk text, plus the trigram table for substring recall.
-3. Fuzzy over short fields (titles, entity names, current annotation lines) for one-edit typos.
-4. Fuse with RRF, apply the R.8 recency multiplier, optionally rerank the top window with the cross-encoder (R.9).
+1. **Dense** - query embedding against chunk vectors.
+2. **Keyword** - FTS5 BM25 over chunk text, title column weighted 10x (`bm25(fts_chunks, 1.0, 10.0, 1.0)`).
+3. **Trigram** - the `fts_chunks_tri` trigram table for substrings and partial words.
+4. **Fuzzy** - `SequenceMatcher` over short fields (titles, entity names, current annotation lines) for one-edit typos trigram cannot see (R.7).
+5. **Exact phrase** - quoted phrases pinned (R.10).
+6. **Facets** - the conceptual channel, hits weighted by trust (`score * trust * 2.0`).
+7. **Entities** - the named-thing channel.
 
-### Two granularities
+Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optionally rerank the top window with the bge-reranker cross-encoder (R.9, off by default), then roll up to one row per artifact.
+
+### Three granularities
 
 | Layer | Unit | Powers |
 | --- | --- | --- |
 | Literal | chunk | Search, citation to passage |
 | Conceptual | facet | Search's conceptual channel, weighted by trust |
+| Named-thing | entity | Search's world-vocabulary channel |
 
-### Hybrid search
+### The relevance floor (Q.3, in progress)
 
-Sparse and dense together, fused with RRF, both in the one SQLite file.
-
-- **Search**: hybrid, weighted toward sparse.
-- **Facet channel**: dense facets fused in as a conceptual channel; sparse stays minor.
+Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` shares the same `passes_relevance_floor` predicate so the answer path refuses honestly. Calibration (the two constants + the gray-zone judge) is the active work in `docs/PLAN.md` Phase Q.
 
 ### Scope dial for chat
 

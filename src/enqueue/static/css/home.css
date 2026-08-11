@@ -1040,7 +1040,7 @@
   }
   /* P.7: the active tab gets a small lavender disc ahead of its label - the
      brand colour reads in the tab bar without replacing the underline. A 6px
-     graphic: --accent on the canvas at 6.04:1 clears the 3:1 rule. */
+     graphic: --accent on the canvas at 4.70:1 clears the 3:1 rule. */
   .groupbar button[aria-pressed="true"]::before {
     content: "";
     display: inline-block;

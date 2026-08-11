@@ -334,13 +334,13 @@ def submit_all() -> int:
 
 
 def submit_images() -> int:
-    """Re-queue every image for the vision describe step (K.11).
+    """Re-queue every image still without a description for the vision step (K.11/L.2).
 
-    The one-line catch-up for images captured before the vision step existed: a
-    `kind='image'` artifact with no body never had a description, and nothing
-    else will ever give it one. Re-running the pipeline describes it (or skips
-    it if a vision model still is not available) and then chunks, facets, and
-    indexes it like any other artifact.
+    The backfill for images captured before a working vision model existed, or
+    whose describe run failed: each image with no body is re-read so the vision
+    step gives it real content, then chunk, facet, and index flow like any other
+    artifact. Already-described images are skipped (their body is set and nothing
+    re-charges them).
     """
     from .. import db
 
@@ -350,6 +350,7 @@ def submit_images() -> int:
             r["id"]
             for r in conn.execute(
                 "SELECT id FROM artifacts WHERE kind = 'image' AND deleted_at IS NULL"
+                " AND (body IS NULL OR TRIM(body) = '')"
             )
         ]
     finally:

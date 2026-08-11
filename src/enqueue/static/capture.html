@@ -53,12 +53,12 @@
     --text: #101114;
     --text-mute: #686b82;
     --ink-faint: #6c6f84;
-    --accent: #7132f5;
+    --accent: #5e6ad2;
     /* The drag-over boundary. Lavender clears the 3:1 sole-boundary rule on the
-       canvas (6.04:1), so the drop affordance reads the same in the capture window
+       canvas (4.70:1), so the drop affordance reads the same in the capture window
        and on the wall, and no amber survives. */
-    --accent-strong: #7132f5;
-    --lavender-subtle: rgba(113, 50, 245, 0.16);
+    --accent-strong: #5e6ad2;
+    --lavender-subtle: rgba(94, 106, 210, 0.12);
     /* Errors. The same danger hue as the app; the pink is only the image-kind
        hue (C.3), never an error color. */
     --danger: #b4332b;
@@ -108,7 +108,9 @@
     display: flex;
     flex-direction: column;
     background: var(--bg);
-    border: 1px solid var(--line-strong);
+    /* A hairline, not a frame: the lifted shadow carries the edge, and
+       the border only keeps the 3:1 drag-target boundary distinct. */
+    border: 1px solid var(--line);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-lifted);
     transition:
@@ -139,7 +141,8 @@
     height: 30px;
     flex: 0 0 30px;
     background: var(--surface);
-    border-bottom: 1px solid var(--line);
+    /* No underline: the surface step (tinted bar on the white card) is the
+       whole separation. A line on top of it would box the bar back in. */
     /* The whole bar is the drag handle, so nothing in it may swallow a mousedown
        or start a text selection on the way past. */
     user-select: none;
@@ -148,8 +151,8 @@
 
   /* The brand mark at rest: the same lavender disc as the keep button on the
      pill, at the overlay's 10px size. Static - no animation, and the 30px bar
-     never shifts. Wrapped with the wordmark so the kind label stays flush
-     right under space-between. */
+     never shifts. The disc alone is the mark; the window already is Enqueue,
+     so no caps wordmark rides beside it (K.3). */
   #bar .brand {
     display: flex;
     align-items: center;
@@ -188,8 +191,7 @@
   .label {
     font-family: var(--sans);
     font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 0.4px;
     color: var(--text-mute);
     white-space: nowrap;
   }
@@ -257,13 +259,37 @@
   .busy {
     opacity: 0.55;
   }
+
+  /* The kept beat (K.5): one calm settle of the brand disc - a single pulse,
+     then the window goes away. Reduced motion skips the animation entirely and
+     keptBeat's guard dismisses at once. */
+  #bar .brand .disc.settle {
+    animation: disc-settle 260ms var(--ease);
+  }
+
+  @keyframes disc-settle {
+    0% {
+      transform: scale(1);
+    }
+    40% {
+      transform: scale(1.28);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #bar .brand .disc.settle {
+      animation: none;
+    }
+  }
 </style>
 
 <div id="card">
   <div id="bar">
     <span class="brand">
       <span class="disc" aria-hidden="true"></span>
-      <span class="label">Enqueue</span>
     </span>
     <span class="kind-wrap">
       <span class="dot" id="dot" aria-hidden="true"></span>
@@ -272,7 +298,7 @@
   </div>
   <textarea
     id="field"
-    placeholder="A note, a link, an image, or dropped files"
+    placeholder="Toss it here. It stays."
     autofocus
     spellcheck="false"
   ></textarea>
@@ -375,16 +401,19 @@
     statusLabel.classList.toggle("problem", !!problem);
   }
 
-  /// The "kept" beat (C.3c): a brief confirmation before the overlay goes
-  /// away. The status reads "Kept." and the card border goes lavender for
-  /// 200ms, then everything resets so the next summon starts clean. Reduced
-  /// motion skips the flash and dismisses at once.
+  /// The "kept" beat (C.3c/K.5): a brief confirmation before the overlay goes
+  /// away. The status reads "Kept.", the card border goes lavender, and the
+  /// brand disc settles once - one calm pulse - for
+  /// 260ms, then everything resets so the next summon starts clean. Reduced
+  /// motion skips the flash and the pulse and dismisses at once.
   async function keptBeat() {
     say("Kept.");
     card.style.borderColor = "var(--accent-strong)";
+    disc.classList.add("settle");
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 260));
     }
+    disc.classList.remove("settle");
     say("");
     card.style.borderColor = "";
   }

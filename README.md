@@ -199,13 +199,73 @@ Artifacts marked `local_only` never go to an outside service, even when one is c
 
 ---
 
+## How search works
+
+Search is the part of Enqueue that has to be good, because the whole promise is that you can find a thing later even when you have forgotten what you called it.
+It follows three principles that the strong second-brain apps (mem, Fabric, mymind) converge on:
+
+1. **Index everything you can see.** The headline search failures are gaps in what got indexed, not bad ranking. So annotations, image descriptions, PDF page text, and link previews all become searchable, not just the note body.
+2. **Lexical and vector together, always.** Never vector-only. Exact words, typos, and meaning each have a channel, and the channels are fused.
+3. **"Nothing found" is a real answer.** If you search for something you never saved, the honest result is empty, not a wall of loosely-related cards.
+
+### Three layers, built at capture time
+
+When you save something, the engine builds three searchable layers from it, behind the response (capture never waits):
+
+| Layer | What it is | The gap it closes |
+| --- | --- | --- |
+| **Chunks** | the literal text, split into passages and embedded. Fed from the note body, a PDF's page text, a link's preview text, your annotations on an image, and a vision model's description of an image. | finding by the words that are actually there |
+| **Facets** | 5 to 15 model-written statements of *what this could be an example of*, climbing from literal to abstract (levels 0-4), each embedded. | finding by a concept the item never names ("antifragility" reaching a furniture article about surviving stress) |
+| **Entities** | the named things in the text, each enriched with a one-line world-knowledge fact ("Theodore Roosevelt - 26th US President"), embedded. | finding a named thing by a fact it never states (a Roosevelt biography reached by "president") |
+
+Facets and entities are what make Enqueue different from plain RAG: they raise each artifact *up* toward the concepts you might search by, so the query does not have to share vocabulary with the note.
+
+### Seven legs, one fused ranking
+
+A free-text search runs several retrieval legs in parallel, each producing a ranked list, then fuses them with Reciprocal Rank Fusion (RRF, the canonical k=60):
+
+- **Dense** - the query embedding against chunk vectors (meaning, paraphrase).
+- **Keyword** - FTS5 BM25 over chunk text, with the **title weighted 10x** (exact words; a title match outranks a body match).
+- **Trigram** - a trigram-tokenized index for substrings and partial words ("hydro" finds "hydroponics").
+- **Fuzzy** - edit-distance matching over short fields (titles, entity names, annotation lines) for one-character typos that trigram misses ("copper" for "chopper").
+- **Exact phrase** - a quoted `"grand alliance"` pins items containing that literal phrase.
+- **Facets** - the conceptual channel, weighted by each facet's trust score.
+- **Entities** - the named-thing channel.
+
+After fusion, a light **recency** multiplier nudges newer items up, and an **opt-in cross-encoder reranker** can re-score the top window for extra precision. Results roll up to one row per artifact (six chunks of one note come back as one card), with a snippet from the best-matching passage.
+
+### The relevance floor
+
+Vector search always returns *some* nearest neighbor, however far. So a query for something you never saved would otherwise return a confident wall of unrelated notes. The floor stops that: a result survives only if it has a real lexical hit **or** a dense neighbor that is genuinely close; the ambiguous middle is settled by a single model judgment, failing open (a stray result is safer than hiding one of your own notes). A search with nothing close returns empty.
+
+### Example flows - the breadth and depth
+
+Each row is a different *kind* of query and the leg that carries it. The last two are the point of the whole system.
+
+| You search | What happens | Leg |
+| --- | --- | --- |
+| `ziggurat` | a rare word that appears verbatim in one note - exact match, rank 1 | keyword (BM25) |
+| `hydro` | a partial word - the trigram index matches "hydroponics" even though you typed a fragment | trigram |
+| `tony tony copper` | a typo - fuzzy matching catches the one-character edit over the annotation "tony tony chopper" that keyword and trigram both miss | fuzzy |
+| `"grand alliance"` | the quotes force a literal phrase - only items containing those exact words survive | exact phrase |
+| a name that is only in the title | the title is weighted 10x and also prepended to the chunk index, so a name that appears nowhere in the body still finds the note | keyword (title) |
+| `what survives being stressed` | a paraphrase sharing no words with a note about a chair that survives being sat on - matched by meaning | dense |
+| `notes on a president` | the note is a Roosevelt biography that never says "president"; a **facet** ("effective governance requires a leader") and an **entity** ("Theodore Roosevelt - 26th US President") both bridge the gap | facets + entities |
+| `hyperdimensional cheese grater` | you never saved this; no lexical leg fires and the nearest vector is far, so the floor returns **nothing found** instead of a wall | relevance floor |
+
+The first five are lexical breadth - exact, partial, typo, phrase, and field-weighted. The sixth is semantic. The seventh is the conceptual bridge that plain RAG cannot cross, and the eighth is the honesty that keeps the tool trustworthy.
+
+Search runs entirely on your Mac, over the one SQLite file. The dense search is exact (brute-force) nearest-neighbor, which is fast at this scale; only the optional gray-zone judge and the cross-encoder reranker ever call a model, and only for the searches that need them.
+
+---
+
 ## Where your data lives
 
 Everything is stored under `~/.enqueue-poc`:
 
 | Path | Contents |
 | --- | --- |
-| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, chats, trash, secrets, and the search index (sqlite-vec + FTS5 tables). |
+| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, entities, chats, trash, secrets, and the search index (sqlite-vec + FTS5 tables). |
 | `blobs/` | Original uploaded files, unmodified. |
 | `settings.json` | User preferences (not secrets). |
 | `repo` | One-line pointer to the repo path, written by `bin/relaunch` so the desktop shell can find the engine. |
@@ -321,7 +381,7 @@ Key endpoints:
 - **The global capture hotkey opens a window, but that window is the capture overlay, not a full capture flow.** The hotkey is functional (registered via `tauri-plugin-global-shortcut`), but the overlay is a small note-input box, not a full capture interface.
 - **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the home HTML view does not implement infinite scroll or pagination.
 - **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
-- **No sync (planned).** One machine only today. Sync is a planned milestone.
+- **No sync (planned).** One machine only today. The design is scoped in `docs/e2e/E2E.md` (encrypted per-artifact snapshots, last-writer-wins) and `docs/MOBILE.md` (a relay plus a mobile client), but no sync code exists yet.
 - **The default local model (`llama3.1:8b`) is weak.** Roughly three of four model outputs fail their validators. Conversations work; a better model is needed for reliable chat answers and facet generation.
 - **Search is brute-force.** sqlite-vec does exact nearest-neighbour search over the 768-dim embeddings in `enqueue.db`. At this library's scale that is fast (Phase 19 measured p95 21 ms); at a few hundred thousand chunks it will need quantization or an approximate index.
 - **No Windows or Linux support.** The desktop shell uses macOS-specific AppKit calls (activation, hiding). The Keychain wrapper is macOS-only.

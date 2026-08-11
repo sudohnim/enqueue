@@ -21,8 +21,11 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from sqlite3 import OperationalError
 
+from pydantic import BaseModel
+
 from .. import config, db
 from ..index.store import get_store
+from ..providers.base import get_provider
 
 # R.7 fuzzy branch: minimum SequenceMatcher ratio for a candidate to count as
 # a one-edit typo match, and the score a fuzzy hit carries. The score is modest
@@ -43,6 +46,212 @@ FUZZY_BASE_SCORE = 0.02
 # because a freshly seeded corpus is uniformly "now".
 RECENCY_WEIGHT = 0.5
 RECENCY_TAU_DAYS = 30
+
+
+# Q.3 relevance floor, two-tier gray-zone gate (Minh's DECISION after the
+# Q.4 block-out): a single dense threshold cannot separate the real matches
+# from the strongest gibberish neighbors - the eval proved the weakest real
+# matches (cosine ~0.518) sit below the strongest gibberish neighbors
+# (~0.668), so no constant divides them. The floor is therefore a judgment
+# on the raw legs with TWO bars on the true-cosine scale (Q.2b), leaving a
+# gray zone between them that the gray-zone judge (Q.3b) decides:
+#
+# - Any result with a lexical hit (FTS5 keyword / trigram / facet / entity /
+#   fuzzy / exact-phrase) survives regardless of its dense score.
+# - Without a lexical hit: `dense_similarity >= KEEP_ABOVE` is clearly
+#   relevant, keep without asking; `dense_similarity < DROP_BELOW` is
+#   clearly irrelevant, drop without asking; in between is the gray zone,
+#   kept or dropped on one model judgment (Q.3b).
+#
+# These two bars are start values for the eval in PLAN Phase Q.4 to calibrate
+# against the corpus - they are not guessed final answers. Q.4 shrinks the
+# gray zone as far as it can while keeping all 42 real-match queries passing
+# and pushing Nothing-OK toward 8/8.
+KEEP_ABOVE = 0.75
+DROP_BELOW = 0.45
+
+
+def _floor_verdict(hit: dict) -> str:
+    """The two-tier keep decision for one hit: "keep", "drop", or "gray".
+
+    A hit with any lexical leg is always kept. Without one, the dense
+    similarity is judged against the two bars: at or above `KEEP_ABOVE` is
+    clearly relevant, below `DROP_BELOW` is clearly irrelevant, and the
+    strip in between is the gray zone where the judge (Q.3b) decides.
+    """
+    if hit.get("had_lexical_hit"):
+        return "keep"
+    sim = hit.get("dense_similarity", 0.0)
+    if sim >= KEEP_ABOVE:
+        return "keep"
+    if sim < DROP_BELOW:
+        return "drop"
+    return "gray"
+
+
+def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
+    """The Q.3 two-tier gate over a ranked list, survivor order preserved.
+
+    Keeps lexical-leg and clearly-close hits, drops clearly-far ones, and
+    sends the gray zone to the judge (Q.3b) in one batched call. Survivors
+    keep their relative order - the floor removes non-matches, it never
+    reorders matches. A gray-zone hit whose artifact the judge did not keep
+    is removed; if the judge is unavailable it keeps everything (fail-open).
+    """
+    gray = [h for h in hits if _floor_verdict(h) == "gray"]
+    kept_gray = judge_gray_zone(query, gray) if gray else None
+    out = []
+    for h in hits:
+        verdict = _floor_verdict(h)
+        if verdict == "drop":
+            continue
+        if verdict == "gray" and kept_gray is not None and h["artifact_id"] not in kept_gray:
+            continue
+        out.append(h)
+    return out
+
+
+# ---- Q.3b: the gray-zone judge -------------------------------------------
+#
+# The two bars leave a strip - DROP_BELOW <= dense_similarity < KEEP_ABOVE
+# with no lexical hit - that the eval proved no constant can split from the
+# real matches. One model judgment decides those candidates per search: the
+# query and each item as `[{kind}] {title}\n{snippet}` go to the provider in
+# one batched call, and each comes back as {id, relevant}. Three hard rules:
+# fail-open (a raising or malformed call keeps every candidate it did not
+# clearly judge - the gate's error budget is a small honest leak, never the
+# silent loss of a real note), cached per (query, artifact_id, model_version)
+# so a re-run of the same search costs nothing, and only the gray zone ever
+# reaches this code, so most searches make zero model calls.
+
+
+class _GrayZoneVerdict(BaseModel):
+    id: str  # the artifact_id of the judged candidate
+    relevant: bool  # whether it genuinely matches the query
+
+
+class _GrayZoneResponse(BaseModel):
+    verdicts: list[_GrayZoneVerdict]
+
+
+_GRAY_JUDGE_SYSTEM = """\
+You are the gate on a person's own second brain: they searched what they saved,
+and the vector index returned the items below because they sit near the query.
+For each one, say whether it GENUINELY matches the query or is only loosely /
+coincidentally similar.
+
+The query, then each saved item as:
+
+{index}. [id:{id}] [{kind}] {title}
+{snippet}
+
+A genuine match has real topical overlap with the query - it actually bears on
+what was asked. An item about a different subject that only happens to sit
+nearby in vector space is NOT a match. When in doubt, prefer "not relevant": a
+missed note costs nothing, while a confident wall of unrelated notes is the
+failure this gate exists to stop.
+
+Return one verdict per item, echoing the exact [id:...] shown above.
+"""
+
+
+def _judge_cache_read(query: str, artifact_id: str, model_version: str) -> bool | None:
+    """The cached gray-zone verdict for (query, artifact), or None when absent.
+
+    A verdict is a property of the query and the artifact text, not of the
+    bars, so it stays valid as Q.4 moves them: this cache is only consulted
+    for a candidate that is gray on the current run, and it was written the
+    last time the same (query, artifact) was judged. Scoped to the judge's
+    model_version so a backend switch never serves another model's opinions.
+    A missing `derived_values` table (pre-0012 DB) reads as "no cache".
+    """
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT value FROM derived_values"
+            " WHERE scope = 'gray_judge' AND subject = ? AND attribute = ?"
+            " AND source = 'model' AND model_version = ?",
+            (query, artifact_id, model_version),
+        ).fetchone()
+    except OperationalError:
+        return None
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return row["value"] == "1"
+
+
+def _judge_cache_write(query: str, artifact_id: str, relevant: bool, model_version: str) -> None:
+    """Record the verdict for (query, artifact) under the judge's model."""
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO derived_values"
+            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
+            " VALUES ('gray_judge', ?, ?, ?, 1, 'model', ?, ?)",
+            (query, artifact_id, "1" if relevant else "0", model_version, db.now()),
+        )
+
+
+def judge_gray_zone(query: str, candidates: list[dict]) -> set[str]:
+    """One batched model call deciding the gray-zone candidates (Q.3b).
+
+    `candidates` holds hits with no lexical leg whose dense similarity sits in
+    [DROP_BELOW, KEEP_ABOVE) - the strip only the judge may split. Returns the
+    set of artifact ids judged genuinely relevant to `query`.
+
+    Fail-open by contract: if the provider raises, or its answer is malformed
+    or does not cover an item, that item is kept. Verdicts are cached per
+    (query, artifact_id, model_version) in `derived_values` (scope
+    'gray_judge'), so re-running the same search makes no new call.
+    """
+    if not candidates:
+        return set()
+    try:
+        provider = get_provider()
+        model_version = provider.model
+    except Exception:  # noqa: BLE001 - fail-open is the contract
+        return {h["artifact_id"] for h in candidates}
+
+    kept: set[str] = set()
+    unjudged: list[dict] = []
+    for hit in candidates:
+        aid = hit["artifact_id"]
+        cached = _judge_cache_read(query, aid, model_version)
+        if cached:
+            kept.add(aid)
+        elif cached is None:
+            unjudged.append(hit)
+    if not unjudged:
+        return kept
+
+    lines = [
+        f"{idx}. [id:{hit['artifact_id']}] [{hit.get('kind', 'artifact')}] {hit['title']}\n{hit['snippet']}"
+        for idx, hit in enumerate(unjudged, 1)
+    ]
+    user = f"Query: {query}\n\nSaved items to judge:\n\n" + "\n\n".join(lines)
+
+    try:
+        result = provider.complete(
+            system=_GRAY_JUDGE_SYSTEM,
+            user=user,
+            response_model=_GrayZoneResponse,
+        )
+        verdicts = result.verdicts if result is not None else []
+        covered: set[str] = set()
+        by_aid = {h["artifact_id"]: h for h in unjudged}
+        for verdict in verdicts:
+            if verdict.id not in by_aid:
+                continue  # an id that was not in the batch: ignore, never cache
+            covered.add(verdict.id)
+            _judge_cache_write(query, verdict.id, verdict.relevant, model_version)
+            if verdict.relevant:
+                kept.add(verdict.id)
+        # Fail-open for anything the response did not cover.
+        kept.update(aid for aid in by_aid if aid not in covered)
+    except Exception:  # noqa: BLE001 - fail-open is the contract
+        kept.update(h["artifact_id"] for h in unjudged)
+    return kept
 
 
 def _age_days(updated_at: str) -> float:
@@ -223,6 +432,12 @@ def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dic
                 ).fetchone()
                 if row is None:
                     continue
+                # Q.2: a fuzzy-only hit IS a lexical hit (it's a one-edit typo
+                # over a short lexical field - title, entity name, annotation
+                # text), so the relevance floor treats it as such. There is no
+                # dense-similarity reading here: the branch never queries the
+                # dense store. The 0.0 below matches the Q.3 convention - the
+                # floor checks `had_lexical_hit` first.
                 by_aid[aid] = {
                     "score": f["score"],
                     "artifact_id": aid,
@@ -230,6 +445,8 @@ def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dic
                     "kind": row["kind"],
                     "why": "fuzzy",
                     "snippet": " ".join(f["matched"].split())[:200],
+                    "dense_similarity": 0.0,
+                    "had_lexical_hit": True,
                 }
     finally:
         conn.close()
@@ -315,6 +532,10 @@ def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
                 "kind": h["kind"],
                 "why": "exact",
                 "snippet": " ".join(h["text"].split())[:200],
+                # Q.2: an exact-phrase match IS a lexical hit. The floor (Q.3)
+                # never drops a pinned exact match.
+                "dense_similarity": 0.0,
+                "had_lexical_hit": True,
             }
             for h in ranked
         ]
@@ -597,6 +818,11 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         # the R.9 rerank stage does not apply here: the free text is ranked, then
         # the tag set is carved out of that ranking.
         tagged = [h for h in _hybrid_results(query_text, limit * 5) if h["artifact_id"] in tag_ids]
+        # Q.3: the relevance floor still applies - a tag-filtered result that
+        # matches no real lexical leg is dropped (below DROP_BELOW outright,
+        # or in the gray zone and the Q.3b judge says no), even if its tag
+        # set looks right.
+        tagged = _apply_floor(query_text, tagged)
         ranked = tagged[:limit]
 
     elif config.SEARCH_RERANK:
@@ -606,15 +832,27 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         fused = _merge_fuzzy(
             _hybrid_results(query_text, window), _fuzzy_hits(query_text, window), window
         )
+        # Q.3: the floor reads the per-leg signals from _hybrid_results /
+        # _merge_fuzzy. The wider window means we floor before the reranker
+        # so a gibberish query cannot waste the reranker's budget.
+        fused = _apply_floor(query_text, fused)
         ranked = _rerank(query_text, fused)[:limit]
 
     else:
-        ranked = _merge_fuzzy(
+        fused = _merge_fuzzy(
             _hybrid_results(query_text, limit), _fuzzy_hits(query_text, limit), limit
         )
+        # Q.3: drop result that has no lexical hit AND whose dense similarity
+        # is below DROP_BELOW (or sits in the gray zone and the Q.3b judge
+        # says no). A query left with zero kept results returns [] - the
+        # honest "nothing found".
+        ranked = _apply_floor(query_text, fused)
 
     # R.10: the exact needle outranks every hybrid answer, deduped so one
-    # artifact never occupies two slots. With no exact hits this is a no-op.
+    # artifact never occupies two slots. Exact-phrase hits pass the floor by
+    # construction (had_lexical_hit=True); an exact hit whose artifact is
+    # outside the tag set is dropped like any other non-tagged hit. With no
+    # exact hits this is a no-op.
     if exact:
         ranked = _pin_exact(exact, ranked, limit, tag_ids)
     return ranked
@@ -630,6 +868,44 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     chunk_hits = store.search(store.CHUNKS, q, limit=per_query, prefetch=prefetch)
     facet_hits = store.search(store.FACETS, q, limit=per_query, prefetch=prefetch)
     entity_hits = store.search(store.ENTITIES, q, limit=per_query, prefetch=prefetch)
+
+    # Q.2: per-leg signal at the fusion point. The relevance floor (Q.3) judges
+    # raw legs, not the fused RRF score - a real query has at least one strong
+    # leg (lexical hit or close dense neighbor), a gibberish query has no
+    # lexical hit AND its nearest neighbor is far. We thread two flags per
+    # candidate through to the output: `dense_similarity` (the best cosine
+    # similarity the dense branch produced for this artifact, 0.0 if none)
+    # and `had_lexical_hit` (True if any of keyword/trigram/facet/entity hit
+    # it). Ranking is unchanged - these flags only join the result dict.
+    #
+    # `chunk_hits` etc. carry the FUSED RRF score, not raw cosine similarity;
+    # we ask the store directly for the dense leg so the floor can read the
+    # actual nearest-neighbor distance for each artifact. Same query budget
+    # as R.6's recall net - one extra sqlite-vec knn per call.
+    #
+    # Lexical legs are scored separately so a dense-only match (no keyword /
+    # trigram / facet / entity hit) does not count as lexical. The fused
+    # `chunk_hits` list is what got ranked and surfaced, but it can be
+    # entirely dense-only - calling every artifact in it "lexical" would
+    # make the Q.3 floor useless.
+    dense_sims: dict[str, float] = {}
+    lexical_aids: set[str] = set()
+    dense_chunk_hits = store.search_dense(store.CHUNKS, q, limit=per_query)
+    for hit in dense_chunk_hits:
+        aid = hit["artifact_id"]
+        if hit["score"] > dense_sims.get(aid, 0.0):
+            dense_sims[aid] = hit["score"]
+    keyword_chunk_hits = store.search_keyword(store.CHUNKS, q, limit=per_query)
+    for hit in keyword_chunk_hits:
+        lexical_aids.add(hit["artifact_id"])
+    if store.CHUNKS == store.CHUNKS:  # trigram only exists for chunks
+        trigram_chunk_hits = store.search_trigram(store.CHUNKS, q, limit=per_query)
+        for hit in trigram_chunk_hits:
+            lexical_aids.add(hit["artifact_id"])
+    for hit in facet_hits:
+        lexical_aids.add(hit["artifact_id"])
+    for hit in entity_hits:
+        lexical_aids.add(hit["artifact_id"])
 
     conn = db.get_conn()
     cache: dict = {}
@@ -732,6 +1008,10 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
                     "kind": kind,
                     "why": info["why"],
                     "snippet": " ".join(snippet.split())[:200],
+                    # Q.2: per-leg signals at the fusion point. The relevance
+                    # floor (Q.3) reads these to drop gibberish-query hits.
+                    "dense_similarity": round(dense_sims.get(aid, 0.0), 6),
+                    "had_lexical_hit": aid in lexical_aids,
                 }
             )
         return out

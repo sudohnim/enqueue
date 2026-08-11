@@ -204,16 +204,16 @@
     letter-spacing: 0;
   }
   /* Primary: the one instruction per surface. The old 1.5px --text edge is gone -
-     lavender clears the 3:1 sole-boundary rule on the canvas (6.04:1), so the fill
-     bounds the control on its own, and the label is white on the fill (6.04:1). */
+     lavender clears the 3:1 sole-boundary rule on the canvas (4.70:1), so the fill
+     bounds the control on its own, and the label is white on the fill (4.70:1). */
   .btn.primary {
     background: var(--accent);
     color: var(--on-lavender);
   }
   .btn.primary:hover {
-    /* DESIGN-kraken.md names #8b5cf6 as the hover, but white on that is 4.23:1 and
-       fails 4.5; the hover step is the lavender-focus that clears 4.5 (6.04:1 with
-       white). */
+    /* DESIGN.md names #828fff as the hover, but white on that is 2.73:1 and
+       fails 4.5; the hover step is the lavender-focus that clears 4.5 (4.75:1
+       with white). */
     background: var(--lavender-focus);
   }
   .btn.primary:active {
@@ -252,7 +252,7 @@
   }
   /* Subtle: a lavender wash for a secondary brand action. The wash carries the
      lavender idea without shouting. Its text is the deep lavender that clears 4.5:1
-     on the wash (5.17:1): the primary #7132f5 measures 4.69 there and only just
+     on the wash (5.17:1): the primary #5e6ad2 measures 4.69 there and only just
      clears, so the wash uses --accent-text, the same ink the badges use. */
   .btn.subtle {
     background: var(--lavender-subtle);
@@ -265,7 +265,7 @@
     background: color-mix(in srgb, var(--accent) 24%, transparent);
   }
   /* Inverse: white on a lavender or surface-2 banner. On lavender the white fill
-     bounds the control itself (6.04:1 against the banner); on surface-2 the
+     bounds the control itself (4.70:1 against the banner); on surface-2 the
      line-strong border carries the 3:1 boundary (3.32:1). */
   .btn.inverse {
     background: #ffffff;

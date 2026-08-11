@@ -34,6 +34,25 @@ class FakeProvider:
         return reply
 
 
+@pytest.fixture(autouse=True)
+def _no_real_judge(monkeypatch):
+    """No chat test may touch a real model. The Q.3b gray-zone judge (Q.3)
+    fires the moment a question lands in the gray zone - here the
+    "hyperdimensional cheese grater" test - so stub `get_provider` fail-open
+    (keep everything), the gate's error budget, unless a test installs its
+    own verdicts.
+    """
+    from enqueue.retrieve import candidates as cand
+
+    class _KeepAllJudge:
+        model = "test-judge"
+
+        def complete(self, *args, **kwargs):
+            return cand._GrayZoneResponse(verdicts=[])
+
+    monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _KeepAllJudge())
+
+
 @pytest.fixture
 def answered(monkeypatch):
     """Callable test double: scripts the provider and the passages queue.
@@ -371,6 +390,109 @@ class TestScope:
         assert found and all(p["artifact_id"] == note["artifact"]["id"] for p in found)
 
 
+class TestQ5AnswerPathFloor:
+    """Q.5: the answer path reads the same relevance floor as /search.
+
+    `passages()` feeds the answer model, and it used to trust the fused RRF
+    score from `store.search` - which can look strong on a gibberish query
+    (a rank-1 on a low-rank list), so an answer over a no-match question
+    grounded on far neighbors instead of refusing. The floor now reads the
+    raw per-chunk legs, exactly as `_hybrid_results` does for /search.
+    """
+
+    def _library(self, store, monkeypatch):
+        conn = db.get_conn()
+        try:
+            for aid, title, body in [
+                ("a1", "Rooftop farming", "A city can feed itself from its rooftops."),
+                ("a2", "Ziggurats", "A ziggurat of Ur stood in the desert."),
+            ]:
+                conn.execute(
+                    "INSERT INTO artifacts (id, kind, title, body, content_hash, status,"
+                    " created_at, updated_at) VALUES (?, 'note', ?, ?, ?, 'ok',"
+                    " datetime('now'), datetime('now'))",
+                    (aid, title, body, aid + "_hash"),
+                )
+                conn.execute(
+                    "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker)"
+                    " VALUES (?, ?, 0, ?, 'test')",
+                    ("c" + aid, aid, body),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        from enqueue import config
+        from enqueue.index.store import get_store
+
+        monkeypatch.setattr(config, "VECTOR_STORE", "sqlite-vec")
+        get_store.cache_clear()
+        s = get_store()
+        s.ensure()
+        s.upsert_chunks()
+        return s
+
+    def test_a_no_match_question_feeds_the_answer_nothing(self, store, quiet_queue, monkeypatch):
+        self._library(store, monkeypatch)
+
+        found = chats.passages("quantum flux capacitor", "library", None)
+
+        # The floor drops the far neighbors instead of letting the answer
+        # ground on them, so the refusal (grounded=false) has nothing to
+        # point at - exactly the honest "nothing you have saved" answer.
+        # "quantum flux capacitor"'s nearest neighbor measures ~0.40 here,
+        # below DROP_BELOW, so no passage survives the two-tier gate.
+        assert found == [], f"gibberish question must yield no passages, got {found}"
+
+    def test_a_gray_zone_question_is_kept_only_if_the_judge_says_relevant(
+        self, store, quiet_queue, monkeypatch
+    ):
+        """The gray zone (at or above DROP_BELOW, below KEEP_ABOVE) is the
+        judge's patch (Q.3b), and the answer path runs the same judge as
+        /search. "hyperdimensional cheese grater" measures in the gray zone
+        against this corpus, so `passages()` sends it to the judge in one
+        batched call: a "not relevant" ruling feeds the answer nothing, a
+        "relevant" ruling lets the passage through."""
+        from enqueue.retrieve import candidates as cand
+
+        self._library(store, monkeypatch)
+
+        class _Judge:
+            model = "test-model"
+
+            def __init__(self, verdicts):
+                self.verdicts = verdicts
+
+            def complete(self, system, user, response_model, context=None, max_retries=3):
+                return response_model(verdicts=self.verdicts)
+
+        monkeypatch.setattr(
+            cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": False}])
+        )
+        found = chats.passages("hyperdimensional cheese grater", "library", None)
+        assert found == [], f"judge said not relevant, expected no passages, got {found}"
+        # Clear the judge's cache and rule it relevant.
+        conn = db.get_conn()
+        try:
+            conn.execute("DELETE FROM derived_values WHERE scope = 'gray_judge'")
+            conn.commit()
+        finally:
+            conn.close()
+        monkeypatch.setattr(
+            cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": True}])
+        )
+        found = chats.passages("hyperdimensional cheese grater", "library", None)
+        assert len(found) == 1
+        assert found[0]["artifact_id"] == "a1"
+
+    def test_a_real_question_still_finds_its_passages(self, store, quiet_queue, monkeypatch):
+        self._library(store, monkeypatch)
+
+        found = chats.passages("rooftops", "library", None)
+
+        assert found, "a real question must still fill the passage window"
+        assert "a1" in {p["artifact_id"] for p in found}
+
+
 class TestSubmittingReturnsImmediately:
     """A conversation exists once a question is submitted, not once it is answered.
 
@@ -686,3 +808,101 @@ class TestListingTopicsBatching:
         ]
         assert len(topic_sql) == 1, f"expected one topics SELECT, saw: {topic_sql}"
         assert "json_each" in topic_sql[0], "the topics SELECT must filter by listed chat ids"
+
+
+class TestPassageShapeForTheAnswerModel:
+    """L.1: the answer passage carries the artifact kind and marks annotation
+    text as a note ON the artifact, so the model can tell an image with a
+    user-supplied note from a standalone text note. Reproduces the bug from
+    PLAN Phase L ("just text and not an image")."""
+
+    class _RecordingProvider(FakeProvider):
+        def __init__(self, **byname):
+            super().__init__(**byname)
+            self.last_user = ""
+
+        def complete(self, system, user, response_model, context=None, max_retries=3):
+            self.last_user = user
+            return super().complete(system, user, response_model, context, max_retries)
+
+    def test_passage_header_carries_the_kind(self, store, monkeypatch):
+        """Before L.1: the passage header was `[id] title\\n text` with no kind,
+        so the model could not distinguish an image-with-annotation from a note.
+        After L.1: the header is `[image] title\\n text` so the kind is on screen."""
+        captured = self._RecordingProvider(
+            Answer=Answer(
+                answer="It is an image of a small reindeer with a pink hat.",
+                grounded=True,
+                cited=["aid-image"],
+            )
+        )
+        monkeypatch.setattr(chats, "get_provider", lambda *a, **k: captured)
+        chats._ask_model(
+            question="what is the chopper image?",
+            history="",
+            found=[
+                {
+                    "artifact_id": "aid-image",
+                    "title": "chopper.png",
+                    "kind": "image",
+                    "text": "tony tony chopper",
+                }
+            ],
+        )
+
+        assert "[image] chopper.png" in captured.last_user, (
+            "the kind prefix must ride with the passage header so the model knows "
+            "the artifact kind (L.1); got:\n" + captured.last_user
+        )
+
+    def test_annotation_sourced_chunk_text_is_tagged_as_a_note(self, store):
+        """Before L.1: chunk text merged annotation prose with artifact body
+        silently, so a passage over an image whose only text was an annotation
+        looked identical to a passage over a note. After L.1: annotation text
+        is prefixed so the model can see it is commentary ON the artifact,
+        not the artifact's own body. PLAN Phase L chopper repro."""
+        import hashlib
+        import uuid
+
+        from enqueue import config
+        from enqueue.ingest import chunk as ingest_chunk
+
+        # An image whose vision describe failed (status='text_only', body NULL):
+        # the only searchable text on the artifact is the user-supplied
+        # annotation we are about to add. This is the chopper repro from PLAN.
+        artifact_id = str(uuid.uuid4())
+        data = b"\x89PNG\r\n\x1a\n" + artifact_id.encode()
+        digest = hashlib.sha256(data).hexdigest()
+        blob = config.BLOB_DIR / digest
+        blob.parent.mkdir(parents=True, exist_ok=True)
+        blob.write_bytes(data)
+        now = "2024-01-01T00:00:00+00:00"
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, content_hash, mime,"
+                " filename, created_at, updated_at, status) VALUES (?, 'image',"
+                " 'chopper.png', NULL, ?, 'image/png', 'chopper.png', ?, ?,"
+                " 'text_only')",
+                (artifact_id, digest, now, now),
+            )
+            conn.execute(
+                "INSERT INTO annotations (id, artifact_id, text, created_at) VALUES"
+                " (?, ?, 'tony tony chopper', ?)",
+                (str(uuid.uuid4()), artifact_id, now),
+            )
+
+        conn = db.get_conn()
+        try:
+            ingest_chunk.chunk_artifact(conn, artifact_id)
+            chunks = conn.execute(
+                "SELECT text FROM chunks WHERE artifact_id = ?", (artifact_id,)
+            ).fetchall()
+        finally:
+            conn.close()
+
+        joined = "\n\n".join(c["text"] for c in chunks)
+        assert "(note added by you) tony tony chopper" in joined, (
+            "annotation text must carry the (note added by you) marker so the "
+            "model can attribute the line to a user-supplied note on the "
+            "artifact, not the artifact's own body (L.1); got:\n" + joined
+        )

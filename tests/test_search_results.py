@@ -17,10 +17,38 @@ from enqueue.api import app
 from enqueue.index import bootstrap
 from enqueue.index.store import get_store
 from enqueue.index.store_sqlite import _trigram_query
-from enqueue.retrieve.candidates import search_results
+from enqueue.retrieve.candidates import (
+    DROP_BELOW,
+    KEEP_ABOVE,
+    _apply_floor,
+    _floor_verdict,
+    search_results,
+)
 
 _BODY = "A city can feed itself from its rooftops, one tray of greens at a time."
 _UNRELATED = "The ziggurat of Ur stood in the desert, season after season."
+
+
+@pytest.fixture(autouse=True)
+def _no_real_judge(monkeypatch):
+    """Tests never touch a real model, but the Q.3b judge (Q.3) would fire
+    the moment any corpus query lands in the gray zone. Stub it fail-open -
+    keep everything - exactly the gate's error budget, so searches that are
+    not about the judge behave as they did before it. Judge-specific tests
+    override `get_provider` with their own verdicts.
+    """
+    from enqueue.retrieve import candidates as cand
+
+    class _KeepAllJudge:
+        model = "test-judge"
+
+        def complete(self, *args, **kwargs):
+            # No verdicts. All gray-zone candidates fall through to fail-open
+            # and are kept - the leak-side choice for a test that is not
+            # asserting on the judge.
+            return cand._GrayZoneResponse(verdicts=[])
+
+    monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _KeepAllJudge())
 
 
 @pytest.fixture
@@ -612,3 +640,247 @@ class TestQueryBatching:
         assert probes == [], f"per-row title probes found: {probes[:3]}"
         titles = [s for s in statements if "SELECT id, title FROM artifacts" in s]
         assert len(titles) == 1, f"expected one batched title query, saw: {titles}"
+
+
+class TestQ2PerLegSignals:
+    """Q.2: the /search rollup carries per-leg signals at the fusion point so
+    the relevance floor (Q.3) can judge raw legs, not the fused RRF score.
+    Every result must carry `dense_similarity` (the best cosine similarity
+    the dense branch produced for this artifact) and `had_lexical_hit`
+    (whether any of keyword / trigram / facet / entity hit it)."""
+
+    def test_a_real_match_carries_a_dense_similarity_and_a_lexical_flag(self, sqlite_store):
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _chunk(conn, "c1", "a1", 0, _BODY)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("rooftops", limit=20)
+        assert hits[0]["artifact_id"] == "a1"
+        assert (
+            "dense_similarity" in hits[0]
+        ), "every search hit must carry the per-leg dense signal (Q.2)"
+        assert (
+            "had_lexical_hit" in hits[0]
+        ), "every search hit must carry the per-leg lexical flag (Q.2)"
+        # The chunk side is the one that produced this match: keyword + dense
+        # both touched a1, so the lexical flag is on and the dense similarity
+        # is well above 0 (the corpus is small so cosine is generous).
+        assert hits[0]["had_lexical_hit"]
+        assert hits[0]["dense_similarity"] > 0.0
+
+    def test_a_query_with_no_dense_match_still_carries_zero_similarity(self, sqlite_store):
+        """When the dense branch returns nothing for an artifact, the flag is
+        0.0 (not missing) so the floor (Q.3) can read it without a KeyError."""
+        # a1 has no chunks at all - the dense branch cannot score it. The
+        # keyword branch on its title may still hit, so the artifact can
+        # appear in results, but its dense_similarity is 0.0.
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, content_hash,"
+                " status, created_at, updated_at) VALUES (?, 'note', ?, '',"
+                " ?, 'ok', datetime('now'), datetime('now'))",
+                ("a-title-only", "A title only", "a-title-only_hash"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("title", limit=20)
+        if hits:
+            for h in hits:
+                assert "dense_similarity" in h
+                assert "had_lexical_hit" in h
+                assert isinstance(h["dense_similarity"], float)
+                assert isinstance(h["had_lexical_hit"], bool)
+
+
+class TestQ3RelevanceFloor:
+    """Q.3: the two-tier gray-zone gate (Minh's DECISION after the single-
+    threshold block-out). A hit with a lexical leg, or a dense-only hit at or
+    above KEEP_ABOVE, is kept without a model call; a dense-only hit below
+    DROP_BELOW is dropped without one; the gray zone between the bars is
+    fail-open kept until Q.3b's judge decides it. A query whose entire
+    result set drops returns [] - the honest "nothing found" (a gibberish
+    query's nearest neighbors score below DROP_BELOW, so the wall no longer
+    lights up with unrelated notes)."""
+
+    def test_lexical_hit_passes_without_a_model_call(self):
+        assert _floor_verdict({"had_lexical_hit": True, "dense_similarity": 0.1}) == "keep"
+
+    def test_dense_above_keep_above_passes_without_a_model_call(self):
+        assert _floor_verdict({"had_lexical_hit": False, "dense_similarity": KEEP_ABOVE}) == "keep"
+        assert _floor_verdict({"had_lexical_hit": False, "dense_similarity": 0.9}) == "keep"
+
+    def test_dense_below_drop_below_drops_without_a_model_call(self):
+        assert _floor_verdict({"had_lexical_hit": False, "dense_similarity": 0.3}) == "drop"
+        assert _floor_verdict({"had_lexical_hit": False, "dense_similarity": 0.0}) == "drop"
+
+    def test_gray_zone_is_the_judges_patch(self):
+        """The strip between the bars is a gray zone - neither keep nor drop
+        on constants alone; only the Q.3b judge may split it."""
+        assert _floor_verdict({"had_lexical_hit": False, "dense_similarity": 0.6}) == "gray"
+        assert _floor_verdict({"had_lexical_hit": False, "dense_similarity": DROP_BELOW}) == "gray"
+
+    def test_a_gibberish_query_below_drop_below_drops_to_empty(self, sqlite_store):
+        """A query no real artifact matches must come back as `[]`. This is the
+        PLAN Phase Q headline bug: dense kNN always returns its nearest
+        neighbors, so the wall used to light up with unrelated notes. The
+        floor fixes that for the clearly-far case: "quantum flux capacitor"
+        measures ~0.40 against this corpus, below DROP_BELOW, with no
+        lexical hit, so every hit drops."""
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _chunk(conn, "c1", "a1", 0, _BODY)
+            _note(conn, "a2", "Trade routes", _UNRELATED)
+            _chunk(conn, "c2", "a2", 0, _UNRELATED)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("quantum flux capacitor", limit=20)
+        assert hits == [], f"gibberish query below DROP_BELOW must return [], got {hits}"
+
+    def test_a_gray_zone_hit_is_kept_only_if_the_judge_says_relevant(
+        self, sqlite_store, monkeypatch
+    ):
+        """The gray zone between the two bars is the judge's patch (Q.3b).
+
+        "hyperdimensional cheese grater" measures 0.469 against the rooftops
+        note - below KEEP_ABOVE, at or above DROP_BELOW - so it is neither
+        clearly relevant nor clearly irrelevant. One batched model call
+        decides it: a "not relevant" ruling drops the hit to [], a
+        "relevant" ruling keeps it.
+        """
+        from enqueue.retrieve import candidates as cand
+
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Rooftop farming", _BODY)
+            _chunk(conn, "c1", "a1", 0, _BODY)
+            _note(conn, "a2", "Trade routes", _UNRELATED)
+            _chunk(conn, "c2", "a2", 0, _UNRELATED)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        class _Judge:
+            """Stub: one batched call returning the verdicts it was built with."""
+
+            def __init__(self, verdicts):
+                self.model = "test-model"
+                self.verdicts = verdicts
+
+            def complete(self, system, user, response_model, context=None, max_retries=3):
+                return response_model(verdicts=self.verdicts)
+
+        monkeypatch.setattr(
+            cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": False}])
+        )
+        hits = search_results("hyperdimensional cheese grater", limit=20)
+        assert hits == [], f"judge said not relevant, expected [], got {hits}"
+        # Clear the judge's cache so the next call is judged fresh.
+        conn = db.get_conn()
+        try:
+            conn.execute("DELETE FROM derived_values WHERE scope = 'gray_judge'")
+            conn.commit()
+        finally:
+            conn.close()
+        monkeypatch.setattr(
+            cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": True}])
+        )
+        hits = search_results("hyperdimensional cheese grater", limit=20)
+        assert len(hits) == 1 and hits[0]["artifact_id"] == "a1"
+        assert not hits[0]["had_lexical_hit"]
+        assert DROP_BELOW <= hits[0]["dense_similarity"] < KEEP_ABOVE
+
+
+class TestQ3bGrayZoneJudge:
+    """Q.3b: the gray-zone judge's behavior and its hard contract.
+
+    The judge is one batched model call over only the gray-zone candidates
+    (Q.3's strip no constant can split). Three rules are pinned here: a
+    clearly-answered verdict is honored (relevant kept, not relevant
+    dropped), a raising or unhelpful call keeps every candidate (fail-open -
+    the gate's error budget is a small leak, never a hidden real note), and a
+    re-run of the same search is served from cache with no new call (Q.4
+    measures the same query repeatedly, and a paging wall re-runs it).
+    """
+
+    @staticmethod
+    def _hits(*aids, sim=0.6):
+        return [
+            {
+                "artifact_id": aid,
+                "title": f"note {aid}",
+                "kind": "note",
+                "snippet": f"body of {aid}",
+                "dense_similarity": sim,
+                "had_lexical_hit": False,
+            }
+            for aid in aids
+        ]
+
+    def test_relevant_is_kept_and_not_is_dropped(self, store, monkeypatch):
+        from enqueue.retrieve import candidates as cand
+
+        class _Judge:
+            model = "test-model"
+
+            def __init__(self, verdicts):
+                self.verdicts = verdicts
+
+            def complete(self, system, user, response_model, context=None, max_retries=3):
+                return response_model(verdicts=self.verdicts)
+
+        monkeypatch.setattr(
+            cand,
+            "get_provider",
+            lambda *a, **k: _Judge(
+                [{"id": "a1", "relevant": True}, {"id": "a2", "relevant": False}]
+            ),
+        )
+        out = _apply_floor("quantum flux capacitor", self._hits("a1", "a2"))
+        assert [h["artifact_id"] for h in out] == ["a1"]
+
+    def test_raising_provider_keeps_everything(self, store, monkeypatch):
+        from enqueue.retrieve import candidates as cand
+
+        def _boom(*a, **k):
+            raise RuntimeError("provider down")
+
+        monkeypatch.setattr(cand, "get_provider", _boom)
+        hits = self._hits("a1", "a2", sim=0.5)
+        assert [h["artifact_id"] for h in _apply_floor("quantum flux capacitor", hits)] == [
+            "a1",
+            "a2",
+        ]
+
+    def test_second_identical_search_makes_no_new_call(self, store, monkeypatch):
+        from enqueue.retrieve import candidates as cand
+
+        class _CountingJudge:
+            model = "test-model"
+
+            def __init__(self):
+                self.n = 0
+
+            def complete(self, system, user, response_model, context=None, max_retries=3):
+                self.n += 1
+                return response_model(verdicts=[{"id": "a1", "relevant": True}])
+
+        judge = _CountingJudge()
+        monkeypatch.setattr(cand, "get_provider", lambda *a, **k: judge)
+        hits = self._hits("a1")
+        _apply_floor("quantum flux capacitor", hits)
+        _apply_floor("quantum flux capacitor", hits)
+        assert judge.n == 1

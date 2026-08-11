@@ -190,7 +190,7 @@
   .toggle[aria-checked="true"] {
     background: var(--accent);
     /* The old ink edge is gone: the ON track is a live instruction, not a thing
-       with a border, and the deep lavender keeps the boundary crisp at 7.27:1
+       with a border, and the deep lavender keeps the boundary crisp at 6.46:1
        without the heavy near-black line the amber era needed. */
     border-color: var(--lavender-deep);
   }

@@ -587,15 +587,52 @@ class SqliteVecStore(VectorStore):
     # -- reading ----------------------------------------------------------
 
     def search_dense(self, name: str, text: str, limit: int = 30) -> list[dict]:
-        """Vector nearest-neighbour only, for ablations. Same hit shape as `search`."""
+        """Vector nearest-neighbour only, for ablations. Same hit shape as `search`.
+
+        The reported `score` is cosine similarity on an honest scale, not the
+        compressed `1/(1+d)` pseudo-value the dense leg used to report (Q.2b).
+        The vec0 tables store L2 distance, and the stored and query embeddings
+        are L2-normalized (bge-base via fastembed; pinned by a unit-norm test),
+        so the true cosine is `1 - d^2/2` - monotone in `distance`, meaning this
+        changes the reported number only, never the ranking, which still orders
+        by distance. Clamped to [0, 1]: exactly equal vectors score 1.0,
+        orthogonal vectors score 0.0, and two vectors more than a right angle
+        apart (d > sqrt(2)) score 0.0 rather than a negative similarity.
+        """
         query = json.dumps(embed_one(text))
         conn = self._connect()
         try:
             rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
-            ranked = [(row["id"], 1.0 / (1.0 + row["distance"])) for row in rows]
+            ranked = [
+                (row["id"], max(0.0, min(1.0, 1.0 - (row["distance"] ** 2) / 2.0))) for row in rows
+            ]
             return self._fetch_hits(conn, name, ranked)
+        except OperationalError:
+            # The vec0 table does not exist yet (an upgraded DB whose write
+            # path has not yet run, or a minimal test corpus). The dense leg
+            # is unavailable, so return no hits rather than failing the search.
+            return []
         finally:
             conn.close()
+
+    def search_keyword(self, name: str, text: str, limit: int = 30) -> list[dict]:
+        """FTS5 BM25 only, public form. Same hit shape as `search`.
+
+        Public so callers (the relevance floor in `retrieve/candidates.py`)
+        can read raw per-leg hits without re-implementing the FTS5 query.
+        Tolerates a missing keyword table (upgraded DB or minimal test
+        corpus) by returning no hits rather than failing the search.
+        """
+        return self._search_keyword(name, text, limit)
+
+    def search_trigram(self, name: str, text: str, limit: int = 30) -> list[dict]:
+        """FTS5 trigram only, public form. Same hit shape as `search`.
+
+        Tolerates a missing trigram table (an upgraded DB whose write path
+        has not yet run, or a collection that does not build one) by
+        returning no hits rather than failing the search.
+        """
+        return self._search_trigram(name, text, limit)
 
     def _search_keyword(self, name: str, text: str, limit: int) -> list[dict]:
         """FTS5 BM25 only, for the fusion inside `search`."""
@@ -609,6 +646,11 @@ class SqliteVecStore(VectorStore):
             # carry a higher-is-better score like every other branch.
             ranked = [(row["id"], -row["raw"]) for row in rows]
             return self._fetch_hits(conn, name, ranked)
+        except OperationalError:
+            # The keyword table does not exist yet (an upgraded DB whose
+            # write path has not yet run, or a minimal test corpus). Treat
+            # the leg as having no hits rather than failing the whole search.
+            return []
         finally:
             conn.close()
 

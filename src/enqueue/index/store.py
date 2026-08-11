@@ -103,6 +103,24 @@ class VectorStore(ABC):
         """Dense-only retrieval, for ablations. Same hit shape as `search`."""
 
     @abstractmethod
+    def search_keyword(self, name: str, text: str, limit: int = 30) -> list[dict]:
+        """FTS5 keyword-only retrieval. Same hit shape as `search`.
+
+        Exposed publicly so callers (notably the relevance floor in
+        `retrieve/candidates.py`) can read raw per-leg hits without having
+        to re-implement the FTS5 query layer.
+        """
+
+    @abstractmethod
+    def search_trigram(self, name: str, text: str, limit: int = 30) -> list[dict]:
+        """FTS5 trigram-only retrieval. Same hit shape as `search`.
+
+        Only meaningful for the chunks collection; the other collections do
+        not build a trigram table. Returns [] when the trigram table is
+        absent (an upgraded DB whose write path has not yet run).
+        """
+
+    @abstractmethod
     def counts(self) -> dict:
         """Vectors per collection, keyed by collection name."""
 

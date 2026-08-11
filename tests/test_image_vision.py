@@ -272,6 +272,26 @@ class TestRequeueImages:
         assert ingest_queue.submit_images() == 1
         assert submitted == [image_id]
 
+    def test_submit_images_skips_described_images(self, store, quiet_queue, monkeypatch):
+        """L.2: the backfill re-queues only images still without a description.
+
+        An image whose body is already set was described on a working backend and
+        must not be charged again; a 'text_only' image that never got one, and a
+        'failed' one whose first describe run broke, are exactly the backfill's
+        targets.
+        """
+        from enqueue.ingest import queue as ingest_queue
+
+        described_id = _seed_image(store, body="A red bicycle against a brick wall.", status="ok")
+        text_only_id = _seed_image(store, status="text_only")
+        failed_id = _seed_image(store, status="failed")
+        submitted = []
+        monkeypatch.setattr(ingest_queue, "submit", submitted.append)
+
+        assert ingest_queue.submit_images() == 2
+        assert sorted(submitted) == sorted([text_only_id, failed_id])
+        assert described_id not in submitted
+
 
 class TestVisionProvider:
     def test_local_only_routes_to_the_local_backend(self, store, quiet_queue):

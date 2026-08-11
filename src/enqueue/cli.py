@@ -623,6 +623,21 @@ def eval(
         """Run search against the test index, return deduplicated artifact IDs."""
         if mode == "dense":
             hits = store.search_dense(store.CHUNKS, text, limit=limit * 3)
+        elif mode == "rollup":
+            # Q.4: drive the eval through the same /search rollup the wall and
+            # the answer path use, including the Q.3 relevance floor. The
+            # raw hybrid mode above measures retrieval quality without the
+            # floor; rollup measures what a person actually sees. The store's
+            # dense + keyword legs tolerate a missing table (upgraded DB or
+            # minimal test corpus), so missing facets/entities gracefully
+            # become no-hits rather than failing the whole call.
+            from .retrieve.candidates import search_results
+
+            # Fetch wider than `limit` so the floor's drop + dedupe still
+            # gives `limit` survivors; matches the raw-hybrid mode's wider
+            # prefetch window.
+            rows = search_results(text, limit=limit * 3)
+            return [{"id": h["artifact_id"], "score": h["score"]} for h in rows[:limit]]
         else:
             hits = store.search(store.CHUNKS, text, limit=limit * 3)
         # Deduplicate by artifact_id, keep lowest distance
@@ -697,9 +712,9 @@ def eval(
         return out
 
     if ablation:
-        modes = [("hybrid", engine), ("dense", f"{engine}-dense")]
+        modes = [("hybrid", engine), ("dense", f"{engine}-dense"), ("rollup", f"{engine}-rollup")]
     else:
-        modes = [("hybrid", engine)]
+        modes = [("hybrid", engine), ("rollup", f"{engine}-rollup")]
 
     all_results: dict[str, list[dict]] = {}
 

@@ -190,6 +190,12 @@ def chunk_artifact(conn, artifact_id: str) -> int:
     # current annotations are included (a superseded one no longer describes the
     # artifact), matching the `current` flag logic in notes.get(). The artifacts
     # body column is not touched; this is index text only.
+    # L.1: prefix each annotation with the (note added by you) marker so the
+    # answer model can attribute the line to a user-supplied note on the
+    # artifact rather than to the artifact's own body (the PLAN Phase L chopper
+    # repro: the model answered "this is just text, not an image" when the only
+    # text on an image was a user annotation, because the body and the note
+    # looked identical in the passage).
     notes = conn.execute(
         "SELECT a.text FROM annotations a"
         " WHERE a.artifact_id = ?"
@@ -198,7 +204,8 @@ def chunk_artifact(conn, artifact_id: str) -> int:
         (artifact_id,),
     ).fetchall()
     if notes:
-        body = (body + "\n\n" if body.strip() else "") + "\n\n".join(n["text"] for n in notes)
+        marked = "\n\n".join(f"(note added by you) {n['text']}" for n in notes)
+        body = (body + "\n\n" if body.strip() else "") + marked
 
     # A capture whose text never materialised (an image whose vision describe
     # failed, a preview that never arrived) must still be reachable by its own

@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from .. import config, db
 from ..index import bootstrap
 from ..index.store import get_store
+from ..ingest import queue as ingest_queue
 
 router = APIRouter()
 

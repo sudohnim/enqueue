@@ -34,7 +34,7 @@ def _seed_and_build() -> str:
         conn.commit()
     finally:
         conn.close()
-    assert bootstrap.ensure_index() is True
+    assert bootstrap.ensure_index()
     return aid
 
 
@@ -51,10 +51,10 @@ def test_doctor_reports_a_synced_current_index(doctor_store, quiet_queue):
     assert report["chunk_count"] >= 1
     assert report["index_counts"]["chunks"] == report["chunk_count"]
     assert report["embed_version"] == config.EMBED_VERSION
-    assert report["embed_version_current"] is True
+    assert report["embed_version_current"]
     assert report["index_state"] == "ready"
-    assert report["index_in_sync"] is True
-    assert report["healthy"] is True
+    assert report["index_in_sync"]
+    assert report["healthy"]
 
 
 def test_doctor_detects_index_drift(doctor_store, quiet_queue):
@@ -74,8 +74,8 @@ def test_doctor_detects_index_drift(doctor_store, quiet_queue):
     with TestClient(app) as client:
         report = _doctor(client)
     assert report["chunk_count"] > report["index_counts"]["chunks"]
-    assert report["index_in_sync"] is False
-    assert report["healthy"] is False
+    assert not report["index_in_sync"]
+    assert not report["healthy"]
 
 
 def test_doctor_detects_a_stale_embedding_version(doctor_store, quiet_queue):
@@ -94,10 +94,22 @@ def test_doctor_detects_a_stale_embedding_version(doctor_store, quiet_queue):
     with TestClient(app) as client:
         report = _doctor(client)
     assert report["embed_version"] == "old-model"
-    assert report["embed_version_current"] is False
+    assert not report["embed_version_current"]
     # The index is still in sync row-for-row; it is just out of date.
-    assert report["index_in_sync"] is True
-    assert report["healthy"] is False
+    assert report["index_in_sync"]
+    assert not report["healthy"]
+
+
+def test_ingest_wait_answers_idle(doctor_store, quiet_queue, monkeypatch):
+    """M.9 regression: /ingest/wait crashed with a NameError.
+
+    The router split forgot the `ingest_queue` import in admin.py; the endpoint
+    referenced it and blew up on every call. It must answer a bool, not raise.
+    """
+    with TestClient(app) as client:
+        resp = client.post("/ingest/wait", params={"timeout": 5})
+    assert resp.status_code == 200
+    assert isinstance(resp.json()["idle"], bool)
 
 
 def test_doctor_reports_images_without_body(doctor_store, quiet_queue, monkeypatch):
