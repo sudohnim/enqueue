@@ -368,6 +368,20 @@
     statusLabel.classList.toggle("problem", !!problem);
   }
 
+  /// The "kept" beat (C.3c): a brief confirmation before the overlay goes
+  /// away. The status reads "Kept." and the card border goes lavender for
+  /// 200ms, then everything resets so the next summon starts clean. Reduced
+  /// motion skips the flash and dismisses at once.
+  async function keptBeat() {
+    say("Kept.");
+    card.style.borderColor = "var(--accent-strong)";
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    say("");
+    card.style.borderColor = "";
+  }
+
   function busy(on) {
     card.classList.toggle("busy", on);
     field.readOnly = on;
@@ -461,8 +475,9 @@
         });
       }
       field.value = "";
-      say("");
       paint();
+      busy(false);
+      await keptBeat();
       dismiss();
     } catch (err) {
       // The text stays. Losing what someone just typed because a background
@@ -520,7 +535,8 @@
           return new File([file], `${name}.${suffix}`, { type: file.type });
         }),
       );
-      say("");
+      busy(false);
+      await keptBeat();
       dismiss();
     } catch (err) {
       say("Not kept: " + err.message, true);
@@ -574,7 +590,8 @@
     say("Keeping");
     try {
       await keepFiles(files);
-      say("");
+      busy(false);
+      await keptBeat();
       dismiss();
     } catch (err) {
       say("Not kept: " + err.message, true);

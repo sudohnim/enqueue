@@ -352,7 +352,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
   Done when: typing a URL shows a blue dot, plain text a green dot, dropping an image a pink dot; `bin/verify` passes.
 
-- [ ] **C.3c [AGENT]** The "kept" beat.
+^- [x] **C.3c [AGENT]** The "kept" beat.
 
   In `keep()` (capture.html:344-385), after successful save and before `dismiss()`: set status text to `Kept.`, set `#card` border-color to `var(--accent-strong)`, wait 200ms, then dismiss.
   Total added latency must stay at or under 250ms.
