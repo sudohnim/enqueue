@@ -404,11 +404,20 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
   Done when: each name greps to zero; `bin/verify` passes; the wall, a chat, a saved view, and settings all still open (manual smoke).
 
-- [ ] **M.2b [AGENT]** Dead CSS. Verify zero usage in the JS region before deleting each block:
+- [x] **M.2b [AGENT]** Dead CSS. Verify zero usage in the JS region before deleting each block:
   the rail family (`.rail`, `.threadrow`, `.thread`, `.rowbtn`, `.kept`, `.railfoot`, ~3034-3177), `.rail-h` rules (~1634-1664), `.when` (~1619-1632), the `.h1row` family (~2124-2168), `.pin`/`.pin.lit`/`@keyframes kept` (~2649-2673), `.leaf.hit` (~3014-3016), dead tokens `--accent-quiet` (~112), `--lavender`, `--lavender-hover` (~130-133), `--focus` (~210-213), `--info`, `--success`, `--warning` (~155-160; their `--tint-*`/`--badge-*` derivatives stay), `--r-xs`, `--r-xl` (~233, 238).
   Also fix the live bugs in the same pass: replace `var(--surface-1)` with `var(--surface)` at ~712, 771, 804; replace `var(--text-2)` with `var(--text-mute)` at ~985, 988; change `.card { padding: var(--sp-sm) }` (~1416) to `var(--sp-3)`; replace the four literal NUL bytes in the markdown fence placeholder (~3837-3845) with the two-character escape `\x00` inside the JS string.
 
   Done when: `bin/verify` passes (this is the contrast gate too); wall cards above the 1280px breakpoint visibly regain 12px padding; `rg -c $'\x00' src/enqueue/static/museum.html` returns 0.
+
+  ^= Note (kept tokens): `--lavender`, `--info`, `--success`, `--warning` stayed in `:root`
+  despite the delete list: `bin/check-contrast` hardcodes them as contract tokens
+  (`BOUNDARY_RULES`, `TEXT_RULES`, `FILL_ONLY`) and the done-when requires the contrast
+  gate to pass - the spec's own zero-usage guardrail applied to tokens finds them
+  referenced by the checker, exactly like M.2a keeping `--accent`/`--mono`. The truly
+  dead tokens `--accent-quiet`, `--lavender-hover`, `--focus`, `--r-xs`, `--r-xl` were
+  deleted. Verified via CDP: 5-up >1280px cards show 12px padding, 4-up/3-up below show
+  16px; all 4 NUL bytes now the `\x00` escape (file reads as text, `rg` clean).
 
 ### M.3 - Delete dead Python
 

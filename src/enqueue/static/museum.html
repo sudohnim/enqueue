@@ -109,10 +109,6 @@
        #8b5cf6 as the hover, but white text on #8b5cf6 measures 4.23:1 and fails
        4.5, so the hover step uses --lavender-focus (#7132f5, 6.04:1 with white)
        and the pressed step --lavender-deep (#5b1ecf, 8.30:1 with white). */
-    --accent-quiet: #5741d8;
-    /* The drag-over boundary on the capture window and the drop card. Lavender
-       clears the 3:1 sole-boundary rule on the canvas (6.04:1), so no edge is
-       needed. */
     --accent-strong: #7132f5;
     /* The ink motif on the lavender disc (the greeting eye and the drop icon):
        #101114 on #7132f5 is 3.13:1, which clears the 3:1 graphic rule. The disc
@@ -128,9 +124,6 @@
 
     /* The lavender family, named per DESIGN-kraken.md section 2. */
     --lavender: #7132f5;
-    /* Non-text only: white text on this measures 4.23:1 and fails 4.5. Hover and
-       pressed use --lavender-focus / --lavender-deep instead. */
-    --lavender-hover: #8b5cf6;
     --lavender-focus: #7132f5;
     --lavender-deep: #5b1ecf;
     --lavender-subtle: rgba(113, 50, 245, 0.16);
@@ -208,9 +201,7 @@
     --kind-chat: #7f6ad4;
 
     /* The near-black focus ring this replaced is gone: :focus-visible now draws a
-       2px --lavender-focus outline at 50% opacity (AU.1). This token stays as the
-       ink fallback for anything that still reads it. */
-    --focus: #101114;
+       2px --lavender-focus outline at 50% opacity (AU.1). */
     /* Tinted with the ink rather than black, so it stays cool on the canvas. */
     --scrim: rgba(16, 17, 20, 0.32);
 
@@ -229,13 +220,11 @@
     --sp-section: 96px;
 
     /* Radius, per DESIGN.md section 5: buttons and inputs 8px (--r-md), cards and
-       panels 12px (--r-lg), large panels 16px (--r-xl), status pills pill. */
-    --r-xs: 4px;
+       panels 12px (--r-lg), status pills pill. */
     --r-sm: 6px;
     --r-md: 8px;
     --r: 8px;
     --r-lg: 12px;
-    --r-xl: 16px;
     --r-full: 9999px;
     --r-pill: 9999px;
 
@@ -709,7 +698,7 @@
     transition: background var(--dur-fast) var(--ease);
   }
   .pivotgroup .grouptoggle:hover {
-    background: var(--surface-1);
+    background: var(--surface);
   }
   .pivotgroup .gchev {
     display: inline-flex;
@@ -768,7 +757,7 @@
     stroke-linejoin: round;
   }
   .pivotgroup .groupdel:hover {
-    background: var(--surface-1);
+    background: var(--surface);
     color: var(--danger);
   }
   /* Wall sections in the Type and Tags modes get the same collapsible header as
@@ -801,7 +790,7 @@
     transition: background var(--dur-fast) var(--ease);
   }
   .wallgroup .grouptoggle:hover {
-    background: var(--surface-1);
+    background: var(--surface);
   }
   .wallgroup .grouptoggle .shelf {
     flex: 1;
@@ -982,10 +971,10 @@
   /* The Removed shelf reads as a quieter group, so its key label is not a
      false group the eye could mistake for a real one. */
   .removedgroup .grouptoggle span {
-    color: var(--text-2);
+    color: var(--text-mute);
   }
   .removedgroup .meta {
-    color: var(--text-2);
+    color: var(--text-mute);
   }
   /* The move picker's group choices stack full-width so a long key is never clipped. */
   .pickgroups {
@@ -1413,7 +1402,7 @@
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
-    padding: var(--sp-sm);
+    padding: var(--sp-3);
     /* The wall never sheds a card: scrolling appends, and a collection meant to grow
        forever means the grid keeps everything ever scrolled past. Measured at 2,000
        cards, one style change cost 152 ms of forced layout - nine dropped frames for a
@@ -1616,53 +1605,6 @@
     right: var(--sp-3);
   }
 
-  /* Sticky, so you always know which stretch of time you are looking at once the wall
-     is long enough to lose your place in. */
-  .when {
-    position: sticky;
-    top: 0;
-    /* AU.9: above the cards that scroll under it, on the base rung. */
-    z-index: var(--z-base);
-    /* Caption: the date shelf is meta. */
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--text-mute);
-    padding: var(--sp-4) 0 var(--sp-2);
-    background: linear-gradient(var(--bg) 68%, transparent);
-  }
-
-  /* Kept things run sideways: a shelf you scan, not a list you read down. Snap so a
-     flick lands on a card rather than between two. */
-  .rail-h {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 200px;
-    gap: var(--sp-5);
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    padding-bottom: var(--sp-3);
-    margin-top: var(--sp-4);
-  }
-  .rail-h > .card {
-    scroll-snap-align: start;
-    content-visibility: visible;
-  }
-  /* A visible track, because a scroller with no scrollbar is a scroller nobody finds. */
-  .rail-h::-webkit-scrollbar {
-    height: 8px;
-  }
-  .rail-h::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .rail-h::-webkit-scrollbar-thumb {
-    background: var(--line);
-    border-radius: var(--r-full);
-  }
-  .rail-h::-webkit-scrollbar-thumb:hover {
-    background: var(--line-strong);
-  }
-
   #wallEnd {
     min-height: 24px;
     padding: var(--sp-4) 0 var(--sp-6);
@@ -1687,9 +1629,6 @@
   @media (max-width: 768px) {
     .wall {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--sp-3);
-    }
-    .rail-h {
       gap: var(--sp-3);
     }
     /* Display scales toward Display MD on mobile, per DESIGN.md section 9. */
@@ -2121,51 +2060,6 @@
   .h1:first-child {
     margin-top: 0;
   }
-  /* The saved-grouping title row (L.3b): the name with a quiet ghost pencil beside it.
-     Renaming is an act on one grouping while you look at it, so the affordance
-     lives where the title lives - a pencil next to the name, not a gear or a
-     list-row menu. The pencil is a small target, so hover widens it to a disc. */
-  .h1row {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    margin-top: var(--sp-4);
-  }
-  .h1row:first-child {
-    margin-top: 0;
-  }
-  .h1row .h1 {
-    margin-top: 0;
-  }
-  .h1row .title-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    border: 0;
-    border-radius: var(--r-full);
-    background: none;
-    color: var(--text-mute);
-    cursor: pointer;
-    transition:
-      color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
-  }
-  .h1row .title-action:hover {
-    color: var(--text);
-    background: var(--line-soft);
-  }
-  .h1row .title-action svg {
-    width: 15px;
-    height: 15px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
   /* ---- opening a thing --------------------------------------------------
      The card and the artifact are one object seen twice, so the browser tweens between
      them rather than replacing a page. The default crossfade is switched off for the
@@ -2484,7 +2378,7 @@
     gap: var(--sp-1);
     padding: 4px 4px 4px 10px;
     border-radius: var(--r-full);
-    background: var(--surface-1);
+    background: var(--surface);
     border: 1px solid var(--line);
     font-size: 13px;
     color: var(--text);
@@ -2644,32 +2538,6 @@
   .tagclear:hover {
     background: var(--surface-2);
     color: var(--text);
-  }
-
-  /* Keeping something is a small decision, so the control behaves like one: it settles
-     rather than springs. Ease-out only, no bounce. */
-  .pin {
-    transition:
-      background var(--dur-fast) var(--ease),
-      color var(--dur) var(--ease),
-      transform var(--dur) cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  .pin:active {
-    transform: scale(0.92);
-  }
-  .pin.lit svg {
-    fill: currentColor;
-    animation: kept 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  @keyframes kept {
-    from {
-      transform: scale(0.7);
-      opacity: 0.4;
-    }
-    to {
-      transform: scale(1);
-      opacity: 1;
-    }
   }
 
   /* The reading pane. Long-form sits on the faint-cool canvas rather than the
@@ -3011,9 +2879,6 @@
     color: var(--text);
   }
 
-  .leaf.hit {
-    border-color: var(--line-strong);
-  }
   .folio {
     position: fixed;
     right: var(--sp-5);
@@ -3029,151 +2894,6 @@
     border-radius: var(--r-full);
     padding: var(--sp-2) var(--sp-3);
     pointer-events: none;
-  }
-
-  /* ---- the left rail ------------------------------------------------------
-     Its own scroll region on the canvas, divided from the content by a hairline. */
-  .rail {
-    display: none;
-    top: 0;
-    bottom: 0;
-    width: 280px;
-    z-index: var(--z-pill);
-    background: var(--bg);
-    border-right: 1px solid var(--line);
-    overflow-y: auto;
-    padding: var(--sp-5) var(--sp-4) 132px;
-    transition: transform var(--dur) var(--ease);
-  }
-  .rail .wordmark {
-    margin-bottom: var(--sp-4);
-  }
-  .rail .shelf {
-    margin: var(--sp-5) 0 var(--sp-2);
-  }
-  /* The rail's only accent, because it is the rail's only instruction. */
-  .rail .newchat {
-    width: 100%;
-    margin-bottom: var(--sp-2);
-  }
-  .rail .gohome {
-    width: 100%;
-    justify-content: flex-start;
-    color: var(--text-dim);
-  }
-
-  /* Rows lift onto the raised white when selected and take a hairline with them, which
-     is the whole gesture: selection is a state, so it does not shout in yellow. */
-  .threadrow {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-1);
-    margin-bottom: 2px;
-    padding-right: var(--sp-2);
-    border: 1px solid transparent;
-    border-radius: var(--r);
-    transition:
-      background var(--dur-fast) var(--ease),
-      border-color var(--dur-fast) var(--ease);
-  }
-  .threadrow:hover {
-    background: var(--surface-2);
-  }
-  .threadrow.on {
-    background: var(--surface);
-    border-color: var(--line);
-  }
-  .thread {
-    flex: 1;
-    min-width: 0;
-    text-align: left;
-    background: transparent;
-    border: 0;
-    padding: var(--sp-3) 16px;
-    font-family: var(--sans);
-    /* Body: thread rows are list text, at 16 / 400 with zero tracking. */
-    font-size: 16px;
-    font-weight: 400;
-    letter-spacing: 0;
-    line-height: 24px;
-    color: var(--text-dim);
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .threadrow.on .thread {
-    font-weight: 600;
-    font-size: 16px;
-    color: var(--text);
-  }
-
-  /* Visible only on hover or when already doing something, so the rail stays a list of
-     names rather than a list of controls. */
-  .rowbtn {
-    flex-shrink: 0;
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-    padding: 6px;
-    color: var(--text-mute);
-    opacity: 0;
-    border-radius: var(--r-full);
-    transition:
-      opacity var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease);
-  }
-  .rowbtn svg {
-    width: 15px;
-    height: 15px;
-    display: block;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linejoin: round;
-  }
-  .threadrow:hover .rowbtn,
-  .rowbtn:focus-visible {
-    opacity: 1;
-  }
-  .rowbtn:hover {
-    color: var(--text);
-  }
-  .rowbtn.lit {
-    opacity: 1;
-    color: var(--text);
-  }
-  .rowbtn.lit svg {
-    fill: currentColor;
-  }
-
-  /* Kept threads sit above the rest with a rule under them, so the break reads as an
-     ordering and not as two unrelated lists. */
-  .kept {
-    padding-bottom: var(--sp-3);
-    margin-bottom: var(--sp-3);
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  /* Configuration is not a destination; it is where you go when something is wrong,
-     and it should look like it. */
-  .railfoot {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    padding: var(--sp-3) var(--sp-4) var(--sp-4);
-    background: var(--bg);
-    border-top: 1px solid var(--line);
-  }
-  .railfoot .btn {
-    width: 100%;
-    justify-content: flex-start;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 20px;
-    letter-spacing: 0;
-    color: var(--text-dim);
   }
 
   /* ---- the conversation ---------------------------------------------------
@@ -3728,21 +3448,6 @@
   }
 
   @media (max-width: 768px) {
-    /* Off-canvas, sliding in over the scrim rather than shoving the content sideways
-       on a window that has none to give. */
-    .rail {
-      transform: translateX(-100%);
-      box-shadow: var(--shadow-lifted);
-    }
-    .rail.open {
-      transform: none;
-    }
-    .railscrim {
-      position: fixed;
-      inset: 0;
-      z-index: calc(var(--z-pill) - 1);
-      background: var(--scrim);
-    }
     main {
       padding-left: var(--sp-4);
       padding-right: var(--sp-4);
@@ -3750,11 +3455,6 @@
     .docpane,
     .group {
       padding: var(--sp-4);
-    }
-  }
-  @media (min-width: 769px) {
-    .railscrim {
-      display: none;
     }
   }
 </style>
@@ -3831,7 +3531,7 @@
     t = t.replace(
       /```([\s\S]*?)```/g,
       (m, code) =>
-        " " +
+        "\x00" +
         (held.push(
           // Only the newline right after the opening fence is decorative and is
           // dropped; the first real line is kept as typed. The serializer writes
@@ -3841,7 +3541,7 @@
           "<pre><code>" + code.replace(/^\n/, "") + "</code></pre>",
         ) -
           1) +
-        " ",
+        "\x00",
     );
     t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
     t = t.replace(
@@ -3931,7 +3631,7 @@
       }
     }
     flushList();
-    return out.join("").replace(/ (\d+) /g, (m, i) => held[+i]);
+    return out.join("").replace(/\x00(\d+)\x00/g, (m, i) => held[+i]);
   }
 
   // The wall preview must be a plain, clamped snippet. Rendered markdown brings
