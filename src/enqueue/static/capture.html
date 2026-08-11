@@ -72,6 +72,14 @@
     --danger: #b4332b;
     --pink: #8f4273;
 
+    /* Kind is a fact about a thing, never an action, so none of these is the
+       accent. Same values as the museum's :root (C.3b); the overlay copies
+       them because it is standalone on purpose. */
+    --kind-note: #30804b;
+    --kind-link: #376899;
+    --kind-image: #8f4273;
+    --kind-file: #755c12;
+
     --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
@@ -165,6 +173,27 @@
     background: var(--accent);
   }
 
+  /* The kind-hue dot (C.3b): a 6px chip in the kind's own color, sitting next
+     to the label it describes. Hidden until the field has something to
+     classify; transparent when shown without a hue. */
+  #bar .kind-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #bar .kind-wrap .dot {
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  #bar .kind-wrap .dot[hidden] {
+    display: none;
+  }
+
   .label {
     font-family: var(--sans);
     font-size: 10px;
@@ -229,7 +258,10 @@
       <span class="disc" aria-hidden="true"></span>
       <span class="label">Enqueue</span>
     </span>
-    <span class="label" id="kind"></span>
+    <span class="kind-wrap">
+      <span class="dot" id="dot" aria-hidden="true"></span>
+      <span class="label" id="kind"></span>
+    </span>
   </div>
   <textarea
     id="field"
@@ -248,6 +280,7 @@
   const bar = document.getElementById("bar");
   const field = document.getElementById("field");
   const kindLabel = document.getElementById("kind");
+  const dot = document.getElementById("dot");
   const statusLabel = document.getElementById("status");
 
   const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
@@ -291,23 +324,43 @@
   }
 
   let pending = 0; // files waiting to be dropped, only meaningful while hovering
+  let pendingAllImages = false;
+
+  // The dot next to the kind label (C.3b) wears the kind's own hue: note
+  // green, link blue, image pink, plain files the file ochre. Empty field
+  // hides the dot entirely.
+  const KIND_HUES = {
+    note: "var(--kind-note)",
+    link: "var(--kind-link)",
+    image: "var(--kind-image)",
+    file: "var(--kind-file)",
+  };
+
+  function setKind(text, hue) {
+    kindLabel.textContent = text;
+    const on = !!(text && hue);
+    dot.hidden = !on;
+    dot.style.background = on ? KIND_HUES[hue] : "";
+  }
 
   function paint() {
     if (pending) {
-      kindLabel.textContent = pending === 1 ? "1 file" : pending + " files";
+      setKind(
+        pending === 1 ? "1 file" : pending + " files",
+        pendingAllImages ? "image" : "file",
+      );
       return;
     }
     const text = field.value;
     if (!text.trim()) {
-      kindLabel.textContent = "";
+      setKind("", null);
       return;
     }
     const split = splitLink(text);
-    kindLabel.textContent = !split
-      ? "Note"
-      : split.note
-        ? "Link + note"
-        : "Link";
+    setKind(
+      !split ? "Note" : split.note ? "Link + note" : "Link",
+      split ? "link" : "note",
+    );
   }
 
   function say(message, problem) {
@@ -487,9 +540,13 @@
 
   window.addEventListener("dragenter", (event) => {
     depth += 1;
-    pending = Array.from(event.dataTransfer.items || []).filter(
+    const files = Array.from(event.dataTransfer.items || []).filter(
       (item) => item.kind === "file",
-    ).length;
+    );
+    pending = files.length;
+    pendingAllImages =
+      files.length > 0 &&
+      files.every((item) => (item.type || "").startsWith("image/"));
     card.classList.add("hovering");
     paint();
   });

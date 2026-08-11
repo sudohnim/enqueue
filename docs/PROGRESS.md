@@ -344,7 +344,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
   Done when: hotkey shows the disc; `bin/verify` passes.
 
-- [ ] **C.3b [AGENT]** Kind-hue dot on detection.
+^- [x] **C.3b [AGENT]** Kind-hue dot on detection.
 
   In `paint()` (capture.html:259-275), when `kindLabel` shows `Note`, `Link`, `Link + note`, or a file count, prefix the label with a 6px dot in the matching kind hue: `--kind-note: #30804b`, `--kind-link: #376899`, `--kind-image: #8f4273`, `--kind-file: #755c12` (add these tokens to `:root`; values from museum.html:191-201).
   Implement as a `dot` span whose `background` is set from a small `KIND_HUES` map; file drops use `--kind-file` unless every item is an image, then `--kind-image`.
