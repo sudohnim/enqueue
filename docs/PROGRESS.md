@@ -518,7 +518,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `bin/verify` passes and each dialog opens, cancels, and confirms by hand (manual smoke of: rename view, add to view, custom picker, artifact picker).
 
-- [ ] **M.6b [AGENT]** One SVG base rule in the CSS: `svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round }`, with per-context rules carrying only width/height.
+- [x] **M.6b [AGENT]** One SVG base rule in the CSS: `svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round }`, with per-context rules carrying only width/height.
   This deletes the repeated declarations at ~1282, 1940, 2054, 2380, 2445, 2254, 893, 934, 348, 3679, 761 (line refs pre-M.2; re-anchor).
 
   Done when: `bin/verify` passes; icons render identically (visual spot check of wall, pill, drawer).
