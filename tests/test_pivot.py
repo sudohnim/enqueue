@@ -8,8 +8,7 @@ dropped, that subsets are capped, that a misplanned spec is rejected, and - the
 generalization guard - that one engine groups two unrelated fixtures with zero
 code changes.
 
-The provider is stubbed the way the existing tests stub it (see
-tests/test_lens_cache.py): the module's `get_provider` binding is replaced with
+The provider is stubbed: the module's `get_provider` binding is replaced with
 one returning a fake provider, so no real model call ever happens. `derive` is
 patched for the run path and `pivot` for the planner path, because each module
 binds `get_provider` at import time.

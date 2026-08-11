@@ -6,8 +6,7 @@ always wins over the model row on read (rule 2: the director beats the
 curator). The tests prove the cache hits, the `grounded` flag travels with the
 value, and a failed model call is never cached.
 
-The provider is stubbed the way the existing tests stub it (see
-tests/test_lens_cache.py): the module's `get_provider` binding is replaced
+The provider is stubbed: the module's `get_provider` binding is replaced
 with one returning a fake provider, so no real model call ever happens.
 """
 

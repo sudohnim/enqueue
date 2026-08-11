@@ -481,7 +481,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `uv run pytest -q` green after the deletions.
 
-- [ ] **M.5b [AGENT]** Delete the CLI commands: `enq curate`, `enq lens-eval`, `enq lens-cache` from `cli.py`.
+- [x] **M.5b [AGENT]** Delete the CLI commands: `enq curate`, `enq lens-eval`, `enq lens-cache` from `cli.py`.
 
   Done when: `uv run enq --help` lists none of them; `uv run pytest -q` green.
 

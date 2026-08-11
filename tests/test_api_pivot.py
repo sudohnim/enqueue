@@ -5,8 +5,7 @@ Phase P5. The client turns a request into a spec (POST /pivot/plan), runs it
 fixes a wrong value (POST /derived/override) so the re-run shows the corrected
 value. These tests hit the same HTTP boundary the UI does.
 
-The provider is stubbed the way the existing tests stub it (see
-tests/test_lens_cache.py): each module's `get_provider` binding is replaced
+The provider is stubbed: each module's `get_provider` binding is replaced
 with one returning a fake provider, so no real model call ever happens. `plan`
 patches `pivot.get_provider` and the run path patches `derive.get_provider`,
 because each module binds the function at import time.
