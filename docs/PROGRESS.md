@@ -453,7 +453,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
   Done when: manual path passes (rebind in settings, press the new shortcut immediately, overlay opens); `cd desktop && cargo build` succeeds; `bin/verify` passes.
 
-- [ ] **M.4c [AGENT]** Greeting retry dead weight.
+- [x] **M.4c [AGENT]** Greeting retry dead weight.
   Anchors: `refreshGreeting` retry loop at museum.html:5946-5966 and the 60s poll at ~5975; `greeting.py` now always returns `generated: False`.
   Fetch once per home render; delete the retry counter, the 8s retry, and the interval.
   Add a reduced check: `rg -n "greetTries" src/enqueue/static/museum.html` returns zero.
