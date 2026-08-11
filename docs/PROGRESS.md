@@ -523,7 +523,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `bin/verify` passes; icons render identically (visual spot check of wall, pill, drawer).
 
-- [ ] **M.6c [AGENT]** One `_weighted_hits()` helper in `retrieve/candidates.py` for the staleness check + trust weighting, replacing the four copies (facet/entity loops in `candidates()` ~108-139 and `_hybrid_results()` ~221-251).
+- [x] **M.6c [AGENT]** One `_weighted_hits()` helper in `retrieve/candidates.py` for the staleness check + trust weighting, replacing the four copies (facet/entity loops in `candidates()` ~108-139 and `_hybrid_results()` ~221-251).
 
   Done when: `uv run pytest tests/test_search_results.py tests/test_rerank.py -q` green.
 
