@@ -7,7 +7,7 @@ as a `str`, and the first thing to read `.choices` off it died with
 
     'str' object has no attribute 'choices'
 
-which reached the museum verbatim. A misconfigured URL is an ordinary condition and
+which reached the app verbatim. A misconfigured URL is an ordinary condition and
 has to come back as a sentence naming what to change.
 
 The malformed-response test runs a real HTTP server on 127.0.0.1 and a real OpenAI

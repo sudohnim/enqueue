@@ -1,7 +1,7 @@
 """Link previews: what is read out of a page, and what is never referenced.
 
 Parsing is pure and tested directly. The one network-shaped rule that matters is
-tested by its absence: no remote asset URL is ever stored, so nothing the museum
+tested by its absence: no remote asset URL is ever stored, so nothing the app
 renders can call home.
 """
 
@@ -90,7 +90,7 @@ class TestParse:
 
     def test_svg_is_refused_as_a_preview_picture(self):
         """A preview is served back from the engine's own origin, so an SVG would run
-        its script in the same context as the museum. A picture is not worth that."""
+        its script in the same context as the app. A picture is not worth that."""
         assert "image/svg+xml" not in preview.IMAGE_MIMES
 
     def test_a_page_saying_nothing_about_itself(self):

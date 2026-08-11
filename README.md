@@ -74,7 +74,7 @@ uv run enq serve
 ```
 
 This starts the FastAPI/uvicorn server on `127.0.0.1:8787`.
-You can then open `http://127.0.0.1:8787/` in a browser to see the "museum" (the main wall view), or `http://127.0.0.1:8787/capture` for the quick-capture overlay.
+You can then open `http://127.0.0.1:8787/` in a browser to see the home page (the main wall view), or `http://127.0.0.1:8787/capture` for the quick-capture overlay.
 
 The engine binds to `127.0.0.1` only, never to `0.0.0.0`.
 
@@ -141,7 +141,7 @@ Black is configured in `pyproject.toml`: line length 100, target Python 3.12.
 bin/verify
 ```
 
-Runs three checks in sequence: JS parse validation on both served HTML pages, pytest, and a WCAG contrast check on the color palette in `museum.html`.
+Runs three checks in sequence: JS parse validation on both served HTML pages, pytest, and a WCAG contrast check on the color palette in `home.html`.
 Use this before committing UI changes.
 
 ---
@@ -152,7 +152,7 @@ Use this before committing UI changes.
 bin/check-contrast
 ```
 
-Parses the `:root` color tokens from `src/enqueue/static/museum.html` and verifies WCAG contrast ratios (4.5:1 for text, 3.0:1 for strong lines).
+Parses the `:root` color tokens from `src/enqueue/static/home.html` and verifies WCAG contrast ratios (4.5:1 for text, 3.0:1 for strong lines).
 Exits non-zero if any token fails.
 
 ---
@@ -223,7 +223,7 @@ enqueue/
   bin/
     relaunch           # Restart engine + desktop window together
     verify             # JS parse + pytest + contrast check
-    check-contrast     # WCAG contrast validation on museum.html palette
+    check-contrast     # WCAG contrast validation on home.html palette
   desktop/
     src/main.rs        # Tauri shell: window, hotkey, engine lifecycle, capture overlay
     Cargo.toml         # Tauri 2 + global-shortcut plugin
@@ -261,7 +261,7 @@ enqueue/
     migrations/
       versions/        # 0001-0020 Alembic migrations
     static/
-      museum.html      # Main wall view (inline JS/CSS)
+      home.html        # Main wall view (inline JS/CSS)
       capture.html     # Quick-capture overlay
       fonts/           # IBM Plex Sans
   tests/
@@ -292,7 +292,7 @@ enqueue/
 The engine exposes a REST API on `127.0.0.1:8787`.
 Key endpoints:
 
-- `GET /` - The museum (main HTML view)
+- `GET /` - The home page (main HTML view)
 - `GET /capture` - The capture overlay (HTML)
 - `GET /health` - Status and counts
 - `GET /artifacts` - List artifacts (paginated, sortable, filterable by pinned)
@@ -319,7 +319,7 @@ Key endpoints:
 - **No bundled `.app` yet.** The desktop shell runs from `desktop/target/debug/enqueue-desktop` and spawns the engine via `uv run enq serve` from the repo. There is no packaged sidecar binary, so the app cannot be distributed as a double-clickable `.app` without the repo and `uv` present.
 - **No CI pipeline.** There is no GitHub Actions or other CI configuration in the repo. `bin/verify` is the closest thing to a pre-commit gate.
 - **The global capture hotkey opens a window, but that window is the capture overlay, not a full capture flow.** The hotkey is functional (registered via `tauri-plugin-global-shortcut`), but the overlay is a small note-input box, not a full capture interface.
-- **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the museum HTML view does not implement infinite scroll or pagination.
+- **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the home HTML view does not implement infinite scroll or pagination.
 - **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
 - **No sync (planned).** One machine only today. Sync is a planned milestone.
 - **The default local model (`llama3.1:8b`) is weak.** Roughly three of four model outputs fail their validators. Conversations work; a better model is needed for reliable chat answers and facet generation.

@@ -3,7 +3,7 @@
 Saving a link fetches nothing. That is the right default: a request at capture time
 would tell the publisher you read the thing, for every link you ever save, whether
 or not you go back to it. The cost is that a link has no face, which makes the
-museum a wall of URLs.
+home page a wall of URLs.
 
 A preview is the deal that keeps the default and pays the cost only when it buys
 something: one request, for one link, because the person asked for it.
@@ -90,7 +90,7 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 # SVG is deliberately absent. It can carry script, and this file is served back from
 # the engine's own origin, so an SVG preview would run in the same context as the
-# museum itself. A picture is not worth that.
+# app itself. A picture is not worth that.
 IMAGE_MIMES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",

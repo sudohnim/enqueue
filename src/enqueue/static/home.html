@@ -2869,7 +2869,7 @@
     margin-top: var(--sp-5);
   }
   .turn + .turn.you + .turn.you,
-  .turn + .turn.curator + .turn.curator {
+  .turn + .turn.assistant + .turn.assistant {
     margin-top: var(--sp-3);
   }
   .turn.you {
@@ -3478,7 +3478,7 @@
     return r.json();
   };
 
-  // Self-contained markdown. A CDN would make the museum reach the network to render
+  // Self-contained markdown. A CDN would make the app reach the network to render
   // something you wrote, which is the opposite of the promise. Escapes before parsing,
   // so no input path can render raw HTML.
   function md(src) {
@@ -5029,7 +5029,7 @@
 
   // Ingestion time by default. The promise is that things sit in the order you found
   // them, and sorting by last touched means fixing a typo silently moves a note to the
-  // front of your own museum.
+  // front of your own library.
 
   // What the wall was showing last time it drew. Compared on focus so a refresh only
   // happens when something actually changed, rather than reflowing the grid and
@@ -5037,7 +5037,7 @@
   let wallStamp = null;
 
   // A capture made in the overlay lands in a different window, and this one has no
-  // way to hear about it. Without this the museum sits stale until you navigate, so
+  // way to hear about it. Without this the home page sits stale until you navigate, so
   // saving something correctly looked like saving nothing. The wall refreshes only
   // when something actually changed; an open artifact or chat re-fetches
   // its own rows on focus (K.9) so a capture elsewhere never leaves the open page
@@ -5089,8 +5089,8 @@
   document.addEventListener("visibilitychange", refreshIfStale);
 
   // ---- hash router (K.9) --------------------------------------------------
-  // The museum is a single-page app with all view state in memory and no URL.
-  // macOS can reclaim a hidden webview, and the capture flow hides the museum,
+  // The home page is a single-page app with all view state in memory and no URL.
+  // macOS can reclaim a hidden webview, and the capture flow hides the window,
   // so a reload re-inits the page and used to land on the wall no matter what
   // was open. Every navigation now writes a route token to the hash and boot
   // restores the same view. Tokens: empty = wall, #a/<id> = artifact,
@@ -5102,12 +5102,12 @@
     // replaceState, not location.hash: the app's own pill is the back button,
     // and browser-history entries for every artifact would make Back a broken
     // walk through views that never re-render. There is no hashchange listener
-    // - a second window driving the same museum is not a scenario today.
+    // - a second window driving the same page is not a scenario today.
     history.replaceState(null, "", want || location.pathname + location.search);
   }
 
   // Boot reads the hash and restores the view that was open when the page was
-  // reclaimed, so a hidden-and-restored museum never lands on the wall while an
+  // reclaimed, so a hidden-and-restored window never lands on the wall while an
   // artifact was open. Anything unrecognized falls back to the wall.
   function restoreRoute() {
     const raw = location.hash.replace(/^#/, "");
@@ -6027,17 +6027,17 @@
   // costs you nothing except being pulled into a room you did not search for by name.
   const NO_FACETS = {
     too_short:
-      "Too short for the curator to draw anything general out of. Still searchable.",
+      "Too short to draw anything general out of. Still searchable.",
     text_only:
       "Held out of every model call, because it looks like it contains a credential. " +
       "Still searchable.",
-    kind: "Nothing here for the curator to read yet. Still searchable.",
+    kind: "Nothing here to read yet. Still searchable.",
   };
 
   function whyNoFacets(reason) {
     return (
       NO_FACETS[reason] ||
-      "The curator has not read this yet. Still searchable."
+      "Not read yet. Still searchable."
     );
   }
 
@@ -7476,7 +7476,7 @@
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="state">' +
       (why.ready
-        ? 'The curator could not answer.<br><br><span class="strongtext">' +
+        ? 'The assistant could not answer.<br><br><span class="strongtext">' +
           esc(String(err)) +
           "</span><br><br>Nothing was lost. Your question was " +
           esc(text) +
@@ -7505,7 +7505,7 @@
   function renderChat(d) {
     // The scope is a constraint, not a subtitle. Rendered as metadata it read like a
     // caption, and a chat silently locked to one empty link answered "nothing you have
-    // saved" to a question the museum could answer instantly. Say what it can see, and
+    // saved" to a question the app could answer instantly. Say what it can see, and
     // put the way out next to it.
     const scoped = d.chat.scope_kind !== "everything";
     // Side and corner shape carry the speaker, so there are no name labels under the
@@ -7556,7 +7556,7 @@
       const failed = m.status === "failed" && m.role === "assistant";
       html +=
         '<div class="turn ' +
-        (m.role === "user" ? "you" : "curator") +
+        (m.role === "user" ? "you" : "assistant") +
         '">' +
         '<div class="said md">' +
         (m.role === "user"
@@ -8863,7 +8863,7 @@
   }
 
   // Boot restores whatever was open when the page was reclaimed (K.9): the hash
-  // holds the route, so a hidden-and-restored museum lands back on the artifact
+  // holds the route, so a hidden-and-restored window lands back on the artifact
   // or grouping, not the wall. An empty hash is the wall.
   restoreRoute();
 </script>

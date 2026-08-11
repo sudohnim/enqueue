@@ -27,8 +27,8 @@
           ]
         },
         {
-          "identifier": "museum-links",
-          "description": "Lets the museum hand a saved http(s) address to the system browser, and drag its own window by the top strip. Both are refused by default because the page is served from a remote origin.",
+          "identifier": "home-links",
+          "description": "Lets the home window hand a saved http(s) address to the system browser, and drag its own window by the top strip. Both are refused by default because the page is served from a remote origin.",
           "windows": ["main"],
           "remote": {
             "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]

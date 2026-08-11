@@ -141,7 +141,7 @@ Clients never know what language is behind it, which keeps a future port open.
 ### Desktop shell (Tauri)
 
 The Tauri shell owns the window, the menu bar, the global hotkey, and the lifetime of the engine process.
-Nothing about the museum lives in the shell.
+Nothing about the app lives in the shell.
 It speaks to localhost and does not know what language is behind it.
 
 The shell spawns the engine via `uv run enq serve` from the repo directory.
@@ -149,7 +149,7 @@ A bundled .app would use a sidecar binary, but that packaging is unresolved.
 
 Two windows:
 
-- **main** - the museum, loaded from `http://127.0.0.1:8787/`
+- **main** - the home window (the wall), loaded from `http://127.0.0.1:8787/`
 - **capture** - the quick-capture overlay, loaded from `http://127.0.0.1:8787/capture`
 
 The capture overlay is a transparent, undecorated, always-on-top window summoned by a global hotkey (default `Alt+Shift+E`).
@@ -244,14 +244,14 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `bin/verify` | JS parse check on both HTML pages, pytest, contrast check. |
-| `bin/check-contrast` | WCAG contrast check on museum.html palette tokens. |
+| `bin/check-contrast` | WCAG contrast check on home.html palette tokens. |
 | `bin/relaunch` | Kill engine + shell, rebuild if `--build`, relaunch, wait for health, bring to front. |
 
 ### Static
 
 | File | Job |
 | --- | --- |
-| `static/museum.html` | The entire museum interface. One file: inline CSS, inline JS. |
+| `static/home.html` | The entire home interface. One file: inline CSS, inline JS. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | IBM Plex Sans woff2/ttf, served locally. No CDN. |
 
@@ -477,7 +477,7 @@ All endpoints on `127.0.0.1:8787`.
 ### Read
 
 ```
-GET    /                            museum HTML
+GET    /                            home HTML
 GET    /capture                     capture overlay HTML
 GET    /health                      status + row counts
 GET    /greeting                    the wall's greeting for the current four-hour bucket (cached or fallback)

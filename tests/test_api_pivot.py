@@ -173,7 +173,7 @@ class TestOverrideWins:
         """The UI's move control on an enriched group, end to end.
 
         The correction is written scope='artifact' on the group_by attribute -
-        exactly what museum.html sends - and the re-run must land the card in
+        exactly what home.html sends - and the re-run must land the card in
         the corrected group even though that attribute comes from an enrich
         step, whose cache is keyed per value, not per artifact (rule 2: the
         director beats the curator).

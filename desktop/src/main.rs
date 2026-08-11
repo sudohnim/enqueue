@@ -1,7 +1,7 @@
 // Enqueue for macOS.
 //
 // The window is a thin client over the engine, exactly like the browser view is.
-// Nothing about the museum lives here: the shell owns the window, the menu bar, and
+// Nothing about the app lives here: the shell owns the window, the menu bar, and
 // the lifetime of the engine process, and nothing else. That is what keeps the
 // eventual Rust port of the engine possible without touching this file.
 
@@ -31,13 +31,13 @@ const DEFAULT_HOTKEY: &str = "Alt+Shift+E";
 /// outlives the app and the next launch finds the port taken.
 struct Engine(Mutex<Option<Child>>);
 
-/// Whether the museum was the frontmost window when the overlay was summoned.
+/// Whether the home window was the frontmost window when the overlay was summoned.
 ///
 /// It decides where focus goes afterwards, and it has to be focus rather than
-/// visibility: a museum window sitting open behind someone's editor is still
+/// visibility: a home window sitting open behind someone's editor is still
 /// visible, so keying off visibility would raise Enqueue after every capture, which
 /// is the exact interruption the overlay exists to avoid.
-struct CameFromMuseum(AtomicBool);
+struct CameFromHome(AtomicBool);
 
 fn already_running() -> bool {
     TcpStream::connect_timeout(
@@ -280,22 +280,22 @@ mod appkit {
 
 /// Summon the overlay above whatever app is frontmost.
 ///
-/// Lives in Rust rather than in the webview so it survives the museum window being
+/// Lives in Rust rather than in the webview so it survives the home window being
 /// closed. A shortcut registered from a page dies with the page, which reads as the
 /// hotkey having quietly stopped working until the next relaunch.
 fn open_capture(app: &AppHandle) {
-    let museum = app.get_webview_window("main");
-    let from_museum = museum
+    let home = app.get_webview_window("main");
+    let from_home = home
         .as_ref()
         .and_then(|w| w.is_focused().ok())
         .unwrap_or(false);
-    if let Some(state) = app.try_state::<CameFromMuseum>() {
-        state.0.store(from_museum, Ordering::Relaxed);
+    if let Some(state) = app.try_state::<CameFromHome>() {
+        state.0.store(from_home, Ordering::Relaxed);
     }
 
-    // Activating the app raises every window it has, so the museum is put away first.
+    // Activating the app raises every window it has, so the home window is put away first.
     // Otherwise a note slid under the door drags the whole room in behind it.
-    if let Some(w) = museum {
+    if let Some(w) = home {
         let _ = w.hide();
     }
 
@@ -315,15 +315,15 @@ fn capture_dismiss(app: AppHandle) {
         let _ = capture.hide();
     }
 
-    let from_museum = app
-        .try_state::<CameFromMuseum>()
+    let from_home = app
+        .try_state::<CameFromHome>()
         .map(|state| state.0.load(Ordering::Relaxed))
         .unwrap_or(false);
 
-    if from_museum {
-        if let Some(museum) = app.get_webview_window("main") {
-            let _ = museum.show();
-            let _ = museum.set_focus();
+    if from_home {
+        if let Some(home) = app.get_webview_window("main") {
+            let _ = home.show();
+            let _ = home.set_focus();
         }
         return;
     }
@@ -398,7 +398,7 @@ fn main() {
 
     tauri::Builder::default()
         .manage(Engine(Mutex::new(child)))
-        .manage(CameFromMuseum(AtomicBool::new(false)))
+        .manage(CameFromHome(AtomicBool::new(false)))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![capture_dismiss, capture_drag, hotkey_changed, open_external, window_drag])
         .setup(move |app| {
@@ -417,12 +417,12 @@ fn main() {
             .title("Enqueue")
             .inner_size(1080.0, 780.0)
             .min_inner_size(560.0, 480.0)
-            // The museum has no chrome of its own, so the traffic lights float over
+            // The home window has no chrome of its own, so the traffic lights float over
             // the content instead of sitting in a bar that would be a wall.
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
             // Tauri swallows HTML5 drag-drop for its own file-drop event by default,
-            // so the page would never see a drop. The museum is a drop target for
+            // so the page would never see a drop. The home window is a drop target for
             // files, images, and text and wants the real Files, like the capture
             // overlay below.
             .disable_drag_drop_handler()
@@ -489,7 +489,7 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the museum hides it rather than tearing it down: the process has
+            // Closing the home window hides it rather than tearing it down: the process has
             // to stay alive for the hotkey to keep working, and on macOS closing a
             // window has never meant quitting anyway.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -502,7 +502,7 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to start Enqueue")
         .run(|app, event| match event {
-            // Closing the museum only hid it, so the dock icon is the way back. Without
+            // Closing the home window only hid it, so the dock icon is the way back. Without
             // this the app would be running with no way to reach it but the hotkey.
             tauri::RunEvent::Reopen { .. } => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -510,7 +510,7 @@ fn main() {
                     let _ = window.set_focus();
                 }
             }
-            // The engine used to be killed when the museum window was destroyed. It no
+            // The engine used to be killed when the home window was destroyed. It no
             // longer is destroyed, so the kill moves to the one event that still means
             // the app is going away.
             tauri::RunEvent::Exit => {

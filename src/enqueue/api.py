@@ -66,8 +66,8 @@ async def serve_static(name: str) -> Response:
 
 
 @app.get("/", response_class=HTMLResponse)
-def museum() -> str:
-    return resources.files("enqueue").joinpath("static/museum.html").read_text(encoding="utf-8")
+def home() -> str:
+    return resources.files("enqueue").joinpath("static/home.html").read_text(encoding="utf-8")
 
 
 @app.get("/capture", response_class=HTMLResponse)
@@ -218,7 +218,7 @@ def artifact_text(artifact_id: str) -> dict:
 ORDERINGS = {
     # When it was last touched. This is the wall's default: saving, editing, or
     # annotating an artifact bumps `updated_at`, so the wall rises to what you
-    # are working on. "Ingested" is the museum-shelf order, the order things
+    # are working on. "Ingested" is the shelf order, the order things
     # landed in; it stays available but is not the default. (The previous text
     # here claimed ingested was the default; the endpoint has always defaulted
     # to touched, and notes.py says the wall is ordered by last touch.)

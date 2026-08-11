@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check WCAG contrast of the design tokens in museum.html's :root block.
+"""Check WCAG contrast of the design tokens in home.html's :root block.
 
 Reads the palette from the file (not hardcoded) so it stays a real check.
 Three tiers, matching the rules documented in the :root comments:
@@ -29,7 +29,7 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MUSEUM = os.path.join(HERE, "src", "enqueue", "static", "museum.html")
+HOME_HTML = os.path.join(HERE, "src", "enqueue", "static", "home.html")
 SRC = "bin/check-contrast"
 
 # --- WCAG relative luminance ---
@@ -65,7 +65,7 @@ def parse_root_palette(text):
     """
     m = re.search(r":root\s*\{(.*?)\n  \}", text, re.DOTALL)
     if not m:
-        print(f"{SRC}: ERROR: no :root block found in {MUSEUM}", file=sys.stderr)
+        print(f"{SRC}: ERROR: no :root block found in {HOME_HTML}", file=sys.stderr)
         sys.exit(2)
     body = m.group(1)
     raw = {}
@@ -161,12 +161,12 @@ WASH_TEXT = "--text-dim"
 
 def main():
     os.chdir(HERE)
-    with open(MUSEUM) as f:
+    with open(HOME_HTML) as f:
         text = f.read()
 
     palette = parse_root_palette(text)
     if not palette:
-        print(f"{SRC}: ERROR: could not parse any tokens from :root in {MUSEUM}", file=sys.stderr)
+        print(f"{SRC}: ERROR: could not parse any tokens from :root in {HOME_HTML}", file=sys.stderr)
         sys.exit(2)
 
     grounds = {g: ground_lum(palette, g) for g in GROUNDS}

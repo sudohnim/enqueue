@@ -114,7 +114,7 @@ class TestNaming:
         assert len(ChatTopics(topics=["antifragility", "tolerance in joints"]).topics) == 2
 
     def test_run_together_identifiers_are_rejected(self):
-        """Seen in the wild: 'NotesNotFetched', 'MuseumCollection'. They pass the word
+        """Seen in the wild: 'NotesNotFetched', 'CollectionDump'. They pass the word
         count because they contain no spaces, and they cannot be used as a topic."""
         with pytest.raises(ValidationError, match="runs words together"):
             ChatTopics(topics=["NotesNotFetched", "resilience"])

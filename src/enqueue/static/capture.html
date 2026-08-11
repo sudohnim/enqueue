@@ -38,14 +38,14 @@
   }
   :root {
     /* The overlay is self-contained on purpose. It is served from the same engine as
-       the museum but it is a different surface with a different lifetime, and having
-       it depend on the museum's stylesheet would mean a layout change over there can
+       the home window but it is a different surface with a different lifetime, and having
+       it depend on the home page's stylesheet would mean a layout change over there can
        silently break the thing you press when you are mid-sentence somewhere else.
-       The tokens below are the small subset of museum.html the overlay actually uses,
-       copied rather than shared, at the same values as the museum's :root (Phase A). */
+       The tokens below are the small subset of home.html the overlay actually uses,
+       copied rather than shared, at the same values as the home page's :root (Phase A). */
     --bg: #ffffff;
     --surface: #f6f7f9;
-    /* The keycap's ground (C.3d): the museum's faint-cool reading tint, copied
+    /* The keycap's ground (C.3d): the home page's faint-cool reading tint, copied
        with the badge rule because the overlay is standalone on purpose. */
     --surface-doc: #fbfbfd;
     --line: #dedee5;
@@ -56,16 +56,16 @@
     --accent: #7132f5;
     /* The drag-over boundary. Lavender clears the 3:1 sole-boundary rule on the
        canvas (6.04:1), so the drop affordance reads the same in the capture window
-       and on the museum wall, and no amber survives. */
+       and on the wall, and no amber survives. */
     --accent-strong: #7132f5;
     --lavender-subtle: rgba(113, 50, 245, 0.16);
-    /* Errors. The same danger hue as the museum; the pink is only the image-kind
+    /* Errors. The same danger hue as the app; the pink is only the image-kind
        hue (C.3), never an error color. */
     --danger: #b4332b;
     --pink: #8f4273;
 
     /* Kind is a fact about a thing, never an action, so none of these is the
-       accent. Same values as the museum's :root (C.3b); the overlay copies
+       accent. Same values as the home page's :root (C.3b); the overlay copies
        them because it is standalone on purpose. */
     --kind-note: #30804b;
     --kind-link: #376899;
@@ -121,7 +121,7 @@
   }
 
   /* The focus signal is the app's ring, carried by the card so the borderless
-     field can stay borderless. Same lavender ring as every museum input, sized
+     field can stay borderless. Same lavender ring as every input in the app, sized
      for the card's 12px radius. */
   #card:focus-within {
     border-color: var(--accent-strong);
@@ -238,7 +238,7 @@
     text-overflow: ellipsis;
   }
 
-  /* The keycap hint (C.3d): the same badge the museum's searchbar shows, copied
+  /* The keycap hint (C.3d): the same badge the home page's searchbar shows, copied
      because the overlay is standalone on purpose. No fade - the field holds
      focus by design, so the hint is always live. */
   #hint kbd {

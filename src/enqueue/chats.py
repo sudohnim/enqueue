@@ -175,7 +175,7 @@ def rename(chat_id: str, title: str) -> dict:
 def delete(chat_id: str) -> dict:
     """Chats are the one thing here that can be thrown away.
 
-    Everything else in the museum is kept by design. A conversation is not an
+    Everything else in the library is kept by design. A conversation is not an
     artifact: it is scaffolding around the artifacts, and keeping every one of them
     forever would make the list useless, which is the failure mode the whole product
     is built against.
@@ -350,7 +350,7 @@ def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
     Measured: a chat opened from a link whose preview had failed reported "nothing you
     have saved speaks to that yet" for a question the collection answered immediately
     at a retrieval score of 1.0. The answer was true of the scope and false of the
-    museum, and nothing on screen said which one had been searched.
+    library, and nothing on screen said which one had been searched.
     """
     if scope_kind == "everything" or not scope_id:
         return None
@@ -366,12 +366,12 @@ def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
             if row["kind"] == "link":
                 return (
                     "this link has not been fetched, so there is nothing in it to read yet. "
-                    "Fetch a preview, or ask the whole museum instead"
+                    "Fetch a preview, or ask the whole library instead"
                 )
             if row["kind"] in ("pdf", "image", "file"):
                 return (
                     f"no text has been extracted from this {row['kind']} yet, so there is "
-                    "nothing in it to read. Ask the whole museum instead"
+                    "nothing in it to read. Ask the whole library instead"
                 )
             return "this artifact has no text in it yet"
     finally:
@@ -631,7 +631,7 @@ def _retopic(chat_id: str) -> None:
     # A conversation where nothing was found has no concept in it to extract, and the
     # model will invent one rather than return none. Observed: a chat whose only two
     # answers were both "nothing here to answer from" produced the topics
-    # "NotesNotFetched" and "MuseumCollection", which name the failure and the app.
+    # "NotesNotFetched" and "CollectionDump", which name the failure and the app.
     #
     # Topics are meant to be handed back to the curator as a lens. A lens drawn from
     # an empty exchange retrieves nothing, so it is worse than having none.

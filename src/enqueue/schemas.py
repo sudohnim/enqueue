@@ -260,7 +260,7 @@ class Answer(BaseModel):
     """One turn of a chat, answered out of the collection.
 
     The failure this guards against is the answer that reads as though it came from
-    the museum and did not. A model that knows the subject will happily answer from
+    the library and did not. A model that knows the subject will happily answer from
     what it already knows, cite whatever it was shown, and produce something fluent,
     correct, and completely unconnected to anything the person saved. That is the
     worst possible output here: it is indistinguishable from the good case and it
@@ -358,7 +358,7 @@ class ChatTopics(BaseModel):
             if topic.endswith(("?", ".")):
                 raise ValueError(f"topic {topic!r} is a sentence; a topic is a noun phrase")
 
-            # Found in the wild: "NotesNotFetched", "MuseumCollection". A concatenated
+            # Found in the wild: "NotesNotFetched", "CollectionDump". A concatenated
             # identifier passes the word count because it contains no spaces, and it is
             # not a phrase anyone would write on a wall. It also cannot be handed to
             # the curator as a lens, which is the only reason topics exist.

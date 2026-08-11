@@ -37,7 +37,7 @@ fi
 # miss. Every block in every served page, because the overlay has more than one and a
 # gate that checks only the first stops being a gate the moment someone adds a second.
 if command -v node >/dev/null 2>&1; then
-  for page in museum capture; do
+  for page in home capture; do
     # The suffix matters: node infers module type from the extension and refuses a
     # bare temp name.
     JS="$(mktemp -t enqueue-js).js"
