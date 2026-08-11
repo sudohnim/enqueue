@@ -7439,10 +7439,11 @@
   // person put it. The override always wins over the model on read (rule 2: the
   // director beats the curator), so the move survives every later re-run. Every
   // field here comes from the run's own data - no attribute name is hardcoded.
-  async function pivotMove(id) {
-    if (!pivotState) return;
-    const d = pivotState.d;
-
+  // The correction both move flows start from: which group holds this artifact,
+  // which groups exist, and which group the person wants it in instead. Resolves
+  // the chosen group key, or null when the picker is cancelled or the override
+  // write fails - the callers then leave everything as it is.
+  async function chooseMoveGroup(d, id) {
     let current = "";
     for (const g of d.groups) {
       if ((g.artifact_ids || []).includes(id)) {
@@ -7453,7 +7454,7 @@
     const keys = d.groups.map((g) => g.key);
 
     const target = await pickGroup(keys, current);
-    if (target === null) return;
+    if (target === null) return null;
 
     try {
       await api("/derived/override", {
@@ -7467,8 +7468,16 @@
         }),
       });
     } catch (err) {
-      return toast(String((err && err.message) || err), true);
+      toast(String((err && err.message) || err), true);
+      return null;
     }
+    return target;
+  }
+
+  async function pivotMove(id) {
+    if (!pivotState) return;
+    const target = await chooseMoveGroup(pivotState.d, id);
+    if (target === null) return;
 
     view.innerHTML = '<div class="state thinking">moving it...</div>';
     let next;
@@ -7830,34 +7839,8 @@
   async function chatPivotMove(mid, id) {
     const st = organizeTurns[mid];
     if (!st) return;
-    const d = st.d;
-
-    let current = "";
-    for (const g of d.groups) {
-      if ((g.artifact_ids || []).includes(id)) {
-        current = g.key;
-        break;
-      }
-    }
-    const keys = d.groups.map((g) => g.key);
-
-    const target = await pickGroup(keys, current);
+    const target = await chooseMoveGroup(st.d, id);
     if (target === null) return;
-
-    try {
-      await api("/derived/override", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scope: "artifact",
-          subject: id,
-          attribute: d.group_by,
-          value: target,
-        }),
-      });
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
 
     const slot = document.getElementById("org-" + mid);
     if (!slot) return;
