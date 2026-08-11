@@ -4169,32 +4169,33 @@
     setTimeout(() => node.remove(), bad ? 8000 : 2600);
   }
 
-  /// Ask before doing something irreversible. Resolves true only on the confirm button.
+  /// One modal shell for every dialog in the app (M.6a). Owns dialog creation,
+  /// the done guard, finish(), the close-in-try/catch + remove, the Cancel
+  /// button, the cancel event and the Escape keydown, so none of the dialogs
+  /// can drift from one another.
   ///
-  /// Replaces `window.confirm`, which the WKWebView this ships inside does not
-  /// implement: it returned false without ever drawing a panel, so every guard read as
-  /// "the person said no" and the action was skipped in silence.
+  /// The box comes back synchronously with `finish` and `promise` on it: a
+  /// dialog wires its own rows or confirm button to `box.finish(value)`, and
+  /// callers await `box.promise`. Cancel, Escape and (when `backdrop` is set) a
+  /// click on the frame itself resolve `cancelValue` (null unless the dialog
+  /// overrides it, as ask does with false). Focus lands on the Cancel button by
+  /// default, so a stray Return can never trigger a confirm; `focusSel` moves
+  /// it to a field.
   ///
-  /// The promise is settled inside each handler rather than on the dialog's `close`
-  /// event. Measured here, `close()` does not fire `close` in this engine, so a version
-  /// that resolved there never resolved at all: `await ask(...)` hung and the delete
-  /// still did not happen. Settling at the source removes the dependency entirely, and
-  /// `done` keeps the double path from resolving twice.
-  function ask(title, detail, confirmLabel) {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask";
-      box.innerHTML =
-        '<h2 id="askTitle"></h2><p></p>' +
-        '<div class="asked">' +
-        '<button class="btn secondary" value="no">Cancel</button>' +
-        '<button class="btn danger" value="yes"></button>' +
-        "</div>";
-      box.setAttribute("aria-labelledby", "askTitle");
-      box.querySelector("h2").textContent = title;
-      box.querySelector("p").textContent = detail;
-      box.querySelector('[value="yes"]').textContent = confirmLabel;
+  /// The promise is settled inside each handler rather than on the dialog's
+  /// `close` event. Measured here, `close()` does not fire `close` in this
+  /// engine, so a version that resolved there never resolved at all: `await
+  /// ask(...)` hung and the delete still did not happen. Settling at the source
+  /// removes the dependency entirely, and `done` keeps the double path from
+  /// resolving twice.
+  function modalShell(markup, opts) {
+    const o = opts || {};
+    const box = document.createElement("dialog");
+    box.className = "ask";
+    box.innerHTML = markup;
+    if (o.labelledBy) box.setAttribute("aria-labelledby", o.labelledBy);
 
+    box.promise = new Promise((resolve) => {
       let done = false;
       const finish = (answer) => {
         if (done) return;
@@ -4207,27 +4208,63 @@
         box.remove();
         resolve(answer);
       };
+      box.finish = finish;
 
-      box.querySelector('[value="no"]').onclick = () => finish(false);
-      box.querySelector('[value="yes"]').onclick = () => finish(true);
-      // Esc means no. `cancel` is the specified path; the keydown is the fallback for
-      // engines that skip it, and finish() makes the overlap harmless.
+      const cancel = () =>
+        finish(o.cancelValue === undefined ? null : o.cancelValue);
+      box.querySelector('[value="no"]').onclick = cancel;
+      // Esc means no. `cancel` is the specified path; the keydown is the
+      // fallback for engines that skip it, and finish() makes the overlap
+      // harmless.
       box.addEventListener("cancel", (e) => {
         e.preventDefault();
-        finish(false);
+        cancel();
       });
       box.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           e.preventDefault();
-          finish(false);
+          cancel();
         }
       });
+      if (o.backdrop) {
+        // A click that lands on the dialog frame itself (the backdrop, or the
+        // padding ring around the content) dismisses without picking.
+        box.addEventListener("click", (e) => {
+          if (e.target === box) cancel();
+        });
+      }
 
       document.body.appendChild(box);
       box.showModal();
-      // Cancel takes focus, so a stray Return cannot destroy anything.
-      box.querySelector('[value="no"]').focus();
+      const focus = o.focusSel
+        ? box.querySelector(o.focusSel)
+        : box.querySelector('[value="no"]');
+      focus.focus();
     });
+    return box;
+  }
+
+  /// Ask before doing something irreversible. Resolves true only on the confirm
+  /// button.
+  ///
+  /// Replaces `window.confirm`, which the WKWebView this ships inside does not
+  /// implement: it returned false without ever drawing a panel, so every guard
+  /// read as "the person said no" and the action was skipped in silence.
+  function ask(title, detail, confirmLabel) {
+    const box = modalShell(
+      '<h2 id="askTitle"></h2><p></p>' +
+        '<div class="asked">' +
+        '<button class="btn secondary" value="no">Cancel</button>' +
+        '<button class="btn danger" value="yes"></button>' +
+        "</div>",
+      { labelledBy: "askTitle", cancelValue: false },
+    );
+    box.querySelector("h2").textContent = title;
+    box.querySelector("p").textContent = detail;
+    const yes = box.querySelector('[value="yes"]');
+    yes.textContent = confirmLabel;
+    yes.onclick = () => box.finish(true);
+    return box.promise;
   }
 
   // A one-line text prompt, same modal shell as ask() but with a field. Resolves
@@ -4235,61 +4272,33 @@
   // naming is the one place a person types a name, and it is never a browser
   // prompt(), which the macOS WKWebView renders inconsistently.
   function askText(title, placeholder, confirmLabel, initial) {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask";
-      box.innerHTML =
-        '<h2 id="askTitle"></h2>' +
+    const box = modalShell(
+      '<h2 id="askTitle"></h2>' +
         '<input class="field" id="askField" autocomplete="off">' +
         '<div class="asked">' +
         '<button class="btn secondary" value="no">Cancel</button>' +
         '<button class="btn primary" value="yes"></button>' +
-        "</div>";
-      box.setAttribute("aria-labelledby", "askTitle");
-      box.querySelector("h2").textContent = title;
-      const field = box.querySelector("#askField");
-      field.placeholder = placeholder || "";
-      field.value = initial || "";
-      box.querySelector('[value="yes"]').textContent = confirmLabel;
-
-      let done = false;
-      const finish = (answer) => {
-        if (done) return;
-        done = true;
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        resolve(answer);
-      };
-      const submit = () => {
-        const v = field.value.trim();
-        finish(v || null);
-      };
-
-      box.querySelector('[value="no"]').onclick = () => finish(null);
-      box.querySelector('[value="yes"]').onclick = submit;
-      box.addEventListener("cancel", (e) => {
+        "</div>",
+      { labelledBy: "askTitle", focusSel: "#askField" },
+    );
+    box.querySelector("h2").textContent = title;
+    const field = box.querySelector("#askField");
+    field.placeholder = placeholder || "";
+    field.value = initial || "";
+    box.querySelector('[value="yes"]').textContent = confirmLabel;
+    const submit = () => {
+      const v = field.value.trim();
+      box.finish(v || null);
+    };
+    box.querySelector('[value="yes"]').onclick = submit;
+    // Enter submits from the field; Escape is the shell's job.
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
         e.preventDefault();
-        finish(null);
-      });
-      box.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          finish(null);
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          submit();
-        }
-      });
-
-      document.body.appendChild(box);
-      box.showModal();
-      field.focus();
+        submit();
+      }
     });
+    return box.promise;
   }
 
   // The grouping-name modal gets the rich treatment askText does not: an
@@ -4297,78 +4306,51 @@
   // only wakes once there is something to save. askText stays the plain prompt
   // for any other caller; naming a saved grouping goes through here.
   function askGroupName(title, placeholder, confirmLabel, initial, explainer) {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask name";
-      box.innerHTML =
-        '<h2 id="askTitle"></h2>' +
+    const box = modalShell(
+      '<h2 id="askTitle"></h2>' +
         "<p></p>" +
         '<input class="namefield" id="askField" autocomplete="off">' +
         '<div class="asked">' +
         '<button class="btn ghost" value="no">Cancel</button>' +
         '<button class="btn primary" value="yes" disabled></button>' +
-        "</div>";
-      box.setAttribute("aria-labelledby", "askTitle");
-      box.querySelector("h2").textContent = title;
-      box.querySelector("p").textContent =
-        explainer === undefined
-          ? "Saved views re-run live as your library grows."
-          : explainer;
-      const field = box.querySelector("#askField");
-      field.placeholder = placeholder || "";
-      field.value = initial || "";
-      const save = box.querySelector('[value="yes"]');
-      save.textContent = confirmLabel;
-      // Save wakes only once there is text to save: a disabled button cannot take
-      // focus, so a stray Return before typing can never submit. The field's own
-      // Enter handler keeps the trim/empty guard for the typed path.
-      const arm = () => {
-        save.disabled = field.value.trim().length === 0;
-      };
-      field.addEventListener("input", arm);
-      arm();
-
-      let done = false;
-      const finish = (answer) => {
-        if (done) return;
-        done = true;
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        resolve(answer);
-      };
-      const submit = () => {
-        const v = field.value.trim();
-        if (!v) return; // an empty Enter does not submit
-        finish(v);
-      };
-
-      box.querySelector('[value="no"]').onclick = () => finish(null);
-      save.onclick = submit;
-      box.addEventListener("cancel", (e) => {
+        "</div>",
+      { labelledBy: "askTitle", focusSel: "#askField" },
+    );
+    box.classList.add("name");
+    box.querySelector("h2").textContent = title;
+    box.querySelector("p").textContent =
+      explainer === undefined
+        ? "Saved views re-run live as your library grows."
+        : explainer;
+    const field = box.querySelector("#askField");
+    field.placeholder = placeholder || "";
+    field.value = initial || "";
+    const save = box.querySelector('[value="yes"]');
+    save.textContent = confirmLabel;
+    // Save wakes only once there is text to save: a disabled button cannot take
+    // focus, so a stray Return before typing can never submit. The field's own
+    // Enter handler keeps the trim/empty guard for the typed path.
+    const arm = () => {
+      save.disabled = field.value.trim().length === 0;
+    };
+    field.addEventListener("input", arm);
+    arm();
+    const submit = () => {
+      const v = field.value.trim();
+      if (!v) return; // an empty Enter does not submit
+      box.finish(v);
+    };
+    save.onclick = submit;
+    // Enter submits from the field (an empty Return is a no-op); Escape is the
+    // shell's job. The field starts with focus, not the Save button, so
+    // nothing is saved by accident.
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
         e.preventDefault();
-        finish(null);
-      });
-      box.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          finish(null);
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          submit();
-        }
-      });
-
-      document.body.appendChild(box);
-      box.showModal();
-      // The field starts with focus, not the Save button: an empty Return is a
-      // no-op (submit guards on trim), so nothing is saved by accident.
-      field.focus();
+        submit();
+      }
     });
+    return box.promise;
   }
 
   function pickFile(accept) {
@@ -4932,115 +4914,78 @@
   // Escape, and a backdrop click all close without touching the wall. Resolves
   // to the picked grouping ({ id, name }) or null.
   function openCustomPicker() {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask";
-      box.setAttribute("aria-labelledby", "pickTitle");
-      box.innerHTML =
-        '<h2 id="pickTitle">Saved views</h2>' +
+    const box = modalShell(
+      '<h2 id="pickTitle">Saved views</h2>' +
         '<p class="aside">Re-runs live as your library grows. Ask the eye to organize, then keep any arrangement here.</p>' +
         '<div class="pickgroups" id="customPickerList"></div>' +
-        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>';
+        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>',
+      { labelledBy: "pickTitle", backdrop: true },
+    );
 
-      let done = false;
-      const finish = (answer) => {
-        if (done) return;
-        done = true;
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        resolve(answer);
-      };
-
-      // Render (or re-render) the row list. Called on open, and again by
-      // renameSavedGrouping / forgetSavedGrouping after they change a row.
-      const refresh = () => {
-        const list = box.querySelector("#customPickerList");
-        list.innerHTML = '<div class="state">opening...</div>';
-        api("/pivots")
-          .then((d) => {
-            if (!box.isConnected) return; // the modal closed while fetching
-            list.innerHTML = "";
-            const pivots = d.items || [];
-            if (!pivots.length) {
-              const none = document.createElement("div");
-              none.className = "state";
-              none.textContent = "Nothing saved yet.";
-              list.appendChild(none);
-              return;
-            }
-            for (const p of pivots) {
-              const row = document.createElement("div");
-              row.className = "customrow";
-              row.dataset.pivot = p.id;
-
-              const run = document.createElement("button");
-              run.className = "btn tertiary rowname";
-              run.textContent = p.name;
-              run.onclick = () => finish({ id: p.id, name: p.name });
-              row.appendChild(run);
-
-              const rename = document.createElement("button");
-              rename.className = "title-action";
-              rename.setAttribute("aria-label", "Rename " + p.name);
-              rename.title = "Rename this view";
-              rename.innerHTML = svg("pencil");
-              rename.onclick = (ev) => {
-                ev.stopPropagation();
-                renameSavedGrouping(ev, p.id);
-              };
-              row.appendChild(rename);
-
-              const forget = document.createElement("button");
-              forget.className = "forgetbtn";
-              forget.innerHTML = svg("close");
-              forget.setAttribute("aria-label", "Forget " + p.name);
-              forget.onclick = (ev) => {
-                ev.stopPropagation();
-                forgetSavedGrouping(ev, p.id);
-              };
-              row.appendChild(forget);
-
-              list.appendChild(row);
-            }
-          })
-          .catch(() => {
-            if (!box.isConnected) return;
-            const list = box.querySelector("#customPickerList");
-            list.innerHTML = "";
+    // Render (or re-render) the row list. Called on open, and again by
+    // renameSavedGrouping / forgetSavedGrouping after they change a row.
+    const refresh = () => {
+      const list = box.querySelector("#customPickerList");
+      list.innerHTML = '<div class="state">opening...</div>';
+      api("/pivots")
+        .then((d) => {
+          if (!box.isConnected) return; // the modal closed while fetching
+          list.innerHTML = "";
+          const pivots = d.items || [];
+          if (!pivots.length) {
             const none = document.createElement("div");
-            none.className = "aside";
-            none.textContent = "Could not load saved views.";
+            none.className = "state";
+            none.textContent = "Nothing saved yet.";
             list.appendChild(none);
-          });
-      };
-      refresh();
+            return;
+          }
+          for (const p of pivots) {
+            const row = document.createElement("div");
+            row.className = "customrow";
+            row.dataset.pivot = p.id;
 
-      box.querySelector('[value="no"]').onclick = () => finish(null);
-      box.addEventListener("cancel", (e) => {
-        e.preventDefault();
-        finish(null);
-      });
-      box.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          finish(null);
-        }
-      });
-      // A click that lands on the dialog frame itself (the backdrop, or the
-      // padding ring around the content) dismisses without picking.
-      box.addEventListener("click", (e) => {
-        if (e.target === box) finish(null);
-      });
+            const run = document.createElement("button");
+            run.className = "btn tertiary rowname";
+            run.textContent = p.name;
+            run.onclick = () => box.finish({ id: p.id, name: p.name });
+            row.appendChild(run);
 
-      document.body.appendChild(box);
-      box.showModal();
-      // Cancel takes focus first, so a stray Return never runs a grouping.
-      box.querySelector('[value="no"]').focus();
-    });
+            const rename = document.createElement("button");
+            rename.className = "title-action";
+            rename.setAttribute("aria-label", "Rename " + p.name);
+            rename.title = "Rename this view";
+            rename.innerHTML = svg("pencil");
+            rename.onclick = (ev) => {
+              ev.stopPropagation();
+              renameSavedGrouping(ev, p.id);
+            };
+            row.appendChild(rename);
+
+            const forget = document.createElement("button");
+            forget.className = "forgetbtn";
+            forget.innerHTML = svg("close");
+            forget.setAttribute("aria-label", "Forget " + p.name);
+            forget.onclick = (ev) => {
+              ev.stopPropagation();
+              forgetSavedGrouping(ev, p.id);
+            };
+            row.appendChild(forget);
+
+            list.appendChild(row);
+          }
+        })
+        .catch(() => {
+          if (!box.isConnected) return;
+          const list = box.querySelector("#customPickerList");
+          list.innerHTML = "";
+          const none = document.createElement("div");
+          none.className = "aside";
+          none.textContent = "Could not load saved views.";
+          list.appendChild(none);
+        });
+    };
+    refresh();
+    return box.promise;
   }
 
   // Refresh the saved-groupings modal's row list after a rename or forget from
@@ -7496,103 +7441,73 @@
   // subset's matches, so offering already-covered artifacts made every pick a
   // no-op that toasted "already in this view".
   function pickArtifact(spec) {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask";
-      box.setAttribute("aria-labelledby", "pickTitle");
-      box.innerHTML =
-        '<h2 id="pickTitle">Add an artifact to this view</h2>' +
+    const box = modalShell(
+      '<h2 id="pickTitle">Add an artifact to this view</h2>' +
         '<input class="picksearch" type="search" placeholder="Search your library..." autocomplete="off">' +
         '<div class="pickgroups"></div>' +
-        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>';
+        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>',
+      { labelledBy: "pickTitle", focusSel: ".picksearch" },
+    );
 
-      let done = false;
-      const finish = (answer) => {
-        if (done) return;
-        done = true;
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        resolve(answer);
-      };
+    const list = box.querySelector(".pickgroups");
+    const field = box.querySelector(".picksearch");
+    let all = [];
+    // The empty state must tell a loaded-but-empty list (a view that already
+    // covers everything) from a fetch that has not landed yet: the picker
+    // says "Nothing left to add." for the first and keeps "Loading..." for
+    // the second.
+    let loaded = false;
 
-      const list = box.querySelector(".pickgroups");
-      const field = box.querySelector(".picksearch");
-      let all = [];
-      // The empty state must tell a loaded-but-empty list (a view that already
-      // covers everything) from a fetch that has not landed yet: the picker
-      // says "Nothing left to add." for the first and keeps "Loading..." for
-      // the second.
-      let loaded = false;
+    const render = (q) => {
+      const ql = (q || "").trim().toLowerCase();
+      const shown = ql
+        ? all.filter((a) => (a.title || "").toLowerCase().includes(ql))
+        : all;
+      list.textContent = "";
+      if (!shown.length) {
+        const none = document.createElement("div");
+        none.className = "aside";
+        none.textContent = ql
+          ? "No artifact matches that."
+          : loaded
+            ? "Nothing left to add."
+            : "Loading your library...";
+        list.appendChild(none);
+        return;
+      }
+      for (const a of shown) {
+        const b = document.createElement("button");
+        b.className = "btn tertiary pickrow";
+        b.textContent = a.title || "Untitled";
+        b.onclick = () => box.finish(a.id);
+        list.appendChild(b);
+      }
+    };
 
-      const render = (q) => {
-        const ql = (q || "").trim().toLowerCase();
-        const shown = ql
-          ? all.filter((a) => (a.title || "").toLowerCase().includes(ql))
-          : all;
-        list.textContent = "";
-        if (!shown.length) {
-          const none = document.createElement("div");
-          none.className = "aside";
-          none.textContent = ql
-            ? "No artifact matches that."
-            : loaded
-              ? "Nothing left to add."
-              : "Loading your library...";
-          list.appendChild(none);
-          return;
-        }
-        for (const a of shown) {
-          const b = document.createElement("button");
-          b.className = "btn tertiary pickrow";
-          b.textContent = a.title || "Untitled";
-          b.onclick = () => finish(a.id);
-          list.appendChild(b);
-        }
-      };
-
-      field.addEventListener("input", () => render(field.value));
-      const load = spec
-        ? api("/pivot/addable", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ spec }),
-          }).then((d) => (d && d.items) || [])
-        : api("/artifacts?limit=200&order=touched").then(
-            (d) => (d && d.items) || [],
-          );
-      load
-        .then((items) => {
-          // A grouping groups artifacts; conversations are not artifacts, so the
-          // picker never offers them (a chat has no group_by attribute to read).
-          all = items.filter((a) => a.id && a.kind !== "chat");
-          loaded = true;
-          render(field.value);
-        })
-        .catch(() => {
-          loaded = true;
-          render(field.value);
-        });
-
-      box.querySelector('[value="no"]').onclick = () => finish(null);
-      box.addEventListener("cancel", (e) => {
-        e.preventDefault();
-        finish(null);
-      });
-      box.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          finish(null);
-        }
+    field.addEventListener("input", () => render(field.value));
+    const load = spec
+      ? api("/pivot/addable", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spec }),
+        }).then((d) => (d && d.items) || [])
+      : api("/artifacts?limit=200&order=touched").then(
+          (d) => (d && d.items) || [],
+        );
+    load
+      .then((items) => {
+        // A grouping groups artifacts; conversations are not artifacts, so the
+        // picker never offers them (a chat has no group_by attribute to read).
+        all = items.filter((a) => a.id && a.kind !== "chat");
+        loaded = true;
+        render(field.value);
+      })
+      .catch(() => {
+        loaded = true;
+        render(field.value);
       });
 
-      document.body.appendChild(box);
-      box.showModal();
-      field.focus();
-    });
+    return box.promise;
   }
 
   // Correct a misfiled card: write a user override on the grouping attribute for
@@ -7651,61 +7566,30 @@
   // window.prompt), with the keys captured in closures so no value is round-tripped
   // through an HTML attribute.
   function pickGroup(keys, currentKey) {
-    return new Promise((resolve) => {
-      const box = document.createElement("dialog");
-      box.className = "ask";
-      box.setAttribute("aria-labelledby", "pickTitle");
-      box.innerHTML =
-        '<h2 id="pickTitle">Move to which group?</h2>' +
+    const box = modalShell(
+      '<h2 id="pickTitle">Move to which group?</h2>' +
         '<div class="pickgroups"></div>' +
-        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>';
+        '<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>',
+      { labelledBy: "pickTitle" },
+    );
 
-      let done = false;
-      const finish = (answer) => {
-        if (done) return;
-        done = true;
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        resolve(answer);
-      };
+    const list = box.querySelector(".pickgroups");
+    const others = keys.filter((k) => k !== currentKey);
+    for (const k of others) {
+      const b = document.createElement("button");
+      b.className = "btn tertiary";
+      b.textContent = k || "Not determined";
+      b.onclick = () => box.finish(k);
+      list.appendChild(b);
+    }
+    if (!others.length) {
+      const only = document.createElement("div");
+      only.className = "aside";
+      only.textContent = "There is no other group to move it to yet.";
+      list.appendChild(only);
+    }
 
-      const list = box.querySelector(".pickgroups");
-      const others = keys.filter((k) => k !== currentKey);
-      for (const k of others) {
-        const b = document.createElement("button");
-        b.className = "btn tertiary";
-        b.textContent = k || "Not determined";
-        b.onclick = () => finish(k);
-        list.appendChild(b);
-      }
-      if (!others.length) {
-        const only = document.createElement("div");
-        only.className = "aside";
-        only.textContent = "There is no other group to move it to yet.";
-        list.appendChild(only);
-      }
-
-      box.querySelector('[value="no"]').onclick = () => finish(null);
-      box.addEventListener("cancel", (e) => {
-        e.preventDefault();
-        finish(null);
-      });
-      box.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          finish(null);
-        }
-      });
-
-      document.body.appendChild(box);
-      box.showModal();
-      // Cancel takes focus first, so a stray Return never files a card at random.
-      box.querySelector('[value="no"]').focus();
-    });
+    return box.promise;
   }
 
   // ---- chats ---------------------------------------------------------------
