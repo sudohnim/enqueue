@@ -6114,13 +6114,9 @@
   // request. So the page shows what is actually known, and the button that would find
   // out more says what it costs, right where it is.
   function linkFace(a, p) {
-    const host = (() => {
-      try {
-        return new URL(a.source_url).hostname.replace(/^www\./, "");
-      } catch (e) {
-        return "the publisher";
-      }
-    })();
+    // The shared host() helper names the publisher; a link that cannot be parsed
+    // (legacy rows) reads as "the publisher" rather than a raw string.
+    const h = host(a.source_url) || "the publisher";
 
     if (p && p.status === "ok") {
       const shot = p.image_hash
@@ -6157,7 +6153,7 @@
         }, 1500);
         return (
           '<div class="aside thinking">asking ' +
-          esc(host) +
+          esc(h) +
           " what this is...</div>"
         );
       }
@@ -6165,12 +6161,12 @@
       // the one request that is left to decide on.
       return (
         '<div class="aside caution">Nothing has come back from ' +
-        esc(host) +
+        esc(h) +
         ". Automatic previews may be off in settings.</div>" +
         '<button class="btn tertiary" id="btnPreview" onclick="fetchPreview(\'' +
         a.id +
         "')\">Ask " +
-        esc(host) +
+        esc(h) +
         "</button>"
       );
     }
@@ -6185,7 +6181,7 @@
       a.id +
       "')\">Try again</button>" +
       '<div class="aside">one more request to ' +
-      esc(host) +
+      esc(h) +
       "</div>"
     );
   }
