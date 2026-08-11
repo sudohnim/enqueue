@@ -4838,6 +4838,70 @@
   // Each row runs its grouping, renames it (L.3b pencil), or forgets it. Cancel,
   // Escape, and a backdrop click all close without touching the wall. Resolves
   // to the picked grouping ({ id, name }) or null.
+  // Render (or re-render) the saved-groupings row list into the picker's list
+  // container. Shared by the open modal (L.5) and the in-place refresh after a
+  // rename or forget (L.3b): the rows are the same - run, rename, forget -
+  // only the run action differs (finish the modal, or run the grouping
+  // directly). Resolves when the fetch settles, so callers can await it.
+  function renderPickerRows(box, list, onRun) {
+    list.innerHTML = '<div class="state">opening...</div>';
+    return api("/pivots")
+      .then((d) => {
+        if (!box.isConnected) return; // the modal closed while fetching
+        list.innerHTML = "";
+        const pivots = d.items || [];
+        if (!pivots.length) {
+          const none = document.createElement("div");
+          none.className = "state";
+          none.textContent = "Nothing saved yet.";
+          list.appendChild(none);
+          return;
+        }
+        for (const p of pivots) {
+          const row = document.createElement("div");
+          row.className = "customrow";
+          row.dataset.pivot = p.id;
+
+          const run = document.createElement("button");
+          run.className = "btn tertiary rowname";
+          run.textContent = p.name;
+          run.onclick = () => onRun(p);
+          row.appendChild(run);
+
+          const rename = document.createElement("button");
+          rename.className = "title-action";
+          rename.setAttribute("aria-label", "Rename " + p.name);
+          rename.title = "Rename this view";
+          rename.innerHTML = svg("pencil");
+          rename.onclick = (ev) => {
+            ev.stopPropagation();
+            renameSavedGrouping(ev, p.id);
+          };
+          row.appendChild(rename);
+
+          const forget = document.createElement("button");
+          forget.className = "forgetbtn";
+          forget.innerHTML = svg("close");
+          forget.setAttribute("aria-label", "Forget " + p.name);
+          forget.onclick = (ev) => {
+            ev.stopPropagation();
+            forgetSavedGrouping(ev, p.id);
+          };
+          row.appendChild(forget);
+
+          list.appendChild(row);
+        }
+      })
+      .catch(() => {
+        if (!box.isConnected) return;
+        list.innerHTML = "";
+        const none = document.createElement("div");
+        none.className = "aside";
+        none.textContent = "Could not load saved views.";
+        list.appendChild(none);
+      });
+  }
+
   function openCustomPicker() {
     const box = modalShell(
       '<h2 id="pickTitle">Saved views</h2>' +
@@ -4849,66 +4913,10 @@
 
     // Render (or re-render) the row list. Called on open, and again by
     // renameSavedGrouping / forgetSavedGrouping after they change a row.
-    const refresh = () => {
-      const list = box.querySelector("#customPickerList");
-      list.innerHTML = '<div class="state">opening...</div>';
-      api("/pivots")
-        .then((d) => {
-          if (!box.isConnected) return; // the modal closed while fetching
-          list.innerHTML = "";
-          const pivots = d.items || [];
-          if (!pivots.length) {
-            const none = document.createElement("div");
-            none.className = "state";
-            none.textContent = "Nothing saved yet.";
-            list.appendChild(none);
-            return;
-          }
-          for (const p of pivots) {
-            const row = document.createElement("div");
-            row.className = "customrow";
-            row.dataset.pivot = p.id;
-
-            const run = document.createElement("button");
-            run.className = "btn tertiary rowname";
-            run.textContent = p.name;
-            run.onclick = () => box.finish({ id: p.id, name: p.name });
-            row.appendChild(run);
-
-            const rename = document.createElement("button");
-            rename.className = "title-action";
-            rename.setAttribute("aria-label", "Rename " + p.name);
-            rename.title = "Rename this view";
-            rename.innerHTML = svg("pencil");
-            rename.onclick = (ev) => {
-              ev.stopPropagation();
-              renameSavedGrouping(ev, p.id);
-            };
-            row.appendChild(rename);
-
-            const forget = document.createElement("button");
-            forget.className = "forgetbtn";
-            forget.innerHTML = svg("close");
-            forget.setAttribute("aria-label", "Forget " + p.name);
-            forget.onclick = (ev) => {
-              ev.stopPropagation();
-              forgetSavedGrouping(ev, p.id);
-            };
-            row.appendChild(forget);
-
-            list.appendChild(row);
-          }
-        })
-        .catch(() => {
-          if (!box.isConnected) return;
-          const list = box.querySelector("#customPickerList");
-          list.innerHTML = "";
-          const none = document.createElement("div");
-          none.className = "aside";
-          none.textContent = "Could not load saved views.";
-          list.appendChild(none);
-        });
-    };
+    const refresh = () =>
+      renderPickerRows(box, box.querySelector("#customPickerList"), (p) =>
+        box.finish({ id: p.id, name: p.name }),
+      );
     refresh();
     return box.promise;
   }
@@ -4921,60 +4929,15 @@
     if (!dialog) return;
     const box = dialog.closest("dialog");
     if (!box || !box.open) return;
-    const list = box.querySelector("#customPickerList");
-    const d = await api("/pivots").catch(() => ({ items: [] }));
-    if (!box.isConnected) return; // the modal closed while fetching
-    list.innerHTML = "";
-    const pivots = d.items || [];
-    if (!pivots.length) {
-      const none = document.createElement("div");
-      none.className = "state";
-      none.textContent = "Nothing saved yet.";
-      list.appendChild(none);
-      return;
-    }
-    for (const p of pivots) {
-      const row = document.createElement("div");
-      row.className = "customrow";
-      row.dataset.pivot = p.id;
-
-      const run = document.createElement("button");
-      run.className = "btn tertiary rowname";
-      run.textContent = p.name;
-      run.onclick = () => {
-        try {
-          box.close();
-        } catch (_) {
-          // Already closed by the platform; the node still has to go.
-        }
-        box.remove();
-        runSavedGrouping(p.id, p.name);
-      };
-      row.appendChild(run);
-
-      const rename = document.createElement("button");
-      rename.className = "title-action";
-      rename.setAttribute("aria-label", "Rename " + p.name);
-      rename.title = "Rename this view";
-      rename.innerHTML = svg("pencil");
-      rename.onclick = (ev) => {
-        ev.stopPropagation();
-        renameSavedGrouping(ev, p.id);
-      };
-      row.appendChild(rename);
-
-      const forget = document.createElement("button");
-      forget.className = "forgetbtn";
-      forget.innerHTML = svg("close");
-      forget.setAttribute("aria-label", "Forget " + p.name);
-      forget.onclick = (ev) => {
-        ev.stopPropagation();
-        forgetSavedGrouping(ev, p.id);
-      };
-      row.appendChild(forget);
-
-      list.appendChild(row);
-    }
+    await renderPickerRows(box, box.querySelector("#customPickerList"), (p) => {
+      try {
+        box.close();
+      } catch (_) {
+        // Already closed by the platform; the node still has to go.
+      }
+      box.remove();
+      runSavedGrouping(p.id, p.name);
+    });
   }
 
   function card(a, i) {
