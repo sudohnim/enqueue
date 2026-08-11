@@ -117,6 +117,21 @@ def test_a_capture_can_never_hold_a_body(store):
 
 INDEX_TABLES = {"vec_chunks", "vec_facets", "fts_chunks", "fts_facets", "index_meta"}
 
+WALL_INDEX = "idx_artifacts_touched"
+
+
+def test_head_has_the_wall_sort_index(store):
+    """The default wall page's predicate+order is covered by an index (P.1)."""
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (WALL_INDEX,)
+        ).fetchone()
+        assert row is not None, f"{WALL_INDEX} missing at head"
+        assert "deleted_at" in row[0] and "updated_at" in row[0]
+    finally:
+        conn.close()
+
 
 def test_head_has_the_search_index_tables(store):
     """The sqlite-vec engine's tables are part of the schema, not ad hoc."""
