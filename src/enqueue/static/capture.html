@@ -55,6 +55,9 @@
     --bg: #ffffff;
     --surface: #f6f7f9;
     --surface-2: #eef0f3;
+    /* The keycap's ground (C.3d): the museum's faint-cool reading tint, copied
+       with the badge rule because the overlay is standalone on purpose. */
+    --surface-doc: #fbfbfd;
     --line: #dedee5;
     --line-strong: #7f8296;
     --text: #101114;
@@ -247,6 +250,22 @@
     text-overflow: ellipsis;
   }
 
+  /* The keycap hint (C.3d): the same badge the museum's searchbar shows, copied
+     because the overlay is standalone on purpose. No fade - the field holds
+     focus by design, so the hint is always live. */
+  #hint kbd {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1;
+    letter-spacing: normal;
+    padding: 3px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    color: var(--text-mute);
+    background: var(--surface-doc);
+  }
+
   .busy {
     opacity: 0.55;
   }
@@ -271,7 +290,7 @@
   ></textarea>
   <div id="foot">
     <span class="label" id="status"></span>
-    <span class="label" id="hint">Return to keep</span>
+    <span class="label" id="hint"><kbd>Return</kbd> to keep</span>
   </div>
 </div>
 

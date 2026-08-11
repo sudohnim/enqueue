@@ -361,7 +361,7 @@ Delight thesis: the overlay should feel like tearing a slip off the same pad as 
 
   Done when: manual hotkey run shows the flash on keep, paste, and drop; reduced-motion (macOS Reduce Motion on) dismisses with no flash; `bin/verify` passes.
 
-- [ ] **C.3d [AGENT]** Keycap hint.
+^- [x] **C.3d [AGENT]** Keycap hint.
 
   Render the footer hint `Return to keep` (capture.html:204-207) as a keycap plus text: `<kbd>Return</kbd> to keep`, styled to match the museum keycap at museum.html:424 (copy the rule into the overlay stylesheet; it is small and the overlay is standalone on purpose).
 
