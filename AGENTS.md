@@ -190,8 +190,8 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
-| `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. |
-| `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. |
+| `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. A vision describe failure marks the image `status='failed'` and surfaces in `/doctor` (`images_without_body`) instead of failing silently. |
+| `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
 | `ingest/facets.py` | Facet generation via provider. Eligibility gate. Proper noun extraction. |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
@@ -200,7 +200,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `retrieve/expand.py` | Query expansion: lens to restatements + hypothetical passages. |
-| `retrieve/candidates.py` | Multi-vector search across chunks and facets. Rolls up to artifacts. |
+| `retrieve/candidates.py` | `/search` rollup: dense + FTS5 keyword fused with RRF, plus trigram substring recall, a fuzzy short-field branch (titles, entities, annotations), and exact quoted-phrase pinning. One row per artifact. |
 | `retrieve/rerank.py` | Concurrent judgment per candidate. Generates placard here, not separately. |
 | `retrieve/curate.py` | Orchestrates expand -> candidates -> rerank -> synthesise. |
 | `retrieve/score.py` | Stage one of the lens: scores every artifact with vector + keyword search, zero model calls. |
@@ -213,7 +213,7 @@ One line per file, describing its job.
 | --- | --- |
 | `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). |
 | `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
-| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables, hybrid search fused with RRF (k=1). |
+| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF (k=1). |
 | `index/fusion.py` | Reciprocal rank fusion as a pure function. |
 | `index/bootstrap.py` | Startup index build (no manual reindex) + cutover cleanup. |
 
@@ -272,9 +272,9 @@ One line per file, describing its job.
 
 1. **Capture** (`capture.py` or `notes.py`): create an artifact row, write blob if applicable, return immediately.
 2. **Queue** (`ingest/queue.py`): `submit(artifact_id)` puts it on an in-memory queue. Returns before processing.
-3. **Worker thread**: for links, optionally fetch preview; for PDFs, extract text via pymupdf; chunk the text; index into the sqlite-vec store.
-4. **Chunk** (`ingest/chunk.py`): markdown-aware splitting. Headings, lists, code fences are coherent units. Loose prose merged to a floor of 120 words. Long chunks split at 380 words with 60-word overlap.
-5. **Index** (`index/store_sqlite.py`): embed chunks (dense), upsert into `vec_chunks` and `fts_chunks`. Title prepended for indexing only.
+3. **Worker thread**: for links, optionally fetch preview; for PDFs, extract text via pymupdf; chunk the text; index into the sqlite-vec store. An image whose vision describe fails is marked `status='failed'` and surfaced in `/doctor` rather than failing silently.
+4. **Chunk** (`ingest/chunk.py`): markdown-aware splitting. Headings, lists, code fences are coherent units. Loose prose merged to a floor of 120 words. Long chunks split at 380 words with 60-word overlap. The chunk source includes the artifact's current annotation text (superseded annotations excluded), and a bodyless capture falls back to its title + filename so every artifact has at least one chunk.
+5. **Index** (`index/store_sqlite.py`): embed chunks (dense), upsert into `vec_chunks`, `fts_chunks`, and the trigram `fts_chunks_tri`. Title prepended for indexing only. Writing an annotation re-queues the artifact so its new text is searchable.
 
 ### Facet generation
 
@@ -312,7 +312,7 @@ action - saved views are the only persistent view concept.
 
 ### Chat
 
-1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact) do not search. Everything scope uses hybrid search on chunks + facet hits.
+1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact) do not search. Everything scope uses hybrid search on chunks + facet hits (dense + FTS5 keyword + the trigram recall net).
 2. **Answer** (`chats.py`): model answers from passages. `Answer` schema enforces grounded/cited consistency.
 3. **Title + topics** (`chats.py`): best-effort, non-blocking. Topics regenerated from whole transcript each turn.
 
@@ -365,10 +365,12 @@ after retrieval.
 | --- | --- |
 | `vec_chunks` / `vec_facets` | sqlite-vec (vec0) tables: id + 768-dim embedding |
 | `fts_chunks` / `fts_facets` | FTS5 tables: the indexed text, with the id as an unindexed reference |
+| `fts_chunks_tri` | FTS5 trigram table over chunk text: substring matches unicode61 cannot see ("hopper" inside "chopper") |
 | `index_meta` | key/value: the embedding version the index was built at |
 
-Search runs both branches and fuses with Reciprocal Rank Fusion (RRF, k=1 so scores
-stay on the same scale the lens threshold was tuned against). Sparse matters because
+Search runs dense + keyword branches and fuses with Reciprocal Rank Fusion (RRF, k=1 so
+scores stay on the same scale the lens threshold was tuned against). The trigram table
+is a recall net that only adds hits the hybrid missed. Sparse matters because
 dense embeddings blur proper nouns: "Find that thing from Epictetus" is a proper noun,
 and FTS5 BM25 nails it while dense does not.
 
@@ -404,6 +406,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
+| `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
 | `ENQ_LENS_SCORE_THRESHOLD` | `0.1` | Provisional (D4). Below this, unjudged artifacts go to other. Lower keeps more in related (more noise); higher is stricter (more misses). |
 | `ENQ_LENS_JUDGE_TOP` | `20` | How many artifacts get a model judgment per lens. The cost bound: model calls never exceed this, never scale with library size. |
 | `ENQ_LENS_JUDGE_TOP_MAX` | `100` | The ceiling one lens application may request. Raising it lets a person check more of a big library at the cost of more calls per request. |

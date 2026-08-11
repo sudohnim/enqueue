@@ -297,7 +297,7 @@ Every ranking change is validated against the golden set from R.4 before it is c
 
 ### R.11 - Phase gate
 
-- [ ] **R.11 [AGENT]** Full verification and measurement.
+- [x] **R.11 [AGENT]** Full verification and measurement.
 
   Done when: `bin/verify` passes; `uv run black --check src/ tests/` passes; `uv run python scripts/search_eval.py` final numbers are recorded in the phase-close commit body alongside the R.4 baseline; `AGENTS.md` retrieval and ingest sections reflect annotation indexing, the trigram branch, the fuzzy branch, and the new status semantics.
 
