@@ -512,7 +512,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
 ### M.6 - Consolidate duplication
 
-- [ ] **M.6a [AGENT]** One `modalShell()` factory in museum.html replacing the six hand-rolled dialogs (`ask` ~4487-4535, `askText` ~4541-4597, `askGroupName` ~4603-4676, `openCustomPicker` ~5238-5348, `pickArtifact` ~7857-7955, `pickGroup` ~8012-8068).
+- [x] **M.6a [AGENT]** One `modalShell()` factory in museum.html replacing the six hand-rolled dialogs (`ask` ~4487-4535, `askText` ~4541-4597, `askGroupName` ~4603-4676, `openCustomPicker` ~5238-5348, `pickArtifact` ~7857-7955, `pickGroup` ~8012-8068).
   The factory owns: dialog creation, the `done` guard, `finish()`, `box.close()` in try/catch, the `cancel` listener, and Escape handling.
   Behavior must be pixel-identical; this is a pure refactor.
 
