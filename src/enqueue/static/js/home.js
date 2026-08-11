@@ -255,9 +255,25 @@
       });
     }
     // The tag bar is the Tags mode's filter row (L.1): show it only when the
-    // mode asks for it. It stays in the DOM either way, so its chips and the
-    // all-tags expander keep their state across mode switches.
-    const tagbar = view.querySelector(".tagbar");
+    // mode asks for it. Home left it out of the DOM outside Tags mode, so a
+    // switch into Tags fetches and builds it once (P.3d); it stays in the DOM
+    // afterwards so chips and the all-tags expander keep their state.
+    let tagbar = view.querySelector(".tagbar");
+    if (mode === "tags" && !tagbar) {
+      try {
+        const tagcloud = await api("/tags");
+        const tags = tagcloud.tags || [];
+        if (tags.length) {
+          const wrap = document.createElement("div");
+          wrap.innerHTML = tagBarHtml(tags);
+          tagbar = wrap.firstElementChild;
+          view.querySelector(".homehead").appendChild(tagbar);
+          bindTagbar(tagbar, view.querySelector(".homehead input"));
+        }
+      } catch (_) {
+        // A failed /tags fetch just means no chips; the wall still works.
+      }
+    }
     if (tagbar) tagbar.hidden = mode !== "tags";
     const slot = document.getElementById("wallbody");
     if (!slot) return;
@@ -584,6 +600,65 @@
   let wallKept = [];
   let wallFirst = [];
 
+  // The tag bar's chips (L.1): the top eight tags plus an all-tags expander
+  // that reveals the rest. Rendered only in Tags mode; setWallGroup builds or
+  // toggles it in place so chips and expander state survive mode switches.
+  function tagBarHtml(tags) {
+    const top = tags.slice(0, 8);
+    const rest = tags.slice(8);
+    let html =
+      '<div class="tagbar"' + (wallGroup === "tags" ? "" : " hidden") + ">";
+    html += top
+      .map(
+        (t) =>
+          '<button class="tagchip" data-tag="' +
+          esc(t.name) +
+          '" type="button">#' +
+          esc(t.name) +
+          "</button>",
+      )
+      .join("");
+    if (rest.length)
+      html +=
+        '<button class="tagchip all" type="button" aria-expanded="false">all tags</button>' +
+        rest
+          .map(
+            (t) =>
+              '<button class="tagchip more" data-tag="' +
+              esc(t.name) +
+              '" type="button" hidden>#' +
+              esc(t.name) +
+              "</button>",
+          )
+          .join("");
+    html += "</div>";
+    return html;
+  }
+
+  // Bind the tag chips to the same search the searchbar runs: the input shows
+  // the `#name` query and results come back filtered. The all-tags chip
+  // reveals whatever the top eight did not cover.
+  function bindTagbar(tagbar, hs) {
+    if (!tagbar) return;
+    tagbar.querySelectorAll(".tagchip[data-tag]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const q = "#" + chip.dataset.tag;
+        if (hs) hs.value = q;
+        doSearch(q);
+      });
+    });
+    const all = tagbar.querySelector(".tagchip.all");
+    if (all) {
+      all.addEventListener("click", () => {
+        const show = all.getAttribute("aria-expanded") !== "true";
+        all.setAttribute("aria-expanded", String(show));
+        tagbar
+          .querySelectorAll(".tagchip.more")
+          .forEach((c) => (c.hidden = !show));
+      });
+    }
+  }
+
   async function home(opts) {
     const wasReading = chat;
     const keepAt = opts && opts.keepScroll ? window.scrollY : null;
@@ -594,11 +669,13 @@
     setRoute("");
     view.innerHTML = '<div class="state">opening...</div>';
 
-    const [kept, first, tagcloud] = await Promise.all([
+    const [kept, first] = await Promise.all([
       api("/artifacts?pinned=true&order=touched&limit=200"),
       api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
-      api("/tags"),
     ]);
+    // /tags is paid for only in Tags mode (P.3d): every other grouping leaves
+    // the tag bar out of the DOM, and setWallGroup builds it on demand.
+    const tagcloud = wallGroup === "tags" ? await api("/tags") : { tags: [] };
 
     if (!kept.total && !first.total) {
       // No illustration and no button. The capture pill is already on screen and it
@@ -648,44 +725,12 @@
       '<kbd class="hint" aria-hidden="true">&#8984;K</kbd>' +
       "</div>" +
       groupBarHtml();
-    // The tag bar is a set of exact filters, secondary to the searchbar: the top
-    // tags as chips, an all-tags chip only when the top eight do not cover them.
-    // It belongs to the Tags wall mode (L.1): in every other mode it renders
-    // hidden and setWallGroup toggles it without a refetch, so the chips and
-    // the all-tags expander state survive mode switches.
-    const allTags = tagcloud.tags || [];
-    if (allTags.length) {
-      const top = allTags.slice(0, 8);
-      const rest = allTags.slice(8);
-      html +=
-        '<div class="tagbar"' +
-        (wallGroup === "tags" ? "" : " hidden") +
-        ">" +
-        top
-          .map(
-            (t) =>
-              '<button class="tagchip" data-tag="' +
-              esc(t.name) +
-              '" type="button">#' +
-              esc(t.name) +
-              "</button>",
-          )
-          .join("") +
-        (rest.length
-          ? '<button class="tagchip all" type="button" aria-expanded="false">all tags</button>' +
-            rest
-              .map(
-                (t) =>
-                  '<button class="tagchip more" data-tag="' +
-                  esc(t.name) +
-                  '" type="button" hidden>#' +
-                  esc(t.name) +
-                  "</button>",
-              )
-              .join("")
-          : "") +
-        "</div>";
-    }
+    // The tag bar is a set of exact filters, secondary to the searchbar: the
+    // top tags as chips, an all-tags chip only when the top eight do not cover
+    // them. It belongs to the Tags wall mode (L.1); in every other mode it is
+    // left out of the DOM entirely and setWallGroup builds it on demand.
+    if (wallGroup === "tags" && (tagcloud.tags || []).length)
+      html += tagBarHtml(tagcloud.tags);
     html += "</div>";
     // M.1: the wall header goes straight from .homehead into the wall body.
     // The "Collections" shelf is gone; saved groupings own that concept.
@@ -726,26 +771,7 @@
     // A tag chip runs the same search the searchbar runs: the input shows the
     // `#name` query and the results come back filtered. The all-tags chip
     // reveals whatever the top eight did not cover.
-    const tagbar = view.querySelector(".tagbar");
-    if (tagbar) {
-      tagbar.querySelectorAll(".tagchip[data-tag]").forEach((chip) => {
-        chip.addEventListener("click", () => {
-          const q = "#" + chip.dataset.tag;
-          if (hs) hs.value = q;
-          doSearch(q);
-        });
-      });
-      const all = tagbar.querySelector(".tagchip.all");
-      if (all) {
-        all.addEventListener("click", () => {
-          const show = all.getAttribute("aria-expanded") !== "true";
-          all.setAttribute("aria-expanded", String(show));
-          tagbar
-            .querySelectorAll(".tagchip.more")
-            .forEach((c) => (c.hidden = !show));
-        });
-      }
-    }
+    bindTagbar(view.querySelector(".tagbar"), hs);
     // The grouping selector (K.6): one of four arrangements for the same wall.
     // Switching re-renders the body in place; the header stays put.
     const gbar = view.querySelector(".groupbar");

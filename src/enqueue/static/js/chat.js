@@ -110,8 +110,14 @@
       esc(label) +
       "</button>";
 
-    // The view rebuilds every render, so last screen's organize turns are gone.
-    organizeTurns = {};
+    // The view rebuilds every render. Drop only the cached turns whose message is
+    // no longer in the transcript - the rest keep their prior /pivot/run result so
+    // a transcript change elsewhere does not re-fire every organize turn (P.3c).
+    const nextTurns = {};
+    for (const m of d.messages)
+      if (m.kind === "organize" && m.role === "assistant" && m.id in organizeTurns)
+        nextTurns[m.id] = organizeTurns[m.id];
+    organizeTurns = nextTurns;
 
     let html =
       '<div class="transcript">' +
@@ -219,7 +225,11 @@
   let organizeTurns = {};
 
   // Re-run a turn's stored spec and fill its slot. One run endpoint, no fork: the
-  // same POST /pivot/run the standalone pivot used.
+  // same POST /pivot/run the standalone pivot used. Only turns whose spec
+  // actually changed re-fire the run (P.3c): a poll that flipped some other
+  // turn's status (or appended a new typed answer) re-renders the transcript,
+  // but every unchanged organize turn hydrates from the prior run instead of a
+  // fresh /pivot/run call.
   function hydrateOrganize(m, d) {
     const slot = document.getElementById("org-" + m.id);
     if (!slot) return;
@@ -228,6 +238,16 @@
       idx > 0 && d.messages[idx - 1].role === "user"
         ? d.messages[idx - 1].text
         : m.text;
+
+    const cached = organizeTurns[m.id];
+    if (cached && JSON.stringify(cached.spec) === JSON.stringify(m.payload)) {
+      // The spec is unchanged: keep the prior /pivot/run result (refresh the
+      // userText in case the prior turn was edited without touching the spec).
+      organizeTurns[m.id] = { d: cached.d, spec: cached.spec, userText };
+      slot.innerHTML = organizeSlotHtml(m.id);
+      mountCollapsible(".pivotgroup", "enqueue.collapsedGroups." + specHash(m.payload));
+      return;
+    }
 
     api("/pivot/run", {
       method: "POST",

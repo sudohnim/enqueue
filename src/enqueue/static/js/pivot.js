@@ -161,24 +161,28 @@
     const ids = spec.excluded_ids || [];
     if (!ids.length) return;
 
-    const items = [];
-    for (const id of ids) {
-      try {
-        const d = await api("/artifacts/" + id);
-        const a = Object.assign({}, d.artifact, {
-          excerpt: d.artifact.body
-            ? mdText(d.artifact.body)
-                .slice(0, 200)
-                .replace(/\n[^\n]*$/, "")
-            : "",
-          has_preview_image:
-            d.artifact.kind === "link" && d.preview && !!d.preview.image_url,
-        });
-        items.push(a);
-      } catch (_) {
-        // A deleted artifact just does not render a card in the shelf.
-      }
-    }
+    // Fetch the excluded cards in parallel (P.3a): the shelf is a list of
+    // ids, and serial round trips made a long exclusion list slow.
+    const settled = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const d = await api("/artifacts/" + id);
+          return Object.assign({}, d.artifact, {
+            excerpt: d.artifact.body
+              ? mdText(d.artifact.body)
+                  .slice(0, 200)
+                  .replace(/\n[^\n]*$/, "")
+              : "",
+            has_preview_image:
+              d.artifact.kind === "link" && d.preview && !!d.preview.image_url,
+          });
+        } catch (_) {
+          // A deleted artifact just does not render a card in the shelf.
+          return null;
+        }
+      }),
+    );
+    const items = settled.filter(Boolean);
     if (!items.length) return;
 
     const box = document.createElement("section");
@@ -225,25 +229,24 @@
   // still lives on the wall - it just stops matching this grouping.
   // The shared tail of the exclude flows (L.6b/R.3): write exclusions for one
   // or several artifact ids into the stored spec, re-run the view, and
-  // re-render it. Each /exclude response carries the full excluded_ids, so the
-  // last call wins, and the local spec is synced BEFORE the run so the run
-  // actually filters them out. The artifact itself is untouched - it still
-  // lives on the wall - it just stops matching this grouping.
+  // re-render it. The bulk endpoint does the whole list in one request (P.3b),
+  // and its response carries the full excluded_ids, so the local spec is
+  // synced BEFORE the run so the run actually filters them out. The artifact
+  // itself is untouched - it still lives on the wall - it just stops matching
+  // this grouping.
   async function excludeAndRerun(pivotId, ids, undo, busy, done) {
     let excluded = pivotState.spec.excluded_ids || [];
-    for (const id of ids) {
-      try {
-        const resp = await api("/pivots/" + pivotId + "/exclude", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            undo ? { artifact_id: id, undo: true } : { artifact_id: id },
-          ),
-        });
-        excluded = resp.excluded_ids;
-      } catch (err) {
-        return toast(String((err && err.message) || err), true);
-      }
+    try {
+      const resp = await api("/pivots/" + pivotId + "/exclude-many", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          undo ? { artifact_ids: ids, undo: true } : { artifact_ids: ids },
+        ),
+      });
+      excluded = resp.excluded_ids;
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
     }
     pivotState.spec = Object.assign({}, pivotState.spec, {
       excluded_ids: excluded,

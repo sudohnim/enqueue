@@ -251,7 +251,9 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
-| `static/home.html` | The entire home interface. One file: inline CSS, inline JS. |
+| `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations). |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `md`, `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | IBM Plex Sans woff2/ttf, served locally. No CDN. |
 
@@ -528,6 +530,7 @@ POST   /pivots                        create a saved view
 PATCH  /pivots/{id}                   rename a saved view
 DELETE /pivots/{id}                   forget a saved view
 POST   /pivots/{id}/exclude           remove an artifact from a view
+POST   /pivots/{id}/exclude-many      remove (or, with undo, restore) several artifacts in one request (P.3b)
 POST   /pivots/{id}/include           add an artifact to a view
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility

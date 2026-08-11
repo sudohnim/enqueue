@@ -125,6 +125,54 @@ def test_exclude_on_an_unknown_pivot_is_404(store):
     assert resp.status_code == 404
 
 
+def test_exclude_many_appends_to_the_stored_spec_and_undo_removes_it(store):
+    """P.3b: the bulk exclude endpoint writes several ids into `excluded_ids`
+    in one request, so removing a whole group is one round trip instead of one
+    POST per artifact. Duplicate ids in the list collapse. Undo takes them all
+    back out. The artifact rows themselves are never touched."""
+    from fastapi.testclient import TestClient
+
+    from enqueue import api
+
+    client = TestClient(api.app)
+    pivot_id = client.post("/pivots", json={"name": "By author", "spec": _SPEC}).json()["id"]
+
+    # Excluding two ids in one request appends both, in the order sent.
+    resp = client.post(f"/pivots/{pivot_id}/exclude-many", json={"artifact_ids": ["a", "b"]})
+    assert resp.status_code == 200
+    assert resp.json()["excluded_ids"] == ["a", "b"]
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["a", "b"]
+
+    # Duplicates in the payload collapse (the stored spec never repeats an id).
+    # The bulk endpoint preserves the order of survivors: ids already excluded
+    # that are not in the new list keep their place, then every new id is
+    # appended in the order it was sent.
+    client.post(f"/pivots/{pivot_id}/exclude-many", json={"artifact_ids": ["a", "a", "c"]})
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["b", "a", "c"]
+
+    # Undo removes every id in the list (whether or not it was excluded).
+    undo = client.post(
+        f"/pivots/{pivot_id}/exclude-many",
+        json={"artifact_ids": ["a", "b", "c"], "undo": True},
+    )
+    assert undo.status_code == 200
+    assert undo.json()["excluded_ids"] == []
+    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == []
+
+    # The grouping itself is never deleted by an exclude-many call.
+    assert client.get("/pivots/" + pivot_id).status_code == 200
+
+
+def test_exclude_many_on_an_unknown_pivot_is_404(store):
+    from fastapi.testclient import TestClient
+
+    from enqueue import api
+
+    client = TestClient(api.app)
+    resp = client.post("/pivots/nope/exclude-many", json={"artifact_ids": ["a"]})
+    assert resp.status_code == 404
+
+
 def test_include_appends_to_the_stored_spec_and_undo_removes_it(store):
     """L.6c: the include endpoint writes `included_ids` into the stored spec, and
     undo takes the id back out."""

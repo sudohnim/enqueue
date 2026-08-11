@@ -232,6 +232,37 @@ def exclude_pivot_artifact(pivot_id: str, req: PivotExclude) -> dict:
     return {"pivot_id": pivot_id, "excluded_ids": excluded}
 
 
+class PivotExcludeMany(BaseModel):
+    artifact_ids: list[str]
+    undo: bool = False
+
+
+@router.post("/pivots/{pivot_id}/exclude-many")
+def exclude_pivot_artifacts(pivot_id: str, req: PivotExcludeMany) -> dict:
+    """Exclude (or, with undo, restore) several artifacts in one write (P.3b).
+
+    The same read-modify-write as the single-artifact exclude, batched: every
+    id in the list is appended to `excluded_ids` (or removed when `undo` is
+    true) in one request, so removing a whole group is one round trip instead
+    of one POST per artifact. Duplicate ids in the list collapse.
+    """
+    try:
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No saved grouping by that id.") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    ids = list(dict.fromkeys(req.artifact_ids))
+    spec = saved["spec"]
+    excluded = [aid for aid in (spec.get("excluded_ids") or []) if aid not in ids]
+    if not req.undo:
+        excluded.extend(ids)
+    spec["excluded_ids"] = excluded
+    pivots_saved.update_spec(pivot_id, spec)
+    return {"pivot_id": pivot_id, "excluded_ids": excluded}
+
+
 class PivotInclude(BaseModel):
     artifact_id: str
     undo: bool = False

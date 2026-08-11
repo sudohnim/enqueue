@@ -28,8 +28,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute(
-        "CREATE INDEX idx_artifacts_touched"
-        " ON artifacts(deleted_at, pinned, updated_at DESC)"
+        "CREATE INDEX idx_artifacts_touched" " ON artifacts(deleted_at, pinned, updated_at DESC)"
     )
 
 
