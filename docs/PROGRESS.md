@@ -531,7 +531,9 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `uv run pytest tests/test_ingest.py tests/test_chats_worker.py -q` green.
 
-- [ ] **M.6e [AGENT]** Merge the remaining JS twin implementations, one pair at a time, keeping the better name: the custom-picker row builder (`openCustomPicker.refresh` vs `refreshCustomPicker`, ~5264-5312 vs 5353-5411), the collapse plumbing (wall ~5151-5195 vs pivot ~7517-7571, one helper parameterized by storage key), the wall section renderers (~5021-5059 vs 5116-5146), the move-correction flows (`pivotMove` ~7962-8006 vs `chatPivotMove` ~8382-8432), the exclude-and-rerun trio (~7678-7812), the two trash row renderers (~8802-8828 vs 9566-9596), the settings `fieldRow` markup (~9179-9202, 9249-9272, 9438-9448, 9533-9545), and `linkFace` using `host()` (~6575-6581 vs 4903-4909).
+- [x] **M.6e [AGENT]** Merge the remaining JS twin implementations, one pair at a time, keeping the better name: the custom-picker row builder (`openCustomPicker.refresh` vs `refreshCustomPicker`, ~5264-5312 vs 5353-5411), the collapse plumbing (wall ~5151-5195 vs pivot ~7517-7571, one helper parameterized by storage key), the wall section renderers (~5021-5059 vs 5116-5146), the move-correction flows (`pivotMove` ~7962-8006 vs `chatPivotMove` ~8382-8432), the exclude-and-rerun trio (~7678-7812), the two trash row renderers (~8802-8828 vs 9566-9596), the settings `fieldRow` markup (~9179-9202, 9249-9272, 9438-9448, 9533-9545), and `linkFace` using `host()` (~6575-6581 vs 4903-4909).
+
+  All eight pairs merged (commits `cf835df`, `faab786`, `9d86f4f`, `28c83e8`, `e4b559b`, `da4c6f3`, `fa3a144`, `a53d526`), each with its smoke note in the commit body. The custom picker was smoked live against the running engine: open renders all rows, run finishes the modal and executes the view, rename and forget both re-render the list.
 
   Done when: `bin/verify` passes after each pair; the affected surfaces smoke clean by hand.
 
