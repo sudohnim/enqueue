@@ -485,7 +485,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `uv run enq --help` lists none of them; `uv run pytest -q` green.
 
-- [ ] **M.5c [AGENT]** Delete the tests: `tests/test_lens.py`, `tests/test_lens_api.py`, `tests/test_lens_cache.py`, `tests/test_score.py`, `tests/test_expand.py`, plus any curate/lens cases inside other test files (`rg -n "lens|curate" tests/`).
+- [x] **M.5c [AGENT]** Delete the tests: `tests/test_lens.py`, `tests/test_lens_api.py`, `tests/test_lens_cache.py`, `tests/test_score.py`, `tests/test_expand.py`, plus any curate/lens cases inside other test files (`rg -n "lens|curate" tests/`).
 
   Done when: `uv run pytest -q` green with the files gone.
 

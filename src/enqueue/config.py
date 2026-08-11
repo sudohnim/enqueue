@@ -134,52 +134,9 @@ API_URL = f"http://{API_HOST}:{API_PORT}"
 MIN_WORDS_FOR_FACETS = 40
 SKIP_FACETS_FOR_FOLDERS = {"snippets", "biz_"}
 
-RERANK_CONCURRENCY = 4
-
-# The lens view, stage one. Artifacts whose whole-library score sits above
-# this are provisionally related; the rest are not. PROVISIONAL: the value is
-# tuned in Phase 13 against decision D4 with a measured table, and the number
-# here is only a starting point.
-_LENS_SCORE_THRESHOLD = os.getenv("ENQ_LENS_SCORE_THRESHOLD", "0.1")
-try:
-    LENS_SCORE_THRESHOLD = float(_LENS_SCORE_THRESHOLD)
-except (TypeError, ValueError):
-    LENS_SCORE_THRESHOLD = 0.1
-
 # R.9 opt-in cross-encoder rerank stage over the fused free-text candidates.
 # The reranker is a ~1 GB local model plus one inference pass per query, so it
 # is never on by default - the fused hybrid has to earn this. Read as
 # ENQ_SEARCH_RERANK; any of 1/true/yes/on flips it.
 _SEARCH_RERANK = os.getenv("ENQ_SEARCH_RERANK", "").strip().lower()
 SEARCH_RERANK = _SEARCH_RERANK in ("1", "true", "yes", "on")
-
-# The lens view, stage two: how many artifacts get a model judgment. The rest
-# of the library is bucketed by the score threshold alone, so the cost of a
-# lens is bounded by this number, never by the library size. Overridable per
-# request.
-_LENS_JUDGE_TOP = os.getenv("ENQ_LENS_JUDGE_TOP", "20")
-try:
-    LENS_JUDGE_TOP = int(_LENS_JUDGE_TOP)
-except (TypeError, ValueError):
-    LENS_JUDGE_TOP = 20
-
-# The ceiling for a single lens application. Judge Top is a person asking for
-# more: "check more of the wall". Without a cap, one request could spend the
-# library's entire judgment budget; with it, checking more is bounded and the
-# response says so. Raising the cap is a config decision, not a per-request
-# one.
-_LENS_JUDGE_TOP_MAX = os.getenv("ENQ_LENS_JUDGE_TOP_MAX", "100")
-try:
-    LENS_JUDGE_TOP_MAX = int(_LENS_JUDGE_TOP_MAX)
-except (TypeError, ValueError):
-    LENS_JUDGE_TOP_MAX = 100
-
-# The cap on expansion sub-queries (the restatements + passages a lens
-# expands into, plus the lens itself). 0 = no cap, which is the behavior the
-# retrieval baseline was measured at; a positive number bounds retrieval cost
-# at the price of a narrower net. Phase 22.
-_EXPANSION_CAP = os.getenv("ENQ_EXPANSION_CAP", "0")
-try:
-    EXPANSION_CAP = int(_EXPANSION_CAP)
-except (TypeError, ValueError):
-    EXPANSION_CAP = 0

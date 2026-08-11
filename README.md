@@ -179,9 +179,6 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link automatically fetches its preview. |
 | `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. |
 | `ENQ_TRASH_DAYS` | `30` | Days before a trashed artifact is permanently destroyed. Minimum 1. |
-| `ENQ_LENS_SCORE_THRESHOLD` | `0.1` | Unjudged artifacts score above this land in a lens's related section; below, in other. Provisional (decision D4); lower keeps more in (noisier), higher is stricter (misses more). |
-| `ENQ_LENS_JUDGE_TOP` | `20` | How many artifacts get a model judgment per lens application. The cost bound: model calls never exceed this and never scale with library size. |
-| `ENQ_LENS_JUDGE_TOP_MAX` | `100` | Ceiling one lens application may request. Raise it to let Check More go deeper, at the cost of more model calls per request. |
 | `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/relaunch`. |
 
 Settings are also writable through the API (`PATCH /settings`) and stored in `~/.enqueue-poc/settings.json` with `0600` permissions.

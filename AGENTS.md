@@ -407,9 +407,6 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
 | `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
-| `ENQ_LENS_SCORE_THRESHOLD` | `0.1` | Provisional (D4). Below this, unjudged artifacts go to other. Lower keeps more in related (more noise); higher is stricter (more misses). |
-| `ENQ_LENS_JUDGE_TOP` | `20` | How many artifacts get a model judgment per lens. The cost bound: model calls never exceed this, never scale with library size. |
-| `ENQ_LENS_JUDGE_TOP_MAX` | `100` | The ceiling one lens application may request. Raising it lets a person check more of a big library at the cost of more calls per request. |
 
 ### Where secrets live
 
