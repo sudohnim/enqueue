@@ -101,6 +101,35 @@ fn hotkey() -> String {
         .unwrap_or_else(|| DEFAULT_HOTKEY.into())
 }
 
+/// A hotkey rebound in settings takes effect at once, not on the next launch.
+///
+/// The settings form stages the new accelerator and calls this command. The old
+/// registration is released and the new one put in its place; if the new one fails,
+/// the previous binding is put back so a bad combination never leaves the app
+/// without a hotkey. The page keeps the old value on screen and says why.
+#[tauri::command]
+fn hotkey_changed(app: AppHandle, accelerator: String) -> Result<(), String> {
+    let previous = hotkey();
+    let shortcut = app.global_shortcut();
+    if let Err(err) = shortcut.unregister_all() {
+        return Err(format!("could not release the old hotkey: {err}"));
+    }
+    let register = |binding: &str| {
+        shortcut.on_shortcut(binding, |app, _shortcut, event| {
+            if event.state() == ShortcutState::Pressed {
+                open_capture(app);
+            }
+        })
+    };
+    match register(&accelerator) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let _ = register(&previous);
+            Err(err.to_string())
+        }
+    }
+}
+
 /// Where the overlay was last left. Kept next to the repo pointer rather than in the
 /// engine's database, because it describes this machine's screen and not the
 /// collection, and because it has to be readable before the engine is up.
@@ -371,7 +400,7 @@ fn main() {
         .manage(Engine(Mutex::new(child)))
         .manage(CameFromMuseum(AtomicBool::new(false)))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![capture_dismiss, capture_drag, open_external, window_drag])
+        .invoke_handler(tauri::generate_handler![capture_dismiss, capture_drag, hotkey_changed, open_external, window_drag])
         .setup(move |app| {
             // The webview loads the engine's URL, so it cannot be built until the
             // engine answers. By now Tauri has already initialised concurrently with

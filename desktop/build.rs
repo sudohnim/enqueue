@@ -13,6 +13,7 @@ fn main() {
             tauri_build::AppManifest::new().commands(&[
                 "capture_dismiss",
                 "capture_drag",
+                "hotkey_changed",
                 "open_external",
                 "window_drag",
             ]),

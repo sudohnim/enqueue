@@ -8579,7 +8579,26 @@
       const accelerator = [...held, key].join("+");
       label.textContent = keyLabel(accelerator);
       stop();
-      stageSetting("hotkey", accelerator);
+      // The shell re-binds the system shortcut live so the change takes effect
+      // without a relaunch. Only stage the new value once the rebind succeeded;
+      // on a failure the old binding is still active, so the label falls back to
+      // it and the error is said out loud (a silent failure here is exactly what
+      // hid the missing ACL grant before). A plain browser has no global hotkey
+      // and just stages.
+      if (bridge) {
+        bridge("hotkey_changed", { accelerator })
+          .then(() => stageSetting("hotkey", accelerator))
+          .catch((err) => {
+            label.textContent = previous;
+            toast(
+              "Could not change the hotkey: " +
+                String(err && err.message ? err.message : err),
+              true,
+            );
+          });
+      } else {
+        stageSetting("hotkey", accelerator);
+      }
     };
 
     recording = onKey;

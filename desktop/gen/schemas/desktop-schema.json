@@ -189,6 +189,12 @@
           "markdownDescription": "Enables the capture_drag command without any pre-configured scope."
         },
         {
+          "description": "Enables the hotkey_changed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-hotkey-changed",
+          "markdownDescription": "Enables the hotkey_changed command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_external command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-external",
@@ -211,6 +217,12 @@
           "type": "string",
           "const": "deny-capture-drag",
           "markdownDescription": "Denies the capture_drag command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the hotkey_changed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-hotkey-changed",
+          "markdownDescription": "Denies the hotkey_changed command without any pre-configured scope."
         },
         {
           "description": "Denies the open_external command without any pre-configured scope.",

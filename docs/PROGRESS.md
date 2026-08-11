@@ -444,7 +444,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
   Done when: `uv run pytest -q` green including the new test.
 
-- [ ] **M.4b [AGENT]** Hotkey rebinding takes effect without relaunch.
+- [x] **M.4b [AGENT]** Hotkey rebinding takes effect without relaunch.
   Anchors: `recordHotkey` at museum.html:8989-9039; registration once in `desktop/src/main.rs:448-458`.
   Add a Tauri command `hotkey_changed` that unregisters the old shortcut and registers the value from `hotkey()`; call it from the `recordHotkey` success path.
   Register the command in `generate_handler!` (main.rs:374), add it to `build.rs` commands, and add `allow-hotkey-changed` to the `museum-links` capability in tauri.conf.json.

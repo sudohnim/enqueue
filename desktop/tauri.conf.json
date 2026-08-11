@@ -33,7 +33,7 @@
           "remote": {
             "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
           },
-          "permissions": ["allow-open-external", "allow-window-drag"]
+          "permissions": ["allow-hotkey-changed", "allow-open-external", "allow-window-drag"]
         }
       ]
     },
