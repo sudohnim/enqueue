@@ -567,7 +567,9 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
 ### M.9 - Split api.py into routers
 
-- [ ] **M.9 [AGENT]** Convert `api.py` (1460 lines) into an `api/` package with one `APIRouter` per domain.
+- [x] **M.9 [AGENT]** Convert `api.py` (1460 lines) into an `api/` package with one `APIRouter` per domain.
+
+  Done (`0ceb9eb`): routers in `src/enqueue/api/` per the domains above (wall helpers + ORDERINGS ride together in `wall.py`), lazy imports promoted, `app.py` has the factory + serve/warmup, `__init__.py` re-exports `app`, `serve`, `list_artifacts`, `_bootstrap_index`, `_warm_embeddings`. OpenAPI byte-identical to the pre-split snapshot (53 paths), 360 tests pass, black clean, engine boots, AGENTS.md map updated.
 
   Domains and current anchors: `static.py` (51-89), `artifacts.py` (read 95-424 + 549-657, trash 148-193), `write.py` (663-771), `admin.py` (774-885), `search.py` (890-905), `chats.py` (908-1041), `settings.py` (1044-1115), `pivots.py` (1118-1362), `app.py` (app factory, startup warmup 1365-1460, `serve()`).
   No lens router is created; M.5 deletes that surface.
