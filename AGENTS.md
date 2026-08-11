@@ -61,15 +61,12 @@ If you bump one for a release, bump the other to match, but a mismatch is not a 
 9. **There is one view concept: the saved pivot.**
 The `exhibits` / `exhibit_members` tables and the `/exhibits*` endpoints that an earlier agent introduced to paper over the L.2 add-to-grouping bug are removed.
 `saved_pivots` and `/pivots*` carry the same concept with a re-runnable spec.
-The curate flow returns an ephemeral room and saves nothing; only a saved pivot persists a view.
+The wall has no ephemeral view surface; only a saved pivot persists a view.
 
-10. **There is no SSE for curate.**
-`/curate` returns a plain JSON response.
-Streaming was discussed but is not built and is not currently planned.
-Do not add SSE plumbing to curate unless asked. The lens view is the one
-streaming surface: `POST /lens` returns a Server-Sent Events stream (split
-first, then placards as judgments land). Do not model other endpoints on
-it unless asked.
+10. **The SSE lens surface and curate are removed.**
+`POST /lens` (Server-Sent Events), `POST /curate`, and the lens-cache endpoints were deleted in Phase M, along with the retrieve modules that powered them (`retrieve/expand.py`, `retrieve/rerank.py`, `retrieve/score.py`, `retrieve/lens.py`, `retrieve/judgments.py`, `retrieve/curate.py`), the lens settings, and the `lens_judgments` table (migration 0020).
+Search is the retrieval path; the assistant organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
+Do not add SSE plumbing back unless asked.
 
 11. **Browser extension and Android are future milestones.**
 No code for either exists in this repo.
@@ -136,7 +133,7 @@ Search is exact (brute-force) rather than approximate.
 
 ### Why Python
 
-Every library that does the hard parts is Python: pymupdf for documents, chonkie for chunking, instructor for structured output, fastembed for embeddings.
+Every library that does the hard parts is Python: pymupdf for documents, instructor for structured output, fastembed for embeddings.
 
 The engine sits behind a narrow localhost API.
 Clients never know what language is behind it, which keeps a future port open.
@@ -199,13 +196,7 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
-| `retrieve/expand.py` | Query expansion: lens to restatements + hypothetical passages. |
 | `retrieve/candidates.py` | `/search` rollup: dense + FTS5 keyword fused with RRF, plus trigram substring recall, a fuzzy short-field branch (titles, entities, annotations), and exact quoted-phrase pinning. One row per artifact. |
-| `retrieve/rerank.py` | Concurrent judgment per candidate. Generates placard here, not separately. |
-| `retrieve/curate.py` | Orchestrates expand -> candidates -> rerank -> synthesise. |
-| `retrieve/score.py` | Stage one of the lens: scores every artifact with vector + keyword search, zero model calls. |
-| `retrieve/lens.py` | The two-stage lens: free scoring over everything, bounded judgments on the top slice. |
-| `retrieve/judgments.py` | The lens judgment cache: per (lens, artifact, model), written through on every judgment. |
 
 ### Index
 
@@ -213,9 +204,9 @@ One line per file, describing its job.
 | --- | --- |
 | `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). |
 | `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
-| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF (k=1). |
+| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. |
 | `index/fusion.py` | Reciprocal rank fusion as a pure function. |
-| `index/bootstrap.py` | Startup index build (no manual reindex) + cutover cleanup. |
+| `index/bootstrap.py` | Startup index build (no manual step) + cutover cleanup. |
 
 ### Providers
 
@@ -282,33 +273,14 @@ One line per file, describing its job.
 2. **Generate** (`ingest/facets.py`): `generate_all()` iterates eligible artifacts, calls provider with `FACET_GENERATION` prompt, stores facets with trust=0.5.
 3. **Index** (`index/store_sqlite.py`): `upsert_facets()` embeds facet statements, upserts into `vec_facets` and `fts_facets`.
 
-### Curate (retrieve pipeline)
+### Curate and the lens view (removed)
 
-1. **Expand** (`retrieve/expand.py`): lens -> 5 restatements + 3 hypothetical passages. Falls back to bare lens on failure.
-2. **Candidates** (`retrieve/candidates.py`): search both CHUNKS and FACETS collections. Facet hits weighted by trust. Roll up to artifacts. Target ~150 candidates.
-3. **Rerank** (`retrieve/rerank.py`): concurrent judgment per candidate. Model returns verdict (belongs/adjacent/no), strength, evidence, placard. Only "belongs" survives.
-4. **Synthesise** (`retrieve/curate.py`): model reads kept artifacts, returns through_line, groupings (the on-screen view sections), tensions, thin flag.
-
-### Lens (two-stage topic view)
-
-1. **Score everything for free** (`retrieve/score.py`): vector + keyword
-   search over the whole library, no model calls. Every non-deleted,
-   non-pinned artifact gets one score; zero means no match, not absence.
-2. **Judge only the top slice** (`retrieve/lens.py`): the top `judge_top`
-   by score get a model judgment each, reusing the judgment cache. Model
-   calls are capped by `judge_top` and do not grow with library size.
-3. **Bucket by threshold**: everything below the slice is related above
-   `LENS_SCORE_THRESHOLD`, other below it. A failed judgment is not a
-   judgment: the artifact is marked `judged: false` and bucketed by score.
-4. **Coverage is said, not assumed**: when the stage-one window was capped
-   below the chunk count, the response says `partial` and the wall must not
-   label the second section as not related.
-
-A lens is ephemeral: it writes nothing but the judgment cache, bumps no
-`updated_at`, and leaves no room row. The curate flow builds a room and returns
-it; nothing is persisted. To keep the shape of a lens result, the person asks
-the assistant to organise and saves that pivot through the "Save view"
-action - saved views are the only persistent view concept.
+The SSE lens surface (`POST /lens`), the curate flow (`POST /curate`), and the
+modules that powered them were deleted in Phase M. The wall has no ephemeral
+split or room surface: `/search` is the retrieval path, and a saved pivot is
+the only persistent view. What survives from that era is the conceptual layer -
+facets still give search a conceptual channel - and the assistant path that
+organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
 
 ### Chat
 
@@ -332,11 +304,10 @@ Migrations run automatically at startup via Alembic.
 | `artifact_versions` | every saved state of a note's body | append-only, before each update |
 | `annotations` | commentary on a captured artifact | append-only, superseding by id |
 | `chunks` | literal layer for search | text, ordinal, chunker name |
-| `facets` | conceptual layer for curate | level 0-4, statement, model_version, trust (default 0.5) |
+| `facets` | conceptual layer for search | level 0-4, statement, model_version, trust (default 0.5) |
 | `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only |
 | `secret_hits` | credential patterns found in artifact text | redacted excerpts only |
 | `page_text` | extracted text per PDF page | derived, rebuildable |
-| `lens_judgments` | lens judgment cache | keyed by (lens_key, artifact_id, model_version); rebuilt on edit |
 | `link_previews` | what a saved link turns out to be | status, title, description, site_name, image_hash |
 | `chats` | conversations | scoped to everything/artifact. pinned. |
 | `chat_messages` | one turn | append-only. grounded flag. |
@@ -368,8 +339,7 @@ after retrieval.
 | `fts_chunks_tri` | FTS5 trigram table over chunk text: substring matches unicode61 cannot see ("hopper" inside "chopper") |
 | `index_meta` | key/value: the embedding version the index was built at |
 
-Search runs dense + keyword branches and fuses with Reciprocal Rank Fusion (RRF, k=1 so
-scores stay on the same scale the lens threshold was tuned against). The trigram table
+Search runs dense + keyword branches and fuses with Reciprocal Rank Fusion (RRF). The trigram table
 is a recall net that only adds hits the hybrid missed. Sparse matters because
 dense embeddings blur proper nouns: "Find that thing from Epictetus" is a proper noun,
 and FTS5 BM25 nails it while dense does not.
@@ -483,12 +453,8 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq migrate` | Bring the database to head (engine does this at startup too) |
 | `enq facets [--limit N] [--redo]` | Generate facets for eligible artifacts |
 | `enq index` | Rebuild the search index from the database |
-| `enq reindex` | Rebuild the search index with visible progress; resumable |
 | `enq doctor` | Index health: counts, embedding version, sync with the chunks table |
 | `enq search <query> [--limit N]` | Hybrid search, no model calls |
-| `enq curate <lens> [--keep N] [--pool N]` | Build a room on a theme (ephemeral, nothing is saved) |
-| `enq lens-eval [--corpus] [--baseline F]` | Measure threshold placement of true matches |
-| `enq lens-cache clear\|stats` | Manage the lens judgment cache |
 | `enq note [--body TEXT]` | Write a note |
 | `enq link <url>` | Save a URL (nothing is fetched) |
 | `enq artifacts [--limit N]` | List artifacts, newest first |
@@ -556,9 +522,7 @@ POST   /chats                        start a conversation (optionally with text)
 POST   /chats/{id}/messages          one turn
 PATCH  /chats/{id}                   rename / pin
 DELETE /chats/{id}                   the one deletable object
-POST   /curate                       build a room. Returns JSON (not SSE)
-POST   /lens                         stream a topic split: split first, placards as judgments land (SSE)
-POST   /pivot/plan                    plan a saved view from a lens result
+POST   /pivot/plan                    plan a saved view from a request
 POST   /pivot/run                     re-run a saved view spec
 POST   /pivots                        create a saved view
 PATCH  /pivots/{id}                   rename a saved view
@@ -604,26 +568,26 @@ Per artifact, once, re-runnable:
 3. Embed each facet locally. This is the **conceptual layer**.
 
 **Query lowers concepts toward artifacts.**
-Per curate:
+Per free-text search:
 
-1. Expand the lens into restatements plus hypothetical exemplar passages.
-2. Multi-vector search against both collections. Roll chunks up to artifacts. Target ~150 candidates.
-3. Rerank: the model reads candidates against the lens and keeps 10-20. The placard is generated here, not in a separate call.
-4. Synthesise over survivors: through-line, tensions, view sections. That is the room.
+1. Dense embedding of the query, searched against chunk vectors.
+2. Keyword: FTS5 BM25 over title (weighted 10x) and chunk text, plus the trigram table for substring recall.
+3. Fuzzy over short fields (titles, entity names, current annotation lines) for one-edit typos.
+4. Fuse with RRF, apply the R.8 recency multiplier, optionally rerank the top window with the cross-encoder (R.9).
 
 ### Two granularities
 
 | Layer | Unit | Powers |
 | --- | --- | --- |
 | Literal | chunk | Search, citation to passage |
-| Conceptual | artifact | Curate |
+| Conceptual | facet | Search's conceptual channel, weighted by trust |
 
 ### Hybrid search
 
 Sparse and dense together, fused with RRF, both in the one SQLite file.
 
 - **Search**: hybrid, weighted toward sparse.
-- **Curate**: dense plus facets, sparse as a minor channel.
+- **Facet channel**: dense facets fused in as a conceptual channel; sparse stays minor.
 
 ### Scope dial for chat
 
@@ -826,12 +790,12 @@ This exists because a note whose title is the only place a name appears is other
 ### Instructor context keyword
 
 instructor >= 1.9 renamed `validation_context` to `context`.
-The keyword is what carries `proper_nouns`, `artifact_text`, and `lens` into the validators.
+The keyword is what carries `proper_nouns` and `artifact_text` into the validators.
 Getting it wrong silently disables every context-dependent check.
 
 ### The old AGENTS.md is stale
 
-Much of the old AGENTS.md described things that are not built: encryption at rest, sync, crawl4ai, marker, whisper.cpp, browser extension, Android, SSE for curate, facet trust updates.
+Much of the old AGENTS.md described things that are not built: encryption at rest, sync, crawl4ai, marker, whisper.cpp, browser extension, Android, facet trust updates.
 It also named a "Lumo" backend that never existed; the cloud path is OpenRouter.
 This file documents what actually exists.
 See the Resolved decisions section above for the status of each of these.
@@ -847,9 +811,8 @@ See the Resolved decisions section above for the status of each of these.
 | Pydantic | schemas + validation | Validators are the quality floor. Instructor re-prompts on failure. |
 | instructor | structured LLM output | Mode.JSON for all adapters. Wraps the OpenAI client. |
 | openai | LLM client | Used for all OpenAI-compatible endpoints. |
-| chonkie | chunking | Not currently imported in code. The chunker in `ingest/chunk.py` is hand-written markdown splitting. |
 | fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d). |
-| sqlite-vec | search index | vec0 + FTS5 tables inside the SQLite file; hybrid fused with RRF (k=1). |
+| sqlite-vec | search index | vec0 + FTS5 tables inside the SQLite file; hybrid fused with RRF. |
 | pymupdf (fitz) | PDF parsing | Text extraction, page rendering, page counting, phrase search. |
 | beautifulsoup4 + lxml | HTML parsing | For link preview metadata extraction. |
 | httpx | HTTP client | HTTP/2 enabled for preview fetches. |

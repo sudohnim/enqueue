@@ -98,13 +98,9 @@ All commands except `serve`, `migrate`, and `version` are thin HTTP clients over
 | `enq search "query" --limit 10` | Hybrid dense+sparse search. No model calls. |
 | `enq chat "question" --chat-id "ID"` | Ask the collection something. Starts a new conversation or continues one. |
 | `enq chats --limit 20` | List conversations, newest first. |
-| `enq curate "lens" --keep 15 --pool 150 --save` | Build a "room" on a theme. Slow; involves multiple model calls. |
-| `enq lens-eval --corpus --baseline 0.933` | Measure how the lens threshold places true matches (CI guard once a pipeline exists). |
-| `enq lens-cache clear\|stats` | Clear or inspect the lens judgment cache. |
 | `enq facets --limit 0 --redo` | Generate conceptual facets for eligible artifacts. Slow, resumable. |
 | `enq facet-gate` | Decide which artifacts are eligible for facet generation. |
 | `enq index` | Rebuild the search index from the database. |
-| `enq reindex` | Rebuild the search index with visible progress. Resumable. |
 | `enq doctor` | Index health: artifact/chunk counts, index row counts, embedding version, sync with the chunks table. |
 | `enq chunk` | Rebuild text chunks from note bodies. |
 
@@ -209,7 +205,7 @@ Everything is stored under `~/.enqueue-poc`:
 
 | Path | Contents |
 | --- | --- |
-| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, chats, exhibits, trash, secrets, and the search index (sqlite-vec + FTS5 tables). |
+| `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, chats, trash, secrets, and the search index (sqlite-vec + FTS5 tables). |
 | `blobs/` | Original uploaded files, unmodified. |
 | `settings.json` | User preferences (not secrets). |
 | `repo` | One-line pointer to the repo path, written by `bin/relaunch` so the desktop shell can find the engine. |
@@ -247,7 +243,7 @@ enqueue/
     prompts.py         # LLM prompt templates
     schemas.py         # Pydantic models
     ingest/
-      chunk.py         # Text chunking (chonkie)
+      chunk.py         # Text chunking
       facets.py        # Conceptual facet generation
       queue.py         # Background ingest queue
       secrets.py       # Credential scanning
@@ -258,15 +254,12 @@ enqueue/
       fusion.py        # Reciprocal rank fusion, pure
       bootstrap.py     # Startup index build + cutover cleanup
     retrieve/
-      candidates.py    # Candidate retrieval for curation
-      curate.py        # Room/exhibit building
-      expand.py        # Query expansion
-      rerank.py        # LLM-based reranking
+      candidates.py    # /search candidate retrieval and rerank
     providers/
       base.py          # Provider protocol + error handling
       ollama.py        # Ollama adapter
     migrations/
-      versions/        # 0001-0008 Alembic migrations
+      versions/        # 0001-0020 Alembic migrations
     static/
       museum.html      # Main wall view (inline JS/CSS)
       capture.html     # Quick-capture overlay
@@ -310,9 +303,6 @@ Key endpoints:
 - `POST /artifacts/{id}/preview` - Fetch link preview
 - `GET /search?q=...` - Hybrid search
 - `POST /chats` - Start or continue a conversation
-- `POST /curate` - Build a room (deep: expansion, candidate pool, model judgments, synthesis)
-- `POST /lens` - Split the wall by a topic, streamed (cheap: free scoring, bounded judgments; SSE)
-- `POST /exhibits` - Save a room or a lens view as an exhibit
 - `GET /settings` - Read all settings + storage info
 - `PATCH /settings` - Update settings
 - `PUT /settings/api-key` - Store API key in Keychain
@@ -332,7 +322,7 @@ Key endpoints:
 - **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the museum HTML view does not implement infinite scroll or pagination.
 - **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
 - **No sync (planned).** One machine only today. Sync is a planned milestone.
-- **The default local model (`llama3.1:8b`) is weak.** Roughly three of four rerank judgments fail their validators. Conversations work; rooms are unreliable until you point at a better model.
+- **The default local model (`llama3.1:8b`) is weak.** Roughly three of four model outputs fail their validators. Conversations work; a better model is needed for reliable chat answers and facet generation.
 - **Search is brute-force.** sqlite-vec does exact nearest-neighbour search over the 768-dim embeddings in `enqueue.db`. At this library's scale that is fast (Phase 19 measured p95 21 ms); at a few hundred thousand chunks it will need quantization or an approximate index.
 - **No Windows or Linux support.** The desktop shell uses macOS-specific AppKit calls (activation, hiding). The Keychain wrapper is macOS-only.
 

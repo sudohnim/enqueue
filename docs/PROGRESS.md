@@ -493,7 +493,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
   Done when: `rg -n "LENS_" src/` returns nothing; settings page renders (manual); `bin/verify` passes.
 
-- [ ] **M.5e [AGENT]** Drop the cache table and eval artifacts.
+- [x] **M.5e [AGENT]** Drop the cache table and eval artifacts.
   New migration (next unused revision number after the current head 0019, adjusting if P.1 already claimed one) dropping `lens_judgments`; it is a derived cache, safe to drop.
   Delete `evals/lens/` and the lens sections of `docs/EVAL.md`; run `rg -n "lens|curate" bin/ scripts/ evals/` and remove anything referencing the deleted surface (keep `evals/corpus` prose and historical migrations untouched).
 
