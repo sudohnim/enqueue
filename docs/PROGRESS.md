@@ -460,7 +460,7 @@ Order matters: delete dead code first so the rename and the split carry no corps
 
   Done when: `bin/verify` passes; the greeting still renders on home (manual).
 
-- [ ] **M.4d [AGENT]** Stale comments and dead class.
+- [x] **M.4d [AGENT]** Stale comments and dead class.
   Fix the Qdrant-era docstring at `ingest/queue.py:8` (the worker is single-threaded because the index lives inside the SQLite file and embedding models are large, not because of a directory lock).
   Fix the `relevance` ordering comment at api.py:220-234 (no UI control advertises it; keep the defensive 400).
   Delete the unstyled `class="frame"` at museum.html:4694 and 4737 (the inline style does the work).

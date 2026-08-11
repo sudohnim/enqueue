@@ -5,9 +5,10 @@ must never wait on an embedding model loading from disk, and pasting a link must
 never wait on anything at all. So the work that makes an artifact findable happens
 behind the response.
 
-One worker thread, not a pool. The in-process Qdrant holds a lock on its directory
-and the embedding models are large enough that a second copy is not free; serialising
-the work costs nothing at this scale and removes a whole class of bug.
+One worker thread, not a pool. The index lives inside the SQLite file, so there is
+no directory lock to serialise on, and the embedding models are large enough that a
+second copy is not free; serialising the work costs nothing at this scale and
+removes a whole class of bug.
 
 The queue is in memory. If the engine dies with work outstanding, that work is lost
 and the artifact is simply unindexed until the next full `enq index`. That is the

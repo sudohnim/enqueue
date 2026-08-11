@@ -227,9 +227,9 @@ ORDERINGS = {
     "ingested": "created_at DESC",
     "touched": "updated_at DESC",
     "title": "title COLLATE NOCASE ASC",
-    # Relevance has no SQL ordering: there is no score column on the wall. The
-    # control advertises it so the ordering control can express the lens mode;
-    # POST /lens serves it, and the plain wall rejects it with a clear message.
+    # Relevance has no SQL ordering: there is no score column on the wall. It is
+    # listed so an ordering control could express it someday; the wall rejects it
+    # with a clear 400.
     "relevance": None,
 }
 
@@ -324,10 +324,11 @@ def list_artifacts(
             status_code=400, detail=f"order must be one of {sorted(ORDERINGS)}"
         ) from None
     if order == "relevance":
-        # Relevance is not a SQL ordering: there is no score column on the wall. The
-        # control advertises it, POST /lens serves it, and the plain wall says so.
+        # Relevance is not a SQL ordering: there is no score column on the wall. No
+        # UI control sends it, but the defensive 400 stays so a future caller gets a
+        # clear message instead of a silent empty wall.
         raise HTTPException(
-            status_code=400, detail="relevance ordering needs a lens; use POST /lens"
+            status_code=400, detail="relevance ordering needs a lens; the wall has none"
         ) from None
 
     # `pinned` splits the wall into two shelves that are paged separately: the kept
