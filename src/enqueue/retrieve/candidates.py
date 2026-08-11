@@ -393,6 +393,30 @@ def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
     return hit.get("body_version") != body_version or hit.get("model_version") != model
 
 
+def _weighted_hits(conn, hits, cache):
+    """Trust-weight a batch of model-written hits, dropping the stale ones.
+
+    Facets and entities are written from a body by a model, so a hit is only
+    current while body and model still match - `hit_is_stale` enforces that
+    provenance discipline, and a hit that cannot prove it was built from the
+    current body must not win a slot. The trust score (0..1) multiplies the
+    raw store score, and the 2.0 factor keeps a strong facet/entity match
+    competitive with a chunk match of the same raw score: a model's write is
+    worth more than a token overlap.
+
+    Yields (hit, weighted_score) for every hit that is not stale, so each of
+    the four call sites only decides where the weighted score goes.
+    """
+    for hit in hits:
+        if hit_is_stale(conn, hit, cache):
+            continue
+        try:
+            trust = float(hit.get("trust") or 0.5)
+        except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
+            trust = 0.5
+        yield hit, hit["score"] * trust * 2.0
+
+
 def candidates(
     queries: list[str], limit: int = 150, per_query: int = 40, prefetch: int = 100
 ) -> list[dict]:
@@ -426,17 +450,10 @@ def candidates(
                     best[aid] = hit["score"]
                     why[aid] = "chunk"
 
-            for hit in store.search(store.FACETS, query, limit=per_query, prefetch=prefetch):
-                # A facet built from an older body or by an older model no longer
-                # describes the artifact; drop it rather than let it win a slot.
-                if hit_is_stale(conn, hit, cache):
-                    continue
+            for hit, score in _weighted_hits(
+                conn, store.search(store.FACETS, query, limit=per_query, prefetch=prefetch), cache
+            ):
                 aid = hit["artifact_id"]
-                try:
-                    trust = float(hit.get("trust") or 0.5)
-                except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
-                    trust = 0.5
-                score = hit["score"] * trust * 2.0
                 if score > best[aid]:
                     best[aid] = score
                     why[aid] = f"facet L{hit.get('level')}"
@@ -444,17 +461,10 @@ def candidates(
                     if facet_id:
                         matched_facet[aid] = facet_id
 
-            for hit in store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch):
-                # Same provenance discipline as facets: an entity line extracted
-                # from an older body or by an older model is dropped.
-                if hit_is_stale(conn, hit, cache):
-                    continue
+            for hit, score in _weighted_hits(
+                conn, store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch), cache
+            ):
                 aid = hit["artifact_id"]
-                try:
-                    trust = float(hit.get("trust") or 0.5)
-                except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
-                    trust = 0.5
-                score = hit["score"] * trust * 2.0
                 if score > best[aid]:
                     best[aid] = score
                     why[aid] = "entity"
@@ -573,30 +583,12 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
         aid = hit["artifact_id"]
         if aid not in best or hit["score"] > best[aid]["score"]:
             best[aid] = {"score": hit["score"], "chunk_id": hit["chunk_id"], "why": "chunk"}
-    for hit in facet_hits:
-        # A facet built from an older body or by an older model no longer
-        # describes the artifact; drop it rather than let it win a slot.
-        if hit_is_stale(conn, hit, cache):
-            continue
+    for hit, score in _weighted_hits(conn, facet_hits, cache):
         aid = hit["artifact_id"]
-        try:
-            trust = float(hit.get("trust") or 0.5)
-        except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
-            trust = 0.5
-        score = hit["score"] * trust * 2.0
         if aid not in best or score > best[aid]["score"]:
             best[aid] = {"score": score, "chunk_id": None, "why": f"facet L{hit.get('level')}"}
-    for hit in entity_hits:
-        # Same provenance discipline as the facets branch: a line extracted from
-        # an older body or by an older model is dropped rather than shown.
-        if hit_is_stale(conn, hit, cache):
-            continue
+    for hit, score in _weighted_hits(conn, entity_hits, cache):
         aid = hit["artifact_id"]
-        try:
-            trust = float(hit.get("trust") or 0.5)
-        except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
-            trust = 0.5
-        score = hit["score"] * trust * 2.0
         if aid not in best or score > best[aid]["score"]:
             best[aid] = {
                 "score": score,
