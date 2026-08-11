@@ -539,7 +539,7 @@ The R.4 golden-set harness takes over retrieval evaluation, so the lens-eval pat
 
 ### M.7 - Rename museum to home
 
-- [ ] **M.7 [AGENT]** Rename every code identifier; mechanical and complete.
+- [x] **M.7 [AGENT]** Rename every code identifier; mechanical and complete.
 
   File moves (use `git mv`): `src/enqueue/static/museum.html` -> `src/enqueue/static/home.html`.
   Code identifiers: `api.py:71-72` `def museum()` -> `def home()` serving `static/home.html`; `desktop/src/main.rs` `CameFromMuseum` -> `CameFromHome` (struct at :40, uses at :259-264, 289-294, 372) and locals `museum`/`from_museum` -> `home`/`from_home`; `desktop/tauri.conf.json` capability id `museum-links` -> `home-links` and its description; `bin/check-contrast:2,32,164` the `MUSEUM` path variable; `bin/verify:15` `FILES[0]`; `bin/relaunch:40` the page loop.
