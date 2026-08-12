@@ -86,6 +86,14 @@ def _facet(conn, fid, aid, level, statement, trust, model_version="test-model"):
     )
 
 
+def _entity(conn, eid, aid, name, fact, trust=0.5):
+    conn.execute(
+        "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
+        " VALUES (?, ?, ?, ?, 'test-model', ?)",
+        (eid, aid, name, fact, trust),
+    )
+
+
 class TestDedup:
     def test_six_chunks_of_one_artifact_return_it_once(self, sqlite_store):
         # One artifact whose six chunks all match the query; a second that
@@ -884,3 +892,241 @@ class TestQ3bGrayZoneJudge:
         _apply_floor("quantum flux capacitor", hits)
         _apply_floor("quantum flux capacitor", hits)
         assert judge.n == 1
+
+
+class TestQ7FacetEntityDenseLegs:
+    """Q.7: only a TRUE lexical hit bypasses the floor.
+
+    Facets and entities each fuse a keyword (FTS5) branch and a dense (vec)
+    branch, and both branches used to mark the rollup hit `had_lexical_hit`.
+    A weak semantic neighbor riding in on a facet/entity VECTOR therefore
+    bypassed the two-tier gate. The live leak this closes: "pecan pie
+    recipes" surfaced the "Party of the People" note through an entity
+    vector at 0.409 cosine - below DROP_BELOW - exempted only because the
+    entity hit was mislabelled a lexical leg. The keyword branch of a
+    facet/entity is a real lexical leg; the dense branch is not. A
+    dense-only facet/entity hit carries its dense similarity and faces the
+    gate exactly like a chunk dense hit; a hit whose only match is the
+    facet/entity keyword branch still bypasses the bars.
+    """
+
+    def test_a_dense_only_entity_hit_below_drop_below_is_dropped(self, sqlite_store):
+        # a1's only surface is its entity line: a restaurant-themed fact that
+        # "quantum flux capacitor" reaches only through vectors (~0.28 cosine
+        # on this corpus, measured), with no FTS token overlap. Before Q.7
+        # that entity hit was mislabelled lexical and sailed past DROP_BELOW;
+        # now it carries its dense similarity, lands below the bar, and is
+        # cut - a gibberish query must not light up the wall with a nearby
+        # note.
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Party of the People", "")
+            _entity(
+                conn,
+                "e1",
+                "a1",
+                "Cracker Barrel",
+                "Cracker Barrel - An American chain of restaurant and gift stores with a Southern country theme.",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_entities()
+        # A model-written entity is stale unless it was written by the running
+        # model (I2.2); seed it with the real provider's version so the hit is
+        # current, exactly as the facet test above does.
+        from enqueue.providers.base import get_provider
+
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "UPDATE entities SET model_version = ? WHERE id = 'e1'",
+                (get_provider(local_only=False).model,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        hits = search_results("quantum flux capacitor", limit=20)
+        assert hits == [], f"dense-only entity hit below DROP_BELOW must drop, got {hits}"
+
+    def test_a_dense_only_facet_hit_below_drop_below_is_dropped(self, sqlite_store):
+        # The facet side of the same hole: a ziggurat-themed facet line that
+        # "quantum flux capacitor" reaches only through vectors (~0.29
+        # cosine, measured), no FTS token overlap. Before Q.7 the facet hit
+        # was mislabelled lexical too.
+        conn = db.get_conn()
+        try:
+            _note(conn, "a2", "Ziggurat notes", "Goods moved along the river, season by season.")
+            _chunk(conn, "c2", "a2", 0, "Goods moved along the river, season by season.")
+            _facet(conn, "f2", "a2", 3, "Ziggurats rose above the mud-brick cities.", 0.9)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+        sqlite_store.upsert_facets()
+        from enqueue.providers.base import get_provider
+
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "UPDATE facets SET model_version = ? WHERE id = 'f2'",
+                (get_provider(local_only=False).model,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        hits = search_results("quantum flux capacitor", limit=20)
+        assert hits == [], f"dense-only facet hit below DROP_BELOW must drop, got {hits}"
+
+    def test_a_facet_and_entity_keyword_branch_hit_still_bypasses(self, sqlite_store, monkeypatch):
+        """The other half of Q.7: a facet/entity keyword-branch match IS a
+        lexical leg and bypasses both bars with no judge call.
+
+        "mud brick" (query) hits the ziggurat facet's FTS5 keyword branch
+        while its facet dense similarity sits in the gray zone (~0.62), so
+        if the keyword branch stopped marking the hit lexical, the judge
+        would be called; the recording stub would see it and this test would
+        fail. Same shape for "cracker" against the restaurant entity (~0.69
+        dense, keyword branch hit).
+        """
+        from enqueue.retrieve import candidates as cand
+
+        calls = []
+
+        class _RecordingJudge:
+            model = "test-judge"
+
+            def complete(self, *args, **kwargs):
+                calls.append(1)
+                return cand._GrayZoneResponse(verdicts=[])
+
+        monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _RecordingJudge())
+
+        conn = db.get_conn()
+        try:
+            _note(conn, "a1", "Party of the People", "")
+            _entity(
+                conn,
+                "e1",
+                "a1",
+                "Cracker Barrel",
+                "Cracker Barrel - An American chain of restaurant and gift stores with a Southern country theme.",
+            )
+            _note(conn, "a2", "Ziggurat notes", "Goods moved along the river, season by season.")
+            _chunk(conn, "c2", "a2", 0, "Goods moved along the river, season by season.")
+            _facet(conn, "f2", "a2", 3, "Ziggurats rose above the mud-brick cities.", 0.9)
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+        sqlite_store.upsert_facets()
+        sqlite_store.upsert_entities()
+        from enqueue.providers.base import get_provider
+
+        model = get_provider(local_only=False).model
+        conn = db.get_conn()
+        try:
+            conn.execute("UPDATE entities SET model_version = ? WHERE id = 'e1'", (model,))
+            conn.execute("UPDATE facets SET model_version = ? WHERE id = 'f2'", (model,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        hits = search_results("mud brick", limit=20)
+        a2 = [h for h in hits if h["artifact_id"] == "a2"]
+        assert a2, f"a keyword-branch facet hit must bypass the floor, got {hits}"
+        assert a2[0]["had_lexical_hit"], "the facet keyword branch must mark the hit lexical"
+        # The "mud brick" search may judge a1 (its restaurant entity is a
+        # dense-only gray-zone neighbor of that query - correct floor
+        # behavior). Reset the recorder so the next search is asserted on its
+        # own.
+        calls.clear()
+        hits = search_results("cracker", limit=20)
+        a1 = [h for h in hits if h["artifact_id"] == "a1"]
+        assert a1, f"a keyword-branch entity hit must bypass the floor, got {hits}"
+        assert a1[0]["had_lexical_hit"], "the entity keyword branch must mark the hit lexical"
+        assert calls == [], "a lexical-leg hit must bypass the bars with no judge call"
+
+    def test_a_trigram_only_hit_below_drop_below_is_dropped(self, sqlite_store):
+        """Q.7 (Minh's DECISION): a trigram-only hit faces the two-tier gate.
+
+        The trigram branch matches 3-character substrings unicode61 cannot
+        see - "pie" against "occupier"/"piece"/"piety" - which is noise,
+        not a real word match. It stays a recall leg (the candidate still
+        surfaces through the fused chunk hits) but no longer bypasses the
+        floor. "pie" reaches the mill note only through that substring
+        (measured ~0.38 cosine on this corpus, no keyword leg): below
+        DROP_BELOW, so it is cut and the search returns nothing.
+        """
+        conn = db.get_conn()
+        try:
+            _note(
+                conn,
+                "a1",
+                "Mill routine",
+                "The occupier turned the mill wheel by hand each morning, through fog and frost alike.",
+            )
+            _chunk(
+                conn,
+                "c1",
+                "a1",
+                0,
+                "The occupier turned the mill wheel by hand each morning, through fog and frost alike.",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("pie", limit=20)
+        assert hits == [], f"trigram-only hit below DROP_BELOW must drop, got {hits}"
+
+    def test_partial_word_recall_still_bypasses_via_keyword_prefix(self, sqlite_store, monkeypatch):
+        """Dropping the trigram bypass must not cost partial-word recall.
+
+        The keyword branch's FTS5 prefix query ("hydro"* finds the token
+        "hydroponics") is the real partial-word leg; "hydro" reaches the
+        greenhouse note through it (~0.56 cosine lives in the gray zone, so
+        if the keyword leg stopped marking the hit, the recording judge
+        would see a call and this test would fail).
+        """
+        from enqueue.retrieve import candidates as cand
+
+        calls = []
+
+        class _RecordingJudge:
+            model = "test-judge"
+
+            def complete(self, *args, **kwargs):
+                calls.append(1)
+                return cand._GrayZoneResponse(verdicts=[])
+
+        monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _RecordingJudge())
+
+        conn = db.get_conn()
+        try:
+            _note(
+                conn,
+                "a1",
+                "Greenhouse",
+                "Row upon row of hydroponics trays filled the greenhouse from wall to wall.",
+            )
+            _chunk(
+                conn,
+                "c1",
+                "a1",
+                0,
+                "Row upon row of hydroponics trays filled the greenhouse from wall to wall.",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        sqlite_store.upsert_chunks()
+
+        hits = search_results("hydro", limit=20)
+        a1 = [h for h in hits if h["artifact_id"] == "a1"]
+        assert a1, f"partial-word keyword hit must bypass the floor, got {hits}"
+        assert a1[0]["had_lexical_hit"], "the keyword prefix leg must mark the hit lexical"
+        assert calls == [], "a keyword-leg hit must bypass the bars with no judge call"

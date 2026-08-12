@@ -66,6 +66,28 @@
     white-space: nowrap;
     margin-top: 0;
   }
+  /* NOTE.3: on a note the title is a rename target. The text cursor promises
+     editability without implying the whole page is writable. */
+  .titlerow .h1.editable-title {
+    cursor: text;
+  }
+  /* The rename input inherits the h1's type role, so the swap reads as the same
+     element being edited rather than a form field appearing. */
+  .title-edit {
+    width: 100%;
+    min-width: 0;
+    padding: 0 2px;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    outline: none;
+  }
+  .title-edit:focus {
+    border-bottom-color: var(--line-strong);
+  }
   .title-action {
     display: inline-flex;
     align-items: center;
@@ -401,7 +423,10 @@
     outline: none;
     caret-color: var(--text);
   }
-  .editor:empty::before {
+  .editor:empty::before,
+  /* An empty note mounts with a single seeded <p><br></p> (NOTE.1), which is not
+     :empty; the placeholder must still show until the first real character. */
+  .editor:has(> p:only-child > br:only-child)::before {
     content: attr(data-placeholder);
     color: var(--text-mute);
   }

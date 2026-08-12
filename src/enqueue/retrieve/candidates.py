@@ -56,8 +56,15 @@ RECENCY_TAU_DAYS = 30
 # on the raw legs with TWO bars on the true-cosine scale (Q.2b), leaving a
 # gray zone between them that the gray-zone judge (Q.3b) decides:
 #
-# - Any result with a lexical hit (FTS5 keyword / trigram / facet / entity /
-#   fuzzy / exact-phrase) survives regardless of its dense score.
+# - Any result with a lexical hit survives regardless of its dense score:
+#   FTS5 keyword (unicode61, with prefix recall) / fuzzy / exact-phrase, and
+#   the FTS5 KEYWORD branch of a facet or entity (Q.7). The trigram leg is a
+#   recall net only - a trigram-only hit faces the gate on its dense
+#   similarity (Minh's DECISION: a 3-character substring overlap like "pie"
+#   inside "pieces" is noise, not a real word match; partial words are
+#   already covered by the keyword prefix query). A facet/entity DENSE-only
+#   hit is likewise a semantic neighbor, not a lexical leg, and faces the
+#   gate below.
 # - Without a lexical hit: `dense_similarity >= KEEP_ABOVE` is clearly
 #   relevant, keep without asking; `dense_similarity < DROP_BELOW` is
 #   clearly irrelevant, drop without asking; in between is the gray zone,
@@ -875,8 +882,10 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     # lexical hit AND its nearest neighbor is far. We thread two flags per
     # candidate through to the output: `dense_similarity` (the best cosine
     # similarity the dense branch produced for this artifact, 0.0 if none)
-    # and `had_lexical_hit` (True if any of keyword/trigram/facet/entity hit
-    # it). Ranking is unchanged - these flags only join the result dict.
+    # and `had_lexical_hit` (True if a real lexical leg - chunk keyword /
+    # fuzzy / exact-phrase, or the FTS5 KEYWORD branch of a facet or entity
+    # - hit it). Ranking is unchanged - these flags only join the result
+    # dict.
     #
     # `chunk_hits` etc. carry the FUSED RRF score, not raw cosine similarity;
     # we ask the store directly for the dense leg so the floor can read the
@@ -884,7 +893,7 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     # as R.6's recall net - one extra sqlite-vec knn per call.
     #
     # Lexical legs are scored separately so a dense-only match (no keyword /
-    # trigram / facet / entity hit) does not count as lexical. The fused
+    # facet / entity hit) does not count as lexical. The fused
     # `chunk_hits` list is what got ranked and surfaced, but it can be
     # entirely dense-only - calling every artifact in it "lexical" would
     # make the Q.3 floor useless.
@@ -898,14 +907,39 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     keyword_chunk_hits = store.search_keyword(store.CHUNKS, q, limit=per_query)
     for hit in keyword_chunk_hits:
         lexical_aids.add(hit["artifact_id"])
-    if store.CHUNKS == store.CHUNKS:  # trigram only exists for chunks
-        trigram_chunk_hits = store.search_trigram(store.CHUNKS, q, limit=per_query)
-        for hit in trigram_chunk_hits:
+    # Q.7 (Minh's DECISION): the trigram leg stays a RECALL leg, not a
+    # lexical bypass. Trigram matches 3-character substrings - "pie" finds
+    # "pieces" and "piety", "pecan" finds "pecans" - which is noise at the
+    # floor's bar, not a real word match. Partial-word recall is already
+    # covered by the keyword branch (its FTS5 prefix query: "sourd"* finds
+    # the token "sourdough"). A trigram-only hit still surfaces the
+    # candidate through the fused `chunk_hits` above, but it now clears the
+    # two-tier gate on its own `dense_similarity` like any other dense-only
+    # hit (keep >= KEEP_ABOVE, drop < DROP_BELOW, gray zone -> judge).
+
+    # Q.7: a facet/entity hit is a lexical leg ONLY when it matched on its
+    # FTS5 keyword branch. Both collections fuse a keyword branch and a
+    # dense (vec) branch, and `store.search` does not say which leg a hit
+    # rode in on - treating every fused facet/entity hit as lexical let a
+    # weak semantic neighbor bypass the floor. The live leak: "pecan pie
+    # recipes" surfaced the "Party of the People" note through an entity
+    # vector at 0.409 cosine, below DROP_BELOW, exempted only because the
+    # entity hit was mislabelled a lexical leg. So the keyword branch is
+    # read per collection and its hits set `had_lexical_hit`, while the
+    # dense branch feeds `dense_sims` - a dense-only facet/entity hit
+    # carries its own best cosine and faces the two-tier gate exactly like
+    # a chunk dense hit.
+    for dense_hits in (
+        store.search_dense(store.FACETS, q, limit=per_query),
+        store.search_dense(store.ENTITIES, q, limit=per_query),
+    ):
+        for hit in dense_hits:
+            aid = hit["artifact_id"]
+            if hit["score"] > dense_sims.get(aid, 0.0):
+                dense_sims[aid] = hit["score"]
+    for name in (store.FACETS, store.ENTITIES):
+        for hit in store.search_keyword(name, q, limit=per_query):
             lexical_aids.add(hit["artifact_id"])
-    for hit in facet_hits:
-        lexical_aids.add(hit["artifact_id"])
-    for hit in entity_hits:
-        lexical_aids.add(hit["artifact_id"])
 
     conn = db.get_conn()
     cache: dict = {}

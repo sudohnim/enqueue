@@ -331,7 +331,7 @@
       '<span class="kindword">' +
       esc(a.kind) +
       "</span></div>" +
-      '<div class="titlerow"><div class="h1" style="view-transition-name:artifact-title">' +
+      '<div class="titlerow"><div class="h1" id="titleH1" style="view-transition-name:artifact-title">' +
       esc(a.title || "Untitled") +
       "</div>" +
       (["pdf", "image", "file"].includes(a.kind)
@@ -420,6 +420,7 @@
         id,
         kind: "note",
         title: a.title,
+        titleExplicit: a.title_explicit,
         saved: a.body || "",
         html: md(a.body || ""),
       };
@@ -492,6 +493,7 @@
     mountTagRow(id);
     mountViewsRow(id);
     mountEditor(focus);
+    mountTitleEdit(id);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
     if (a.kind === "file") mountPlain(a.id);
     if (scrollY !== undefined) window.scrollTo(0, scrollY);
@@ -1021,7 +1023,13 @@
   function mountEditor(focus) {
     const ed = document.getElementById("body");
     if (!ed || !ctx) return;
-    ed.innerHTML = ctx.html || "";
+    const html = ctx.html || "";
+    // An empty note must never mount a bare editable: the first keystroke would
+    // land in a bare text node with no block, and each input would re-wrap it in
+    // a fresh <p> (applyInputRules' fallback), stacking one paragraph per
+    // character. Seed a single empty paragraph so the very first keystroke has a
+    // real block to live in; the empty paragraph serialises back to nothing.
+    ed.innerHTML = html || "<p><br></p>";
 
     const lead = ed.firstElementChild;
     if (
@@ -1032,7 +1040,10 @@
     )
       ed.classList.add("titled");
 
-    ed.addEventListener("input", () => applyInputRules(ed));
+    ed.addEventListener("input", () => {
+      applyInputRules(ed);
+      refreshTitleHeader();
+    });
     ed.addEventListener("blur", saveBody);
     ed.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && "bi".includes(e.key)) {
@@ -1184,7 +1195,140 @@
       );
     });
 
-    if (focus) ed.focus();
+    if (focus) {
+      ed.focus();
+      // Place the caret inside the seeded block (before its <br>), never on the
+      // editable's element boundary, so the next keystroke types into the <p>.
+      // Only the freshly seeded mount needs this; an editor with content keeps
+      // the browser's own caret.
+      if (!html) {
+        const first = ed.firstElementChild;
+        const r = document.createRange();
+        r.setStart(first.firstChild || first, 0);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      }
+    }
+  }
+
+  // NOTE.2 + NOTE.3: the header always shows the truth about the note's title -
+  // the explicit title if one is set, else the live first-line derivation that
+  // mirrors notes.py's title_from_body via md.js's titleFromBody (same heading
+  // rule, same stripping, same cap), so the header shows exactly what the server
+  // will store on save. An explicit title (NOTE.0) is never clobbered by the
+  // body, and an in-progress edit (<input> in the header) is never overwritten.
+  function refreshTitleHeader() {
+    if (!ctx || ctx.kind !== "note") return;
+    const h = document.getElementById("titleH1");
+    if (!h || h.querySelector("input")) return;
+    if (ctx.titleExplicit) {
+      h.textContent = ctx.title || "Untitled";
+    } else {
+      const ed = document.getElementById("body");
+      h.textContent = titleFromBody(htmlToMd(ed));
+    }
+  }
+
+  // NOTE.3: the header title is click-to-edit. Clicking swaps the <h1> for an
+  // inline input; Enter or blur commits the explicit title (an empty commit
+  // clears it back to the live first-line derivation), Escape cancels without
+  // saving. The explicit intent lives server-side (artifacts.title_explicit),
+  // so a later body-only save never re-derives over a hand-set title.
+  let titleDraft = null;
+
+  function mountTitleEdit(id) {
+    titleDraft = null;
+    const h = document.getElementById("titleH1");
+    if (!h || !ctx || ctx.kind !== "note") return;
+    h.classList.add("editable-title");
+    h.title = "Click to rename this note";
+    h.addEventListener("click", () => beginTitleEdit(h));
+  }
+
+  function beginTitleEdit(h) {
+    if (titleDraft) return;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "title-edit";
+    input.setAttribute("aria-label", "Note title");
+    // Pre-fill with what the note is currently titled - explicit or derived - so
+    // clearing back to derived is "delete the text", not retyping from memory.
+    input.value = titleDraftValue();
+    input.placeholder = "Untitled";
+    h.textContent = "";
+    h.appendChild(input);
+    input.focus();
+    input.select();
+    titleDraft = input;
+    input.addEventListener("blur", () => commitTitleEdit(h));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancelTitleEdit(h);
+      }
+    });
+  }
+
+  function titleDraftValue() {
+    const ed = document.getElementById("body");
+    return ctx.titleExplicit
+      ? ctx.title || "Untitled"
+      : titleFromBody(htmlToMd(ed));
+  }
+
+  function cancelTitleEdit(h) {
+    titleDraft = null;
+    h.textContent = "";
+    refreshTitleHeader();
+  }
+
+  async function commitTitleEdit(h) {
+    const input = titleDraft;
+    titleDraft = null;
+    if (!input || !ctx) return;
+    const value = input.value.trim();
+    const ed = document.getElementById("body");
+    const currentBody = ed ? htmlToMd(ed) : ctx.saved || "";
+    // An unchanged commit is a no-op: it must not freeze a derived title by
+    // accident (a click followed by a click elsewhere is not an edit). Only a
+    // changed or cleared title sends a PATCH.
+    const currentTitle = ctx.titleExplicit
+      ? ctx.title || "Untitled"
+      : titleFromBody(currentBody);
+    if (value === currentTitle) {
+      cancelTitleEdit(h);
+      return;
+    }
+    try {
+      const d = await api("/artifacts/" + ctx.id + "/body", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: currentBody, title: value }),
+      });
+      if (!ctx) return;
+      ctx.title = d.artifact.title;
+      ctx.titleExplicit = d.artifact.title_explicit;
+      ctx.saved = currentBody;
+    } catch (err) {
+      toast(String((err && err.message) || err), true);
+      cancelTitleEdit(h);
+      return;
+    }
+    h.textContent = "";
+    refreshTitleHeader();
+    const state = document.getElementById("state");
+    if (state) {
+      state.className = "saved";
+      state.textContent = "kept";
+      setTimeout(() => {
+        if (state.textContent === "kept") state.textContent = "";
+      }, 2200);
+    }
   }
 
   async function saveBody() {

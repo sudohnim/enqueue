@@ -261,3 +261,19 @@
       .replace(/^\n+|\n+$/g, "");
   }
 
+  // A note's title is its first markdown heading, else the first non-empty line,
+  // else Untitled - a character-for-character mirror of notes.py:title_from_body
+  // (same heading regex, same * _ ` stripping, same 120-char cap), so the live
+  // header the user types against equals exactly what the server will store.
+  function titleFromBody(body) {
+    var lines = body.split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      var m = line.match(/^#{1,6}\s+(.*)$/);
+      var text = (m ? m[1] : line).trim().replace(/[*_`]/g, "").trim();
+      if (text) return text.slice(0, 120);
+    }
+    return "Untitled";
+  }
+

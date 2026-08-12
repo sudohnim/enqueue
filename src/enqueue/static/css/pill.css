@@ -1,317 +1,346 @@
-  /* ---- the capture pill ---------------------------------------------------
+/* ---- the capture pill ---------------------------------------------------
      The app's signature object, present on every page. It floats, so it is one of the
      four things in the whole system allowed a shadow. */
-  .pill {
-    position: fixed;
-    left: 50%;
-    bottom: var(--sp-5);
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    height: 56px;
-    padding: 0 var(--sp-4);
-    z-index: var(--z-pill);
-    /* S.6: a tinted surface, not the same white as the cards behind it, so
+.pill {
+	position: fixed;
+	left: 50%;
+	bottom: var(--sp-5);
+	transform: translateX(-50%);
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	height: 56px;
+	padding: 0 var(--sp-4);
+	z-index: var(--z-pill);
+	/* S.6: a tinted surface, not the same white as the cards behind it, so
        the pill reads as a distinct object floating above the artifacts.
        --surface-2 is two rungs off the canvas - cool, not grey, clearly
        darker than the wall cards' --surface. */
-    background: var(--surface-2);
-    /* S.6: a hairline edge so the pill reads as a defined object against the
+	background: var(--surface-2);
+	/* S.6: a hairline edge so the pill reads as a defined object against the
        artifacts, not just a shadow blur. */
-    border: 1px solid var(--line);
-    border-radius: var(--r-full);
-    /* S.6: a bolder shadow than the default --shadow-lifted so the pill pops
+	border: 1px solid var(--line);
+	border-radius: var(--r-full);
+	/* S.6: a bolder shadow than the default --shadow-lifted so the pill pops
        above the card grid - a tight contact shadow plus a wide elevation one
        at 50% stronger opacity than the old lifted shadow. */
-    box-shadow:
-      0 4px 12px rgba(16, 17, 20, 0.06),
-      0 12px 36px rgba(16, 17, 20, 0.12);
-    transition:
-      width var(--dur-slow) ease,
-      box-shadow var(--dur-slow) ease,
-      transform var(--dur-fast) var(--ease);
-  }
-  /* DL.2: hovering the pill lifts it 2px - a physical object answering a cursor,
+	box-shadow:
+		0 4px 12px rgba(16, 17, 20, 0.06),
+		0 12px 36px rgba(16, 17, 20, 0.12);
+	transition:
+		width var(--dur-slow) ease,
+		box-shadow var(--dur-slow) ease,
+		transform var(--dur-fast) var(--ease);
+}
+/* DL.2: hovering the pill lifts it 2px - a physical object answering a cursor,
      with the same cool shadow it already carries. The centering translateX is
      preserved. Placed before the focus rule so the focus ring wins when both
      apply (hovering a focused pill keeps the ring visible). */
-  .pill:hover {
-    transform: translateX(-50%) translateY(-2px);
-  }
-  /* AU.2: the pill field's own outline is off, so the container carries the focus
+.pill:hover {
+	transform: translateX(-50%) translateY(-2px);
+}
+/* AU.2: the pill field's own outline is off, so the container carries the focus
      ring - the same 2px lavender-focus at 50% as every other control, one size up
      for the 56px pill. Ring first, then the lift, so focus reads as focus. */
-  .pill:focus-within {
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 50%, transparent),
-      var(--shadow-lifted);
-  }
-  /* The capture control is the one thing on the pill that is an instruction, so it is
+.pill:focus-within {
+	box-shadow:
+		0 0 0 2px color-mix(in oklab, var(--lavender-focus) 50%, transparent),
+		var(--shadow-lifted);
+}
+/* The capture control is the one thing on the pill that is an instruction, so it is
      the one thing wearing the accent: a filled circle, with the label in plain ink
      beside it rather than in the yellow, which could not be read. */
-  .pill .keep {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    height: 44px;
-    padding: 0 var(--sp-2) 0 0;
-    border: 0;
-    background: transparent;
-    border-radius: var(--r-full);
-    font-family: var(--sans);
-    /* Button: 14px / 500 / 1.20, zero tracking. */
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 17px;
-    letter-spacing: 0;
-    color: var(--text);
-    cursor: pointer;
-  }
-  .pill .keep .disc {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    flex-shrink: 0;
-    border-radius: var(--r-full);
-    background: var(--accent);
-    /* The edge is gone: the disc's lavender fill bounds it against the pill surface
+.pill .keep {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	height: 44px;
+	padding: 0 var(--sp-2) 0 0;
+	border: 0;
+	background: transparent;
+	border-radius: var(--r-full);
+	font-family: var(--sans);
+	/* Button: 14px / 500 / 1.20, zero tracking. */
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 17px;
+	letter-spacing: 0;
+	color: var(--text);
+	cursor: pointer;
+}
+.pill .keep .disc {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	border-radius: var(--r-full);
+	background: var(--accent);
+	/* The edge is gone: the disc's lavender fill bounds it against the pill surface
        at 4.70:1, so no --text edge is needed (the old edge was for amber, which
        could not bound a control on its own). DL.1: the disc squashes on press -
        scale, never a fill change, because the disc never fills --lavender-deep
        while the ink motif is on it (ink on deep is 2.73:1 and fails). */
-    color: var(--accent-ink);
-    /* Q.5: the transform transition gets an ease-out-back so the press
+	color: var(--accent-ink);
+	/* Q.5: the transform transition gets an ease-out-back so the press
        releases with a ~3% overshoot pop instead of a linear settle; the
        background stays on the plain ease. */
-    transition:
-      background var(--dur-fast) var(--ease),
-      transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  .pill .keep:hover .disc {
-    background: var(--lavender-focus);
-    /* Q.5: a 6px 16%-opacity halo so the disc "warms up" when the cursor
+	transition:
+		background var(--dur-fast) var(--ease),
+		transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.pill .keep:hover .disc {
+	background: var(--lavender-focus);
+	/* Q.5: a 6px 16%-opacity halo so the disc "warms up" when the cursor
        approaches - it reads as a glow, not a border (decorative, no contrast
        requirement). */
-    box-shadow: 0 0 0 6px var(--lavender-subtle);
-  }
-  .pill .keep:active .disc {
-    transform: scale(0.92);
-  }
-  .pill .keep .chev {
-    color: var(--text-mute);
-  }
-  /* Icon-only companions. Their fill is their boundary, so they need no line.
+	box-shadow: 0 0 0 6px var(--lavender-subtle);
+}
+.pill .keep:active .disc {
+	transform: scale(0.92);
+}
+.pill .keep .chev {
+	color: var(--text-mute);
+}
+/* Icon-only companions. Their fill is their boundary, so they need no line.
      AU.10: 44px is the touch floor, so a finger gets the same target a cursor
      does. DL.3: the same press squash vocabulary as the disc. */
-  .pill button.round {
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
-    border: 0;
-    border-radius: var(--r-full);
-    background: var(--surface-2);
-    color: var(--text);
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-    transition:
-      background var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease),
-      transform var(--dur-fast) var(--ease);
-  }
-  /* Q.5: on hover the round buttons take the pill's colour language - a faint
+.pill button.round {
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0;
+	border: 0;
+	border-radius: var(--r-full);
+	background: var(--surface-2);
+	color: var(--text);
+	cursor: pointer;
+	display: grid;
+	place-items: center;
+	transition:
+		background var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease),
+		transform var(--dur-fast) var(--ease);
+}
+/* Q.5: on hover the round buttons take the pill's colour language - a faint
      lavender wash behind a lavender icon, the same accent the keep disc wears. */
-  .pill button.round:hover {
-    background: var(--lavender-subtle);
-    color: var(--accent);
-  }
-  .pill button.round:active {
-    transform: scale(0.94);
-  }
-  /* Q.3: at <380px the pill's 56px height + 44px round buttons risk spilling
+.pill button.round:hover {
+	background: var(--lavender-subtle);
+	color: var(--accent);
+}
+.pill button.round:active {
+	transform: scale(0.94);
+}
+/* Q.3: at <380px the pill's 56px height + 44px round buttons risk spilling
      the viewport. Tighten the padding/gap and hide the keep label if one is
      present (the disc alone still reads as add via its plus icon). */
-  @media (max-width: 380px) {
-    .pill {
-      padding: 0 var(--sp-2);
-      gap: var(--sp-1);
-    }
-    .pill .keep {
-      padding: 0 var(--sp-1) 0 0;
-    }
-    .pill .keep .label {
-      display: none;
-    }
-  }
-  .pill svg {
-    width: 19px;
-    height: 19px;
-    stroke-width: 1.8;
-  }
-  .pill .keep .disc svg {
-    width: 18px;
-    height: 18px;
-    stroke-width: 2.2;
-  }
-  .pill .keep .chev svg {
-    width: 15px;
-    height: 15px;
-  }
+@media (max-width: 380px) {
+	.pill {
+		padding: 0 var(--sp-2);
+		gap: var(--sp-1);
+	}
+	.pill .keep {
+		padding: 0 var(--sp-1) 0 0;
+	}
+	.pill .keep .label {
+		display: none;
+	}
+}
+.pill svg {
+	width: 19px;
+	height: 19px;
+	stroke-width: 1.8;
+}
+.pill .keep .disc svg {
+	width: 18px;
+	height: 18px;
+	stroke-width: 2.2;
+}
+.pill .keep .chev svg {
+	width: 15px;
+	height: 15px;
+}
 
-  /* Typing turns the pill into a field. It keeps the stadium, because it is still the
+/* The ask button wears the living eye (EYE.2). The shared .eye geometry
+     (socket/pupil percentages) self-scales from the frame, so only the frame's
+     display size is set here, at ribbon-button scale: the button is a 44px grid
+     cell, so a 34px frame sits inside it with a little air, reading as the
+     mascot button without crowding the pill's edge. */
+.pill .pill-eye .eye-frame {
+	width: 34px;
+	height: auto;
+}
+/* EYE.6: the ribbon frame is `eye-only.png` (the eye cropped out of the raven),
+   so the iris no longer sits at the full-bird's 53.3%/39.3%. Re-centre the socket
+   over the cropped eye - the pupil percentages inside the socket are unchanged,
+   so it still tracks and clips exactly as the emblem does. */
+.pill .pill-eye .eye-socket {
+	left: 52.6%;
+	top: 51.5%;
+	width: 80%;
+	height: 69.3%;
+}
+/* EYE.6: the shared pupil size (72.7% of socket) is tuned to the emblem's small
+   iris; at the ribbon's 34px it reads as a faint dot. Enlarge the ribbon pupil so
+   the purple reads boldly, like the reference. Height is scaled to the socket's
+   wider-than-tall aspect so the iris stays round; the socket's overflow clip keeps
+   it inside the lid. */
+.pill .pill-eye .eye-pupil {
+	width: 96%;
+	height: 125%;
+}
+
+/* Typing turns the pill into a field. It keeps the stadium, because it is still the
      same object doing a second thing rather than a different control appearing. */
-  .pill.wide {
-    width: min(560px, calc(100vw - 40px));
-    padding-left: var(--sp-4);
-  }
-  .pill input {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--sans);
-    /* Body: entry text at 16 / 400, zero tracking. */
-    font-size: 16px;
-    font-weight: 400;
-    line-height: 24px;
-    letter-spacing: 0;
-    background: transparent;
-    border: 0;
-    color: var(--text);
-    padding: var(--sp-2) 0;
-  }
-  .pill input:focus {
-    outline: none;
-  }
-  .pill input::placeholder {
-    color: var(--ink-faint);
-  }
-  .scope {
-    /* Caption: the scope prefix in the capture pill. */
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--text-mute);
-    white-space: nowrap;
-    padding-right: var(--sp-2);
-  }
+.pill.wide {
+	width: min(560px, calc(100vw - 40px));
+	padding-left: var(--sp-4);
+}
+.pill input {
+	flex: 1;
+	min-width: 0;
+	font-family: var(--sans);
+	/* Body: entry text at 16 / 400, zero tracking. */
+	font-size: 16px;
+	font-weight: 400;
+	line-height: 24px;
+	letter-spacing: 0;
+	background: transparent;
+	border: 0;
+	color: var(--text);
+	padding: var(--sp-2) 0;
+}
+.pill input:focus {
+	outline: none;
+}
+.pill input::placeholder {
+	color: var(--ink-faint);
+}
+.scope {
+	/* Caption: the scope prefix in the capture pill. */
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--text-mute);
+	white-space: nowrap;
+	padding-right: var(--sp-2);
+}
 
-  /* Four equal choices, so none of them is the primary and none of them is yellow. */
-  .menu {
-    position: fixed;
-    left: 50%;
-    bottom: 96px;
-    z-index: var(--z-menu);
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
-    width: 280px;
-    background: var(--surface);
-    /* AU.3: shadow, no border - a floating surface. */
-    border: 0;
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-lifted);
-    padding: var(--sp-2);
-  }
-  .menu button {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    width: 100%;
-    background: transparent;
-    border: 0;
-    border-radius: var(--r);
-    cursor: pointer;
-    padding: var(--sp-3);
-    font-family: var(--sans);
-    /* Body: menu items are list text, not buttons. */
-    font-size: 16px;
-    font-weight: 400;
-    line-height: 24px;
-    letter-spacing: 0;
-    color: var(--text);
-    text-align: left;
-    transition:
-      background var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease);
-  }
-  /* Q.5: the capture menu shares the pill's colour language - lavender wash +
+/* Four equal choices, so none of them is the primary and none of them is yellow. */
+.menu {
+	position: fixed;
+	left: 50%;
+	bottom: 96px;
+	z-index: var(--z-menu);
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+	width: 280px;
+	background: var(--surface);
+	/* AU.3: shadow, no border - a floating surface. */
+	border: 0;
+	border-radius: var(--r-lg);
+	box-shadow: var(--shadow-lifted);
+	padding: var(--sp-2);
+}
+.menu button {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-3);
+	width: 100%;
+	background: transparent;
+	border: 0;
+	border-radius: var(--r);
+	cursor: pointer;
+	padding: var(--sp-3);
+	font-family: var(--sans);
+	/* Body: menu items are list text, not buttons. */
+	font-size: 16px;
+	font-weight: 400;
+	line-height: 24px;
+	letter-spacing: 0;
+	color: var(--text);
+	text-align: left;
+	transition:
+		background var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
+}
+/* Q.5: the capture menu shares the pill's colour language - lavender wash +
      lavender ink/icon on hover, matching the round buttons. Keyboard focus
      keeps its own surface-2 signal so the two states stay distinct. */
-  .menu button:hover {
-    background: var(--lavender-subtle);
-    color: var(--accent);
-  }
-  .menu button:focus-visible {
-    background: var(--surface-2);
-  }
-  .menu button:hover .ic {
-    color: var(--accent);
-  }
-  .menu .ic {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    color: var(--text-mute);
-    display: grid;
-    place-items: center;
-  }
-  .menu svg {
-    width: 20px;
-    height: 20px;
-    stroke-width: 1.8;
-  }
+.menu button:hover {
+	background: var(--lavender-subtle);
+	color: var(--accent);
+}
+.menu button:focus-visible {
+	background: var(--surface-2);
+}
+.menu button:hover .ic {
+	color: var(--accent);
+}
+.menu .ic {
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	color: var(--text-mute);
+	display: grid;
+	place-items: center;
+}
+.menu svg {
+	width: 20px;
+	height: 20px;
+	stroke-width: 1.8;
+}
 
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translate(-50%, 4px);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-  }
-  .menu {
-    transform: translateX(-50%);
-    animation: rise var(--dur-fast) ease both;
-  }
-  @keyframes hang {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  /* `backwards`, not `both`: the end frame is the element's own resting state anyway,
+@keyframes rise {
+	from {
+		opacity: 0;
+		transform: translate(-50%, 4px);
+	}
+	to {
+		opacity: 1;
+		transform: translate(-50%, 0);
+	}
+}
+.menu {
+	transform: translateX(-50%);
+	animation: rise var(--dur-fast) ease both;
+}
+@keyframes hang {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+/* `backwards`, not `both`: the end frame is the element's own resting state anyway,
      and a retained end frame keeps `transform: none` winning over every later rule. */
-  .hang {
-    animation: hang var(--dur-slow) var(--ease) backwards;
-  }
+.hang {
+	animation: hang var(--dur-slow) var(--ease) backwards;
+}
 
-  /* `animation-iteration-count` has to be reset too, and leaving it out is worse than
+/* `animation-iteration-count` has to be reset too, and leaving it out is worse than
      doing nothing at all. Measured: `breathe` kept `infinite` while its duration was
      crushed to 1ms, turning a slow pulse into roughly sixty opacity flashes a second
      for exactly the people who asked for less motion. */
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 1ms !important;
-      animation-delay: 0ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 1ms !important;
-    }
-    .thinking,
-    .recorder.listening span {
-      animation: none !important;
-      opacity: 1 !important;
-    }
-  }
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 1ms !important;
+		animation-delay: 0ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 1ms !important;
+	}
+	.thinking,
+	.recorder.listening span {
+		animation: none !important;
+		opacity: 1 !important;
+	}
+}
 
-  /* ---- the modal ----------------------------------------------------------
+/* ---- the modal ----------------------------------------------------------
      Used for anything irreversible, and only for that.
 
      `<dialog>` rather than a hand-built overlay: focus trapping, Esc to dismiss, inert
@@ -319,235 +348,235 @@
      `window.confirm` is a no-op in the WKWebView this ships inside - it never shows a
      panel and returns false immediately - so every destructive action guarded by it
      silently did nothing. */
-  dialog.ask {
-    border: 0;
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    color: var(--text-dim);
-    padding: var(--sp-6);
-    max-width: min(480px, calc(100vw - 40px));
-    font-family: var(--sans);
-    box-shadow: var(--shadow-lifted);
-    animation: lift var(--dur) ease both;
-  }
-  @keyframes lift {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  dialog.ask::backdrop {
-    background: var(--scrim);
-    animation: fadeIn var(--dur) ease both;
-  }
-  dialog.ask h2 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 500;
-    line-height: 29px;
-    letter-spacing: -0.48px;
-    color: var(--text);
-  }
-  dialog.ask p {
-    margin: var(--sp-3) 0 0;
-    font-size: 16px;
-    line-height: 22.4px;
-    color: var(--text-dim);
-  }
-  /* The destructive choice sits on the right and repeats the verb. Cancel takes the
+dialog.ask {
+	border: 0;
+	border-radius: var(--r-lg);
+	background: var(--surface);
+	color: var(--text-dim);
+	padding: var(--sp-6);
+	max-width: min(480px, calc(100vw - 40px));
+	font-family: var(--sans);
+	box-shadow: var(--shadow-lifted);
+	animation: lift var(--dur) ease both;
+}
+@keyframes lift {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+dialog.ask::backdrop {
+	background: var(--scrim);
+	animation: fadeIn var(--dur) ease both;
+}
+dialog.ask h2 {
+	margin: 0;
+	font-size: 24px;
+	font-weight: 500;
+	line-height: 29px;
+	letter-spacing: -0.48px;
+	color: var(--text);
+}
+dialog.ask p {
+	margin: var(--sp-3) 0 0;
+	font-size: 16px;
+	line-height: 22.4px;
+	color: var(--text-dim);
+}
+/* The destructive choice sits on the right and repeats the verb. Cancel takes the
      initial focus, so a stray Return cannot destroy anything. */
-  dialog.ask .asked {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--sp-3);
-    margin-top: var(--sp-6);
-  }
+dialog.ask .asked {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--sp-3);
+	margin-top: var(--sp-6);
+}
 
-  /* The grouping-name modal is the one rich ask: it gets an explanatory line under
+/* The grouping-name modal is the one rich ask: it gets an explanatory line under
      the title and a properly styled field, so it reads as part of the app rather
      than a platform prompt. The destructive confirm and the move picker keep the
      plain shell. */
-  dialog.ask.name p {
-    margin: var(--sp-2) 0 0;
-    /* Body SM, muted: one sentence that explains what saving means. */
-    font-size: 14px;
-    line-height: 21px;
-    color: var(--text-mute);
-  }
-  dialog.ask.name .namefield {
-    width: 100%;
-    margin-top: var(--sp-4);
-    font-family: var(--sans);
-    /* Body: entry text at 16 / 400, zero tracking. */
-    font-size: 16px;
-    font-weight: 400;
-    line-height: 24px;
-    letter-spacing: 0;
-    /* 8px vertical, 12px horizontal, per DESIGN.md section 4. */
-    padding: var(--sp-2) var(--sp-3);
-    border-radius: var(--r-md);
-    color: var(--text);
-    background: var(--surface);
-    /* The border is the only thing telling you where the typable region is, so it is
+dialog.ask.name p {
+	margin: var(--sp-2) 0 0;
+	/* Body SM, muted: one sentence that explains what saving means. */
+	font-size: 14px;
+	line-height: 21px;
+	color: var(--text-mute);
+}
+dialog.ask.name .namefield {
+	width: 100%;
+	margin-top: var(--sp-4);
+	font-family: var(--sans);
+	/* Body: entry text at 16 / 400, zero tracking. */
+	font-size: 16px;
+	font-weight: 400;
+	line-height: 24px;
+	letter-spacing: 0;
+	/* 8px vertical, 12px horizontal, per DESIGN.md section 4. */
+	padding: var(--sp-2) var(--sp-3);
+	border-radius: var(--r-md);
+	color: var(--text);
+	background: var(--surface);
+	/* The border is the only thing telling you where the typable region is, so it is
        the one line token that clears 3:1. */
-    border: 1px solid var(--line-strong);
-    transition:
-      border-color var(--dur-fast) var(--ease),
-      /* A 120ms focus-ring fade-in: the field wakes instead of snapping. */
-      box-shadow 120ms var(--ease);
-  }
-  dialog.ask.name .namefield::placeholder {
-    color: var(--ink-faint);
-  }
-  dialog.ask.name .namefield:focus {
-    outline: none;
-    /* The mandated 2px lavender-focus ring at 50%, the same signal the search bar
+	border: 1px solid var(--line-strong);
+	transition:
+		border-color var(--dur-fast) var(--ease),
+		/* A 120ms focus-ring fade-in: the field wakes instead of snapping. */
+		box-shadow 120ms var(--ease);
+}
+dialog.ask.name .namefield::placeholder {
+	color: var(--ink-faint);
+}
+dialog.ask.name .namefield:focus {
+	outline: none;
+	/* The mandated 2px lavender-focus ring at 50%, the same signal the search bar
        carries on focus-within. */
-    box-shadow: 0 0 0 2px
-      color-mix(in oklab, var(--lavender-focus) 50%, transparent);
-  }
+	box-shadow: 0 0 0 2px
+		color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+}
 
-  .toast {
-    position: fixed;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 108px;
-    z-index: var(--z-menu);
-    max-width: min(560px, calc(100vw - 40px));
-    background: var(--surface);
-    color: var(--text);
-    /* AU.3: shadow, no border - a floating surface. */
-    border: 0;
-    border-radius: var(--r);
-    box-shadow: var(--shadow-lifted);
-    padding: var(--sp-3) var(--sp-4);
-    font-size: 16px;
-    line-height: 22.4px;
-    animation: rise var(--dur) ease both;
-  }
-  .toast.bad {
-    background: var(--tint-warn);
-    border-color: transparent;
-  }
+.toast {
+	position: fixed;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 108px;
+	z-index: var(--z-menu);
+	max-width: min(560px, calc(100vw - 40px));
+	background: var(--surface);
+	color: var(--text);
+	/* AU.3: shadow, no border - a floating surface. */
+	border: 0;
+	border-radius: var(--r);
+	box-shadow: var(--shadow-lifted);
+	padding: var(--sp-3) var(--sp-4);
+	font-size: 16px;
+	line-height: 22.4px;
+	animation: rise var(--dur) ease both;
+}
+.toast.bad {
+	background: var(--tint-warn);
+	border-color: transparent;
+}
 
-  /* ---- drag-and-drop overlay ------------------------------------------------
+/* ---- drag-and-drop overlay ------------------------------------------------
      The whole window is a drop target, so there is no drop zone to find. When a
      file, image, or external text drag crosses in, the room dims slightly and a
      card opens to receive: the capture pill's disc at a larger scale, an arrow
      into a tray, and the same promise the empty wall makes - anything you drop is
      kept. The card is the drop surface itself, so visible is ready; the accent
      warms as the acknowledgement, not as an instruction to hunt for a zone. */
-  .dropover[hidden] {
-    display: none;
-  }
-  .dropover {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-menu);
-    display: grid;
-    place-items: center;
-    background: var(--scrim);
-    opacity: 0;
-    transition: opacity var(--dur) ease;
-  }
-  .dropover.on {
-    opacity: 1;
-  }
-  .dropcard {
-    display: grid;
-    justify-items: center;
-    gap: var(--sp-2);
-    width: min(440px, calc(100vw - 40px));
-    padding: var(--sp-6) var(--sp-5);
-    text-align: center;
-    background: var(--surface);
-    /* The dropcard's edge is its affordance: the accent-strong boundary says "drop
+.dropover[hidden] {
+	display: none;
+}
+.dropover {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-menu);
+	display: grid;
+	place-items: center;
+	background: var(--scrim);
+	opacity: 0;
+	transition: opacity var(--dur) ease;
+}
+.dropover.on {
+	opacity: 1;
+}
+.dropcard {
+	display: grid;
+	justify-items: center;
+	gap: var(--sp-2);
+	width: min(440px, calc(100vw - 40px));
+	padding: var(--sp-6) var(--sp-5);
+	text-align: center;
+	background: var(--surface);
+	/* The dropcard's edge is its affordance: the accent-strong boundary says "drop
        here" and the scrim behind it does the separating, so AU.3's shadow-vs-
        border rule keeps the border and drops the shadow. */
-    border: 1.5px solid var(--accent-strong);
-    border-radius: var(--r-lg);
-    transform: translateY(6px) scale(0.99);
-    transition:
-      transform var(--dur) var(--ease),
-      background var(--dur) ease;
-  }
-  .dropover.on .dropcard {
-    transform: translateY(0) scale(1);
-  }
-  .dropover[data-state="accept"] .dropcard {
-    background: var(--tint-ok);
-    transform: translateY(0) scale(1.02);
-  }
-  .dropcard .drop-ic {
-    display: grid;
-    place-items: center;
-    width: 56px;
-    height: 56px;
-    margin-bottom: var(--sp-2);
-    border-radius: var(--r-full);
-    background: var(--accent);
-    /* The edge is gone: the disc's lavender fill bounds it against the card at
+	border: 1.5px solid var(--accent-strong);
+	border-radius: var(--r-lg);
+	transform: translateY(6px) scale(0.99);
+	transition:
+		transform var(--dur) var(--ease),
+		background var(--dur) ease;
+}
+.dropover.on .dropcard {
+	transform: translateY(0) scale(1);
+}
+.dropover[data-state="accept"] .dropcard {
+	background: var(--tint-ok);
+	transform: translateY(0) scale(1.02);
+}
+.dropcard .drop-ic {
+	display: grid;
+	place-items: center;
+	width: 56px;
+	height: 56px;
+	margin-bottom: var(--sp-2);
+	border-radius: var(--r-full);
+	background: var(--accent);
+	/* The edge is gone: the disc's lavender fill bounds it against the card at
        4.70:1, so no --text edge is needed (the old edge was for amber). */
-    color: var(--accent-ink);
-  }
-  .dropcard .drop-ic svg {
-    width: 24px;
-    height: 24px;
-    stroke-width: 2;
-  }
-  .dropcard .drop-ic #dropOk {
-    display: none;
-  }
-  .dropover[data-state="accept"] .drop-ic #dropIn {
-    display: none;
-  }
-  .dropover[data-state="accept"] .drop-ic #dropOk {
-    display: block;
-  }
-  .dropcard .title {
-    /* Headline: the drop card is a CTA, so its line is a headline. */
-    font-size: 24px;
-    font-weight: 600;
-    line-height: 29px;
-    letter-spacing: -0.5px;
-    color: var(--text);
-  }
-  .dropcard .sub {
-    color: var(--text-dim);
-  }
-  .dropcard .hint {
-    margin-top: var(--sp-2);
-    font-size: 13px;
-    color: var(--text-mute);
-  }
-  .dropover[data-state="accept"] .hint {
-    color: var(--text-dim);
-  }
+	color: var(--accent-ink);
+}
+.dropcard .drop-ic svg {
+	width: 24px;
+	height: 24px;
+	stroke-width: 2;
+}
+.dropcard .drop-ic #dropOk {
+	display: none;
+}
+.dropover[data-state="accept"] .drop-ic #dropIn {
+	display: none;
+}
+.dropover[data-state="accept"] .drop-ic #dropOk {
+	display: block;
+}
+.dropcard .title {
+	/* Headline: the drop card is a CTA, so its line is a headline. */
+	font-size: 24px;
+	font-weight: 600;
+	line-height: 29px;
+	letter-spacing: -0.5px;
+	color: var(--text);
+}
+.dropcard .sub {
+	color: var(--text-dim);
+}
+.dropcard .hint {
+	margin-top: var(--sp-2);
+	font-size: 13px;
+	color: var(--text-mute);
+}
+.dropover[data-state="accept"] .hint {
+	color: var(--text-dim);
+}
 
-  @keyframes breathe {
-    0%,
-    100% {
-      opacity: 0.35;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-  .thinking {
-    animation: breathe 1.8s var(--ease) infinite;
-  }
+@keyframes breathe {
+	0%,
+	100% {
+		opacity: 0.35;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+.thinking {
+	animation: breathe 1.8s var(--ease) infinite;
+}
 
-  @media (max-width: 768px) {
-    main {
-      padding-left: var(--sp-4);
-      padding-right: var(--sp-4);
-    }
-    .docpane,
-    .group {
-      padding: var(--sp-4);
-    }
-  }
+@media (max-width: 768px) {
+	main {
+		padding-left: var(--sp-4);
+		padding-right: var(--sp-4);
+	}
+	.docpane,
+	.group {
+		padding: var(--sp-4);
+	}
+}

@@ -47,7 +47,12 @@ def create(body: str = "", title: str | None = None, local_only: bool = False) -
     """Create a note. An empty note is legitimate: capture costs nothing."""
     artifact_id = str(uuid.uuid4())
     now = db.now()
-    resolved = (title or title_from_body(body)).strip() or UNTITLED
+    if title and title.strip():
+        resolved = title.strip()
+        explicit = True
+    else:
+        resolved = title_from_body(body).strip() or UNTITLED
+        explicit = False
 
     # The hash is only a dedupe key, and two notes written at different moments are
     # different artifacts even with identical text. Salting with the id keeps the
@@ -56,9 +61,9 @@ def create(body: str = "", title: str | None = None, local_only: bool = False) -
 
     with db.transaction() as conn:
         conn.execute(
-            "INSERT INTO artifacts (id, kind, title, body, content_hash, created_at,"
-            " updated_at, local_only, status) VALUES (?,'note',?,?,?,?,?,?,'ok')",
-            (artifact_id, resolved, body, digest, now, now, int(local_only)),
+            "INSERT INTO artifacts (id, kind, title, title_explicit, body, content_hash,"
+            " created_at, updated_at, local_only, status) VALUES (?,'note',?,?,?,?,?,?,?,'ok')",
+            (artifact_id, resolved, int(explicit), body, digest, now, now, int(local_only)),
         )
         if body:
             _append_version(conn, artifact_id, body, now)
@@ -99,12 +104,17 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
 
     Appends the new body to the version log *before* updating the artifact, so a
     crash between the two leaves a spare copy rather than a hole.
+
+    The title follows NOTE.0's model: a non-empty title is explicit and survives
+    later body-only edits; an empty title clears the flag and reverts to the live
+    first-line derivation; no title at all keeps an explicit title or derives.
     """
     now = db.now()
 
     with db.transaction() as conn:
         row = conn.execute(
-            "SELECT kind, title, body FROM artifacts WHERE id = ?", (artifact_id,)
+            "SELECT kind, title, body, title_explicit FROM artifacts WHERE id = ?",
+            (artifact_id,),
         ).fetchone()
         if row is None:
             raise KeyError(artifact_id)
@@ -113,14 +123,30 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
                 f"{row['kind']} artifacts have no editable body; they came from the world. "
                 "Attach an annotation instead."
             )
-        if row["body"] == body:
+
+        if title is not None and title.strip():
+            resolved = title.strip()
+            explicit = 1
+        elif title is not None:
+            resolved = title_from_body(body)
+            explicit = 0
+        elif row["title_explicit"]:
+            resolved = row["title"]
+            explicit = 1
+        else:
+            resolved = title_from_body(body)
+            explicit = 0
+
+        body_changed = row["body"] != body
+        if not body_changed and row["title"] == resolved and row["title_explicit"] == explicit:
             return get(artifact_id)  # no change, no version
 
-        _append_version(conn, artifact_id, body, now)
-        resolved = (title or title_from_body(body)).strip() or UNTITLED
+        if body_changed:
+            _append_version(conn, artifact_id, body, now)
         conn.execute(
-            "UPDATE artifacts SET body = ?, title = ?, updated_at = ? WHERE id = ?",
-            (body, resolved, now, artifact_id),
+            "UPDATE artifacts SET body = ?, title = ?, title_explicit = ?, updated_at = ?"
+            " WHERE id = ?",
+            (body, resolved, explicit, now, artifact_id),
         )
         _record_secrets(conn, artifact_id, body)
 
