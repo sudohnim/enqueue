@@ -218,6 +218,7 @@ async function saveLink(url) {
 	}
 	home();
 	toast("Saved.");
+	captureFlight();
 }
 
 async function newNote() {

@@ -109,7 +109,60 @@
       units.length - 1,
       Math.floor(Math.log(n) / Math.log(1024)),
     );
-    return (n / Math.pow(1024, i)).toFixed(i ? 1 : 0) + " " + units[i];
+    return (n / 1024 ** i).toFixed(i ? 1 : 0) + " " + units[i];
+  }
+
+  // ANIM.1: the one reusable loading mark. `spinner("lg", "searching...")` is the
+  // big centred raven for a full-view wait; `spinner("sm", ...)` is the small
+  // inline raven for a conversation or row. Returns markup; the caption is the
+  // text a screen reader announces, and it still communicates the wait under
+  // reduced motion when the bird stops spinning.
+  function spinner(size, caption) {
+    const cls = size === "lg" ? "loader loader-lg" : "loader loader-sm";
+    const bird =
+      '<img class="loader-bird" src="/static/loading.png" alt="" aria-hidden="true">';
+    const cap = caption
+      ? '<span class="loader-caption">' + esc(caption) + "</span>"
+      : "";
+    return '<div class="' + cls + '" role="status">' + bird + cap + "</div>";
+  }
+
+  // ANIM.4: the capture-success flight. The raven flies in from the left edge to
+  // centre, holds, and fades - a rehearsed one-off on a successful capture. A
+  // second capture restarts it (the old bird is replaced, never stacked), and the
+  // bird is pointer-events: none so it never blocks a click or the next capture.
+  // Returns a promise that resolves when the flight ends, so the capture overlay
+  // can hold its dismiss until the bird has been seen.
+  function captureFlight() {
+    const old = document.getElementById("captureFlight");
+    if (old) old.remove();
+
+    const img = document.createElement("img");
+    img.id = "captureFlight";
+    img.className = "capture-flight";
+    img.src = "/static/capture-bird.png?v=" + Date.now();
+    img.alt = "";
+    img.setAttribute("aria-hidden", "true");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      img.classList.add("reduced");
+    }
+    document.body.appendChild(img);
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // No-op if a second capture already removed this bird and mounted its own.
+        img.remove();
+        resolve();
+      }, 1900);
+    });
+  }
+
+  // CAP.3: the capture overlay signals a completed capture through the shell
+  // (capture_done -> "capture-flight" event), so the raven flies full-screen here in
+  // the main window rather than as a tiny sweep in the 600x264 overlay. A no-op when
+  // there is no Tauri (plain-browser view).
+  if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
+    window.__TAURI__.event.listen("capture-flight", () => captureFlight());
   }
 
   // DI.1: settings is one tabbed surface, not four stacked full pages. Each tab

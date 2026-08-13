@@ -297,7 +297,7 @@ async function setWallGroup(mode) {
 // only the run action differs (finish the modal, or run the grouping
 // directly). Resolves when the fetch settles, so callers can await it.
 function renderPickerRows(box, list, onRun) {
-	list.innerHTML = '<div class="state">opening...</div>';
+	list.innerHTML = spinner("sm", "opening...");
 	return api("/pivots")
 		.then((d) => {
 			if (!box.isConnected) return; // the modal closed while fetching
@@ -668,7 +668,7 @@ async function home(opts) {
 	view.removeAttribute("data-kind");
 	restorePill("wall");
 	setRoute("");
-	view.innerHTML = '<div class="state">opening...</div>';
+	view.innerHTML = spinner("lg", "opening...");
 
 	const [kept, first] = await Promise.all([
 		api("/artifacts?pinned=true&order=touched&limit=200"),
@@ -949,7 +949,7 @@ async function loadMore() {
 	wall.loading = true;
 
 	const foot = document.getElementById("wallEnd");
-	if (foot) foot.textContent = "loading more...";
+	if (foot) foot.innerHTML = spinner("sm", "loading more...");
 
 	const next = await api(
 		"/artifacts?pinned=false&order=touched&limit=" +

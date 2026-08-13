@@ -1,0 +1,189 @@
+# Sync relay protocol
+
+The relay is the live transport for Enqueue sync.
+It replaces the synced-folder transport from `docs/e2e/E2E.md` for mobile, while the
+folder path stays valid for desktop-to-desktop.
+
+The relay is a dumb byte store.
+It holds per-device snapshot objects and content-addressed blobs, serves them back, and
+streams a "something changed" signal.
+It parses none of the bytes, stores no plaintext, and can decrypt nothing.
+In the plaintext prototype (SYNC.1 to SYNC.7) the bytes are canonical-JSON snapshots; in
+the encrypted stage (SYNC.8 to SYNC.9) they are the same bytes wrapped in an XChaCha20
+ciphertext.
+The relay code does not change between those two stages.
+
+## Auth model
+
+There are no user accounts.
+One person, one library, a small number of devices.
+
+Each library has one **shared secret** (a per-library sync secret, generated once and
+stored in the Keychain on every device, per SYNC.3).
+Every device in the library knows the same secret.
+The relay trusts any caller that presents it.
+
+- HTTP endpoints carry it as `Authorization: Bearer <secret>`.
+- The SSE endpoint carries it as a query parameter `?token=<secret>`, because
+  `EventSource` cannot set headers.
+  The token is validated on connect, exactly like dequeue's `GET /events?token=<jwt>`.
+
+The relay stores the secret (or a hash of it) only to compare on request; it is not a
+user identity and it authorizes nothing beyond "this caller may read and write this
+library's objects".
+A wrong or missing secret gets `401`.
+
+`device_id` is separate from the secret.
+It is a UUID4 generated once per device and stored at `DATA_DIR/device_id` (E2E.md
+Section 1).
+It names a device's own write namespace and breaks LWW ties; it is not an identity the
+relay verifies.
+
+## Object namespace
+
+Objects are named exactly as in E2E.md Section 1, minus the dropped `exhibits/` path
+(exhibits were removed in migration 0019; saved-pivot sync is out of scope).
+
+- Snapshot objects: `dev/<device_id>/artifacts/<artifact_id>.enc`
+- Blob objects: `blobs/<blob_name>`
+
+`<blob_name>` is the E2E.md content-addressed name `blob_name(content_hash, dek)` - a
+hex HMAC-SHA256 of the content hash keyed by the DEK - so a blob's address leaks nothing
+about its contents.
+Names are the only metadata the relay ever sees.
+
+A device writes **only** to its own `dev/<device_id>/` namespace.
+It reads every namespace.
+
+## Endpoints
+
+Base URL is the configured `SYNC_RELAY_URL`, e.g. `https://<host>`.
+
+### 1. `GET /sync/objects?since=<cursor>` - list changed objects
+
+Request:
+
+- `Authorization: Bearer <secret>` header.
+- `since` query parameter: an opaque cursor from a previous call, or absent (or `0`) on
+  first call.
+
+Response `200`:
+
+```json
+{
+  "objects": [
+    {"name": "dev/<device_id>/artifacts/<id>.enc", "size": 1234},
+    {"name": "blobs/<blob_name>", "size": 5678}
+  ],
+  "cursor": "<opaque-cursor>"
+}
+```
+
+- `objects` lists every object that changed at or after the cursor, newest first, by
+  object name.
+- `cursor` is the new cursor to pass to the next call.
+  It is an opaque monotonic value; clients must treat it as a black box and never derive
+  anything from its shape.
+- The list is bounded (the relay may paginate); a client that reaches the end simply
+  re-reads with the returned cursor until it sees no new names.
+- It never returns the bytes; clients call get-object for bytes they do not have.
+
+### 2. `GET /sync/object/<name>` - fetch one object
+
+Request:
+
+- `Authorization: Bearer <secret>` header.
+- `<name>` is a full object name, e.g. `dev/<device_id>/artifacts/<id>.enc` or
+  `blobs/<blob_name>`.
+  The name is URL-escaped; slashes inside the name are part of the path.
+
+Response `200`:
+
+- `Content-Type: application/octet-stream`.
+- Body is the exact bytes that were put, byte-for-byte.
+- The relay adds no framing, no envelope, no metadata.
+
+Errors:
+
+- `404` when no object with that name exists.
+- `401` on a bad secret.
+
+The relay never interprets the bytes.
+A client treats an unreadable or decrypt-failing object as "not yet arrived", never as
+corruption (E2E.md Phase E4).
+
+### 3. `PUT /sync/object/<name>` - store one object (write-by-unique-name)
+
+Request:
+
+- `Authorization: Bearer <secret>` header.
+- `<name>` is a full object name, same escaping as get-object.
+- `Content-Type: application/octet-stream`.
+- Body is the object bytes.
+
+Response `201`:
+
+```json
+{"name": "<name>", "size": 1234}
+```
+
+Semantics:
+
+- Write-by-unique-name: the name is the object's identity.
+  A `PUT` of an existing name is a conflict, not an update.
+- The relay **never overwrites in place**.
+  A re-`PUT` of a name that already exists returns `409 Conflict` and leaves the stored
+  object untouched.
+- Idempotence for the client: re-pushing an unchanged snapshot is a no-op because the
+  name is already present; the client treats `409` as "already there" and moves on.
+- The relay writes the object durably (to disk or object storage) before returning, and
+  records the name in the change feed that `list-changed-since` and `subscribe` read.
+
+### 4. `GET /sync/events?token=<secret>` - subscribe (SSE)
+
+Request:
+
+- `token` query parameter: the shared secret.
+  There is no header form for this endpoint.
+- `Accept: text/event-stream`.
+
+Response `200`, then a persistent `text/event-stream`:
+
+```
+event: object
+data: {"name": "dev/<device_id>/artifacts/<id>.enc", "cursor": "<cursor>"}
+
+event: object
+data: {"name": "blobs/<blob_name>", "cursor": "<cursor>"}
+```
+
+- One `event: object` is emitted whenever any object changes (a successful `PUT`).
+- `data` is a JSON object with the changed object's `name` and the new `cursor`.
+- A client uses the `name` to decide whether to fetch, and the `cursor` to reconcile with
+  `list-changed-since` if it falls behind.
+
+Reconnect discipline (mirrors dequeue):
+
+- `EventSource` auto-reconnects on transient drops; the client must not add a second
+  reconnect loop on top of it.
+- `403`/`401` on connect is terminal: the secret is wrong.
+- A client that reconnects after a gap must re-run `list-changed-since` from its last
+  cursor, because the SSE stream is not a durable log and events emitted while it was
+  away are not replayed.
+- The relay sends a heartbeat (an SSE comment line, or a `: ping`) at a fixed interval so
+  dead connections are noticed and half-open sockets do not linger.
+
+## Security invariants
+
+- The relay stores opaque bytes only.
+  It never parses a snapshot, a blob, or any field inside them.
+- The relay can decrypt nothing.
+  Encryption happens on the device before `PUT` (E2E.md Phase E1) and after `GET`
+  (E2E.md Phase E4).
+  The relay holds neither the DEK, the KEK, nor the recovery phrase.
+- The only plaintext the relay ever holds is the object **name**, which is
+  `dev/<device_id>/artifacts/<id>.enc` (a UUID and an artifact UUID, deliberately not
+  meaningful) or `blobs/<HMAC>` (a keyed digest that reveals nothing).
+- The shared secret authenticates "this caller belongs to this library".
+  It grants no finer identity; the relay does not know which device is which and does not
+  need to.

@@ -82,7 +82,7 @@
        under dissolve there and nowhere else - they never show through the
        translucent wash at the top (the reappearing-artifacts bug). */
 	background:
-		linear-gradient(180deg, var(--lavender-subtle) 0%, transparent 40%),
+		linear-gradient(180deg, var(--purple-bold-wash-strong) 0%, transparent 85%),
 		linear-gradient(180deg, var(--bg) 0%, var(--bg) 92%, transparent 100%);
 	padding-top: var(--sp-3);
 	padding-bottom: var(--sp-6);
@@ -167,7 +167,7 @@
      hero text - a single pixel of brand ink that ties the phrase to the eye
      without recoloring the whole line (the eye owns the saturation). */
 .greet-mark {
-	color: var(--accent);
+	color: var(--purple-bold);
 }
 
 /* The greeting eye: the eye alone is the brand mark now - the lavender disc is

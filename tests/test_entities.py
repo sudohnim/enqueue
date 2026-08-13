@@ -88,6 +88,23 @@ def sqlite_store(store, monkeypatch):
     get_store.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_judge(monkeypatch):
+    """Retrieval tests here assert the entity/facet ladder, not the gray-zone
+    judge. Stub it fail-open (keep everything) exactly as test_chats.py and
+    test_search_results.py do, so a gray-zone hit never waits on the real local
+    model and a verdict can never make a ladder test flake."""
+    from enqueue.retrieve import candidates as cand
+
+    class _KeepAllJudge:
+        model = "test-judge"
+
+        def complete(self, *args, **kwargs):
+            return cand._GrayZoneResponse(verdicts=[])
+
+    monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _KeepAllJudge())
+
+
 class TestExtraction:
     def test_extracts_and_enriches(self, store, monkeypatch):
         aid = notes.create(body="The words of Theodore Roosevelt on grit.")["artifact"]["id"]

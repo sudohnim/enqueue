@@ -59,6 +59,12 @@
        and on the wall, and no amber survives. */
     --accent-strong: #5e6ad2;
     --lavender-subtle: rgba(94, 106, 210, 0.12);
+    /* The capture overlay wears the eye's bold purple (#60079f) on its brand disc
+       and focus edge, matching the app mark. These are capture-local extras (not in
+       the shared token set), so they carry the eye's saturation without drifting
+       the synced lavender tokens above. */
+    --purple-bold: #60079f;
+    --purple-bold-wash: rgba(96, 7, 159, 0.1);
     /* Errors. The same danger hue as the app; the pink is only the image-kind
        hue (C.3), never an error color. */
     --danger: #b4332b;
@@ -76,7 +82,9 @@
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
     --r-sm: 6px;
+    --r-md: 8px;
     --r-lg: 12px;
+    --r-full: 9999px;
     --shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08);
 
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -101,70 +109,65 @@
     font-family: var(--sans);
     color: var(--text);
     -webkit-font-smoothing: antialiased;
+    height: 100vh;
   }
 
+  /* The transparent window IS the floating card - it fills the window, carries its
+     own rounded edge and shadow, and floats on the desktop (the dequeue capture
+     model, without dimming the whole screen). */
   #card {
     height: 100%;
     display: flex;
     flex-direction: column;
+    gap: 12px;
     background: var(--bg);
-    /* A hairline, not a frame: the lifted shadow carries the edge, and
-       the border only keeps the 3:1 drag-target boundary distinct. */
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-lifted);
+    padding: 14px;
     transition:
       border-color var(--dur) var(--ease),
-      box-shadow var(--dur) var(--ease);
+      box-shadow var(--dur) var(--ease),
+      opacity 160ms var(--ease),
+      transform 160ms var(--ease);
+  }
+  /* On a successful keep the card leaves before the bird flies (K.5 reorder). */
+  #card.kept {
+    opacity: 0;
+    transform: scale(0.98);
   }
 
   #card.hovering {
-    border-color: var(--accent-strong);
+    border-color: var(--purple-bold);
   }
 
   /* The focus signal is the app's ring, carried by the card so the borderless
      field can stay borderless. Same lavender ring as every input in the app, sized
      for the card's 12px radius. */
-  #card:focus-within {
-    border-color: var(--accent-strong);
-    box-shadow: 0 0 0 3px var(--lavender-subtle);
-  }
+  /* The focus ring lives on the input box (#fieldbox), not the card, so the two
+     never double up; the card keeps its hairline. */
 
   /* ------------------------------------------------------------------ title bar */
 
+  /* A slim grab handle at the top of the card - the whole strip drags the window,
+     with the brand disc centred in it. Nothing in it may swallow a mousedown. */
   #bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 0 12px;
-    height: 30px;
-    flex: 0 0 30px;
-    background: var(--surface);
-    /* No underline: the surface step (tinted bar on the white card) is the
-       whole separation. A line on top of it would box the bar back in. */
-    /* The whole bar is the drag handle, so nothing in it may swallow a mousedown
-       or start a text selection on the way past. */
+    justify-content: center;
+    height: 12px;
+    flex: 0 0 12px;
     user-select: none;
     cursor: default;
   }
 
-  /* The brand mark at rest: the same lavender disc as the keep button on the
-     pill, at the overlay's 10px size. Static - no animation, and the 30px bar
-     never shifts. The disc alone is the mark; the window already is Enqueue,
-     so no caps wordmark rides beside it (K.3). */
-  #bar .brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  #bar .brand .disc {
-    width: 10px;
-    height: 10px;
+  #bar .disc {
+    width: 8px;
+    height: 8px;
     flex-shrink: 0;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--purple-bold);
+    opacity: 0.5;
   }
 
   /* The kind-hue dot (C.3b): a 6px chip in the kind's own color, sitting next
@@ -206,23 +209,83 @@
 
   /* --------------------------------------------------------------------- field */
 
+  /* The prominent input box: a tinted, rounded well the person types into, with the
+     purple focus ring on the box itself - the dequeue capture model. */
+  #fieldbox {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    transition:
+      border-color var(--dur) var(--ease),
+      box-shadow var(--dur) var(--ease);
+  }
+  #fieldbox:focus-within {
+    border-color: var(--purple-bold);
+    box-shadow: 0 0 0 3px var(--purple-bold-wash);
+  }
+
   #field {
     flex: 1 1 auto;
+    min-height: 0;
     display: block;
     width: 100%;
-    /* Aligned to the title bar's 12px gutter so the caret sits under the wordmark. */
-    padding: 11px 12px 0;
     border: 0;
-    resize: none;
     background: transparent;
     color: var(--text);
     font-family: var(--sans);
-    font-size: 15px;
-    line-height: 1.45;
+    font-size: 16px;
+    line-height: 1.5;
+    outline: none;
+    caret-color: var(--text);
+    overflow-y: auto;
+    word-wrap: break-word;
   }
-
-  #field::placeholder {
+  /* The placeholder is the standard contenteditable trick: show it while the
+     field is :empty, and also over the seeded empty <p><br></p> the field mounts
+     with (NOTE.1's shape) so it reads until the first real character. */
+  #field:empty::before,
+  #field:has(> p:only-child > br:only-child)::before {
+    content: attr(data-placeholder);
     color: var(--ink-faint);
+  }
+  /* Rich blocks, minimal: a heading reads larger, a list shows its markers, a
+     quote its bar. The capture box is the note editor's smaller cousin. */
+  #field h1,
+  #field h2,
+  #field h3 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0;
+  }
+  #field h1 {
+    font-size: 1.3em;
+  }
+  #field h2 {
+    font-size: 1.18em;
+  }
+  #field h3 {
+    font-size: 1.08em;
+  }
+  #field p {
+    margin: 0;
+  }
+  #field ul,
+  #field ol {
+    margin: 0;
+    padding-left: 1.25em;
+  }
+  #field li {
+    margin: 0;
+  }
+  #field blockquote {
+    margin: 0;
+    padding-left: 0.7em;
+    border-left: 2px solid var(--line-strong);
+    color: var(--text-mute);
   }
 
   #foot {
@@ -230,30 +293,54 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 0 12px 9px;
-    flex: 0 0 auto;
   }
 
+  /* The caption row under the box: the kind hue-dot plus its label, and errors. */
+  .cap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .cap .dot {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: transparent;
+  }
+  .cap .dot[hidden] {
+    display: none;
+  }
   #status {
-    /* Errors are the only thing here that can run long, so it gets the room. */
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  /* The keycap hint (C.3d): the same badge the home page's searchbar shows, copied
-     because the overlay is standalone on purpose. No fade - the field holds
-     focus by design, so the hint is always live. */
-  #hint kbd {
+  /* The keep action: a filled bold-purple pill with white ink - the one instruction
+     on the surface, the dequeue "Add task" model. */
+  #keep {
     flex-shrink: 0;
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1;
-    letter-spacing: normal;
-    padding: 3px 6px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--r-sm);
-    color: var(--text-mute);
-    background: var(--surface-doc);
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: #fff;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0;
+    padding: 8px 18px;
+    cursor: pointer;
+    transition:
+      background 140ms var(--ease),
+      transform 140ms var(--ease);
+  }
+  #keep:hover {
+    background: #7a1fc0;
+  }
+  #keep:active {
+    transform: scale(0.96);
   }
 
   .busy {
@@ -284,30 +371,35 @@
       animation: none;
     }
   }
+
+  /* The capture-success flight now lives in the main window (CAP.3): the overlay
+     invokes capture_done, which dismisses it and tells the main window to fly the
+     raven full-screen. No bird is mounted here, so none can persist in the overlay. */
 </style>
 
 <div id="card">
-  <div id="bar">
-    <span class="brand">
-      <span class="disc" aria-hidden="true"></span>
-    </span>
-    <span class="kind-wrap">
+  <div id="bar" aria-hidden="true">
+    <span class="disc"></span>
+  </div>
+  <div id="fieldbox">
+    <div
+      id="field"
+      contenteditable="true"
+      data-placeholder="Toss it here - text, a link, or markdown."
+      spellcheck="false"
+    ></div>
+  </div>
+  <div id="foot">
+    <span class="cap">
       <span class="dot" id="dot" aria-hidden="true"></span>
       <span class="label" id="kind"></span>
+      <span class="label problem" id="status"></span>
     </span>
-  </div>
-  <textarea
-    id="field"
-    placeholder="Toss it here. It stays."
-    autofocus
-    spellcheck="false"
-  ></textarea>
-  <div id="foot">
-    <span class="label" id="status"></span>
-    <span class="label" id="hint"><kbd>Return</kbd> to keep</span>
+    <button id="keep" type="button">Keep</button>
   </div>
 </div>
 
+<script src="/static/js/md.js"></script>
 <script>
   const card = document.getElementById("card");
   const bar = document.getElementById("bar");
@@ -315,6 +407,8 @@
   const kindLabel = document.getElementById("kind");
   const dot = document.getElementById("dot");
   const statusLabel = document.getElementById("status");
+  const disc = document.querySelector("#bar .disc");
+  const keepBtn = document.getElementById("keep");
 
   const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : null;
 
@@ -376,6 +470,131 @@
     dot.style.background = on ? KIND_HUES[hue] : "";
   }
 
+  // The markdown shorthands that convert as you type, mirroring the note editor's
+  // RULES (artifact.js) minus the code fence, which the one-field capture box does
+  // not need. The serializer (htmlToMd) is shared: it comes from md.js, loaded above,
+  // never copied here.
+  const CAPTURE_RULES = [
+    [/^(#{1,3})\s$/, (m) => "h" + m[1].length],
+    [/^[-*+]\s$/, () => "ul"],
+    [/^1\.\s$/, () => "ol"],
+    [/^>\s$/, () => "blockquote"],
+  ];
+
+  function applyFieldRules() {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    let block = sel.anchorNode;
+    while (block && block.parentNode !== field) block = block.parentNode;
+    if (!block) return;
+    // A bare text node (a browser that did not wrap the first line in a block) gets
+    // a <p> so the rules have a real block to convert - the same fallback as the
+    // note editor; the seed below means the caret is normally already in one.
+    if (block.nodeType !== 1) {
+      if (block.nodeType !== 3) return;
+      const p = document.createElement("p");
+      block.parentNode.insertBefore(p, block);
+      p.appendChild(block);
+      block = p;
+    }
+    if (["UL", "OL", "BLOCKQUOTE"].includes(block.tagName)) return;
+
+    const text = block.textContent;
+    for (const [re, kind] of CAPTURE_RULES) {
+      const m = text.match(re);
+      if (!m) continue;
+      const tag = kind(m);
+      document.execCommand(
+        tag === "ul"
+          ? "insertUnorderedList"
+          : tag === "ol"
+            ? "insertOrderedList"
+            : "formatBlock",
+        false,
+        tag === "ul" || tag === "ol" ? null : tag,
+      );
+      // A list command nests the new list inside the paragraph it converted
+      // (`<p><ul><li>...`), which htmlToMd reads as a paragraph and flattens to
+      // plain text. Unwrap until the list is a direct child of the field.
+      const isList = tag === "ul" || tag === "ol";
+      let made = isList ? block.querySelector("ul, ol") : null;
+      if (isList && !made) {
+        const caret = window.getSelection().anchorNode;
+        const el =
+          caret && caret.nodeType === 1 ? caret : caret && caret.parentElement;
+        made = el && el.closest ? el.closest("ul, ol") : null;
+      }
+      if (isList) {
+        while (made && made.parentNode && made.parentNode !== field) {
+          const wrap = made.parentNode;
+          wrap.parentNode.insertBefore(made, wrap);
+          wrap.remove();
+        }
+      } else {
+        const caret = window.getSelection().anchorNode;
+        const el =
+          caret && caret.nodeType === 1 ? caret : caret && caret.parentElement;
+        made = el && el.closest ? el.closest("h1, h2, h3, blockquote") : null;
+      }
+      // The marker characters were the instruction, not the content: strip them
+      // from the converted block's first text node.
+      const first =
+        made && made.firstElementChild
+          ? made.firstElementChild.firstChild
+          : made
+            ? made.firstChild
+            : null;
+      const host = first && first.nodeType === 3 ? first : null;
+      if (host)
+        host.nodeValue = host.nodeValue.replace(/^(#{1,3}|[-*+]|1\.|>)\s/, "");
+      // The marker was the whole block, so a heading/quote is now empty. An empty
+      // text node is an unreliable caret anchor in Chrome/WebKit (the next
+      // keystroke lands before the block instead of inside it), so anchor the
+      // caret on a <br>, exactly like the seeded empty paragraph.
+      if (!isList && made) {
+        made.textContent = "";
+        made.appendChild(document.createElement("br"));
+        const sel2 = window.getSelection();
+        const r2 = document.createRange();
+        r2.setStart(made.firstChild, 0);
+        r2.collapse(true);
+        sel2.removeAllRanges();
+        sel2.addRange(r2);
+      }
+      return;
+    }
+  }
+
+  // The field's text, as markdown. paint() and keep() both read this so what the
+  // kind detector sees is exactly what a keep stores (md.js's htmlToMd).
+  function fieldText() {
+    return htmlToMd(field);
+  }
+
+  // An empty field is a single <p><br></p> so the caret is never in a bare text
+  // node (NOTE.1's char-stacking fix, which the WebKit capture window actually
+  // ships on). The placeholder rule above covers this shape.
+  function seedField() {
+    const p = document.createElement("p");
+    p.appendChild(document.createElement("br"));
+    field.replaceChildren(p);
+    const r = document.createRange();
+    r.setStart(p.firstChild || p, 0);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  }
+
+  function placeCaretEnd() {
+    const r = document.createRange();
+    r.selectNodeContents(field);
+    r.collapse(false);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  }
+
   function paint() {
     if (pending) {
       setKind(
@@ -384,7 +603,7 @@
       );
       return;
     }
-    const text = field.value;
+    const text = fieldText();
     if (!text.trim()) {
       setKind("", null);
       return;
@@ -408,7 +627,7 @@
   /// motion skips the flash and the pulse and dismisses at once.
   async function keptBeat() {
     say("Kept.");
-    card.style.borderColor = "var(--accent-strong)";
+    card.style.borderColor = "var(--purple-bold)";
     disc.classList.add("settle");
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       await new Promise((resolve) => setTimeout(resolve, 260));
@@ -420,7 +639,7 @@
 
   function busy(on) {
     card.classList.toggle("busy", on);
-    field.readOnly = on;
+    field.contentEditable = on ? "false" : "true";
   }
 
   /// Put the overlay away and hand focus back to wherever the person was. Rust owns
@@ -446,6 +665,7 @@
       w.getCurrentWindow().onFocusChanged(({ payload: focused }) => {
         if (focused) {
           hasHeldFocus = true;
+          card.classList.remove("kept");
           field.focus();
         } else if (hasHeldFocus) {
           hasHeldFocus = false;
@@ -481,7 +701,7 @@
   /// One field, four outcomes, no question asked. Which one it is falls out of what
   /// is in the field rather than out of a control the person has to operate first.
   async function keep() {
-    const text = field.value.trim();
+    const text = fieldText().trim();
     if (!text) return;
 
     busy(true);
@@ -510,11 +730,18 @@
           body: JSON.stringify({ body: text }),
         });
       }
-      field.value = "";
+      seedField();
       paint();
       busy(false);
-      await keptBeat();
-      dismiss();
+      // The card leaves first, then the overlay dismisses and the main window plays
+      // the full-screen flight (CAP.3).
+      card.classList.add("kept");
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        await new Promise((r) => setTimeout(r, 160));
+      }
+      // The capture completed: dismiss the overlay and let the main window play the
+      // full-screen flight (CAP.3). No bird is mounted here, so none can persist.
+      if (invoke) invoke("capture_done").catch(() => {});
     } catch (err) {
       // The text stays. Losing what someone just typed because a background
       // process is down is the one failure this whole surface exists to avoid.
@@ -524,7 +751,11 @@
     }
   }
 
-  field.addEventListener("input", paint);
+  field.addEventListener("input", () => {
+    applyFieldRules();
+    paint();
+  });
+  keepBtn.addEventListener("click", keep);
 
   field.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -534,10 +765,8 @@
       dismiss();
       return;
     }
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      keep();
-    }
+    // Enter is a newline now, not a submit: markdown-as-you-type needs multi-line
+    // input ("- a" Enter "- b" is a bullet list). The Keep button is the submit.
   });
 
   // An image on the clipboard is the case where asking "what kind is this?" would be
@@ -573,7 +802,7 @@
       );
       busy(false);
       await keptBeat();
-      dismiss();
+      if (invoke) invoke("capture_done").catch(() => {});
     } catch (err) {
       say("Not kept: " + err.message, true);
     } finally {
@@ -628,7 +857,7 @@
       await keepFiles(files);
       busy(false);
       await keptBeat();
-      dismiss();
+      if (invoke) invoke("capture_done").catch(() => {});
     } catch (err) {
       say("Not kept: " + err.message, true);
     } finally {
@@ -649,10 +878,13 @@
   // to be put back by hand each time it returns.
   window.addEventListener("focus", () => {
     field.focus();
-    const end = field.value.length;
-    field.setSelectionRange(end, end);
+    // Put the caret at the end of whatever is already there (a dismissed-without-
+    // keeping note keeps its text); a freshly seeded empty field already has its
+    // caret inside the <p> from seedField().
+    if (fieldText().trim()) placeCaretEnd();
   });
 
+  seedField();
   field.focus();
   paint();
 </script>

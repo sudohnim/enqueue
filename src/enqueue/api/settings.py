@@ -21,6 +21,7 @@ def read_settings() -> dict:
         "settings": settings.all_settings(),
         "storage": settings.storage(),
         "backends": settings.backends(),
+        "sync": settings.sync_state(),
     }
 
 
@@ -54,6 +55,32 @@ def forget_api_key() -> dict:
 
     keyring.clear()
     return settings.api_key_state()
+
+
+class SyncSecret(BaseModel):
+    secret: str
+
+
+@router.put("/settings/sync-secret")
+def store_sync_secret(req: SyncSecret) -> dict:
+    """Put the per-library sync secret in the macOS Keychain (SYNC.3).
+
+    Like the API key: never written to settings.json, and the value is never
+    returned - only whether one now exists and its hint.
+    """
+    try:
+        keyring.sync_secret_set(req.secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return settings.sync_state()
+
+
+@router.delete("/settings/sync-secret")
+def forget_sync_secret() -> dict:
+    keyring.sync_secret_clear()
+    return settings.sync_state()
 
 
 @router.patch("/settings")

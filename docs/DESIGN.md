@@ -3,18 +3,18 @@
 A light, trustworthy surface with a quiet lavender accent.
 
 The system takes Kraken's clean, professional, white-canvas calm and restrains it with Linear's muted-lavender discipline.
-Kraken's purple (`#7132f5`) is too loud for a tool meant to age well, so the brand accent is Linear's muted lavender (`#5e6ad2`) instead.
+Kraken's purple scale (`#7132f5`, `#5741d8`, `#5b1ecf`) is too loud for a tool meant to age well, so the brand accent is Linear's muted lavender (`#5e6ad2`) instead.
 The result is distinct from either source: a light canvas (Kraken) carrying a quiet lavender (Linear), rather than Kraken's shouty purple-on-white or Linear's lavender-on-near-black.
 
 Lavender is scarce here, the way it is in Linear.
 It is a fill and a focus ring and a link, never a section background or a card wash.
 Depth comes from a cool light surface ladder plus hairline borders plus whisper shadows, the way Kraken earns trust without drama.
-One chromatic accent. No atmospheric gradients. No spotlight cards.
+One lavender UI accent, plus one scoped brand-mark purple `#60079f` for the raven's own moments. No atmospheric gradients except the single brand-mark header wash. No spotlight cards.
 
 ## 1. Atmosphere
 
 - Light only. The canvas is white with the faintest cool tint.
-- A muted lavender (`#5e6ad2`) is the single chromatic accent, used scarcely.
+- A muted lavender (`#5e6ad2`) is the interface accent, used scarcely; the bolder brand-mark violet (`#60079f`) is the raven mark's own color, scoped to a few brand moments.
 - Near-black text (`#101114`) on a cool-gray neutral scale.
 - Depth from a three-step light surface ladder, hairline borders, and whisper shadows.
 - Display type uses aggressive negative tracking. Body holds near zero.
@@ -30,6 +30,16 @@ One chromatic accent. No atmospheric gradients. No spotlight cards.
 - **Lavender Deep** `#4a51a8`: deepest lavender, for pressed/active fills.
 - **Lavender Subtle** `rgba(94, 106, 210, 0.12)`: subtle lavender fills (low-emphasis buttons, selected chips).
 - **On Lavender** `#ffffff`: text on a lavender fill.
+
+### Brand-mark purple
+
+The raven's eye is a vivid purple `#60079f` - bolder and more saturated than the lavender UI accent. It is the ONE brand-saturation the system allows, and it is the mark's own color, not a second interface accent. It is scarce and scoped: it appears only where the mark belongs, never as an ordinary control color.
+
+- **Purple Bold** `#60079f`: the raven eye's pupil, the home header wash (a low-opacity gradient), the capture overlay's disc and Keep button, and the greeting's trailing period. Dark, so it wears white ink (dark ink fails on it).
+- **Purple Bold Hover** `#7a1fc0`: the lighter lift for the capture Keep button on hover.
+- **Purple Bold Wash** `rgba(96, 7, 159, 0.1)`: the home header's fading purple wash, and the capture focus glow.
+
+Lavender stays the interface accent (CTA, focus ring, links, chips). The bold purple is the mark's saturation only - do not reach for it for ordinary buttons, focus rings, or links.
 
 ### Surface (light ladder)
 
@@ -67,30 +77,29 @@ One chromatic accent. No atmospheric gradients. No spotlight cards.
 
 ### Families
 
-- **Display and Body**: `Inter`, fallbacks `SF Pro Display, -apple-system, system-ui, Segoe UI, Roboto`.
+- **Display and Body**: `IBM Plex Sans`, fallbacks `system-ui, -apple-system, Segoe UI, Roboto`.
   One family across display and body, so the voice stays continuous.
-  `Geist Sans` is an acceptable alternative.
-- **Mono**: `JetBrains Mono`, fallbacks `ui-monospace, SF Mono, Menlo`.
+  Vendored as woff2 in `static/fonts/` (weights 400/500/600/700); no CDN, no webfont substitute.
+- **Mono**: the system mono stack (`ui-monospace, SF Mono, Menlo, Consolas`), matching `--mono` in `css/tokens.css`.
   Reserved for code and for status or ID tokens.
-  `Geist Mono` is an acceptable alternative.
 
 ### Scale
 
 | Role | Family | Size | Weight | Line height | Tracking | Use |
 | --- | --- | --- | --- | --- | --- | --- |
-| Display XL | Inter | 56px | 600 | 1.08 | -2.0px | Largest hero headline |
-| Display LG | Inter | 40px | 600 | 1.12 | -1.4px | Section opener headlines |
-| Display MD | Inter | 30px | 600 | 1.18 | -1.0px | Sub-section headlines |
-| Headline | Inter | 24px | 600 | 1.22 | -0.5px | Panel titles, CTA headings |
-| Title | Inter | 20px | 500 | 1.26 | -0.3px | Card titles |
-| Subhead | Inter | 18px | 400 | 1.40 | -0.2px | Lead paragraphs |
-| Body LG | Inter | 18px | 400 | 1.50 | -0.1px | Hero subhead |
-| Body | Inter | 16px | 400 | 1.50 | 0 | Default body |
-| Body SM | Inter | 14px | 400 | 1.50 | 0 | Card body, secondary |
-| Caption | Inter | 12px | 400 | 1.40 | 0 | Meta, captions |
-| Button | Inter | 14px | 500 | 1.20 | 0 | All button labels |
-| Eyebrow | Inter | 12px | 600 | 1.30 | +0.6px | Section eyebrow, uppercase |
-| Mono | JetBrains Mono | 13px | 400 | 1.50 | 0 | Code, IDs |
+| Display XL | IBM Plex Sans | 56px | 600 | 1.08 | -2.0px | Largest hero headline |
+| Display LG | IBM Plex Sans | 40px | 600 | 1.12 | -1.4px | Section opener headlines |
+| Display MD | IBM Plex Sans | 30px | 600 | 1.18 | -1.0px | Sub-section headlines |
+| Headline | IBM Plex Sans | 24px | 600 | 1.22 | -0.5px | Panel titles, CTA headings |
+| Title | IBM Plex Sans | 20px | 500 | 1.26 | -0.3px | Card titles |
+| Subhead | IBM Plex Sans | 18px | 400 | 1.40 | -0.2px | Lead paragraphs |
+| Body LG | IBM Plex Sans | 18px | 400 | 1.50 | -0.1px | Hero subhead |
+| Body | IBM Plex Sans | 16px | 400 | 1.50 | 0 | Default body |
+| Body SM | IBM Plex Sans | 14px | 400 | 1.50 | 0 | Card body, secondary |
+| Caption | IBM Plex Sans | 12px | 400 | 1.40 | 0 | Meta, captions |
+| Button | IBM Plex Sans | 14px | 500 | 1.20 | 0 | All button labels |
+| Eyebrow | IBM Plex Sans | 12px | 600 | 1.30 | +0.6px | Section eyebrow, uppercase |
+| Mono | system mono | 13px | 400 | 1.50 | 0 | Code, IDs |
 
 ### Principles
 
@@ -223,7 +232,8 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 
 ### Do
 
-- Reserve lavender for the brand mark, primary CTA, focus ring, and link emphasis.
+- Reserve lavender for the primary CTA, focus ring, link emphasis, and chips.
+- Reserve the bold brand-mark purple `#60079f` for the mark's own moments only (the raven eye, the home header wash, the capture disc and Keep button, the greeting period).
 - Use the surface ladder for hierarchy. Avoid skipping levels.
 - Apply negative letter-spacing aggressively on display.
 - Pair display weight 600 with body weight 400.
@@ -233,11 +243,12 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 ### Don't
 
 - Don't use lavender as a section background or a card fill.
-- Don't introduce a second chromatic accent.
+- Don't introduce a chromatic accent beyond the two sanctioned here: the lavender UI accent and the one scoped brand-mark purple `#60079f`. No third.
+- Don't spread the bold purple `#60079f` into ordinary controls (buttons, focus rings, links) - it is the mark's saturation, not a UI accent.
 - Don't pill-round buttons.
 - Don't use true black `#000000` for text. Use ink `#101114`.
-- Don't add atmospheric gradients or spotlight cards.
-- Don't use the loud Kraken purple `#7132f5`. The accent is the muted lavender.
+- Don't add atmospheric gradients or spotlight cards - with one sanctioned exception: the home header's single low-opacity brand-mark purple wash fading to the canvas. No other gradients.
+- Don't use the loud Kraken blue-purple `#7132f5` (distinct from the sanctioned brand-mark violet `#60079f`). The interface accent is the muted lavender.
 - Don't combine multiple bright accents in one view.
 
 ## 9. Responsive
@@ -279,6 +290,11 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 --lavender-subtle: rgba(94, 106, 210, 0.12)
 --on-lavender:   #ffffff
 
+--purple-bold:       #60079f
+--purple-bold-hover: #7a1fc0
+--purple-bold-wash:  rgba(96, 7, 159, 0.1)
+--on-purple-bold:    #ffffff
+
 --ink:           #101114
 --ink-muted:     #4d5061
 --ink-subtle:    #686b82
@@ -314,6 +330,23 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 --shadow-card:   0 4px 16px rgba(16, 17, 20, 0.06)
 --shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08)
 
---font-sans: "Inter", "SF Pro Display", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif
---font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace
+--font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif
+--font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace
 ```
+
+## 11. Provenance
+
+This system descends from Kraken's marketing surface, restrained.
+The following table records what was carried over and what was deliberately toned down, so the lineage stays legible.
+
+| From Kraken | Decision | Result here |
+| --- | --- | --- |
+| Purple scale `#7132f5` / `#5741d8` / `#5b1ecf` | Restrained | Muted lavender `#5e6ad2`, used scarcely |
+| White canvas, professional calm | Kept | Light-only canvas, cool tint |
+| Near-black text `#101114` | Kept | Ink `#101114`, never true black |
+| Green success `#149e61`, badge text `#026b3f` | Kept | Success token and badge treatment |
+| Whisper shadows (`rgba(0,0,0,0.03) 0 4px 24px`) | Kept, cooled | Cool low-opacity Micro/Card/Lifted shadows |
+| 12px-max button radius, no pill | Kept as discipline | Buttons at 8px, never pilled |
+| Kraken-Brand / Kraken-Product dual font | Restrained | One family (IBM Plex Sans) across display and body |
+| Bold 700 display, negative tracking | Softened | Display at 600, aggressive negative tracking |
+| Ad-hoc spacing (13px, 15px, 25px) | Replaced | Clean 4px-base scale |

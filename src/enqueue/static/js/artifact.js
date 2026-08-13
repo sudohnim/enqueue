@@ -429,7 +429,7 @@
         body += reader(a, d.pages);
       } else if (a.kind === "file") {
         body +=
-          fileFacts(d.file) + '<div class="md" id="plain">reading...</div>';
+          fileFacts(d.file) + '<div class="md" id="plain">' + spinner("sm", "reading...") + "</div>";
       } else if (a.kind === "image") {
         body +=
           '<div class="docpane"><img class="page" src="/artifacts/' +

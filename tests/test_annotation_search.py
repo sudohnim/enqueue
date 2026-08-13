@@ -34,6 +34,23 @@ def sqlite_store(store, monkeypatch):
     get_store.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_judge(monkeypatch):
+    """These tests assert chunk-level search and the fuzzy branch, not the
+    gray-zone judge. Stub it fail-open (keep everything) exactly as test_chats.py
+    and test_search_results.py do, so a gray-zone hit never waits on the real
+    local model and a verdict can never make a search test flake."""
+    from enqueue.retrieve import candidates as cand
+
+    class _KeepAllJudge:
+        model = "test-judge"
+
+        def complete(self, *args, **kwargs):
+            return cand._GrayZoneResponse(verdicts=[])
+
+    monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _KeepAllJudge())
+
+
 class FakeVision:
     """A vision provider that answers without any model."""
 

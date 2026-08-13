@@ -11,6 +11,20 @@ import pytest
 from enqueue import config, db
 
 
+@pytest.fixture(autouse=True)
+def _fast_argon2(monkeypatch):
+    """Tests use the INTERACTIVE Argon2id preset so the key-derivation tests run
+    in milliseconds instead of ~1s each. The production preset stays MODERATE
+    (DEC-D5); correctness is identical, only the brute-force resistance differs,
+    and tests do not need that."""
+    import nacl.pwhash
+
+    from enqueue import crypto
+
+    monkeypatch.setattr(crypto, "OPSLIMIT", nacl.pwhash.argon2id.OPSLIMIT_INTERACTIVE)
+    monkeypatch.setattr(crypto, "MEMLIMIT", nacl.pwhash.argon2id.MEMLIMIT_INTERACTIVE)
+
+
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)

@@ -1,4 +1,4 @@
-"""Where the API key actually lives.
+"""Where secrets actually live: the macOS Keychain.
 
 An earlier version of this product had no field for a key at all, on the grounds that
 `settings.json` is plaintext on disk and a password written in plaintext is not a
@@ -10,6 +10,10 @@ So the key goes in the macOS Keychain, through `/usr/bin/security`. That is the 
 store Safari and Mail use: encrypted at rest, unlocked with the login password, and
 readable by nothing else without the user approving it. No new dependency, because it
 ships with the operating system.
+
+Two secrets live here: the provider API key (service `enqueue-llm-api-key`) and the
+per-library sync secret (service `enqueue-sync-secret`). They are separate entries on
+purpose, so forgetting one never takes the other with it.
 
 **Masking in the interface is not what protects this.** The dots stop someone reading
 the key over your shoulder. The Keychain is what stops it being read off the disk.
@@ -27,7 +31,10 @@ import shutil
 import subprocess
 import sys
 
+# The provider API key (LLM backends) and the per-library sync secret are two
+# different Keychain entries under one account.
 SERVICE = "enqueue-llm-api-key"
+SYNC_SERVICE = "enqueue-sync-secret"
 ACCOUNT = "enqueue"
 
 _SECURITY = "/usr/bin/security"
@@ -38,12 +45,12 @@ def available() -> bool:
     return sys.platform == "darwin" and bool(shutil.which(_SECURITY))
 
 
-def get() -> str | None:
+def _get(service: str) -> str | None:
     if not available():
         return None
     try:
         done = subprocess.run(
-            [_SECURITY, "find-generic-password", "-a", ACCOUNT, "-s", SERVICE, "-w"],
+            [_SECURITY, "find-generic-password", "-a", ACCOUNT, "-s", service, "-w"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -56,31 +63,31 @@ def get() -> str | None:
     return key or None
 
 
-def set(key: str) -> None:
-    """Store the key, replacing whatever was there.
+def _set(service: str, secret: str, noun: str = "key") -> None:
+    """Store a secret, replacing whatever was there.
 
     Written through `security -i`, which reads whole commands from stdin, so the
     secret never appears in this process's argument list. `add-generic-password -w
     <secret>` would put it in `argv`, where any other process on the machine can read
     it out of `ps` for as long as the call runs.
-
-    A previous attempt passed the key on stdin to `-w` with no argument. That does not
-    read stdin: it stored an empty password and reported success, so the interface
-    said the key was saved and every model call then failed to authenticate.
     """
     if not available():
-        raise RuntimeError("no keychain on this platform; set ENQ_LLM_API_KEY instead")
+        raise RuntimeError(
+            "no keychain on this platform; set ENQ_LLM_API_KEY instead"
+            if noun == "key"
+            else "no keychain on this platform; the sync secret has nowhere to go"
+        )
 
-    key = key.strip()
-    if not key:
-        raise ValueError("an empty key is not a key")
-    if "\n" in key or "\r" in key:
+    secret = secret.strip()
+    if not secret:
+        raise ValueError(f"an empty {noun} is not a {noun}")
+    if "\n" in secret or "\r" in secret:
         # `security -i` is line-oriented, so a newline would end the command early and
-        # store a truncated key.
-        raise ValueError("a key cannot contain a line break")
+        # store a truncated secret.
+        raise ValueError(f"a {noun} cannot contain a line break")
 
-    quoted = key.replace("\\", "\\\\").replace('"', '\\"')
-    command = f'add-generic-password -a {ACCOUNT} -s {SERVICE} -U -w "{quoted}"\n'
+    quoted = secret.replace("\\", "\\\\").replace('"', '\\"')
+    command = f'add-generic-password -a {ACCOUNT} -s {service} -U -w "{quoted}"\n'
 
     done = subprocess.run(
         [_SECURITY, "-i"],
@@ -90,19 +97,19 @@ def set(key: str) -> None:
         timeout=15,
     )
     if done.returncode != 0:
-        raise RuntimeError(done.stderr.strip() or "the keychain refused to store the key")
+        raise RuntimeError(done.stderr.strip() or f"the keychain refused to store the {noun}")
 
     # `security -i` reports per-command failures on stderr while still exiting 0, so
     # the only trustworthy confirmation is reading it back.
-    if get() != key:
-        raise RuntimeError("the key did not store correctly")
+    if _get(service) != secret:
+        raise RuntimeError(f"the {noun} did not store correctly")
 
 
-def clear() -> bool:
+def _clear(service: str) -> bool:
     if not available():
         return False
     done = subprocess.run(
-        [_SECURITY, "delete-generic-password", "-a", ACCOUNT, "-s", SERVICE],
+        [_SECURITY, "delete-generic-password", "-a", ACCOUNT, "-s", service],
         capture_output=True,
         text=True,
         timeout=10,
@@ -110,12 +117,46 @@ def clear() -> bool:
     return done.returncode == 0
 
 
-def hint(key: str | None = None) -> str | None:
+def hint(secret: str | None = None) -> str | None:
     """The last four characters, so a person can tell which key is stored.
 
     Enough to recognise it, useless to anyone who does not already have it.
     """
-    key = key if key is not None else get()
-    if not key:
+    secret = secret if secret is not None else get()
+    if not secret:
         return None
-    return "..." + key[-4:] if len(key) > 4 else "..."
+    return "..." + secret[-4:] if len(secret) > 4 else "..."
+
+
+# ---- provider API key ----------------------------------------------------
+
+
+def get() -> str | None:
+    return _get(SERVICE)
+
+
+def set(secret: str) -> None:
+    _set(SERVICE, secret)
+
+
+def clear() -> bool:
+    return _clear(SERVICE)
+
+
+# ---- per-library sync secret ---------------------------------------------
+
+
+def sync_secret_get() -> str | None:
+    return _get(SYNC_SERVICE)
+
+
+def sync_secret_set(secret: str) -> None:
+    _set(SYNC_SERVICE, secret, noun="secret")
+
+
+def sync_secret_clear() -> bool:
+    return _clear(SYNC_SERVICE)
+
+
+def sync_secret_hint() -> str | None:
+    return hint(sync_secret_get())

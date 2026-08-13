@@ -140,10 +140,19 @@ def get_vision_provider(local_only: bool = False) -> Provider:
     name = "ollama" if local_only else settings.get("llm_backend")
     backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
 
-    url = settings.get("llm_url") if not local_only else config.BACKENDS["ollama"]["url"]
+    # SET.1: the endpoint is implied by the backend. A named backend uses its own
+    # URL, and a stored `llm_url` (a stale localhost from before) never overrides
+    # it. Only `custom` reads the user-typed URL. Local-only always routes to the
+    # local Ollama.
+    if local_only:
+        url = config.BACKENDS["ollama"]["url"]
+    elif name == "custom":
+        url = settings.get("llm_url") or backend["url"]
+    else:
+        url = backend["url"]
     return OpenAICompatibleProvider(
         model=settings.get("vision_model") if not local_only else config.VISION_MODEL,
-        base_url=url or backend["url"],
+        base_url=url,
     )
 
 
@@ -161,8 +170,17 @@ def get_provider(local_only: bool = False) -> Provider:
     name = "ollama" if local_only else settings.get("llm_backend")
     backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
 
-    url = settings.get("llm_url") if not local_only else config.BACKENDS["ollama"]["url"]
+    # SET.1: the endpoint is implied by the backend. A named backend uses its own
+    # URL, and a stored `llm_url` (a stale localhost from before) never overrides
+    # it. Only `custom` reads the user-typed URL. Local-only always routes to the
+    # local Ollama.
+    if local_only:
+        url = config.BACKENDS["ollama"]["url"]
+    elif name == "custom":
+        url = settings.get("llm_url") or backend["url"]
+    else:
+        url = backend["url"]
     return OpenAICompatibleProvider(
         model=settings.get("llm_model") if not local_only else config.LLM_MODEL,
-        base_url=url or backend["url"],
+        base_url=url,
     )

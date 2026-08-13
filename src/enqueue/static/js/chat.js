@@ -4,7 +4,7 @@
   // only reason to store them rather than to name a chat by its first line.
 
   let chat = null;
-  let rail = null;
+  const rail = null;
 
   function teardown() {
     if (readerWatch) {
@@ -36,8 +36,7 @@
 
   async function startChat(text) {
     const asked = { kind: scope.kind, id: scope.id };
-    view.innerHTML =
-      '<div class="state thinking">reading what you saved...</div>';
+    view.innerHTML = spinner("lg", "reading what you saved...");
     let made;
     try {
       made = await api("/chats", {
@@ -156,7 +155,7 @@
         (m.role === "user"
           ? esc(m.text)
           : pending
-            ? '<span class="streaming">Reading what you saved...</span>'
+            ? spinner("sm", "Reading what you saved...")
             : md(m.text));
       const echoes =
         d.chat.scope_kind === "artifact" &&
@@ -206,7 +205,9 @@
         html +=
           '<div class="org" id="org-' +
           esc(m.id) +
-          '"><div class="state thinking">Building the view...</div></div>';
+          '">' +
+          spinner("sm", "Building the view...") +
+          "</div>";
       html += "</div>";
     }
 
@@ -337,7 +338,7 @@
 
     const slot = document.getElementById("org-" + mid);
     if (!slot) return;
-    slot.innerHTML = '<div class="state thinking">moving it...</div>';
+    slot.innerHTML = spinner("sm", "moving it...");
     try {
       st.d = await api("/pivot/run", {
         method: "POST",
@@ -451,7 +452,7 @@
     teardown();
     restorePill("inside");
     setRoute("g/" + id);
-    view.innerHTML = '<div class="state thinking">Building the view...</div>';
+    view.innerHTML = spinner("lg", "Building the view...");
     let saved;
     try {
       saved = await api("/pivots/" + id);

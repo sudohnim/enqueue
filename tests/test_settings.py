@@ -144,3 +144,60 @@ class TestNothingIsWrittenUntilUpdate:
         settings.update({"user_agent": "Enqueue/0.2"})
         written = json.loads(settings.settings_path().read_text(encoding="utf-8"))
         assert written == {"llm_model": "some-model", "user_agent": "Enqueue/0.2"}
+
+
+class TestSyncSettings:
+    """SYNC.3: the relay URL is a plaintext setting; the per-library secret lives
+    in the Keychain and is never written to a file; the device id is stable."""
+
+    def _stub_secret(self, monkeypatch, value=None):
+        stored = {"secret": value}
+        monkeypatch.setattr(keyring, "sync_secret_get", lambda: stored["secret"])
+        monkeypatch.setattr(keyring, "sync_secret_set", lambda s: stored.__setitem__("secret", s))
+        monkeypatch.setattr(
+            keyring, "sync_secret_clear", lambda: stored.__setitem__("secret", None)
+        )
+        monkeypatch.setattr(keyring, "sync_secret_hint", lambda: keyring.hint(stored["secret"]))
+        return stored
+
+    def test_get_settings_reports_relay_configuration(self, store, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app
+
+        self._stub_secret(monkeypatch, value="shh-secret")
+
+        with TestClient(app) as client:
+            empty = client.get("/settings").json()["sync"]
+            assert empty["relay_configured"] is False
+            assert empty["relay_url"] == ""
+            assert empty["secret_present"] is True
+            assert empty["device_id"]
+
+        settings.update({"sync_relay_url": "https://relay.example/v1"})
+        with TestClient(app) as client:
+            configured = client.get("/settings").json()["sync"]
+            assert configured["relay_configured"] is True
+            assert configured["relay_url"] == "https://relay.example/v1"
+
+    def test_the_sync_secret_never_touches_disk(self, store, monkeypatch):
+        stored = self._stub_secret(monkeypatch, value=None)
+
+        keyring.sync_secret_set("shh-secret")
+        settings.update({"sync_relay_url": "https://relay.example"})
+
+        assert stored["secret"] == "shh-secret"
+        written = json.loads(settings.settings_path().read_text(encoding="utf-8"))
+        assert "shh-secret" not in json.dumps(written)
+        # The URL is plaintext on purpose; the secret is not.
+        assert written["sync_relay_url"] == "https://relay.example"
+
+    def test_device_id_is_stable_and_a_uuid(self, store):
+        import uuid
+
+        from enqueue.sync import device_id
+
+        first = device_id()
+        second = device_id()
+        assert first == second
+        uuid.UUID(first)  # a real UUID4, not a name-derived string

@@ -340,21 +340,59 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
                 if len(found) >= PASSAGES:
                     break
 
+        # Q.10: a dense-only facet/entity hit is a semantic neighbor, not a
+        # lexical leg, and it used to ground an answer with no floor check - the
+        # same leak /search had before Q.7. Read the raw legs per collection exactly
+        # as _hybrid_results does (the keyword branch is the lexical leg, the dense
+        # branch is the dense similarity), then apply the same two-tier gate: keep
+        # >= KEEP_ABOVE, drop < DROP_BELOW, gray zone -> judge.
+        facet_entity_dense: dict[str, float] = {}
+        facet_entity_lexical: set[str] = set()
+        for name in (store.FACETS, store.ENTITIES):
+            for hit in store.search_dense(name, question, limit=PASSAGES * 4):
+                aid = hit["artifact_id"]
+                if hit["score"] > facet_entity_dense.get(aid, 0.0):
+                    facet_entity_dense[aid] = hit["score"]
+            for hit in store.search_keyword(name, question, limit=PASSAGES * 4):
+                facet_entity_lexical.add(hit["artifact_id"])
+
+        def _pull_opening(aid: str, why: str, score: float) -> None:
+            row = conn.execute(
+                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
+                (aid,),
+            ).fetchone()
+            if row and row["id"] not in found:
+                found[row["id"]] = {"score": score, "why": why}
+
         # The other half of the abstraction gap. A question phrased as a concept can
         # match a facet whose artifact shares no vocabulary with it, which is the case
         # the whole facet ladder exists for. Pull the artifact's opening chunk in so
         # the answer has something literal to stand on. A facet built from an older
         # body or by an older model no longer describes the artifact and is skipped.
         cache: dict = {}
+        gray_facet_entity: dict[str, tuple[str, float, str]] = {}
         for hit in store.search(store.FACETS, question, limit=4):
             if hit_is_stale(conn, hit, cache):
                 continue
-            row = conn.execute(
-                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
-                (hit["artifact_id"],),
-            ).fetchone()
-            if row and row["id"] not in found:
-                found[row["id"]] = {"score": hit["score"], "why": f"facet L{hit.get('level')}"}
+            aid = hit["artifact_id"]
+            why = f"facet L{hit.get('level')}"
+            verdict = _floor_verdict(
+                {
+                    "dense_similarity": facet_entity_dense.get(aid, 0.0),
+                    "had_lexical_hit": aid in facet_entity_lexical,
+                }
+            )
+            if verdict == "drop":
+                continue
+            if verdict == "gray":
+                stmt = conn.execute(
+                    "SELECT statement FROM facets WHERE id = ?", (hit["facet_id"],)
+                ).fetchone()
+                gray_facet_entity.setdefault(
+                    aid, (why, hit["score"], stmt["statement"] if stmt else "")
+                )
+                continue
+            _pull_opening(aid, why, hit["score"])
 
         # The name-side of the same gap: a question phrased in the world's vocabulary
         # ("presidents") reaches an artifact through its enriched entity line even
@@ -364,12 +402,51 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         for hit in store.search(store.ENTITIES, question, limit=4):
             if hit_is_stale(conn, hit, cache):
                 continue
-            row = conn.execute(
-                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
-                (hit["artifact_id"],),
-            ).fetchone()
-            if row and row["id"] not in found:
-                found[row["id"]] = {"score": hit["score"], "why": "entity"}
+            aid = hit["artifact_id"]
+            verdict = _floor_verdict(
+                {
+                    "dense_similarity": facet_entity_dense.get(aid, 0.0),
+                    "had_lexical_hit": aid in facet_entity_lexical,
+                }
+            )
+            if verdict == "drop":
+                continue
+            if verdict == "gray":
+                gray_facet_entity.setdefault(aid, ("entity", hit["score"], hit.get("fact") or ""))
+                continue
+            _pull_opening(aid, "entity", hit["score"])
+
+        # Q.10: resolve the gray-zone facet/entity hits through the same judge
+        # as the chunk gray zone and /search, in one batched call. The judge reads
+        # the matched text - the facet statement or the entity fact - not the
+        # artifact's opening chunk, because that line is what the dense match was
+        # computed against, exactly as /search shows an entity fact for an
+        # entity-only hit. A kept artifact's opening chunk then takes its slot.
+        if gray_facet_entity:
+            faces = {
+                r["id"]: (r["title"], r["kind"])
+                for r in conn.execute(
+                    "SELECT id, title, kind FROM artifacts"
+                    " WHERE id IN (SELECT value FROM json_each(?))",
+                    (json.dumps(list(gray_facet_entity)),),
+                ).fetchall()
+            }
+            kept = judge_gray_zone(
+                question,
+                [
+                    {
+                        "artifact_id": aid,
+                        "title": faces.get(aid, ("", ""))[0],
+                        "kind": faces.get(aid, ("", ""))[1] or "artifact",
+                        "snippet": " ".join(snippet.split())[:400],
+                    }
+                    for aid, (_why, _score, snippet) in gray_facet_entity.items()
+                ],
+            )
+            for aid, (why, score, _snippet) in gray_facet_entity.items():
+                if aid not in kept:
+                    continue
+                _pull_opening(aid, why, score)
 
         if not found:
             return []

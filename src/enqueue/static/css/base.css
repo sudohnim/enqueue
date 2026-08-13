@@ -391,3 +391,105 @@
     flex-shrink: 0;
   }
 
+
+  /* ---- loader (ANIM.1) ---------------------------------------------------
+     The single loading mark across the app: the raven spins counter-clockwise on
+     GPU transform only. Large is a full-view wait with the caption stacked below,
+     centred; small is an inline bird, caption beside it when one is given. Under
+     reduced motion the bird sits still and the caption alone says what is
+     happening - never a blank, never a spinner that vanishes. */
+  .loader {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .loader.loader-lg {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    width: 100%;
+    padding: var(--sp-6) var(--sp-4);
+    gap: var(--sp-3);
+    text-align: center;
+  }
+  .loader-bird {
+    display: block;
+    width: 24px;
+    height: 24px;
+    animation: spin-ccw 1.1s linear infinite;
+    will-change: transform;
+  }
+  .loader-lg .loader-bird {
+    width: 64px;
+    height: 64px;
+  }
+  .loader-caption {
+    color: var(--text-dim);
+  }
+  @keyframes spin-ccw {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .loader-bird {
+      animation: none;
+      will-change: auto;
+    }
+  }
+
+  /* ---- capture-success flight (ANIM.4) ----------------------------------
+     The raven flies in from the left edge to screen centre, holds, and fades on
+     a successful capture. GPU transform/opacity only, will-change while the bird
+     lives (it is removed when the run ends), pointer-events none so it never
+     blocks a click. Reduced motion drops the fly and keeps a plain fade. */
+  .capture-flight {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 220px;
+    height: auto;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0;
+    will-change: transform, opacity;
+  }
+  .capture-flight:not(.reduced) {
+    animation: raven-flight 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .capture-flight.reduced {
+    animation: raven-fade 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes raven-flight {
+    0% {
+      transform: translate(calc(-50% - 100vw), -50%);
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    31.6% {
+      transform: translate(-50%, -50%);
+    }
+    84.2% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes raven-fade {
+    0% {
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    84.2% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }

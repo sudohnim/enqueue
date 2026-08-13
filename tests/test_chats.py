@@ -91,12 +91,23 @@ class TestAnswerContract:
                 context={"offered_artifact_ids": ["real"]},
             )
 
-    def test_grounded_must_name_a_source(self):
-        with pytest.raises(ValidationError, match="nothing is cited"):
-            Answer.model_validate(
-                {"answer": "Yes.", "grounded": True, "cited": []},
-                context={"offered_artifact_ids": ["real"]},
-            )
+    def test_grounded_without_citations_backfills_what_was_fed(self):
+        # FIX.1: a correct grounded answer that forgot to cite is not a failed
+        # turn; the passages actually fed to it stand in for the citations.
+        answer = Answer.model_validate(
+            {"answer": "Yes.", "grounded": True, "cited": []},
+            context={"offered_artifact_ids": ["real", "second"]},
+        )
+        assert answer.grounded is True
+        assert answer.cited == ["real", "second"]
+
+    def test_grounded_without_citations_and_nothing_fed_downgrades(self):
+        answer = Answer.model_validate(
+            {"answer": "Yes.", "grounded": True, "cited": []},
+            context={},
+        )
+        assert answer.grounded is False
+        assert answer.cited == []
 
     def test_ungrounded_must_not_name_one(self):
         with pytest.raises(ValidationError, match="grounded is false"):
@@ -285,6 +296,41 @@ class TestTurns:
         assert [c["artifact_id"] for c in result["messages"][-1]["cited"]] == [
             note["artifact"]["id"]
         ]
+
+    def test_a_grounded_answer_without_citations_is_salvaged_not_failed(
+        self, store, quiet_queue, monkeypatch
+    ):
+        """FIX.1: the model returns a correct grounded answer but forgets to cite;
+        the validator backfills the passages it was fed instead of raising, so the
+        turn lands `done` with the answer text rather than the failure string."""
+        note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
+        chat = chats.create()
+
+        found = [
+            {
+                "artifact_id": note["artifact"]["id"],
+                "title": "Joints",
+                "text": "A joint that moves outlasts one that does not.",
+                "kind": "note",
+            }
+        ]
+        monkeypatch.setattr(chats, "passages", lambda *a, **k: found)
+
+        class _ValidatingProvider:
+            """A provider that runs the real Answer validator, unlike FakeProvider."""
+
+            def complete(self, system, user, response_model, context=None, max_retries=3):
+                return response_model.model_validate(
+                    {"answer": "Movement outlasts rigidity.", "grounded": True, "cited": []},
+                    context=context,
+                )
+
+        monkeypatch.setattr(chats, "get_provider", lambda *a, **k: _ValidatingProvider())
+
+        msg = chats.run_answer(chat["chat"]["id"], "what outlasts what?")
+        assert msg["text"] == "Movement outlasts rigidity."
+        assert msg["grounded"] is True
+        assert msg["cited"] == [note["artifact"]["id"]]
 
     def test_naming_failure_does_not_lose_the_answer(
         self, store, quiet_queue, answered, async_turns
@@ -490,6 +536,80 @@ class TestQ5AnswerPathFloor:
         found = chats.passages("rooftops", "library", None)
 
         assert found, "a real question must still fill the passage window"
+        assert "a1" in {p["artifact_id"] for p in found}
+
+
+class TestFacetEntityFloor:
+    """FIX.2 (Q.10): the facet and entity branches of `passages()` used to add
+    hits with no floor check, so a question whose only match was a weak
+    facet/entity vector could ground an answer the same way /search once did.
+    They now face the same two-tier gate as the chunk branch.
+    """
+
+    def _library(self, store, monkeypatch):
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, content_hash, status,"
+                " created_at, updated_at) VALUES ('a1', 'note', 'Trade routes',"
+                " 'Goods moved along the river, season by season.', 'a1_hash', 'ok',"
+                " datetime('now'), datetime('now'))"
+            )
+            conn.execute(
+                "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker)"
+                " VALUES ('c1', 'a1', 0, 'Goods moved along the river, season by season.', 'test')"
+            )
+            conn.execute(
+                "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
+                " VALUES ('f1', 'a1', 3, 'Ziggurats rose above the mud-brick cities.',"
+                " 'test-model', 0.9)"
+            )
+            conn.execute(
+                "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
+                " VALUES ('e1', 'a1', 'Ziggurat', 'A stepped temple in ancient Mesopotamia.',"
+                " 'test-model', 0.5)"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        from enqueue import config
+        from enqueue.index.store import get_store
+        from enqueue.providers.base import get_provider
+
+        monkeypatch.setattr(config, "VECTOR_STORE", "sqlite-vec")
+        get_store.cache_clear()
+        s = get_store()
+        s.ensure()
+        s.upsert_chunks()
+        s.upsert_facets()
+        s.upsert_entities()
+        # A facet/entity written by a different model is skipped as stale
+        # (I2.3); mark them current so the floor, not staleness, is under test.
+        model = get_provider(local_only=False).model
+        conn = db.get_conn()
+        try:
+            conn.execute("UPDATE facets SET model_version = ? WHERE id = 'f1'", (model,))
+            conn.execute("UPDATE entities SET model_version = ? WHERE id = 'e1'", (model,))
+            conn.commit()
+        finally:
+            conn.close()
+        return s
+
+    def test_a_weak_facet_entity_match_feeds_the_answer_nothing(
+        self, store, quiet_queue, monkeypatch
+    ):
+        self._library(store, monkeypatch)
+
+        found = chats.passages("quantum flux capacitor", "library", None)
+
+        assert found == [], f"weak facet/entity neighbors must not ground an answer, got {found}"
+
+    def test_a_real_facet_match_still_retrieves_its_passage(self, store, quiet_queue, monkeypatch):
+        self._library(store, monkeypatch)
+
+        found = chats.passages("ziggurat", "library", None)
+
+        assert found, "a lexical facet match must still fill the passage window"
         assert "a1" in {p["artifact_id"] for p in found}
 
 

@@ -19,12 +19,693 @@ Repo root for all commands: `~/enqueue`.
 ---
 
 > [!IMPORTANT]  
-> **Context guard for the next agent:** EYE.4a/b/c, NOTE.1, NOTE.2, NOTE.3 are done
-> and checked (NOTE.3 used NOTE.0's recommended option: a `title_explicit` column in
+> **Context guard for the next agent:** EYE.4a/b/c, NOTE.1, NOTE.2, NOTE.3,
+> FIX.1, FIX.2, SET.1, SET.2, ANIM.1, ANIM.2, ANIM.3, ANIM.4, ANIM.5, SYNC.1,
+> SYNC.2, SYNC.3, SYNC.3b, SYNC.4, SYNC.5, SYNC.6, SYNC.8, and SYNC.9 are done and
+> checked (NOTE.3 used NOTE.0's recommended option: a `title_explicit` column in
 > migration 0022; `notes.edit` only re-derives when not explicit). Minh cleared the
 > [HUMAN] gates with "ignore all human verification until the very end after you
-> implement everything"; work the [AGENT] queue straight through. Next: FIX.1, then
-> FIX.2, SET.1, SET.2.
+> implement everything"; work the [AGENT] queue straight through. The whole desktop
+> block (EYE, NOTE, FIX, SET, ANIM) and the whole sync block (SYNC.1 to SYNC.9) are
+> done. MOB.2 is BLOCKED (missing Android toolchain, see below); MOB.3-MOB.7 follow it.
+
+## CAP.4 done - Full capture flow verified end to end
+
+Verification-only, no code changed. Drove the reshaped overlay (headless Chrome CDP on
+9226, `__TAURI__.core.invoke` mocked so `capture_done` is recorded) through every kind:
+
+- bare URL `https://example.com` -> `kind: link`, `source_url: https://example.com`;
+- URL + words `https://example.org read this later` -> `kind: link` with an annotation
+  `"read this later"` (the note-on-a-link);
+- plain text `plain note body` -> `kind: note`, `body: "plain note body"`;
+- image paste (a real 1x1 PNG through a synthetic ClipboardEvent) -> `kind: image`,
+  `mime: image/png` (the old `disc` crash is gone - the paste handler completes and
+  `invoke("capture_done")` fires).
+
+Dismiss + reset: every success path records `capture_done` (4 invocations across the 4
+captures), no `#captureFlight` bird is ever mounted in the overlay, and the field is
+empty (`htmlToMd(field).trim() === ""`) after each keep - the next summon starts clean.
+
+Note (not a bug): `/capture/link` deduplicates by URL, so re-running the test against the
+same URL adds a second identical annotation to the SAME link artifact rather than a new
+link - the duplicate annotation in the test output is that, not keep() posting twice.
+
+Gates: `uv run pytest -q` = 444 passed; `bin/verify` all checks passed (JS parse,
+pytest, contrast).
+
+Status: done, uncommitted (user commits). No repo file changed by this task.
+
+## CAP.3 done - The capture-success raven flies full-screen in the main window
+
+Approach (a), the cross-window signaling worked: the overlay no longer flies its own
+tiny 220px bird in the 600x264 window; instead a new Rust command `capture_done`
+puts the overlay away (reusing `capture_dismiss`) and then `app.emit("capture-flight")`,
+and the main window listens (`util.js`: `__TAURI__.event.listen("capture-flight", ...)`)
+and fires its existing full-screen `captureFlight()` (220px bird across the 1080x780
+home window). Wiring: `capture_done` added to `lib.rs` (`use tauri::Emitter`) +
+`generate_handler!` + `build.rs`'s `commands(&[...])` list (which is what generates the
+`allow-capture-done` permission - missing it fails with `UnknownPermission` at
+`generate_context!`); overlay capability gains `allow-capture-done`, main capability
+gains `core:event:allow-listen`/`allow-unlisten`. `capture.html`'s three success paths
+(`keep()`, paste, drop) now `invoke("capture_done")` instead of mounting a bird, and the
+overlay's own `captureFlight()` + `.capture-flight` CSS/keyframes are removed, so no
+bird can persist in the overlay (the old "stale bird top-left" failure mode is gone).
+
+Verification (`Done when` run literally, headless Chrome CDP on 9226):
+
+- Main window: `captureFlight()` mounts `#captureFlight` (220px, class
+  `capture-flight`, src `/static/capture-bird.png`) and removes it after the run -
+  `document.getElementById("captureFlight") === null` after ~2s (no bird remains).
+- Overlay (with `__TAURI__.core.invoke` mocked): `keep()` resolves "kept" and the
+  recorded invocation is exactly `["capture_done"]`, and no `#captureFlight` is ever
+  mounted in the overlay. The overlay dismisses via the Rust command.
+- `cargo check`/`cargo clippy` clean (one pre-existing `unsafe_op_in_unsafe_fn` in the
+  appkit `shared_app` was fixed with explicit `unsafe {}` blocks - the checker blocked
+  on it, and it is forward-compatible with edition 2024); `bin/relaunch --build`
+  succeeds; `bin/verify` all checks passed.
+
+Known limitation (inherent to approach (a), noted): the full-screen flight is visible
+when the capture returns to the home window (capture summoned while Enqueue is
+frontmost). A hotkey capture from another app hides Enqueue entirely on dismiss
+(`hide_app`), so there is no visible main window for the bird - the overlay just
+goes away, which is the correct return-to-the-other-app behavior.
+
+Spotted, not in scope: clippy also reports four `manual_c_str_literals` warnings in the
+pre-existing appkit module (`b"...\0".as_ptr()` vs `c"..."`); cosmetic and unrelated to
+CAP.3, left for the human review.
+
+Status: done, uncommitted (user commits). Files: `desktop/src/lib.rs`,
+`desktop/build.rs`, `desktop/tauri.conf.json`, `desktop/permissions/autogenerated/capture_done.toml`
+(auto-generated by build.rs), `desktop/gen/schemas/*` (regenerated), `src/enqueue/static/capture.html`,
+`src/enqueue/static/js/util.js`.
+
+## CAP.2 done - Markdown-as-you-type in the capture box
+
+`#field` is now a `contenteditable` div instead of a `<textarea>`. The shared
+serializer is reused, not copied: `capture.html` loads `md.js`
+(`<script src="/static/js/md.js">`) and `keep()`/`paint()` read `htmlToMd(field)`
+via a small `fieldText()` helper, so what the kind detector sees is exactly what a
+keep stores. The input rules (`CAPTURE_RULES` + `applyFieldRules`) mirror the note
+editor's `RULES`/`applyInputRules` (artifact.js) minus the code fence - bullets
+(`-`, `*`, `+`), numbered list (`1.`), headings (`#`..`###`), quote (`>`) -
+same regexes, same execCommand, same unwrap + marker strip. The field seeds a
+single `<p><br></p>` (`seedField()`) so the caret is never in a bare text node
+(NOTE.1's char-stacking fix, and this window ships on WKWebView); the placeholder
+uses `:empty::before` plus `:has(> p:only-child > br:only-child)::before` to cover
+the seed shape. Rich-block styles (h1-h3, ul/ol, blockquote) added to `capture.html`.
+
+Two judgment calls, both documented:
+
+1. Enter is now a NEWLINE, not a submit. The old `keydown` did Enter -> `keep()`;
+   the CAP.2 Done-when ("typing `- a` Enter `- b` shows a real bullet list") is
+   impossible while Enter submits, so Enter now inserts a block (default
+   contenteditable behavior) and the Keep button is the submit. Escape still
+   dismisses. This matches the reshaped dequeue format (prominent Keep button,
+   the old "Return to keep" hint was already removed).
+2. A caret fix beyond the note editor: after `formatBlock` strips a heading/quote
+   marker the block is empty, and an empty text node is an unreliable caret anchor
+   in Chrome/WebKit (the next keystroke landed in a stray `<p>` BEFORE the `<h1>`,
+   giving `<p>heading</p><h1></h1>`). `applyFieldRules` now anchors the caret on a
+   `<br>` inside the emptied heading/quote, exactly like the seeded paragraph.
+
+Verification (`Done when` run literally, headless Chrome CDP on 9226 at 600x264,
+`Input.insertText` + a real Enter key sequence):
+
+- `- a` Enter `b` -> `<ul><li>a</li><li>b</li></ul>`, `htmlToMd` = `- a\n- b`.
+- `# heading` -> `<h1>heading</h1>`, `htmlToMd` = `# heading` (also `##` -> h2).
+- `1. first` -> `<ol><li>first</li></ol>` = `1. first`; `> quoted` ->
+  `<blockquote>quoted</blockquote>` = `> quoted`.
+- Full keep: typing the list then `keep()` created a note whose stored body is
+  exactly `- a\n- b` (GET `/artifacts/<id>` returns it byte-identical); the
+  backend round-trips the body unchanged.
+- Kind detection: a bare URL reads "Link", URL + words "Link + note", plain text
+  "Note"; the image/file path is unchanged (`pending`/`pendingAllImages`, no
+  `.value` read).
+- Placeholder: `getComputedStyle(#field, "::before").content` is the placeholder
+  over the seeded empty field, gone after the first character.
+
+Gates: `bin/verify` all checks passed (JS parse home + capture, pytest 444,
+contrast). No Python touched, so no black check.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/capture.html`.
+
+## CAP.1 done - Rebuilt the shell and verified the reshaped card fits
+
+Rebuilt with `bin/relaunch --build` (cargo "Finished", fresh binary). The plan's
+anchor `desktop/src/main.rs:457` is stale - `main.rs` is now a 9-line shim
+(`enqueue_lib::run()`); the resize `.inner_size(600.0, 264.0)` lives at
+`desktop/src/lib.rs:452`, which is what actually compiled and what the window now uses.
+
+Verification (`Done when` run literally, headless Chrome CDP on 9225 against the
+engine on 8787, viewport 600x264 = the Tauri capture window size, dpr 2): the card
+fills the window (600x264); the fieldbox is 164px tall with the textarea's
+scrollHeight == clientHeight (138px), so the text sits top-left and is NOT clipped
+(the old 132px cram was the clip); the caption row renders (kind label visible,
+foot row at y=215); the Keep button is fully inside the window (bottom 249 < 264);
+and the drag strip (#bar, 12px) keeps its mousedown -> `invoke("capture_drag")`
+handler with `capture_drag` -> `start_dragging()` intact in lib.rs (unchanged by the
+rebuild). `bin/verify` passed (JS parse home + capture, pytest 444, contrast).
+
+Deviation (judgment call, documented): the reshaped card referenced `var(--r-md)`
+(#fieldbox) and `var(--r-full)` (#keep) but capture.html's `:root` only defined
+`--r-sm`/`--r-lg`, so the "tinted rounded well" and the "bold-purple pill" rendered
+as sharp squares (measured `border-radius: 0px` on both). Added `--r-md: 8px` and
+`--r-full: 9999px` to the capture `:root` (matching `css/tokens.css`). Re-measured
+after: fieldbox radius 8px, Keep radius 9999px. This is the AGENTS.md pixel-perfection
+rule ("if something clearly looks off, get it fixed") applied to the exact surface
+CAP.1 verifies; it is a two-token additive fix, not a redo of the reshape.
+
+Note on the gate: the first `bin/verify` run's pytest leg tripped its hardcoded 120s
+timeout because the suite runs ~163s while the user's League of Legends client holds
+~70% CPU; the tests still passed (444). Once unloaded the suite is ~87s and `bin/verify`
+passes. Environmental CPU contention, not a code regression (suite count is unchanged
+at 444).
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/capture.html`.
+
+## MOB.2 NOT IMPLEMENTED - blocked on the Android mobile toolchain
+
+STATUS: NOT IMPLEMENTED - blocked.
+
+Task: stand up the Tauri v2 mobile shell (Android) and build + launch it on the
+emulator with a blank screen carrying the DESIGN.md tokens. The "Done when" is
+literally "the app builds and launches on the Android emulator showing the light
+canvas and the correct fonts", which needs a working Android build + an emulator.
+
+What I tried: assessed the toolchain rather than half-scaffolding a project that
+cannot be built or launched. The concrete evidence (all missing):
+
+- `cargo tauri mobile --version` -> `error: unrecognized subcommand 'mobile'`. The
+  installed tauri-cli 2.11.4 is compiled WITHOUT the mobile feature, so there is no
+  `tauri mobile init` / `android dev` / `android build`.
+- `rustup target list --installed | grep android` -> empty. No `aarch64-linux-android`
+  (or armv7/i686/x86_64) targets, so the Rust core cannot cross-compile for Android.
+- `emulator -list-avds` -> empty. There is no Android Virtual Device to launch to.
+- `ls ~/Library/Android/sdk/system-images/` -> empty, and `cmdline-tools/` is absent,
+  so there is no `sdkmanager`/`avdmanager` to download a system image or create an
+  AVD.
+- `desktop/gen/` has only `schemas/`; there is no `gen/android` mobile scaffold.
+
+`ANDROID_HOME` is set and the `emulator`/`adb`/NDK (26.1, 27.1) binaries exist, so the
+SDK is partially present - but without a system image, an AVD, the mobile CLI, or the
+Rust targets, nothing can build or launch.
+
+Options for the human (in order of preference):
+
+1. Provision the toolchain, then re-queue MOB.2. Run (a) `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`,
+   (b) `cargo install tauri-cli --version '^2.11' --features mobile` (a ~10 min compile),
+   (c) install Android cmdline-tools, accept licenses, `sdkmanager 'system-images;android-34;google_apis;arm64-v8a'` (~1-2 GB download), create an AVD with `avdmanager create avd`, and boot it once. Tradeoff: ~30-60 min of downloads/compiles and ~2 GB disk, plus the emulator boot on this Mac must be verified (hardware acceleration).
+2. Prove the mobile UI on the existing desktop shell first: build the three-surface capture-first mobile layout as a responsive `static/` page the desktop webview serves, deferring the native Android wrapper. Tradeoff: not a real Android app, but de-risks the UI before the toolchain is worth provisioning.
+3. Defer Phase MOBILE: the sync foundation (SYNC.1-SYNC.9) is complete and the desktop block is complete; mobile is a follow-on once the toolchain is set up. Tradeoff: the mobile capture-and-read surface is not built.
+
+Nothing is checked; the box stays unchecked. Everything else in the queue (the whole
+desktop block and the whole sync block) is done and green.
+
+## SYNC.9 done - The plaintext guard is off; a non-local relay is allowed
+
+Flipped `SYNC_PLAINTEXT_PROTOTYPE` to `False` in `sync/guard.py` (encryption is in
+from SYNC.8, so `assert_local_relay` is now a no-op for any host). Updated the guard
+test: `test_a_non_local_url_is_now_accepted` asserts the flag is False and that
+`assert_local_relay("https://relay.example/v1")` does not raise; the redundant
+flag-off test was folded in. The ciphertext and E3-convergence guarantees are the
+SYNC.8 tests, still green.
+
+Verification (`Done when` run literally): the flag is False, a non-local relay URL is
+accepted, a raw relay fetch is unreadable ciphertext (SYNC.8), and the E3 convergence
+property test still holds. Gates: `uv run pytest -q` = 444 passed; `uv run black --check
+src/ tests/` clean; `bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/sync/guard.py`,
+`tests/test_sync.py`.
+
+## SYNC.8 done - Encryption folded in at the relay boundary (E1 + E2)
+
+Added PyNaCl (the only crypto library). `src/enqueue/crypto.py` (E2E.md Phase E1):
+`derive_kek` (Argon2id MODERATE, ops/mem recorded once, DEC-D5), `new_dek`,
+`wrap`/`unwrap` and `encrypt`/`decrypt` (XChaCha20-Poly1305 SecretBox, fresh nonce),
+and `blob_name` (hex HMAC-SHA256 of the content hash keyed by the DEK).
+`src/enqueue/keyring_file.py` (E2E.md Phase E2): `initialize` (DEK wrapped twice - under
+a password-KEK and a recovery-KEK from a Crockford-base32 phrase - writes
+`DATA_DIR/keyring.json`, returns the phrase, never writes the phrase or DEK),
+`unlock`/`unlock_with_recovery` (raise `UnlockError` on a wrong secret),
+`regenerate_recovery`, `is_initialized`, and an in-memory `dek()` holder (None until
+unlocked). The path is resolved at call time so the `store` fixture's DATA_DIR repoint
+works. Wrapped the boundary in `sync/client.py`: `push_artifact` now
+`crypto.encrypt(serialize(...), dek)` before the PUT and `pull`
+`crypto.decrypt(..., dek)` after the GET; both treat a locked keyring (no DEK) as
+"sync paused". The relay code is unchanged - it still stores opaque bytes.
+
+Tests: `tests/test_crypto.py` (round-trip, wrong-key and flipped-byte raise,
+non-determinism, wrap/unwrap, blob-name stability, plus a 100-example property test)
+and `tests/test_keyring_file.py` (unlock returns the DEK, wrong password raises,
+recovery unlocks, regenerate invalidates the old phrase, the phrase never touches
+disk). `tests/test_sync.py` now initializes the keyring and asserts a raw relay GET
+carries no readable body (`b"hello relay" not in got.content`) then decrypts to check
+it, and the device-A-to-device-B pull test still converges byte-identically through
+the encrypted path. A conftest autouse fixture switches Argon2id to INTERACTIVE for
+tests only (production stays MODERATE), cutting the suite from ~115s to ~60s.
+
+Verification (`Done when` run literally): a raw GET from the relay yields no readable
+JSON (`b"hello relay"` absent), and `test_pull_applies_a_remote_snapshot` converges
+byte-identically through encryption. Gates: `uv run pytest -q` = 445 passed;
+`uv run black --check src/ tests/` clean; `bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/crypto.py`,
+`src/enqueue/keyring_file.py`, `src/enqueue/sync/client.py`, `tests/test_crypto.py`,
+`tests/test_keyring_file.py`, `tests/test_sync.py`, `tests/conftest.py`, `pyproject.toml`
+(pynacl).
+
+## SYNC.6 done - Losing edits stay recoverable (DEC-A)
+
+Added `apply_pulled_snapshot` to `sync/snapshot.py` and used it in `pull()`: when an
+incoming snapshot wins (its lww_key is higher) and the local body differs, the local
+edit's version rows are merged into the snapshot's versions before applying, so the
+losing edit stays in `artifact_versions` and shows up in the existing version-history
+UI as a recoverable prior version. The core `apply_snapshot` (REPLACE) is unchanged, so
+the E3 convergence property test still holds; the merge is a pull-path-only retention
+layer on top. Test (`tests/test_snapshot.py::test_a_losing_local_edit_is_retained_as_a_version`):
+device A's edit and device B's newer edit both land, B's body wins, and A's body is in
+the version list afterward.
+
+Verification (`Done when` run literally): the test passes - two offline edits resolve
+to the newer and the older is retained in the version history (recoverable). Gates:
+`uv run pytest -q` = 432 passed; `uv run black --check src/ tests/` clean; `bin/verify`
+all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/sync/snapshot.py`,
+`src/enqueue/sync/client.py`, `tests/test_snapshot.py`.
+
+## SYNC.5 done - Pull worker (timer + SSE) over the LWW merge
+
+Added `pull()` to `sync/client.py`: reads a persisted cursor (`DATA_DIR/sync_cursor`),
+lists changed objects since it, downloads each `dev/*/artifacts/*.enc` (skipping this
+device's own namespace and blobs, which are fetched on demand later), and applies each
+through `apply_snapshot` (whose LWW no-op check drops stale ones). `push_artifact` now
+also records `_device_id = device_id()` on the local row after a successful PUT, so both
+devices converge to byte-identical state (the pushed `_device_id` matches the pulled
+one). Added `sync/worker.py`: a shared `Worker` drains pull jobs, fed by a 5s timer
+fallback and an SSE listener (`GET /sync/events?token=`, query-token auth, terminal on
+401/403, `httpx` auto-reconnect on transient drop, heartbeat). `api/app.py::serve()`
+starts it via `_start_sync_worker()` (a no-op when `sync_relay_url` is empty).
+
+Tests: `tests/test_sync.py::test_pull_applies_a_remote_snapshot` creates a note on
+"device A" (pushed), deletes it locally and regenerates the device id to simulate
+"device B", then `pull()`s and asserts the restored snapshot equals the original
+byte-for-byte (including `_device_id`). The convergence invariant itself is the
+hypothesis property test in tests/test_snapshot.py.
+
+Verification (`Done when` run literally): `test_pull_applies_a_remote_snapshot` passes
+(device A's snapshot appears on device B via the relay, byte-identical); the timer
+fallback (5s) and SSE give the "within seconds" live path; an idle `list-changed-since`
+returns nothing, so no polling storm. Gates: `uv run pytest -q` = 431 passed;
+`uv run black --check src/ tests/` clean; `bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/sync/client.py`,
+`src/enqueue/sync/worker.py`, `src/enqueue/api/app.py`, `tests/test_sync.py`.
+
+## SYNC.4 done - Snapshot core (E2E Phase E3) + push to the relay
+
+Built `src/enqueue/sync/snapshot.py` (E2E.md Phase E3): `read_artifact_snapshot`
+(artifact row + annotations by `created_at,id` + page_text by `page` + versions by
+`created_at,id`), `serialize`/`deserialize` (canonical JSON per E2E.md Section 1),
+`lww_key` (`(updated_at, _device_id)`), `winner` (max lww_key), and `apply_snapshot`
+(upsert-in-place via `INSERT .. ON CONFLICT(id) DO UPDATE` so the derived tables' FKs
+stay valid, then replace the three child tables; idempotent; no-op when local >=
+incoming). Added migration `0023_sync_device_id` (a `_device_id` column on artifacts)
+so the local DB remembers which device wrote the current row - without it the LWW
+tie-break was wrong and the convergence property test caught it (applying equal-
+timestamp snapshots in different orders disagreed). The convergence property test
+(100 hypothesis examples) and the idempotence/stale-pull tests live in
+tests/test_snapshot.py; hypothesis was added to the dev dependency group.
+
+Built `src/enqueue/sync/client.py` `push_artifact(id)`: reads the snapshot, stamps
+`_device_id = device_id()`, serializes (plaintext in the prototype), and PUTs
+`dev/<device_id>/artifacts/<id>.enc` with the Keychain secret as a Bearer token;
+local-only artifacts are skipped, a 409 is an idempotent no-op, and an HTTP error is
+reported but never fails the edit. Wired into `notes.create` and `notes.edit` (lazy
+import, after the transaction commits). `tests/test_sync.py::TestPush` runs a real
+relay (uvicorn on a free port), creates a note, asserts the snapshot object appears
+on the relay with the right body and a stamped `_device_id`, then re-pushes and
+asserts the object list is unchanged.
+
+Verification (`Done when` run literally): `tests/test_sync.py::test_edit_pushes_and_repush_is_a_noop`
+passes (snapshot appears on the relay after an edit; re-push uploads nothing new);
+the E2E.md convergence property test passes (100 examples, any order -> winner).
+Gates: `uv run pytest -q` = 430 passed; `uv run black --check src/ tests/` clean;
+`bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/sync/snapshot.py`,
+`src/enqueue/sync/client.py`, `src/enqueue/notes.py`,
+`src/enqueue/migrations/versions/0023_sync_device_id.py`, `tests/test_snapshot.py`,
+`tests/test_sync.py`, `pyproject.toml` (hypothesis dev dep).
+
+## SYNC.3b done - The plaintext-prototype safety guard
+
+Added `src/enqueue/sync/guard.py`: `SYNC_PLAINTEXT_PROTOTYPE = True` (module-level,
+flips to False only in SYNC.9) and `assert_local_relay(url)`, which raises a clear
+`RuntimeError` when the flag is set and the relay URL's host is not loopback
+(`127.0.0.0/8`, `::1`, `localhost`) or a private-LAN IPv4 (`10/8`, `172.16/12`,
+`192.168/16`). Non-local hostnames are treated as remote and refused (conservative:
+can't be proven local). An empty URL (sync off) is a no-op. The push/pull client
+(SYNC.4/5) will call this before any upload. Tests (`tests/test_sync.py`, 4): non-local
+URL raises; loopback + LAN URLs pass; empty URL passes; flag off accepts any URL.
+
+Verification (`Done when` run literally): `uv run pytest tests/test_sync.py -q` = 4
+passed; `uv run pytest -q` = 419 passed; `uv run black --check src/ tests/` clean;
+`bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/sync/guard.py`,
+`tests/test_sync.py`.
+
+## SYNC.3 done - Sync settings, the Keychain secret, and the device id
+
+Added `sync_relay_url` to `settings.py` FIELDS (`ENQ_SYNC_RELAY_URL`, default empty -
+empty means sync is off). Generalized `keyring.py` to hold two Keychain entries under
+one account: the existing provider API key (`enqueue-llm-api-key`) and the new
+per-library sync secret (`enqueue-sync-secret`); the shared `_set`/`_get`/`_clear` take
+the service, and the public API-key functions keep their original error wording (the
+`noun` parameter) so the existing keyring tests still pass. Added
+`src/enqueue/sync/__init__.py` with `device_id()` - a UUID4 generated once and stored at
+`DATA_DIR/device_id`, never derived from hardware (E2E.md Section 1), idempotent.
+`settings.sync_state()` reports `{relay_url, relay_configured, secret_present,
+secret_hint, device_id}`; `GET /settings` now carries it under `sync`, and new
+`PUT /settings/sync-secret` + `DELETE /settings/sync-secret` store/clear the secret in
+the Keychain exactly like the API-key routes (value never returned, never in
+settings.json).
+
+Tests (`tests/test_settings.py` `TestSyncSettings`, 3): `GET /settings` reports
+`relay_configured` false then true once the URL is set, with `device_id` present;
+the sync secret is stored via `keyring.sync_secret_set` and never appears in
+settings.json while the URL does; `device_id()` is stable and a real UUID.
+
+Verification (`Done when` run literally): `uv run pytest tests/test_settings.py -q` =
+20 passed; `uv run pytest -q` = 415 passed; `uv run black --check src/ tests/` clean;
+`bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/keyring.py`,
+`src/enqueue/settings.py`, `src/enqueue/api/settings.py`, `src/enqueue/sync/__init__.py`,
+`tests/test_settings.py`.
+
+## SYNC.2 done - The relay as a standalone FastAPI service
+
+Added `src/enqueue/relay/` (a separate package, not part of the local engine):
+`storage.py` (a `RelayStorage` that keeps objects as BLOBs in a SQLite file keyed by
+name, with a monotonic cursor derived from `MAX(cursor)` so it survives a restart; writes
+are write-by-unique-name and raise `ObjectConflict` on an existing name), and `app.py`
+(`create_relay(data_dir, secret)` builds the FastAPI app with the four SYNC.1 endpoints
+plus an in-memory `RelayHub` SSE fan-out). Endpoints: `GET /sync/objects?since=<cursor>`
+(changed names + new cursor), `GET /sync/object/{name:path}` (raw bytes, `404` on miss),
+`PUT /sync/object/{name:path}` (`201`, `409` on an existing name, never overwrite), and
+`GET /sync/events?token=<secret>` (SSE `event: object` on every PUT, 15s heartbeat).
+Auth: `Authorization: Bearer <secret>` on HTTP, `?token=` on SSE, `401` on mismatch.
+`serve()` runs it standalone on `RELAY_PORT` (default 8788). The relay parses none of
+the bytes.
+
+Tests (`tests/test_relay.py`, 6): PUT+GET byte-identical; PUT-existing-name is 409 and
+the first bytes survive; list-changed-since returns names after a cursor and nothing at
+the head; missing object is 404; bad secret is 401; and an SSE client receives an event
+on a PUT. The SSE test runs the app under a real uvicorn server on a free port and PUTs
+over httpx while streaming the event source - the in-process TestClient's single
+portal deadlocks that shape (the first version hung, caught and fixed).
+
+Verification (`Done when` run literally): `uv run pytest tests/test_relay.py -q` = 6
+passed; `uv run pytest -q` = 412 passed; `uv run black --check src/ tests/` clean;
+`bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/relay/__init__.py`,
+`src/enqueue/relay/storage.py`, `src/enqueue/relay/app.py`, `tests/test_relay.py`.
+
+## SYNC.1 done - Relay protocol spec
+
+Wrote `docs/sync-relay.md`: the auth model (a per-library shared secret, `Bearer` on
+HTTP and `?token=` on the SSE endpoint because EventSource cannot send headers; the
+`device_id` is a separate UUID4, not an identity the relay verifies), the object
+namespace (`dev/<device_id>/artifacts/<id>.enc` and `blobs/<blob_name>`, mirroring
+E2E.md minus the dropped `exhibits/`), and the four operations with request/response
+shapes - `GET /sync/objects?since=<cursor>` (changed names + new cursor), `GET
+/sync/object/<name>` (raw bytes, `404` on miss), `PUT /sync/object/<name>`
+(write-by-unique-name, `409` on an existing name, never overwrite), and `GET
+/sync/events?token=<secret>` (SSE `event: object` on every change, heartbeat,
+reconnect discipline). The doc states plainly that the relay stores opaque bytes and
+can decrypt nothing, and that the plaintext prototype and the encrypted stage share
+this protocol unchanged. Docs-only task, no code gates.
+
+Status: done, uncommitted (user commits). Files: `docs/sync-relay.md`.
+
+## ANIM.5 done - Brand sweep: every loading state uses the spinning raven
+
+Converted the remaining bare-text loading states to the shared loader, sized per the
+motion thesis (full-view = `lg`, inline/row = `sm`):
+
+- `home.js`: the wall "opening..." (full-view, `lg`), the saved-groupings picker
+  "opening..." (inline modal, `sm`), and the wall paging "loading more..." (inline
+  footer, `sm`).
+- `artifact.js`: the file plain-text "reading..." placeholder (inline, `sm`).
+- `trash.js`: the trash "..." (full-view, `lg`).
+- `pivot.js`: "removing it..."/"removing N artifacts..."/"restoring it..."/"moving
+  it..." (all full-view `view.innerHTML` waits, `lg`), "adding it..." (inline slot,
+  `sm`), and the picker's "Loading your library..." (inline modal list, `sm` - the
+  ternary was split so the loading branch sets `innerHTML` to the spinner and the
+  loaded/empty branches keep the `aside` text).
+
+Each keeps its exact wording as the caption. Verified live (headless Chrome CDP,
+ cache-disabled): the served `home.js`/`pivot.js`/`artifact.js`/`trash.js` all route
+ through `spinner(...)`, the home view renders (no stuck bare "opening..."), and
+ `bin/verify` passed (pytest 406 + JS parse + contrast). The plan's grep is clean:
+ no `state thinking` and no bare `>...ing<` loader remain.
+
+Spotted, not in scope: two loading indicators fall outside the plan's
+ `class="state"`/`class="state thinking"` catch-all and the `>...ing<` grep, so they
+ were left as-is: `artifact.js:596` is a `.aside thinking` "asking <host> what this
+ is..." (link-preview pending, `.aside` not `.state`), and `settings.js:690` is the
+ rebuild-index button's `textContent = "rebuilding..."` (a button action, not a
+ `.state` wait). Converting a button's text to a spinner would be a different shape
+ of change; left for the human review.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/home.js`,
+`src/enqueue/static/js/artifact.js`, `src/enqueue/static/js/trash.js`,
+`src/enqueue/static/js/pivot.js`.
+
+## ANIM.4 done - The capture-success flight
+
+Added `captureFlight()` (in `js/util.js` for the main window, plus a self-contained
+copy in `capture.html`'s inline script, matching that page's standalone-by-design
+rule). It mounts `#captureFlight` - a `position: fixed`, `pointer-events: none`,
+`z-index: 100` `<img src="/static/capture-bird.png">` at 220px - and runs `raven-flight`
+(1.9s: enter `translate(calc(-50% - 100vw), -50%)` -> `translate(-50%, -50%)` over
+~600ms on `cubic-bezier(0.16, 1, 0.3, 1)`, hold ~1s, fade ~300ms, then the node is
+removed). Reduced motion uses `raven-fade` (fade in, hold, fade out, no translate).
+`will-change: transform, opacity` lives on the class, so it only applies while the
+bird is mounted. A second capture removes the prior bird first (`img.remove()` in the
+stale timeout is a no-op), so birds never stack.
+
+Call sites: the three quick-capture success paths in `capture.html` (`keep()`, the
+paste handler, the drop handler) each `const flight = captureFlight(); await keptBeat();
+await flight; dismiss();` - the overlay holds its dismiss until the ~1.9s flight has
+been seen (the bird is pointer-events: none, so it never blocks a click). `saveLink`
+in `pill.js` fires `captureFlight()` alongside `toast("Saved.")` (fire-and-forget; the
+main window stays visible).
+
+Verified live (headless Chrome CDP, cache-disabled): `captureFlight()` mounts
+`.capture-flight` with `animation-name: raven-flight`, `1.9s`, `pointer-events: none`,
+`z-index: 100`; the CSSOM keyframe is `0% translate(calc(-50% - 100vw), -50%)` ->
+`31.6% translate(-50%, -50%)` (left -> centre); the node is gone after ~2s; two rapid
+captures leave exactly one bird; under `Emulation.setEmulatedMedia` reduce the class
+is `capture-flight reduced` with `animation-name: raven-fade`. `bin/verify` passed
+(pytest 406 + JS parse incl. capture.html + contrast).
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/util.js`,
+`src/enqueue/static/js/pill.js`, `src/enqueue/static/capture.html`,
+`src/enqueue/static/css/base.css`.
+
+## ANIM.3 done - Conversations use the small spinning raven
+
+`chat.js` waiting markup now routes through the shared loader. The three inline
+in-chat waits get the small raven (`spinner("sm", ...)`): the pending assistant bubble
+("Reading what you saved..."), the organize slot placeholder ("Building the view..."),
+and the in-chat move ("moving it..."). The two full-view waits get the large raven
+(`spinner("lg", ...)`) per the motion thesis (large for full-view, small for inline):
+`startChat`'s "reading what you saved..." and `runSavedGrouping`'s "Building the
+view...". The poller/refresh logic is untouched - only the rendered markup changed.
+
+Judgment call: the plan's title says "conversations use the small raven", but the
+motion thesis (and ANIM.5's "full-view waits get lg") splits large-vs-small by
+full-view-vs-inline, not by file. `startChat` and `runSavedGrouping` replace the whole
+view (a full-view wait), so they take `lg`; only the in-bubble/slot waits take `sm`.
+Verified live (headless Chrome CDP, cache-disabled): served `chat.js` uses
+`spinner("sm", "Reading what you saved...")` for the pending bubble and `spinner("sm",
+"moving it...")`/`"Building the view..."` for the slots; `spinner("sm", "Reading what
+you saved...")` renders 24x24 with `flex-direction: row` (caption beside the bird) and
+`spin-ccw`. `bin/verify` passed (pytest 406 + JS parse + contrast).
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/chat.js`.
+
+## ANIM.2 done - Search shows the big centred raven
+
+`doSearch` in `search.js` now renders `spinner("lg", "searching...")` for the initial
+wait and `spinner("lg", msg)` for the index-rebuild wait (the two `state thinking`
+sites), instead of the top-left text label. The timing, polling, and clearing logic
+are unchanged - only the rendered markup swapped to the shared loader. Verified live
+(headless Chrome CDP, cache-disabled reload, a 1.5s fetch delay to hold the loading
+state open): the loading view is `.loader-lg` with caption "searching..." and
+`flex-direction: column` / `align-items: center` (the bird centred, caption beneath),
+and after results arrive `hasLoader` is false with `.item` rows present. Reduced
+motion is covered by ANIM.1's `prefers-reduced-motion` block. `bin/verify` passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/search.js`.
+
+## ANIM.1 done - The reusable spinning-raven loader
+
+Added `spinner(size, caption)` in `js/util.js` (returns markup, no caller hand-rolls
+it) and the loader CSS in `css/base.css` (the shared stylesheet, so no new file and no
+`bin/verify` JS_ORDER change). `spinner("lg", caption)` is the full-view wait: the bird
+at 64px with the caption stacked below, centred; `spinner("sm", caption?)` is the inline
+bird at 24px, caption beside it when given. The bird is `loading.png` spinning counter-
+clockwise (`@keyframes spin-ccw { to { transform: rotate(-360deg) } }`, 1.1s linear
+infinite, GPU transform only), `will-change` only while animating, and a
+`prefers-reduced-motion: reduce` block sets `animation: none` so the bird sits still
+with the caption still communicating the wait.
+
+Verified live (headless Chrome CDP on 9225, cache-disabled reload against the engine):
+`spinner("lg","searching...")` -> `loader-lg` bird 64x64, caption "searching...",
+animation `spin-ccw 1.1s linear infinite`; `spinner("sm")` -> `loader-sm` bird 24x24;
+the CSSOM `spin-ccw` keyframe is `100% { rotate(-360deg) }` (counter-clockwise); under
+`Emulation.setEmulatedMedia` reduce the computed `animation-name` is `none` and the bird
+still renders 64x64 (never blank). `bin/verify` all checks passed.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/util.js`,
+`src/enqueue/static/css/base.css`.
+
+## SET.2 done - Clarify the two OpenCode backends
+
+Labels only, no behaviour change: `config.py` now names them "OpenCode Zen (Zen key)"
+and "OpenCode Go (Go subscription key)" so the picker makes the separate-billing split
+obvious. `bin/verify` passed, gates green.
+
+## SET.1 done - Endpoint derives from the backend; no endpoint field for named backends
+
+Backend (`providers/base.py`): `get_provider` and `get_vision_provider` no longer read
+`llm_url` for a named backend. The URL is now derived: `local_only` -> the local Ollama
+URL (unchanged); `custom` -> the stored `llm_url`; any named backend ->
+`config.BACKENDS[name]["url"]`. So a stale stored `llm_url` (the old localhost default)
+can never point `opencode-go` or `openrouter` at 127.0.0.1 again. The old code did
+`url = settings.get("llm_url")` for every non-local backend and `base_url = url or
+backend["url"]`, and because `llm_url` defaults to localhost it always won - that was
+the bug.
+
+Frontend (`static/js/settings.js`): the Endpoint (`llm_url`) field is rendered only when
+the chosen backend is `custom` (the one backend whose URL is not in config.BACKENDS);
+the model field still renders for every backend. `stageBackend` no longer stages
+`llm_url` on a backend switch (it used to stage `spec.url`, which re-introduced the
+stale URL on every switch).
+
+Tests: `TestBackendUrlDerivation` in `tests/test_providers.py` - named backend ignores a
+stale localhost `llm_url`; `custom` uses the stored URL; `local_only` routes to Ollama;
+the vision provider derives the same way.
+
+Flakiness fix (done here, not part of SET.1's literal scope, because it was blocking the
+gate): `tests/test_entities.py` and `tests/test_annotation_search.py` had no
+`_no_real_judge` fixture, so their retrieval tests called the REAL gray-zone judge
+(Ollama llama3.1:8b) - slow (5-18s each) and non-deterministic, which flaked
+`bin/verify` and pushed the full suite over its 120s pytest timeout. Both files now have
+the same autouse fail-open judge stub their siblings `test_chats.py` and
+`test_search_results.py` already had. No assertion changed; the judge is stubbed to
+keep-all, which is the leak-side choice for tests not asserting on the judge. This took
+the two files from ~69s to ~15s and made them deterministic. This was the FIX.2 note's
+"spotted, not in scope" item, escalated because it blocked SET.1's bin/verify gate.
+
+Verification (`Done when` run literally): `get_provider()` for `opencode-go` has
+`base_url == config.BACKENDS["opencode-go"]["url"]` and no `127.0.0.1` in it; `custom`
+uses the stored URL; `local_only` routes to Ollama; the Endpoint field renders only for
+`custom` (settings.js field loop). Gates: `uv run pytest -q` = 406 passed (was 402;
++4 provider tests), `uv run black --check src/ tests/` clean, `bin/verify` all checks
+passed (JS parse, pytest 406, 33 contrast + capture tokens).
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/providers/base.py`,
+`src/enqueue/static/js/settings.js`, `tests/test_providers.py`,
+`tests/test_entities.py`, `tests/test_annotation_search.py`.
+
+## FIX.2 done - Close the chat-side floor leak in chats.passages()
+
+The facet and entity branches of `chats.passages()` used to add hits with no floor
+check, so a question whose only match was a weak facet/entity vector could ground an
+answer the same way `/search` once did. Both branches now face the same two-tier gate
+as the chunk branch, reusing `_floor_verdict` and `judge_gray_zone` from
+`retrieve.candidates` (not copied): the raw legs are read per collection exactly as
+`_hybrid_results` does (`search_keyword` is the lexical leg, `search_dense` is the
+dense similarity), then keep >= KEEP_ABOVE, drop < DROP_BELOW, gray zone -> judge.
+
+Judgment call (found during verification): the gray-zone judge for a facet/entity hit
+must read the MATCHED text - the facet `statement` or the entity `fact` - not the
+artifact's opening chunk. My first version fed the opening chunk; the entity-ladder
+test (`presidents` -> a Roosevelt biography whose opening chunk is a recipe) then
+correctly ruled the recipe "not relevant" and dropped a real match. The fix stores the
+statement/fact with each gray candidate and uses it as the judge snippet, mirroring
+how `/search` shows an entity fact for an entity-only hit. This also removes a real
+model call from the judge prompt path being fed the wrong evidence.
+
+Tests: new `TestFacetEntityFloor` in `tests/test_chats.py` - one test that a question
+whose only match is weak facet/entity vectors feeds the answer nothing ("quantum flux
+capacitor" vs an unrelated facet+entity, all legs below DROP_BELOW, `found == []`),
+and one that a real lexical facet match still retrieves its passage ("ziggurat" hits
+the facet keyword branch). Both seed facets/entities with the running model version so
+`hit_is_stale` does not skip them. The pre-existing entity-ladder test
+(`test_entities.py::test_chats_passages_reach_the_biography_via_entity`) still passes -
+it now exercises the gray-zone-judge path with the entity fact as the snippet.
+
+Verification (`Done when` run literally): `uv run pytest tests/test_chats.py -q` = 44
+passed; `uv run pytest -q` = 402 passed (full suite, twice); `uv run black --check
+src/ tests/` clean. `bin/verify` JS parse + contrast checks pass; its pytest leg
+flaked once on a PRE-EXISTING test (below), then passed on re-run.
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/chats.py`,
+`tests/test_chats.py`.
+
+Spotted, not in scope: `tests/test_entities.py` has no `_no_real_judge` fixture (its
+sibling files `test_chats.py` and `test_search_results.py` both stub the gray-zone
+judge fail-open). So its retrieval tests (`test_search_results_reaches_a_biography_that_never_says_president`
+and now `test_chats_passages_reach_the_biography_via_entity`) call the REAL judge -
+Ollama llama3.1:8b on localhost - which is slow and non-deterministic: the /search one
+flaked once across three full-suite runs (passed, failed, passed). This predates FIX.2
+(the /search path already had the floor) and is a pre-existing flake; fixing it means
+adding the same autouse judge stub to `test_entities.py`, which is out of FIX.2's scope.
+
+## FIX.1 done - Stop discarding a good grounded answer that has no citations
+
+The `Answer` validator (`src/enqueue/schemas.py`) used to raise "grounded is true but
+nothing is cited" whenever the model returned `grounded: true` with `cited: []`, which
+surfaced as the failed turn "That answer could not be completed." Now the validator
+salvages instead of throwing: when grounded but uncited, it backfills `cited` with the
+passages actually fed to the model (`offered_artifact_ids` from context); only when there
+is nothing fed to point at does it downgrade `grounded` to `false` and keep the answer.
+The invented-citation guard (cite only what was offered) and the ungrounded-but-cited
+guard are untouched, so a genuinely citing answer still carries its citations and a
+lying one is still rejected.
+
+Test change (deliberate, spec change not a fudge): `test_grounded_must_name_a_source`
+encoded the OLD raise behaviour and now asserts the opposite, so it was replaced by two
+contract tests - backfill-what-was-fed, and downgrade-when-nothing-fed - plus one
+end-to-end test (`test_a_grounded_answer_without_citations_is_salvaged_not_failed`) that
+drives `run_answer` through a provider that actually runs the `Answer` validator and
+asserts the turn returns the model's answer text with the backfilled citation, not the
+failure string.
+
+Verification (`Done when` run literally): `test_a_grounded_answer_without_citations_is_salvaged_not_failed`
+returns "Movement outlasts rigidity." (not `FAILED_TEXT`) with `cited == [note id]`;
+a genuinely citing answer still stores its citation (existing `test_a_question_and_its_answer_are_written_together`
+and `test_a_citation_the_model_invented_is_dropped` unchanged and green); and
+`uv run pytest -q` is 400 passed (was 398; one contract test split into two plus one new).
+Gates: `uv run black --check src/ tests/` clean, `bin/verify` all checks passed (JS parse,
+pytest, 33 contrast + capture tokens).
+
+Status: done, uncommitted (user commits). Files: `src/enqueue/schemas.py`,
+`tests/test_chats.py`.
+
+Spotted, not in scope: the pi-lens checker flags three function-local imports in
+`tests/test_chats.py` ("Import block is un-sorted or un-formatted" - `from __future__
+import annotations` at top, `from enqueue import config` and `import hashlib` inside
+test methods). They are pre-existing deliberate lazy imports (avoid circular imports),
+not the repo's `black` gate, and were left alone.
 
 ## NOTE.3 done - Click-to-edit the header title, with an explicit-title model behind it
 
@@ -53,6 +734,7 @@ is a no-op (a click-then-click-away must not freeze a derived title by accident)
 and an empty commit clears back to derived.
 
 Judgment calls:
+
 - The no-op guard above is frontend-only. The backend still treats any non-empty
   `title` in a PATCH as explicit; the accidental-freeze problem is a UI gesture
   (click and blur without editing), so it is refused at the gesture.
@@ -91,7 +773,7 @@ Added a shared JS mirror of `notes.py:title_from_body` - `titleFromBody(body)` i
 `[*_\`]` stripping, same 120-char cap, same `Untitled`) - so the live header and the
 server's stored title derive from identical rules and cannot drift. The editor's
 `input` handler now runs `updateTitleFromBody(ed)` after `applyInputRules`: for note
-artifacts it recomputes `titleFromBody(htmlToMd(ed))` and writes it into the header
+artifacts it recomputes`titleFromBody(htmlToMd(ed))` and writes it into the header
 `.h1`. The header for non-note kinds and the function-splitting is untouched. The
 function leaves room for NOTE.0's explicit title: when one exists it must not be
 re-derived (comment marks where NOTE.3 hooks in).
@@ -151,8 +833,8 @@ engine on 8787, focus-emulation + cache-disabled so the seeded JS actually serve
   note is untouched).
 - Typing `testing` with no Enter: editor becomes `<p>testing</p>` - one line, one
   paragraph, no per-character break; live `htmlToMd` is `testing`.
-- Shorthands on line one (fresh empty note each): `- ` -> UL, `# ` -> H1, `1. ` -> OL,
-  `> ` -> BLOCKQUOTE - all convert exactly as before.
+- Shorthands on line one (fresh empty note each): `-` -> UL, `#` -> H1, `1.` -> OL,
+  `>` -> BLOCKQUOTE - all convert exactly as before.
 - Round-trip: blurring saves `testing` to the API; reopening shows `<p>testing</p>`
   and `htmlToMd` gives `testing` - no stray empty leading paragraph in the serialized
   markdown.
@@ -239,6 +921,7 @@ Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/icons.js
 `src/enqueue/static/css/home.css`.
 
 ---
+
 ## EYE.2 done - Put the eye in the ribbon "ask" button
 
 Implementation was already in the working tree when EYE.2 was queued (pill.js renders `<span class="pill-eye
@@ -283,6 +966,7 @@ Status: done, uncommitted (user commits). Files: `src/enqueue/static/js/pill.js`
 Verified live: headless Chrome CDP 127.0.0.1:9225 against the engine, plus `bin/verify`.
 
 ---
+
 ## EYE.1 done - Extract the eye into a reusable piece
 
 Extracted the greeting eye (markup + cursor-follow tracking) into one factory, `makeEye(el)`, in `src/enqueue/static/js/icons.js`.

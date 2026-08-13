@@ -47,6 +47,13 @@ const svg = (k) => '<svg viewBox="0 0 24 24">' + ICONS[k] + "</svg>";
 // greeting emblem and the ribbon's ask button, so every surface renders the
 // same eye. The travel math self-scales from the socket's rendered size, so
 // the same code works at emblem size and ribbon-button size.
+// The eye PNGs load via img.src, not through home.html's versioned <link>/<script>
+// tags, so the cache-buster never reaches them and a swapped asset shows stale. A
+// per-page-load version query fixes that: the same value for every mount in a
+// session (so the WebView caches within the session), a fresh value each app
+// launch (so a relaunch always pulls a changed eye-frame/pupil/eye-only).
+const EYE_ASSET_V = "?v=" + Date.now();
+
 const EYE_MARKUP = (() => {
 	const wrap = document.createElement("div");
 	wrap.className = "eye-blinkwrap";
@@ -54,13 +61,13 @@ const EYE_MARKUP = (() => {
 	socket.className = "eye-socket";
 	const pupil = document.createElement("img");
 	pupil.className = "eye-pupil";
-	pupil.src = "/static/eye-pupil.png";
+	pupil.src = "/static/eye-pupil.png" + EYE_ASSET_V;
 	pupil.alt = "";
 	pupil.draggable = false;
 	socket.appendChild(pupil);
 	const frame = document.createElement("img");
 	frame.className = "eye-frame";
-	frame.src = "/static/eye-frame.png";
+	frame.src = "/static/eye-frame.png" + EYE_ASSET_V;
 	frame.alt = "";
 	frame.draggable = false;
 	wrap.appendChild(socket);
@@ -171,9 +178,12 @@ function eyeSaccade(el) {
 	}
 	const socket = el.querySelector(".eye-socket");
 	const sock = socket.getBoundingClientRect();
-	// Same travel math as the follow: a glance uses a generous share of the
-	// reach, so the iris swings inside the lid without ever leaving it.
-	const reach = 25 * (sock.width / 184);
+	// The follow's reach keeps tracking subtle, but the idle glance is a deliberate
+	// "look away" and should read. The emblem's pupil is small inside a large lid,
+	// so it has far more travel room than the follow baseline assumes; give it a
+	// bigger swing than the ribbon eye (whose pupil already fills its socket).
+	const glanceScale = el.classList.contains("pill-eye") ? 25 : 55;
+	const reach = glanceScale * (sock.width / 184);
 	const ang = Math.random() * Math.PI * 2;
 	const len = reach * rand(0.65, 0.95);
 	st.gx = (Math.cos(ang) * len).toFixed(2);
@@ -342,7 +352,7 @@ function makeEye(el) {
 	// its socket geometry is overridden in pill.css. The emblem keeps the raven.
 	if (el.classList.contains("pill-eye")) {
 		const f = el.querySelector(".eye-frame");
-		if (f) f.src = "/static/eye-only.png";
+		if (f) f.src = "/static/eye-only.png" + EYE_ASSET_V;
 	}
 	eyeState.set(el, {
 		raf: 0,
@@ -364,7 +374,8 @@ function makeEye(el) {
 	}
 	el.addEventListener("pointerdown", eyePress, { passive: true });
 	eyeArmIdle(el);
-	eyeArmBlink(el);
+	// The home greeting raven no longer blinks (Minh); only the ribbon eye does.
+	if (el.classList.contains("pill-eye")) eyeArmBlink(el);
 }
 
 // The eye dies with the view (the view teardown calls this): drop every

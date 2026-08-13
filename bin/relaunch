@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="$REPO/desktop/target/debug/enqueue-desktop"
+BIN="$REPO/desktop/target/debug/Enqueue"
 LOG="${TMPDIR:-/tmp}/enqueue-app.log"
 
 if [[ "${1:-}" == "--build" ]]; then
@@ -21,7 +21,7 @@ fi
 
 # The shell kills its own engine when the window closes, so stop the window first
 # and let it clean up rather than orphaning a process on the port.
-pkill -f "enqueue-desktop" 2>/dev/null || true
+pkill -f "Enqueue" 2>/dev/null || true
 sleep 1
 pkill -f "enq serve" 2>/dev/null || true
 sleep 1
@@ -89,7 +89,7 @@ fi
 
 # Launched from a shell, the process is not frontmost, so the window opens behind
 # whatever the person was looking at and reads as a launch that failed.
-osascript -e 'tell application "System Events" to tell process "enqueue-desktop" to set frontmost to true' 2>/dev/null || true
+osascript -e 'tell application "System Events" to tell process "Enqueue" to set frontmost to true' 2>/dev/null || true
 
 echo "up: $(curl -s http://127.0.0.1:8787/health)"
 echo "log: $LOG"

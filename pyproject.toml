@@ -21,6 +21,7 @@ dependencies = [
   "alembic>=1.13",
   "trafilatura>=1.8",
   "sqlite-vec>=0.1.9",
+  "pynacl>=1.6.2",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +31,11 @@ index = ["fastembed>=0.4"]
 enq = "enqueue.cli:app"
 
 [dependency-groups]
-dev = ["black>=24.0", "pytest>=8.0"]
+dev = [
+    "black>=24.0",
+ "hypothesis>=6.165.4",
+ "pytest>=8.0",
+]
 
 [build-system]
 requires = ["hatchling"]

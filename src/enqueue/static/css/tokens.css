@@ -98,6 +98,19 @@
     --lavender-subtle: rgba(94, 106, 210, 0.12);
     --on-lavender: #ffffff;
 
+    /* The vivid purple of the eye pupil (#60079f) - bolder and more saturated
+       than the muted lavender accent. Used only where the brand wants the eye's
+       own saturation to carry: the header wash, the capture disc, the greeting
+       period. It is dark, so it always wears white ink (dark ink fails on it);
+       --purple-bold-hover is the lighter lift for the disc's hover. */
+    --purple-bold: #60079f;
+    --purple-bold-hover: #7a1fc0;
+    --purple-bold-wash: rgba(96, 7, 159, 0.1);
+    /* A stronger version of the wash for the home header, so the purple carries
+       further down the frozen header before fading to the white ground. */
+    --purple-bold-wash-strong: rgba(96, 7, 159, 0.22);
+    --on-purple-bold: #ffffff;
+
     --line: #dedee5;
     --line-soft: #eceef2;
     /* The only line token allowed to be a sole boundary. DESIGN.md's #c4c6d0

@@ -44,6 +44,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # the text model: most backends answer text and images with different models.
     "vision_model": ("ENQ_VISION_MODEL", config.VISION_MODEL, True),
     "llm_url": ("ENQ_OLLAMA_URL", config.OLLAMA_URL, True),
+    # The relay the sync client pushes to and pulls from (SYNC.3). Empty means
+    # sync is not configured. Plaintext on purpose: the relay URL is not a secret.
+    "sync_relay_url": ("ENQ_SYNC_RELAY_URL", "", True),
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
     "user_agent": ("ENQ_USER_AGENT", None, True),
     "hotkey": ("ENQ_HOTKEY", "Alt+Shift+E", True),
@@ -196,4 +199,23 @@ def api_key_state() -> dict:
         # offered rather than offered and ignored.
         "api_key_editable": keyring.available(),
         "keychain_available": keyring.available(),
+    }
+
+
+def sync_state() -> dict:
+    """What the interface needs to know about sync configuration (SYNC.3).
+
+    The relay URL is a plaintext setting; the per-library secret lives in the
+    Keychain and its value is never read back here - only whether one is present
+    and its hint. The device id names this device's namespace on the relay.
+    """
+    from . import keyring
+    from .sync import device_id
+
+    return {
+        "relay_url": get("sync_relay_url") or "",
+        "relay_configured": bool(get("sync_relay_url")),
+        "secret_present": bool(keyring.sync_secret_get()),
+        "secret_hint": keyring.sync_secret_hint(),
+        "device_id": device_id(),
     }

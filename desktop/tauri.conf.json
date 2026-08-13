@@ -21,6 +21,7 @@
           },
           "permissions": [
             "allow-capture-dismiss",
+            "allow-capture-done",
             "allow-capture-drag",
             "core:event:allow-listen",
             "core:event:allow-unlisten"
@@ -33,7 +34,13 @@
           "remote": {
             "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
           },
-          "permissions": ["allow-hotkey-changed", "allow-open-external", "allow-window-drag"]
+          "permissions": [
+            "allow-hotkey-changed",
+            "allow-open-external",
+            "allow-window-drag",
+            "core:event:allow-listen",
+            "core:event:allow-unlisten"
+          ]
         }
       ]
     },

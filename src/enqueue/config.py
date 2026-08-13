@@ -40,7 +40,7 @@ BACKENDS = {
         "key_var": "ENQ_LLM_API_KEY",
     },
     "opencode": {
-        "label": "OpenCode Zen",
+        "label": "OpenCode Zen (Zen key)",
         # opencode.ai/zen/v1, not api.opencode.ai/v1. The latter host resolves and
         # answers 200 with the plain text "Not Found" for every path, which is not an
         # HTTP error and so is not caught as one - the OpenAI client hands the body
@@ -51,7 +51,7 @@ BACKENDS = {
         "key_var": "ENQ_LLM_API_KEY",
     },
     "opencode-go": {
-        "label": "OpenCode Go",
+        "label": "OpenCode Go (Go subscription key)",
         # The Go subscription endpoint. Separate billing from Zen: a Go key has no
         # Zen entitlement and vice versa, so a key that 503s on opencode (Zen) may
         # work fine here. Verified against the live host: GET /zen/go/v1/models

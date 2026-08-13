@@ -26,7 +26,8 @@ import openai
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from enqueue.providers.base import ProviderError, why
+from enqueue import config, settings
+from enqueue.providers.base import ProviderError, get_provider, get_vision_provider, why
 from enqueue.providers.ollama import OpenAICompatibleProvider
 
 
@@ -153,3 +154,69 @@ class TestWhy:
         first.__cause__ = second
         second.__cause__ = first
         assert why(first, "http://x/v1", "m")
+
+
+class TestBackendUrlDerivation:
+    """SET.1: the endpoint is implied by the backend, never by a stored llm_url.
+
+    A named backend has its URL in config.BACKENDS; a stale stored llm_url (the
+    old localhost default) must not override it. Only `custom` reads the
+    user-typed URL, and local-only always routes to the local Ollama.
+    """
+
+    def test_a_named_backend_uses_its_own_url_not_the_stored_one(self, monkeypatch):
+        monkeypatch.setattr(
+            settings,
+            "get",
+            lambda name: {
+                "llm_backend": "opencode-go",
+                "llm_model": "kimi-k3",
+                "llm_url": "http://127.0.0.1:11434/v1",  # the stale localhost default
+            }.get(name),
+        )
+
+        provider = get_provider()
+        assert provider.base_url == config.BACKENDS["opencode-go"]["url"]
+        assert "127.0.0.1" not in provider.base_url
+
+    def test_custom_uses_the_stored_url(self, monkeypatch):
+        monkeypatch.setattr(
+            settings,
+            "get",
+            lambda name: {
+                "llm_backend": "custom",
+                "llm_model": "some-model",
+                "llm_url": "https://myhost.example/v1",
+            }.get(name),
+        )
+
+        provider = get_provider()
+        assert provider.base_url == "https://myhost.example/v1"
+
+    def test_local_only_always_routes_to_ollama(self, monkeypatch):
+        monkeypatch.setattr(
+            settings,
+            "get",
+            lambda name: {
+                "llm_backend": "opencode-go",
+                "llm_model": "kimi-k3",
+                "llm_url": "https://myhost.example/v1",
+            }.get(name),
+        )
+
+        provider = get_provider(local_only=True)
+        assert provider.base_url == config.BACKENDS["ollama"]["url"]
+
+    def test_vision_provider_derives_the_url_the_same_way(self, monkeypatch):
+        monkeypatch.setattr(
+            settings,
+            "get",
+            lambda name: {
+                "llm_backend": "openrouter",
+                "vision_model": "google/gemini-3-flash",
+                "llm_url": "http://127.0.0.1:11434/v1",
+            }.get(name),
+        )
+
+        provider = get_vision_provider()
+        assert provider.base_url == config.BACKENDS["openrouter"]["url"]

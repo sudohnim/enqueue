@@ -1,17 +1,27 @@
 [package]
-name = "enqueue-desktop"
+name = "Enqueue"
 version = "0.1.0"
 edition = "2021"
 description = "Enqueue"
+
+# Tauri mobile builds the app as a shared library loaded by the Android/iOS
+# wrapper, so the crate needs a lib target in addition to the desktop binary.
+[lib]
+name = "enqueue_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api"] }
-tauri-plugin-global-shortcut = "2"
 # Only used to pick the hotkey out of GET /settings. Already in the tree via tauri.
 serde_json = "1"
+
+# The global-shortcut plugin and the engine/AppKit machinery are desktop-only;
+# none of it compiles or makes sense on Android/iOS (no local Python engine there).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-global-shortcut = "2"
 
 [profile.release]
 opt-level = "s"

@@ -75,13 +75,12 @@
 	height: 32px;
 	flex-shrink: 0;
 	border-radius: var(--r-full);
-	background: var(--accent);
-	/* The edge is gone: the disc's lavender fill bounds it against the pill surface
-       at 4.70:1, so no --text edge is needed (the old edge was for amber, which
-       could not bound a control on its own). DL.1: the disc squashes on press -
-       scale, never a fill change, because the disc never fills --lavender-deep
-       while the ink motif is on it (ink on deep is 2.73:1 and fails). */
-	color: var(--accent-ink);
+	background: var(--purple-bold);
+	/* The disc wears the eye's vivid purple (#60079f), which is dark, so the plus
+       is white ink (--on-purple-bold, ~13:1) rather than the dark --accent-ink
+       that only worked on the lighter lavender. DL.1: the disc squashes on press
+       (scale), never a fill change. */
+	color: var(--on-purple-bold);
 	/* Q.5: the transform transition gets an ease-out-back so the press
        releases with a ~3% overshoot pop instead of a linear settle; the
        background stays on the plain ease. */
@@ -90,11 +89,11 @@
 		transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .pill .keep:hover .disc {
-	background: var(--lavender-focus);
+	background: var(--purple-bold-hover);
 	/* Q.5: a 6px 16%-opacity halo so the disc "warms up" when the cursor
        approaches - it reads as a glow, not a border (decorative, no contrast
        requirement). */
-	box-shadow: 0 0 0 6px var(--lavender-subtle);
+	box-shadow: 0 0 0 6px var(--purple-bold-wash);
 }
 .pill .keep:active .disc {
 	transform: scale(0.92);

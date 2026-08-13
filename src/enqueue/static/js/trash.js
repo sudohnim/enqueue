@@ -33,7 +33,7 @@
   async function showTrash() {
     teardown();
     restorePill("inside");
-    view.innerHTML = '<div class="state">...</div>';
+    view.innerHTML = spinner("lg", "...");
     const d = await api("/trash");
 
     let html =

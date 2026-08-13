@@ -276,9 +276,19 @@
         "</div>";
     else if (picked)
       html += '<div class="aside">Nothing leaves this machine.</div>';
-    for (const name of ["llm_model", "llm_url"]) {
+    for (const name of ["llm_model"]) {
       const f = d.settings[name];
       html += fieldRow(name, esc(SETTING_LABELS[name]), {
+        value: f.value,
+        locked: f.locked,
+        pinned: "pinned by " + esc(f.env_var) + " in the environment",
+      });
+    }
+    // SET.1: the endpoint is implied by the backend, so only `custom` - the one
+    // backend whose URL is not in config.BACKENDS - shows an Endpoint field.
+    if (chosen.value === "custom") {
+      const f = d.settings.llm_url;
+      html += fieldRow("llm_url", esc(SETTING_LABELS.llm_url), {
         value: f.value,
         locked: f.locked,
         pinned: "pinned by " + esc(f.env_var) + " in the environment",
@@ -436,14 +446,11 @@
     stageSetting("auto_preview", on ? "on" : "off");
   }
 
-  // Switching backend moves the endpoint with it, because leaving the old URL
-  // behind would point a hosted model at localhost and fail in a way nobody could
-  // read. The move is staged with the choice, committed by the same Save.
+  // Switching backend moves the model name with it when one is known. The
+  // endpoint is implied by the backend itself (SET.1), so nothing stages a URL
+  // here - only `custom` has a user-typed endpoint, edited in its own field.
   async function stageBackend(name) {
-    const list = (await api("/settings")).backends;
-    const spec = list.find((b) => b.name === name);
     stageSetting("llm_backend", name);
-    if (spec && spec.url) stageSetting("llm_url", spec.url);
     if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
   }
 

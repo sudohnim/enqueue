@@ -71,6 +71,9 @@ def create(body: str = "", title: str | None = None, local_only: bool = False) -
 
     if body:
         ingest_queue.submit(artifact_id)
+    from .sync.client import push_artifact
+
+    push_artifact(artifact_id)
     return get(artifact_id)
 
 
@@ -151,6 +154,9 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
         _record_secrets(conn, artifact_id, body)
 
     ingest_queue.submit(artifact_id)
+    from .sync.client import push_artifact
+
+    push_artifact(artifact_id)
     return get(artifact_id)
 
 

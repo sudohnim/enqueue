@@ -273,7 +273,7 @@
       pivotState.pivot_id,
       [id],
       false,
-      '<div class="state thinking">removing it...</div>',
+      spinner("lg", "removing it..."),
       () => toast("Removed from this view."),
     );
   }
@@ -308,7 +308,7 @@
       pivotId,
       ids,
       false,
-      '<div class="state thinking">removing ' + count + " artifacts...</div>",
+      spinner("lg", "removing " + count + " artifacts..."),
       () =>
         toast(
           'Deleted "' +
@@ -329,7 +329,7 @@
       pivotState.pivot_id,
       [id],
       true,
-      '<div class="state thinking">restoring it...</div>',
+      spinner("lg", "restoring it..."),
       () => toast("Restored to this view."),
     );
   }
@@ -352,7 +352,7 @@
 
     const slot = document.getElementById("org-" + mid);
     if (!slot) return;
-    slot.innerHTML = '<div class="state thinking">adding it...</div>';
+    slot.innerHTML = spinner("sm", "adding it...");
     try {
       st.d = await api("/pivot/run", {
         method: "POST",
@@ -403,12 +403,12 @@
       list.textContent = "";
       if (!shown.length) {
         const none = document.createElement("div");
-        none.className = "aside";
-        none.textContent = ql
-          ? "No artifact matches that."
-          : loaded
-            ? "Nothing left to add."
-            : "Loading your library...";
+        if (!ql && !loaded) {
+          none.innerHTML = spinner("sm", "Loading your library...");
+        } else {
+          none.className = "aside";
+          none.textContent = ql ? "No artifact matches that." : "Nothing left to add.";
+        }
         list.appendChild(none);
         return;
       }
@@ -492,7 +492,7 @@
     const target = await chooseMoveGroup(pivotState.d, id);
     if (target === null) return;
 
-    view.innerHTML = '<div class="state thinking">moving it...</div>';
+    view.innerHTML = spinner("lg", "moving it...");
     let next;
     try {
       next = await api("/pivot/run", {

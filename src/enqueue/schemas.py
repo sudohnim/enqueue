@@ -267,6 +267,10 @@ class Answer(BaseModel):
     quietly makes the collection irrelevant.
 
     So `grounded` is a claim the model has to make, and the citations have to back it.
+
+    A grounded claim the model forgets to cite is salvaged, not rejected: the
+    passages actually fed to it stand in for the citations, and only when there is
+    nothing fed to point at does the claim downgrade to ungrounded (FIX.1).
     """
 
     answer: str = Field(min_length=1)
@@ -289,11 +293,14 @@ class Answer(BaseModel):
             )
 
         if self.grounded and not self.cited:
-            raise ValueError(
-                "grounded is true but nothing is cited; either name the artifacts the "
-                "answer came from, or set grounded to false and say the collection "
-                "does not hold this"
-            )
+            # FIX.1: a correct grounded answer the model forgot to cite is not a
+            # failed turn. Backfill the passages that were actually fed to it; only
+            # when there is nothing fed to point at do we downgrade the claim to
+            # ungrounded and keep the answer rather than nuking a correct one.
+            if offered:
+                self.cited = sorted(offered)
+            else:
+                self.grounded = False
         if not self.grounded and self.cited:
             raise ValueError(
                 "grounded is false but artifacts are cited; if they carried the answer, "

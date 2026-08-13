@@ -21,7 +21,7 @@
   async function doSearch(q) {
     teardown();
     setRoute("s/" + encodeURIComponent(q));
-    view.innerHTML = '<div class="state thinking">searching...</div>';
+    view.innerHTML = spinner("lg", "searching...");
     let r;
     try {
       r = await api("/search?limit=20&q=" + encodeURIComponent(q));
@@ -31,7 +31,7 @@
         // The index is being rebuilt (version mismatch or first run). Show the
         // required message, then poll /doctor and re-run the search when the
         // rebuild lands - the index is never queried in its stale state.
-        view.innerHTML = '<div class="state thinking">' + esc(msg) + "</div>";
+        view.innerHTML = spinner("lg", msg);
         const timer = setInterval(async () => {
           const d = await api("/doctor").catch(() => null);
           if (d && d.index_state === "ready") {

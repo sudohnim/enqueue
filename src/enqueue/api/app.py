@@ -57,7 +57,22 @@ def serve() -> None:
 
     _bootstrap_index()
 
+    _start_sync_worker()
+
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
+
+
+def _start_sync_worker() -> None:
+    """Start the background sync worker (SYNC.5) when a relay is configured.
+
+    `start()` is a no-op when `sync_relay_url` is empty, so this is always safe.
+    """
+    try:
+        from ..sync.worker import start
+
+        start()
+    except Exception as exc:  # noqa: BLE001 - sync is additive; never block startup
+        print(f"[engine] could not start the sync worker: {exc}")
 
 
 def _warm_embeddings() -> None:
