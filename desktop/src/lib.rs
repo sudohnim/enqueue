@@ -19,9 +19,13 @@ pub fn run() {
 #[cfg(mobile)]
 mod mobile {
     use base64::engine::general_purpose;
+    use base64::Engine;
     use rusqlite::Connection;
     use serde_json::Value;
+    use sha2::Digest;
     use tauri::{AppHandle, Manager};
+    use tauri_plugin_dialog::DialogExt;
+    use ureq::Request;
 
     /// Open (and initialize) the local SQLite read copy.
     fn open_lib(app: &AppHandle) -> Result<Connection, String> {
@@ -59,13 +63,25 @@ mod mobile {
         secret: &str,
         keyring_json: &str,
         dek: &[u8; 32],
+        llm_backend: Option<&str>,
+        llm_model: Option<&str>,
+        llm_api_key: Option<&str>,
+        llm_url: Option<&str>,
+        auto_preview: Option<bool>,
+        trash_days: Option<&str>,
     ) -> Result<(), String> {
-        let blob = serde_json::json!({
+        let mut blob = serde_json::json!({
             "relay_url": relay_url,
             "secret": secret,
             "keyring_json": keyring_json,
             "dek": hex::encode(dek),
         });
+        if let Some(v) = llm_backend { blob["llm_backend"] = serde_json::json!(v); }
+        if let Some(v) = llm_model { blob["llm_model"] = serde_json::json!(v); }
+        if let Some(v) = llm_api_key { blob["llm_api_key"] = serde_json::json!(v); }
+        if let Some(v) = llm_url { blob["llm_url"] = serde_json::json!(v); }
+        if let Some(v) = auto_preview { blob["auto_preview"] = serde_json::json!(v); }
+        if let Some(v) = trash_days { blob["trash_days"] = serde_json::json!(v); }
         secure_store_set(app, "sync_config", &blob.to_string())
     }
 
@@ -109,7 +125,7 @@ mod mobile {
             if !keyring_json.is_empty() && !recovery_phrase.is_empty() {
                 let dek = crate::sync::unlock_dek(keyring_json, recovery_phrase)
                     .map_err(|e| e.to_string())?;
-                save_config(&app, relay_url, sync_secret, keyring_json, &dek)?;
+                save_config(&app, relay_url, sync_secret, keyring_json, &dek, None, None, None, None, None, None)?;
                 (relay_url.to_string(), sync_secret.to_string(), Some(dek))
             } else if let Some(saved) = load_config(&app)? {
                 let dek = saved
@@ -318,7 +334,7 @@ mod mobile {
             bytes
         };
 
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let b64 = general_purpose::STANDARD.encode(&bytes);
         Ok(serde_json::json!({ "mime": resolved_mime, "base64": b64 }).to_string())
     }
 
@@ -502,7 +518,7 @@ mod mobile {
             _ => "application/octet-stream",
         };
         
-        let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let base64 = general_purpose::STANDARD.encode(&bytes);
         Ok(serde_json::json!({ "base64": base64, "mime": mime }).to_string())
     }
 
@@ -702,7 +718,8 @@ mod mobile {
             req = req.set("Authorization", &auth);
         }
         
-        let resp = req.send_json(body).map_err(|e| format!("HTTP error: {}", e))?;
+        let body_str = body.to_string();
+        let resp = req.send_string(&body_str).map_err(|e| format!("HTTP error: {}", e))?;
         
         if !resp.status().is_success() {
             let status = resp.status();
@@ -760,7 +777,19 @@ mod mobile {
         if let Some(v) = new_settings.get("auto_preview") { cfg["auto_preview"] = v.clone(); }
         if let Some(v) = new_settings.get("trash_days") { cfg["trash_days"] = v.clone(); }
         
-        save_config(&app, &cfg)?;
+        save_config(
+            &app,
+            cfg.get("relay_url").and_then(Value::as_str).unwrap_or(""),
+            cfg.get("secret").and_then(Value::as_str).unwrap_or(""),
+            cfg.get("keyring_json").and_then(Value::as_str).unwrap_or(""),
+            &cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).unwrap_or([0u8; 32]),
+            cfg.get("llm_backend").and_then(Value::as_str),
+            cfg.get("llm_model").and_then(Value::as_str),
+            cfg.get("llm_api_key").and_then(Value::as_str),
+            cfg.get("llm_url").and_then(Value::as_str),
+            cfg.get("auto_preview").and_then(Value::as_bool),
+            cfg.get("trash_days").and_then(Value::as_str),
+        )?;
         Ok("ok".to_string())
     }
 
@@ -816,7 +845,19 @@ mod mobile {
         if let Some(v) = new_settings.get("auto_preview") { cfg["auto_preview"] = v.clone(); }
         if let Some(v) = new_settings.get("trash_days") { cfg["trash_days"] = v.clone(); }
         
-        save_config(&app, &cfg)?;
+        save_config(
+            &app,
+            cfg.get("relay_url").and_then(Value::as_str).unwrap_or(""),
+            cfg.get("secret").and_then(Value::as_str).unwrap_or(""),
+            cfg.get("keyring_json").and_then(Value::as_str).unwrap_or(""),
+            &cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).unwrap_or([0u8; 32]),
+            cfg.get("llm_backend").and_then(Value::as_str),
+            cfg.get("llm_model").and_then(Value::as_str),
+            None,
+            cfg.get("llm_url").and_then(Value::as_str),
+            cfg.get("auto_preview").and_then(Value::as_bool),
+            cfg.get("trash_days").and_then(Value::as_str),
+        )?;
         Ok("ok".to_string())
     }
 
@@ -862,13 +903,26 @@ mod mobile {
             .map_err(|e| format!("invalid password_salt hex: {e}"))?;
         
         // Derive KEK from password and unwrap DEK
-        let kek = crate::sync::derive_kek(&password, &password_salt.try_into().map_err(|_| "invalid salt length")?)
+        let kek = crate::sync::derive_kek(&password, &password_salt)
             .map_err(|e| e.to_string())?;
-        let dek = crate::sync::unwrap(dek_by_password.try_into().map_err(|_| "invalid wrapped DEK length")?, &kek)
+        let dek = crate::sync::unwrap(&dek_by_password, &kek)
             .map_err(|e| format!("wrong password: {e}"))?;
         
         // Save config with unlocked DEK
-        save_config(&app, relay_url, secret, String::from_utf8(keyring_bytes).unwrap_or_default(), &dek)?;
+        let keyring_json = String::from_utf8(keyring_bytes).unwrap_or_default();
+        save_config(
+            &app,
+            relay_url,
+            secret,
+            &keyring_json,
+            &dek,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
         
         // Sync
         let conn = open_lib(&app)?;
@@ -881,13 +935,6 @@ mod mobile {
         
         Ok(serde_json::json!({ "configured": true }).to_string())
     }
-
-    /// Push pending outbox items (MOB.7).
-
-        /// Push pending outbox items (MOB.7).
-
-        /// Push pending outbox items (MOB.7).
-    #[tauri::command]
     fn mobile_outbox_push(app: AppHandle) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let cfg = load_config(&app)?.ok_or("not configured")?;

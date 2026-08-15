@@ -15,18 +15,21 @@ Do one task per turn, in order, and verify each with the command in its "Done wh
 These came up while surveying the code against the old AGENTS.md, then confirmed with Minh.
 They are recorded here so the next agent does not re-litigate them.
 
-1. **Encryption at rest is planned, not built.**
-The database is plain `sqlite3` today.
-Encryption at rest is a planned milestone.
-Do not assume any specific scheme (SQLCipher, Argon2id, AES-256-GCM, envelope encryption) - none is chosen yet.
-Until it exists, treat the store as plaintext and keep secret material out of the search index.
+1. **Encryption at rest (the local DB) is planned, not built.**
+The local database `~/.enqueue-poc/enqueue.db` is plain `sqlite3` today; encryption at rest for it is still a planned milestone and no scheme is chosen.
+Treat the local store as plaintext and keep secret material out of the search index.
+(Distinct from the SYNC payload, which IS end-to-end encrypted - see decision 2. The DEK/keyring crypto in `crypto.py`/`keyring_file.py` protects what goes to the relay, not the DB on disk.)
 
-2. **Sync is planned and scoped, not built.**
-There is zero sync code in the repo.
-The design IS now fixed on paper: `docs/e2e/E2E.md` specifies encrypted per-artifact snapshots with last-writer-wins per artifact (no event log, no logical clock), and `docs/MOBILE.md` adds a dumb end-to-end-encrypted relay plus an SSE push transport for the mobile client.
-Do not resurrect the old event-log / multi-peer design; LWW-per-snapshot is the chosen model.
-Treat SQLite as the source of truth, not a materialised view of a log.
-Note E2E.md predates two changes: substitute `saved_pivots` for its `exhibits` references (exhibits were dropped in migration 0019), and ignore its `lens_judgments` references (the lens was removed in Phase M).
+2. **Sync and E2E are built; the desktop SETUP flow is the missing piece.**
+The model is fixed and implemented: `docs/e2e/E2E.md` specifies encrypted per-artifact snapshots with last-writer-wins per artifact (no event log, no logical clock), and a dumb end-to-end-encrypted relay plus SSE push for the mobile client. Do not resurrect the old event-log / multi-peer design; LWW-per-snapshot is the model. SQLite is the source of truth, not a materialised view of a log. (E2E.md predates two renames: use `saved_pivots` for its `exhibits`, and ignore its `lens_judgments`.)
+What exists in code:
+- Relay: `src/enqueue/relay/app.py` (`create_relay(data_dir, secret=...)`, Bearer-secret auth, stores opaque bytes only). No `enq relay` command yet - run via uvicorn factory.
+- Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
+- E2E keyring: `keyring_file.py` writes `keyring.json` with the DEK wrapped TWICE - under a password-KEK (Argon2id) and a recovery-phrase-KEK. Plaintext DEK held in memory only after unlock. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/.enqueue-poc/enqueue.db` at rest is still plain sqlite (see decision 1).
+- Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
+**Pairing model = Option A (decided, security-critical):** the pairing code carries ONLY `{relay_url, relay_secret}` - never the DEK, keyring, or recovery phrase. `relay_secret` grants download of ciphertext, not decryption. The decryption key is derived on the new device from the LIBRARY PASSWORD (Argon2id → unwrap DEK), which never leaves the device. The QR renders LOCALLY (Rust `qrcode` crate) - never send the code to any external service. Never put key material in a scannable/pasteable artifact.
+**Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600, NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
+**The gap (what's NOT built):** there is no desktop flow to CONFIGURE sync in the first place. `keyring_file.initialize(password)` (creates the DEK, returns the recovery phrase) is called by no CLI or endpoint; the Settings > Sync tab shows only a dead-end "Not configured" message with no inputs; there is no `enq relay` command. Until that flow exists, sync cannot be started from the UI. This is the current PLAN.md.
 
 3. **The data directory is `~/.enqueue-poc` on purpose.**
 The `-poc` suffix is intentional for the current phase.
@@ -44,8 +47,7 @@ For now, trust is a flat constant and every facet contributes equally after the 
 
 6. **There is no Lumo. The cloud backend is OpenRouter.**
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
-The configured backends are `ollama` (default, local), `openrouter` (the cloud option for now), `opencode`, and `custom`.
-Treat OpenRouter as the cloud path. Remove any Lumo reference you find.
+The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
 7. **crawl4ai may be added later.**
 The old docs reference crawl4ai, marker, and whisper.cpp; none are in `pyproject.toml`.
@@ -71,8 +73,11 @@ Do not add SSE plumbing back unless asked.
 
 11. **The browser extension is a future milestone; Android is in progress.**
 No browser extension code exists; document it as future, do not build against it.
-The Android app (Tauri v2 mobile, `desktop/gen/android`, crate builds as `enqueue_lib`) is being built per `docs/PLAN.md` Phases MOBILE and MOB2: it syncs the encrypted library through the relay into a local SQLite copy, captures, reads, and (per the MOB2.0 amendment) writes - note edits, annotations, tags, pins, trash/restore - and chats by calling the configured LLM backend directly with keyword-only grounding.
-It never computes embeddings, facets, or entities; enrichment stays desktop-only.
+The Android app (Tauri v2 mobile, `desktop/gen/android`, crate builds as `enqueue_lib`) is built: it syncs the encrypted library through the relay into a local SQLite copy, captures, reads, writes (note edits, annotations, tags, pins, trash/restore), and chats by calling the configured LLM backend directly with keyword-only (FTS) grounding.
+It never computes embeddings, facets, or entities; enrichment stays desktop-only. AI-derived data that has not synced down is absent quietly - never a placeholder or a fabricated summary.
+Mobile UI lives in `src/enqueue/static/mobile.html` (relative asset paths). Layout: a single-column list under SAVED / EVERYTHING ELSE shelf headers, newest first; rows open a read-only Reader (note markdown, image with pinch-zoom, link preview card, PDF via vendored pdf.js); a bottom pill (capture in `--purple-bold`, search, the living raven eye for ask, menu). The capture "raven moment" is the ANIM.4 flight, or a fade under reduced motion.
+Build/run the app with `bin/launch mobile` (physical phone only). What remains open is the desktop sync-setup flow (decision 2) and any items in the current `docs/PLAN.md`.
+Sync/mobile scope boundaries (durable): one person, one library - no multi-user or shared libraries. Android-first; iOS is a follow-on. The relay is additive - with sync off, nothing about the desktop changes. `saved_pivots` (saved views) and chats do NOT cross the relay; mobile reads artifacts only, and mobile chat histories are device-local by decision.
 
 12. **The user-facing concept is "view", not "grouping".**
 We use the word "view" for the user-facing concept that was previously called "grouping", "saved grouping", and "collection".

@@ -162,7 +162,7 @@ The precedence is: environment variable > `settings.json` > built-in default.
 
 | Variable | Default | Purpose |
 |---|---|
-| `ENQ_LLM_BACKEND` | `ollama` | Which model backend to use. One of: `ollama`, `openrouter`, `opencode`, `custom`. |
+| `ENQ_LLM_BACKEND` | `ollama` | Which model backend to use. One of: `ollama`, `openrouter`, `opencode-go`. |
 | `ENQ_LLM_MODEL` | `llama3.1:8b` | The model name to send to the backend. |
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | URL for the Ollama backend. Also used as `llm_url` in settings. |
 | `ENQ_LLM_API_KEY` | `ollama` (placeholder) | API key for non-local backends. Falls back to the macOS Keychain if not set. |

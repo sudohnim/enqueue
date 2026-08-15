@@ -275,6 +275,15 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 - Card grids go 3-up at 1024px, 2-up below that, 1-up below 768px.
 - Display XL 56px scales toward Display MD 30px on mobile.
 
+### The Android app (`mobile.html`)
+
+The mobile app is the same light canvas and type, laid out for one thumb:
+
+- A single-column list, newest first, under `SAVED` / `EVERYTHING ELSE` shelf headers. No card grid - full-width rows (kind dot, title, snippet, timestamp), each opening a read-only Reader.
+- A floating bottom pill (safe-area padded) mirrors the desktop pill: the primary capture button in `--purple-bold`, search, the living raven eye (the ask surface, reuses `makeEye`), and a menu. This supersedes any "bottom bar."
+- The capture success plays the raven moment - the ANIM.4 left-to-centre flight, or a fade under `prefers-reduced-motion`.
+- Reader surfaces: note markdown, image (pinch-zoom), the stored link-preview card, and PDF (vendored pdf.js). Read-only, annotations below the content. AI-derived data that has not synced is absent quietly - never a placeholder.
+
 ## 10. Token summary
 
 ```

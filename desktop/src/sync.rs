@@ -20,7 +20,7 @@ const NONCE_LEN: usize = 24; // XSalsa20-Poly1305 secretbox nonce
 const TAG_LEN: usize = 16; // Poly1305 tag
 
 /// Argon2id key derivation, byte-for-byte the desktop's `crypto.derive_kek`.
-fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; DEK_LEN], String> {
+pub fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; DEK_LEN], String> {
     use argon2::{Algorithm, Argon2, Params, Version};
     let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(DEK_LEN))
         .map_err(|e| format!("argon2 params: {e}"))?;
@@ -50,7 +50,7 @@ fn secretbox_decrypt(key: &[u8; DEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, 
 
 /// XSalsa20-Poly1305 secretbox encrypt (the inverse of `secretbox_decrypt`), for the
 /// capture push path (MOB.7): fresh nonce prepended, same wire format as the desktop.
-fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, String> {
+pub fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use xsalsa20poly1305::aead::{Aead, KeyInit};
     use xsalsa20poly1305::{Nonce, XSalsa20Poly1305};
     let mut nonce = [0u8; NONCE_LEN];
@@ -62,6 +62,12 @@ fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, S
     let mut out = nonce.to_vec();
     out.extend_from_slice(&ct);
     Ok(out)
+}
+
+/// Unwrap a DEK wrapped with a KEK (inverse of `secretbox_encrypt`).
+/// Uses the same XSalsa20-Poly1305 secretbox decrypt.
+pub fn unwrap(wrapped: &[u8], kek: &[u8; DEK_LEN]) -> Result<Vec<u8>, String> {
+    secretbox_decrypt(kek, wrapped)
 }
 
 /// The mobile device's UUID4, generated once and stored in the app data dir (E2E.md
