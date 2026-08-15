@@ -843,6 +843,30 @@ mod tests {
 /// Update a note's body, appending a version and respecting title_explicit (MOB2.4).
 /// Returns the updated artifact.
 pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, new_title: Option<&str>) -> Result<Value, String> {
+
+/// Fetch the keyring.json from the relay (MOB2.10).
+/// The keyring.enc is now the raw keyring.json (no DEK encryption).
+pub fn fetch_keyring(
+    relay_url: &str,
+    secret: &str,
+) -> Result<Vec<u8>, String> {
+    let resp = ureq::get(&format!(
+        "{}/sync/object/lib/keyring.enc",
+        relay_url.trim_end_matches('/')
+    ))
+    .set("Authorization", &format!("Bearer {secret}"))
+    .call()
+    .map_err(|e| e.to_string())?;
+    if resp.status() != 200 {
+        return Err(format!("keyring fetch: {}", resp.status()));
+    }
+    let mut bytes = Vec::new();
+    resp.into_reader()
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    Ok(bytes)
+}
+
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
     // Check if artifact exists and is a note

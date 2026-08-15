@@ -1506,36 +1506,56 @@ src/ tests/` clean, `cargo check` compiles.
 Status: done, uncommitted (user commits). Files: `src/enqueue/sync/client.py`,
 `desktop/src/lib.rs`, `docs/sync-relay.md`.
 
-## MOB2.10 done - Pairing code
+## MOB2.10 done - Pairing by password unlock (Option A)
 
-Implemented pairing code (MOB2.10) for mobile setup:
+Implemented the Proton-style pairing flow (Option A, decided 2026-08-14):
 
 **Desktop side (NEW):**
 
-- Added `desktop_pairing_code` Tauri command in `desktop/src/lib.rs` (desktop module) that returns a versioned base64 of `{relay_url, secret}` from the desktop's configured settings. Fetches the actual sync secret from the macOS Keychain.
-- Added Sync tab to Settings (`src/enqueue/static/js/settings.js`) with:
-  - Configuration display (relay URL, secret hint, device ID)
-  - "Pair a new device" section with a reveal gate
-  - "Show pairing code" button that generates the code via `desktop_pairing_code`
-  - QR code rendered locally via qrserver.com (no external dependency)
-  - Copyable code textarea + copy button
-  - Treat the code like a password: no logging, no screenshots
+- `desktop_pairing_code` Tauri command returns `{code, qr_svg}` where code is base64 of `{v:1, relay_url, secret}` ONLY - no keyring, no phrase
+- QR code generated locally in Rust using `qrcode` crate (SVG output) - ZERO external network calls
+- Sync tab in Settings (`settings.js`) shows pairing code + locally-rendered QR + copy button
+- `push_keyring` in Python sync client pushes raw `keyring.json` to relay as `lib/keyring.enc` (NO DEK encryption - keyring.json already contains only wrapped DEKs)
 
-**Mobile side (simplified per review):**
+**Mobile side:**
 
-- Removed the stub `mobile_scan_qr` command and "Scan QR" button from setup
-- Setup screen now shows manual entry fields + a single "Or paste pairing code" textarea
-- Single "Connect" button tries pairing code first (via `mobile_setup_from_code`), falls back to manual entry
-- Manual entry fields remain as fallback (relay URL, sync secret, keyring.json, recovery phrase)
+- New `mobile_pairing_setup(code, password)` Tauri command:
+  1. Decodes pairing code → gets relay_url + secret
+  2. Fetches `lib/keyring.enc` from relay (now raw keyring.json, no DEK decryption needed)
+  3. Parses keyring.json, extracts `dek_by_password` and `password_salt`
+  4. Derives KEK from user's password + salt, unwraps DEK
+  5. Saves config with unlocked DEK, syncs library
+- Mobile setup screen simplified: pairing code textarea (with live decode preview) + password field
+- Removed: `mobile_scan_qr` stub, `mobile_setup_from_code` (legacy), keyring.json/phrase fields
 
-**Deviations from plan (documented):**
+**Security model (mirrors Proton):**
 
-- The plan specified QR scanning on mobile via camera; Tauri v2 has no public camera/QR API from app commands. The desktop still shows a QR code that can be scanned with any phone camera app (which deep-links or copies the code). Mobile side uses paste-code + manual only.
-- Pairing code payload is `{v: 1, relay_url, secret}` only (not keyring/phrase) - the keyring and phrase are entered manually on the mobile device as before, or carried via the existing `mobile_sync` config persistence.
+- Pairing code = relay locator ONLY (relay_url + relay_secret) - authorizes ciphertext download, never decrypts
+- Library password = the key - derives KEK locally, unwraps DEK, never leaves device
+- keyring.json on relay is SAFE - contains only wrapped DEKs (password-KEK + recovery-KEK), no plaintext DEK
 
-Verification: `uv run black --check src/ tests/` clean, `uv run pytest -q` = 451 passed, `bin/check-contrast` all 33 passed, `cargo check` compiles, JS parse checks pass (13 desktop files + concatenated + mobile.html + capture.html).
+**Deviations from original plan (documented):**
 
-Status: done, uncommitted (user commits). Files: `desktop/src/lib.rs`, `src/enqueue/static/js/settings.js`, `src/enqueue/static/mobile.html`.
+- Mobile QR scanning removed (Tauri v2 has no public camera API); desktop QR is locally rendered for scanning with any phone camera app
+- Recovery phrase kept as fallback only (not in pairing code)
+
+**Files modified:**
+
+- `desktop/src/lib.rs`: `desktop_pairing_code`, `mobile_pairing_setup`, `fetch_keyring`, invoke_handler updates
+- `desktop/src/sync.rs`: `fetch_keyring` (no DEK decryption)
+- `src/enqueue/sync/client.py`: `push_keyring` (no DEK encryption)
+- `src/enqueue/static/js/settings.js`: local QR rendering, removed qrserver.com
+- `src/enqueue/static/mobile.html`: new setup UI with pairing code + password
+
+**Verification:**
+
+- `uv run black --check src/ tests/` clean
+- `uv run pytest -q` = 451 passed
+- `bin/check-contrast` all 33 passed
+- `cargo check` compiles
+- JS parse checks pass (13 desktop + concatenated + mobile.html + capture.html)
+
+Status: done, uncommitted (user commits). Files: `desktop/src/lib.rs`, `desktop/src/sync.rs`, `desktop/Cargo.toml`, `src/enqueue/sync/client.py`, `src/enqueue/static/js/settings.js`, `src/enqueue/static/mobile.html`.
 
 ## MOB2.11 done - The app icon
 

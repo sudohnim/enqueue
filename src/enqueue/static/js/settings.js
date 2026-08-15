@@ -720,18 +720,11 @@ async function showPairingCode() {
 	btn.disabled = true;
 	btn.textContent = "Generating...";
 	try {
-		const result = await bridge("desktop_pairing_code", {});
-		pairCodeCache = result;
-		textArea.value = result;
-		qr.innerHTML = "";
-		// Generate QR code using a simple data URL (no external library)
-		const qrUrl =
-			"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" +
-			encodeURIComponent(result);
-		qr.innerHTML =
-			'<img src="' +
-			qrUrl +
-			'" alt="Pairing QR" style="max-width: 200px; border: 1px solid var(--line); border-radius: var(--r-md); background: white;">';
+		const response = await bridge("desktop_pairing_code", {});
+		const data = JSON.parse(response);
+		pairCodeCache = data.code;
+		textArea.value = data.code;
+		qr.innerHTML = data.qr_svg || "";
 		area.hidden = false;
 		btn.textContent = "Show pairing code";
 		btn.disabled = false;

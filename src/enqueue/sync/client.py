@@ -262,26 +262,22 @@ def pull_settings() -> None:
 
 
 def push_keyring() -> None:
-    """PUT the encrypted keyring.json to the relay as lib/keyring.enc (MOB2.10).
+    """PUT the keyring.json to the relay as lib/keyring.enc (MOB2.10).
 
     The keyring.json already contains the DEK wrapped twice (password-KEK and
-    recovery-KEK). We encrypt it with the DEK so the relay stores ciphertext.
+    recovery-KEK). It does NOT contain the plaintext DEK, so it's safe to
+    store on the relay without additional encryption.
     """
     url = _relay_url()
     if not url:
         return
     assert_local_relay(url)
 
-    dek = keyring_file.dek()
-    if dek is None:
-        return
-
     keyring_path = config.DATA_DIR / "keyring.json"
     if not keyring_path.exists():
         return
 
     keyring_bytes = keyring_path.read_bytes()
-    data = crypto.encrypt(keyring_bytes, dek)
 
     name = "lib/keyring.enc"
     headers = {
@@ -291,7 +287,7 @@ def push_keyring() -> None:
     try:
         with httpx.Client(timeout=30) as client:
             resp = client.put(
-                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
+                f"{url.rstrip('/')}/sync/object/{name}", content=keyring_bytes, headers=headers
             )
         if resp.status_code not in (201, 409):
             print(f"[sync] keyring push rejected: {resp.status_code}", flush=True)

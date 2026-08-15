@@ -246,7 +246,8 @@ One line per file, describing its job.
 | --- | --- |
 | `bin/verify` | JS parse check on both HTML pages, pytest, contrast check. |
 | `bin/check-contrast` | WCAG contrast check on home.html palette tokens. |
-| `bin/relaunch` | Kill engine + shell, rebuild if `--build`, relaunch, wait for health, bring to front. |
+| `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
+| `bin/launch mobile` | Build + install + run on a plugged-in Android phone (emulator rejected). |
 
 ### Static
 
@@ -741,14 +742,14 @@ bin/verify
 # Build the Tauri shell (first time or after editing desktop/src)
 cd desktop && cargo build
 
-# Relaunch everything (engine + shell)
-bin/relaunch
+# Launch everything (engine + shell); rebuilds the shell first
+bin/launch desktop
 
-# Rebuild shell first, then relaunch
-bin/relaunch --build
+# Put it on a plugged-in Android phone
+bin/launch mobile
 ```
 
-`bin/relaunch` kills the shell and engine, rebuilds if asked, writes the repo path to `~/.enqueue-poc/repo`, launches the shell, waits for the engine health check, and brings the window to front.
+`bin/launch desktop` always rebuilds the shell with `cargo build` first (incremental, near-instant when unchanged; a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to `~/.enqueue-poc/repo`, launches the shell, waits for the engine health check, and brings the window to front. `bin/launch mobile` requires a real phone on USB (USB debugging on) - an emulator is rejected on purpose - then builds, installs, and runs on it via `cargo tauri android dev`.
 
 The shell finds the engine repo via (in order):
 

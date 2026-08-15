@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db, greeting, keyring, settings
+from ..sync.client import push_keyring
 
 router = APIRouter()
 
@@ -74,6 +75,9 @@ def store_sync_secret(req: SyncSecret) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    # After sync secret is configured, push the encrypted keyring to the relay
+    # so mobile devices can pull it during pairing (MOB2.10).
+    push_keyring()
     return settings.sync_state()
 
 

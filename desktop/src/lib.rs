@@ -822,35 +822,14 @@ mod mobile {
 
 
 
-    /// Scan a QR code and return the pairing code (MOB2.10).
+    /// Setup from pairing code + password (MOB2.10 - new flow).
+    /// Takes a pairing code (relay URL + secret) and a library password,
+    /// pulls keyring.enc from relay, unlocks with password, and syncs.
     #[tauri::command]
-    async fn mobile_scan_qr(app: AppHandle) -> Result<String, String> {
-        use tauri_plugin_dialog::DialogExt;
-        
-        // For now, we'll use a file picker to select a QR code image
-        // In a real implementation, this would use the camera
-        let file_path = DialogExt::file(app.clone())
-            .add_filter("Images", &["png", "jpg", "jpeg"])
-            .pick_file()
-            .await
-            .map_err(|e| format!("dialog error: {e}"))?
-            .ok_or("cancelled")?;
-        
-        let path = match file_path {
-            tauri_plugin_dialog::FilePath::Path(p) => p,
-            tauri_plugin_dialog::FilePath::Url(_) => return Err("unsupported file path type".into()),
-        };
-        
-        // For now, return cancelled - a real implementation would decode the QR
-        Err("QR scanning not fully implemented - use paste code instead".into())
-    }
-
-    /// Setup from pairing code (MOB2.10).
-    #[tauri::command]
-    fn mobile_setup_from_code(app: AppHandle, code: String) -> Result<String, String> {
+    fn mobile_pairing_setup(app: AppHandle, code: String, password: String) -> Result<String, String> {
         use base64::Engine as _;
         
-        // Decode the pairing code
+        // Decode the pairing code (contains only relay_url + secret)
         let decoded = base64::engine::general_purpose::STANDARD.decode(&code)
             .map_err(|e| format!("invalid base64: {e}"))?;
         let config: serde_json::Value = serde_json::from_slice(&decoded)
@@ -858,19 +837,38 @@ mod mobile {
         
         let relay_url = config["relay_url"].as_str().unwrap_or("");
         let secret = config["secret"].as_str().unwrap_or("");
-        let keyring_json = config["keyring_json"].as_str().unwrap_or("");
-        let phrase = config["phrase"].as_str().unwrap_or("");
         
-        if relay_url.is_empty() || secret.is_empty() || keyring_json.is_empty() || phrase.is_empty() {
+        if relay_url.is_empty() || secret.is_empty() {
             return Err("incomplete pairing code".into());
         }
         
-        // Unlock DEK
-        let dek = crate::sync::unlock_dek(keyring_json, phrase)
+        // Fetch keyring.json from relay (now stored as raw keyring.json, no DEK encryption)
+        let keyring_bytes = crate::sync::fetch_keyring(relay_url, secret)
             .map_err(|e| e.to_string())?;
         
-        // Save config
-        save_config(&app, relay_url, secret, keyring_json, &dek)?;
+        // Parse keyring.json to get the wrapped DEK and salts
+        let keyring: serde_json::Value = serde_json::from_slice(&keyring_bytes)
+            .map_err(|e| format!("invalid keyring: {e}"))?;
+        
+        // Extract the password-wrapped DEK and password salt
+        let dek_by_password_hex = keyring["dek_by_password"].as_str()
+            .ok_or("missing dek_by_password")?;
+        let password_salt_hex = keyring["password_salt"].as_str()
+            .ok_or("missing password_salt")?;
+        
+        let dek_by_password = hex::decode(dek_by_password_hex)
+            .map_err(|e| format!("invalid dek_by_password hex: {e}"))?;
+        let password_salt = hex::decode(password_salt_hex)
+            .map_err(|e| format!("invalid password_salt hex: {e}"))?;
+        
+        // Derive KEK from password and unwrap DEK
+        let kek = crate::sync::derive_kek(&password, &password_salt.try_into().map_err(|_| "invalid salt length")?)
+            .map_err(|e| e.to_string())?;
+        let dek = crate::sync::unwrap(dek_by_password.try_into().map_err(|_| "invalid wrapped DEK length")?, &kek)
+            .map_err(|e| format!("wrong password: {e}"))?;
+        
+        // Save config with unlocked DEK
+        save_config(&app, relay_url, secret, String::from_utf8(keyring_bytes).unwrap_or_default(), &dek)?;
         
         // Sync
         let conn = open_lib(&app)?;
@@ -878,7 +876,7 @@ mod mobile {
         
         let outcome = crate::sync::sync_library(relay_url, secret, Some(&dek), &conn);
         if outcome.status != "synced" {
-            return Err(outcome.error.unwrap_or_else(|| "sync failed".into()));
+            return Err(outcome.error.unwrap_or_else(||"sync failed".into()));
         }
         
         Ok(serde_json::json!({ "configured": true }).to_string())
@@ -971,8 +969,7 @@ mod mobile {
                 mobile_clear_blob_cache,
                 mobile_settings_sync,
                 mobile_settings_apply,
-                mobile_scan_qr,
-                mobile_setup_from_code,
+                mobile_pairing_setup,
                 mobile_update_note,
                 mobile_add_annotation,
                 mobile_remove_annotation,
@@ -1110,8 +1107,7 @@ mod mobile {
                 mobile_clear_blob_cache,
                 mobile_settings_sync,
                 mobile_settings_apply,
-                mobile_scan_qr,
-                mobile_setup_from_code,
+                mobile_pairing_setup,
                 mobile_update_note,
                 mobile_add_annotation,
                 mobile_remove_annotation,
@@ -1531,8 +1527,21 @@ mod desktop {
             "relay_url": relay_url,
             "secret": secret,
         });
-        let code_b64 = base64::engine::general_purpose::STANDARD.encode(code.to_string());
-        Ok(code_b64)
+        let code_b64 = Base64Engine::encode(&base64::engine::general_purpose::STANDARD, code.to_string());
+        
+        // Generate QR code SVG locally (no external network calls)
+        let qr_code = qrcode::QrCode::new(&code_b64).map_err(|e| e.to_string())?;
+        let qr_svg = qr_code.render()
+            .min_dimensions(200, 200)
+            .dark_color(qrcode::render::svg::Color("#000000"))
+            .light_color(qrcode::render::svg::Color("#ffffff"))
+            .build();
+        
+        let result = serde_json::json!({
+            "code": code_b64,
+            "qr_svg": qr_svg,
+        });
+        Ok(result.to_string())
     }
 
     /// Hand a saved address to the system browser. The scheme is checked here rather than

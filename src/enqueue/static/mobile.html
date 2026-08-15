@@ -918,41 +918,35 @@
   <p class="sub">Sync your library from the relay.</p>
   <div id="setup_manual" style="display: block">
     <label
-      >Relay URL
-      <input
-        id="relay_url"
-        placeholder="https://relay.example"
-        autocomplete="off"
-    /></label>
-    <label
-      >Sync secret <input id="sync_secret" type="password" autocomplete="off"
-    /></label>
-    <label
-      >keyring.json (paste)
-      <textarea id="keyring_json" spellcheck="false"></textarea>
+      >Pairing code (required)
+      <textarea
+        id="pairing_code"
+        placeholder="Paste the base64 pairing code from desktop Settings > Sync..."
+        spellcheck="false"
+        style="min-height: 80px"
+      ></textarea>
     </label>
-    <label
-      >Recovery phrase <input id="recovery_phrase" autocomplete="off"
-    /></label>
-    <div
-      style="
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid var(--line);
-      "
-    >
+    <div id="pairing_decoded" style="margin-top: 12px; display: none">
       <label
-        >Or paste pairing code
-        <textarea
-          id="pairing_code"
-          placeholder="Paste the base64 pairing code from desktop Settings > Sync..."
-          spellcheck="false"
-          style="min-height: 80px"
-        ></textarea>
+        >Relay URL (from pairing code)
+        <input id="relay_url" readonly autocomplete="off" />
+      </label>
+      <label
+        >Sync secret (from pairing code)
+        <input id="sync_secret" type="password" readonly autocomplete="off" />
       </label>
     </div>
+    <label
+      >Library password (required)
+      <input
+        id="library_password"
+        type="password"
+        placeholder="Enter your library password to unlock the keyring"
+        autocomplete="off"
+    /></label>
     <button id="sync_btn">Connect</button>
   </div>
+  <div id="status"></div>
 </section>
 
 <section id="library" hidden>
@@ -2048,37 +2042,50 @@
       });
   }
 
+  document
+    .getElementById("pairing_code")
+    .addEventListener("input", function () {
+      const code = this.value.trim();
+      const decodedDiv = document.getElementById("pairing_decoded");
+      const relayInput = document.getElementById("relay_url");
+      const secretInput = document.getElementById("sync_secret");
+      if (code) {
+        try {
+          const decoded = atob(code);
+          const config = JSON.parse(decoded);
+          relayInput.value = config.relay_url || "";
+          secretInput.value = config.secret || "";
+          decodedDiv.style.display = "block";
+        } catch (e) {
+          decodedDiv.style.display = "none";
+        }
+      } else {
+        decodedDiv.style.display = "none";
+      }
+    });
+
   document.getElementById("sync_btn").addEventListener("click", async () => {
-    const config = {
-      relay_url: document.getElementById("relay_url").value.trim(),
-      sync_secret: document.getElementById("sync_secret").value.trim(),
-      keyring_json: document.getElementById("keyring_json").value.trim(),
-      recovery_phrase: document.getElementById("recovery_phrase").value.trim(),
-    };
+    const code = document.getElementById("pairing_code").value.trim();
+    const password = document.getElementById("library_password").value;
+    if (!code || !password) {
+      setStatus("Pairing code and password are required", "error");
+      return;
+    }
     if (!invoke) {
       setStatus("no tauri bridge", "error");
       return;
     }
-    setStatus("Syncing\u2026");
+    setStatus("Connecting...");
     try {
-      const result = await invoke("mobile_sync", {
-        config: JSON.stringify(config),
-      });
+      const result = await invoke("mobile_pairing_setup", { code, password });
       const r = parse(result);
-      if (r.status === "error") {
-        setStatus(r.error || "sync error", "error");
-        return;
+      if (r.configured) {
+        setStatus("Connected and synced!", "ok");
+        show("library");
+        renderLibrary();
+      } else {
+        setStatus(r.error || "Setup failed", "error");
       }
-      if (r.status === "locked") {
-        setStatus("Locked - add the keyring and recovery phrase.", "error");
-        return;
-      }
-      setStatus(
-        "Synced " + r.pulled + " new; " + r.artifact_ids.length + " total.",
-        "ok",
-      );
-      show("library");
-      renderLibrary();
     } catch (e) {
       setStatus(String(e), "error");
     }
@@ -2368,66 +2375,6 @@
     .getElementById("capture_image_btn")
     .addEventListener("click", doCaptureImage);
 
-  // Single Connect handler: try pairing code first, then fall back to manual entry
-  document.getElementById("sync_btn").addEventListener("click", async () => {
-    const code = document.getElementById("pairing_code").value.trim();
-    if (code) {
-      // Try pairing code
-      const status = document.getElementById("status");
-      status.textContent = "";
-      try {
-        const result = await invoke("mobile_setup_from_code", { code });
-        const r = JSON.parse(result);
-        if (r.configured) {
-          show("library");
-          renderLibrary();
-          return;
-        } else {
-          status.textContent = r.error || "Invalid pairing code";
-          return;
-        }
-      } catch (e) {
-        status.textContent = String(e);
-        return;
-      }
-    }
-
-    // Fall back to manual entry
-    const config = {
-      relay_url: document.getElementById("relay_url").value.trim(),
-      sync_secret: document.getElementById("sync_secret").value.trim(),
-      keyring_json: document.getElementById("keyring_json").value.trim(),
-      recovery_phrase: document.getElementById("recovery_phrase").value.trim(),
-    };
-    if (!invoke) {
-      setStatus("no tauri bridge", "error");
-      return;
-    }
-    setStatus("Syncing\u2026");
-    try {
-      const result = await invoke("mobile_sync", {
-        config: JSON.stringify(config),
-      });
-      const r = parse(result);
-      if (r.status === "error") {
-        setStatus(r.error || "sync error", "error");
-        return;
-      }
-      if (r.status === "locked") {
-        setStatus("Locked - add the keyring and recovery phrase.", "error");
-        return;
-      }
-      setStatus(
-        "Synced " + r.pulled + " new; " + r.artifact_ids.length + " total.",
-        "ok",
-      );
-      show("library");
-      renderLibrary();
-    } catch (e) {
-      setStatus(String(e), "error");
-    }
-  });
-
   function bootstrap() {
     // Bootstrap: if a config was already persisted (MOB.3b), sync with it and open the
     if (!invoke) {
@@ -2661,11 +2608,10 @@
       try {
         const result = await invoke("mobile_pairing_code");
         const data = JSON.parse(result);
-        // Show QR code and copyable code
         alert(
           "Pairing code (copy this):\n\n" +
             data.code +
-            '\n\nOn the new device, use "Scan QR" or paste this code.',
+            "\n\nOn the new device, paste this code, then enter the library password.",
         );
       } catch (e) {
         alert("Failed to generate pairing code: " + e);

@@ -33,6 +33,7 @@ hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 regex = "1.10"
+qrcode = { version = "0.14", features = ["svg"] }
 
 # Mobile plugins for capture (MOB.7): dialog for photo picker, opener for URLs,
 # clipboard-manager for share-sheet text.

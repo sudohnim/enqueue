@@ -177,9 +177,9 @@ Current state - ALREADY in the working tree, uncommitted, do NOT redo:
 - `desktop/src/main.rs:457` capture window resized from `580x132` to `600x264` to hold the box + button (Rust - needs a rebuild to take effect).
 
 - [x] **CAP.1 [AGENT]** Rebuild the shell and verify the new card fits.
-  The window resize is Rust, so a plain `bin/relaunch` does NOT apply it (the binary was older than `main.rs`, which is why the card was crammed into 132px and the input text clipped). Rebuild with `bin/relaunch --build` (it runs `cargo build`), then verify.
+  The window resize is Rust, so a plain `bin/launch desktop` does NOT apply it (the binary was older than `main.rs`, which is why the card was crammed into 132px and the input text clipped). Rebuild with `bin/launch desktop --build` (it runs `cargo build`), then verify.
   Anchor: `src/enqueue/static/capture.html` (`#card` / `#fieldbox` / `#field` / `#foot` CSS), `desktop/src/main.rs:457`.
-  Done when: after `bin/relaunch --build`, the overlay shows the whole card - input box with text sitting top-left (not clipped), the caption row, and the fully-visible `Keep` button - the drag strip drags the window, and `bin/verify` passes.
+  Done when: after `bin/launch desktop --build`, the overlay shows the whole card - input box with text sitting top-left (not clipped), the caption row, and the fully-visible `Keep` button - the drag strip drags the window, and `bin/verify` passes.
 
 - [x] **CAP.2 [AGENT]** Markdown-as-you-type in the capture box. Today `#field` is a plain `<textarea>`; it should render markdown live like the note editor (`-` becomes a bullet, `#` a heading) and serialize back to markdown on keep.
   Anchor: the `<textarea id="field">` in `capture.html` and the note editor's live-markdown logic in `src/enqueue/static/js/artifact.js` (`applyInputRules`, the `RULES` table, `htmlToMd`) plus `md()` in `js/md.js`. Replace the textarea with a `contenteditable` div, wire the same input-rule conversions (bullets, numbered lists, headings, quote), keep the placeholder via `:empty::before`, and on keep read the serialized markdown (`htmlToMd`) instead of `field.value`. `paint()` / kind detection and the paste + drop handlers must read the editor's text content, not `.value`.
@@ -194,7 +194,7 @@ Current state - ALREADY in the working tree, uncommitted, do NOT redo:
   Anchor: `keep()`, `keepFiles()`, the `paste` and `drop` handlers in `capture.html`.
   Done when: each of the four kinds creates the right artifact from the overlay, image paste works, the overlay dismisses and resets on the next summon, and `uv run pytest -q` plus `bin/verify` are green.
 
-Verify (CAP.1 to CAP.4): after `bin/relaunch --build` the overlay shows the reshaped card, markdown renders as you type, the raven flight is visible, all four capture kinds work, and `bin/verify` passes.
+Verify (CAP.1 to CAP.4): after `bin/launch desktop --build` the overlay shows the reshaped card, markdown renders as you type, the raven flight is visible, all four capture kinds work, and `bin/verify` passes.
 
 ---
 
@@ -467,7 +467,7 @@ Scoped from Minh's first run of the scaffolded app. Gaps hit directly: no writin
 - [x] **MOB2.9 [AGENT]** Settings sync (MOB2.0.4; sync-core change, DESKTOP + relay + tests). The relay is write-by-unique-name and never overwrites (SYNC.1), so the settings object is versioned: `lib/settings/<timestamp>-<device_id>.enc`, each carrying an embedded `updated_at`; the reader takes the newest by `updated_at` (device id breaks ties). Desktop pushes after a Settings save and applies incoming ones on SSE; mobile does the same. Only the MOB2.0.4 whitelist crosses. Env-locked fields are never overridden (three-layer rule). Add the object family to `docs/sync-relay.md`.
   Done when: changing the model on the desktop lands in the phone's AI section within seconds (and vice versa); an env-locked field ignores sync; a raw relay GET of a settings object is ciphertext; `uv run pytest -q` covers the LWW pick and the whitelist.
 
-- [ ] **MOB2.10 [AGENT]** Pairing by password unlock (Option A - decided 2026-08-14; this REPLACES the earlier "put `{relay_url, secret, keyring_json, phrase}` in a QR the phone scans" design, which was reversed for leaking the decryption key into a scannable/pasteable artifact). The model, mirroring Proton: the relay only ever holds ciphertext; the decryption key is derived on the new device from a password the relay never sees. Two artifacts, kept strictly separate:
+- [x] **MOB2.10 [AGENT]** Pairing by password unlock (Option A - decided 2026-08-14; this REPLACES the earlier "put `{relay_url, secret, keyring_json, phrase}` in a QR the phone scans" design, which was reversed for leaking the decryption key into a scannable/pasteable artifact). The model, mirroring Proton: the relay only ever holds ciphertext; the decryption key is derived on the new device from a password the relay never sees. Two artifacts, kept strictly separate:
   - **The pairing code = relay-locator ONLY.** It carries `{relay_url, relay_secret}` and NOTHING ELSE - never the DEK, never `keyring.json`, never the recovery phrase. `relay_secret` authorizes *downloading ciphertext* from the library namespace; it does not decrypt anything. Versioned prefix so the format can change without bricking old installs. This is the ONE thing shown as a QR + copyable code.
   - **The library password = the key.** The new device types it once; from it the phone derives the password-KEK (Argon2id, the existing keyring scheme) locally and unwraps the DEK. The password never leaves the phone. The recovery phrase stays as a fallback field only, not the primary path.
 
@@ -514,7 +514,7 @@ Then the sync/mobile initiative (D.1 to D.4 already ratified):
 
 ## Review when it's all done (Minh, /bro)
 
-No gates while the agent works - it runs the whole desktop block start to finish without stopping. When it's done, you do this. Relaunch the app first (`bin/relaunch`), then walk these.
+No gates while the agent works - it runs the whole desktop block start to finish without stopping. When it's done, you do this. Relaunch the app first (`bin/launch desktop`), then walk these.
 
 **The eye (EYE).** Look at the little eye button in the bottom pill. Should be just the eye - almond outline, lashes, bold purple pupil that follows your cursor. No whole bird. The big bird up top by the greeting stays a bird, that's on purpose. Move your mouse around, pupil should track.
 

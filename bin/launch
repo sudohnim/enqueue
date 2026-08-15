@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# Launch Enqueue on a chosen platform.
+#
+#   bin/launch desktop          rebuild the shell, restart engine + macOS window, front
+#   bin/launch mobile           build + install + run on a PLUGGED-IN Android phone
+#
+# Desktop always rebuilds first (cargo is incremental, so it is near-instant when
+# nothing changed) - the window you see is always the current code.
+#
+# Desktop and the engine share one lifetime: the shell kills its own engine when the
+# window closes, so they come up together or not at all. Mobile is a separate target -
+# it needs a real phone on USB (debugging on); an emulator is deliberately NOT accepted
+# here, because "bin/launch mobile" means "put it on my phone."
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  echo "usage: bin/launch <desktop|mobile>" >&2
+  exit 2
+}
+
+# JS parse gate. The interface is inline/served <script>. A single stray quote takes
+# out every function at once, and the page still serves 200 with no console error the
+# harness can see, so it looks like a behaviour bug rather than a parse failure. Cheap
+# to check, expensive to miss. `$1` is a space-separated list of pages to check:
+# home/capture concat their static/js, mobile concats md.js + its inline script.
+js_gate() {
+  command -v node >/dev/null 2>&1 || return 0
+  local page JS
+  for page in $1; do
+    JS="$(mktemp -t enqueue-js).js"
+    if [[ "$page" == "home" ]]; then
+      cat "$REPO"/src/enqueue/static/js/{util,icons,md,dialogs,pill,morph,home,artifact,search,pivot,chat,trash,settings}.js > "$JS"
+    elif [[ "$page" == "mobile" ]]; then
+      cat "$REPO/src/enqueue/static/js/md.js" > "$JS"
+      python3 - "$REPO/src/enqueue/static/mobile.html" "$JS" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+blocks = re.findall(r"<script[^>]*>(.*?)</script>", src, re.S)
+if blocks:
+    with open(sys.argv[2], "a", encoding="utf-8") as f:
+        f.write("\n" + "\n".join("{\n" + b + "\n}" for b in blocks))
+PY
+    else
+      python3 - "$REPO/src/enqueue/static/$page.html" "$JS" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+blocks = re.findall(r"<script[^>]*>(.*?)</script>", src, re.S)
+if not blocks:
+    sys.exit("no script found in " + sys.argv[1])
+open(sys.argv[2], "w", encoding="utf-8").write(
+    "\n".join("{\n" + b + "\n}" for b in blocks)
+)
+PY
+    fi
+    if ! node --check "$JS"; then
+      echo "$page does not parse. not launching." >&2
+      rm -f "$JS"
+      exit 1
+    fi
+    rm -f "$JS"
+  done
+}
+
+launch_desktop() {
+  local BIN="$REPO/desktop/target/debug/Enqueue"
+  local LOG="${TMPDIR:-/tmp}/enqueue-app.log"
+
+  # Always build the latest. cargo is incremental, so this is a fast no-op when nothing
+  # changed, and a compile error stops here rather than silently launching a stale
+  # binary. That is the whole point: the window you see is always the code on disk.
+  echo "building the shell..."
+  (cd "$REPO/desktop" && cargo build)
+
+  # The shell kills its own engine when the window closes, so stop the window first
+  # and let it clean up rather than orphaning a process on the port.
+  pkill -f "Enqueue" 2>/dev/null || true
+  sleep 1
+  pkill -f "enq serve" 2>/dev/null || true
+  sleep 1
+
+  js_gate "home capture"
+
+  echo "/Users/minhmai/enqueue" > "$HOME/.enqueue-poc/repo" 2>/dev/null || true
+
+  ENQUEUE_REPO="$REPO" "$BIN" >"$LOG" 2>&1 &
+
+  # The window is only useful once the engine behind it answers.
+  for _ in $(seq 1 40); do
+    if curl -sf -o /dev/null http://127.0.0.1:8787/health; then break; fi
+    sleep 0.5
+  done
+
+  if ! curl -sf -o /dev/null http://127.0.0.1:8787/health; then
+    echo "engine never came up. log:" >&2
+    tail -20 "$LOG" >&2
+    exit 1
+  fi
+
+  # Launched from a shell, the process is not frontmost, so the window opens behind
+  # whatever the person was looking at and reads as a launch that failed.
+  osascript -e 'tell application "System Events" to tell process "Enqueue" to set frontmost to true' 2>/dev/null || true
+
+  echo "up: $(curl -s http://127.0.0.1:8787/health)"
+  echo "log: $LOG"
+}
+
+launch_mobile() {
+  # Android toolchain env. Respect anything already exported; fall back to the standard
+  # Android Studio locations. NDK_HOME picks the newest installed NDK unless set.
+  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+  if [[ -z "${NDK_HOME:-}" ]]; then
+    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
+  fi
+  export NDK_HOME
+  export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
+  local ADB="$ANDROID_HOME/platform-tools/adb"
+  if [[ ! -x "$ADB" ]]; then
+    echo "adb not found at $ADB. Is the Android SDK installed?" >&2
+    exit 1
+  fi
+
+  # Require a PHYSICAL phone on USB. Emulators (serial emulator-NNNN) are rejected here
+  # on purpose: "bin/launch mobile" means put it on the real device.
+  local serial="" line dev state
+  while IFS=$'\t ' read -r dev state _; do
+    [[ "$state" == "device" ]] || continue
+    [[ "$dev" == emulator-* ]] && continue
+    serial="$dev"
+    break
+  done < <("$ADB" devices)
+
+  if [[ -z "$serial" ]]; then
+    echo "no Android phone connected." >&2
+    echo "Plug in your phone over USB, enable USB debugging, accept the prompt, then retry." >&2
+    echo >&2
+    echo "adb sees:" >&2
+    "$ADB" devices >&2
+    exit 1
+  fi
+
+  echo "phone: $serial"
+  echo "NDK:   ${NDK_HOME:-<none found>}"
+  export ANDROID_SERIAL="$serial"   # pins gradle + adb to the phone, ignores any emulator
+
+  js_gate "mobile"
+
+  # cargo tauri android dev builds the debug apk, installs it on $ANDROID_SERIAL,
+  # launches it, and streams the device log. Runs from the Tauri project root (desktop/).
+  cd "$REPO/desktop"
+  exec cargo tauri android dev
+}
+
+[[ $# -ge 1 ]] || usage
+platform="$1"
+shift
+case "$platform" in
+  desktop) launch_desktop "$@" ;;
+  mobile)  launch_mobile "$@" ;;
+  *)       usage ;;
+esac

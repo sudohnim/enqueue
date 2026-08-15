@@ -15,8 +15,8 @@ Nothing is uploaded anywhere unless you deliberately point it at an outside mode
 - **macOS.** The desktop shell uses Tauri with macOS-specific APIs, and the API key store uses the macOS Keychain.
 - **Python >= 3.12.** The engine is Python and targets 3.12 exactly (see `.python-version`).
 - **[uv](https://docs.astral.sh/uv/).** All commands in this repo and in the desktop shell go through `uv run`, so it must be on your PATH. The shell looks for it at `/opt/homebrew/bin/uv` or `/usr/local/bin/uv`.
-- **[Rust](https://www.rust-lang.org/) and [Tauri](https://v2.tauri.app/) prerequisites**, only if you want to build the desktop window from source. The pre-built binary at `desktop/target/debug/enqueue-desktop` is what `bin/relaunch` runs.
-- **[Node.js](https://nodejs.org/)**, only for the JS parse check that `bin/relaunch` and `bin/verify` run before launching. If `node` is not on the PATH, the check is skipped silently.
+- **[Rust](https://www.rust-lang.org/) and [Tauri](https://v2.tauri.app/) prerequisites**, only if you want to build the desktop window from source. The pre-built binary at `desktop/target/debug/enqueue-desktop` is what `bin/launch desktop` runs.
+- **[Node.js](https://nodejs.org/)**, only for the JS parse check that `bin/launch` and `bin/verify` run before launching. If `node` is not on the PATH, the check is skipped silently.
 - **[Ollama](https://ollama.com/)** running locally, if you want the default AI backend (model: `llama3.1:8b`). Not required for capture, search, or browsing; only for conversations and rooms.
 
 ---
@@ -40,7 +40,7 @@ cargo build
 cd ..
 ```
 
-That produces `desktop/target/debug/enqueue-desktop`, which `bin/relaunch` expects.
+That produces `desktop/target/debug/enqueue-desktop`, which `bin/launch desktop` expects.
 
 ---
 
@@ -49,18 +49,16 @@ That produces `desktop/target/debug/enqueue-desktop`, which `bin/relaunch` expec
 The easiest way to run everything:
 
 ```bash
-bin/relaunch
+bin/launch desktop
 ```
 
-This starts the Python engine (`enq serve`), waits for it to answer on `127.0.0.1:8787`, then launches the Tauri desktop window and brings it to the front.
+This rebuilds the shell with `cargo build` first (incremental, so it is near-instant when nothing changed, and a compile error stops it rather than launching a stale binary), starts the Python engine (`enq serve`), waits for it to answer on `127.0.0.1:8787`, then launches the Tauri desktop window and brings it to the front.
 
-After editing Rust code in `desktop/src/`:
+To run on a plugged-in Android phone (USB debugging on; an emulator is rejected):
 
 ```bash
-bin/relaunch --build
+bin/launch mobile
 ```
-
-This rebuilds the shell with `cargo build` before relaunching.
 
 The script kills any existing `enqueue-desktop` and `enq serve` processes first, so engine and window always come up together.
 Engine output is logged to `$TMPDIR/enqueue-app.log` (or `/tmp/enqueue-app.log`).
@@ -175,7 +173,7 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link automatically fetches its preview. |
 | `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. |
 | `ENQ_TRASH_DAYS` | `30` | Days before a trashed artifact is permanently destroyed. Minimum 1. |
-| `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/relaunch`. |
+| `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/launch desktop`. |
 
 Settings are also writable through the API (`PATCH /settings`) and stored in `~/.enqueue-poc/settings.json` with `0600` permissions.
 No secret is ever written to that file; the API key lives in the macOS Keychain (via `/usr/bin/security`).
@@ -268,7 +266,7 @@ Everything is stored under `~/.enqueue-poc`:
 | `enqueue.db` | SQLite database: artifacts, versions, chunks, facets, entities, chats, trash, secrets, and the search index (sqlite-vec + FTS5 tables). |
 | `blobs/` | Original uploaded files, unmodified. |
 | `settings.json` | User preferences (not secrets). |
-| `repo` | One-line pointer to the repo path, written by `bin/relaunch` so the desktop shell can find the engine. |
+| `repo` | One-line pointer to the repo path, written by `bin/launch desktop` so the desktop shell can find the engine. |
 | `capture-position` | Last screen position of the capture overlay. |
 
 To back up Enqueue, copy that folder.
@@ -281,7 +279,7 @@ Your original files are in `blobs/` byte for byte, so they stay readable by othe
 ```
 enqueue/
   bin/
-    relaunch           # Restart engine + desktop window together
+    launch             # launch desktop (engine + window) or mobile (on-phone)
     verify             # JS parse + pytest + contrast check
     check-contrast     # WCAG contrast validation on home.html palette
   desktop/
