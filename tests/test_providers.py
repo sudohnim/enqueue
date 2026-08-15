@@ -27,7 +27,12 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from enqueue import config, settings
-from enqueue.providers.base import ProviderError, get_provider, get_vision_provider, why
+from enqueue.providers.base import (
+    ProviderError,
+    get_provider,
+    get_vision_provider,
+    why,
+)
 from enqueue.providers.ollama import OpenAICompatibleProvider
 
 
@@ -114,6 +119,22 @@ def _api_error(cls: type, status: int) -> Exception:
     return cls("no", response=response, body=None)
 
 
+def _go_model_error(model_name: str = "deepseek/deepseek-v4-pro") -> openai.AuthenticationError:
+    """An OpenCode Go 401 that carries a ModelError body, the root-cause shape (FIX.3)."""
+    request = httpx.Request("POST", "http://127.0.0.1:1/v1/chat/completions")
+    response = httpx.Response(
+        401,
+        request=request,
+        json={
+            "error": {
+                "type": "ModelError",
+                "message": f"Model {model_name} is not supported",
+            }
+        },
+    )
+    return openai.AuthenticationError("no", response=response, body=None)
+
+
 class TestWhy:
     """Each case is named from the exception type, never from its message text."""
 
@@ -154,6 +175,69 @@ class TestWhy:
         first.__cause__ = second
         second.__cause__ = first
         assert why(first, "http://x/v1", "m")
+
+    def test_go_model_error_is_not_a_key_rejection(self):
+        """FIX.3: OpenCode Go returns 401 ModelError for an unrecognized model name,
+        but the SDK raises AuthenticationError. The translator must say the model is
+        not served, not that the key was rejected.
+        """
+        cause = _go_model_error("deepseek/deepseek-v4-pro")
+        said = why(cause, config.BACKENDS["opencode-go"]["url"], "deepseek/deepseek-v4-pro")
+        assert "rejected the API key" not in said
+        assert "does not serve the model" in said
+        assert "deepseek/deepseek-v4-pro" in said
+        assert "valid" in said.lower()
+
+    def test_go_unsupported_shape_model_error_names_the_real_limitation(self):
+        """FIX.3: when the ModelError body names a model that needs /responses or
+        /messages, the translator names the API-shape limitation, not an auth failure.
+        """
+        cause = _go_model_error("grok-4.5")
+        said = why(cause, config.BACKENDS["opencode-go"]["url"], "grok-4.5")
+        assert "rejected the API key" not in said
+        assert "API shape" in said
+        assert "grok-4.5" in said
+        assert "chat-completions" in said
+
+    def test_a_plain_key_rejection_still_says_so(self):
+        """The ModelError check must not swallow a genuine 401."""
+        cause = _api_error(openai.AuthenticationError, 401)
+        said = why(cause, "https://x/v1", "m")
+        assert "rejected the API key" in said
+
+
+class TestGoModelShapeCheck:
+    """FIX.3: refuse a Go model that needs /responses or /messages before calling."""
+
+    def test_unsupported_shape_model_is_refused_before_calling(self):
+        provider = OpenAICompatibleProvider(
+            model="grok-4.5",
+            base_url=config.BACKENDS["opencode-go"]["url"],
+        )
+        with pytest.raises(ProviderError) as caught:
+            provider.complete("s", "u", Answer, max_retries=0)
+        said = str(caught.value)
+        assert "API shape" in said
+        assert "grok-4.5" in said
+        assert "chat-completions" in said
+
+    def test_chat_completions_model_is_allowed_through(self):
+        """A model on the supported list must not be refused by the shape check.
+
+        It may still fail for other reasons (rate limit, no key) - the point is that
+        the shape check does not block it.
+        """
+        from enqueue.providers.base import _check_go_model_shape
+
+        # Should not raise.
+        _check_go_model_shape(config.BACKENDS["opencode-go"]["url"], "kimi-k3")
+        _check_go_model_shape(config.BACKENDS["opencode-go"]["url"], "deepseek-v4-pro")
+
+    def test_non_go_backend_is_unaffected(self):
+        """The shape check is a no-op for backends that are not OpenCode Go."""
+        from enqueue.providers.base import _check_go_model_shape
+
+        _check_go_model_shape("http://127.0.0.1:11434/v1", "grok-4.5")
 
 
 class TestBackendUrlDerivation:

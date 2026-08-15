@@ -56,7 +56,7 @@ class TestTheKeyNeverTouchesDisk:
         monkeypatch.setattr(keyring, "get", lambda: "sk-live-abcdefgh9999")
         by_name = {b["name"]: b for b in settings.backends()}
         assert by_name["openrouter"]["key_present"] is True
-        assert by_name["opencode"]["key_present"] is True
+        assert by_name["opencode-go"]["key_present"] is True
         assert by_name["ollama"]["key_present"] is False  # needs no key
 
     def test_backends_with_no_key_report_absent(self, store, monkeypatch):

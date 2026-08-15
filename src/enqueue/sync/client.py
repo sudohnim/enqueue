@@ -92,6 +92,31 @@ def push_artifact(artifact_id: str) -> None:
         print(f"[sync] push rejected for {artifact_id}: {resp.status_code}", flush=True)
         return
 
+    # Push the file blob for captures (E2E.md E5: blobs are fetched on demand by the
+    # reader/thumbnails). The blob name is HMAC(content_hash, DEK), so it reveals
+    # nothing about the content; the bytes are encrypted like the snapshot.
+    kind = snapshot["artifact"].get("kind")
+    content_hash = snapshot["artifact"].get("content_hash")
+    if kind in ("image", "pdf", "file") and content_hash:
+        blob_path = config.BLOB_DIR / content_hash
+        if blob_path.exists():
+            blob_name = crypto.blob_name(content_hash, dek)
+            blob_data = crypto.encrypt(blob_path.read_bytes(), dek)
+            try:
+                with httpx.Client(timeout=60) as client:
+                    bresp = client.put(
+                        f"{url.rstrip('/')}/sync/object/blobs/{blob_name}",
+                        content=blob_data,
+                        headers=headers,
+                    )
+                if bresp.status_code not in (201, 409):
+                    print(
+                        f"[sync] blob push rejected for {artifact_id}: {bresp.status_code}",
+                        flush=True,
+                    )
+            except httpx.HTTPError as exc:
+                print(f"[sync] blob push failed for {artifact_id}: {exc}", flush=True)
+
     # Record that this device wrote the row, so the local LWW key matches what
     # other devices apply - both ends then converge to byte-identical state.
     with db.transaction() as conn:
@@ -142,3 +167,133 @@ def pull() -> dict:
 
     _write_cursor(new_cursor)
     return {"pulled": pulled}
+
+
+def push_settings() -> None:
+    """PUT the settings object to the relay (MOB2.9)."""
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+
+    dek = keyring_file.dek()
+    if dek is None:
+        return
+
+    # Load current settings from local config
+    cfg = settings.load()
+    s = {
+        "llm_backend": cfg.get("llm_backend", "ollama"),
+        "llm_model": cfg.get("llm_model", "llama3.1:8b"),
+        "llm_url": cfg.get("llm_url", ""),
+        "auto_preview": cfg.get("auto_preview", True),
+        "trash_days": cfg.get("trash_days", "30"),
+        "updated_at": "",  # will be filled by caller
+    }
+    import datetime
+
+    s["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    data = crypto.encrypt(serialize(s), dek)
+    timestamp = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+    name = f"lib/settings/{timestamp}-{device_id()}.enc"
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+            )
+        if resp.status_code not in (201, 409):
+            print(f"[sync] settings push rejected: {resp.status_code}", flush=True)
+    except httpx.HTTPError as exc:
+        print(f"[sync] settings push failed: {exc}", flush=True)
+
+
+def pull_settings() -> None:
+    """Pull the latest settings object from the relay and apply it (MOB2.9)."""
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+
+    dek = keyring_file.dek()
+    if dek is None:
+        return
+
+    base = url.rstrip("/")
+    headers = {"Authorization": f"Bearer {_secret()}"}
+    cursor = _read_cursor()
+
+    with httpx.Client(timeout=30) as client:
+        listing = client.get(f"{base}/sync/objects", params={"since": cursor}, headers=headers)
+        if listing.status_code != 200:
+            return
+        new_cursor = listing.json()["cursor"]
+
+        for obj in listing.json()["objects"]:
+            name = obj["name"]
+            if not name.startswith("lib/settings/"):
+                continue
+            resp = client.get(f"{base}/sync/object/{name}", headers=headers)
+            if resp.status_code != 200:
+                continue
+            s = deserialize(crypto.decrypt(resp.content, dek))
+            if "updated_at" in s:
+                with db.transaction() as conn:
+                    for key, val in s.items():
+                        if key in (
+                            "llm_backend",
+                            "llm_model",
+                            "llm_url",
+                            "auto_preview",
+                            "trash_days",
+                        ):
+                            conn.execute(
+                                "UPDATE settings SET value = ? WHERE key = ?",
+                                (str(val), key),
+                            )
+
+
+def push_keyring() -> None:
+    """PUT the encrypted keyring.json to the relay as lib/keyring.enc (MOB2.10).
+
+    The keyring.json already contains the DEK wrapped twice (password-KEK and
+    recovery-KEK). We encrypt it with the DEK so the relay stores ciphertext.
+    """
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+
+    dek = keyring_file.dek()
+    if dek is None:
+        return
+
+    keyring_path = config.DATA_DIR / "keyring.json"
+    if not keyring_path.exists():
+        return
+
+    keyring_bytes = keyring_path.read_bytes()
+    data = crypto.encrypt(keyring_bytes, dek)
+
+    name = "lib/keyring.enc"
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
+            )
+        if resp.status_code not in (201, 409):
+            print(f"[sync] keyring push rejected: {resp.status_code}", flush=True)
+    except httpx.HTTPError as exc:
+        print(f"[sync] keyring push failed: {exc}", flush=True)

@@ -173,17 +173,31 @@ Reconnect discipline (mirrors dequeue):
 - The relay sends a heartbeat (an SSE comment line, or a `: ping`) at a fixed interval so
   dead connections are noticed and half-open sockets do not linger.
 
+## Object namespace (extended for MOB2.9)
+
+In addition to artifacts and blobs, the sync relay also carries a **settings object**
+for MOB2.9:
+
+- Settings objects: `lib/settings/<timestamp>-<device_id>.enc`
+
+Each settings object carries an embedded `updated_at` timestamp in its encrypted payload.
+The reader takes the newest by `updated_at` (device id breaks ties), enabling LWW merge
+without requiring the relay to parse the contents.
+Settings objects are encrypted with the same DEK as artifacts, so the relay still stores
+only opaque bytes.
+
 ## Security invariants
 
 - The relay stores opaque bytes only.
-  It never parses a snapshot, a blob, or any field inside them.
+  It never parses a snapshot, a blob, a settings object, or any field inside them.
 - The relay can decrypt nothing.
   Encryption happens on the device before `PUT` (E2E.md Phase E1) and after `GET`
   (E2E.md Phase E4).
   The relay holds neither the DEK, the KEK, nor the recovery phrase.
 - The only plaintext the relay ever holds is the object **name**, which is
   `dev/<device_id>/artifacts/<id>.enc` (a UUID and an artifact UUID, deliberately not
-  meaningful) or `blobs/<HMAC>` (a keyed digest that reveals nothing).
+  meaningful), `lib/settings/<timestamp>-<device_id>.enc` (a timestamp and device UUID),
+  or `blobs/<HMAC>` (a keyed digest that reveals nothing).
 - The shared secret authenticates "this caller belongs to this library".
   It grants no finer identity; the relay does not know which device is which and does not
   need to.

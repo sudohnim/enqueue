@@ -14,7 +14,7 @@ One lavender UI accent, plus one scoped brand-mark purple `#60079f` for the rave
 ## 1. Atmosphere
 
 - Light only. The canvas is white with the faintest cool tint.
-- A muted lavender (`#5e6ad2`) is the interface accent, used scarcely; the bolder brand-mark violet (`#60079f`) is the raven mark's own color, scoped to a few brand moments.
+- The bold violet (`#60079f`), the raven eye's color, is the single chromatic accent - fills, focus rings, links, chips - used scarcely. The old muted lavender (`#5e6ad2`) is retired; the `--lavender*` tokens are kept only as aliases pointing at the violet.
 - Near-black text (`#101114`) on a cool-gray neutral scale.
 - Depth from a three-step light surface ladder, hairline borders, and whisper shadows.
 - Display type uses aggressive negative tracking. Body holds near zero.
@@ -33,13 +33,13 @@ One lavender UI accent, plus one scoped brand-mark purple `#60079f` for the rave
 
 ### Brand-mark purple
 
-The raven's eye is a vivid purple `#60079f` - bolder and more saturated than the lavender UI accent. It is the ONE brand-saturation the system allows, and it is the mark's own color, not a second interface accent. It is scarce and scoped: it appears only where the mark belongs, never as an ordinary control color.
+The raven's eye purple `#60079f` is the single chromatic accent - the whole interface wears it (fills, focus rings, links, chips), not just the mark. It is dark, so filled controls carry white ink.
 
 - **Purple Bold** `#60079f`: the raven eye's pupil, the home header wash (a low-opacity gradient), the capture overlay's disc and Keep button, and the greeting's trailing period. Dark, so it wears white ink (dark ink fails on it).
 - **Purple Bold Hover** `#7a1fc0`: the lighter lift for the capture Keep button on hover.
 - **Purple Bold Wash** `rgba(96, 7, 159, 0.1)`: the home header's fading purple wash, and the capture focus glow.
 
-Lavender stays the interface accent (CTA, focus ring, links, chips). The bold purple is the mark's saturation only - do not reach for it for ordinary buttons, focus rings, or links.
+The `--lavender*` token names are retained as aliases (they now resolve to `#60079f`), so existing consumers keep working; there is no separate lavender accent anymore. Filled controls wear white ink (`--on-purple-bold`); the accent as text (`--accent-text` `#60079f`) clears 4.5:1 on every surface.
 
 ### Surface (light ladder)
 
@@ -248,7 +248,7 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 - Don't pill-round buttons.
 - Don't use true black `#000000` for text. Use ink `#101114`.
 - Don't add atmospheric gradients or spotlight cards - with one sanctioned exception: the home header's single low-opacity brand-mark purple wash fading to the canvas. No other gradients.
-- Don't use the loud Kraken blue-purple `#7132f5` (distinct from the sanctioned brand-mark violet `#60079f`). The interface accent is the muted lavender.
+- Don't use the loud Kraken blue-purple `#7132f5` (distinct from the accent violet `#60079f`). The accent is `#60079f`.
 - Don't combine multiple bright accents in one view.
 
 ## 9. Responsive
@@ -283,7 +283,7 @@ A resting card earns at most a hairline, or a `Card` shadow if it must separate 
 --surface-2:     #eef0f3
 --surface-3:     #e4e6eb
 
---lavender:      #5e6ad2
+--lavender:      #60079f
 --lavender-hover:#828fff
 --lavender-focus:#5e69d1
 --lavender-deep: #4a51a8

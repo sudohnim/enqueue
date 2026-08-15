@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from .. import config
 from ..prompts import IMAGE_DESCRIBE
-from .base import ProviderError, why
+from .base import ProviderError, _check_go_model_shape, why
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -89,6 +89,7 @@ class OpenAICompatibleProvider:
         else:
             messages = [{"role": "user", "content": system}]
 
+        _check_go_model_shape(self.base_url, self.model)
         try:
             return cast(
                 T,
@@ -129,6 +130,7 @@ class OpenAICompatibleProvider:
             {"type": "image_url", "image_url": {"url": data_url}},
         ]
         messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": content}]
+        _check_go_model_shape(self.base_url, self.model)
         try:
             reply = client.chat.completions.create(
                 model=self.model,

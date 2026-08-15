@@ -18,6 +18,28 @@ tauri = { version = "2", features = ["macos-private-api"] }
 # Only used to pick the hotkey out of GET /settings. Already in the tree via tauri.
 serde_json = "1"
 
+# The mobile sync client (MOB.3) reimplements the desktop's Phase SYNC in Rust: a
+# local SQLite read copy, the relay pull, and the same crypto (PyNaCl SecretBox =
+# XSalsa20-Poly1305, Argon2id MODERATE). Pure Rust, so they cross-compile for Android.
+rusqlite = { version = "0.32", features = ["bundled"] }
+xsalsa20poly1305 = "0.9"
+argon2 = "0.5"
+ureq = "2"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+getrandom = "0.2"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+regex = "1.10"
+
+# Mobile plugins for capture (MOB.7): dialog for photo picker, opener for URLs,
+# clipboard-manager for share-sheet text.
+tauri-plugin-dialog = { version = "2", default-features = false }
+tauri-plugin-opener = { version = "2", default-features = false }
+tauri-plugin-clipboard-manager = { version = "2", default-features = false }
+
 # The global-shortcut plugin and the engine/AppKit machinery are desktop-only;
 # none of it compiles or makes sense on Android/iOS (no local Python engine there).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

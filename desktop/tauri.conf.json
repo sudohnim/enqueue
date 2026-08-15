@@ -41,6 +41,12 @@
             "core:event:allow-listen",
             "core:event:allow-unlisten"
           ]
+        },
+        {
+          "identifier": "mobile-library",
+          "description": "Lets the mobile shell pull the synced library into the local SQLite read copy (MOB.3) and read it (MOB.4/MOB.5). The mobile window loads an app URL, not the remote engine, so this capability has no remote restriction.",
+          "windows": ["main"],
+          "permissions": ["allow-mobile-sync", "allow-mobile-list", "allow-mobile-get", "allow-mobile-status", "allow-mobile-search", "allow-mobile-capture", "allow-mobile-blob"]
         }
       ]
     },

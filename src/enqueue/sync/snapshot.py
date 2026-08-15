@@ -14,6 +14,7 @@ order. It is proved by the property test in `tests/test_sync.py`.
 from __future__ import annotations
 
 import json
+import uuid
 from sqlite3 import Connection
 
 from . import device_id
@@ -24,6 +25,7 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
 
     Children are ordered exactly as E2E.md Section 1 specifies: annotations by
     `created_at, id`, page_text by `page`, versions by `created_at, id`.
+    Tags are ordered by name (canonical form).
     """
     row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
     if row is None:
@@ -48,6 +50,14 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
             dict(r)
             for r in conn.execute(
                 "SELECT * FROM artifact_versions WHERE artifact_id = ?" " ORDER BY created_at, id",
+                (artifact_id,),
+            )
+        ],
+        "tags": [
+            r["name"]
+            for r in conn.execute(
+                "SELECT t.name FROM tags t JOIN artifact_tags at ON at.tag_id = t.id"
+                " WHERE at.artifact_id = ? ORDER BY t.name",
                 (artifact_id,),
             )
         ],
@@ -87,6 +97,49 @@ def winner(snapshots: list[dict]) -> dict:
     return max(snapshots, key=lww_key)
 
 
+def _apply_snapshot_children(
+    conn: Connection, artifact_id: str, snapshot: dict, artifact: dict
+) -> None:
+    """Apply snapshot children (annotations, page_text, versions, tags)."""
+    conn.execute("DELETE FROM annotations WHERE artifact_id = ?", (artifact_id,))
+    conn.execute("DELETE FROM page_text WHERE artifact_id = ?", (artifact_id,))
+    conn.execute("DELETE FROM artifact_versions WHERE artifact_id = ?", (artifact_id,))
+    conn.execute("DELETE FROM artifact_tags WHERE artifact_id = ?", (artifact_id,))
+
+    for a in snapshot.get("annotations", []):
+        conn.execute(
+            "INSERT INTO annotations (id, artifact_id, supersedes_id, text, created_at)"
+            " VALUES (?,?,?,?,?)",
+            (a["id"], artifact_id, a.get("supersedes_id"), a["text"], a["created_at"]),
+        )
+    for p in snapshot.get("page_text", []):
+        conn.execute(
+            "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,?,?,?)",
+            (artifact_id, p["page"], p["text"], p["extractor"]),
+        )
+    for v in snapshot.get("versions", []):
+        conn.execute(
+            "INSERT INTO artifact_versions (id, artifact_id, body, created_at)" " VALUES (?,?,?,?)",
+            (v["id"], artifact_id, v["body"], v["created_at"]),
+        )
+    for tag_name in snapshot.get("tags", []):
+        # Upsert tag - generate UUID for the tag id
+        tag_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?,?,?)",
+            (tag_id, tag_name, artifact["created_at"]),
+        )
+        # If tag already existed, get its id
+        tag_row = conn.execute("SELECT id FROM tags WHERE name = ?", (tag_name,)).fetchone()
+        if tag_row:
+            tag_id = tag_row["id"]
+        # Link artifact to tag
+        conn.execute(
+            "INSERT OR IGNORE INTO artifact_tags (artifact_id, tag_id, created_at) VALUES (?,?,?)",
+            (artifact_id, tag_id, artifact["created_at"]),
+        )
+
+
 def apply_snapshot(conn: Connection, snapshot: dict) -> None:
     """Upsert the artifact row and replace its children, idempotently.
 
@@ -105,6 +158,10 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
     if local_row is not None:
         local_key = (local_row["updated_at"], local_row["_device_id"] or device_id())
         if local_key >= lww_key(snapshot):
+            # Still need to apply children (tags, annotations, etc.) even if
+            # artifact row is not updated, in case children were added/removed
+            # without changing the artifact's updated_at (e.g., tags added).
+            _apply_snapshot_children(conn, artifact_id, snapshot, artifact)
             return
 
     # Upsert the artifact row in place (no delete, so the derived tables'
@@ -119,26 +176,7 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
         [artifact[c] for c in cols],
     )
 
-    conn.execute("DELETE FROM annotations WHERE artifact_id = ?", (artifact_id,))
-    conn.execute("DELETE FROM page_text WHERE artifact_id = ?", (artifact_id,))
-    conn.execute("DELETE FROM artifact_versions WHERE artifact_id = ?", (artifact_id,))
-
-    for a in snapshot.get("annotations", []):
-        conn.execute(
-            "INSERT INTO annotations (id, artifact_id, supersedes_id, text, created_at)"
-            " VALUES (?,?,?,?,?)",
-            (a["id"], artifact_id, a.get("supersedes_id"), a["text"], a["created_at"]),
-        )
-    for p in snapshot.get("page_text", []):
-        conn.execute(
-            "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,?,?,?)",
-            (artifact_id, p["page"], p["text"], p["extractor"]),
-        )
-    for v in snapshot.get("versions", []):
-        conn.execute(
-            "INSERT INTO artifact_versions (id, artifact_id, body, created_at)" " VALUES (?,?,?,?)",
-            (v["id"], artifact_id, v["body"], v["created_at"]),
-        )
+    _apply_snapshot_children(conn, artifact_id, snapshot, artifact)
 
 
 def apply_pulled_snapshot(conn: Connection, snapshot: dict) -> None:

@@ -69,10 +69,10 @@ The wall has no ephemeral view surface; only a saved pivot persists a view.
 Search is the retrieval path; the assistant organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
 Do not add SSE plumbing back unless asked.
 
-11. **Browser extension and Android are future milestones.**
-No code for either exists in this repo.
-The current capture surfaces are the CLI and the macOS desktop overlay.
-Document them as future if relevant, but do not build against them.
+11. **The browser extension is a future milestone; Android is in progress.**
+No browser extension code exists; document it as future, do not build against it.
+The Android app (Tauri v2 mobile, `desktop/gen/android`, crate builds as `enqueue_lib`) is being built per `docs/PLAN.md` Phases MOBILE and MOB2: it syncs the encrypted library through the relay into a local SQLite copy, captures, reads, and (per the MOB2.0 amendment) writes - note edits, annotations, tags, pins, trash/restore - and chats by calling the configured LLM backend directly with keyword-only grounding.
+It never computes embeddings, facets, or entities; enrichment stays desktop-only.
 
 12. **The user-facing concept is "view", not "grouping".**
 We use the word "view" for the user-facing concept that was previously called "grouping", "saved grouping", and "collection".

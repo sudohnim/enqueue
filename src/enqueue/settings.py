@@ -81,6 +81,23 @@ def get(name: str) -> Any:
     return _stored().get(name, default)
 
 
+def _go_chat_models(name: str) -> dict[str, list[str] | str] | None:
+    """Expose Go model classification to the settings panel (FIX.3).
+
+    Lets the frontend warn when a model name requires an API shape the adapter
+    cannot speak (/responses or /messages), before any call is made.
+    """
+    if name != "opencode-go":
+        return None
+    from . import config
+
+    return {
+        "chat_completions": sorted(config.GO_CHAT_COMPLETIONS_MODELS),
+        "unsupported_shape": sorted(config.GO_UNSUPPORTED_SHAPE_MODELS),
+        "examples": config.GO_CHAT_COMPLETIONS_EXAMPLES,
+    }
+
+
 def backends() -> list[dict]:
     """The named endpoints, and what choosing each one means.
 
@@ -99,6 +116,7 @@ def backends() -> list[dict]:
             "local": spec["local"],
             "needs_key": bool(spec["key_var"]),
             "key_present": bool(spec["key_var"]) and bool(key) and key != "ollama",
+            **({"chat_models": _go_chat_models(name)} if name == "opencode-go" else {}),
         }
         for name, spec in config.BACKENDS.items()
     ]

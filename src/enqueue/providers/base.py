@@ -64,6 +64,13 @@ def _name_one(cause: BaseException, base_url: str, model: str) -> str | None:
     from pydantic import ValidationError
 
     if isinstance(cause, openai.AuthenticationError):
+        # OpenCode Go returns 401 (not 404) with a ModelError body when the model
+        # name is not recognized; the SDK maps any 401 to AuthenticationError so
+        # without this check a wrong model name reads as "rejected the API key"
+        # when the key is valid. Inspect the body and name the real failure (FIX.3).
+        go_note = _go_model_error_from_auth(cause, base_url, model)
+        if go_note:
+            return go_note
         return (
             f"the endpoint at {base_url} rejected the API key. Set a valid key in "
             "Settings, or switch the backend to Ollama to stay on this machine"
@@ -109,6 +116,68 @@ def _name_one(cause: BaseException, base_url: str, model: str) -> str | None:
     return None
 
 
+def _go_model_error_from_auth(cause, base_url: str, model: str) -> str | None:
+    """If a 401 response body says ModelError, name the real failure (FIX.3).
+
+    OpenCode Go returns 401 (not 404) with
+    {"error":{"type":"ModelError","message":"Model X is not supported"}}
+    for an unrecognized model name. The OpenAI SDK raises AuthenticationError
+    for any 401, so without this check the translator says "rejected the API key"
+    when the key is valid and the model name is the problem.
+    """
+    resp = getattr(cause, "response", None)
+    if resp is None:
+        return None
+    try:
+        body = resp.json()
+    except Exception:
+        return None
+    inner = body.get("error", {}) if isinstance(body, dict) else {}
+    if inner.get("type") != "ModelError":
+        return None
+    from .. import config
+
+    msg = inner.get("message", "")
+    # OpenCode Go message format: "Model X is not supported"
+    model_from_msg = msg.replace("Model ", "").replace(" is not supported", "").strip()
+    if model_from_msg in config.GO_UNSUPPORTED_SHAPE_MODELS:
+        return (
+            f"the model {model_from_msg!r} needs an API shape Enqueue does not "
+            "speak yet. OpenCode Go serves it behind /responses or /messages, "
+            "and Enqueue's adapter only speaks /chat/completions. Pick a "
+            f"chat-completions model instead ({config.GO_CHAT_COMPLETIONS_EXAMPLES})."
+        )
+    # Unrecognized model name (e.g. 'deepseek/deepseek-v4-pro' with an OpenRouter prefix)
+    return (
+        f"the endpoint at {base_url} does not serve the model {model!r}. The key is "
+        "valid, but that model name is not recognized - check the name in Settings. "
+        f"The Go chat-completions models are: {config.GO_CHAT_COMPLETIONS_EXAMPLES}."
+    )
+
+
+def _check_go_model_shape(base_url: str, model: str) -> None:
+    """FIX.3: refuse to call a Go model that needs /responses or /messages.
+
+    OpenCode Go serves Grok 4.5, GPT 5.6 Luna, MiniMax, and Qwen behind API shapes
+    that OpenAICompatibleProvider cannot reach (it only speaks /chat/completions).
+    Intercept those names here so the person gets the real limitation instead of
+    whatever HTTP error the server would throw - which can misread as an auth
+    rejection. No-op for backends whose URL is not the Go endpoint.
+    """
+    from .. import config
+
+    go_url = config.BACKENDS["opencode-go"]["url"]
+    if base_url != go_url:
+        return
+    if model and model in config.GO_UNSUPPORTED_SHAPE_MODELS:
+        raise ProviderError(
+            f"the model {model!r} needs an API shape Enqueue does not speak yet. "
+            "OpenCode Go serves it behind /responses or /messages, and Enqueue's "
+            "adapter only speaks /chat/completions. Pick a chat-completions model "
+            f"instead ({config.GO_CHAT_COMPLETIONS_EXAMPLES})."
+        )
+
+
 class Provider(Protocol):
     name: str
     model: str
@@ -138,6 +207,10 @@ def get_vision_provider(local_only: bool = False) -> Provider:
     from .ollama import OpenAICompatibleProvider
 
     name = "ollama" if local_only else settings.get("llm_backend")
+    if (
+        name == "opencode"
+    ):  # Stored Zen configs resolve to Go (Zen is still live, just not in this codebase).
+        name = "opencode-go"
     backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
 
     # SET.1: the endpoint is implied by the backend. A named backend uses its own
@@ -168,6 +241,10 @@ def get_provider(local_only: bool = False) -> Provider:
     from .ollama import OpenAICompatibleProvider
 
     name = "ollama" if local_only else settings.get("llm_backend")
+    if (
+        name == "opencode"
+    ):  # Stored Zen configs resolve to Go (Zen is still live, just not in this codebase).
+        name = "opencode-go"
     backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
 
     # SET.1: the endpoint is implied by the backend. A named backend uses its own

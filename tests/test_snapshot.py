@@ -12,6 +12,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from enqueue import db
+from enqueue import tags as tags_module
 from enqueue.sync.snapshot import (
     apply_pulled_snapshot,
     apply_snapshot,
@@ -290,3 +291,60 @@ class TestConvergence:
             assert again == best["artifact"]["body"]
         finally:
             conn.close()
+
+
+def test_tags_round_trip_through_snapshot(store):
+    """Tags are included in the snapshot and reapplied on the other side (MOB2.1)."""
+    import uuid as uuid_lib
+
+    conn = db.get_conn()
+    try:
+        now = db.now()
+        artifact_id = str(uuid_lib.uuid4())
+        tag1 = "work"
+        tag2 = "personal"
+
+        # Create artifact with tags
+        conn.execute(
+            "INSERT INTO artifacts (id, kind, title, body, content_hash, status, "
+            "created_at, updated_at) VALUES (?, 'note', 'T', 'body', 'h', 'ok', ?, ?)",
+            (artifact_id, now, now),
+        )
+        conn.execute(
+            "INSERT INTO tags (id, name, created_at) VALUES (?, ?, ?)",
+            (str(uuid_lib.uuid4()), tag1, now),
+        )
+        conn.execute(
+            "INSERT INTO tags (id, name, created_at) VALUES (?, ?, ?)",
+            (str(uuid_lib.uuid4()), tag2, now),
+        )
+        conn.execute(
+            "INSERT INTO artifact_tags (artifact_id, tag_id, created_at) "
+            "SELECT ?, id, ? FROM tags WHERE name IN (?, ?)",
+            (artifact_id, now, tag1, tag2),
+        )
+        conn.commit()
+
+        # Read snapshot
+        snap = read_artifact_snapshot(conn, artifact_id)
+        assert snap is not None
+        assert set(snap["tags"]) == {tag1, tag2}
+        print(f"DEBUG: snapshot tags = {snap['tags']}")
+
+        # Clear tags and reapply snapshot
+        conn.execute("DELETE FROM artifact_tags WHERE artifact_id = ?", (artifact_id,))
+        conn.execute("DELETE FROM tags WHERE name IN (?, ?)", (tag1, tag2))
+        conn.commit()
+        print("DEBUG: cleared tags")
+
+        # Apply snapshot - should recreate tags
+        with db.transaction() as tx:
+            apply_snapshot(tx, snap)
+        print("DEBUG: apply_snapshot done")
+
+        # Verify tags are restored
+        tags = tags_module.for_artifact(artifact_id)
+        print(f"DEBUG: restored tags = {tags}")
+        assert set(tags) == {tag1, tag2}
+    finally:
+        conn.close()

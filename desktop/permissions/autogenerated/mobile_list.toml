@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-list"
+description = "Enables the mobile_list command without any pre-configured scope."
+commands.allow = ["mobile_list"]
+
+[[permission]]
+identifier = "deny-mobile-list"
+description = "Denies the mobile_list command without any pre-configured scope."
+commands.deny = ["mobile_list"]

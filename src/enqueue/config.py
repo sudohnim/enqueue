@@ -39,34 +39,61 @@ BACKENDS = {
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
     },
-    "opencode": {
-        "label": "OpenCode Zen (Zen key)",
-        # opencode.ai/zen/v1, not api.opencode.ai/v1. The latter host resolves and
-        # answers 200 with the plain text "Not Found" for every path, which is not an
-        # HTTP error and so is not caught as one - the OpenAI client hands the body
-        # back as a string and the first attribute access on it fails. Verified against
-        # the live host: GET /zen/v1/models returns the model list as JSON.
-        "url": "https://opencode.ai/zen/v1",
-        "local": False,
-        "key_var": "ENQ_LLM_API_KEY",
-    },
     "opencode-go": {
-        "label": "OpenCode Go (Go subscription key)",
-        # The Go subscription endpoint. Separate billing from Zen: a Go key has no
-        # Zen entitlement and vice versa, so a key that 503s on opencode (Zen) may
-        # work fine here. Verified against the live host: GET /zen/go/v1/models
-        # returns the model list as JSON with a Go key in the Authorization header.
+        "label": "OpenCode Go",
+        # The Go subscription endpoint. Verified against the live host:
+        # GET /zen/go/v1/models returns the model list as JSON with a Go key in the
+        # Authorization header. OpenCode Zen (/zen/v1) is a separate, still-live
+        # product with its own keys; SET2.1 narrowed the picker to Go-only.
+        # Go models span three API shapes - /chat/completions, /responses, and
+        # /messages - but only /chat/completions matches OpenAICompatibleProvider.
+        # The other two shapes are a follow-on, not this fix (FIX.3).
         "url": "https://opencode.ai/zen/go/v1",
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
     },
-    "custom": {
-        "label": "Something else that speaks the OpenAI protocol",
-        "url": "",
-        "local": False,
-        "key_var": "ENQ_LLM_API_KEY",
-    },
 }
+
+# OpenCode Go models, classified by the API shape they require. The
+# OpenAI-compatible adapter (OpenAICompatibleProvider) speaks only
+# /chat/completions, so models from the other two shapes cannot be reached yet
+# - full /responses or /messages support is a follow-on. Source: the live
+# GET /zen/go/v1/models list and https://opencidi.ai docs/go endpoints.
+GO_CHAT_COMPLETIONS_MODELS = frozenset(
+    {
+        "glm-5.2",
+        "glm-5.1",
+        "glm-5",
+        "kimi-k3",
+        "kimi-k2.7-code",
+        "kimi-k2.6",
+        "kimi-k2.5",
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+        "mimo-v2.5",
+        "mimo-v2.5-pro",
+        "mimo-v2-pro",
+        "mimo-v2-omni",
+        "hy3",
+        "hy3-preview",
+    }
+)
+GO_UNSUPPORTED_SHAPE_MODELS = frozenset(
+    {
+        "grok-4.5",
+        "gpt-5.6-luna",
+        "minimax-m3",
+        "minimax-m2.7",
+        "minimax-m2.5",
+        "qwen3.7-max",
+        "qwen3.8-max",
+        "qwen3.7-plus",
+        "qwen3.6-plus",
+        "qwen3.5-plus",
+    }
+)
+
+GO_CHAT_COMPLETIONS_EXAMPLES = "glm-5.2, kimi-k3, deepseek-v4-pro, mimo-v2.5, hy3"
 
 LLM_BACKEND = os.getenv("ENQ_LLM_BACKEND", "ollama")
 

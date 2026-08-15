@@ -68,34 +68,29 @@
        surface-1), 4.95:1 on the canvas. It is not permitted on surface-2 (4.33). */
     --ink-faint: #6c6f84;
 
-    /* The one chromatic accent, the design system's muted lavender (DESIGN.md
-       names #5e6ad2; the loud Kraken purple #7132f5 is explicitly banned). It is
-       a fill, a focus ring, a link - never a section background and never a card
-       wash. 4.70:1 on the canvas means it can stand alone as a filled control
-       with white ink and as a sole boundary (3:1). */
-    --accent: #5e6ad2;
-    /* Hover and pressed steps for filled lavender controls. DESIGN.md names
-       #828fff as the hover, but white text on that measures 2.73:1 and fails
-       4.5, so the hover step uses --lavender-focus (#5e69d1, 4.75:1 with white)
-       and the pressed step --lavender-deep (#4a51a8, 6.92:1 with white). */
-    --accent-strong: #5e6ad2;
-    /* The ink motif on the lavender disc (the greeting eye and the drop icon):
-       #101114 on #5e6ad2 is 4.01:1, which clears the 3:1 graphic rule. The disc
-       never fills --lavender-deep while the ink motif is on it - ink on deep is
-       2.73:1 and fails - so its pressed state is a scale squash, not a fill
-       change. */
-    --accent-ink: #101114;
-    /* Lavender as text. #5e6ad2 clears 4.5 even on surface-3 (4.55:1), and the
-       places lavender text carries weight (aside.dirty, .title-action.lit) use
-       --accent-text #5741d8, which clears 4.5:1 on every surface (6.66 canvas,
-       6.21 surface-1, 5.83 surface-2, 5.33 surface-3). */
-    --accent-text: #5741d8;
+    /* The chromatic accent is the raven eye's bold purple #60079f (the loud Kraken
+       purple #7132f5 stays banned). It is a fill, a focus ring, a link - never a
+       section background or a card wash. It is dark, so a filled control wears WHITE
+       ink; as a sole boundary and as link text it clears 3:1 / 4.5:1 comfortably. */
+    --accent: #60079f;
+    /* Hover and pressed steps for filled accent controls: a lighter lift on hover
+       (--lavender-focus #7a1fc0) and a deeper press (--lavender-deep #4a0578), both
+       dark enough to carry white text. */
+    --accent-strong: #60079f;
+    /* The ink motif on the accent disc (the drop icon): WHITE on #60079f (~13:1),
+       because the accent is now dark - dark ink would fail on it. */
+    --accent-ink: #ffffff;
+    /* The accent as text. #60079f on white is ~8:1 and clears 4.5:1 on every
+       surface in the ladder, so accented text (aside.dirty, .title-action.lit,
+       links) uses it directly. */
+    --accent-text: #60079f;
 
-    /* The lavender family, named per DESIGN.md section 2. */
-    --lavender: #5e6ad2;
-    --lavender-focus: #5e69d1;
-    --lavender-deep: #4a51a8;
-    --lavender-subtle: rgba(94, 106, 210, 0.12);
+    /* The accent family (the eye's purple). The --lavender* names are kept as
+       aliases so existing consumers resolve, but they now point at the purple. */
+    --lavender: #60079f;
+    --lavender-focus: #7a1fc0;
+    --lavender-deep: #4a0578;
+    --lavender-subtle: rgba(96, 7, 159, 0.12);
     --on-lavender: #ffffff;
 
     /* The vivid purple of the eye pupil (#60079f) - bolder and more saturated

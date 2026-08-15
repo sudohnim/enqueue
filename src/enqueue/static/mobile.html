@@ -1,14 +1,12 @@
 <!doctype html>
 <meta charset="utf-8" />
-<!-- The mobile shell (MOB.2): the DESIGN.md light canvas and IBM Plex Sans, and
-     nothing else yet. The real surfaces (Library, Reader, Capture) build into this
-     shell in MOB.4/MOB.5/MOB.7. -->
 <meta
   name="viewport"
   content="width=device-width, initial-scale=1, viewport-fit=cover"
 />
 <title>Enqueue</title>
 <link rel="stylesheet" href="css/tokens.css" />
+<script src="js/md.js"></script>
 <style>
   html,
   body {
@@ -20,16 +18,2780 @@
     color: var(--text);
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
-    display: grid;
-    place-items: center;
+    line-height: 1.5;
   }
-  .mark {
+  section {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 20px 16px;
+    padding-top: calc(20px + env(safe-area-inset-top));
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  section[hidden] {
+    display: none;
+  }
+  .title {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .sub {
+    font-size: 14px;
+    color: var(--text-mute);
+    margin: 0 0 20px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    color: var(--text-mute);
+    margin-bottom: 14px;
+  }
+  input,
+  textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 6px;
+    padding: 10px 12px;
+    font-family: var(--sans);
+    font-size: 15px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    outline: none;
+  }
+  textarea {
+    min-height: 96px;
+    resize: vertical;
+  }
+  input:focus,
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--lavender-subtle);
+  }
+  button {
+    font-family: var(--sans);
     font-size: 15px;
     font-weight: 500;
-    letter-spacing: 0.2px;
+    padding: 12px 18px;
+    border: 0;
+    border-radius: var(--r-md);
+    cursor: pointer;
+  }
+  #sync_btn {
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    margin-top: 4px;
+  }
+  #status {
+    margin-top: 14px;
+    font-size: 14px;
     color: var(--text-mute);
   }
+  #status.error {
+    color: var(--danger);
+  }
+  #status.ok {
+    color: var(--success);
+  }
+
+  /* Library */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  #search {
+    margin: 0 0 14px;
+  }
+  header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+  }
+  .back {
+    background: transparent;
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .shelf-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-mute);
+    padding: 4px 2px 2px;
+  }
+  .thumb-placeholder {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--r-sm);
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: pointer;
+  }
+  .row:active {
+    background: var(--surface);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 7px;
+    flex-shrink: 0;
+  }
+  .row-body {
+    min-width: 0;
+    flex: 1;
+  }
+  .row-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .row-snippet {
+    font-size: 13px;
+    color: var(--text-mute);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    margin-top: 2px;
+  }
+  .row-time {
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 4px;
+  }
+  .empty {
+    font-size: 14px;
+    color: var(--text-mute);
+    padding: 40px 0;
+    text-align: center;
+  }
+
+  /* Reader */
+  #reader_body {
+    font-size: 16px;
+  }
+  #reader_body h1,
+  #reader_body h2,
+  #reader_body h3 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0.6em 0 0.3em;
+  }
+  #reader_body p {
+    margin: 0 0 0.8em;
+  }
+  #reader_body ul,
+  #reader_body ol {
+    margin: 0 0 0.8em;
+    padding-left: 1.4em;
+  }
+  #reader_body blockquote {
+    margin: 0 0 0.8em;
+    padding-left: 0.8em;
+    border-left: 2px solid var(--line-strong);
+    color: var(--text-mute);
+  }
+  #reader_body a {
+    color: var(--link);
+  }
+  .kind-hint {
+    font-size: 12px;
+    color: var(--text-mute);
+    text-transform: capitalize;
+    margin-bottom: 12px;
+  }
+  .ann {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .ann h2 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: var(--text-mute);
+    margin: 0 0 10px;
+  }
+  .ann p {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+  }
+
+  /* Mobile Pill (MOB2.3) - mirrors desktop pill.css */
+  .pill {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--sp-5) + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 56px;
+    padding: 0 var(--sp-4);
+    z-index: var(--z-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    box-shadow:
+      0 4px 12px rgba(16, 17, 20, 0.06),
+      0 12px 36px rgba(16, 17, 20, 0.12);
+    transition:
+      width var(--dur-slow) ease,
+      box-shadow var(--dur-slow) ease,
+      transform var(--dur-fast) var(--ease);
+  }
+  .pill:hover {
+    transform: translateX(-50%) translateY(-2px);
+  }
+  .pill:focus-within {
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 50%, transparent),
+      var(--shadow-lifted);
+  }
+  .pill .keep {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 44px;
+    padding: 0 var(--sp-2) 0 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--r-full);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 17px;
+    letter-spacing: 0;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .pill .keep .disc {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    transition:
+      background var(--dur-fast) var(--ease),
+      transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .pill .keep:hover .disc {
+    background: var(--purple-bold-hover);
+    box-shadow: 0 0 0 6px var(--purple-bold-wash);
+  }
+  .pill .keep:active .disc {
+    transform: scale(0.92);
+  }
+  .pill .round {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--r-full);
+    color: var(--text);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .pill .round:hover {
+    background: var(--surface);
+  }
+  .pill .round:active {
+    background: var(--surface-2);
+  }
+  .pill .round svg {
+    width: 24px;
+    height: 24px;
+  }
+  .pill .pill-eye {
+    width: 44px;
+    height: 44px;
+  }
+  .pill .pill-eye .eye-frame {
+    width: 100%;
+    height: 100%;
+  }
+  .pill .pill-eye .eye-socket {
+    width: 52.6%;
+    height: 51.5%;
+    top: 80%;
+    left: 69.3%;
+  }
+  .pill .pill-eye .eye-pupil {
+    width: 120%;
+    height: 156%;
+  }
+
+  /* Pill Menu (MOB2.3) */
+  .pill-menu {
+    position: fixed;
+    left: 50%;
+    bottom: calc(56px + var(--sp-5) + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding: var(--sp-2);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow:
+      0 4px 12px rgba(16, 17, 20, 0.06),
+      0 12px 36px rgba(16, 17, 20, 0.12);
+    z-index: calc(var(--z-pill) - 1);
+    min-width: 160px;
+  }
+  .pill-menu button {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: var(--sp-2) var(--sp-3);
+    background: transparent;
+    border: 0;
+    border-radius: var(--r-md);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .pill-menu button:hover {
+    background: var(--surface);
+  }
+  .pill-menu button svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  /* Capture (MOB.7): a fixed bottom bar with the bold-purple button, plus a sheet. */
+  <div
+    id="pill"
+    class="pill"
+    role="group"
+    aria-label="Main actions"
+    > <!--
+    Capture
+    (primary)
+    --
+    > <button
+    class="keep"
+    id="pill_capture"
+    aria-label="Capture"
+    aria-expanded="false"
+    > <span
+    class="disc"
+    > </span
+    > </button
+    > <!--
+    Search
+    --
+    > <button
+    class="round"
+    id="pill_search"
+    aria-label="Search"
+    > <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    aria-hidden="true"
+    > <circle
+    cx="11"
+    cy="11"
+    r="8"
+    > </circle
+    > <line
+    x1="21"
+    y1="21"
+    x2="16.65"
+    y2="16.65"
+    > </line
+    > </svg
+    > </button
+    > <!--
+    Ask
+    (Living Raven Eye)
+    --
+    > <button
+    class="round"
+    id="pill_ask"
+    aria-label="Chat with AI"
+    > <span
+    class="pill-eye eye"
+    id="pillEye"
+    > </span
+    > </button
+    > <!--
+    Menu
+    --
+    > <button
+    class="round"
+    id="pill_menu"
+    aria-label="Menu"
+    aria-expanded="false"
+    aria-haspopup="true"
+    > <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    aria-hidden="true"
+    > <circle
+    cx="12"
+    cy="12"
+    r="1"
+    > </circle
+    > <circle
+    cx="12"
+    cy="5"
+    r="1"
+    > </circle
+    > <circle
+    cx="12"
+    cy="19"
+    r="1"
+    > </circle
+    > </svg
+    > </button
+    > </div
+    > <!--
+    Pill
+    Menu
+    (MOB2.3)
+    --
+    > <div
+    id="pill_menu_panel"
+    class="pill-menu"
+    hidden
+    role="menu"
+    > <button
+    role="menuitem"
+    id="pill_menu_settings"
+    > <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    aria-hidden="true"
+    > <circle
+    cx="12"
+    cy="12"
+    r="3"
+    > </circle
+    > <path
+    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+    > </path
+    > </svg
+    > Settings</button
+    > <button
+    role="menuitem"
+    id="pill_menu_trash"
+    > <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    aria-hidden="true"
+    > <polyline
+    points="3 6 5 6 21 6"
+    > </polyline
+    > <path
+    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+    > </path
+    > </svg
+    > Trash</button
+    > </div
+    > #capture_field {
+    margin-bottom: 14px;
+  }
+  #capture_actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  #capture_keep {
+    flex: 1;
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+  }
+  #capture_image {
+    flex: 1;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 12px 18px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  #capture_status {
+    margin-top: 12px;
+    font-size: 14px;
+    color: var(--danger);
+  }
+
+  /* Unsynced state indicator (MOB.7) */
+  .row-unsynced {
+    position: relative;
+  }
+  .row-unsynced::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warning);
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+
+  /* Raven flight animation (ANIM.4, MOB.7) */
+  #captureFlight {
+    position: fixed;
+    pointer-events: none;
+    z-index: 100;
+    width: 220px;
+    height: 220px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .capture-flight {
+    animation: raven-flight 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform, opacity;
+  }
+  .capture-flight.reduced {
+    animation: raven-fade 1.6s ease forwards;
+  }
+  @keyframes raven-flight {
+    0% {
+      transform: translate(calc(-50% - 100vw), -50%) scale(1);
+      opacity: 1;
+    }
+    31.6% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+    84.2% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0;
+    }
+  }
+  @keyframes raven-fade {
+    0% {
+      opacity: 0;
+    }
+    12.5% {
+      opacity: 1;
+    }
+    87.5% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .capture-flight {
+      animation: raven-fade 1.6s ease forwards;
+    }
+  }
+
+  /* First-sync loading (the ANIM.1 raven) and image thumbnails (MOB.4). */
+  #loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 48px 0;
+    color: var(--text-mute);
+    font-size: 14px;
+  }
+  #loading img {
+    width: 48px;
+    height: 48px;
+    animation: spin-ccw 1.1s linear infinite;
+  }
+  @keyframes spin-ccw {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #loading img,
+    .pdf-loading img {
+      animation: none;
+    }
+  }
+  .thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--r-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+  #reader_body img {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+  .img-zoom-wrap {
+    overflow: hidden;
+    touch-action: none;
+  }
+  .img-zoom-wrap img {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform-origin: 0 0;
+    touch-action: none;
+  }
+  .pdf-page {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-bottom: 12px;
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card);
+  }
+  .pdf-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 40px 0;
+    color: var(--text-mute);
+    font-size: 14px;
+  }
+  .pdf-loading img {
+    width: 32px;
+    height: 32px;
+    animation: spin-ccw 1.1s linear infinite;
+  }
+  .link-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    text-decoration: none;
+    color: var(--text);
+  }
+  .link-card:active {
+    background: var(--surface-2);
+  }
+  .link-card-image {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--r-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+  .link-card-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .link-card-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .link-card-desc {
+    font-size: 13px;
+    color: var(--text-mute);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    margin-top: 4px;
+  }
+  .link-card-site {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin-top: 4px;
+  }
+
+  /* Rich Cards (MOB2.5) */
+  .card {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .card:hover {
+    background: var(--surface-2);
+  }
+  .card:active {
+    background: var(--surface-2);
+  }
+  .card-unsynced {
+    position: relative;
+  }
+  .card-unsynced::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warning);
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+  .card .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .card-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .card-excerpt,
+  .card-snippet {
+    font-size: 13px;
+    color: var(--text-mute);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: auto;
+    padding-top: 4px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .card-time {
+    flex: 1;
+  }
+  .card-pages {
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .card-pin {
+    font-size: 12px;
+  }
+
+  /* Note card */
+  .card-note .card-excerpt {
+    -webkit-line-clamp: 4;
+  }
+
+  /* Link card */
+  .card-link {
+    flex-direction: row;
+  }
+  .card-link .card-content {
+    flex: 1;
+  }
+  .card-preview-image {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--r-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+  .card-link .card-snippet {
+    -webkit-line-clamp: 2;
+  }
+
+  /* Image card */
+  .card-image {
+    flex-direction: row;
+  }
+  .card-image .card-content {
+    flex: 1;
+  }
+  .card-full-image {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--r-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+
+  /* PDF card */
+  .card-pdf {
+    flex-direction: row;
+  }
+  .card-pdf .card-content {
+    flex: 1;
+  }
+  .card-pdf-thumb {
+    width: 64px;
+    height: auto;
+    border-radius: var(--r-sm);
+    flex-shrink: 0;
+    background: var(--surface-2);
+    box-shadow: var(--shadow-card);
+  }
+  .card-pdf .card-pages {
+    font-weight: 500;
+  }
+
+  /* Generic card */
+  .card .card-snippet {
+    -webkit-line-clamp: 2;
+  }
 </style>
-<body>
-  <div class="mark">Enqueue</div>
-</body>
+
+<section id="setup">
+  <h1 class="title">Enqueue</h1>
+  <p class="sub">Sync your library from the relay.</p>
+  <div id="setup_manual" style="display: block">
+    <label
+      >Relay URL
+      <input
+        id="relay_url"
+        placeholder="https://relay.example"
+        autocomplete="off"
+    /></label>
+    <label
+      >Sync secret <input id="sync_secret" type="password" autocomplete="off"
+    /></label>
+    <label
+      >keyring.json (paste)
+      <textarea id="keyring_json" spellcheck="false"></textarea>
+    </label>
+    <label
+      >Recovery phrase <input id="recovery_phrase" autocomplete="off"
+    /></label>
+    <div
+      style="
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      "
+    >
+      <label
+        >Or paste pairing code
+        <textarea
+          id="pairing_code"
+          placeholder="Paste the base64 pairing code from desktop Settings > Sync..."
+          spellcheck="false"
+          style="min-height: 80px"
+        ></textarea>
+      </label>
+    </div>
+    <button id="sync_btn">Connect</button>
+  </div>
+</section>
+
+<section id="library" hidden>
+  <header>
+    <button class="back" id="to_setup">&larr; Setup</button>
+    <h1>Library</h1>
+  </header>
+  <input id="search" type="search" placeholder="Search" autocomplete="off" />
+  <div id="loading" hidden>
+    <img src="loading.png" alt="" />
+    <span>Syncing&#8230;</span>
+  </div>
+  <div id="shelves"></div>
+  <div class="empty" id="empty" hidden>Nothing synced yet.</div>
+</section>
+
+<section id="reader" hidden>
+  <header>
+    <button class="back" id="to_library">&larr;</button>
+    <h1 id="reader_title"></h1>
+  </header>
+  <div class="kind-hint" id="reader_kind"></div>
+  <div id="reader_body"></div>
+  <div class="ann" id="reader_ann" hidden>
+    <h2>Notes</h2>
+  </div>
+</section>
+
+<section id="capture" hidden>
+  <header>
+    <button class="back" id="capture_cancel">&larr;</button>
+    <h1>Capture</h1>
+  </header>
+  <input
+    id="capture_field"
+    type="text"
+    placeholder="Toss it here - text or a link"
+    autocomplete="off"
+  />
+  <div id="capture_actions">
+    <button id="capture_keep">Keep</button>
+    <button id="capture_image" type="button">Photo</button>
+  </div>
+  <div id="capture_status"></div>
+</section>
+
+<!-- Crop/Rotate sheet (MOB2.6) -->
+<section id="crop" hidden>
+  <header>
+    <button class="back" id="crop_cancel">&larr;</button>
+    <h1>Adjust</h1>
+  </header>
+  <div
+    id="crop_canvas_wrap"
+    style="position: relative; max-width: 100%; margin: 0 auto"
+  >
+    <canvas
+      id="crop_canvas"
+      style="max-width: 100%; height: auto; display: block; margin: 0 auto"
+    ></canvas>
+    <div
+      id="crop_overlay"
+      style="
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+      "
+    ></div>
+  </div>
+  <div
+    id="crop_actions"
+    style="
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    "
+  >
+    <button id="crop_rotate_left" type="button" aria-label="Rotate left">
+      ⟲
+    </button>
+    <button id="crop_rotate_right" type="button" aria-label="Rotate right">
+      ⟳
+    </button>
+    <button id="crop_reset" type="button" aria-label="Reset to original">
+      Reset
+    </button>
+  </div>
+  <div
+    id="crop_buttons"
+    style="display: flex; gap: 12px; margin-top: 16px; justify-content: center"
+  >
+    <button
+      id="crop_done"
+      class="keep"
+      style="background: var(--purple-bold); color: var(--on-purple-bold)"
+    >
+      Done
+    </button>
+    <button
+      id="crop_cancel_btn"
+      style="
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--line);
+      "
+    >
+      Cancel
+    </button>
+  </div>
+  <div
+    id="crop_status"
+    style="
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--danger);
+      text-align: center;
+    "
+  ></div>
+</section>
+
+<!-- Chat sheet (MOB2.7) -->
+<section id="chat" hidden>
+  <header>
+    <button class="back" id="chat_cancel">&larr;</button>
+    <h1>Chat</h1>
+  </header>
+  <div
+    id="chat_messages"
+    style="
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    "
+  ></div>
+  <div id="chat_loading" class="pdf-loading" hidden>
+    <img src="loading.png" alt="" />
+    <span>Thinking…</span>
+  </div>
+  <form
+    id="chat_form"
+    style="
+      display: flex;
+      gap: 8px;
+      padding: 16px;
+      border-top: 1px solid var(--line);
+    "
+  >
+    <input
+      id="chat_input"
+      type="text"
+      placeholder="Ask about your notes…"
+      style="flex: 1; padding: 12px; font-size: 15px"
+      autocomplete="off"
+    />
+    <button
+      type="submit"
+      class="round"
+      style="background: var(--purple-bold); color: var(--on-purple-bold)"
+      aria-label="Send"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        width="24"
+        height="24"
+        aria-hidden="true"
+      >
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      </svg>
+    </button>
+  </form>
+</section>
+
+<!-- Settings sheet (MOB2.8) -->
+<section id="settings" hidden>
+  <header>
+    <button class="back" id="settings_cancel">&larr;</button>
+    <h1>Settings</h1>
+  </header>
+  <div style="padding: 16px; display: flex; flex-direction: column; gap: 24px">
+    <!-- AI Section -->
+    <div>
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        AI
+      </h2>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <label
+          >Backend
+          <select
+            id="settings_backend"
+            style="width: 100%; padding: 12px; font-size: 15px"
+          ></select>
+        </label>
+        <label
+          >Model
+          <input
+            id="settings_model"
+            type="text"
+            placeholder="Model name"
+            style="width: 100%; padding: 12px; font-size: 15px"
+            autocomplete="off"
+          />
+        </label>
+        <label
+          >API Key
+          <input
+            id="settings_api_key"
+            type="password"
+            placeholder="API key (stored locally)"
+            style="width: 100%; padding: 12px; font-size: 15px"
+            autocomplete="off"
+          />
+        </label>
+        <label id="settings_custom_url_label" style="display: none"
+          >Custom Endpoint
+          <input
+            id="settings_custom_url"
+            type="url"
+            placeholder="https://..."
+            style="width: 100%; padding: 12px; font-size: 15px"
+            autocomplete="off"
+          />
+        </label>
+      </div>
+    </div>
+    <!-- Sync Section -->
+    <div>
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        Sync
+      </h2>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <div
+          id="settings_sync_status"
+          style="font-size: 14px; color: var(--text-mute)"
+        ></div>
+        <button
+          id="settings_sync_now"
+          type="button"
+          class="round"
+          style="background: var(--purple-bold); color: var(--on-purple-bold)"
+        >
+          Sync Now
+        </button>
+        <button
+          id="settings_pair"
+          type="button"
+          style="
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--line);
+            padding: 12px 18px;
+            border-radius: var(--r-md);
+          "
+        >
+          Show Pairing Code
+        </button>
+      </div>
+    </div>
+    <!-- Features Section -->
+    <div>
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        Features
+      </h2>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <label
+          style="display: flex; align-items: center; gap: 12px; cursor: pointer"
+        >
+          <input id="settings_auto_preview" type="checkbox" />
+          <span>Auto-preview links</span>
+        </label>
+        <label
+          style="display: flex; align-items: center; gap: 12px; cursor: pointer"
+        >
+          Trash retention
+          <select
+            id="settings_trash_days"
+            style="flex: 1; padding: 8px; font-size: 15px"
+          >
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+            <option value="0">Never auto-delete</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <!-- Storage Section -->
+    <div>
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        Storage
+      </h2>
+      <div
+        style="
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          font-size: 14px;
+          color: var(--text-mute);
+        "
+      >
+        <div>Library size: <span id="storage_lib"></span></div>
+        <div>Blob cache: <span id="storage_blob"></span></div>
+        <button
+          id="settings_clear_cache"
+          type="button"
+          style="
+            background: var(--surface);
+            color: var(--danger);
+            border: 1px solid var(--line);
+            padding: 12px 18px;
+            border-radius: var(--r-md);
+            margin-top: 8px;
+          "
+        >
+          Clear Blob Cache
+        </button>
+      </div>
+    </div>
+    <!-- Trash Section -->
+    <div>
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        Trash
+      </h2>
+      <button
+        id="settings_trash"
+        type="button"
+        style="
+          background: var(--surface);
+          color: var(--text);
+          border: 1px solid var(--line);
+          padding: 12px 18px;
+          border-radius: var(--r-md);
+          width: 100%;
+          text-align: left;
+        "
+      >
+        View Trash &rarr;
+      </button>
+    </div>
+  </div>
+</section>
+
+<div id="capture_bar">
+  <button id="capture_btn">Capture</button>
+  <button id="capture_image_btn" type="button" aria-label="Capture photo">
+    📷
+  </button>
+</div>
+
+<script>
+  // md.js's md() escapes input via this helper (defined in util.js on the desktop,
+  // which mobile does not load), so it is provided here for the reader.
+  function esc(s) {
+    return (s ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+  }
+
+  const invoke = window.__TAURI__ && window.__TAURI__.core.invoke;
+
+  const KIND_COLORS = {
+    note: "var(--kind-note)",
+    link: "var(--kind-link)",
+    image: "var(--kind-image)",
+    pdf: "var(--kind-pdf)",
+    file: "var(--kind-file)",
+  };
+
+  function show(id) {
+    for (const s of ["setup", "library", "reader", "capture", "chat"]) {
+      document.getElementById(s).hidden = s !== id;
+    }
+  }
+
+  function setStatus(text, cls) {
+    const el = document.getElementById("status");
+    el.textContent = text;
+    el.className = cls || "";
+  }
+
+  function relativeTime(iso) {
+    const t = new Date(iso).getTime();
+    if (!t) return "";
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.round(s / 60) + "m ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    return Math.round(s / 86400) + "d ago";
+  }
+
+  function parse(raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      throw new Error("bad response: " + e);
+    }
+  }
+
+  // md() escapes input before parsing, so its HTML carries no raw markup; parse it
+  // to nodes with DOMParser and append, rather than injecting an innerHTML string.
+  function renderMd(el, src) {
+    const doc = new DOMParser().parseFromString(md(src), "text/html");
+    el.replaceChildren(...Array.from(doc.body.childNodes));
+  }
+
+  function renderRows(arts, container) {
+    container.replaceChildren();
+    for (const a of arts) {
+      const li = document.createElement("li");
+      li.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
+
+      if (a.kind === "note") {
+        renderNoteCard(li, a);
+      } else if (a.kind === "link") {
+        renderLinkCard(li, a);
+      } else if (a.kind === "image") {
+        renderImageCard(li, a);
+      } else if (a.kind === "pdf") {
+        renderPdfCard(li, a);
+      } else {
+        renderGenericCard(li, a);
+      }
+
+      container.appendChild(li);
+    }
+  }
+
+  function renderNoteCard(li, a) {
+    li.className =
+      "card card-note" + (a.status === "pending" ? " card-unsynced" : "");
+
+    const kindDot = document.createElement("span");
+    kindDot.className = "dot";
+    kindDot.style.background = KIND_COLORS[a.kind] || "var(--text-mute)";
+
+    const content = document.createElement("div");
+    content.className = "card-content";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = a.title || "Untitled";
+
+    const excerpt = document.createElement("div");
+    excerpt.className = "card-excerpt";
+    excerpt.textContent = mdText(a.body || "");
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    const time = document.createElement("span");
+    time.className = "card-time";
+    time.textContent = relativeTime(a.updated_at || a.created_at);
+    meta.appendChild(time);
+
+    if (a.pinned) {
+      const pin = document.createElement("span");
+      pin.className = "card-pin";
+      pin.textContent = "📌";
+      meta.appendChild(pin);
+    }
+
+    content.appendChild(title);
+    if (excerpt.textContent) content.appendChild(excerpt);
+    content.appendChild(meta);
+
+    li.appendChild(kindDot);
+    li.appendChild(content);
+
+    li.addEventListener("click", () => openArtifact(a.id));
+  }
+
+  function renderLinkCard(li, a) {
+    li.className =
+      "card card-link" + (a.status === "pending" ? " card-unsynced" : "");
+
+    const kindDot = document.createElement("span");
+    kindDot.className = "dot";
+    kindDot.style.background = KIND_COLORS[a.kind] || "var(--text-mute)";
+
+    const content = document.createElement("div");
+    content.className = "card-content";
+
+    // Preview image if available
+    if (a.mime && a.mime.startsWith("image/")) {
+      const thumb = document.createElement("img");
+      thumb.className = "card-preview-image";
+      thumb.alt = "";
+      li.insertBefore(thumb, kindDot);
+      invoke("mobile_blob", { id: a.id })
+        .then((raw) => {
+          const b = parse(raw);
+          thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
+        })
+        .catch(() => {
+          thumb.remove();
+        });
+    }
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = a.title || "Untitled";
+
+    const snippet = document.createElement("div");
+    snippet.className = "card-snippet";
+    snippet.textContent = mdText(a.body || "");
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    const time = document.createElement("span");
+    time.className = "card-time";
+    time.textContent = relativeTime(a.updated_at || a.created_at);
+    meta.appendChild(time);
+
+    if (a.pinned) {
+      const pin = document.createElement("span");
+      pin.className = "card-pin";
+      pin.textContent = "📌";
+      meta.appendChild(pin);
+    }
+
+    content.appendChild(title);
+    if (snippet.textContent) content.appendChild(snippet);
+    content.appendChild(meta);
+
+    li.appendChild(kindDot);
+    li.appendChild(content);
+
+    li.addEventListener("click", () => openArtifact(a.id));
+  }
+
+  function renderImageCard(li, a) {
+    li.className =
+      "card card-image" + (a.status === "pending" ? " card-unsynced" : "");
+
+    const kindDot = document.createElement("span");
+    kindDot.className = "dot";
+    kindDot.style.background = KIND_COLORS[a.kind] || "var(--text-mute)";
+
+    const thumb = document.createElement("img");
+    thumb.className = "card-full-image";
+    thumb.alt = a.title || "";
+    li.insertBefore(thumb, kindDot);
+    invoke("mobile_blob", { id: a.id })
+      .then((raw) => {
+        const b = parse(raw);
+        thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
+      })
+      .catch(() => {
+        thumb.remove();
+      });
+
+    const content = document.createElement("div");
+    content.className = "card-content";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = a.title || "Untitled";
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    const time = document.createElement("span");
+    time.className = "card-time";
+    time.textContent = relativeTime(a.updated_at || a.created_at);
+    meta.appendChild(time);
+
+    if (a.pinned) {
+      const pin = document.createElement("span");
+      pin.className = "card-pin";
+      pin.textContent = "📌";
+      meta.appendChild(pin);
+    }
+
+    content.appendChild(title);
+    content.appendChild(meta);
+
+    li.appendChild(kindDot);
+    li.appendChild(content);
+
+    li.addEventListener("click", () => openArtifact(a.id));
+  }
+
+  function renderPdfCard(li, a) {
+    li.className =
+      "card card-pdf" + (a.status === "pending" ? " card-unsynced" : "");
+
+    const kindDot = document.createElement("span");
+    kindDot.className = "dot";
+    kindDot.style.background = KIND_COLORS[a.kind] || "var(--text-mute)";
+
+    const thumb = document.createElement("canvas");
+    thumb.className = "card-pdf-thumb";
+    li.insertBefore(thumb, kindDot);
+
+    // Fetch and render first page thumbnail
+    invoke("mobile_blob", { id: a.id })
+      .then((raw) => {
+        const b = parse(raw);
+        const bytes = base64ToUint8Array(b.base64);
+        loadPdfJs().then(() => {
+          pdfjsLib.getDocument({ data: bytes }).promise.then((pdf) => {
+            pdf.getPage(1).then((page) => {
+              const viewport = page.getViewport({ scale: 0.5 });
+              thumb.width = viewport.width;
+              thumb.height = viewport.height;
+              const ctx = thumb.getContext("2d");
+              page.render({ canvasContext: ctx, viewport: viewport });
+            });
+          });
+        });
+      })
+      .catch(() => {
+        thumb.remove();
+      });
+
+    const content = document.createElement("div");
+    content.className = "card-content";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = a.title || "Untitled";
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    const time = document.createElement("span");
+    time.className = "card-time";
+    time.textContent = relativeTime(a.updated_at || a.created_at);
+    if (a.pages) {
+      const pages = document.createElement("span");
+      pages.className = "card-pages";
+      pages.textContent = a.pages + " pages";
+      meta.appendChild(pages);
+    }
+    meta.appendChild(time);
+
+    if (a.pinned) {
+      const pin = document.createElement("span");
+      pin.className = "card-pin";
+      pin.textContent = "📌";
+      meta.appendChild(pin);
+    }
+
+    content.appendChild(title);
+    content.appendChild(meta);
+
+    li.appendChild(kindDot);
+    li.appendChild(content);
+
+    li.addEventListener("click", () => openArtifact(a.id));
+  }
+
+  function renderGenericCard(li, a) {
+    li.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
+
+    const kindDot = document.createElement("span");
+    kindDot.className = "dot";
+    kindDot.style.background = KIND_COLORS[a.kind] || "var(--text-mute)";
+
+    const content = document.createElement("div");
+    content.className = "card-content";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = a.title || "Untitled";
+
+    const snippet = document.createElement("div");
+    snippet.className = "card-snippet";
+    snippet.textContent = mdText(a.body || "");
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    const time = document.createElement("span");
+    time.className = "card-time";
+    time.textContent = relativeTime(a.updated_at || a.created_at);
+    meta.appendChild(time);
+
+    if (a.pinned) {
+      const pin = document.createElement("span");
+      pin.className = "card-pin";
+      pin.textContent = "📌";
+      meta.appendChild(pin);
+    }
+
+    content.appendChild(title);
+    if (snippet.textContent) content.appendChild(snippet);
+    content.appendChild(meta);
+
+    li.appendChild(kindDot);
+    li.appendChild(content);
+
+    li.addEventListener("click", () => openArtifact(a.id));
+  }
+
+  function renderSections(arts, emptyMsg) {
+    const shelves = document.getElementById("shelves");
+    const empty = document.getElementById("empty");
+    const saved = arts.filter((a) => a.pinned);
+    const rest = arts.filter((a) => !a.pinned);
+    empty.hidden = arts.length > 0;
+    if (!arts.length) {
+      empty.textContent = emptyMsg || "Nothing synced yet.";
+      shelves.replaceChildren();
+      return;
+    }
+    shelves.replaceChildren();
+    if (saved.length) {
+      const label = document.createElement("div");
+      label.className = "shelf-label";
+      label.textContent = "SAVED";
+      const ul = document.createElement("ul");
+      ul.className = "rows";
+      shelves.appendChild(label);
+      shelves.appendChild(ul);
+      renderRows(saved, ul);
+    }
+    const label2 = document.createElement("div");
+    label2.className = "shelf-label";
+    label2.textContent = "EVERYTHING ELSE";
+    const ul2 = document.createElement("ul");
+    ul2.className = "rows";
+    shelves.appendChild(label2);
+    shelves.appendChild(ul2);
+    renderRows(rest, ul2);
+  }
+
+  function renderLibrary() {
+    invoke("mobile_list")
+      .then((raw) => renderSections(parse(raw)))
+      .catch((e) => {
+        const empty = document.getElementById("empty");
+        empty.hidden = false;
+        empty.textContent = "Error: " + e;
+      });
+  }
+
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "js/pdfjs/pdf.min.js";
+      script.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "js/pdfjs/pdf.worker.min.js";
+        resolve();
+      };
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  function base64ToUint8Array(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  function renderPdfPage(pdf, pageNumber, canvas) {
+    pdf.getPage(pageNumber).then(
+      (page) => {
+        const viewport = page.getViewport({
+          scale: (window.devicePixelRatio || 1) * 1.5,
+        });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+        });
+      },
+      () => {
+        canvas.replaceChildren();
+        canvas.insertAdjacentText(
+          "beforeend",
+          "page " + pageNumber + " would not render",
+        );
+      },
+    );
+  }
+
+  function setupImageZoom(img) {
+    let scale = 1;
+    let startDist = 0;
+    let startScale = 1;
+    let translateX = 0;
+    let translateY = 0;
+    let startX = 0;
+    let startY = 0;
+    let isPanning = false;
+    let lastTap = 0;
+
+    function applyTransform() {
+      img.style.transform =
+        "translate(" +
+        translateX +
+        "px, " +
+        translateY +
+        "px) scale(" +
+        scale +
+        ")";
+    }
+
+    img.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          isPanning = false;
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          startDist = Math.hypot(dx, dy);
+          startScale = scale;
+        } else if (e.touches.length === 1 && scale > 1) {
+          isPanning = true;
+          startX = e.touches[0].clientX - translateX;
+          startY = e.touches[0].clientY - translateY;
+        }
+      },
+      { passive: false },
+    );
+
+    img.addEventListener(
+      "touchmove",
+      (e) => {
+        if (e.touches.length === 2 && startDist > 0) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const dist = Math.hypot(dx, dy);
+          scale = Math.max(1, Math.min(4, startScale * (dist / startDist)));
+          applyTransform();
+        } else if (e.touches.length === 1 && isPanning) {
+          e.preventDefault();
+          translateX = e.touches[0].clientX - startX;
+          translateY = e.touches[0].clientY - startY;
+          applyTransform();
+        }
+      },
+      { passive: false },
+    );
+
+    img.addEventListener("touchend", (e) => {
+      if (e.touches.length === 0) {
+        isPanning = false;
+        startDist = 0;
+      }
+      const now = Date.now();
+      if (now - lastTap < 300) {
+        if (scale > 1) {
+          scale = 1;
+        } else {
+          scale = 2;
+        }
+        translateX = 0;
+        translateY = 0;
+        applyTransform();
+      }
+      lastTap = now;
+    });
+  }
+
+  function openArtifact(id) {
+    invoke("mobile_get", { id })
+      .then((raw) => {
+        const data = parse(raw);
+        const a = data.artifact;
+        document.getElementById("reader_title").textContent =
+          a.title || "Untitled";
+        document.getElementById("reader_kind").textContent = a.kind;
+        const body = document.getElementById("reader_body");
+        const ann = document.getElementById("reader_ann");
+        for (const c of Array.from(ann.children)) {
+          if (c.tagName !== "H2") c.remove();
+        }
+        ann.hidden = true;
+        if (a.kind === "note") {
+          renderMd(body, a.body || "");
+        } else if (a.kind === "link") {
+          // Render stored preview card if available, else fall back to plain link
+          const preview = data.preview;
+          if (preview && preview.title) {
+            const card = document.createElement("div");
+            card.className = "link-card";
+            card.style.cursor = "pointer";
+            const url = a.source_url || "";
+            // Preview image
+            if (preview.image_hash) {
+              const img = document.createElement("img");
+              img.className = "link-card-image";
+              img.alt = "";
+              // Fetch and set the preview image
+              invoke("mobile_blob", {
+                id: preview.image_hash,
+                mime: preview.image_mime || "image/png",
+              })
+                .then((raw) => {
+                  const blob = parse(raw);
+                  img.src =
+                    "data:" +
+                    (blob.mime || "image/png") +
+                    ";base64," +
+                    blob.base64;
+                })
+                .catch(() => {
+                  img.remove();
+                });
+              card.appendChild(img);
+            }
+            const content = document.createElement("div");
+            content.className = "link-card-content";
+            const title = document.createElement("div");
+            title.className = "link-card-title";
+            title.textContent = preview.title;
+            const desc = document.createElement("div");
+            desc.className = "link-card-desc";
+            desc.textContent = preview.description || "";
+            const site = document.createElement("div");
+            site.className = "link-card-site";
+            let host = "";
+            try {
+              host = new URL(url).hostname.replace("www.", "");
+            } catch (e) {}
+            site.textContent = preview.site_name || host || "";
+            content.appendChild(title);
+            if (desc.textContent) content.appendChild(desc);
+            content.appendChild(site);
+            card.appendChild(content);
+            card.addEventListener("click", () => {
+              // Validate URL: only allow http/https to prevent open redirect
+              try {
+                const u = new URL(url);
+                if (u.protocol === "http:" || u.protocol === "https:") {
+                  window.open(url, "_system");
+                }
+              } catch (e) {}
+            });
+            body.replaceChildren(card);
+          } else {
+            // Fallback: plain link
+            const p = document.createElement("p");
+            const link = document.createElement("a");
+            link.href = a.source_url || "";
+            link.textContent = a.title || a.source_url || "link";
+            p.appendChild(link);
+            body.replaceChildren(p);
+          }
+        } else if (a.kind === "image") {
+          const p = document.createElement("p");
+          p.className = "empty";
+          p.textContent = "Loading\u2026";
+          body.replaceChildren(p);
+          invoke("mobile_blob", { id })
+            .then((raw) => {
+              const blob = parse(raw);
+              const img = document.createElement("img");
+              img.src =
+                "data:" + (blob.mime || "image/png") + ";base64," + blob.base64;
+              img.alt = a.title || "";
+              const wrap = document.createElement("div");
+              wrap.className = "img-zoom-wrap";
+              body.replaceChildren(wrap);
+              wrap.appendChild(img);
+              setupImageZoom(img);
+            })
+            .catch((e) => {
+              const p2 = document.createElement("p");
+              p2.className = "empty";
+              p2.textContent = "Could not load: " + e;
+              body.replaceChildren(p2);
+            });
+        } else if (a.kind === "pdf") {
+          const spinner = document.createElement("div");
+          spinner.className = "pdf-loading";
+          const spinnerImg = document.createElement("img");
+          spinnerImg.src = "loading.png";
+          spinnerImg.alt = "";
+          spinner.appendChild(spinnerImg);
+          body.replaceChildren(spinner);
+          invoke("mobile_blob", { id })
+            .then((raw) => {
+              const blob = parse(raw);
+              const bytes = base64ToUint8Array(blob.base64);
+              loadPdfJs()
+                .then(() => {
+                  const loadingTask = pdfjsLib.getDocument({
+                    data: bytes,
+                  });
+                  loadingTask.promise
+                    .then((pdf) => {
+                      body.replaceChildren();
+                      for (let i = 1; i <= pdf.numPages; i++) {
+                        const canvas = document.createElement("canvas");
+                        canvas.className = "pdf-page";
+                        canvas.width = 1;
+                        canvas.height = 1;
+                        renderPdfPage(pdf, i, canvas);
+                        body.appendChild(canvas);
+                      }
+                    })
+                    .catch((e) => {
+                      const p = document.createElement("p");
+                      p.className = "empty";
+                      p.textContent = "Could not load: " + e.message;
+                      body.replaceChildren(p);
+                    });
+                })
+                .catch((e) => {
+                  const p = document.createElement("p");
+                  p.className = "empty";
+                  p.textContent = "Could not load pdf.js: " + e;
+                  body.replaceChildren(p);
+                });
+            })
+            .catch((e) => {
+              const p = document.createElement("p");
+              p.className = "empty";
+              p.textContent = "Could not load: " + e;
+              body.replaceChildren(p);
+            });
+        } else {
+          const p = document.createElement("p");
+          p.className = "empty";
+          p.textContent = a.kind + " - not rendered yet";
+          body.replaceChildren(p);
+        }
+        if (data.annotations && data.annotations.length) {
+          ann.hidden = false;
+          for (const an of data.annotations) {
+            const p = document.createElement("p");
+            p.textContent = an.text;
+            ann.appendChild(p);
+          }
+        }
+        history.pushState({ v: "reader" }, "");
+        show("reader");
+      })
+      .catch((e) => {
+        document.getElementById("reader_body").textContent = "Error: " + e;
+        show("reader");
+      });
+  }
+
+  document.getElementById("sync_btn").addEventListener("click", async () => {
+    const config = {
+      relay_url: document.getElementById("relay_url").value.trim(),
+      sync_secret: document.getElementById("sync_secret").value.trim(),
+      keyring_json: document.getElementById("keyring_json").value.trim(),
+      recovery_phrase: document.getElementById("recovery_phrase").value.trim(),
+    };
+    if (!invoke) {
+      setStatus("no tauri bridge", "error");
+      return;
+    }
+    setStatus("Syncing\u2026");
+    try {
+      const result = await invoke("mobile_sync", {
+        config: JSON.stringify(config),
+      });
+      const r = parse(result);
+      if (r.status === "error") {
+        setStatus(r.error || "sync error", "error");
+        return;
+      }
+      if (r.status === "locked") {
+        setStatus("Locked - add the keyring and recovery phrase.", "error");
+        return;
+      }
+      setStatus(
+        "Synced " + r.pulled + " new; " + r.artifact_ids.length + " total.",
+        "ok",
+      );
+      show("library");
+      renderLibrary();
+    } catch (e) {
+      setStatus(String(e), "error");
+    }
+  });
+
+  document
+    .getElementById("to_setup")
+    .addEventListener("click", () => show("setup"));
+  document
+    .getElementById("to_library")
+    .addEventListener("click", () => show("library"));
+  // The Android system Back gesture pops the webview history; a pop while the reader
+  // or capture sheet is open returns to the library (never traps the user).
+  window.addEventListener("popstate", () => {
+    if (!document.getElementById("library").hidden) return;
+    show("library");
+    renderLibrary();
+  });
+  document.getElementById("search").addEventListener("input", (e) => {
+    const q = e.target.value.trim();
+    if (!q) {
+      renderLibrary();
+      return;
+    }
+    invoke("mobile_search", { query: q })
+      .then((raw) => renderSections(parse(raw), "Nothing matches."))
+      .catch(() => renderSections([], "Nothing matches."));
+  });
+
+  document.getElementById("capture_btn").addEventListener("click", () => {
+    document.getElementById("capture_field").value = "";
+    document.getElementById("capture_status").textContent = "";
+    history.pushState({ v: "capture" }, "");
+    show("capture");
+    document.getElementById("capture_field").focus();
+  });
+  document.getElementById("capture_cancel").addEventListener("click", () => {
+    show("library");
+    renderLibrary();
+  });
+  // Raven flight animation (ANIM.4, MOB.7)
+  function captureFlight() {
+    const existing = document.getElementById("captureFlight");
+    if (existing) existing.remove();
+    const img = document.createElement("img");
+    img.id = "captureFlight";
+    img.src = "capture-bird.png";
+    img.alt = "";
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    img.className = reduced ? "capture-flight reduced" : "capture-flight";
+    document.body.appendChild(img);
+    setTimeout(() => img.remove(), reduced ? 1600 : 1900);
+  }
+
+  document
+    .getElementById("capture_keep")
+    .addEventListener("click", async () => {
+      const text = document.getElementById("capture_field").value.trim();
+      if (!text) return;
+      const status = document.getElementById("capture_status");
+      status.textContent = "";
+      try {
+        await invoke("mobile_capture", { text });
+        document.getElementById("capture_field").value = "";
+        captureFlight();
+        show("library");
+        renderLibrary();
+      } catch (e) {
+        status.textContent = String(e);
+      }
+    });
+
+  // Image capture from photo picker (MOB.7) -> Crop/Rotate sheet (MOB2.6)
+  let cropData = null; // { base64, mime, rotation, cropRect }
+
+  async function doCaptureImage() {
+    const status = document.getElementById("capture_status");
+    status.textContent = "";
+    try {
+      // Pick image via dialog
+      const result = await invoke("mobile_pick_image");
+      const data = JSON.parse(result);
+      if (data.cancelled) return;
+
+      // Initialize crop state
+      cropData = {
+        base64: data.base64,
+        mime: data.mime,
+        rotation: 0,
+        cropRect: null, // { x, y, width, height } in image coordinates
+      };
+
+      // Show crop sheet
+      await showCropSheet();
+    } catch (e) {
+      if (String(e) !== "cancelled") {
+        status.textContent = String(e);
+      }
+    }
+  }
+
+  async function showCropSheet() {
+    if (!cropData) return;
+
+    const canvas = document.getElementById("crop_canvas");
+    const ctx = canvas.getContext("2d");
+
+    // Load original image
+    const img = new Image();
+    img.src = "data:" + cropData.mime + ";base64," + cropData.base64;
+
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+
+    // Set canvas size to match image (accounting for rotation)
+    const isRotated90 = cropData.rotation % 180 !== 0;
+    canvas.width = isRotated90 ? img.height : img.width;
+    canvas.height = isRotated90 ? img.width : img.height;
+
+    // Draw with current rotation
+    drawCropCanvas(ctx, img);
+
+    // Setup crop overlay interaction
+    setupCropInteraction(canvas);
+
+    show("crop");
+  }
+
+  function drawCropCanvas(ctx, img) {
+    if (!cropData) return;
+    const canvas = ctx.canvas;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((cropData.rotation * Math.PI) / 180);
+
+    if (cropData.cropRect) {
+      // Draw cropped region
+      ctx.drawImage(
+        img,
+        cropData.cropRect.x,
+        cropData.cropRect.y,
+        cropData.cropRect.width,
+        cropData.cropRect.height,
+        -canvas.width / 2,
+        -canvas.height / 2,
+        canvas.width,
+        canvas.height,
+      );
+    } else {
+      // Draw full image, fitted to canvas
+      ctx.drawImage(
+        img,
+        -canvas.width / 2,
+        -canvas.height / 2,
+        canvas.width,
+        canvas.height,
+      );
+    }
+    ctx.restore();
+
+    // Draw crop overlay if active
+    if (cropData.cropRect) {
+      drawCropOverlay(ctx);
+    }
+  }
+
+  function drawCropOverlay(ctx) {
+    // Draw semi-transparent overlay with crop rectangle highlighted
+    const canvas = ctx.canvas;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (cropData.cropRect) {
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+      ctx.setLineDash([]);
+    }
+  }
+
+  let cropInteraction = { dragging: false, handle: null, startX: 0, startY: 0 };
+
+  function setupCropInteraction(canvas) {
+    // Simplified: double-tap to toggle crop mode
+    let lastTap = 0;
+    canvas.addEventListener("touchend", (e) => {
+      const now = Date.now();
+      if (now - lastTap < 300) {
+        // Double tap - toggle crop mode
+        if (cropData.cropRect) {
+          cropData.cropRect = null;
+        } else {
+          // Set crop to 80% of image centered
+          cropData.cropRect = {
+            x: canvas.width * 0.1,
+            y: canvas.height * 0.1,
+            width: canvas.width * 0.8,
+            height: canvas.height * 0.8,
+          };
+        }
+        drawCropCanvas(canvas.getContext("2d"), new Image());
+      }
+      lastTap = now;
+    });
+  }
+
+  // Crop sheet handlers
+  document.getElementById("crop_rotate_left").addEventListener("click", () => {
+    if (!cropData) return;
+    cropData.rotation = (cropData.rotation - 90 + 360) % 360;
+    const canvas = document.getElementById("crop_canvas");
+    const temp = canvas.width;
+    canvas.width = canvas.height;
+    canvas.height = temp;
+    drawCropCanvas(canvas.getContext("2d"), new Image());
+  });
+
+  document.getElementById("crop_rotate_right").addEventListener("click", () => {
+    if (!cropData) return;
+    cropData.rotation = (cropData.rotation + 90) % 360;
+    const canvas = document.getElementById("crop_canvas");
+    const temp = canvas.width;
+    canvas.width = canvas.height;
+    canvas.height = temp;
+    drawCropCanvas(canvas.getContext("2d"), new Image());
+  });
+
+  document.getElementById("crop_reset").addEventListener("click", () => {
+    if (!cropData) return;
+    cropData.rotation = 0;
+    cropData.cropRect = null;
+    const canvas = document.getElementById("crop_canvas");
+    const img = new Image();
+    img.src = "data:" + cropData.mime + ";base64," + cropData.base64;
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      drawCropCanvas(canvas.getContext("2d"), img);
+    };
+  });
+
+  document.getElementById("crop_done").addEventListener("click", async () => {
+    if (!cropData) return;
+
+    const status = document.getElementById("crop_status");
+    status.textContent = "";
+
+    try {
+      // Generate final adjusted image
+      const canvas = document.getElementById("crop_canvas");
+      const finalBase64 = canvas.toDataURL(cropData.mime).split(",")[1];
+
+      // Save the adjusted image
+      await invoke("mobile_save_cropped_image", {
+        base64: finalBase64,
+        mime: cropData.mime,
+      });
+
+      captureFlight();
+      show("library");
+      renderLibrary();
+    } catch (e) {
+      status.textContent = String(e);
+    }
+  });
+
+  document.getElementById("crop_cancel_btn").addEventListener("click", () => {
+    cropData = null;
+    show("library");
+  });
+
+  document.getElementById("crop_cancel").addEventListener("click", () => {
+    cropData = null;
+    show("library");
+  });
+
+  document
+    .getElementById("capture_image")
+    .addEventListener("click", doCaptureImage);
+  document
+    .getElementById("capture_image_btn")
+    .addEventListener("click", doCaptureImage);
+
+  // Single Connect handler: try pairing code first, then fall back to manual entry
+  document.getElementById("sync_btn").addEventListener("click", async () => {
+    const code = document.getElementById("pairing_code").value.trim();
+    if (code) {
+      // Try pairing code
+      const status = document.getElementById("status");
+      status.textContent = "";
+      try {
+        const result = await invoke("mobile_setup_from_code", { code });
+        const r = JSON.parse(result);
+        if (r.configured) {
+          show("library");
+          renderLibrary();
+          return;
+        } else {
+          status.textContent = r.error || "Invalid pairing code";
+          return;
+        }
+      } catch (e) {
+        status.textContent = String(e);
+        return;
+      }
+    }
+
+    // Fall back to manual entry
+    const config = {
+      relay_url: document.getElementById("relay_url").value.trim(),
+      sync_secret: document.getElementById("sync_secret").value.trim(),
+      keyring_json: document.getElementById("keyring_json").value.trim(),
+      recovery_phrase: document.getElementById("recovery_phrase").value.trim(),
+    };
+    if (!invoke) {
+      setStatus("no tauri bridge", "error");
+      return;
+    }
+    setStatus("Syncing\u2026");
+    try {
+      const result = await invoke("mobile_sync", {
+        config: JSON.stringify(config),
+      });
+      const r = parse(result);
+      if (r.status === "error") {
+        setStatus(r.error || "sync error", "error");
+        return;
+      }
+      if (r.status === "locked") {
+        setStatus("Locked - add the keyring and recovery phrase.", "error");
+        return;
+      }
+      setStatus(
+        "Synced " + r.pulled + " new; " + r.artifact_ids.length + " total.",
+        "ok",
+      );
+      show("library");
+      renderLibrary();
+    } catch (e) {
+      setStatus(String(e), "error");
+    }
+  });
+
+  function bootstrap() {
+    // Bootstrap: if a config was already persisted (MOB.3b), sync with it and open the
+    if (!invoke) {
+      show("setup");
+      return;
+    }
+    invoke("mobile_status")
+      .then((raw) => {
+        const r = parse(raw);
+        if (!r.configured) {
+          show("setup");
+          return;
+        }
+        show("library");
+        document.getElementById("loading").hidden = false;
+        document.getElementById("shelves").replaceChildren();
+        document.getElementById("empty").hidden = true;
+        invoke("mobile_sync", { config: "{}" })
+          .then(() => {
+            // Push any pending outbox items after sync (MOB.7)
+            return invoke("mobile_outbox_push").catch(() => {});
+          })
+          .then(() => {
+            document.getElementById("loading").hidden = true;
+            renderLibrary();
+          })
+          .catch(() => {
+            document.getElementById("loading").hidden = true;
+            show("setup");
+          });
+      })
+      .catch(() => show("setup"));
+  }
+
+  // Pill (MOB2.3) - mirrors desktop pill.js logic
+  let pillPlace = "library";
+  let pillMenu = null;
+
+  function pillCloseMenu(restoreFocus) {
+    if (pillMenu) {
+      pillMenu.hidden = true;
+      pillMenu = null;
+    }
+    const btn = document.getElementById("pill_menu");
+    if (btn) {
+      btn.setAttribute("aria-expanded", "false");
+      if (restoreFocus) btn.focus();
+    }
+  }
+
+  function pillRestorePill(where) {
+    if (where) pillPlace = where;
+    pillCloseMenu();
+    const pill = document.getElementById("pill");
+    const inside = pillPlace === "inside";
+
+    let html = "";
+    if (inside) {
+      html =
+        '<button class="keep" aria-label="Home" onclick="home()">' +
+        '<span class="disc"></span></button>' +
+        '<button class="round" aria-label="Chat with AI" onclick="chatOrAsk()">' +
+        '<span class="pill-eye eye" id="pillEye"></span>' +
+        "</button>";
+    } else {
+      html =
+        '<button class="keep" id="pill_capture" aria-label="Capture" aria-expanded="false" onclick="pillToggleMenu(event)">' +
+        '<span class="disc"></span></button>' +
+        '<button class="round" aria-label="Search" onclick="pillOpenSearch()">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>' +
+        '<button class="round" aria-label="Chat with AI" onclick="openField("ask")">' +
+        '<span class="pill-eye eye" id="pillEye"></span>' +
+        "</button>" +
+        '<button class="round" aria-label="Settings" aria-expanded="false" aria-haspopup="true" onclick="pillToggleMenu(event)">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></button>';
+    }
+    pill.innerHTML = html;
+    makeEye(document.getElementById("pillEye"));
+  }
+
+  function pillToggleMenu(e) {
+    if (e) e.stopPropagation();
+    if (pillMenu) return pillCloseMenu();
+
+    const btn = document.getElementById("pill_menu");
+    btn.setAttribute("aria-expanded", "true");
+
+    pillMenu = document.getElementById("pill_menu_panel");
+    pillMenu.hidden = false;
+  }
+
+  function pillOpenSearch() {
+    document.getElementById("search").focus();
+  }
+
+  // Chat functions (MOB2.7)
+  let chatHistory = [];
+  let chatInProgress = false;
+
+  // Settings (MOB2.8)
+  let settingsCache = null;
+
+  async function loadSettings() {
+    try {
+      const result = await invoke("mobile_settings_get");
+      settingsCache = JSON.parse(result);
+      populateSettings(settingsCache);
+    } catch (e) {
+      console.error("Failed to load settings:", e);
+    }
+  }
+
+  function populateSettings(s) {
+    // Backend select
+    const backendSelect = document.getElementById("settings_backend");
+    const backends = [
+      { value: "ollama", label: "Ollama (local)" },
+      { value: "openrouter", label: "OpenRouter" },
+      { value: "opencode-go", label: "OpenCode Go" },
+      { value: "custom", label: "Custom" },
+    ];
+    backendSelect.innerHTML = backends
+      .map((b) => `<option value="${b.value}">${b.label}</option>`)
+      .join("");
+    backendSelect.value = s.llm_backend || "ollama";
+
+    // Model
+    document.getElementById("settings_model").value = s.llm_model || "";
+
+    // API Key
+    document.getElementById("settings_api_key").value = s.llm_api_key || "";
+
+    // Custom URL
+    const customUrlLabel = document.getElementById("settings_custom_url_label");
+    const customUrlInput = document.getElementById("settings_custom_url");
+    customUrlInput.value = s.llm_url || "";
+    customUrlLabel.style.display =
+      s.llm_backend === "custom" ? "block" : "none";
+
+    // Features
+    document.getElementById("settings_auto_preview").checked =
+      s.auto_preview !== false;
+    document.getElementById("settings_trash_days").value = s.trash_days || "30";
+
+    // Update sync status
+    updateSyncStatus();
+  }
+
+  function updateSyncStatus() {
+    const el = document.getElementById("settings_sync_status");
+    if (!settingsCache) {
+      el.textContent = "Not configured";
+      return;
+    }
+    if (settingsCache.last_synced) {
+      const d = new Date(settingsCache.last_synced);
+      el.textContent = "Last synced: " + d.toLocaleString();
+    } else {
+      el.textContent = "Never synced";
+    }
+    if (settingsCache.outbox_count > 0) {
+      el.textContent += ` (${settingsCache.outbox_count} pending)`;
+    }
+  }
+
+  // Backend change handler
+  document
+    .getElementById("settings_backend")
+    .addEventListener("change", (e) => {
+      const customUrlLabel = document.getElementById(
+        "settings_custom_url_label",
+      );
+      customUrlLabel.style.display =
+        e.target.value === "custom" ? "block" : "none";
+    });
+
+  // Save settings
+  async function saveSettings() {
+    const s = {
+      llm_backend: document.getElementById("settings_backend").value,
+      llm_model: document.getElementById("settings_model").value,
+      llm_api_key: document.getElementById("settings_api_key").value,
+      llm_url: document.getElementById("settings_custom_url").value,
+      auto_preview: document.getElementById("settings_auto_preview").checked,
+      trash_days: document.getElementById("settings_trash_days").value,
+    };
+    try {
+      await invoke("mobile_settings_set", { settings: JSON.stringify(s) });
+      settingsCache = { ...settingsCache, ...s };
+      updateSyncStatus();
+    } catch (e) {
+      alert("Failed to save: " + e);
+    }
+  }
+
+  // Auto-save on change
+  [
+    "settings_backend",
+    "settings_model",
+    "settings_api_key",
+    "settings_custom_url",
+    "settings_auto_preview",
+    "settings_trash_days",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", saveSettings);
+  });
+
+  // Sync Now
+  document
+    .getElementById("settings_sync_now")
+    .addEventListener("click", async () => {
+      const btn = document.getElementById("settings_sync_now");
+      btn.disabled = true;
+      btn.textContent = "Syncing...";
+      try {
+        await invoke("mobile_sync", { config: "{}" });
+        await loadSettings();
+      } catch (e) {
+        alert("Sync failed: " + e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Sync Now";
+      }
+    });
+
+  // Pairing code
+  document
+    .getElementById("settings_pair")
+    .addEventListener("click", async () => {
+      try {
+        const result = await invoke("mobile_pairing_code");
+        const data = JSON.parse(result);
+        // Show QR code and copyable code
+        alert(
+          "Pairing code (copy this):\n\n" +
+            data.code +
+            '\n\nOn the new device, use "Scan QR" or paste this code.',
+        );
+      } catch (e) {
+        alert("Failed to generate pairing code: " + e);
+      }
+    });
+
+  // Clear cache
+  document
+    .getElementById("settings_clear_cache")
+    .addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Clear all cached blobs? They will be re-downloaded on demand.",
+        )
+      )
+        return;
+      try {
+        await invoke("mobile_clear_blob_cache");
+        alert("Cache cleared");
+      } catch (e) {
+        alert("Failed: " + e);
+      }
+    });
+
+  // Trash navigation
+  document.getElementById("settings_trash").addEventListener("click", () => {
+    show("library");
+    // Could add a trash filter here
+    alert("Trash view - use the Library with filter (not yet implemented)");
+  });
+
+  function openChat() {
+    show("chat");
+    renderChatHistory();
+    document.getElementById("chat_input").focus();
+  }
+
+  function renderChatHistory() {
+    const container = document.getElementById("chat_messages");
+    container.innerHTML = "";
+    for (const msg of chatHistory) {
+      const div = document.createElement("div");
+      div.className =
+        "chat-message " + (msg.role === "user" ? "user" : "assistant");
+      div.style.cssText =
+        "max-width: 85%; padding: 10px 14px; border-radius: var(--r-md); " +
+        (msg.role === "user"
+          ? "background: var(--purple-bold); color: var(--on-purple-bold); align-self: flex-end;"
+          : "background: var(--surface); color: var(--text); align-self: flex-start; border: 1px solid var(--line);");
+      div.textContent = msg.content;
+      container.appendChild(div);
+    }
+    // Add citations for assistant messages
+    if (msg.citations && msg.citations.length) {
+      const citeDiv = document.createElement("div");
+      citeDiv.className = "chat-citations";
+      citeDiv.style.cssText =
+        "display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;";
+      for (const id of msg.citations) {
+        const chip = document.createElement("button");
+        chip.className = "citation-chip";
+        chip.textContent = id.slice(0, 8);
+        chip.style.cssText =
+          "padding: 2px 8px; font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text-mute);";
+        chip.onclick = () => {
+          show("reader");
+          openArtifact(id);
+        };
+        citeDiv.appendChild(chip);
+      }
+      div.appendChild(citeDiv);
+    }
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function appendMessage(role, content, citations) {
+    chatHistory.push({ role, content, citations: citations || [] });
+    renderChatHistory();
+  }
+
+  async function sendChat() {
+    const input = document.getElementById("chat_input");
+    const query = input.value.trim();
+    if (!query || chatInProgress) return;
+
+    input.value = "";
+    chatInProgress = true;
+    appendMessage("user", query);
+
+    document.getElementById("chat_loading").hidden = false;
+
+    try {
+      const historyJson = JSON.stringify(chatHistory.slice(-10)); // last 10 messages
+      const result = await invoke("mobile_chat", {
+        query,
+        history: historyJson,
+      });
+      const data = JSON.parse(result);
+
+      if (data.error) {
+        appendMessage("assistant", "Error: " + data.error);
+      } else {
+        appendMessage("assistant", data.answer, data.citations);
+      }
+    } catch (e) {
+      appendMessage("assistant", "Error: " + String(e));
+    } finally {
+      chatInProgress = false;
+      document.getElementById("chat_loading").hidden = true;
+    }
+  }
+
+  document.getElementById("chat_form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendChat();
+  });
+
+  document.getElementById("chat_cancel").addEventListener("click", () => {
+    show("library");
+  });
+
+  // Close menu on outside click
+  document.addEventListener("click", () => pillCloseMenu(false));
+
+  // Initialize pill
+  pillRestorePill("library");
+
+  bootstrap();
+</script>

@@ -19,7 +19,11 @@ import tempfile
 
 SRC = "bin/verify"
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILES = ["src/enqueue/static/home.html", "src/enqueue/static/capture.html"]
+FILES = [
+    "src/enqueue/static/home.html",
+    "src/enqueue/static/capture.html",
+    "src/enqueue/static/mobile.html",
+]
 JS_DIR = os.path.join(HERE, "src", "enqueue", "static", "js")
 JS_ORDER = [
     "util.js",
@@ -36,6 +40,9 @@ JS_ORDER = [
     "trash.js",
     "settings.js",
 ]
+# The mobile shell (MOB.2) loads md.js for markdown; MOB.4+ adds the mobile UI's
+# scripts here, checked the same way the home page's are.
+MOBILE_JS_ORDER = ["md.js"]
 
 def extract_script_blocks(path):
     with open(path, encoding="utf-8") as f:
@@ -65,24 +72,36 @@ def node_check(source, label):
     finally:
         os.unlink(tmp)
 
-def check_home_js():
-    missing = [f for f in JS_ORDER if not os.path.isfile(os.path.join(JS_DIR, f))]
+def check_js_files(order, concat_label):
+    """Parse each file in `order` individually, then all of them concatenated."""
+    missing = [f for f in order if not os.path.isfile(os.path.join(JS_DIR, f))]
     if missing:
         print(f"{SRC}: missing js files: {', '.join(missing)}", file=sys.stderr)
         return False
     ok = True
-    for name in JS_ORDER:
+    for name in order:
         with open(os.path.join(JS_DIR, name), encoding="utf-8") as f:
             source = f.read()
         if not node_check(source, f"static/js/{name}"):
             ok = False
-    combined = ""
-    for name in JS_ORDER:
-        with open(os.path.join(JS_DIR, name), encoding="utf-8") as f:
-            combined += f.read() + "\n"
-    if not node_check(combined, "static/js/*.js concatenated (cross-file scoping)"):
-        ok = False
+    if order:
+        combined = ""
+        for name in order:
+            with open(os.path.join(JS_DIR, name), encoding="utf-8") as f:
+                combined += f.read() + "\n"
+        if not node_check(combined, concat_label):
+            ok = False
     return ok
+
+def check_home_js():
+    return check_js_files(
+        JS_ORDER, "static/js/*.js concatenated (cross-file scoping)"
+    )
+
+def check_mobile_js():
+    return check_js_files(
+        MOBILE_JS_ORDER, "static/js mobile concatenated (cross-file scoping)"
+    )
 
 def check_inline_js(path):
     blocks = extract_script_blocks(path)
@@ -107,8 +126,15 @@ def main():
         pass_flag = False
 
     print("")
+    print(f"=== {SRC}: JS parse: {FILES[2]} (mobile shell) ===")
+    if not check_mobile_js():
+        pass_flag = False
+    if not check_inline_js(FILES[2]):
+        pass_flag = False
+
+    print("")
     print(f"=== {SRC}: pytest ===")
-    r = subprocess.run(["uv", "run", "pytest", "-q"], capture_output=False, timeout=120)
+    r = subprocess.run(["uv", "run", "pytest", "-q"], capture_output=False, timeout=300)
     if r.returncode == 0:
         print(f"{SRC}: pytest OK")
     else:

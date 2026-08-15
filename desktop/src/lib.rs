@@ -4,6 +4,10 @@
 // engine process. On mobile there is no local engine, so the mobile path is a thin
 // webview only; the real capture-and-read mobile surfaces are Phase MOBILE work.
 
+// The mobile sync client (MOB.3): pull + decrypt + local SQLite read copy. Reuses the
+// desktop crypto and snapshot/LWW model, reimplemented in Rust.
+mod sync;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(desktop)]
@@ -14,19 +18,1122 @@ pub fn run() {
 
 #[cfg(mobile)]
 mod mobile {
-    /// A blank shell: it builds and launches on the device (MOB.2). It has no local
-    /// engine, so the synced library, capture, and read surfaces (MOB.3-MOB.7) are
-    /// what make it a real Enqueue.
+    use base64::engine::general_purpose;
+    use rusqlite::Connection;
+    use serde_json::Value;
+    use tauri::{AppHandle, Manager};
+
+    /// Open (and initialize) the local SQLite read copy.
+    fn open_lib(app: &AppHandle) -> Result<Connection, String> {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let conn = Connection::open(dir.join("library.db")).map_err(|e| e.to_string())?;
+        crate::sync::init_schema(&conn).map_err(|e| e.to_string())?;
+        Ok(conn)
+    }
+
+    /// Persist a value in the app's private (OS-sandboxed) data dir, so a relaunch
+    /// syncs without re-entering the config (MOB.3b). NOTE: the Android Keystore was the
+    /// intended backend, but Tauri v2 exposes no public API to reach the JNI context from
+    /// an app command (`run_on_android_context` and `ndk-context` are both crate-internal),
+    /// so the secret + DEK rest in a file that only this app's Linux UID can read.
+    fn secure_store_set(app: &AppHandle, key: &str, value: &str) -> Result<(), String> {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(key), value).map_err(|e| e.to_string())
+    }
+
+    fn secure_store_get(app: &AppHandle, key: &str) -> Result<Option<String>, String> {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        match std::fs::read_to_string(dir.join(key)) {
+            Ok(s) => Ok(Some(s)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Persist the sync config + the unlocked DEK in the secure store (MOB.3b), so a
+    /// relaunch syncs without re-entering the phrase.
+    fn save_config(
+        app: &AppHandle,
+        relay_url: &str,
+        secret: &str,
+        keyring_json: &str,
+        dek: &[u8; 32],
+    ) -> Result<(), String> {
+        let blob = serde_json::json!({
+            "relay_url": relay_url,
+            "secret": secret,
+            "keyring_json": keyring_json,
+            "dek": hex::encode(dek),
+        });
+        secure_store_set(app, "sync_config", &blob.to_string())
+    }
+
+    fn load_config(app: &AppHandle) -> Result<Option<Value>, String> {
+        match secure_store_get(app, "sync_config")? {
+            Some(s) => serde_json::from_str(&s)
+                .map(Some)
+                .map_err(|e| format!("saved config: {e}")),
+            None => Ok(None),
+        }
+    }
+
+    fn dek_from_hex(s: &str) -> Option<[u8; 32]> {
+        let bytes = hex::decode(s).ok()?;
+        let mut out = [0u8; 32];
+        if bytes.len() == 32 {
+            out.copy_from_slice(&bytes);
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    /// Pull the encrypted library into the local SQLite read copy (MOB.3). A non-empty
+    /// config unlocks the DEK from the imported keyring + phrase, then persists the
+    /// secret + DEK (MOB.3b). An empty config falls back to the persisted one, so a
+    /// relaunch syncs without re-entering anything.
+    #[tauri::command]
+    fn mobile_sync(app: AppHandle, config: String) -> Result<String, String> {
+        let cfg: Value = serde_json::from_str(&config).unwrap_or(Value::Null);
+        let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+        let sync_secret = cfg.get("sync_secret").and_then(Value::as_str).unwrap_or("");
+        let keyring_json = cfg.get("keyring_json").and_then(Value::as_str).unwrap_or("");
+        let recovery_phrase = cfg.get("recovery_phrase").and_then(Value::as_str).unwrap_or("");
+
+        let conn = open_lib(&app)?;
+
+        // Resolve the config: a fresh keyring + phrase wins and is persisted; otherwise
+        // the saved config (with its already-unlocked DEK) is reused.
+        let (relay_url, sync_secret, dek) =
+            if !keyring_json.is_empty() && !recovery_phrase.is_empty() {
+                let dek = crate::sync::unlock_dek(keyring_json, recovery_phrase)
+                    .map_err(|e| e.to_string())?;
+                save_config(&app, relay_url, sync_secret, keyring_json, &dek)?;
+                (relay_url.to_string(), sync_secret.to_string(), Some(dek))
+            } else if let Some(saved) = load_config(&app)? {
+                let dek = saved
+                    .get("dek")
+                    .and_then(Value::as_str)
+                    .and_then(dek_from_hex);
+                (
+                    saved.get("relay_url").and_then(Value::as_str).unwrap_or("").to_string(),
+                    saved.get("secret").and_then(Value::as_str).unwrap_or("").to_string(),
+                    dek,
+                )
+            } else {
+                (relay_url.to_string(), sync_secret.to_string(), None)
+            };
+
+        let outcome = crate::sync::sync_library(&relay_url, &sync_secret, dek.as_ref(), &conn);
+        let ids = crate::sync::list_artifact_ids(&conn).unwrap_or_default();
+
+        Ok(serde_json::json!({
+            "status": outcome.status,
+            "pulled": outcome.pulled,
+            "error": outcome.error,
+            "artifact_ids": ids,
+        })
+        .to_string())
+    }
+
+    /// Whether a sync config (secret + DEK) has been persisted, so the UI can decide
+    /// between the setup surface and the library (MOB.3b).
+    #[tauri::command]
+    fn mobile_status(app: AppHandle) -> Result<String, String> {
+        let configured = load_config(&app)?.is_some();
+        Ok(serde_json::json!({ "configured": configured }).to_string())
+    }
+
+    /// The synced library rows for the Library surface (MOB.4).
+    #[tauri::command]
+    fn mobile_list(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let arts = crate::sync::list_artifacts(&conn).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!(arts).to_string())
+    }
+
+    /// One artifact plus its annotations for the Reader surface (MOB.5).
+    #[tauri::command]
+    fn mobile_get(app: AppHandle, id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Keyword search over the synced library (MOB.6).
+    #[tauri::command]
+    fn mobile_search(app: AppHandle, query: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let arts = crate::sync::search_artifacts(&conn, &query).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!(arts).to_string())
+    }
+
+    fn now_iso() -> String {
+        chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
+            .to_string()
+    }
+
+    fn looks_like_link(text: &str) -> bool {
+        let t = text.trim();
+        if t.is_empty() || t.contains(char::is_whitespace) {
+            return false;
+        }
+        t.starts_with("http://")
+            || t.starts_with("https://")
+            || t.starts_with("www.")
+            || (t.contains('.') && !t.ends_with('.'))
+    }
+
+    /// Create a note or link locally, then push its snapshot (MOB.7). A bare URL becomes
+    /// a link, a URL plus words a link with a note, plain text a note - the desktop
+    /// overlay's four-outcomes logic minus the image path (which needs the blob push).
+    #[tauri::command]
+    fn mobile_capture(app: AppHandle, text: String) -> Result<String, String> {
+        let trimmed = text.trim().to_string();
+        if trimmed.is_empty() {
+            return Err("empty capture".into());
+        }
+
+        let conn = open_lib(&app)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_iso();
+
+        // Split a URL from surrounding words, like the desktop's splitLink.
+        let words: Vec<&str> = trimmed.split_whitespace().collect();
+        let url_at = words.iter().position(|w| looks_like_link(w));
+        let (kind, source_url, body, annotation) = match url_at {
+            Some(at) => {
+                let url = words[at].to_string();
+                let inside = at != 0 && at != words.len() - 1;
+                let note = if inside {
+                    trimmed.clone()
+                } else {
+                    words
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != at)
+                        .map(|(_, w)| *w)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                ("link", Some(url), None, (!note.trim().is_empty()).then_some(note))
+            }
+            None => ("note", None, Some(trimmed.clone()), None),
+        };
+
+        let title = if kind == "link" {
+            source_url.clone().unwrap_or_else(|| "link".into())
+        } else {
+            body.clone().unwrap_or_default()
+        };
+        let title = crate::sync::title_hint(&title);
+
+        conn.execute(
+            "INSERT INTO artifacts (id,kind,title,body,source_url,content_hash,mime,filename,
+             created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)
+             VALUES (?1,?2,?3,?4,?5,?6,NULL,NULL,?7,?7,0,'ok',0,NULL,NULL,0,NULL)",
+            rusqlite::params![id, kind, title, body, source_url, uuid::Uuid::new_v4().to_string(), now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        if let Some(note) = annotation {
+            conn.execute(
+                "INSERT INTO annotations (id,artifact_id,supersedes_id,text,created_at)
+                 VALUES (?1,?2,NULL,?3,?4)",
+                rusqlite::params![uuid::Uuid::new_v4().to_string(), id, note, now],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        // Push the snapshot when sync is configured + unlocked.
+        if let Some(cfg) = load_config(&app)? {
+            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
+                if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id)? {
+                    let mut snapshot = snapshot;
+                    snapshot["artifact"]["_device_id"] = serde_json::Value::String(
+                        crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?),
+                    );
+                    let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+                    let _ = crate::sync::push_snapshot(relay_url, secret, &dek, &snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot);
+                }
+            }
+        }
+
+        let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Fetch (or load the cached) file blob for an image/PDF/file artifact or a
+    /// link preview image, returning `{mime, base64}` for the reader and thumbnails
+    /// (MOB.5). Accepts either an artifact id (UUID) or a content hash (64 hex chars).
+    /// Optional `mime` parameter can be provided when fetching by content hash.
+    #[tauri::command]
+    fn mobile_blob(app: AppHandle, id: String, mime: Option<String>) -> Result<String, String> {
+        use base64::Engine as _;
+        
+        // Check if id is a content hash (64 hex chars) or an artifact id (UUID)
+        let is_content_hash = id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit());
+        
+        let (content_hash, resolved_mime) = if is_content_hash {
+            // Direct content hash - use provided mime or default
+            (id, mime.unwrap_or_else(|| "image/png".to_string()))
+        } else {
+            let conn = open_lib(&app)?;
+            let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+            let content_hash = art["artifact"]["content_hash"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            let artifact_mime = art["artifact"]["mime"].as_str().unwrap_or("").to_string();
+            if content_hash.is_empty() {
+                return Err("no blob".into());
+            }
+            (content_hash, artifact_mime)
+        };
+
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("blobs");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let cache_path = dir.join(&content_hash);
+
+        let bytes = if cache_path.exists() {
+            std::fs::read(&cache_path).map_err(|e| e.to_string())?
+        } else {
+            let cfg = load_config(&app)?.ok_or("not configured")?;
+            let dek = cfg
+                .get("dek")
+                .and_then(Value::as_str)
+                .and_then(dek_from_hex)
+                .ok_or("locked")?;
+            let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+            let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+            let bytes = crate::sync::fetch_blob(relay_url, secret, &dek, &content_hash)?;
+            let _ = std::fs::write(&cache_path, &bytes);
+            bytes
+        };
+
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(serde_json::json!({ "mime": resolved_mime, "base64": b64 }).to_string())
+    }
+
+    /// Initialize the outbox schema for pending captures (MOB.7).
+    fn init_outbox_schema(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS capture_outbox (
+              id            TEXT PRIMARY KEY,
+              kind          TEXT NOT NULL,
+              title         TEXT NOT NULL,
+              body          TEXT,
+              source_url    TEXT,
+              content_hash  TEXT,
+              mime          TEXT,
+              filename      TEXT,
+              created_at    TEXT NOT NULL,
+              updated_at    TEXT NOT NULL,
+              local_only    INTEGER NOT NULL DEFAULT 0,
+              status        TEXT NOT NULL DEFAULT 'pending',
+              pinned        INTEGER NOT NULL DEFAULT 0,
+              deleted_at    TEXT,
+              pages         INTEGER,
+              title_explicit INTEGER NOT NULL DEFAULT 0,
+              _device_id    TEXT
+            );
+            "#,
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Capture an image from the photo picker (MOB.7).
+    #[tauri::command]
+    async fn mobile_capture_image(app: AppHandle) -> Result<String, String> {
+        use tauri_plugin_dialog::DialogExt;
+        
+        let conn = open_lib(&app)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_iso();
+        
+        // Open photo picker
+        let file_path = DialogExt::file(app.clone())
+            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "heic"])
+            .pick_file()
+            .await
+            .map_err(|e| format!("dialog error: {e}"))?
+            .ok_or("cancelled")?;
+        
+        let path = match file_path {
+            tauri_plugin_dialog::FilePath::Path(p) => p,
+            tauri_plugin_dialog::FilePath::Url(_) => return Err("unsupported file path type".into()),
+        };
+        
+        // Read and hash the image
+        let bytes = std::fs::read(&path).map_err(|e| format!("read image: {e}"))?;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&bytes);
+        let content_hash = hex::encode(hasher.finalize());
+        
+        // Determine MIME type
+        let mime = match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "heic" => "image/heic",
+            _ => "application/octet-stream",
+        };
+        
+        let filename = path.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("image")
+            .to_string();
+        
+        let title = filename.clone();
+        
+        // Store blob locally
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("blobs");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let cache_path = dir.join(&content_hash);
+        std::fs::write(&cache_path, &bytes).map_err(|e| e.to_string())?;
+        
+        // Insert into artifacts as pending
+        conn.execute(
+            "INSERT INTO artifacts (id,kind,title,body,source_url,content_hash,mime,filename,\n             created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)\n             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,0,'pending',0,NULL,NULL,0,NULL)",
+            rusqlite::params![
+                id,
+                "image",
+                title,
+                None::<String>,
+                None::<String>,
+                content_hash,
+                mime,
+                filename,
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        
+        // Add to outbox for sync
+        conn.execute(
+            "INSERT INTO capture_outbox (id,kind,title,body,source_url,content_hash,mime,filename,\n             created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)\n             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,0,'pending',0,NULL,NULL,0,NULL)",
+            rusqlite::params![
+                id,
+                "image",
+                title,
+                None::<String>,
+                None::<String>,
+                content_hash,
+                mime,
+                filename,
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        
+        // Try to push immediately if sync configured
+        if let Some(cfg) = load_config(&app)? {
+            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
+                if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id)? {
+                    let mut snapshot = snapshot;
+                    snapshot["artifact"]["_device_id"] = serde_json::Value::String(
+                        crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?),
+                    );
+                    let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+                    let _ = crate::sync::push_snapshot(relay_url, secret, &dek, &snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot);
+                    
+                    // If push succeeded, update status
+                    if let Some(cfg2) = load_config(&app)? {
+                        let relay_url = cfg2.get("relay_url").and_then(Value::as_str).unwrap_or("");
+                        let secret = cfg2.get("secret").and_then(Value::as_str).unwrap_or("");
+                        // Check if object exists on relay
+                        let client = ureq::get(&format!("{}/sync/object/dev/{}/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
+                            .set("Authorization", &format!("Bearer {}", secret))
+                            .call();
+                        if client.is_ok() && client.as_ref().unwrap().status() == 200 {
+                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [id]);
+                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [id]);
+                        }
+                    }
+                }
+            }
+        }
+        
+        let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+
+    /// Pick an image from the photo picker and return base64 data (MOB2.6).
+    /// Does NOT create an artifact - just returns the image data for crop/rotate.
+    #[tauri::command]
+    async fn mobile_pick_image(app: AppHandle) -> Result<String, String> {
+        use tauri_plugin_dialog::DialogExt;
+        
+        let file_path = DialogExt::file(app.clone())
+            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "heic"])
+            .pick_file()
+            .await
+            .map_err(|e| format!("dialog error: {e}"))?
+            .ok_or("cancelled")?;
+        
+        let path = match file_path {
+            tauri_plugin_dialog::FilePath::Path(p) => p,
+            tauri_plugin_dialog::FilePath::Url(_) => return Err("unsupported file path type".into()),
+        };
+        
+        let bytes = std::fs::read(&path).map_err(|e| format!("read image: {e}"))?;
+        let mime = match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "heic" => "image/heic",
+            _ => "application/octet-stream",
+        };
+        
+        let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(serde_json::json!({ "base64": base64, "mime": mime }).to_string())
+    }
+
+    /// Save a cropped/rotated image as an artifact (MOB2.6).
+    #[tauri::command]
+    fn mobile_save_cropped_image(app: AppHandle, base64: String, mime: String) -> Result<String, String> {
+        use base64::Engine as _;
+        
+        let conn = open_lib(&app)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = now_iso();
+        
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&base64)
+            .map_err(|e| format!("base64 decode: {e}"))?;
+        
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&bytes);
+        let content_hash = hex::encode(hasher.finalize());
+        
+        let filename = format!("image.{}", match mime.as_str() {
+            "image/jpeg" => "jpg",
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/heic" => "heic",
+            _ => "img",
+        });
+        
+        let title = filename.clone();
+        
+        // Store blob locally
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("blobs");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let cache_path = dir.join(&content_hash);
+        std::fs::write(&cache_path, &bytes).map_err(|e| e.to_string())?;
+        
+        // Insert into artifacts as pending
+        conn.execute(
+            "INSERT INTO artifacts (id,kind,title,body,source_url,content_hash,mime,filename,\n             created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)\n             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,0,'pending',0,NULL,NULL,0,NULL)",
+            rusqlite::params![
+                id,
+                "image",
+                title,
+                None::<String>,
+                None::<String>,
+                content_hash,
+                mime,
+                filename,
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        
+        // Add to outbox for sync
+        conn.execute(
+            "INSERT INTO capture_outbox (id,kind,title,body,source_url,content_hash,mime,filename,\n             created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)\n             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,0,'pending',0,NULL,NULL,0,NULL)",
+            rusqlite::params![
+                id,
+                "image",
+                title,
+                None::<String>,
+                None::<String>,
+                content_hash,
+                mime,
+                filename,
+                now,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        
+        // Try to push immediately if sync configured
+        if let Some(cfg) = load_config(&app)? {
+            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
+                if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id)? {
+                    let mut snapshot = snapshot;
+                    snapshot["artifact"]["_device_id"] = serde_json::Value::String(
+                        crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?),
+                    );
+                    let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+                    let _ = crate::sync::push_snapshot(relay_url, secret, &dek, &snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot);
+                    
+                    // If push succeeded, update status
+                    if let Some(cfg2) = load_config(&app)? {
+                        let relay_url = cfg2.get("relay_url").and_then(Value::as_str).unwrap_or("");
+                        let secret = cfg2.get("secret").and_then(Value::as_str).unwrap_or("");
+                        let client = ureq::get(&format!("{}/sync/object/dev/{}/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
+                            .set("Authorization", &format!("Bearer {}", secret))
+                            .call();
+                        if client.is_ok() && client.as_ref().unwrap().status() == 200 {
+                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [id]);
+                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [id]);
+                        }
+                    }
+                }
+            }
+        }
+        
+        let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+
+
+/// Mobile chat: keyword search + LLM answer (MOB2.7).
+    #[tauri::command]
+    fn mobile_chat(app: AppHandle, query: String, history: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        
+        // 1. Keyword search over local copy (MOB.6)
+        let arts = crate::sync::search_artifacts(&conn, &query).map_err(|e| e.to_string())?;
+        if arts.is_empty() {
+            return Ok(serde_json::json!({
+                "answer": "I couldn't find anything relevant in your notes.",
+                "citations": Vec::<String>::new(),
+                "error": null
+            }).to_string());
+        }
+        
+        // 2. Build passages from matched artifacts (newest first, cap tokens)
+        let mut passages = Vec::new();
+        let mut total_chars = 0;
+        const MAX_CHARS: usize = 8000;
+        
+        for art in arts {
+            let body = art["body"].as_str().unwrap_or("");
+            if body.is_empty() { continue; }
+            let passage = format!("Source [{}]: {}", art["id"].as_str().unwrap_or(""), body);
+            if total_chars + passage.len() > MAX_CHARS { break; }
+            total_chars += passage.len();
+            passages.push(passage);
+        }
+        
+        if passages.is_empty() {
+            return Ok(serde_json::json!({
+                "answer": "I couldn't find anything relevant in your notes.",
+                "citations": Vec::<String>::new(),
+                "error": null
+            }).to_string());
+        }
+        
+        // 3. Load config for LLM backend and API key
+        let cfg = load_config(&app)?.ok_or("not configured")?;
+        let dek = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).ok_or("locked")?;
+        let backend = cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama");
+        let model = cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b");
+        let custom_url = if backend == "custom" { cfg.get("llm_url").and_then(Value::as_str).unwrap_or("") } else { "" };
+        let api_key = cfg.get("llm_api_key").and_then(Value::as_str).unwrap_or("");
+        
+        // 4. Build prompt
+        let context = passages.join("\n\n---\n\n");
+        let prompt = format!(
+            "Answer the question using ONLY the provided context. Cite sources by their [id] in square brackets.\n\nContext:\n{}\n\nQuestion: {}\n\nAnswer:",
+            context, query
+        );
+        
+        // 5. Call LLM - for mobile we need to call provider directly
+        let answer = call_llm_mobile(&backend, &model, &custom_url, &api_key, &prompt)
+            .map_err(|e| e.to_string())?;
+        
+        // 6. Extract citations from answer
+        let cited_ids = extract_citations(&answer);
+        
+        Ok(serde_json::json!({
+            "answer": answer,
+            "citations": cited_ids,
+            "error": null
+        }).to_string())
+    }
+    
+    fn call_llm_mobile(backend: &str, model: &str, custom_url: &str, api_key: &str, prompt: &str) -> Result<String, String> {
+        // Use ureq to call the provider directly
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": false
+        });
+        
+        let (url, auth_header) = match backend {
+            "ollama" => {
+                let url = if custom_url.is_empty() { "http://127.0.0.1:11434/api/chat" } else { custom_url };
+                (url.to_string(), None)
+            }
+            "openrouter" => ("https://openrouter.ai/api/v1/chat/completions".to_string(), Some(format!("Bearer {}", api_key))),
+            "opencode-go" => ("https://opencode.ai/zen/go/v1/chat/completions".to_string(), Some(format!("Bearer {}", api_key))),
+            "custom" => (custom_url.to_string(), if api_key.is_empty() { None } else { Some(format!("Bearer {}", api_key)) }),
+            _ => return Err(format!("unknown backend: {}", backend))
+        };
+        
+        let mut req = ureq::post(&url)
+            .set("Content-Type", "application/json");
+        if let Some(auth) = auth_header {
+            req = req.set("Authorization", &auth);
+        }
+        
+        let resp = req.send_json(body).map_err(|e| format!("HTTP error: {}", e))?;
+        
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let err_text = resp.into_string().unwrap_or_default();
+            return Err(format!("LLM error {}: {}", status, err_text));
+        }
+        
+        let json: serde_json::Value = resp.into_json().map_err(|e| format!("JSON parse: {}", e))?;
+        
+        // Extract answer from various response formats
+        let answer = json["choices"][0]["message"]["content"]
+            .as_str()
+            .or_else(|| json["message"]["content"].as_str())
+            .or_else(|| json["response"].as_str())
+            .unwrap_or("No response from model")
+            .to_string();
+        
+        Ok(answer)
+    }
+    
+    fn extract_citations(text: &str) -> Vec<String> {
+        let re = regex::Regex::new(r"\[([a-f0-9-]{36})\]").unwrap();
+        re.captures_iter(text)
+            .map(|cap| cap[1].to_string())
+            .collect()
+    }
+
+    
+/// Get mobile settings (MOB2.8).
+    #[tauri::command]
+    fn mobile_settings_get(app: AppHandle) -> Result<String, String> {
+        let cfg = load_config(&app)?.unwrap_or_default();
+        Ok(serde_json::json!({
+            "llm_backend": cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama"),
+            "llm_model": cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b"),
+            "llm_api_key": cfg.get("llm_api_key").and_then(Value::as_str).unwrap_or(""),
+            "llm_url": cfg.get("llm_url").and_then(Value::as_str).unwrap_or(""),
+            "auto_preview": cfg.get("auto_preview").and_then(Value::as_bool).unwrap_or(true),
+            "trash_days": cfg.get("trash_days").and_then(Value::as_str).unwrap_or("30"),
+            "last_synced": cfg.get("last_synced").and_then(Value::as_str),
+            "outbox_count": 0,
+        }).to_string())
+    }
+
+    /// Set mobile settings (MOB2.8).
+    #[tauri::command]
+    fn mobile_settings_set(app: AppHandle, settings: String) -> Result<String, String> {
+        let new_settings: Value = serde_json::from_str(&settings).map_err(|e| e.to_string())?;
+        let mut cfg = load_config(&app)?.unwrap_or_else(|| serde_json::json!({}));
+        
+        if let Some(v) = new_settings.get("llm_backend") { cfg["llm_backend"] = v.clone(); }
+        if let Some(v) = new_settings.get("llm_model") { cfg["llm_model"] = v.clone(); }
+        if let Some(v) = new_settings.get("llm_api_key") { cfg["llm_api_key"] = v.clone(); }
+        if let Some(v) = new_settings.get("llm_url") { cfg["llm_url"] = v.clone(); }
+        if let Some(v) = new_settings.get("auto_preview") { cfg["auto_preview"] = v.clone(); }
+        if let Some(v) = new_settings.get("trash_days") { cfg["trash_days"] = v.clone(); }
+        
+        save_config(&app, &cfg)?;
+        Ok("ok".to_string())
+    }
+
+    /// Generate pairing code (MOB2.10).
+    #[tauri::command]
+    fn mobile_pairing_code(app: AppHandle) -> Result<String, String> {
+        let cfg = load_config(&app)?.ok_or("not configured")?;
+        let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+        let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+        
+        let code = serde_json::json!({
+            "v": 1,
+            "relay_url": relay_url,
+            "secret": secret,
+        });
+        let code_b64 = general_purpose::STANDARD.encode(code.to_string());
+        Ok(serde_json::json!({ "code": code_b64 }).to_string())
+    }
+
+    /// Clear blob cache (MOB2.8).
+    #[tauri::command]
+    fn mobile_clear_blob_cache(app: AppHandle) -> Result<String, String> {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("blobs");
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        }
+        Ok("ok".to_string())
+    }
+
+    /// Get settings for sync (MOB2.9 - desktop calls this).
+    #[tauri::command]
+    fn mobile_settings_sync(app: AppHandle) -> Result<String, String> {
+        let cfg = load_config(&app)?.unwrap_or_default();
+        Ok(serde_json::json!({
+            "llm_backend": cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama"),
+            "llm_model": cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b"),
+            "llm_url": cfg.get("llm_url").and_then(Value::as_str).unwrap_or(""),
+            "auto_preview": cfg.get("auto_preview").and_then(Value::as_bool).unwrap_or(true),
+            "trash_days": cfg.get("trash_days").and_then(Value::as_str).unwrap_or("30"),
+        }).to_string())
+    }
+
+    /// Apply synced settings (MOB2.9).
+    #[tauri::command]
+    fn mobile_settings_apply(app: AppHandle, settings: String) -> Result<String, String> {
+        let new_settings: Value = serde_json::from_str(&settings).map_err(|e| e.to_string())?;
+        let mut cfg = load_config(&app)?.unwrap_or_else(|| serde_json::json!({}));
+        
+        if let Some(v) = new_settings.get("llm_backend") { cfg["llm_backend"] = v.clone(); }
+        if let Some(v) = new_settings.get("llm_model") { cfg["llm_model"] = v.clone(); }
+        if let Some(v) = new_settings.get("llm_url") { cfg["llm_url"] = v.clone(); }
+        if let Some(v) = new_settings.get("auto_preview") { cfg["auto_preview"] = v.clone(); }
+        if let Some(v) = new_settings.get("trash_days") { cfg["trash_days"] = v.clone(); }
+        
+        save_config(&app, &cfg)?;
+        Ok("ok".to_string())
+    }
+
+
+
+    /// Scan a QR code and return the pairing code (MOB2.10).
+    #[tauri::command]
+    async fn mobile_scan_qr(app: AppHandle) -> Result<String, String> {
+        use tauri_plugin_dialog::DialogExt;
+        
+        // For now, we'll use a file picker to select a QR code image
+        // In a real implementation, this would use the camera
+        let file_path = DialogExt::file(app.clone())
+            .add_filter("Images", &["png", "jpg", "jpeg"])
+            .pick_file()
+            .await
+            .map_err(|e| format!("dialog error: {e}"))?
+            .ok_or("cancelled")?;
+        
+        let path = match file_path {
+            tauri_plugin_dialog::FilePath::Path(p) => p,
+            tauri_plugin_dialog::FilePath::Url(_) => return Err("unsupported file path type".into()),
+        };
+        
+        // For now, return cancelled - a real implementation would decode the QR
+        Err("QR scanning not fully implemented - use paste code instead".into())
+    }
+
+    /// Setup from pairing code (MOB2.10).
+    #[tauri::command]
+    fn mobile_setup_from_code(app: AppHandle, code: String) -> Result<String, String> {
+        use base64::Engine as _;
+        
+        // Decode the pairing code
+        let decoded = base64::engine::general_purpose::STANDARD.decode(&code)
+            .map_err(|e| format!("invalid base64: {e}"))?;
+        let config: serde_json::Value = serde_json::from_slice(&decoded)
+            .map_err(|e| format!("invalid JSON: {e}"))?;
+        
+        let relay_url = config["relay_url"].as_str().unwrap_or("");
+        let secret = config["secret"].as_str().unwrap_or("");
+        let keyring_json = config["keyring_json"].as_str().unwrap_or("");
+        let phrase = config["phrase"].as_str().unwrap_or("");
+        
+        if relay_url.is_empty() || secret.is_empty() || keyring_json.is_empty() || phrase.is_empty() {
+            return Err("incomplete pairing code".into());
+        }
+        
+        // Unlock DEK
+        let dek = crate::sync::unlock_dek(keyring_json, phrase)
+            .map_err(|e| e.to_string())?;
+        
+        // Save config
+        save_config(&app, relay_url, secret, keyring_json, &dek)?;
+        
+        // Sync
+        let conn = open_lib(&app)?;
+        crate::sync::init_schema(&conn).map_err(|e| e.to_string())?;
+        
+        let outcome = crate::sync::sync_library(relay_url, secret, Some(&dek), &conn);
+        if outcome.status != "synced" {
+            return Err(outcome.error.unwrap_or_else(|| "sync failed".into()));
+        }
+        
+        Ok(serde_json::json!({ "configured": true }).to_string())
+    }
+
+    /// Push pending outbox items (MOB.7).
+
+        /// Push pending outbox items (MOB.7).
+
+        /// Push pending outbox items (MOB.7).
+    #[tauri::command]
+    fn mobile_outbox_push(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let cfg = load_config(&app)?.ok_or("not configured")?;
+        let dek = cfg
+            .get("dek")
+            .and_then(Value::as_str)
+            .and_then(dek_from_hex)
+            .ok_or("locked")?;
+        let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+        let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+        let device_id = crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?);
+        
+        let mut stmt = conn
+            .prepare("SELECT id FROM capture_outbox ORDER BY created_at")
+            .map_err(|e| e.to_string())?;
+        let ids: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        
+        let mut pushed = 0;
+        for id in ids {
+            if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id).map_err(|e| e.to_string())? {
+                let mut snapshot = snapshot;
+                snapshot["artifact"]["_device_id"] = serde_json::Value::String(device_id.clone());
+                let result = crate::sync::push_snapshot(&relay_url, &secret, &dek, &device_id, &snapshot);
+                if result.is_ok() {
+                    let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
+                    let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
+                    pushed += 1;
+                }
+            }
+        }
+        
+        Ok(serde_json::json!({ "pushed": pushed }).to_string())
+    }
+
+    /// List pending outbox items (MOB.7).
+    #[tauri::command]
+    fn mobile_outbox_list(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let mut stmt = conn
+            .prepare("SELECT id FROM capture_outbox ORDER BY created_at")
+            .map_err(|e| e.to_string())?;
+        let ids: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        Ok(serde_json::json!({ "pending": ids }).to_string())
+    }
+
+    /// The mobile shell: it builds and launches on the device (MOB.2). The synced
+    /// library (MOB.3), setup surface (MOB.3b), and read surfaces (MOB.4-MOB.7) are what
+    /// make it a real Enqueue.
     pub fn run() {
         tauri::Builder::default()
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_clipboard_manager::init())
+            .invoke_handler(tauri::generate_handler![
+                mobile_sync,
+                mobile_status,
+                mobile_list,
+                mobile_get,
+                mobile_search,
+                mobile_capture,
+                mobile_blob,
+                mobile_capture_image,
+                mobile_outbox_push,
+                mobile_outbox_list,
+                mobile_pick_image,
+                mobile_save_cropped_image,
+                mobile_chat,
+                mobile_settings_get,
+                mobile_settings_set,
+                mobile_pairing_code,
+                mobile_clear_blob_cache,
+                mobile_settings_sync,
+                mobile_settings_apply,
+                mobile_scan_qr,
+                mobile_setup_from_code,
+                mobile_update_note,
+                mobile_add_annotation,
+                mobile_remove_annotation,
+                mobile_add_tag,
+                mobile_remove_tag,
+                mobile_toggle_pin,
+                mobile_toggle_trash,
+                mobile_get_tags,
+                mobile_list_trashed,
+                mobile_restore_trashed,
+            ])
             .setup(|app| {
                 tauri::WebviewWindowBuilder::new(
                     app,
                     "main",
-                    tauri::WebviewUrl::App("home.html".into()),
+                    tauri::WebviewUrl::App("mobile.html".into()),
                 )
                 .title("Enqueue")
                 .build()?;
+                // Initialize outbox schema
+                let conn = open_lib(&app)?;
+                init_outbox_schema(&conn).map_err(|e| e.to_string())?;
+                Ok(())
+            })
+            .run(tauri::generate_context!())
+            .expect("error while running Enqueue on mobile");
+    }
+
+    /// Update a note's body (MOB2.4).
+    #[tauri::command]
+    fn mobile_update_note(app: AppHandle, id: String, body: String, title: Option<String>) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::update_note_body(&conn, &id, &body, title.as_deref()).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Add an annotation to an artifact (MOB2.4).
+    #[tauri::command]
+    fn mobile_add_annotation(app: AppHandle, id: String, text: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::add_annotation(&conn, &id, &text).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Remove an annotation (MOB2.4).
+    #[tauri::command]
+    fn mobile_remove_annotation(app: AppHandle, id: String, annotation_id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::remove_annotation(&conn, &id, &annotation_id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Add a tag to an artifact (MOB2.4).
+    #[tauri::command]
+    fn mobile_add_tag(app: AppHandle, id: String, tag: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::add_tag(&conn, &id, &tag).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Remove a tag from an artifact (MOB2.4).
+    #[tauri::command]
+    fn mobile_remove_tag(app: AppHandle, id: String, tag: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::remove_tag(&conn, &id, &tag).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Toggle pin status (MOB2.4).
+    #[tauri::command]
+    fn mobile_toggle_pin(app: AppHandle, id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::toggle_pin(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Toggle trash status (MOB2.4).
+    #[tauri::command]
+    fn mobile_toggle_trash(app: AppHandle, id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::toggle_trash(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// Get tags for an artifact (MOB2.4).
+    #[tauri::command]
+    fn mobile_get_tags(app: AppHandle, id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let tags = crate::sync::get_tags(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!(tags).to_string())
+    }
+
+    /// List trashed artifacts (MOB2.4).
+    #[tauri::command]
+    fn mobile_list_trashed(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let arts = crate::sync::list_trashed(&conn).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!(arts).to_string())
+    }
+
+    /// Restore a trashed artifact (MOB2.4).
+    #[tauri::command]
+    fn mobile_restore_trashed(app: AppHandle, id: String) -> Result<String, String> {
+        // Reuse toggle_trash - if it's trashed, this restores it
+        let conn = open_lib(&app)?;
+        let art = crate::sync::toggle_trash(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(art.to_string())
+    }
+
+    /// The mobile shell: it builds and launches on the device (MOB.2). The synced
+    /// library (MOB.3), setup surface (MOB.3b), and read surfaces (MOB.4-MOB.7) are what
+    /// make it a real Enqueue.
+    pub fn run() {
+        tauri::Builder::default()
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_clipboard_manager::init())
+            .invoke_handler(tauri::generate_handler![
+                mobile_sync,
+                mobile_status,
+                mobile_list,
+                mobile_get,
+                mobile_search,
+                mobile_capture,
+                mobile_blob,
+                mobile_capture_image,
+                mobile_outbox_push,
+                mobile_outbox_list,
+                mobile_pick_image,
+                mobile_save_cropped_image,
+                mobile_chat,
+                mobile_settings_get,
+                mobile_settings_set,
+                mobile_pairing_code,
+                mobile_clear_blob_cache,
+                mobile_settings_sync,
+                mobile_settings_apply,
+                mobile_scan_qr,
+                mobile_setup_from_code,
+                mobile_update_note,
+                mobile_add_annotation,
+                mobile_remove_annotation,
+                mobile_add_tag,
+                mobile_remove_tag,
+                mobile_toggle_pin,
+                mobile_toggle_trash,
+                mobile_get_tags,
+                mobile_list_trashed,
+                mobile_restore_trashed,
+            ])
+            .setup(|app| {
+                tauri::WebviewWindowBuilder::new(
+                    app,
+                    "main",
+                    tauri::WebviewUrl::App("mobile.html".into()),
+                )
+                .title("Enqueue")
+                .build()?;
+                // Initialize outbox schema
+                let conn = open_lib(&app)?;
+                init_outbox_schema(&conn).map_err(|e| e.to_string())?;
                 Ok(())
             })
             .run(tauri::generate_context!())
@@ -45,6 +1152,7 @@ mod desktop {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use base64::Engine as Base64Engine;
     use tauri::{AppHandle, Emitter, Manager};
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -384,6 +1492,49 @@ mod desktop {
         Ok(())
     }
 
+    /// Generate a pairing code for mobile setup (MOB2.10).
+    /// Returns a versioned base64 of {relay_url, secret} from the desktop's settings.
+    #[tauri::command]
+    fn desktop_pairing_code() -> Result<String, String> {
+        let settings = engine_get("/settings")
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+            .ok_or("could not fetch settings")?;
+        let relay_url = settings
+            .get("sync")
+            .and_then(|s| s.get("relay_url"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        
+        // We need the actual secret, not just the hint. Fetch it from the keyring.
+        // Since the keyring is macOS-only, we use the same approach as the engine.
+        // The secret is stored in the macOS Keychain under service "enqueue-sync-secret".
+        let secret = if cfg!(target_os = "macos") {
+            std::process::Command::new("/usr/bin/security")
+                .args(["find-generic-password", "-a", "enqueue", "-s", "enqueue-sync-secret", "-w"])
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        
+        if relay_url.is_empty() || secret.is_empty() {
+            return Err("sync not configured".into());
+        }
+        
+        let code = serde_json::json!({
+            "v": 1,
+            "relay_url": relay_url,
+            "secret": secret,
+        });
+        let code_b64 = base64::engine::general_purpose::STANDARD.encode(code.to_string());
+        Ok(code_b64)
+    }
+
     /// Hand a saved address to the system browser. The scheme is checked here rather than
     /// in the page: these URLs come out of the collection, and `open` will launch a
     /// handler for any scheme registered on the machine, so restrict to http and https.
@@ -423,7 +1574,8 @@ mod desktop {
                 capture_drag,
                 hotkey_changed,
                 open_external,
-                window_drag
+                window_drag,
+                desktop_pairing_code
             ])
             .setup(move |app| {
                 // The webview loads the engine's URL, so it cannot be built until the

@@ -53,12 +53,11 @@
     --text: #101114;
     --text-mute: #686b82;
     --ink-faint: #6c6f84;
-    --accent: #5e6ad2;
-    /* The drag-over boundary. Lavender clears the 3:1 sole-boundary rule on the
-       canvas (4.70:1), so the drop affordance reads the same in the capture window
-       and on the wall, and no amber survives. */
-    --accent-strong: #5e6ad2;
-    --lavender-subtle: rgba(94, 106, 210, 0.12);
+    --accent: #60079f;
+    /* The drag-over boundary is the accent (now the eye's bold purple), matching
+       tokens.css so bin/check-contrast's capture-parity pass stays green. */
+    --accent-strong: #60079f;
+    --lavender-subtle: rgba(96, 7, 159, 0.12);
     /* The capture overlay wears the eye's bold purple (#60079f) on its brand disc
        and focus edge, matching the app mark. These are capture-local extras (not in
        the shared token set), so they carry the eye's saturation without drifting
