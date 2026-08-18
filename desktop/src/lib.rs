@@ -26,6 +26,63 @@ mod mobile {
     use tauri::{AppHandle, Manager, Emitter};
     use tauri_plugin_dialog::DialogExt;
     use ureq::Request;
+    // JNI for foreground service (QR.5b)
+    use jni::JNIEnv;
+    use jni::objects::JClass;
+    use ndk_context::android_context;
+
+    /// Start the Android foreground sync service via JNI.
+    fn jni_start_sync_foreground_service() -> Result<(), String> {
+        let ctx = android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
+            .map_err(|e| format!("Failed to get JavaVM: {}", e))?;
+        let mut env = vm.attach_current_thread()
+            .map_err(|e| format!("Failed to attach thread: {}", e))?;
+        let class = env.find_class("com/sudohnim/enqueue/SyncForegroundService")
+            .map_err(|e| format!("Failed to find SyncForegroundService class: {}", e))?;
+        // Create JObject from the raw context pointer
+        let context_obj = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
+        env.call_static_method(
+            class,
+            "startSync",
+            "(Landroid/content/Context;)V",
+            &[jni::objects::JValue::Object(&context_obj)],
+        ).map_err(|e| format!("Failed to call startSync: {}", e))?;
+        Ok(())
+    }
+
+    /// Stop the Android foreground sync service via JNI.
+    fn jni_stop_sync_foreground_service() -> Result<(), String> {
+        let ctx = android_context();
+        let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
+            .map_err(|e| format!("Failed to get JavaVM: {}", e))?;
+        let mut env = vm.attach_current_thread()
+            .map_err(|e| format!("Failed to attach thread: {}", e))?;
+        let class = env.find_class("com/sudohnim/enqueue/SyncForegroundService")
+            .map_err(|e| format!("Failed to find SyncForegroundService class: {}", e))?;
+        let context_obj = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
+        env.call_static_method(
+            class,
+            "stopSync",
+            "(Landroid/content/Context;)V",
+            &[jni::objects::JValue::Object(&context_obj)],
+        ).map_err(|e| format!("Failed to call stopSync: {}", e))?;
+        Ok(())
+    }
+
+    /// Start the Android foreground sync service (QR.5b).
+    #[tauri::command]
+    fn start_sync_foreground_service() -> Result<String, String> {
+        jni_start_sync_foreground_service()?;
+        Ok("foreground_service_started".to_string())
+    }
+
+    /// Stop the Android foreground sync service (QR.5b).
+    #[tauri::command]
+    fn stop_sync_foreground_service() -> Result<String, String> {
+        jni_stop_sync_foreground_service()?;
+        Ok("foreground_service_stopped".to_string())
+    }
 
     /// Open (and initialize) the local SQLite read copy.
     fn open_lib(app: &AppHandle) -> Result<Connection, String> {
@@ -1151,6 +1208,8 @@ mod mobile {
                 mobile_get_tags,
                 mobile_list_trashed,
                 mobile_restore_trashed,
+                start_sync_foreground_service,
+                stop_sync_foreground_service,
             ])
             .setup(|app| {
                 tauri::WebviewWindowBuilder::new(
