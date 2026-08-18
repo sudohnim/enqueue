@@ -1485,10 +1485,11 @@ mod desktop {
         Ok(())
     }
 
-    /// Generate a pairing code for mobile setup (MOB2.10).
-    /// Returns a versioned base64 of {relay_url, secret} from the desktop's settings.
+    /// Generate a linking QR code for mobile setup (QR.3).
+    /// Returns ONLY the rendered SVG - the payload is encoded in the QR, never as text.
+    /// The QR encodes the pinned wire format: {"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}
     #[tauri::command]
-    fn desktop_pairing_code() -> Result<String, String> {
+    fn desktop_link_code() -> Result<String, String> {
         let settings = engine_get("/settings")
             .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
             .ok_or("could not fetch settings")?;
@@ -1515,30 +1516,48 @@ mod desktop {
             String::new()
         };
         
-        if relay_url.is_empty() || secret.is_empty() {
+        // Get the DEK from the keychain, base64 encoded
+        let dek_b64 = if cfg!(target_os = "macos") {
+            std::process::Command::new("/usr/bin/security")
+                .args(["find-generic-password", "-a", "enqueue", "-s", "enqueue-sync-dek", "-w"])
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|s| base64::engine::general_purpose::STANDARD.encode(s.trim().as_bytes()))
+                .unwrap_or_default()
+        } else {
+            // On other platforms, read from the sync-dek.bin file
+            let dek_path = std::path::Path::new(".enqueue-poc/sync-dek.bin");
+            if dek_path.exists() {
+                let dek = std::fs::read(dek_path).unwrap_or_default();
+                base64::engine::general_purpose::STANDARD.encode(dek)
+            } else {
+                String::new()
+            }
+        };
+        
+        if relay_url.is_empty() {
             return Err("sync not configured".into());
         }
         
-        let code = serde_json::json!({
+        // Build the pinned wire format JSON: {"v":1,"relay_url":"...","relay_secret":"...","dek":"<base64>"}
+        let payload = serde_json::json!({
             "v": 1,
             "relay_url": relay_url,
-            "secret": secret,
+            "relay_secret": secret,
+            "dek": dek_b64,
         });
-        let code_b64 = Base64Engine::encode(&base64::engine::general_purpose::STANDARD, code.to_string());
+        let payload_str = payload.to_string();
         
         // Generate QR code SVG locally (no external network calls)
-        let qr_code = qrcode::QrCode::new(&code_b64).map_err(|e| e.to_string())?;
+        let qr_code = qrcode::QrCode::new(&payload_str).map_err(|e| e.to_string())?;
         let qr_svg = qr_code.render()
             .min_dimensions(200, 200)
             .dark_color(qrcode::render::svg::Color("#000000"))
             .light_color(qrcode::render::svg::Color("#ffffff"))
             .build();
         
-        let result = serde_json::json!({
-            "code": code_b64,
-            "qr_svg": qr_svg,
-        });
-        Ok(result.to_string())
+        Ok(qr_svg)
     }
 
     /// Hand a saved address to the system browser. The scheme is checked here rather than
@@ -1581,7 +1600,7 @@ mod desktop {
                 hotkey_changed,
                 open_external,
                 window_drag,
-                desktop_pairing_code
+                desktop_link_code
             ])
             .setup(move |app| {
                 // The webview loads the engine's URL, so it cannot be built until the
