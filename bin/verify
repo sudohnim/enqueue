@@ -121,7 +121,7 @@ def check_inline_js(path):
     return node_check(wrapped, path)
 
 def check_android_compile():
-    """Check that the mobile module compiles for Android."""
+    """Check that the mobile module compiles for Android (Rust + Kotlin)."""
     desktop_dir = os.path.join(HERE, "desktop")
     
     # Auto-detect Android SDK and NDK from standard locations (same as bin/launch mobile)
@@ -181,6 +181,21 @@ def check_android_compile():
             print(f"{SRC}: Android compile check SKIPPED - aarch64-linux-android-clang not found in NDK")
             return True
     
+    # Check if any Android Kotlin or Rust source files are staged
+    # If so, run the full cargo tauri android build to catch Kotlin errors
+    staged_files = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=HERE,
+        capture_output=True,
+        text=True,
+        timeout=10
+    ).stdout.strip().splitlines()
+    
+    android_files_staged = any(
+        f.startswith("desktop/gen/android/") and (f.endswith(".kt") or f.endswith(".rs"))
+        for f in staged_files
+    )
+    
     print(f"=== {SRC}: Android compile check ===")
     env = os.environ.copy()
     env["ANDROID_HOME"] = android_home
@@ -188,13 +203,25 @@ def check_android_compile():
     # Ensure cargo can find the NDK toolchain
     env["PATH"] = f"{toolchain_bin}:{android_home}/platform-tools:{env.get('PATH', '')}"
     
-    result = subprocess.run(
-        ["cargo", "check", "--lib", "--target", "aarch64-linux-android"],
-        cwd=desktop_dir,
-        env=env,
-        capture_output=False,
-        timeout=300
-    )
+    if android_files_staged:
+        print(f"{SRC}: Android source files staged, running full cargo tauri android build")
+        result = subprocess.run(
+            ["cargo", "tauri", "android", "build", "--debug"],
+            cwd=desktop_dir,
+            env=env,
+            capture_output=False,
+            timeout=600
+        )
+    else:
+        # No Android files staged, just check Rust compilation (faster)
+        result = subprocess.run(
+            ["cargo", "check", "--lib", "--target", "aarch64-linux-android"],
+            cwd=desktop_dir,
+            env=env,
+            capture_output=False,
+            timeout=300
+        )
+    
     if result.returncode == 0:
         print(f"{SRC}: Android compile OK")
         return True
