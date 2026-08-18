@@ -377,11 +377,11 @@ mod mobile {
         let now = now_iso();
         
         // Open photo picker
-        let file_path = DialogExt::file(app.clone())
+        let file_path = app
+            .dialog()
+            .file()
             .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "heic"])
-            .pick_file()
-            .await
-            .map_err(|e| format!("dialog error: {e}"))?
+            .blocking_pick_file()
             .ok_or("cancelled")?;
         
         let path = match file_path {
@@ -477,8 +477,8 @@ mod mobile {
                             .set("Authorization", &format!("Bearer {}", secret))
                             .call();
                         if client.is_ok() && client.as_ref().unwrap().status() == 200 {
-                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [id]);
-                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [id]);
+                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
+                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
                         }
                     }
                 }
@@ -496,11 +496,11 @@ mod mobile {
     async fn mobile_pick_image(app: AppHandle) -> Result<String, String> {
         use tauri_plugin_dialog::DialogExt;
         
-        let file_path = DialogExt::file(app.clone())
+        let file_path = app
+            .dialog()
+            .file()
             .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "heic"])
-            .pick_file()
-            .await
-            .map_err(|e| format!("dialog error: {e}"))?
+            .blocking_pick_file()
             .ok_or("cancelled")?;
         
         let path = match file_path {
@@ -613,8 +613,8 @@ mod mobile {
                             .set("Authorization", &format!("Bearer {}", secret))
                             .call();
                         if client.is_ok() && client.as_ref().unwrap().status() == 200 {
-                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [id]);
-                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [id]);
+                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
+                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
                         }
                     }
                 }
@@ -721,8 +721,8 @@ mod mobile {
         let body_str = body.to_string();
         let resp = req.send_string(&body_str).map_err(|e| format!("HTTP error: {}", e))?;
         
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        if !(200..300).contains(&status) {
             let err_text = resp.into_string().unwrap_or_default();
             return Err(format!("LLM error {}: {}", status, err_text));
         }
@@ -905,9 +905,13 @@ mod mobile {
         // Derive KEK from password and unwrap DEK
         let kek = crate::sync::derive_kek(&password, &password_salt)
             .map_err(|e| e.to_string())?;
-        let dek = crate::sync::unwrap(&dek_by_password, &kek)
+        let dek_vec = crate::sync::unwrap(&dek_by_password, &kek)
             .map_err(|e| format!("wrong password: {e}"))?;
-        
+        let dek: [u8; 32] = dek_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| "unwrapped DEK is not 32 bytes")?;
+
         // Save config with unlocked DEK
         let keyring_json = String::from_utf8(keyring_bytes).unwrap_or_default();
         save_config(
@@ -935,6 +939,9 @@ mod mobile {
         
         Ok(serde_json::json!({ "configured": true }).to_string())
     }
+
+    /// Push any queued offline captures to the relay (MOB.7).
+    #[tauri::command]
     fn mobile_outbox_push(app: AppHandle) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let cfg = load_config(&app)?.ok_or("not configured")?;
@@ -986,63 +993,6 @@ mod mobile {
             .filter_map(Result::ok)
             .collect();
         Ok(serde_json::json!({ "pending": ids }).to_string())
-    }
-
-    /// The mobile shell: it builds and launches on the device (MOB.2). The synced
-    /// library (MOB.3), setup surface (MOB.3b), and read surfaces (MOB.4-MOB.7) are what
-    /// make it a real Enqueue.
-    pub fn run() {
-        tauri::Builder::default()
-            .plugin(tauri_plugin_dialog::init())
-            .plugin(tauri_plugin_opener::init())
-            .plugin(tauri_plugin_clipboard_manager::init())
-            .invoke_handler(tauri::generate_handler![
-                mobile_sync,
-                mobile_status,
-                mobile_list,
-                mobile_get,
-                mobile_search,
-                mobile_capture,
-                mobile_blob,
-                mobile_capture_image,
-                mobile_outbox_push,
-                mobile_outbox_list,
-                mobile_pick_image,
-                mobile_save_cropped_image,
-                mobile_chat,
-                mobile_settings_get,
-                mobile_settings_set,
-                mobile_pairing_code,
-                mobile_clear_blob_cache,
-                mobile_settings_sync,
-                mobile_settings_apply,
-                mobile_pairing_setup,
-                mobile_update_note,
-                mobile_add_annotation,
-                mobile_remove_annotation,
-                mobile_add_tag,
-                mobile_remove_tag,
-                mobile_toggle_pin,
-                mobile_toggle_trash,
-                mobile_get_tags,
-                mobile_list_trashed,
-                mobile_restore_trashed,
-            ])
-            .setup(|app| {
-                tauri::WebviewWindowBuilder::new(
-                    app,
-                    "main",
-                    tauri::WebviewUrl::App("mobile.html".into()),
-                )
-                .title("Enqueue")
-                .build()?;
-                // Initialize outbox schema
-                let conn = open_lib(&app)?;
-                init_outbox_schema(&conn).map_err(|e| e.to_string())?;
-                Ok(())
-            })
-            .run(tauri::generate_context!())
-            .expect("error while running Enqueue on mobile");
     }
 
     /// Update a note's body (MOB2.4).
@@ -1175,7 +1125,7 @@ mod mobile {
                 .title("Enqueue")
                 .build()?;
                 // Initialize outbox schema
-                let conn = open_lib(&app)?;
+                let conn = open_lib(app.handle())?;
                 init_outbox_schema(&conn).map_err(|e| e.to_string())?;
                 Ok(())
             })
