@@ -1008,7 +1008,8 @@ mod mobile {
 
     /// Link device by scanning a linking QR code (QR.4b).
     /// The config contains {{relay_url, sync_secret, dek}} decoded from the desktop linking QR.
-    /// Stores the DEK in the secure app file and triggers sync.
+    /// Persists the relay URL, sync secret, and DEK (hex-encoded) via save_config so
+    /// load_config can find them, and sync can start.
     #[tauri::command]
     fn mobile_link_qr(app: AppHandle, config: String) -> Result<String, String> {
         let cfg: serde_json::Value = serde_json::from_str(&config).map_err(|e| e.to_string())?;
@@ -1016,23 +1017,15 @@ mod mobile {
         let sync_secret = cfg.get("sync_secret").and_then(|v| v.as_str()).ok_or("missing sync_secret")?.to_string();
         let dek_b64 = cfg.get("dek").and_then(|v| v.as_str()).ok_or("missing dek")?.to_string();
         
-        // Store the DEK in the secure app file (MOB.3b)
-        if cfg!(target_os = "macos") {
-            let output = std::process::Command::new("/usr/bin/security")
-                .args(["add-generic-password", "-a", "enqueue", "-s", "enqueue-sync-dek", "-w", &dek_b64])
-                .output();
-            match output {
-                Ok(out) if out.status.success() => {},
-                _ => return Err("failed to store DEK in keychain".into()),
-            }
-        } else {
-            let dir = std::env::var("HOME").map(|h| format!("{}/.enqueue-poc", h)).unwrap_or_default();
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            let file_path = format!("{}/sync-dek.bin", dir);
-            let dek_bytes = base64::engine::general_purpose::STANDARD.decode(dek_b64.as_bytes()).map_err(|e| e.to_string())?;
-            std::fs::write(&file_path, &dek_bytes).map_err(|e| e.to_string())?;
-            let _ = std::process::Command::new("chmod").args(["0600", &file_path]).output();
-        }
+        // Decode the DEK from base64; the sync path expects hex-encoded DEK in config
+        let dek_bytes = base64::engine::general_purpose::STANDARD.decode(dek_b64.as_bytes()).map_err(|e| e.to_string())?;
+        // Ensure we have exactly 32 bytes (DEK_LEN); if not, treat as empty
+        let dek_array: [u8; 32] = dek_bytes.try_into().unwrap_or([0u8; 32]);
+        let keyring_json_or_empty = String::new();
+        
+        // Persist relay_url, sync_secret, and DEK (hex) via save_config so
+        // load_config can find them and sync can start.
+        save_config(&app, &relay_url, &sync_secret, &keyring_json_or_empty, &dek_array, None, None, None, None, None, None)?;
         
         // For now, return success; sync is driven by the events system (QR.5a)
         Ok("linked".to_string())
