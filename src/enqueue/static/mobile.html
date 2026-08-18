@@ -7,7 +7,7 @@
 <title>Enqueue</title>
 <link rel="stylesheet" href="css/tokens.css" />
 <script src="js/md.js"></script>
-<script src="vendor/jsQR.js"></script>
+
 <style>
   html,
   body {
@@ -869,41 +869,18 @@
 <section id="setup">
   <h1 class="title">Enqueue</h1>
   <p class="sub">Sync your library from the relay.</p>
-  <div id="setup_camera" style="display: block">
-    <div
-      id="scan_area"
-      style="
-        position: relative;
-        width: min(100%, 280px);
-        margin: 0 auto 12px;
-        aspect-ratio: 1 / 1;
-      "
-    >
-      <video
-        id="scan_video"
-        autoplay
-        playsinline
-        muted
-        style="
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          border-radius: 12px;
-          background: #000;
-        "
-      ></video>
-    </div>
-    <p
-      id="scan_status"
-      style="
-        font-size: 13px;
-        color: var(--text-subtle);
-        text-align: center;
-        margin: 0;
-      "
-    >
-      Point your camera at the QR code on your desktop.
+  <div id="setup_camera" style="display: block; text-align: center; padding: 48px 20px">
+    <p style="font-size: 13px; color: var(--text-subtle); margin: 0 0 24px;">
+      Scan the linking QR on your desktop
     </p>
+    <button
+      id="scan_qr_btn"
+      class="round primary"
+      style="min-width: 200px; padding: 14px 28px; font-size: 15px;"
+    >
+      Scan QR
+    </button>
+    <p id="scan_status" style="font-size: 13px; color: var(--text-subtle); text-align: center; margin: 16px 0 0;"></p>
   </div>
   <div
     id="setup_no_camera"
@@ -2003,95 +1980,29 @@
       });
   }
 
-  // QR.4a: live camera preview for linking. QR.4b adds QR decode on top of it.
-  let scanStream = null;
-  let scanInterval = null;
+  // QR.4a/QR.4b: native QR scanner via tauri-plugin-barcode-scanner (ML Kit on Android)
+  // Replaces getUserMedia + jsQR camera feed with native scanner.
   let scanActive = false;
 
-  async function startCamera() {
-    const video = document.getElementById("scan_video");
-    const noCamera = document.getElementById("setup_no_camera");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      });
-      scanStream = stream;
-      video.srcObject = stream;
-      await video.play().catch(() => {});
-      noCamera.style.display = "none";
-      document.getElementById("setup_camera").style.display = "block";
-      scanActive = true;
-      startScanLoop();
-    } catch (err) {
-      console.error("camera:", err);
-      noCamera.style.display = "block";
-      document.getElementById("setup_camera").style.display = "none";
+  async function handleScanResult(result) {
+    if (!result || !result.content) {
+      setStatus("No QR code detected", "error");
+      return;
     }
-  }
-
-  function stopCamera() {
-    scanActive = false;
-    if (scanInterval) {
-      clearInterval(scanInterval);
-      scanInterval = null;
-    }
-    if (scanStream) {
-      scanStream.getTracks().forEach((t) => t.stop());
-      scanStream = null;
-    }
-  }
-
-  // QR.4b: decode QR frames from the camera feed and link the device.
-  function startScanLoop() {
-    if (scanInterval) clearInterval(scanInterval);
-    let canvas = document.getElementById("scan_canvas");
-    if (!canvas) {
-      canvas = document.createElement("canvas");
-      canvas.id = "scan_canvas";
-      canvas.style.display = "none";
-      document.getElementById("scan_area").appendChild(canvas);
-    }
-    scanInterval = setInterval(() => {
-      if (!scanActive) return;
-      const video = document.getElementById("scan_video");
-      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      // jsQR is the primary decoder (vendored locally, no CDN).
-      // BarcodeDetector is opportunistic only - many Android WebView builds lack it.
-      let code = null;
-      if (window.jsQR) {
-        code = jsQR(imageData.data, imageData.width, imageData.height);
-      }
-      if (code && code.data) {
-        scanActive = false;
-        handleQrCode(code.data);
-      }
-    }, 300);
-  }
-
-  async function handleQrCode(data) {
-    stopCamera();
     let payload;
     try {
-      payload = JSON.parse(data);
+      payload = JSON.parse(result.content);
     } catch (e) {
       setStatus("Invalid QR code", "error");
-      startCamera();
       return;
     }
     // WIRE FORMAT (pinned - matches QR.3 desktop_link_code)
     if (payload.v !== 1) {
       setStatus("Unsupported QR format version", "error");
-      startCamera();
       return;
     }
     if (!payload.relay_url || !payload.relay_secret || !payload.dek) {
       setStatus("Incomplete QR payload", "error");
-      startCamera();
       return;
     }
     setStatus("Linking...", "ok");
@@ -2108,16 +2019,39 @@
       document.getElementById("shelves").replaceChildren();
       document.getElementById("empty").hidden = true;
       // QR.5a: mobile_sync now returns immediately; events drive the UI
-      invoke("mobile_sync", { config: "{}" });
+      await invoke("mobile_sync", { config: "{}" });
     } catch (e) {
       setStatus("Link failed: " + String(e), "error");
-      startCamera();
     }
   }
 
   document
+    .getElementById("scan_qr_btn")
+    .addEventListener("click", async () => {
+      if (scanActive) return;
+      scanActive = true;
+      document.getElementById("scan_qr_btn").disabled = true;
+      document.getElementById("scan_status").textContent = "Opening scanner...";
+      try {
+        const result = await invoke("plugin:barcode-scanner|scan", {
+          formats: ["QR_CODE"],
+        });
+        await handleScanResult(result);
+      } catch (e) {
+        setStatus("Scan failed: " + String(e), "error");
+      } finally {
+        scanActive = false;
+        document.getElementById("scan_qr_btn").disabled = false;
+        document.getElementById("scan_status").textContent = "";
+      }
+    });
+
+  document
     .getElementById("retry_camera")
-    .addEventListener("click", startCamera);
+    .addEventListener("click", () => {
+      // The "Retry" button is now just the Scan QR button
+      document.getElementById("scan_qr_btn").click();
+    });
 
   document.getElementById("to_setup").addEventListener("click", () => {
     show("setup");
