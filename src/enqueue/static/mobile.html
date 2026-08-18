@@ -7,6 +7,7 @@
 <title>Enqueue</title>
 <link rel="stylesheet" href="css/tokens.css" />
 <script src="js/md.js"></script>
+<script src="vendor/jsQR.js"></script>
 <style>
   html,
   body {
@@ -401,145 +402,7 @@
     flex-shrink: 0;
   }
 
-  /* Capture (MOB.7): a fixed bottom bar with the bold-purple button, plus a sheet. */
-  <div
-    id="pill"
-    class="pill"
-    role="group"
-    aria-label="Main actions"
-    > <!--
-    Capture
-    (primary)
-    --
-    > <button
-    class="keep"
-    id="pill_capture"
-    aria-label="Capture"
-    aria-expanded="false"
-    > <span
-    class="disc"
-    > </span
-    > </button
-    > <!--
-    Search
-    --
-    > <button
-    class="round"
-    id="pill_search"
-    aria-label="Search"
-    > <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    aria-hidden="true"
-    > <circle
-    cx="11"
-    cy="11"
-    r="8"
-    > </circle
-    > <line
-    x1="21"
-    y1="21"
-    x2="16.65"
-    y2="16.65"
-    > </line
-    > </svg
-    > </button
-    > <!--
-    Ask
-    (Living Raven Eye)
-    --
-    > <button
-    class="round"
-    id="pill_ask"
-    aria-label="Chat with AI"
-    > <span
-    class="pill-eye eye"
-    id="pillEye"
-    > </span
-    > </button
-    > <!--
-    Menu
-    --
-    > <button
-    class="round"
-    id="pill_menu"
-    aria-label="Menu"
-    aria-expanded="false"
-    aria-haspopup="true"
-    > <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    aria-hidden="true"
-    > <circle
-    cx="12"
-    cy="12"
-    r="1"
-    > </circle
-    > <circle
-    cx="12"
-    cy="5"
-    r="1"
-    > </circle
-    > <circle
-    cx="12"
-    cy="19"
-    r="1"
-    > </circle
-    > </svg
-    > </button
-    > </div
-    > <!--
-    Pill
-    Menu
-    (MOB2.3)
-    --
-    > <div
-    id="pill_menu_panel"
-    class="pill-menu"
-    hidden
-    role="menu"
-    > <button
-    role="menuitem"
-    id="pill_menu_settings"
-    > <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    aria-hidden="true"
-    > <circle
-    cx="12"
-    cy="12"
-    r="3"
-    > </circle
-    > <path
-    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
-    > </path
-    > </svg
-    > Settings</button
-    > <button
-    role="menuitem"
-    id="pill_menu_trash"
-    > <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    aria-hidden="true"
-    > <polyline
-    points="3 6 5 6 21 6"
-    > </polyline
-    > <path
-    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-    > </path
-    > </svg
-    > Trash</button
-    > </div
-    > #capture_field {
+  /* #capture_field {
     margin-bottom: 14px;
   }
   #capture_actions {
@@ -913,38 +776,141 @@
   }
 </style>
 
+<div id="pill" class="pill" role="group" aria-label="Main actions">
+  <button
+    class="keep"
+    id="pill_capture"
+    aria-label="Capture"
+    aria-expanded="false"
+    onclick="pillToggleMenu(event)"
+  >
+    <span class="disc"></span>
+  </button>
+  <button
+    class="round"
+    id="pill_search"
+    aria-label="Search"
+    onclick="pillOpenSearch()"
+  >
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="8"></circle>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+    </svg>
+  </button>
+  <button
+    class="round"
+    id="pill_ask"
+    aria-label="Chat with AI"
+    onclick="openField('ask')"
+  >
+    <span class="pill-eye eye" id="pillEye"></span>
+  </button>
+  <button
+    class="round"
+    id="pill_menu"
+    aria-label="Menu"
+    aria-expanded="false"
+    aria-haspopup="true"
+    onclick="pillToggleMenu(event)"
+  >
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="1"></circle>
+      <circle cx="12" cy="5" r="1"></circle>
+      <circle cx="12" cy="19" r="1"></circle>
+    </svg>
+  </button>
+</div>
+
+<div id="pill_menu_panel" class="pill-menu" hidden role="menu">
+  <button role="menuitem" id="pill_menu_settings">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3"></circle>
+      <path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+      ></path>
+    </svg>
+    Settings
+  </button>
+  <button role="menuitem" id="pill_menu_trash">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path
+        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+      ></path>
+    </svg>
+    Trash
+  </button>
+</div>
+
 <section id="setup">
   <h1 class="title">Enqueue</h1>
   <p class="sub">Sync your library from the relay.</p>
-  <div id="setup_manual" style="display: block">
-    <label
-      >Pairing code (required)
-      <textarea
-        id="pairing_code"
-        placeholder="Paste the base64 pairing code from desktop Settings > Sync..."
-        spellcheck="false"
-        style="min-height: 80px"
-      ></textarea>
-    </label>
-    <div id="pairing_decoded" style="margin-top: 12px; display: none">
-      <label
-        >Relay URL (from pairing code)
-        <input id="relay_url" readonly autocomplete="off" />
-      </label>
-      <label
-        >Sync secret (from pairing code)
-        <input id="sync_secret" type="password" readonly autocomplete="off" />
-      </label>
+  <div id="setup_camera" style="display: block">
+    <div
+      id="scan_area"
+      style="
+        position: relative;
+        width: min(100%, 280px);
+        margin: 0 auto 12px;
+        aspect-ratio: 1 / 1;
+      "
+    >
+      <video
+        id="scan_video"
+        autoplay
+        playsinline
+        muted
+        style="
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 12px;
+          background: #000;
+        "
+      ></video>
     </div>
-    <label
-      >Library password (required)
-      <input
-        id="library_password"
-        type="password"
-        placeholder="Enter your library password to unlock the keyring"
-        autocomplete="off"
-    /></label>
-    <button id="sync_btn">Connect</button>
+    <p
+      id="scan_status"
+      style="
+        font-size: 13px;
+        color: var(--text-subtle);
+        text-align: center;
+        margin: 0;
+      "
+    >
+      Point your camera at the QR code on your desktop.
+    </p>
+  </div>
+  <div
+    id="setup_no_camera"
+    style="display: none; text-align: center; padding: 48px 20px"
+  >
+    <p>Camera access is required to scan the linking QR.</p>
+    <button id="retry_camera" style="margin-top: 12px">Retry</button>
   </div>
   <div id="status"></div>
 </section>
@@ -1226,7 +1192,7 @@
             border-radius: var(--r-md);
           "
         >
-          Show Pairing Code
+          Link With QR
         </button>
       </div>
     </div>
@@ -1334,13 +1300,6 @@
     </div>
   </div>
 </section>
-
-<div id="capture_bar">
-  <button id="capture_btn">Capture</button>
-  <button id="capture_image_btn" type="button" aria-label="Capture photo">
-    📷
-  </button>
-</div>
 
 <script>
   // md.js's md() escapes input via this helper (defined in util.js on the desktop,
@@ -1928,13 +1887,15 @@
             content.appendChild(site);
             card.appendChild(content);
             card.addEventListener("click", () => {
-              // Validate URL: only allow http/https to prevent open redirect
-              try {
-                const u = new URL(url);
-                if (u.protocol === "http:" || u.protocol === "https:") {
-                  window.open(url, "_system");
-                }
-              } catch (e) {}
+              if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+                try {
+                  window.open(
+                    new URL(url).href,
+                    "_system",
+                    "noopener,noreferrer",
+                  );
+                } catch (e) {}
+              }
             });
             body.replaceChildren(card);
           } else {
@@ -2042,58 +2003,126 @@
       });
   }
 
-  document
-    .getElementById("pairing_code")
-    .addEventListener("input", function () {
-      const code = this.value.trim();
-      const decodedDiv = document.getElementById("pairing_decoded");
-      const relayInput = document.getElementById("relay_url");
-      const secretInput = document.getElementById("sync_secret");
-      if (code) {
-        try {
-          const decoded = atob(code);
-          const config = JSON.parse(decoded);
-          relayInput.value = config.relay_url || "";
-          secretInput.value = config.secret || "";
-          decodedDiv.style.display = "block";
-        } catch (e) {
-          decodedDiv.style.display = "none";
-        }
-      } else {
-        decodedDiv.style.display = "none";
-      }
-    });
+  // QR.4a: live camera preview for linking. QR.4b adds QR decode on top of it.
+  let scanStream = null;
+  let scanInterval = null;
+  let scanActive = false;
 
-  document.getElementById("sync_btn").addEventListener("click", async () => {
-    const code = document.getElementById("pairing_code").value.trim();
-    const password = document.getElementById("library_password").value;
-    if (!code || !password) {
-      setStatus("Pairing code and password are required", "error");
-      return;
-    }
-    if (!invoke) {
-      setStatus("no tauri bridge", "error");
-      return;
-    }
-    setStatus("Connecting...");
+  async function startCamera() {
+    const video = document.getElementById("scan_video");
+    const noCamera = document.getElementById("setup_no_camera");
     try {
-      const result = await invoke("mobile_pairing_setup", { code, password });
-      const r = parse(result);
-      if (r.configured) {
-        setStatus("Connected and synced!", "ok");
-        show("library");
-        renderLibrary();
-      } else {
-        setStatus(r.error || "Setup failed", "error");
-      }
-    } catch (e) {
-      setStatus(String(e), "error");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+      scanStream = stream;
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      noCamera.style.display = "none";
+      document.getElementById("setup_camera").style.display = "block";
+      scanActive = true;
+      startScanLoop();
+    } catch (err) {
+      console.error("camera:", err);
+      noCamera.style.display = "block";
+      document.getElementById("setup_camera").style.display = "none";
     }
-  });
+  }
+
+  function stopCamera() {
+    scanActive = false;
+    if (scanInterval) {
+      clearInterval(scanInterval);
+      scanInterval = null;
+    }
+    if (scanStream) {
+      scanStream.getTracks().forEach((t) => t.stop());
+      scanStream = null;
+    }
+  }
+
+  // QR.4b: decode QR frames from the camera feed and link the device.
+  function startScanLoop() {
+    if (scanInterval) clearInterval(scanInterval);
+    let canvas = document.getElementById("scan_canvas");
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.id = "scan_canvas";
+      canvas.style.display = "none";
+      document.getElementById("scan_area").appendChild(canvas);
+    }
+    scanInterval = setInterval(() => {
+      if (!scanActive) return;
+      const video = document.getElementById("scan_video");
+      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // jsQR is the primary decoder (vendored locally, no CDN).
+      // BarcodeDetector is opportunistic only - many Android WebView builds lack it.
+      let code = null;
+      if (window.jsQR) {
+        code = jsQR(imageData.data, imageData.width, imageData.height);
+      }
+      if (code && code.data) {
+        scanActive = false;
+        handleQrCode(code.data);
+      }
+    }, 300);
+  }
+
+  async function handleQrCode(data) {
+    stopCamera();
+    let payload;
+    try {
+      payload = JSON.parse(data);
+    } catch (e) {
+      setStatus("Invalid QR code", "error");
+      startCamera();
+      return;
+    }
+    // WIRE FORMAT (pinned - matches QR.3 desktop_link_code)
+    if (payload.v !== 1) {
+      setStatus("Unsupported QR format version", "error");
+      startCamera();
+      return;
+    }
+    if (!payload.relay_url || !payload.relay_secret || !payload.dek) {
+      setStatus("Incomplete QR payload", "error");
+      startCamera();
+      return;
+    }
+    setStatus("Linking...", "ok");
+    try {
+      await invoke("mobile_link_qr", {
+        config: JSON.stringify({
+          relay_url: payload.relay_url,
+          sync_secret: payload.relay_secret,
+          dek: payload.dek,
+        }),
+      });
+      show("library");
+      document.getElementById("loading").hidden = false;
+      document.getElementById("shelves").replaceChildren();
+      document.getElementById("empty").hidden = true;
+      // QR.5a: mobile_sync now returns immediately; events drive the UI
+      invoke("mobile_sync", { config: "{}" });
+    } catch (e) {
+      setStatus("Link failed: " + String(e), "error");
+      startCamera();
+    }
+  }
 
   document
-    .getElementById("to_setup")
-    .addEventListener("click", () => show("setup"));
+    .getElementById("retry_camera")
+    .addEventListener("click", startCamera);
+
+  document.getElementById("to_setup").addEventListener("click", () => {
+    show("setup");
+    startCamera();
+  });
   document
     .getElementById("to_library")
     .addEventListener("click", () => show("library"));
@@ -2376,9 +2405,9 @@
     .addEventListener("click", doCaptureImage);
 
   function bootstrap() {
-    // Bootstrap: if a config was already persisted (MOB.3b), sync with it and open the
     if (!invoke) {
       show("setup");
+      startCamera();
       return;
     }
     invoke("mobile_status")
@@ -2386,27 +2415,52 @@
         const r = parse(raw);
         if (!r.configured) {
           show("setup");
+          startCamera();
           return;
         }
         show("library");
         document.getElementById("loading").hidden = false;
         document.getElementById("shelves").replaceChildren();
         document.getElementById("empty").hidden = true;
-        invoke("mobile_sync", { config: "{}" })
-          .then(() => {
-            // Push any pending outbox items after sync (MOB.7)
-            return invoke("mobile_outbox_push").catch(() => {});
-          })
-          .then(() => {
-            document.getElementById("loading").hidden = true;
-            renderLibrary();
-          })
-          .catch(() => {
-            document.getElementById("loading").hidden = true;
-            show("setup");
-          });
+        // QR.5a: mobile_sync returns immediately; sync-done event refreshes
+        invoke("mobile_sync", { config: "{}" }).catch(() => {});
       })
-      .catch(() => show("setup"));
+      .catch(() => {
+        show("setup");
+        startCamera();
+      });
+  }
+
+  // QR.5a: sync lifecycle events from the background thread
+  if (window.__TAURI__ && window.__TAURI__.event) {
+    __TAURI__.event.listen("sync-started", () => {
+      const btn = document.getElementById("settings_sync_now");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Syncing\u2026";
+      }
+      document.getElementById("loading").hidden = false;
+    });
+    __TAURI__.event.listen("sync-done", () => {
+      document.getElementById("loading").hidden = true;
+      const btn = document.getElementById("settings_sync_now");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Sync Now";
+      }
+      if (!document.getElementById("library").hidden) renderLibrary();
+      invoke("mobile_outbox_push").catch(() => {});
+    });
+    __TAURI__.event.listen("sync-error", (e) => {
+      document.getElementById("loading").hidden = true;
+      const btn = document.getElementById("settings_sync_now");
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Sync Now";
+      }
+      const payload = e && e.payload ? e.payload : {};
+      alert("Sync failed: " + (payload.error || "unknown error"));
+    });
   }
 
   // Pill (MOB2.3) - mirrors desktop pill.js logic
@@ -2445,13 +2499,14 @@
         '<span class="disc"></span></button>' +
         '<button class="round" aria-label="Search" onclick="pillOpenSearch()">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>' +
-        '<button class="round" aria-label="Chat with AI" onclick="openField("ask")">' +
+        '<button class="round" aria-label="Chat with AI" onclick="openField('ask')">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
         '<button class="round" aria-label="Settings" aria-expanded="false" aria-haspopup="true" onclick="pillToggleMenu(event)">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></button>';
     }
-    pill.innerHTML = html;
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    pill.replaceChildren(...parsed.body.childNodes);
     makeEye(document.getElementById("pillEye"));
   }
 
@@ -2496,9 +2551,13 @@
       { value: "opencode-go", label: "OpenCode Go" },
       { value: "custom", label: "Custom" },
     ];
-    backendSelect.innerHTML = backends
-      .map((b) => `<option value="${b.value}">${b.label}</option>`)
-      .join("");
+    backendSelect.replaceChildren();
+    for (const b of backends) {
+      const opt = document.createElement("option");
+      opt.value = b.value;
+      opt.textContent = b.label;
+      backendSelect.appendChild(opt);
+    }
     backendSelect.value = s.llm_backend || "ollama";
 
     // Model
@@ -2583,40 +2642,23 @@
     if (el) el.addEventListener("change", saveSettings);
   });
 
-  // Sync Now
-  document
-    .getElementById("settings_sync_now")
-    .addEventListener("click", async () => {
-      const btn = document.getElementById("settings_sync_now");
-      btn.disabled = true;
-      btn.textContent = "Syncing...";
-      try {
-        await invoke("mobile_sync", { config: "{}" });
-        await loadSettings();
-      } catch (e) {
-        alert("Sync failed: " + e);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Sync Now";
-      }
+  // Sync Now (QR.5a: non-blocking - mobile_sync returns immediately)
+  document.getElementById("settings_sync_now").addEventListener("click", () => {
+    const btn = document.getElementById("settings_sync_now");
+    btn.disabled = true;
+    btn.textContent = "Syncing\u2026";
+    invoke("mobile_sync", { config: "{}" }).catch(() => {
+      btn.disabled = false;
+      btn.textContent = "Sync Now";
     });
+  });
 
-  // Pairing code
-  document
-    .getElementById("settings_pair")
-    .addEventListener("click", async () => {
-      try {
-        const result = await invoke("mobile_pairing_code");
-        const data = JSON.parse(result);
-        alert(
-          "Pairing code (copy this):\n\n" +
-            data.code +
-            "\n\nOn the new device, paste this code, then enter the library password.",
-        );
-      } catch (e) {
-        alert("Failed to generate pairing code: " + e);
-      }
-    });
+  // QR.4b: the desktop shows a QR (Settings > Sync > Show linking QR);
+  // this phone scans it from the setup screen. No paste-code or password on mobile.
+  document.getElementById("settings_pair").addEventListener("click", () => {
+    show("setup");
+    startCamera();
+  });
 
   // Clear cache
   document
@@ -2651,7 +2693,7 @@
 
   function renderChatHistory() {
     const container = document.getElementById("chat_messages");
-    container.innerHTML = "";
+    container.replaceChildren();
     for (const msg of chatHistory) {
       const div = document.createElement("div");
       div.className =
@@ -2740,4 +2782,17 @@
   pillRestorePill("library");
 
   bootstrap();
+
+
+  // QR.5b: Resume sync when app becomes visible or comes online
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      console.log('[resume] visibilitychange - triggering sync');
+      if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
+    }
+  });
+  window.addEventListener('online', () => {
+    console.log('[resume] online event - triggering sync');
+    if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
+  });
 </script>

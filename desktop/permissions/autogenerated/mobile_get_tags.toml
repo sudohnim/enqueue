@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-get-tags"
+description = "Enables the mobile_get_tags command without any pre-configured scope."
+commands.allow = ["mobile_get_tags"]
+
+[[permission]]
+identifier = "deny-mobile-get-tags"
+description = "Denies the mobile_get_tags command without any pre-configured scope."
+commands.deny = ["mobile_get_tags"]

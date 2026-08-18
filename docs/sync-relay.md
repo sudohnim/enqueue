@@ -186,6 +186,74 @@ without requiring the relay to parse the contents.
 Settings objects are encrypted with the same DEK as artifacts, so the relay still stores
 only opaque bytes.
 
+## Running it as a hosted service (public deploy)
+
+The relay is designed to run on a small always-on host (the user picks the
+provider - a VPS, a Raspberry Pi at home, a container on any host), reachable
+over the internet so the phone syncs anywhere, not only on the same wifi or
+plugged in over USB. It stores only opaque ciphertext, so hosting it publicly
+changes nothing about the E2E model: `guard.py` already allows non-local relay
+URLs because the bytes are encrypted before they leave a device.
+
+- The configured `sync_relay_url` in Settings is the PUBLIC URL, e.g.
+  `https://relay.example.com`. The QR/ pairing surfaces must encode that public
+  URL, never `127.0.0.1`.
+- Run it with `enq relay --host 0.0.0.0 --port <port> --secret <strong-secret>`
+  (or `RELAY_HOST`/`RELAY_PORT`/`RELAY_DATA_DIR`/`RELAY_SECRET`). Bind to
+  `0.0.0.0` only when it is behind a firewall/reverse proxy - the default
+  `127.0.0.1` stays the safe local/dev default.
+- The Bearer secret must be sent over TLS in the hosted case. Terminate TLS at
+  the edge (Caddy, nginx, a PaaS TLS endpoint, cloudflare) and forward to the
+  relay on localhost; the relay itself is plain HTTP behind that. Never expose
+  an un-TLS'd relay to the public internet with a guessable secret.
+- Give it a real data dir that survives restarts (`RELAY_DATA_DIR`), and back it
+  up if the library is irreplaceable - the relay is the only copy of what was
+  synced. Disk use is bounded by what devices have pushed; blobs are
+  content-addressed and de-duplicated by name.
+- **CORS: none needed.** Every sync client is native - the desktop worker is
+  Python `httpx` and the mobile client is Rust `ureq`. No browser page talks to
+  the relay (mobile.html has no `EventSource`/`fetch` to it), so a public deploy
+  needs no CORS middleware. If a browser-origin client is ever added, add
+  CORS then.
+
+## Dev tunnel (no deploy needed for development)
+
+To test sync against a reachable URL WITHOUT deploying the relay, expose the
+local `enq relay` through a tunnel:
+
+```bash
+# terminal 1 - the relay on localhost
+uv run enq relay --secret <your-secret>
+
+# terminal 2 - a public URL that forwards to it
+cloudflared tunnel --url http://127.0.0.1:8788
+# or: ngrok http 8788
+```
+
+The tunnel prints a public `https://...` URL; use THAT as `sync_relay_url` (and
+in the QR payload). TLS is provided by the tunnel, so the Bearer secret is safe
+in transit. The tunnel is for development/testing only - a real host is the
+production answer.
+
+## The dev harness is USB by design; the app is not
+
+`bin/launch mobile` runs `cargo tauri android dev`, whose dev-server connection
+is USB-tethered by design (`adb reverse`). That is the DEV HARNESS, not the
+product: an app that only syncs while plugged in is a bug in the test setup, not
+in sync.
+
+To verify the app works unplugged, do NOT use `bin/launch mobile`:
+build the apk, install it, and launch it from the phone with USB disconnected:
+
+```bash
+cargo tauri android build --debug --target aarch64
+# install the apk, disconnect USB, launch from the phone
+```
+
+The installed app syncs over the hosted/tunnelled relay (QR.2) with no USB at
+all. Treat any "works only while plugged in" result as a failure of the harness
+to be ignored, and re-test via the installed apk.
+
 ## Security invariants
 
 - The relay stores opaque bytes only.

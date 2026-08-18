@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import typer
+import uvicorn
 from httpx import ConnectError
 
 from . import config
@@ -242,6 +243,49 @@ def chunk() -> None:
 def facet_gate() -> None:
     """Decide which artifacts never get facets."""
     _echo(_call("POST", "/facet-gate"))
+
+
+@app.command()
+def relay(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        envvar="RELAY_HOST",
+        help="Bind address. Default 127.0.0.1 (local only). Use 0.0.0.0 for LAN.",
+    ),
+    port: int = typer.Option(
+        8788,
+        "--port",
+        envvar="RELAY_PORT",
+        help="Port to listen on (default 8788).",
+    ),
+    data_dir: str = typer.Option(
+        "./relay-data",
+        "--data-dir",
+        envvar="RELAY_DATA_DIR",
+        help="Directory for relay object storage (default ./relay-data).",
+    ),
+    secret: str = typer.Option(
+        "dev-secret",
+        "--secret",
+        envvar="RELAY_SECRET",
+        help="Bearer secret for relay auth (default dev-secret). Override with RELAY_SECRET.",
+    ),
+) -> None:
+    """Run the sync relay locally.
+
+    The relay is a dumb byte store for end-to-end encrypted snapshots.
+    It authenticates with a Bearer secret and serves SSE for change notifications.
+    """
+
+    from .relay.app import create_relay
+    from pathlib import Path
+
+    app = create_relay(data_dir=Path(data_dir), secret=secret)
+    typer.secho(f"Relay listening on {host}:{port}", fg=typer.colors.GREEN)
+    typer.secho(f"Data directory: {data_dir}", fg=typer.colors.CYAN)
+    typer.secho(f"Bearer secret: {secret}", fg=typer.colors.CYAN)
+    uvicorn.run(app, host=host, port=port)
 
 
 # ---------------------------------------------------------------------------

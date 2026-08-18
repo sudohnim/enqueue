@@ -10,11 +10,11 @@ from __future__ import annotations
 import os
 import re
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, Response
-
 # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from importlib import resources
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from .. import db
 
@@ -62,7 +62,7 @@ def _bust(html: str) -> str:
     still hit the cache.
     """
 
-    def repl(m: "re.Match[str]") -> str:
+    def repl(m: re.Match[str]) -> str:
         path = m.group("path")
         fp = os.path.join(str(static_dir), path[len("/static/") :])
         try:
@@ -86,6 +86,12 @@ def home() -> HTMLResponse:
 @router.get("/capture", response_class=HTMLResponse)
 def capture_window() -> HTMLResponse:
     html = resources.files("enqueue").joinpath("static/capture.html").read_text(encoding="utf-8")
+    return HTMLResponse(_bust(html), headers=_NO_CACHE)
+
+
+@router.get("/flight", response_class=HTMLResponse)
+def flight_window() -> HTMLResponse:
+    html = resources.files("enqueue").joinpath("static/flight.html").read_text(encoding="utf-8")
     return HTMLResponse(_bust(html), headers=_NO_CACHE)
 
 

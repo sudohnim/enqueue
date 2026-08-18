@@ -764,8 +764,18 @@
       dismiss();
       return;
     }
-    // Enter is a newline now, not a submit: markdown-as-you-type needs multi-line
-    // input ("- a" Enter "- b" is a bullet list). The Keep button is the submit.
+    // A plain Enter submits the capture, exactly as the Keep button does.
+    // Shift+Enter (or Cmd/Ctrl+Enter) is a newline: markdown-as-you-type needs
+    // multi-line input ("- a" Shift+Enter "- b" is a bullet list).
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      event.preventDefault();
+      keep();
+    }
   });
 
   // An image on the clipboard is the case where asking "what kind is this?" would be

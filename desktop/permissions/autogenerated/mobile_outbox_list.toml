@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-outbox-list"
+description = "Enables the mobile_outbox_list command without any pre-configured scope."
+commands.allow = ["mobile_outbox_list"]
+
+[[permission]]
+identifier = "deny-mobile-outbox-list"
+description = "Denies the mobile_outbox_list command without any pre-configured scope."
+commands.deny = ["mobile_outbox_list"]

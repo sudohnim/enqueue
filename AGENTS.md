@@ -23,63 +23,65 @@ Treat the local store as plaintext and keep secret material out of the search in
 2. **Sync and E2E are built; the desktop SETUP flow is the missing piece.**
 The model is fixed and implemented: `docs/e2e/E2E.md` specifies encrypted per-artifact snapshots with last-writer-wins per artifact (no event log, no logical clock), and a dumb end-to-end-encrypted relay plus SSE push for the mobile client. Do not resurrect the old event-log / multi-peer design; LWW-per-snapshot is the model. SQLite is the source of truth, not a materialised view of a log. (E2E.md predates two renames: use `saved_pivots` for its `exhibits`, and ignore its `lens_judgments`.)
 What exists in code:
-- Relay: `src/enqueue/relay/app.py` (`create_relay(data_dir, secret=...)`, Bearer-secret auth, stores opaque bytes only). No `enq relay` command yet - run via uvicorn factory.
-- Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
-- E2E keyring: `keyring_file.py` writes `keyring.json` with the DEK wrapped TWICE - under a password-KEK (Argon2id) and a recovery-phrase-KEK. Plaintext DEK held in memory only after unlock. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/.enqueue-poc/enqueue.db` at rest is still plain sqlite (see decision 1).
-- Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
-**Pairing model = Option A (decided, security-critical):** the pairing code carries ONLY `{relay_url, relay_secret}` - never the DEK, keyring, or recovery phrase. `relay_secret` grants download of ciphertext, not decryption. The decryption key is derived on the new device from the LIBRARY PASSWORD (Argon2id → unwrap DEK), which never leaves the device. The QR renders LOCALLY (Rust `qrcode` crate) - never send the code to any external service. Never put key material in a scannable/pasteable artifact.
-**Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600, NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
-**The gap (what's NOT built):** there is no desktop flow to CONFIGURE sync in the first place. `keyring_file.initialize(password)` (creates the DEK, returns the recovery phrase) is called by no CLI or endpoint; the Settings > Sync tab shows only a dead-end "Not configured" message with no inputs; there is no `enq relay` command. Until that flow exists, sync cannot be started from the UI. This is the current PLAN.md.
 
-3. **The data directory is `~/.enqueue-poc` on purpose.**
+- Relay: `src/enqueue/relay/app.py` (`create_relay(data_dir, secret=...)`, Bearer-secret auth, stores opaque bytes only). `enq relay` command in `src/enqueue/cli.py` wraps this with uvicorn (flags: `--host`, `--port`, `--data-dir`, `--secret`; env: `RELAY_HOST`, `RELAY_PORT`, `RELAY_DATA_DIR`, `RELAY_SECRET`).
+- Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
+- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/.enqueue-poc/enqueue.db` at rest is still plain sqlite (see decision 1).
+- Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
+**Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout).** The direction, being built in `docs/PLAN.md` Phase QRSYNC: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop shows a locally-rendered QR encoding `{relay_url, relay_secret, dek}`, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the old recovery phrase becomes a recovery-code-only artifact for total-device-loss. The QR now DOES carry key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. Until Phase QRSYNC lands, the code still contains the Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow); those are being replaced - do not extend them.
+**Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600, NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
+**The gap (what's NOT built):** the desktop sync-setup flow is built (SU.1-SU.4, SU.7) and the keyring is now passwordless with the DEK auto-loaded from the Keychain (QR.1). What remains open is Phase QRSYNC: QR.2 (hosted relay + tunnel docs), QR.3 (Signal-style linking QR carrying {relay_url, relay_secret, dek}), QR.4 (mobile camera-scan linking, replacing the paste-code + password surface), QR.5 (mobile background/lock-resilient sync), QR.6 (loader transparency), QR.7 (mobile bottom pill). This is the current PLAN.md.
+
+1. **The data directory is `~/.enqueue-poc` on purpose.**
 The `-poc` suffix is intentional for the current phase.
 Do not rename it without an explicit migration of user data.
 
-4. **`instructor.Mode.JSON` is used for every adapter.**
+2. **`instructor.Mode.JSON` is used for every adapter.**
 All providers pass `mode=instructor.Mode.JSON` unconditionally.
 This is correct for now, not a bug to fix.
 Ollama's adapter calls it out in a comment because the default is `TOOLS`, which needs function-calling support that local servers often lack.
 
-5. **Facet trust is a fixed multiplier, not a learning loop.**
+3. **Facet trust is a fixed multiplier, not a learning loop.**
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
 A trust-update mechanism (promote on save, demote on eject) is a planned feature, not an implemented one.
 For now, trust is a flat constant and every facet contributes equally after the 0.5 weighting.
 
-6. **There is no Lumo. The cloud backend is OpenRouter.**
+4. **There is no Lumo. The cloud backend is OpenRouter.**
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
 The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
-7. **crawl4ai may be added later.**
+5. **crawl4ai may be added later.**
 The old docs reference crawl4ai, marker, and whisper.cpp; none are in `pyproject.toml`.
 crawl4ai may return for better link capture.
 marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
-8. **API version string and package version are two different things.**
+6. **API version string and package version are two different things.**
 `pyproject.toml version = "0.1.0"` is the package release version.
 `api.py FastAPI(version="0.2.0")` is just the string the OpenAPI docs page shows.
 They are allowed to differ.
 If you bump one for a release, bump the other to match, but a mismatch is not a bug.
 
-9. **There is one view concept: the saved pivot.**
+7. **There is one view concept: the saved pivot.**
 The `exhibits` / `exhibit_members` tables and the `/exhibits*` endpoints that an earlier agent introduced to paper over the L.2 add-to-grouping bug are removed.
 `saved_pivots` and `/pivots*` carry the same concept with a re-runnable spec.
 The wall has no ephemeral view surface; only a saved pivot persists a view.
 
-10. **The SSE lens surface and curate are removed.**
+8. **The SSE lens surface and curate are removed.**
 `POST /lens` (Server-Sent Events), `POST /curate`, and the lens-cache endpoints were deleted in Phase M, along with the retrieve modules that powered them (`retrieve/expand.py`, `retrieve/rerank.py`, `retrieve/score.py`, `retrieve/lens.py`, `retrieve/judgments.py`, `retrieve/curate.py`), the lens settings, and the `lens_judgments` table (migration 0020).
 Search is the retrieval path; the assistant organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
 Do not add SSE plumbing back unless asked.
 
-11. **The browser extension is a future milestone; Android is in progress.**
+9. **The browser extension is a future milestone; Android is in progress.**
 No browser extension code exists; document it as future, do not build against it.
 The Android app (Tauri v2 mobile, `desktop/gen/android`, crate builds as `enqueue_lib`) is built: it syncs the encrypted library through the relay into a local SQLite copy, captures, reads, writes (note edits, annotations, tags, pins, trash/restore), and chats by calling the configured LLM backend directly with keyword-only (FTS) grounding.
 It never computes embeddings, facets, or entities; enrichment stays desktop-only. AI-derived data that has not synced down is absent quietly - never a placeholder or a fabricated summary.
 Mobile UI lives in `src/enqueue/static/mobile.html` (relative asset paths). Layout: a single-column list under SAVED / EVERYTHING ELSE shelf headers, newest first; rows open a read-only Reader (note markdown, image with pinch-zoom, link preview card, PDF via vendored pdf.js); a bottom pill (capture in `--purple-bold`, search, the living raven eye for ask, menu). The capture "raven moment" is the ANIM.4 flight, or a fade under reduced motion.
 Build/run the app with `bin/launch mobile` (physical phone only). What remains open is the desktop sync-setup flow (decision 2) and any items in the current `docs/PLAN.md`.
 Sync/mobile scope boundaries (durable): one person, one library - no multi-user or shared libraries. Android-first; iOS is a follow-on. The relay is additive - with sync off, nothing about the desktop changes. `saved_pivots` (saved views) and chats do NOT cross the relay; mobile reads artifacts only, and mobile chat histories are device-local by decision.
+Mobile unlock is password-only, by decision (keep it simple). The phone derives the DEK from the library password; there is deliberately NO recovery-phrase unlock path on the phone. The desktop is the single source of truth and the recovery anchor: forget the phone password and you simply re-pair from the desktop (paste code + password). Do not add a mobile recovery-phrase fallback.
 
-12. **The user-facing concept is "view", not "grouping".**
+10. **The user-facing concept is "view", not "grouping".**
 We use the word "view" for the user-facing concept that was previously called "grouping", "saved grouping", and "collection".
 The persistence layer keeps its names (`saved_pivots`, `pivots_saved`, `_PlannedSpec`, `/pivots*` endpoints).
 Only user-facing strings and docs say "view".
@@ -768,6 +770,10 @@ The shell finds the engine repo via (in order):
 - A double-clicked app inherits the launch daemon's PATH, which has no `/opt/homebrew/bin`. The shell searches for `uv` at `/opt/homebrew/bin/uv` and `/usr/local/bin/uv`.
 - `macOSPrivateApi: true` is needed for the transparent capture window.
 - Tauri commands: `capture_dismiss`, `capture_drag`, `open_external`, `window_drag`. Each needs both `generate_handler!` registration and a matching permission in `tauri.conf.json`.
+
+### Verification gate limits
+
+`bin/verify` runs JS parse, pytest, contrast check, and an Android compile check (when the NDK is present). A green `bin/verify` is NOT proof the app runs on a device - it only proves the code parses, the tests pass, the palette meets contrast, and the mobile module compiles for the Android target. The desktop window (`bin/launch desktop`) and a real device (`bin/launch mobile`) are the only proof the app runs. This is the AGENTS.md "reproduce in a real setting" rule applied to the shells.
 
 ---
 

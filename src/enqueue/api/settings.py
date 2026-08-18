@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .. import db, greeting, keyring, settings
+from .. import db, greeting, keyring, keyring_file, settings
 from ..sync.client import push_keyring
 
 router = APIRouter()
@@ -24,6 +24,14 @@ def read_settings() -> dict:
         "backends": settings.backends(),
         "sync": settings.sync_state(),
     }
+
+
+class KeyringInit(BaseModel):
+    force: bool = False
+
+
+class KeyringUnlock(BaseModel):
+    recovery_phrase: str
 
 
 class SettingsUpdate(BaseModel):
@@ -85,6 +93,60 @@ def store_sync_secret(req: SyncSecret) -> dict:
 def forget_sync_secret() -> dict:
     keyring.sync_secret_clear()
     return settings.sync_state()
+
+
+@router.post("/settings/keyring-init")
+def keyring_init(req: KeyringInit) -> dict:
+    # A legacy (pre-QR.1 two-slot) keyring cannot be carried forward: the new
+    # format drops the password slot, so such a file is re-initialized in place
+    # with a fresh DEK and recovery phrase (the UI confirms this first). A
+    # current-format keyring still refuses re-init unless force=true.
+    if keyring_file.is_initialized() and not req.force and not keyring_file.is_legacy():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A keyring already exists. Re-initializing would orphan the "
+                "current DEK and all synced data. If you are certain, pass "
+                "`force=true`, but understand this is irreversible."
+            ),
+        )
+    phrase = keyring_file.initialize()
+    return {
+        "recovery_phrase": phrase,
+        "message": (
+            "Write this down. It is the only way to recover your library if "
+            "you lose access to this device. It will never be shown again."
+        ),
+    }
+
+
+@router.post("/settings/keyring-unlock")
+def keyring_unlock(req: KeyringUnlock) -> dict:
+    """Unlock the sync keyring in memory with the recovery phrase.
+
+    The recovery phrase is never logged or written to disk. On success the sync
+    worker resumes pushing/pulling; on a wrong phrase it is refused with a
+    human error and the keyring stays locked. If there is no keyring to unlock,
+    the request is refused with a pointer to initialize one.
+    """
+    if not keyring_file.is_initialized():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "There is no sync keyring to unlock. Initialize sync on the " "Sync tab first."
+            ),
+        )
+    try:
+        keyring_file.unlock_with_recovery(req.recovery_phrase)
+    except keyring_file.UnlockError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "That recovery phrase did not unlock the sync keyring. Please "
+                "check it and try again - the keyring stays locked."
+            ),
+        ) from exc
+    return {"ok": True, "message": "sync keyring unlocked"}
 
 
 @router.patch("/settings")

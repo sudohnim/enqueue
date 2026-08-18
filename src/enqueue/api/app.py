@@ -35,6 +35,17 @@ app = create_app()
 def serve() -> None:
     import uvicorn
 
+    # QR.1: load the DEK from the Keychain/file so sync is unlocked with no
+    # prompt after a restart. A missing DEK just means sync stays paused until
+    # the recovery phrase is used or the keyring is re-initialized.
+    try:
+        from .. import keyring_file
+
+        if keyring_file.load_dek_from_keychain() is not None:
+            print("[engine] sync keyring unlocked from the Keychain")
+    except Exception as exc:  # noqa: BLE001 - never block startup on this
+        print(f"[engine] could not auto-load the sync keyring: {exc}")
+
     try:
         expired = trash.purge_expired()
         if expired["purged"]:

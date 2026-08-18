@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-outbox-push"
+description = "Enables the mobile_outbox_push command without any pre-configured scope."
+commands.allow = ["mobile_outbox_push"]
+
+[[permission]]
+identifier = "deny-mobile-outbox-push"
+description = "Denies the mobile_outbox_push command without any pre-configured scope."
+commands.deny = ["mobile_outbox_push"]

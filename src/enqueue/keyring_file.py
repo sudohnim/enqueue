@@ -1,10 +1,13 @@
-"""The sync keyring file: the wrapped DEK, password, and recovery code (E2E.md Phase E2).
+"""The sync keyring file: the wrapped DEK and recovery code (QR.1).
 
-Forgetting the password must not destroy the library, so the DEK is wrapped
-twice: once under a KEK derived from the password (Argon2id MODERATE), and once
-under a recovery-KEK derived from a high-entropy recovery phrase. Only the
-wrapped keys are written to `keyring.json`; the plaintext DEK is held in memory
-only after unlock, and the recovery phrase is never written anywhere.
+The DEK is wrapped ONLY under a recovery-KEK derived from a high-entropy
+recovery phrase. The password-KEK wrap slot has been removed (QR.1): the
+DEK persists in the macOS Keychain (or a mode-0600 file on non-macOS), so
+no password is needed to unlock on restart. The recovery phrase is the only
+way to recover the DEK if the Keychain/file is lost.
+
+Only the wrapped DEK is written to `keyring.json`; the plaintext DEK is held
+in memory after unlock/load, and the recovery phrase is never written anywhere.
 
 This is separate from `keyring.py` (the macOS API-key store) on purpose: those
 keys go in the Keychain, while this file lives in `DATA_DIR` because the sync
@@ -18,7 +21,7 @@ import json
 import nacl.exceptions
 import nacl.utils
 
-from . import config, crypto
+from . import config, crypto, keyring
 
 
 def _path():
@@ -27,7 +30,7 @@ def _path():
     return config.DATA_DIR / "keyring.json"
 
 
-# The plaintext DEK, held in memory only after unlock (E2E.md Section 1). None
+# The plaintext DEK, held in memory only after unlock/load (QR.1). None
 # until then; the sync client treats a locked keyring as "sync paused".
 _dek: bytes | None = None
 
@@ -38,7 +41,7 @@ def dek() -> bytes | None:
 
 
 class UnlockError(Exception):
-    """A wrong password or recovery phrase; never returns partial bytes."""
+    """A wrong recovery phrase; never returns partial bytes."""
 
 
 def _crockford_base32(data: bytes) -> str:
@@ -76,15 +79,34 @@ def is_initialized() -> bool:
     return _path().exists()
 
 
-def initialize(password: str) -> str:
-    """Create the DEK, wrap it twice, write keyring.json, return the recovery phrase."""
+def _is_legacy_format(record: dict) -> bool:
+    """True for the old two-slot (password + recovery) keyring.json format."""
+    return "password_salt" in record and "dek_by_password" in record
+
+
+def is_legacy() -> bool:
+    """Whether the existing keyring.json is the pre-QR.1 two-slot format.
+
+    Legacy files are pre-release dev installs only. The new code cannot use the
+    password slot and must not carry it forward: such a file is re-initialized
+    in place (fresh DEK + fresh recovery phrase) behind the destructive
+    confirmation, same semantics as FIX.4's guarded reset.
+    """
+    record = _read()
+    return record is not None and _is_legacy_format(record)
+
+
+def initialize() -> str:
+    """Create the DEK, wrap it under the recovery-KEK only, write keyring.json,
+    store the DEK in the Keychain/file, return the recovery phrase.
+
+    A legacy two-slot keyring (pre-QR.1) is overwritten in place with a fresh
+    DEK and recovery phrase - the caller decides when that is safe (the
+    destructive confirmation).
+    """
     global _dek
 
     dek = crypto.new_dek()
-
-    password_salt = nacl.utils.random(16)
-    kek = crypto.derive_kek(password, password_salt)
-    dek_by_password = crypto.wrap(dek, kek)
 
     phrase = _crockford_base32(nacl.utils.random(20))
     recovery_salt = nacl.utils.random(16)
@@ -93,13 +115,15 @@ def initialize(password: str) -> str:
 
     _write(
         {
-            "version": 1,
-            "password_salt": password_salt.hex(),
+            "version": 2,  # version 2 = passwordless (recovery-only) format
             "recovery_salt": recovery_salt.hex(),
-            "dek_by_password": dek_by_password.hex(),
             "dek_by_recovery": dek_by_recovery.hex(),
         }
     )
+
+    # Store the raw DEK in the Keychain (macOS) or file (other platforms)
+    keyring.dek_store(dek)
+
     _dek = dek
     return phrase
 
@@ -114,22 +138,34 @@ def _unlock(field: str, secret: str, salt_field: str) -> bytes:
         kek = crypto.derive_kek(secret, salt)
         return crypto.unwrap(wrapped, kek)
     except (KeyError, ValueError, nacl.exceptions.CryptoError) as exc:
-        # A wrong password, a wrong recovery phrase, or a damaged record are all
-        # one case: cannot unlock, and never partial bytes.
+        # A wrong recovery phrase, or a damaged record: cannot unlock.
         raise UnlockError("could not unlock") from exc
 
 
-def unlock(password: str) -> bytes:
-    global _dek
-
-    _dek = _unlock("dek_by_password", password, "password_salt")
-    return _dek
-
-
 def unlock_with_recovery(phrase: str) -> bytes:
+    """Unlock the DEK using the recovery phrase, then store it in Keychain/file."""
     global _dek
 
     _dek = _unlock("dek_by_recovery", phrase, "recovery_salt")
+    keyring.dek_store(_dek)
+    return _dek
+
+
+def load_dek_from_keychain() -> bytes | None:
+    """Load the DEK from Keychain/file into memory on engine startup (QR.1).
+
+    Returns the DEK if found and loads it into _dek, or None if not stored.
+    Does not raise - a missing DEK just means sync stays paused until
+    explicit unlock or re-initialization.
+    """
+    global _dek
+
+    if _dek is not None:
+        return _dek
+
+    dek = keyring._dek_get()
+    if dek is not None:
+        _dek = dek
     return _dek
 
 
@@ -145,3 +181,12 @@ def regenerate_recovery(dek: bytes) -> str:
     record["dek_by_recovery"] = crypto.wrap(dek, kek).hex()
     _write(record)
     return phrase
+
+
+def clear_keyring() -> None:
+    """Remove keyring.json and the stored DEK (for reset sync)."""
+    global _dek
+
+    _path().unlink(missing_ok=True)
+    keyring.dek_clear()
+    _dek = None

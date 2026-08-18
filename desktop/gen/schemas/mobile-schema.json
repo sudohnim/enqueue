@@ -363,10 +363,34 @@
           "markdownDescription": "Enables the capture_drag command without any pre-configured scope."
         },
         {
+          "description": "Enables the desktop_link_code command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-desktop-link-code",
+          "markdownDescription": "Enables the desktop_link_code command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the flight_done command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-flight-done",
+          "markdownDescription": "Enables the flight_done command without any pre-configured scope."
+        },
+        {
           "description": "Enables the hotkey_changed command without any pre-configured scope.",
           "type": "string",
           "const": "allow-hotkey-changed",
           "markdownDescription": "Enables the hotkey_changed command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_add_annotation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-add-annotation",
+          "markdownDescription": "Enables the mobile_add_annotation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_add_tag command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-add-tag",
+          "markdownDescription": "Enables the mobile_add_tag command without any pre-configured scope."
         },
         {
           "description": "Enables the mobile_blob command without any pre-configured scope.",
@@ -381,10 +405,40 @@
           "markdownDescription": "Enables the mobile_capture command without any pre-configured scope."
         },
         {
+          "description": "Enables the mobile_capture_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-capture-image",
+          "markdownDescription": "Enables the mobile_capture_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_chat command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-chat",
+          "markdownDescription": "Enables the mobile_chat command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_clear_blob_cache command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-clear-blob-cache",
+          "markdownDescription": "Enables the mobile_clear_blob_cache command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mobile_get command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mobile-get",
           "markdownDescription": "Enables the mobile_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_get_tags command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-get-tags",
+          "markdownDescription": "Enables the mobile_get_tags command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_link_qr command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-link-qr",
+          "markdownDescription": "Enables the mobile_link_qr command without any pre-configured scope."
         },
         {
           "description": "Enables the mobile_list command without any pre-configured scope.",
@@ -393,10 +447,94 @@
           "markdownDescription": "Enables the mobile_list command without any pre-configured scope."
         },
         {
+          "description": "Enables the mobile_list_trashed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-list-trashed",
+          "markdownDescription": "Enables the mobile_list_trashed command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_outbox_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-outbox-list",
+          "markdownDescription": "Enables the mobile_outbox_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_outbox_push command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-outbox-push",
+          "markdownDescription": "Enables the mobile_outbox_push command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_pairing_code command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-pairing-code",
+          "markdownDescription": "Enables the mobile_pairing_code command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_pairing_setup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-pairing-setup",
+          "markdownDescription": "Enables the mobile_pairing_setup command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_pick_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-pick-image",
+          "markdownDescription": "Enables the mobile_pick_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_remove_annotation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-remove-annotation",
+          "markdownDescription": "Enables the mobile_remove_annotation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_remove_tag command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-remove-tag",
+          "markdownDescription": "Enables the mobile_remove_tag command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_restore_trashed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-restore-trashed",
+          "markdownDescription": "Enables the mobile_restore_trashed command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_save_cropped_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-save-cropped-image",
+          "markdownDescription": "Enables the mobile_save_cropped_image command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mobile_search command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mobile-search",
           "markdownDescription": "Enables the mobile_search command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_settings_apply command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-settings-apply",
+          "markdownDescription": "Enables the mobile_settings_apply command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_settings_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-settings-get",
+          "markdownDescription": "Enables the mobile_settings_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_settings_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-settings-set",
+          "markdownDescription": "Enables the mobile_settings_set command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_settings_sync command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-settings-sync",
+          "markdownDescription": "Enables the mobile_settings_sync command without any pre-configured scope."
         },
         {
           "description": "Enables the mobile_status command without any pre-configured scope.",
@@ -409,6 +547,24 @@
           "type": "string",
           "const": "allow-mobile-sync",
           "markdownDescription": "Enables the mobile_sync command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_toggle_pin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-toggle-pin",
+          "markdownDescription": "Enables the mobile_toggle_pin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_toggle_trash command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-toggle-trash",
+          "markdownDescription": "Enables the mobile_toggle_trash command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mobile_update_note command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-update-note",
+          "markdownDescription": "Enables the mobile_update_note command without any pre-configured scope."
         },
         {
           "description": "Enables the open_external command without any pre-configured scope.",
@@ -441,10 +597,34 @@
           "markdownDescription": "Denies the capture_drag command without any pre-configured scope."
         },
         {
+          "description": "Denies the desktop_link_code command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-desktop-link-code",
+          "markdownDescription": "Denies the desktop_link_code command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the flight_done command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-flight-done",
+          "markdownDescription": "Denies the flight_done command without any pre-configured scope."
+        },
+        {
           "description": "Denies the hotkey_changed command without any pre-configured scope.",
           "type": "string",
           "const": "deny-hotkey-changed",
           "markdownDescription": "Denies the hotkey_changed command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_add_annotation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-add-annotation",
+          "markdownDescription": "Denies the mobile_add_annotation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_add_tag command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-add-tag",
+          "markdownDescription": "Denies the mobile_add_tag command without any pre-configured scope."
         },
         {
           "description": "Denies the mobile_blob command without any pre-configured scope.",
@@ -459,10 +639,40 @@
           "markdownDescription": "Denies the mobile_capture command without any pre-configured scope."
         },
         {
+          "description": "Denies the mobile_capture_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-capture-image",
+          "markdownDescription": "Denies the mobile_capture_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_chat command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-chat",
+          "markdownDescription": "Denies the mobile_chat command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_clear_blob_cache command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-clear-blob-cache",
+          "markdownDescription": "Denies the mobile_clear_blob_cache command without any pre-configured scope."
+        },
+        {
           "description": "Denies the mobile_get command without any pre-configured scope.",
           "type": "string",
           "const": "deny-mobile-get",
           "markdownDescription": "Denies the mobile_get command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_get_tags command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-get-tags",
+          "markdownDescription": "Denies the mobile_get_tags command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_link_qr command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-link-qr",
+          "markdownDescription": "Denies the mobile_link_qr command without any pre-configured scope."
         },
         {
           "description": "Denies the mobile_list command without any pre-configured scope.",
@@ -471,10 +681,94 @@
           "markdownDescription": "Denies the mobile_list command without any pre-configured scope."
         },
         {
+          "description": "Denies the mobile_list_trashed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-list-trashed",
+          "markdownDescription": "Denies the mobile_list_trashed command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_outbox_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-outbox-list",
+          "markdownDescription": "Denies the mobile_outbox_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_outbox_push command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-outbox-push",
+          "markdownDescription": "Denies the mobile_outbox_push command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_pairing_code command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-pairing-code",
+          "markdownDescription": "Denies the mobile_pairing_code command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_pairing_setup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-pairing-setup",
+          "markdownDescription": "Denies the mobile_pairing_setup command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_pick_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-pick-image",
+          "markdownDescription": "Denies the mobile_pick_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_remove_annotation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-remove-annotation",
+          "markdownDescription": "Denies the mobile_remove_annotation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_remove_tag command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-remove-tag",
+          "markdownDescription": "Denies the mobile_remove_tag command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_restore_trashed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-restore-trashed",
+          "markdownDescription": "Denies the mobile_restore_trashed command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_save_cropped_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-save-cropped-image",
+          "markdownDescription": "Denies the mobile_save_cropped_image command without any pre-configured scope."
+        },
+        {
           "description": "Denies the mobile_search command without any pre-configured scope.",
           "type": "string",
           "const": "deny-mobile-search",
           "markdownDescription": "Denies the mobile_search command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_settings_apply command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-settings-apply",
+          "markdownDescription": "Denies the mobile_settings_apply command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_settings_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-settings-get",
+          "markdownDescription": "Denies the mobile_settings_get command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_settings_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-settings-set",
+          "markdownDescription": "Denies the mobile_settings_set command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_settings_sync command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-settings-sync",
+          "markdownDescription": "Denies the mobile_settings_sync command without any pre-configured scope."
         },
         {
           "description": "Denies the mobile_status command without any pre-configured scope.",
@@ -487,6 +781,24 @@
           "type": "string",
           "const": "deny-mobile-sync",
           "markdownDescription": "Denies the mobile_sync command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_toggle_pin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-toggle-pin",
+          "markdownDescription": "Denies the mobile_toggle_pin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_toggle_trash command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-toggle-trash",
+          "markdownDescription": "Denies the mobile_toggle_trash command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_update_note command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-update-note",
+          "markdownDescription": "Denies the mobile_update_note command without any pre-configured scope."
         },
         {
           "description": "Denies the open_external command without any pre-configured scope.",

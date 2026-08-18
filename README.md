@@ -78,6 +78,38 @@ The engine binds to `127.0.0.1` only, never to `0.0.0.0`.
 
 ---
 
+## Running the sync relay
+
+The sync relay is a standalone service that stores end-to-end encrypted snapshots
+and serves them to paired devices. It is a dumb byte store - it cannot decrypt
+anything.
+
+```bash
+uv run enq relay
+```
+
+This starts the relay on `127.0.0.1:8788` with a default data directory of
+`./relay-data` and a default Bearer secret of `dev-secret`.
+
+Options:
+
+- `--host` - Bind address (default `127.0.0.1`, use `0.0.0.0` for LAN access)
+- `--port` - Port to listen on (default `8788`)
+- `--data-dir` - Directory for object storage (default `./relay-data`)
+- `--secret` - Bearer secret for authentication (default `dev-secret`)
+
+Environment variables can also be used:
+
+- `RELAY_HOST` - Bind address
+- `RELAY_PORT` - Port
+- `RELAY_DATA_DIR` - Data directory
+- `RELAY_SECRET` - Bearer secret
+
+The relay authenticates all requests with a Bearer token. A wrong secret returns
+`401 Unauthorized`.
+
+---
+
 ## CLI commands
 
 The entry point is `enq`, registered in `pyproject.toml` as `enqueue.cli:app`.
@@ -97,6 +129,7 @@ All commands except `serve`, `migrate`, and `version` are thin HTTP clients over
 | `enq chat "question" --chat-id "ID"` | Ask the collection something. Starts a new conversation or continues one. |
 | `enq chats --limit 20` | List conversations, newest first. |
 | `enq facets --limit 0 --redo` | Generate conceptual facets for eligible artifacts. Slow, resumable. |
+| `enq relay` | Run the sync relay locally (default `127.0.0.1:8788`). |
 | `enq facet-gate` | Decide which artifacts are eligible for facet generation. |
 | `enq index` | Rebuild the search index from the database. |
 | `enq doctor` | Index health: artifact/chunk counts, index row counts, embedding version, sync with the chunks table. |

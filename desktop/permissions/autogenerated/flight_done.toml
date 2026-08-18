@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-flight-done"
+description = "Enables the flight_done command without any pre-configured scope."
+commands.allow = ["flight_done"]
+
+[[permission]]
+identifier = "deny-flight-done"
+description = "Denies the flight_done command without any pre-configured scope."
+commands.deny = ["flight_done"]

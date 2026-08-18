@@ -13,6 +13,7 @@ The relay, engine sync client/worker, snapshot LWW, the E2E keyring
 the mobile app all exist. The desktop can also SHOW a pairing code once configured.
 
 The gap: **there is no way to CONFIGURE sync on the desktop in the first place.**
+
 - `keyring_file.initialize(password)` (creates the DEK, returns the recovery phrase) is
   called by no CLI and no endpoint - the keyring can never be created from a surface.
 - The Settings > Sync tab, when unconfigured, shows a dead-end "Not configured" message
@@ -24,16 +25,18 @@ Result: `keyring_file.dek()` is always None, sync stays locked, and the pairing 
 (which assumes a configured, initialized library) is unreachable. This phase builds the
 front door.
 
-## Pairing model (decided - do not change)
+## Pairing model (SUPERSEDED - see Phase QRSYNC)
 
-Option A. The pairing code carries ONLY `{relay_url, relay_secret}` - never the DEK,
-keyring, or recovery phrase. The key is derived on each device from the LIBRARY
-PASSWORD, which never leaves the device. QR renders locally. Full statement in
-`AGENTS.md` decision #2.
+The old "Option A" model (paste a code + type a library password on each device) was
+replaced on 2026-08-16 after live testing. The current model is QR-linked, hosted-relay,
+passwordless - the desktop shows a camera-scan QR that carries the key, no password
+anywhere. Full statement in Phase QRSYNC below and `AGENTS.md` decision #2. Do NOT build
+against Option A; the SU / FIX phases below predate the switch and are kept only for
+their (mostly done) engine/relay/keyring groundwork that QRSYNC reuses.
 
 ## Phase SU - the desktop sync setup flow
 
-- [ ] **SU.1 [AGENT]** An `enq relay` CLI command to run the relay locally.
+- [x] **SU.1 [AGENT]** An `enq relay` CLI command to run the relay locally.
   Wrap `enqueue.relay.app.create_relay(data_dir, secret=...)` in a CLI command
   (`src/enqueue/cli.py`) that serves it with uvicorn. Flags/env for port (default a
   fixed local port, documented), the Bearer secret (`RELAY_SECRET`), and the data dir
@@ -44,7 +47,7 @@ PASSWORD, which never leaves the device. QR renders locally. Full statement in
   Done when: `enq relay` boots and answers on the documented local port; a wrong Bearer
   secret is rejected (401); `enq relay --help` shows the flags.
 
-- [ ] **SU.2 [AGENT]** An endpoint to initialize the library keyring.
+- [x] **SU.2 [AGENT]** An endpoint to initialize the library keyring.
   Add `POST /settings/keyring-init` taking `{password}` that calls
   `keyring_file.initialize(password)` and returns the recovery phrase ONCE in the
   response body. Guard with `keyring_file.is_initialized()`: refuse to re-initialize an
@@ -59,7 +62,7 @@ PASSWORD, which never leaves the device. QR renders locally. Full statement in
   message; the phrase never appears in any log; `keyring_file.dek()` is non-None after a
   subsequent unlock with that password.
 
-- [ ] **SU.3 [AGENT]** The Settings > Sync setup form (replaces the dead "Not
+- [x] **SU.3 [AGENT]** The Settings > Sync setup form (replaces the dead "Not
   configured" state in `static/js/settings.js`). When sync is not configured, render a
   real form, walking the person through, in order:
   1. Relay URL (default the local `enq relay` address from SU.1).
@@ -79,7 +82,7 @@ PASSWORD, which never leaves the device. QR renders locally. Full statement in
   the relay - and the tab then shows the pairing code; reloading Settings shows the
   configured state; `bin/verify` passes.
 
-- [ ] **SU.4 [AGENT]** Fix the stale empty-state copy. Remove the pre-Option-A wording
+- [x] **SU.4 [AGENT]** Fix the stale empty-state copy. Remove the pre-Option-A wording
   ("import your keyring and recovery phrase on your mobile device") from
   `settings.js`; the new SU.3 form replaces it. Grep for any other stale "import your
   keyring" / "scan the QR with your phone's camera" strings that imply removed flows and
@@ -94,17 +97,529 @@ PASSWORD, which never leaves the device. QR renders locally. Full statement in
   Done when: an artifact made on either device appears on the other through the local
   relay, with the password never leaving its device and no key material in the pairing
   code.
+  SUPERSEDED (2026-08-16) - this is the Option A paste-code + password flow, replaced by
+  the camera-only QR link. Its real successor is QR.4b's done-when (scan the desktop QR,
+  library appears on the phone). During live testing the mechanism WAS proven end to end:
+  desktop->mobile synced and decrypted a note on the physical phone, and mobile->desktop
+  pushed (it only failed to appear because the desktop had re-locked on restart - the
+  exact pain QR.1's Keychain auto-load removes). Do not run SU.5 as written; validate
+  sync via QR.4b instead.
 
-## Smaller open item (optional, decide before building)
+- [x] **SU.7 [AGENT]** Desktop keyring unlock-on-launch (required; found trying to run
+  SU.5). The DEK is held in memory only (`keyring_file._dek`), so every engine restart
+  leaves an initialized keyring LOCKED (`keyring_file.dek()` is `None`, `GET /settings`
+  reports `keyring_locked: true`) and sync cannot encrypt, push, or pull until it is
+  unlocked. `keyring_file.unlock(password)` (keyring_file.py:122) exists but is wired to
+  NOTHING - no endpoint, no CLI, no UI. `initialize()` unlocks at first-time creation,
+  but nothing unlocks on any launch after. This is a hard blocker for sync surviving a
+  restart, and it is why the relay has zero objects (the locked desktop never pushed).
+  Build:
+  1. `POST /settings/keyring-unlock` taking `{password}` -> calls
+     `keyring_file.unlock(password)`; on success returns ok and the sync worker resumes;
+     a wrong password returns a human-readable error and the keyring stays locked. Never
+     log the password. (`GET /settings` already exposes `keyring_locked`.)
+  2. Desktop Settings > Sync: when `keyring_initialized && keyring_locked`, show a
+     "Sync is locked - enter your library password to unlock" form instead of the
+     configured/pairing view; on unlock, flip to the configured/pairing state. Ideally
+     also surface the locked state on launch (a prompt or a clear banner) so the person
+     is not silently un-synced.
+  3. Confirm the push/pull/worker paths (which already no-op while locked) resume once
+     `dek()` is non-None.
+  Only the desktop needs this: mobile stores the DEK in an app-sandboxed file (MOB.3b),
+  so it survives restarts and does not re-lock.
+  Done when: after an engine restart with an initialized keyring, `GET /settings` shows
+  `keyring_locked: true`; entering the correct password via the new endpoint/UI unlocks
+  it (`keyring_locked: false`); a wrong password shows a human error and stays locked;
+  and a push/pull works after unlocking (verify an object reaches the relay).
 
-- [ ] **SU.6 [AGENT]** Mobile recovery-phrase fallback. The keyring carries
-  `dek_by_recovery`, but mobile setup currently unlocks by password only - lose the
-  password on a fresh phone with no other unlocked device and you are stuck until you
-  re-pair from the desktop. If wanted, add an "unlock with recovery phrase instead"
-  path to `mobile_pairing_setup` (mirror the password branch, using the recovery-KEK
-  slot). Skip if the desktop-as-recovery-anchor is acceptable.
-  Done when: a phone can unlock with either the password or the recovery phrase; both
-  paths give a human error on a wrong secret.
+## Phase FIX - bugs blocking SU.5 (found trying to run the real end-to-end test)
+
+SU.5 could not run. Three defects surfaced, plus the gate gap that hid two of them.
+SU.5 stays blocked until FIX.1 and FIX.2 are done. FIX.3 stops this class of bug from
+hiding again.
+
+- [x] **FIX.1 [AGENT] - RE-APPLIED + verified 2026-08-18. MUST BE COMMITTED (it has been
+  lost twice as uncommitted working-tree changes).** Re-applied all 7 fixes to
+  `desktop/src/lib.rs` (deleted the duplicate `run()` block, restored `#[tauri::command]`
+  on `mobile_outbox_push`, `app.dialog().file().blocking_pick_file()` for the two dialog
+  fns, `(200..300).contains(&status)` for ureq, `try_into` for the DEK, `app.handle()` in
+  the setup closure, `[&id]` for the moved id). `cargo check --lib --target
+  aarch64-linux-android` = 0 errors; full `bin/verify` green (JS, pytest, contrast,
+  Android compile). COMMIT `desktop/src/lib.rs` NOW so it is not reverted a third time.
+  The mobile module was previously broken because: `cargo check --lib --target aarch64-linux-android` = 15
+  errors, the SAME ones this task originally fixed (duplicate `pub fn run()` in
+  `mod mobile` - now at lib.rs:994 AND :1132; `mobile_outbox_push` missing its
+  `#[tauri::command]` at lib.rs:938; `fetch_keyring` mis-nesting in sync.rs; ureq
+  `is_success`/`into_json`; `DialogExt::file` E0782; moved `id`; `open_lib(&app)` in the
+  setup closure). ROOT CAUSE: the original FIX.1 edits lived in the WORKING TREE and were
+  never committed; a later commit/checkout reverted `lib.rs` to its broken pre-FIX.1
+  state (`git status` shows lib.rs clean = HEAD is the broken version). This is why
+  QR.5a/QR.4b could not be device-verified - the app cannot build. Re-apply the exact
+  FIX.1 fixes (they are documented in the original PROGRESS "FIX.1 done" entry), then
+  COMMIT them so they cannot be lost again. `bin/verify` (FIX.3 android check) MUST be run
+  and MUST pass before checking this box - it would have caught this. The original task
+  text follows for reference:
+  The mobile app does not compile for Android - 16 Rust errors in
+  the `#[cfg(mobile)] mod mobile` block of `desktop/src/lib.rs`. These were invisible
+  because a desktop `cargo check`/`cargo build` excludes the mobile cfg, so the module
+  never actually compiled; the apk on the phone is a stale Aug-14 build from an older
+  tree. The current source has never built for Android. Errors seen (from
+  `cargo tauri android build --debug --target aarch64`):
+  - `resp.into_json()` - `ureq`'s `into_json` needs the `json` feature, which is not
+    enabled (`ureq = "2"` in `desktop/Cargo.toml`). Enable `features = ["json"]` or
+    parse the body manually. (~line 730, `mobile_chat`.)
+  - `resp.status().is_success()` - `ureq` 2.x `status()` returns `u16`, which has no
+    `is_success()`. Use an explicit range check (`(200..300).contains(&status)`). (~724.)
+  - `use of moved value: id` / `borrow of moved value: id` - `id` moved into a rusqlite
+    params array then used again; `.clone()` the id (or reorder). (~616-624, blob/outbox.)
+  - plus E0308 (mismatched types, several), E0782, E0425, E0428, E0599 - work through
+    each from the compiler output.
+  Fix all 16 so `cargo tauri android build --debug --target aarch64` succeeds, then
+  rebuild + install the apk on the phone.
+  Done when: `cargo tauri android build --debug --target aarch64` compiles with zero
+  errors and produces a fresh `app-arm64-debug.apk`; it installs and launches on the
+  physical phone and shows the setup screen; the Connect flow does not crash (the
+  duplicate-handler bug was already removed in mobile.html, so verify that fix is in the
+  fresh build).
+
+- [x] **FIX.2 [AGENT]** The desktop "Show pairing code" button errors with
+  `desktop_pairing_code not allowed. Command not found` in the running app.
+  `desktop_pairing_code` IS defined and registered in the `#[cfg(desktop)]`
+  invoke_handler (`lib.rs:1541`/`:1634`), so the most likely cause is a stale desktop
+  binary (the window predates the command). First: `bin/launch desktop` (always
+  rebuilds now) and retry. If it still fails after a clean rebuild, it is a Tauri v2
+  capabilities/permission gap - the command needs an allow entry in a capability file
+  (mirror how the `mobile_*` commands got `desktop/permissions/autogenerated/*.toml`).
+  Investigate and fix whichever it is; record the root cause in PROGRESS.
+  Done when: from a freshly built + relaunched desktop, "Show pairing code" returns the
+  locally-rendered QR + code with no error, and the code decodes to
+  `{relay_url, secret}` only (no key material).
+
+- [x] **FIX.3 [AGENT]** The verification gate does not catch Tauri or Android failures,
+  which is why FIX.1 and FIX.2 passed as "done." `bin/verify` runs JS-parse + pytest +
+  contrast - it never compiles the mobile cfg and never runs the desktop Tauri runtime,
+  so a mobile module that does not compile and a desktop command that is unreachable
+  both sail through. Add an Android compile check to the gate: `cargo check --lib
+  --target aarch64-linux-android` (with the NDK env `bin/launch mobile` sets), skipped
+  with a clear message when the Android toolchain/NDK is absent so non-mobile machines
+  are not blocked. Document in AGENTS.md that a green `bin/verify` is NOT proof the app
+  runs - the desktop window and a real device are the only proof (this is the AGENTS.md
+  "reproduce in a real setting" rule applied to the shells).
+  Done when: `bin/verify` fails when the mobile module does not compile for Android (and
+  skips cleanly with a message when no NDK is present); AGENTS.md states the gate's
+  limits.
+  REOPENED (review 2026-08-16). The check was added and its failure path is correct
+  (`cargo check` non-zero -> the gate exits 1), BUT it only runs when `ANDROID_HOME` AND
+  `NDK_HOME` are exported as env vars - which they are NOT in a normal shell. So a plain
+  `./bin/verify` prints "SKIPPED - NDK_HOME not set" and passes even with the mobile
+  module broken - the exact hiding this task exists to stop, and the reason it did not
+  catch FIX.1. The done-when says "skips cleanly when no NDK is PRESENT", but the NDK IS
+  present (installed at `~/Library/Android/sdk/ndk/*`); it is just not in an env var, so
+  it skips instead of running. Fix: auto-detect the toolchain from the standard install
+  location the way `bin/launch mobile` already does - when the env vars are unset,
+  default `ANDROID_HOME` to `~/Library/Android/sdk` and `NDK_HOME` to the newest
+  `~/Library/Android/sdk/ndk/*` (sorted, take the last). Only skip when the SDK/NDK
+  directory genuinely does not exist on disk. Re-verify by breaking the mobile module on
+  purpose (e.g. a bad token in a `#[cfg(mobile)]` fn) and confirming a plain `./bin/verify`
+  now FAILS, then reverting.
+
+- [x] **FIX.4 [AGENT]** Desktop "reset sync" affordance. There is no way to reset or
+  re-initialize sync from the UI, so a person who set a library password but did not
+  record the recovery phrase (shown exactly once at creation, by design) cannot get a
+  new one without hand-deleting `~/.enqueue-poc/keyring.json`. Add a "reset sync" control
+  in Settings > Sync that calls `POST /settings/keyring-init` with `force=true` behind a
+  clear destructive confirmation ("this wipes the current key and orphans anything
+  already synced - only do this if nothing important has synced yet"), then shows the
+  new recovery phrase once (the same one-time panel as first setup).
+  Done when: from a configured library, a guarded reset re-initializes the keyring and
+  shows a fresh recovery phrase once; the confirmation states the data-loss consequence
+  plainly; cancelling changes nothing.
+
+## Phase CAP2 - quick-capture UX fixes
+
+- [x] **CAP2.1 [AGENT]** In the quick-capture overlay, a plain Enter should SAVE and
+  Shift+Enter should insert a newline. Right now it is reversed: Enter inserts a newline
+  and only the Keep button submits (a deliberate CAP.2 choice for markdown-as-you-type,
+  `src/enqueue/static/capture.html` keydown handler ~line 759-769). Change to the dequeue
+  feel: a plain Enter (no Shift/Cmd) calls the same path as the Keep button; Shift+Enter
+  inserts a newline. Accepted tradeoff: multi-line notes and markdown lists now need
+  Shift+Enter between lines - that is the intended behaviour. Leave Escape (dismiss
+  without discarding) and image-paste unchanged.
+  Done when: in the capture overlay, Enter saves the capture exactly as the Keep button
+  does, Shift+Enter adds a newline, and Escape still dismisses without losing the draft.
+  DONE (verified) - see PROGRESS: keydown now calls `keep()` on plain Enter (consumed
+  => submits, no newline), allows the native newline on Shift+Enter, and leaves Escape
+  unchanged. Verified via headless Chrome CDP; `bin/verify` green.
+
+- [ ] **CAP2.2 [AGENT]** The capture-success raven must play over whatever app is
+  focused, not only inside Enqueue. Today `capture_done` (`desktop/src/lib.rs` ~line
+  1455) tells the `main` window to play the full-screen flight (CAP.3), but the main
+  Enqueue window sits behind whatever app the person was in (e.g. Chrome) when they hit
+  the global capture hotkey - so the raven plays on a window they cannot see. Build a
+  dedicated flight overlay: a separate borderless, transparent, always-on-top,
+  click-through (ignore-cursor-events) full-screen Tauri window that renders the raven
+  flight over everything and closes itself when the animation ends. Fire it from
+  `capture_done`. It must NOT steal focus (the person stays in their previous app) and
+  must NOT intercept clicks. Reduced-motion still applies (a fade instead of the flight).
+  Done when: with a different app (e.g. Chrome) focused, a global-hotkey capture shows
+  the raven over that app without taking focus or blocking clicks, and it disappears on
+  its own; capturing while Enqueue itself is focused still works; the overlay never
+  lingers or leaves a stuck window.
+  WHY THE CURRENT APPROACH FAILS (this is the whole bug): the flight renders in the
+  `main` window (`capture_done` emits `capture-flight` -> `home.js`). The main window
+  belongs to a BACKGROUND app (Enqueue is not frontmost after a global-hotkey capture
+  from Chrome), and on macOS a background app's normal-level window sits BEHIND the
+  frontmost app's windows. `always_on_top` alone does NOT fix this: Tauri's
+  `always_on_top(true)` sets `NSFloatingWindowLevel` (3), which is not reliably above the
+  active app, and Tauri's `.show()`/`.set_focus()` path calls `makeKeyAndOrderFront`,
+  which ACTIVATES Enqueue (steals focus). So you either see nothing (behind Chrome) or
+  you get yanked out of Chrome. The fix is a dedicated overlay whose NSWindow level is
+  raised above the active app AND that is ordered front WITHOUT activating. This needs
+  AppKit, extending the existing `#[cfg(target_os = "macos")] mod appkit` in
+  `desktop/src/lib.rs` (it already has the `objc_msgSend`/`sel_registerName` machinery
+  and an `activate()`/`hide_app()` pair - the flight must do the OPPOSITE of `activate`).
+
+  IMPLEMENTATION STATUS (agent turn): steps 1-4 are DONE and compile-verified.
+  `cargo check` (desktop, `--cfg desktop` active) is clean with zero warnings;
+  `bin/verify` is green (JS parse of `flight.html` included, plus pytest, contrast, and the
+  Android compile); `black`/`ruff` are clean on every edited file.
+  Step 5 - the no-focus-steal / click-through / over-app / auto-close runtime behaviour -
+  is human-only: there is no macOS display here, so a real Tauri window cannot be driven
+  and judged. Per the "never ship unverified native-only Rust" rule, the native overlay (in
+  `desktop/src/lib.rs`) is compile-checked but its runtime is left for human verification.
+  The `CAP2.2` task box therefore stays unchecked.
+  Files touched: `src/enqueue/static/flight.html` (new), `src/enqueue/api/static.py`,
+  `desktop/tauri.conf.json`, `desktop/build.rs`,
+  `desktop/permissions/autogenerated/flight_done.toml` (auto-generated by tauri-build),
+  `desktop/src/lib.rs` (appkit fixups + `flight_done` / `open_flight_overlay` /
+  `capture_done` rework + `flight_done` registered in `generate_handler!`), `bin/verify`
+  (parses `flight.html`).
+  The recipe below is unchanged; step 5 remains the human-only acceptance gate.
+
+  IMPLEMENTATION (do it in this order; step 5 is the part only a human at the desktop
+  can judge):
+  1. Flight content surface `src/enqueue/static/flight.html`: a standalone page, FULLY
+     transparent `html`/`body` background, that plays ONLY the ANIM.4 raven flight and
+     nothing else. Reuse the existing asset `static/capture-bird.png` and the
+     `.capture-flight` keyframes (today in `util.js captureFlight()` / `css/base.css`) -
+     lift them into this page. On load, start the flight immediately; on `animationend`
+     (or after the reduced-motion fade) call a new Tauri command `flight_done` (or
+     `getCurrentWindow().close()`) to close the overlay. Add a JS safety timer (~2.5s)
+     that closes it even if `animationend` never fires (a hidden/paused tab never fires
+     it). `@media (prefers-reduced-motion: reduce)` -> a fade, not the flight.
+  2. Register a `flight` window in `tauri.conf.json` loading `flight.html` (an app URL,
+     no remote). Add a small capability (mirror `capture-overlay`) allowing `flight_done`
+     - window close for the `flight` window. App-wide `transparent` already works via the
+     existing `"macOSPrivateApi": true`.
+  3. In `capture_done` (`desktop/src/lib.rs`), instead of emitting `capture-flight` to
+     `main`, create+show the flight overlay. Builder flags: `.decorations(false)`,
+     `.transparent(true)`, `.shadow(false)`, `.skip_taskbar(true)`, `.always_on_top(true)`,
+     `.focused(false)`, `.resizable(false)`, `.closable(false)`. Size+position it to cover
+     the CURRENT monitor (the one under the cursor; fall back to primary): set
+     `.inner_size(w,h)` and `.position(x,y)` to that monitor's full frame. Do NOT use
+     `.fullscreen(true)` - macOS native fullscreen opens a NEW Space and switches to it.
+  4. AppKit fixups AFTER the window exists (the part `always_on_top` cannot do). Get the
+     handle `let ns = window.ns_window()? as *mut c_void;` (cfg macos) and, via the
+     `appkit` module's `objc_msgSend`/`sel_registerName`:
+       - Raise above the active app: `[ns setLevel: 1000]` (NSScreenSaverWindowLevel;
+         `objc_msgSend(ns, sel("setLevel:"), 1000 as c_int)`). NSStatusWindowLevel (25)
+         is the minimum, 1000 is safest to clear fullscreen apps.
+       - Appear on the current Space incl. other apps' fullscreen, without activating:
+         `[ns setCollectionBehavior: 273]` where 273 = CanJoinAllSpaces(1) |
+         Stationary(16) | FullScreenAuxiliary(256) (`objc_msgSend(ns, sel(
+         "setCollectionBehavior:"), 273 as usize)`).
+       - Click-through: Tauri `window.set_ignore_cursor_events(true)?` (or
+         `[ns setIgnoresMouseEvents: YES]`).
+       - Show WITHOUT activating - THE key to no-focus-steal: do NOT call Tauri `.show()`
+         / `.set_focus()` and do NOT call `appkit::activate()`. Instead
+         `[ns orderFrontRegardless]` (`objc_msgSend(ns, sel("orderFrontRegardless:"...` -
+         note it takes no args: `objc_msgSend(ns, sel_registerName(
+         b"orderFrontRegardless\0"...))`). This orders the window front while Chrome stays
+         key.
+  5. RUNTIME VERIFICATION (must be on the real macOS desktop, another app focused - this
+     is why it is not agent-verifiable): focus Chrome, trigger a capture via the GLOBAL
+     HOTKEY (not from the Enqueue window), then confirm ALL of: the raven flies over
+     Chrome; Chrome stays key (type into Chrome mid-flight -> keys land in Chrome); a
+     click during the flight goes THROUGH to Chrome; the overlay closes itself and leaves
+     no stuck/black window; a second capture works (no leaked window); and capturing while
+     Enqueue itself is focused still shows the flight. Multi-monitor: it appears on the
+     monitor with the cursor.
+  Done when: all of step 5 passes on the real desktop, and `bin/verify` is green
+  (including the Android compile check, which now runs by default).
+
+## Phase QRSYNC - QR-linked, hosted-relay, passwordless sync (the refactor)
+
+Decided 2026-08-16 after live SU.5 testing. This REPLACES the Option A pairing model
+(paste-code + per-device library password) and its whole surface. Two decisions, both
+baked:
+
+- **Hosted relay** (not localhost/USB): a dumb ciphertext relay reachable over the
+  internet, so the phone syncs anywhere, not only on the same wifi or plugged in over
+  USB. The relay still only ever stores/streams opaque encrypted bytes (E2E model
+  unchanged, `guard.py` already allows non-local since bytes are encrypted).
+- **QR carries the key, Signal-style**: the desktop shows a locally-rendered QR; the
+  phone camera scans it and links + receives the encryption key in one step. There is
+  NO library password in the normal flow. The old recovery phrase becomes a
+  recovery-code-only artifact (shown once, used only to recover if every device is
+  lost).
+
+Why this supersedes the current sync UX (from live testing): the localhost relay only
+reached the phone via `adb reverse` (USB), which defeats mobile; the in-memory DEK
+locked on every desktop restart (SU.7) and a locked desktop silently failed to sync;
+and forgetting the library password locked the user out with no in-UI recovery. The new
+model removes passwords, unlock-on-restart, and paste-codes entirely.
+
+SUPERSEDED by this phase (do NOT keep building on them): the mobile paste-code +
+library-password setup surface (`mobile_pairing_setup`, the setup form in mobile.html);
+the desktop SU.7 unlock flow and its `keyring-unlock` endpoint/UI (no password to unlock
+anymore - the DEK auto-loads); the SU.2 `keyring-init` endpoint's `{password}` input and
+the SU.3 setup form's "set a library password" step (key creation becomes passwordless,
+see QR.1); the Option A pairing statement in AGENTS.md decision #2 (update it to this
+model). FIX.2's `desktop_pairing_code` plumbing can be reused but its output changes (see
+QR.3).
+
+EXECUTION ORDER: do the tasks strictly in this order: QR.1, QR.2, QR.3, QR.4a, QR.4b,
+QR.5a, QR.5b, QR.6, QR.7.
+QR.3 depends on the DEK existing via QR.1's passwordless keygen.
+QR.4a/QR.4b depend on QR.3's pinned wire format.
+QR.4b depends on QR.4a's live camera feed; QR.5b depends on QR.5a's threaded sync.
+Do not start a later task until the previous task's "Done when" passes.
+Every task has a VERIFY line: run it and paste the result into PROGRESS.md before
+checking the box. A compile success is NOT the task's "Done when" - it is only the
+minimum bar to attempt device verification.
+
+- [x] **QR.1 [AGENT]** Desktop: passwordless key creation, DEK persisted in the macOS
+  Keychain, auto-load on launch. Three sub-changes:
+  1. Passwordless keygen. Change `keyring_file.initialize()` (`keyring_file.py:79`) to
+     take NO password argument: generate the DEK, wrap it ONLY under the recovery-KEK,
+     write `keyring.json`, return the recovery phrase. Call it automatically the first
+     time sync is enabled (and lazily from QR.3's link-code path if no keyring exists
+     yet), so no human ever types a password. The SU.2 endpoint's `{password}` input and
+     the SU.3 form's password step are superseded - remove them.
+  2. Keyring file format. `keyring.json` drops the password-KEK wrap slot entirely; the
+     recovery-KEK slot is the only wrap. No migration of the password slot - existing
+     keyrings are pre-release dev installs only: on finding an old two-slot file, re-
+     initialize in place (fresh DEK + fresh recovery phrase, same destructive semantics
+     as FIX.4's guarded reset) rather than carrying the password slot forward.
+  3. Keychain persistence. After keygen (and on every unlock), store the raw DEK in the
+     macOS Keychain (reuse the `keyring.py` `/usr/bin/security` pattern, a distinct
+     service e.g. `enqueue-sync-dek`); on engine startup, load it from the Keychain into
+     `_dek` so sync is unlocked with no user action. Remove the password-unlock path from
+     the normal flow. Non-macOS: fall back to the existing app-data file (mode 0600),
+     same as mobile (MOB.3b).
+  Done when: on a fresh library, enabling sync creates the keyring with no password
+  prompt and shows the recovery phrase once (the same one-time panel); after an engine
+  restart the desktop is NOT locked (`keyring_locked: false` with no prompt) and sync
+  push/pull work immediately; the DEK never sits in a plaintext file on macOS; a recovery
+  code still exists for total-device-loss recovery; an old two-slot `keyring.json` is
+  re-initialized in place behind the destructive confirmation.
+  VERIFY: `uv run pytest -q` AND `bin/verify` green; then restart the engine
+  (`bin/launch desktop`) and confirm `curl -s 127.0.0.1:8787/settings` shows
+  `keyring_locked: false` with no prompt.
+
+- [ ] **QR.2 [AGENT]** Point sync at a hosted relay. The relay service already exists
+  (`src/enqueue/relay/app.py`, `enq relay`). This task is the config + docs to run it as
+  a reachable host, not localhost: document deploying it (a small always-on host - the
+  user picks the provider) and that `sync_relay_url` is the public URL; keep `enq relay`
+  for local/dev. For DEVELOPMENT/testing without deploying, document a tunnel
+  (cloudflared/ngrok) exposing the local `enq relay`, and have the QR encode that URL.
+  The relay must require its Bearer secret over TLS in the hosted case. No relay code
+  change beyond confirming CORS/host binding for a public deploy.
+  DEV-LOOP CLARIFICATION (the "app only works plugged in" confusion): `bin/launch mobile`
+  runs `cargo tauri android dev`, whose dev-server connection is USB-tethered by design -
+  that is the dev harness, not the app. To verify the app works unplugged, build the apk
+  (`cargo tauri android build --debug --target aarch64`), install it, then launch it from
+  the phone with USB disconnected and confirm sync over the hosted/tunnelled relay. Add
+  this distinction to `docs/sync-relay.md` so no future agent treats the USB tether as a
+  product requirement.
+  Done when: with the relay reachable at a non-localhost URL over the network, a phone
+  NOT on the same machine/USB can pull and push; the unplugged-run path above is verified
+  once on the physical phone; `docs/sync-relay.md` documents the hosted deployment, the
+  dev tunnel, and the dev-harness-vs-app USB distinction.
+  VERIFY: from a shell on the DESKTOP, `curl -s -o /dev/null -w "%{http_code}"
+  -H "Authorization: Bearer <secret>" <public-relay-url>/...` returns a non-000 response
+  (TLS handshake + auth reached); then a real phone push/pull over that URL.
+  STATUS: NOT IMPLEMENTED - blocked (docs + code-confirmation + LAN verification DONE).
+  `docs/sync-relay.md` now documents the hosted deployment, the cloudflared/ngrok dev
+  tunnel, and the dev-harness-vs-app USB distinction (bin/launch mobile is USB-tethered
+  by design; verify unplugged via the installed apk). Relay code confirmed: every
+  endpoint requires the Bearer secret, binding is uvicorn's host param, and NO CORS is
+  needed because all sync clients are native (Python httpx / Rust ureq; mobile.html has
+  no browser calls to the relay). Live LAN verification passed: relay on 0.0.0.0:8899
+  answered at <http://192.168.86.126:8899> - wrong secret 401, correct secret 200, PUT 201,
+  GET returned the opaque bytes (non-localhost URL + auth + byte round-trip proven).
+  The two remaining literal clauses are unreachable here: (a) a PUBLIC tunnel URL needs
+  cloudflared/ngrok, neither installed (brew install + exposing a service to the public
+  internet is a user decision); (b) the physical-phone unplugged push/pull needs driving
+  the phone UI (no scrcpy - same block as SU.5). Reopen with a tunnel tool + scrcpy.
+
+- [x] **QR.3 [AGENT]** Desktop: show the linking QR. Desktop Settings > Sync (once set
+  up) shows a locally-rendered QR (Rust `qrcode` crate, no external service - reuse the
+  FIX.2 path) encoding the Signal-style linking payload. Reveal-gated (the QR IS the key
+  now - treat like a secret: no logging, warn the user not to share/screenshot).
+  CAMERA-ONLY - there is NO copyable/pasteable fallback code, by decision (2026-08-16):
+  the payload carries the raw DEK, and putting the raw key into a copy-paste string would
+  expose it to the clipboard and clipboard history (the Paste-app leak class we already
+  hit). The QR is the only transport; camera-scanning it is ephemeral and never stored,
+  which is the whole reason key-in-code is acceptable here. Do NOT render, offer, or log a
+  textual form of the payload anywhere. `desktop_pairing_code` becomes `desktop_link_code`
+  and RETURNS ONLY the rendered QR (SVG/PNG), never the underlying string; update its
+  permission + capability.
+  WIRE FORMAT (pinned - QR.4 parses exactly this, do not improvise): the QR encodes
+  UTF-8 JSON, compact separators, exactly these keys:
+  `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}` where `dek`
+  is standard RFC 4648 base64 (with padding) of the raw 32-byte DEK. `v` is the format
+  version integer, `1` for this version; a parser that sees any other `v` must refuse
+  with a clear message.
+  Done when: the desktop shows a QR that encodes the pinned payload above, rendered with
+  zero external network calls; a reveal gate guards it; no textual/copyable form of the
+  payload exists anywhere in the UI or logs; scanning it (QR.4) links a phone.
+  VERIFY: `cd desktop && cargo build` clean, then `bin/launch desktop`, open Settings >
+  Sync, reveal the QR, and decode it with any phone camera app or `zbarimg` on a
+  screencap - the decoded text must be the pinned JSON exactly.
+
+- [ ] **QR.4a [AGENT]** Mobile: live camera feed in the setup screen (no decode yet).
+  Scope is ONLY a working camera preview inside the Tauri webview - do NOT touch decode,
+  storage, or the old setup fields in this task. A fresh install's setup screen shows a
+  "scan the QR on your desktop" area with the live camera picture in it. Permissions -
+  ALL THREE are needed, in this order, and a missing one leaves the camera dead with no
+  error: (a) `CAMERA` in the AndroidManifest
+  (`desktop/gen/android/app/src/main/AndroidManifest.xml`); (b) the Android runtime
+  permission request (`ActivityCompat.requestPermissions`) before opening the camera;
+  (c) the webview-side grant - the Kotlin `WebChromeClient` must override
+  `onPermissionRequest` and call `request.grant(...)` for `RESOURCE_VIDEO_CAPTURE`, or
+  `getUserMedia` in the Tauri webview is silently denied. Check how the generated Tauri
+  Kotlin app wires its WebChromeClient first; if Tauri's default already grants, verify
+  with a real camera call and say so. If permission is denied or there is no camera,
+  show a clear "camera required to link this device" state with a retry button (never a
+  paste box - QR.3 decision).
+  Done when: on the physical phone, the setup screen shows a live camera preview; the
+  permission prompt appears exactly once and the feed starts after granting; denying shows
+  the "camera required" state with working retry; no decode/linking behavior exists yet.
+  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors, install, run
+  on the physical phone with USB disconnected, screencap the live preview
+  (`adb exec-out screencap -p > qr4a.png`) and attach to PROGRESS.md.
+  REVIEW ON THE PHYSICAL PHONE (2026-08-18) - NOT WORKING, two concrete bugs; the setup
+  screen shows a GRAY play-button placeholder, not a live feed:
+  1. Missing permission layer (b): the runtime CAMERA permission is never requested. The
+     manifest has `CAMERA` (a) and the generated `RustWebChromeClient.onPermissionRequest`
+     already grants the webview layer (c), but nothing calls `ActivityCompat.
+     requestPermissions` - so the OS permission stays `granted=false`
+     (`adb shell dumpsys package com.sudohnim.enqueue | grep CAMERA` confirmed
+     `granted=false` on a fresh install) and `getUserMedia` is denied. Add the runtime
+     request (Kotlin `MainActivity`, or trigger it before `startCamera`).
+  2. Video will not autoplay in the WebView: `#scan_video` (mobile.html ~line 831) has
+     `autoplay playsinline` but NO `muted`, and `startCamera` calls `video.play()`
+     without awaiting/catching it. Android WebView's autoplay policy blocks the unmuted
+     play, so even AFTER granting camera (I granted it manually via
+     `adb shell pm grant ... CAMERA` and relaunched - still the gray placeholder) the feed
+     never renders. Add `muted` to the `<video>` (a getUserMedia stream is video-only, so
+     muting is harmless) and `await video.play().catch(...)`.
+  Both must be fixed before QR.4a's done-when can pass; QR.4b/QR.5 are gated behind a
+  working feed. Everything else on the setup screen is correct (the "Point your camera at
+  the QR" copy, the camera-only layout with no paste/password fields, and the pill).
+
+- [ ] **QR.4b [AGENT]** Mobile: decode the QR and link (the full setup). Builds on
+  QR.4a's live feed. Steps:
+  1. Decode - jsQR is the PRIMARY path, `BarcodeDetector` is opportunistic only: the
+     Shape Detection API is NOT guaranteed present in Android WebView (Chrome has it,
+     many WebView builds do not), so feature-detect `window.BarcodeDetector` and fall
+     back to jsQR unconditionally. Vendor jsQR the same way pdf.js is vendored (a pinned
+     version from the official npm/GitHub dist copied into `src/enqueue/static/vendor/`,
+     version + license recorded in a comment/README alongside), never a CDN. Grab frames
+     from the QR.4a preview (canvas drawImage at a few fps) and feed the decoder.
+  2. On a successful decode: parse the pinned QR.3 wire format (UTF-8 JSON, exact keys
+     `v`/`relay_url`/`relay_secret`/`dek`, refuse unknown `v` with a clear message,
+     base64-decode the DEK), store the DEK in the secure app file (MOB.3b), and trigger
+     sync.
+  3. CAMERA-ONLY - REMOVE the paste-code AND library-password fields entirely. There is
+     no pasteable fallback (QR.3 decision: the raw DEK must never touch the clipboard).
+     Setup is scan-the-QR and nothing else; no password is ever entered on the phone.
+  Done when: on a fresh phone, opening the app and scanning the desktop QR links and
+  syncs the library with NO typing; decode works even when `window.BarcodeDetector` is
+  undefined (test by forcing the jsQR path); there is NO paste-code or password field
+  anywhere in mobile.html.
+  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors, install, run
+  unplugged, scan the real desktop QR end to end, confirm the library appears on the
+  phone; grep mobile.html for `pairing`/`password` inputs - zero hits outside comments.
+
+- [ ] **QR.5a [AGENT]** Mobile: non-blocking sync (background thread + progress events).
+  WHERE THE CODE IS (anchors, do not search blind): the sync engine is Rust,
+  `desktop/src/sync.rs::sync_library`; it is invoked synchronously from the
+  `mobile_sync` Tauri command (`desktop/src/lib.rs:113`), which mobile.html awaits - that
+  await is what freezes the UI. Scope of THIS task is only the threading: `mobile_sync`
+  spawns `sync_library` on a background thread (`std::thread::spawn` or tauri
+  `async_runtime`), returns immediately, and reports progress/completion to the webview
+  via `app.emit(...)` events (`sync-started` / `sync-progress` / `sync-done` /
+  `sync-error`); mobile.html listens for the events instead of awaiting the command. The
+  "Syncing…" indicator is driven by those events, so it clears on `sync-done` (it
+  currently sticks - see QR.7). Guard against double-spawn: a second `mobile_sync` while
+  one is running returns the in-flight status instead of starting a parallel sync. Do NOT
+  do the foreground service or resume triggers here - that is QR.5b.
+  Done when: with a multi-hundred-artifact library syncing, the phone UI scrolls,
+  captures, and reads with no freeze; the indicator appears on `sync-started` and clears
+  on `sync-done`; tapping Sync Now twice does not run two syncs.
+  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors, install, run
+  unplugged; trigger a sync and screencap mid-sync scrolling; `adb logcat` shows the
+  emit sequence started -> done exactly once per sync.
+
+- [ ] **QR.5b [AGENT]** Mobile: lock/background resilience + resume triggers. Builds on
+  QR.5a's threaded sync. Two changes:
+  1. Lock/background resilience: an Android FOREGROUND SERVICE (decided - not
+     WorkManager; the sync is short, user-triggered, and WorkManager's deferral is the
+     wrong semantic) runs while a sync is active, with a persistent notification, so the
+     process survives screen-lock and backgrounding. Start it when a sync begins, stop it
+     when the cursor is caught up. This lives in the Kotlin side
+     (`desktop/gen/android/app/src/main/java/.../`); declare the service +
+     `FOREGROUND_SERVICE` permission in the manifest. The QR.5a background thread keeps
+     running inside the service-held process.
+  2. Resume: re-trigger sync on app resume/`visibilitychange` and on network-regained
+     (ConnectivityManager callback, or the webview `online` event if simpler), so an
+     offline capture pushes when the network returns. Sync must NOT require USB (hosted
+     relay, QR.2).
+  Done when: locking the screen mid-sync and returning loses nothing and the sync
+  completes; backgrounding the app mid-sync does not abort it (the foreground-service
+  notification is visible while active and gone when caught up); airplane-mode capture
+  pushes when the network returns with no manual retry.
+  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors, install, run
+  unplugged; three device tests matching the three done-when clauses, screencap the
+  persistent notification, attach to PROGRESS.md.
+
+- [x] **QR.6 [AGENT]** Loader transparency (desktop AND mobile). The spinning-raven
+  loader shows a gray transparency-checkerboard behind it - a non-transparent PNG
+  (same class as the old `capture-bird.png` checkerboard). THE ASSET IS
+  `src/enqueue/static/loading.png`. It is referenced from: desktop `util.js spinner()`
+  (util.js:121), and mobile.html three times (`#loading` first-sync screen ~line 959,
+  `#chat_loading` ~line 1093, the pdf.js loading spinner ~line 1977). Fix `loading.png`
+  so its background is truly transparent (regenerate or alpha-key it; do NOT swap in a
+  CSS white/black box), and confirm all four call sites pick it up (they share the one
+  file - no code change expected, but check none of them sets an opaque CSS background
+  behind the img). Verify on the light canvas - no gray box.
+  Done when: the loading raven has a transparent background on desktop and mobile; a
+  screenshot on each shows no checkerboard/gray box.
+  VERIFY: `bin/verify` green; then a pixel check - open the fixed PNG
+  (`uv run python -c "from PIL import Image; im=Image.open('src/enqueue/static/loading.png').convert('RGBA'); print(im.getpixel((0,0)))"`)
+  and confirm corner alpha is 0, plus one screencap each of the desktop spinner and the
+  mobile first-sync loader on the light canvas.
+
+- [x] **QR.7 [AGENT]** Mobile UI: the bottom bar is cut off and there is no pill. The
+  reporter's screenshot shows the "Capture" button clipped at the bottom and no floating
+  pill like desktop (MOB2.3 specified one). THE SCREENSHOT IS NOT IN THE REPO - first
+  reproduce on the physical phone (`bin/launch mobile`, screenshot via
+  `adb exec-out screencap`) to see the current geometry; if it does not reproduce, ask
+  the user for the screenshot before touching markup. Fix the mobile bottom surface in
+  `mobile.html`: render the MOB2.3 pill (capture in `--purple-bold`, search, the living
+  raven eye, menu - mirror the desktop `pill.css` anatomy), padded with
+  `env(safe-area-inset-bottom)` so nothing is clipped on a notched/gesture-nav phone, and
+  check the webview viewport is not laid out under the system bars
+  (`android:fitsSystemWindows` / edge-to-edge handling in the Tauri Android config).
+  Reconcile with any existing bottom-bar markup (remove the clipped bar).
+  Done when: the mobile bottom pill renders fully above the gesture bar / safe area,
+  nothing is clipped, and it mirrors the desktop pill's anatomy; before/after screencaps
+  are in PROGRESS.md.
+  VERIFY: `bin/verify` green, `cargo tauri android build --debug --target aarch64` zero
+  errors, then on the physical phone `adb exec-out screencap -p > qr7-after.png` showing
+  the full pill above the gesture bar, attached to PROGRESS.md.
 
 ## Out of scope
 

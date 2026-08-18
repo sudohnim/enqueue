@@ -88,7 +88,7 @@ class TestPush:
         try:
             settings.update({"sync_relay_url": base})
             monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
-            keyring_file.initialize("pw")
+            keyring_file.initialize()
 
             created = notes.create(body="hello relay")
             aid = created["artifact"]["id"]
@@ -135,7 +135,7 @@ class TestPush:
         try:
             settings.update({"sync_relay_url": base})
             monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
-            keyring_file.initialize("pw")
+            keyring_file.initialize()
 
             # Device A: create a note (which pushes it).
             created = notes.create(body="# Title\n\nBody text")
@@ -171,3 +171,126 @@ class TestPush:
         finally:
             server.should_exit = True
             thread.join(timeout=5)
+
+
+class TestAutoLoad:
+    """QR.1: the DEK persists in the Keychain/file (no password), so an engine
+    restart does NOT lock the keyring - it auto-loads with no prompt and push
+    resumes immediately. The recovery phrase remains the path for total loss of
+    the stored DEK (POST /settings/keyring-unlock now takes the phrase, not a
+    password); a wrong phrase is refused and the keyring stays locked."""
+
+    def _serve(self, app):
+        import socket
+        import threading
+        import time
+
+        import uvicorn
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+
+        base = f"http://127.0.0.1:{port}"
+        for _ in range(100):
+            try:
+                if (
+                    httpx.get(
+                        base + "/sync/objects",
+                        headers={"Authorization": "Bearer test-secret"},
+                        timeout=1,
+                    ).status_code
+                    == 200
+                ):
+                    break
+            except Exception:  # noqa: BLE001 - not ready yet
+                time.sleep(0.05)
+        return base, server, thread
+
+    def test_restart_autoloads_and_push_resumes(self, store, quiet_queue, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app as engine
+
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+
+            # First-time creation stores the DEK in the Keychain/file (mirrors
+            # the setup flow's POST /settings/keyring-init, no password).
+            keyring_file.initialize()
+            assert keyring_file.dek() is not None
+
+            with TestClient(engine) as client:
+                # An engine restart loses the in-memory DEK (process death); the
+                # stored copy auto-loads it back - no prompt, not locked.
+                keyring_file._dek = None
+                state = client.get("/settings").json()["sync"]
+                assert state["keyring_initialized"] is True
+                assert state["keyring_ready"] is True
+                assert keyring_file.dek() is not None
+
+                # Push works immediately after restart with no unlock step.
+                created = notes.create(body="pushed after restart")
+                aid = created["artifact"]["id"]
+
+                listing = httpx.get(
+                    base + "/sync/objects",
+                    headers={"Authorization": "Bearer test-secret"},
+                    timeout=5,
+                ).json()
+                names = [o["name"] for o in listing["objects"]]
+                assert any(
+                    n.startswith("dev/") and n.endswith(f"/artifacts/{aid}.enc") for n in names
+                ), names
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
+    def test_recovery_unlocks_when_the_stored_dek_is_lost(self, store, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app as engine
+
+        settings.update({"sync_relay_url": "http://127.0.0.1:8788"})
+        monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+        phrase = keyring_file.initialize()
+
+        with TestClient(engine) as client:
+            # Total device loss of the stored DEK: the keyring is now locked and
+            # only the recovery phrase can restore it.
+            keyring_file._dek = None
+            keyring.dek_clear()
+            locked = client.get("/settings").json()["sync"]
+            assert locked["keyring_initialized"] is True
+            assert locked["keyring_ready"] is False
+
+            # A wrong phrase is refused with a human error and stays locked.
+            bad = client.post("/settings/keyring-unlock", json={"recovery_phrase": "0" * 40})
+            assert bad.status_code == 403
+            assert "did not unlock" in bad.json()["detail"].lower()
+            assert keyring_file.dek() is None
+
+            # The right phrase unlocks it and re-stores the DEK.
+            ok = client.post("/settings/keyring-unlock", json={"recovery_phrase": phrase})
+            assert ok.status_code == 200
+            assert ok.json()["ok"] is True
+            assert client.get("/settings").json()["sync"]["keyring_ready"] is True
+            assert keyring_file.dek() is not None
+            assert keyring.dek_available()
+
+    def test_unlock_refused_when_no_keyring(self, store):
+        from fastapi.testclient import TestClient
+
+        from enqueue.api import app as engine
+
+        with TestClient(engine) as client:
+            r = client.post("/settings/keyring-unlock", json={"recovery_phrase": "x" * 40})
+            assert r.status_code == 409
+            assert "no sync keyring" in r.json()["detail"].lower()

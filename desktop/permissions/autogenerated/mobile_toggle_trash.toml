@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-toggle-trash"
+description = "Enables the mobile_toggle_trash command without any pre-configured scope."
+commands.allow = ["mobile_toggle_trash"]
+
+[[permission]]
+identifier = "deny-mobile-toggle-trash"
+description = "Denies the mobile_toggle_trash command without any pre-configured scope."
+commands.deny = ["mobile_toggle_trash"]

@@ -30,6 +30,29 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "enqueue.db")
     monkeypatch.setattr(config, "BLOB_DIR", tmp_path / "blobs")
+    # QR.1: keyring_file stores the raw DEK via keyring.dek_store/_dek_get, which
+    # on macOS writes to the real Keychain. Tests must never touch that: redirect
+    # the DEK to a file inside the test's temp dir, exactly the non-macOS fallback.
+    dek_file = tmp_path / "sync-dek.bin"
+
+    from enqueue import keyring
+
+    def _fake_store(dek: bytes) -> None:
+        dek_file.write_bytes(dek)
+
+    def _fake_get() -> bytes | None:
+        try:
+            return dek_file.read_bytes()
+        except OSError:
+            return None
+
+    def _fake_clear() -> bool:
+        dek_file.unlink(missing_ok=True)
+        return True
+
+    monkeypatch.setattr(keyring, "dek_store", _fake_store)
+    monkeypatch.setattr(keyring, "_dek_get", _fake_get)
+    monkeypatch.setattr(keyring, "dek_clear", _fake_clear)
     db.reset_migration_state()
     db.migrate()
     yield tmp_path

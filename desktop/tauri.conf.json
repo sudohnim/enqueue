@@ -28,8 +28,19 @@
           ]
         },
         {
+          "identifier": "flight-overlay",
+          "description": "Lets the capture-success raven flight overlay (CAP2.2) ask the shell to retire itself by invoking flight_done.",
+          "windows": ["flight"],
+          "remote": {
+            "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
+          },
+          "permissions": [
+            "allow-flight-done"
+          ]
+        },
+        {
           "identifier": "home-links",
-          "description": "Lets the home window hand a saved http(s) address to the system browser, and drag its own window by the top strip. Both are refused by default because the page is served from a remote origin.",
+          "description": "Lets the home window hand a saved http(s) address to the system browser, drag its own window by the top strip, and show the Signal-style linking QR for mobile setup (QR.3). All are refused by default because the page is served from a remote origin.",
           "windows": ["main"],
           "remote": {
             "urls": ["http://127.0.0.1:8787/*", "http://localhost:8787/*"]
@@ -38,6 +49,7 @@
             "allow-hotkey-changed",
             "allow-open-external",
             "allow-window-drag",
+            "allow-desktop-link-code",
             "core:event:allow-listen",
             "core:event:allow-unlisten"
           ]
@@ -46,7 +58,7 @@
           "identifier": "mobile-library",
           "description": "Lets the mobile shell pull the synced library into the local SQLite read copy (MOB.3) and read it (MOB.4/MOB.5). The mobile window loads an app URL, not the remote engine, so this capability has no remote restriction.",
           "windows": ["main"],
-          "permissions": ["allow-mobile-sync", "allow-mobile-list", "allow-mobile-get", "allow-mobile-status", "allow-mobile-search", "allow-mobile-capture", "allow-mobile-blob"]
+          "permissions": ["allow-mobile-sync", "allow-mobile-link-qr", "allow-mobile-list", "allow-mobile-get", "allow-mobile-status", "allow-mobile-search", "allow-mobile-capture", "allow-mobile-blob", "allow-mobile-capture-image", "allow-mobile-outbox-push", "allow-mobile-outbox-list", "allow-mobile-pick-image", "allow-mobile-save-cropped-image", "allow-mobile-chat", "allow-mobile-settings-get", "allow-mobile-settings-set", "allow-mobile-settings-sync", "allow-mobile-settings-apply", "allow-mobile-pairing-code", "allow-mobile-pairing-setup", "allow-mobile-clear-blob-cache", "allow-mobile-update-note", "allow-mobile-add-annotation", "allow-mobile-remove-annotation", "allow-mobile-add-tag", "allow-mobile-remove-tag", "allow-mobile-toggle-pin", "allow-mobile-toggle-trash", "allow-mobile-get-tags", "allow-mobile-list-trashed", "allow-mobile-restore-trashed", "core:event:allow-listen", "core:event:allow-unlisten"]
         }
       ]
     },

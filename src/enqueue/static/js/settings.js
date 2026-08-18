@@ -655,23 +655,241 @@ async function renderSettingsTrash() {
 	html += settingsActionsBar();
 	return html;
 }
+
 // ---- Sync tab ------------------------------------------------------------
+// The Sync tab branches on configuration state:
+// - Not configured: the setup walk (relay URL -> passwordless keyring init with
+//   the recovery phrase shown once -> sync secret).
+// - Configured: the read-only configuration + the Signal-style linking QR (QR.3).
 async function renderSettingsSync() {
 	const d = await api("/settings");
 	const sync = d.sync || {};
 	let html = '<div class="h2">Sync</div>';
 
 	if (!sync.relay_configured) {
-		html +=
-			'<div class="shelf">Not configured</div><div class="group">' +
-			'<div class="aside">Sync is not set up. Enter the relay URL and sync secret, ' +
-			"then import your keyring and recovery phrase on your mobile device.</div>" +
-			"</div>";
-		html += settingsActionsBar();
-		return html;
+		html += renderSyncSetup(d, sync);
+	} else {
+		html += renderSyncConfigured(sync);
 	}
 
-	html += '<div class="shelf">Configuration</div><div class="group">';
+	html += settingsActionsBar();
+	return html;
+}
+
+// The current step of the setup walk, held on window so a re-render of the tab
+// keeps the walk position. 1 = relay URL, 2 = recovery (keyring init), 3 = secret.
+function renderSyncSetup(_d, sync) {
+	const step = window.syncSetupStep || 1;
+
+	let html = '<div class="shelf">Set up sync</div><div class="group">';
+	if (step === "recovery") {
+		html += renderSyncRecovery();
+	} else if (step === 3) {
+		html += renderSyncStepSecret(sync);
+	} else {
+		html += renderSyncStepRelay(sync);
+	}
+	html += "</div>";
+	return html;
+}
+
+function renderSyncStepRelay(sync) {
+	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
+	return (
+		'<div class="aside">First, the relay that stores your encrypted library ' +
+		"snapshots and shares them between devices. The bytes are encrypted - the " +
+		"relay cannot read them.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);">' +
+		'<label for="s_sync_relay_url">Relay URL</label>' +
+		'<input id="s_sync_relay_url" type="url" value="' +
+		relayValue +
+		'" placeholder="http://127.0.0.1:8788">' +
+		'<div class="aside">Default is the local <code>enq relay</code> address ' +
+		"from <code>127.0.0.1:8788</code>. A remote relay needs <code>--host 0.0.0.0</code> " +
+		"on the machine running it.</div>" +
+		"</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn primary" onclick="advanceSyncSetupAndInit()">Continue</button>' +
+		"</div>"
+	);
+}
+
+async function advanceSyncSetupAndInit() {
+	const relayUrl = (document.getElementById("s_sync_relay_url") || {}).value;
+	if (!relayUrl || !relayUrl.trim()) {
+		toast("Please enter a relay URL", true);
+		return;
+	}
+	window.syncRelayUrl = relayUrl.trim();
+
+	const d = await api("/settings");
+	const sync = d.sync || {};
+
+	// A legacy (pre-QR.1 two-slot) keyring cannot be carried forward: the new
+	// format drops the password slot, so it is re-initialized in place with a
+	// fresh key and recovery phrase, behind a destructive confirmation.
+	if (sync.keyring_initialized && sync.keyring_legacy) {
+		const yes = await ask(
+			"Re-initialize sync keyring?",
+			"Your sync keyring is from an older pre-release version. It will be " +
+				"re-initialized with a fresh encryption key and a new recovery phrase. " +
+				"Anything already synced with the old key can no longer be decrypted " +
+				"on this device. This cannot be undone.",
+			"Re-initialize",
+		);
+		if (!yes) {
+			window.syncSetupStep = 1;
+			renderSettingsTab(currentSettingsTab);
+			return;
+		}
+		await initKeyringAndShowRecovery();
+		return;
+	}
+
+	// Already initialized and current-format (re-pairing this desktop): skip
+	// straight to the secret step. Never re-initialize - that would orphan the
+	// current DEK.
+	if (sync.keyring_initialized) {
+		window.syncSetupStep = 3;
+		renderSettingsTab(currentSettingsTab);
+		return;
+	}
+
+	// Fresh library: initialize the keyring (no password) and show the recovery
+	// phrase once.
+	await initKeyringAndShowRecovery();
+}
+
+async function initKeyringAndShowRecovery() {
+	const btn = event && event.target ? event.target : null;
+	if (btn) {
+		btn.disabled = true;
+		btn.textContent = "Initializing...";
+	}
+	try {
+		const res = await api("/settings/keyring-init", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		// The phrase is shown exactly once, in memory only, and cleared on confirm.
+		window.syncRecoveryPhrase = res.recovery_phrase;
+		window.syncSetupStep = "recovery";
+		renderSettingsTab(currentSettingsTab);
+	} catch (err) {
+		toast(String(err.message || err), true);
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = "Initialize and show recovery phrase";
+		}
+	}
+}
+
+function renderSyncRecovery() {
+	const phrase = window.syncRecoveryPhrase;
+	if (!phrase) {
+		// No phrase available - go back to relay step.
+		window.syncSetupStep = 1;
+		return renderSyncStepRelay({});
+	}
+	return (
+		'<div class="callout warn">' +
+		"<b>Write this down. This is the only time you will see it.</b> " +
+		"This recovery phrase is the only way to recover your library if you " +
+		"lose access to this device. Store it somewhere safe. It will never be shown " +
+		"again.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);">' +
+		"<label>Recovery phrase</label>" +
+		'<div class="mono chip" style="font-size: 14px; letter-spacing: 2px; word-break: break-all;">' +
+		esc(phrase) +
+		"</div>" +
+		"</div>" +
+		'<div class="field">' +
+		'<label><input type="checkbox" id="s_recovery_confirmed"> ' +
+		"I have written down the recovery phrase and stored it safely</label>" +
+		"</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn primary" onclick="confirmRecoveryAndAdvance()">I have saved it - continue</button>' +
+		"</div>"
+	);
+}
+
+function renderSyncStepSecret(_sync) {
+	return (
+		'<div class="aside">Finally, the sync secret. This authenticates your ' +
+		"devices to the relay. Leave the field empty to generate a secure one, " +
+		"or paste the secret from the relay you run.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);">' +
+		'<label for="s_sync_secret">Sync secret</label>' +
+		'<input id="s_sync_secret" type="password" autocomplete="off" ' +
+		'placeholder="Leave empty to generate a secure secret">' +
+		'<div class="aside">Stored in the macOS Keychain, never in any file.</div>' +
+		"</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn primary" onclick="saveSyncSecretAndFinish()">Finish setup</button>' +
+		'<button class="btn ghost" onclick="backSyncSetup(2)">Back</button>' +
+		"</div>"
+	);
+}
+
+function backSyncSetup(step) {
+	window.syncSetupStep = step;
+	renderSettingsTab(currentSettingsTab);
+}
+
+function confirmRecoveryAndAdvance() {
+	const confirmed = document.getElementById("s_recovery_confirmed").checked;
+	if (!confirmed) {
+		toast("Please confirm you have saved the recovery phrase", true);
+		return;
+	}
+	window.syncRecoveryPhrase = null;
+	window.syncSetupStep = 3;
+	renderSettingsTab(currentSettingsTab);
+}
+
+async function saveSyncSecretAndFinish() {
+	const relayUrl = window.syncRelayUrl || "http://127.0.0.1:8788";
+	const secretField = document.getElementById("s_sync_secret");
+	const secret = secretField ? secretField.value.trim() : "";
+	const btn = event.target;
+	btn.disabled = true;
+	btn.textContent = "Saving...";
+	try {
+		// Generate a secure secret when the field is empty.
+		const finalSecret = secret || generateSyncSecret();
+		// PUT /settings/sync-secret also pushes the keyring to the relay.
+		await api("/settings/sync-secret", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ secret: finalSecret }),
+		});
+		// Persist the relay URL as a plaintext setting.
+		await api("/settings", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ changes: { sync_relay_url: relayUrl } }),
+		});
+		window.syncSetupStep = null;
+		window.syncRelayUrl = null;
+		pendingSettings = null;
+		toast("Sync configured");
+		await renderSettingsTab("sync");
+	} catch (err) {
+		toast(String(err.message || err), true);
+		btn.disabled = false;
+		btn.textContent = "Finish setup";
+	}
+}
+
+function generateSyncSecret() {
+	const array = new Uint8Array(32);
+	crypto.getRandomValues(array);
+	return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function renderSyncConfigured(sync) {
+	let html = '<div class="shelf">Configuration</div><div class="group">';
 	html +=
 		'<div class="field"><label>Relay URL</label>' +
 		'<div class="mono chip">' +
@@ -689,56 +907,100 @@ async function renderSettingsSync() {
 
 	html += '<div class="shelf">Pair a new device</div><div class="group">';
 	html +=
-		'<div class="aside">A pairing code carries the relay URL and sync secret. ' +
-		"Scan the QR with your phone's camera, or copy the code and paste it on the new device. " +
-		"Treat it like a password - do not share it.</div>" +
-		'<div class="field" style="margin-top: var(--sp-4);"><label>Pairing code</label>' +
-		'<div class="actions" style="gap: var(--sp-2); margin-top: var(--sp-2);">' +
-		'<button class="btn primary" id="pairShowBtn" onclick="showPairingCode()">Show pairing code</button>' +
+		'<div class="aside">On your phone, open the Enqueue app and choose "Link a device". ' +
+		"The phone camera scans the QR below and receives the encryption key in one " +
+		"step - no password, no typing. The QR contains your encryption key: only scan " +
+		"it with the Enqueue app, never screenshot it, and never share it." +
 		"</div>" +
-		'<div id="pairCodeArea" hidden style="margin-top: var(--sp-4);">' +
-		'<div id="pairQR" style="text-align: center; margin-bottom: var(--sp-3);"></div>' +
-		'<textarea id="pairCodeText" rows="3" readonly spellcheck="false" style="width: 100%; font-size: 11px; font-family: var(--mono); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2);"></textarea>' +
+		'<div class="field" style="margin-top: var(--sp-4);"><label>Linking QR</label>' +
+		'<div class="actions" style="gap: var(--sp-2); margin-top: var(--sp-2);">' +
+		'<button class="btn primary" id="linkShowBtn" onclick="showLinkCode()">Show linking QR</button>' +
+		"</div>" +
+		'<div id="linkQRArea" hidden style="margin-top: var(--sp-4);">' +
+		'<div id="linkQR" style="text-align: center; margin-bottom: var(--sp-3);"></div>' +
 		'<div class="actions" style="margin-top: var(--sp-2);">' +
-		'<button class="btn tertiary" onclick="copyPairingCode()">Copy code</button>' +
-		'<button class="btn ghost" onclick="hidePairingCode()">Hide</button>' +
+		'<button class="btn ghost" onclick="hideLinkCode()">Hide QR</button>' +
 		"</div>" +
 		"</div>" +
 		"</div>";
 
-	html += settingsActionsBar();
+	html += '<div class="shelf">Reset sync</div><div class="group">';
+	html +=
+		'<div class="aside caution">' +
+		"Resetting sync wipes the current encryption key and orphans anything " +
+		"already synced to the relay. Only do this if nothing important has " +
+		"synced yet, or if you have the recovery phrase and want to start fresh." +
+		"</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn harm" onclick="confirmResetSync()">Reset sync</button>' +
+		"</div>" +
+		"</div>";
+
 	return html;
 }
 
-let pairCodeCache = null;
-
-async function showPairingCode() {
-	const btn = document.getElementById("pairShowBtn");
-	const area = document.getElementById("pairCodeArea");
-	const qr = document.getElementById("pairQR");
-	const textArea = document.getElementById("pairCodeText");
+async function showLinkCode() {
+	const btn = document.getElementById("linkShowBtn");
+	const area = document.getElementById("linkQRArea");
+	const qr = document.getElementById("linkQR");
 	btn.disabled = true;
 	btn.textContent = "Generating...";
 	try {
-		const response = await bridge("desktop_pairing_code", {});
+		// QR.3: the command returns ONLY the rendered SVG - there is deliberately no
+		// textual form of the payload anywhere (camera-scanning is the only transport).
+		const response = await bridge("desktop_link_code", {});
 		const data = JSON.parse(response);
-		pairCodeCache = data.code;
-		textArea.value = data.code;
-		qr.innerHTML = data.qr_svg || "";
+		const svg = String(data.qr_svg || "");
+		// Parse and inject as a real SVG element via DOMParser - never innerHTML,
+		// and never raw content: a non-SVG or malformed document is rejected.
+		const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
+		const node = parsed.documentElement;
+		if (!node || node.tagName.toLowerCase() !== "svg") {
+			throw new Error("link QR did not come back as an SVG");
+		}
+		qr.replaceChildren(node);
 		area.hidden = false;
-		btn.textContent = "Show pairing code";
+		btn.textContent = "Show linking QR";
 		btn.disabled = false;
 	} catch (err) {
 		toast(String(err.message || err), true);
-		btn.textContent = "Show pairing code";
+		btn.textContent = "Show linking QR";
 		btn.disabled = false;
 	}
 }
 
-function hidePairingCode() {
-	const area = document.getElementById("pairCodeArea");
+function hideLinkCode() {
+	const area = document.getElementById("linkQRArea");
 	area.hidden = true;
-	pairCodeCache = null;
+	const qr = document.getElementById("linkQR");
+	if (qr) qr.replaceChildren();
+}
+
+async function confirmResetSync() {
+	const yes = await ask(
+		"Reset sync?",
+		"This wipes the current encryption key and orphans anything already synced to the relay. Only do this if nothing important has synced yet, or if you have the recovery phrase and want to start fresh. This cannot be undone.",
+		"Reset",
+	);
+	if (!yes) return;
+
+	const btn = event.target;
+	btn.disabled = true;
+	btn.textContent = "Resetting...";
+	try {
+		const res = await api("/settings/keyring-init", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ force: true }),
+		});
+		window.syncRecoveryPhrase = res.recovery_phrase;
+		window.syncSetupStep = "recovery";
+		await renderSettingsTab("sync");
+	} catch (err) {
+		toast(String(err.message || err), true);
+		btn.disabled = false;
+		btn.textContent = "Reset sync";
+	}
 }
 
 function copyPairingCode() {
@@ -746,6 +1008,7 @@ function copyPairingCode() {
 	navigator.clipboard.writeText(pairCodeCache);
 	toast("Pairing code copied");
 }
+
 const BACKEND_MODELS = {
 	ollama: "llama3.1:8b",
 	openrouter: "google/gemini-3-flash",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate: JS parse check on both pages, pytest, contrast check.
+"""Gate: JS parse check on both pages, pytest, contrast check, Android compile check.
 
 home.html has no inline scripts since M.8: its JS lives in static/js/*.js,
 loaded by <script src> in shell order. Each file is checked individually
@@ -10,6 +10,13 @@ cannot see - separate classic scripts share the global scope).
 capture.html still carries its JS inline: every <script> block is wrapped in
 { } so const/let scoping cannot collide across blocks, then run through
 node --check.
+
+The Android compile check runs `cargo check --lib --target aarch64-linux-android`
+in the desktop/ directory with the NDK environment. It is skipped with a clear
+message when the Android toolchain/NDK is absent (so non-mobile machines are not
+blocked). A green bin/verify is NOT proof the app runs - the desktop window and
+a real device are the only proof (per AGENTS.md "reproduce in a real setting"
+rule).
 """
 import os
 import re
@@ -22,6 +29,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = [
     "src/enqueue/static/home.html",
     "src/enqueue/static/capture.html",
+    "src/enqueue/static/flight.html",
     "src/enqueue/static/mobile.html",
 ]
 JS_DIR = os.path.join(HERE, "src", "enqueue", "static", "js")
@@ -112,6 +120,88 @@ def check_inline_js(path):
     wrapped = "\n".join("{" + b + "\n}" for b in blocks)
     return node_check(wrapped, path)
 
+def check_android_compile():
+    """Check that the mobile module compiles for Android."""
+    desktop_dir = os.path.join(HERE, "desktop")
+    
+    # Auto-detect Android SDK and NDK from standard locations (same as bin/launch mobile)
+    android_home = os.environ.get("ANDROID_HOME")
+    if not android_home or not os.path.isdir(android_home):
+        android_home = os.path.expanduser("~/Library/Android/sdk")
+    
+    ndk_home = os.environ.get("NDK_HOME")
+    if not ndk_home or not os.path.isdir(ndk_home):
+        ndk_parent = os.path.join(android_home, "ndk")
+        ndk_dirs = sorted(
+            d for d in os.listdir(ndk_parent)
+            if os.path.isdir(os.path.join(ndk_parent, d))
+        ) if os.path.isdir(ndk_parent) else []
+        if ndk_dirs:
+            ndk_home = os.path.join(ndk_parent, ndk_dirs[-1])
+    
+    if not android_home or not os.path.isdir(android_home):
+        print(f"{SRC}: Android compile check SKIPPED - Android SDK not found at {android_home}")
+        return True
+    
+    if not ndk_home or not os.path.isdir(ndk_home):
+        print(f"{SRC}: Android compile check SKIPPED - NDK not found at {ndk_home}")
+        return True
+    
+    # Check if the target is installed
+    rustup_target = subprocess.run(
+        ["rustup", "target", "list", "--installed"],
+        capture_output=True, text=True, timeout=30
+    )
+    if "aarch64-linux-android" not in rustup_target.stdout:
+        print(f"{SRC}: Android compile check SKIPPED - aarch64-linux-android target not installed")
+        return True
+    
+    # Check if the NDK has the required clang tool (unversioned name)
+    # Determine the host platform for the NDK toolchain path
+    import platform
+    host_platform = "darwin-x86_64" if platform.system() == "Darwin" else "linux-x86_64"
+    toolchain_bin = os.path.join(ndk_home, "toolchains", "llvm", "prebuilt", host_platform, "bin")
+    clang_path = os.path.join(toolchain_bin, "aarch64-linux-android-clang")
+    
+    if not os.path.exists(clang_path):
+        # Try to find versioned clang and create symlink, or skip
+        versioned_clang = None
+        if os.path.isdir(toolchain_bin):
+            for f in os.listdir(toolchain_bin):
+                if f.startswith("aarch64-linux-android") and f.endswith("-clang") and not f.endswith("++"):
+                    versioned_clang = os.path.join(toolchain_bin, f)
+                    break
+        if versioned_clang:
+            # Create symlink for the build
+            try:
+                os.symlink(versioned_clang, clang_path)
+            except (OSError, FileExistsError):
+                pass
+        else:
+            print(f"{SRC}: Android compile check SKIPPED - aarch64-linux-android-clang not found in NDK")
+            return True
+    
+    print(f"=== {SRC}: Android compile check ===")
+    env = os.environ.copy()
+    env["ANDROID_HOME"] = android_home
+    env["NDK_HOME"] = ndk_home
+    # Ensure cargo can find the NDK toolchain
+    env["PATH"] = f"{toolchain_bin}:{android_home}/platform-tools:{env.get('PATH', '')}"
+    
+    result = subprocess.run(
+        ["cargo", "check", "--lib", "--target", "aarch64-linux-android"],
+        cwd=desktop_dir,
+        env=env,
+        capture_output=False,
+        timeout=300
+    )
+    if result.returncode == 0:
+        print(f"{SRC}: Android compile OK")
+        return True
+    else:
+        print(f"{SRC}: Android compile FAILED", file=sys.stderr)
+        return False
+
 def main():
     os.chdir(HERE)
     pass_flag = True
@@ -126,10 +216,15 @@ def main():
         pass_flag = False
 
     print("")
-    print(f"=== {SRC}: JS parse: {FILES[2]} (mobile shell) ===")
+    print(f"=== {SRC}: JS parse: {FILES[2]} ===")
+    if not check_inline_js(FILES[2]):
+        pass_flag = False
+
+    print("")
+    print(f"=== {SRC}: JS parse: {FILES[3]} (mobile shell) ===")
     if not check_mobile_js():
         pass_flag = False
-    if not check_inline_js(FILES[2]):
+    if not check_inline_js(FILES[3]):
         pass_flag = False
 
     print("")
@@ -148,6 +243,10 @@ def main():
         print(f"{SRC}: contrast OK")
     else:
         print(f"{SRC}: contrast check FAILED", file=sys.stderr)
+        pass_flag = False
+
+    print("")
+    if not check_android_compile():
         pass_flag = False
 
     print("")

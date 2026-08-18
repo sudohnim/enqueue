@@ -226,9 +226,19 @@ def sync_state() -> dict:
     The relay URL is a plaintext setting; the per-library secret lives in the
     Keychain and its value is never read back here - only whether one is present
     and its hint. The device id names this device's namespace on the relay.
+    Keyring state tells the UI whether sync can proceed or needs initialization.
     """
-    from . import keyring
+    from . import keyring, keyring_file
     from .sync import device_id
+
+    keyring_initialized = keyring_file.is_initialized()
+    # QR.1: DEK auto-loads from the Keychain/file on startup, so a restart is
+    # not locked. When the stored copy is missing (total device loss), the
+    # keyring stays locked until the recovery phrase restores it.
+    if keyring_initialized and keyring_file.dek() is None:
+        keyring_file.load_dek_from_keychain()
+    keyring_locked = keyring_initialized and keyring_file.dek() is None
+    keyring_ready = keyring_initialized and not keyring_locked
 
     return {
         "relay_url": get("sync_relay_url") or "",
@@ -236,4 +246,8 @@ def sync_state() -> dict:
         "secret_present": bool(keyring.sync_secret_get()),
         "secret_hint": keyring.sync_secret_hint(),
         "device_id": device_id(),
+        "keyring_initialized": keyring_initialized,
+        "keyring_locked": keyring_locked,
+        "keyring_ready": keyring_ready,
+        "keyring_legacy": keyring_file.is_legacy(),
     }

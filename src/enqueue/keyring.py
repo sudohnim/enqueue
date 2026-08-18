@@ -31,10 +31,11 @@ import shutil
 import subprocess
 import sys
 
-# The provider API key (LLM backends) and the per-library sync secret are two
-# different Keychain entries under one account.
+# The provider API key (LLM backends), the per-library sync secret, and the
+# raw DEK for sync (QR.1) are three different Keychain entries under one account.
 SERVICE = "enqueue-llm-api-key"
 SYNC_SERVICE = "enqueue-sync-secret"
+DEK_SERVICE = "enqueue-sync-dek"
 ACCOUNT = "enqueue"
 
 _SECURITY = "/usr/bin/security"
@@ -160,3 +161,100 @@ def sync_secret_clear() -> bool:
 
 def sync_secret_hint() -> str | None:
     return hint(sync_secret_get())
+
+
+# ---- sync DEK (QR.1) -------------------------------------------------------
+# The raw DEK is stored in the Keychain so it survives engine restarts without
+# requiring a password unlock. On non-macOS platforms we fall back to an
+# app-data file (mode 0600), same as mobile (MOB.3b).
+
+
+def dek_store(dek: bytes) -> None:
+    """Store the raw DEK in the Keychain (macOS) or a file (other platforms)."""
+    if available():
+        # Store as base64 through security -i to keep it out of argv
+        import base64
+
+        b64 = base64.b64encode(dek).decode("ascii")
+        quoted = b64.replace("\\", "\\\\").replace('"', '\\"')
+        command = f'add-generic-password -a {ACCOUNT} -s {DEK_SERVICE} -U -w "{quoted}"\n'
+        done = subprocess.run(
+            [_SECURITY, "-i"],
+            input=command,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if done.returncode != 0:
+            raise RuntimeError(done.stderr.strip() or "the keychain refused to store the DEK")
+        # Verify it stored correctly
+        if _dek_get() != dek:
+            raise RuntimeError("the DEK did not store correctly")
+    else:
+        # Non-macOS: write to a mode-0600 file in DATA_DIR
+        from . import config
+
+        path = config.DATA_DIR / "sync-dek.bin"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(dek)
+        path.chmod(0o600)
+
+
+def _dek_get() -> bytes | None:
+    """Read the raw DEK from the Keychain (macOS) or file (other platforms)."""
+    if available():
+        try:
+            done = subprocess.run(
+                [_SECURITY, "find-generic-password", "-a", ACCOUNT, "-s", DEK_SERVICE, "-w"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode != 0:
+            return None
+        b64 = done.stdout.strip()
+        if not b64:
+            return None
+        import base64
+
+        try:
+            return base64.b64decode(b64)
+        except Exception:
+            return None
+    else:
+        # Non-macOS: read from file
+        from . import config
+
+        path = config.DATA_DIR / "sync-dek.bin"
+        try:
+            return path.read_bytes()
+        except OSError:
+            return None
+
+
+def dek_clear() -> bool:
+    """Remove the stored DEK (for reset sync)."""
+    if available():
+        done = subprocess.run(
+            [_SECURITY, "delete-generic-password", "-a", ACCOUNT, "-s", DEK_SERVICE],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return done.returncode == 0
+    else:
+        from . import config
+
+        path = config.DATA_DIR / "sync-dek.bin"
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+
+def dek_available() -> bool:
+    """Whether a DEK is stored (Keychain or file)."""
+    return _dek_get() is not None

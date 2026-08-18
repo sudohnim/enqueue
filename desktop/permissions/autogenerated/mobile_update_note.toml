@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-update-note"
+description = "Enables the mobile_update_note command without any pre-configured scope."
+commands.allow = ["mobile_update_note"]
+
+[[permission]]
+identifier = "deny-mobile-update-note"
+description = "Denies the mobile_update_note command without any pre-configured scope."
+commands.deny = ["mobile_update_note"]

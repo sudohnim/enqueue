@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-add-annotation"
+description = "Enables the mobile_add_annotation command without any pre-configured scope."
+commands.allow = ["mobile_add_annotation"]
+
+[[permission]]
+identifier = "deny-mobile-add-annotation"
+description = "Denies the mobile_add_annotation command without any pre-configured scope."
+commands.deny = ["mobile_add_annotation"]
