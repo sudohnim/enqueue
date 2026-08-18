@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Pre-commit gate: nothing broken gets committed.
+#
+# This exists because verified work was lost twice to uncommitted-then-reverted
+# working trees, and because a broken mobile module (FIX.1) was committed after the
+# author skipped `bin/verify`. The fix is to make "green" a precondition of every
+# commit, enforced by git rather than by memory.
+#
+# Runs `bin/verify` (JS parse on every served page, pytest, contrast, and - when the
+# Android SDK/NDK is present - the aarch64 compile that catches the mobile-module
+# breakage that keeps recurring). A failure blocks the commit.
+#
+# Install (once per clone):   git config core.hooksPath .githooks
+# Emergency bypass (avoid):   git commit --no-verify
+#
+# It only runs when code that bin/verify covers is staged, so docs-only commits stay
+# instant.
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# What is staged for this commit?
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+
+# Docs/asset-only commits do not need the code gate.
+if ! printf '%s\n' "$staged" | grep -qE '\.(py|js|html|rs|toml)$|^bin/|^desktop/(src|permissions|Cargo)'; then
+  exit 0
+fi
+
+echo "pre-commit: running bin/verify (code changes staged)..."
+if ! "$REPO/bin/verify"; then
+  echo >&2
+  echo "pre-commit: bin/verify FAILED - commit blocked." >&2
+  echo "pre-commit: fix it, or 'git commit --no-verify' only if you truly must." >&2
+  exit 1
+fi
+echo "pre-commit: bin/verify green - committing."

@@ -775,6 +775,16 @@ The shell finds the engine repo via (in order):
 
 `bin/verify` runs JS parse, pytest, contrast check, and an Android compile check (when the NDK is present). A green `bin/verify` is NOT proof the app runs on a device - it only proves the code parses, the tests pass, the palette meets contrast, and the mobile module compiles for the Android target. The desktop window (`bin/launch desktop`) and a real device (`bin/launch mobile`) are the only proof the app runs. This is the AGENTS.md "reproduce in a real setting" rule applied to the shells.
 
+## Working agreement: verification split + commit discipline (do not skip)
+
+Verified work has been lost twice to uncommitted-then-reverted working trees, and a broken mobile module was committed after `bin/verify` was skipped. Two rules prevent the recurrence:
+
+1. **`bin/verify` gates every commit, enforced by git.** A pre-commit hook (`.githooks/pre-commit`, activated with `git config core.hooksPath .githooks`) runs `bin/verify` whenever code is staged and blocks the commit if it fails. Run `bin/verify` yourself before claiming any task "done" - do not rely on the hook to find breakage late. A broken `cargo check --lib --target aarch64-linux-android` is a failure, not a "device blocker."
+
+2. **Commit the same turn work goes green - never leave verified code uncommitted.** The loss happened in the gap between "it works in the working tree" and "someone commits it." Close that gap: as soon as `bin/verify` is green, the working tree is committed (the human commits after each green turn; or, if agreed, an agent commits its own verified work to a branch the human reviews). Uncommitted verified work is treated as work that will be lost.
+
+**The verification split** (why "I can't run the device" is never a reason to stop): implementing code, `cargo check`, and `bin/verify` are HEADLESS and need no hardware - do all of it. The final runtime check on a physical phone / desktop window ("Done when: on the device...") is done by the HUMAN TESTER, who has the device. So the loop is: agent implements + `bin/verify` green + commit, leaving the box UNCHECKED with a "code-complete, pending device verify" note; the human runs the device pass and checks the box. Never stop a turn merely because the device runtime is out of reach - there is almost always headless implementation + gate + commit work to finish first.
+
 ---
 
 ## Gotchas
