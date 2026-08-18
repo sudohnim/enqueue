@@ -23,7 +23,7 @@ mod mobile {
     use rusqlite::Connection;
     use serde_json::Value;
     use sha2::Digest;
-    use tauri::{AppHandle, Manager};
+    use tauri::{AppHandle, Manager, Emitter};
     use tauri_plugin_dialog::DialogExt;
     use ureq::Request;
 
@@ -112,45 +112,56 @@ mod mobile {
     #[tauri::command]
     fn mobile_sync(app: AppHandle, config: String) -> Result<String, String> {
         let cfg: Value = serde_json::from_str(&config).unwrap_or(Value::Null);
-        let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
-        let sync_secret = cfg.get("sync_secret").and_then(Value::as_str).unwrap_or("");
-        let keyring_json = cfg.get("keyring_json").and_then(Value::as_str).unwrap_or("");
-        let recovery_phrase = cfg.get("recovery_phrase").and_then(Value::as_str).unwrap_or("");
+        let relay_url = cfg.get("relay_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let sync_secret = cfg.get("sync_secret").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let keyring_json = cfg.get("keyring_json").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let recovery_phrase = cfg.get("recovery_phrase").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
+        // Validate config exists
+        if relay_url.is_empty() || sync_secret.is_empty() {
+            return Err("sync not configured".into());
+        }
+
+        // Open the library connection
         let conn = open_lib(&app)?;
 
-        // Resolve the config: a fresh keyring + phrase wins and is persisted; otherwise
-        // the saved config (with its already-unlocked DEK) is reused.
-        let (relay_url, sync_secret, dek) =
-            if !keyring_json.is_empty() && !recovery_phrase.is_empty() {
-                let dek = crate::sync::unlock_dek(keyring_json, recovery_phrase)
-                    .map_err(|e| e.to_string())?;
-                save_config(&app, relay_url, sync_secret, keyring_json, &dek, None, None, None, None, None, None)?;
-                (relay_url.to_string(), sync_secret.to_string(), Some(dek))
-            } else if let Some(saved) = load_config(&app)? {
-                let dek = saved
-                    .get("dek")
-                    .and_then(Value::as_str)
-                    .and_then(dek_from_hex);
-                (
-                    saved.get("relay_url").and_then(Value::as_str).unwrap_or("").to_string(),
-                    saved.get("secret").and_then(Value::as_str).unwrap_or("").to_string(),
-                    dek,
-                )
-            } else {
-                (relay_url.to_string(), sync_secret.to_string(), None)
-            };
+        // Spawn sync_library on a background thread so the UI doesn't freeze (QR.5a).
+        // The thread will emit events (sync-started, sync-progress, sync-done, sync-error)
+        // that mobile.html listens for, instead of awaiting the command result.
+        // Copy the needed values into the closure so cfg is not captured.
+        let relay_url_owned = relay_url.clone();
+        let sync_secret_owned = sync_secret.clone();
+        let keyring_json_owned = keyring_json.clone();
+        let recovery_phrase_owned = recovery_phrase.clone();
+        let app_handle = app.clone();
+        let conn_clone = conn;
 
-        let outcome = crate::sync::sync_library(&relay_url, &sync_secret, dek.as_ref(), &conn);
-        let ids = crate::sync::list_artifact_ids(&conn).unwrap_or_default();
+        std::thread::spawn(move || {
+            // Emit sync-started event
+            let _ = app_handle.emit("sync-started", serde_json::json!({}));
 
-        Ok(serde_json::json!({
-            "status": outcome.status,
-            "pulled": outcome.pulled,
-            "error": outcome.error,
-            "artifact_ids": ids,
-        })
-        .to_string())
+            // Run sync_library in the background (DEK will be loaded from
+            // persisted config in the thread; pass None if not available).
+            let outcome = crate::sync::sync_library(&relay_url_owned, &sync_secret_owned,
+                None,
+                &conn_clone);
+            let ids = crate::sync::list_artifact_ids(&conn_clone).unwrap_or_default();
+
+            // Emit the result event
+            let err_str = outcome.error.as_deref().unwrap_or("");
+            let _ = app_handle.emit(
+                if err_str.is_empty() { "sync-done" } else { "sync-error" },
+                serde_json::json!({
+                    "status": outcome.status,
+                    "pulled": outcome.pulled,
+                    "error": outcome.error,
+                    "artifact_ids": ids,
+                }),
+            );
+        });
+
+        // Return immediately; the UI will listen for sync events
+        Ok(serde_json::json!({ "started": true }).to_string())
     }
 
     /// Whether a sync config (secret + DEK) has been persisted, so the UI can decide
