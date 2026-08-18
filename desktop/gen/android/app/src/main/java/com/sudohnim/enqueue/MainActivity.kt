@@ -14,6 +14,14 @@ class MainActivity : TauriActivity() {
     WebView.setWebContentsDebuggingEnabled(true)
     super.onCreate(savedInstanceState)
 
+    // QR.4a: allow video autoplay without user gesture (muted stream from camera)
+    // Android WebView defaults to TRUE, which blocks even muted <video> autoplay.
+    // Setting this to false allows the camera stream to play in the setup screen.
+    val webView = window?.findViewById<WebView>(android.R.id.web)
+    if (webView != null) {
+        webView.webSettings.mediaPlaybackRequiresUserGesture = false
+    }
+
     // Request CAMERA permission before opening the camera in the Tauri WebView
     if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
       != android.content.pm.PackageManager.PERMISSION_GRANTED
