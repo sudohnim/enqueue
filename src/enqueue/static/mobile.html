@@ -778,27 +778,61 @@
   /* QR.4a: during a native barcode scan the plugin renders the camera BEHIND a
      transparent WebView, so the page must be see-through and the normal UI hidden,
      leaving only the aiming overlay. */
-  html.scanning, body.scanning { background: transparent !important; }
-  body.scanning * { visibility: hidden !important; }
-  body.scanning #scan_overlay, body.scanning #scan_overlay * { visibility: visible !important; }
-  #scan_overlay { position: fixed; inset: 0; z-index: 99999; display: none; }
-  body.scanning #scan_overlay { display: block; }
+  html.scanning,
+  body.scanning {
+    background: transparent !important;
+  }
+  body.scanning * {
+    visibility: hidden !important;
+  }
+  body.scanning #scan_overlay,
+  body.scanning #scan_overlay * {
+    visibility: visible !important;
+  }
+  #scan_overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: none;
+  }
+  body.scanning #scan_overlay {
+    display: block;
+  }
   #scan_overlay .frame {
-    position: absolute; left: 50%; top: 44%; width: 260px; height: 260px;
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    width: 260px;
+    height: 260px;
     transform: translate(-50%, -50%);
-    border: 3px solid #fff; border-radius: 18px;
+    border: 3px solid #fff;
+    border-radius: 18px;
     /* Fully opaque surround (alpha 1) so the camera shows ONLY inside this box,
        not across the whole screen. */
     box-shadow: 0 0 0 4000px rgba(0, 0, 0, 1);
   }
   #scan_overlay .hint {
-    position: absolute; top: 16%; left: 0; right: 0; text-align: center;
-    color: #fff; font-size: 15px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+    position: absolute;
+    top: 16%;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: #fff;
+    font-size: 15px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
   }
   #scan_overlay .cancel {
-    position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
-    padding: 12px 30px; border-radius: 999px; border: none;
-    background: #fff; color: #000; font-weight: 600; font-size: 15px;
+    position: absolute;
+    bottom: 12%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 30px;
+    border-radius: 999px;
+    border: none;
+    background: #fff;
+    color: #000;
+    font-weight: 600;
+    font-size: 15px;
   }
 </style>
 
@@ -875,38 +909,34 @@
     </svg>
     Settings
   </button>
-  <button role="menuitem" id="pill_menu_trash">
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      aria-hidden="true"
-    >
-      <polyline points="3 6 5 6 21 6"></polyline>
-      <path
-        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-      ></path>
-    </svg>
-    Trash
-  </button>
 </div>
 
 <section id="setup">
   <h1 class="title">Enqueue</h1>
   <p class="sub">Sync your library from the relay.</p>
-  <div id="setup_camera" style="display: block; text-align: center; padding: 48px 20px">
-    <p style="font-size: 13px; color: var(--text-subtle); margin: 0 0 24px;">
+  <div
+    id="setup_camera"
+    style="display: block; text-align: center; padding: 48px 20px"
+  >
+    <p style="font-size: 13px; color: var(--text-subtle); margin: 0 0 24px">
       Scan the linking QR on your desktop
     </p>
     <button
       id="scan_qr_btn"
       class="round primary"
-      style="min-width: 200px; padding: 14px 28px; font-size: 15px;"
+      style="min-width: 200px; padding: 14px 28px; font-size: 15px"
     >
       Scan QR
     </button>
-    <p id="scan_status" style="font-size: 13px; color: var(--text-subtle); text-align: center; margin: 16px 0 0;"></p>
+    <p
+      id="scan_status"
+      style="
+        font-size: 13px;
+        color: var(--text-subtle);
+        text-align: center;
+        margin: 16px 0 0;
+      "
+    ></p>
   </div>
   <div
     id="setup_no_camera"
@@ -1285,21 +1315,23 @@
       >
         Trash
       </h2>
-      <button
-        id="settings_trash"
-        type="button"
+      <div
+        id="settings_trash_list"
         style="
           background: var(--surface);
-          color: var(--text);
           border: 1px solid var(--line);
-          padding: 12px 18px;
           border-radius: var(--r-md);
-          width: 100%;
-          text-align: left;
+          padding: 0;
+          overflow: hidden;
         "
       >
-        View Trash &rarr;
-      </button>
+        <div
+          id="settings_trash_empty"
+          style="padding: 12px 18px; color: var(--text-subtle); font-size: 13px"
+        >
+          No trashed items
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -2057,45 +2089,41 @@
     }
   }
 
-  document
-    .getElementById("scan_qr_btn")
-    .addEventListener("click", async () => {
-      if (scanActive) return;
-      scanActive = true;
-      document.getElementById("scan_qr_btn").disabled = true;
-      document.getElementById("scan_status").textContent = "Opening scanner...";
-      // Make the page see-through so the camera (rendered behind the WebView by the
-      // plugin) shows, leaving only the aiming overlay visible.
-      document.documentElement.classList.add("scanning");
-      document.body.classList.add("scanning");
-      try {
-        const result = await invoke("plugin:barcode-scanner|scan", {
-          formats: ["QR_CODE"],
-        });
-        await handleScanResult(result);
-      } catch (e) {
-        if (String(e) !== "cancelled" && !String(e).includes("cancel")) {
-          setStatus("Scan failed: " + String(e), "error");
-        }
-      } finally {
-        document.documentElement.classList.remove("scanning");
-        document.body.classList.remove("scanning");
-        scanActive = false;
-        document.getElementById("scan_qr_btn").disabled = false;
-        document.getElementById("scan_status").textContent = "";
+  document.getElementById("scan_qr_btn").addEventListener("click", async () => {
+    if (scanActive) return;
+    scanActive = true;
+    document.getElementById("scan_qr_btn").disabled = true;
+    document.getElementById("scan_status").textContent = "Opening scanner...";
+    // Make the page see-through so the camera (rendered behind the WebView by the
+    // plugin) shows, leaving only the aiming overlay visible.
+    document.documentElement.classList.add("scanning");
+    document.body.classList.add("scanning");
+    try {
+      const result = await invoke("plugin:barcode-scanner|scan", {
+        formats: ["QR_CODE"],
+      });
+      await handleScanResult(result);
+    } catch (e) {
+      if (String(e) !== "cancelled" && !String(e).includes("cancel")) {
+        setStatus("Scan failed: " + String(e), "error");
       }
-    });
+    } finally {
+      document.documentElement.classList.remove("scanning");
+      document.body.classList.remove("scanning");
+      scanActive = false;
+      document.getElementById("scan_qr_btn").disabled = false;
+      document.getElementById("scan_status").textContent = "";
+    }
+  });
 
   document.getElementById("scan_cancel").addEventListener("click", () => {
     invoke("plugin:barcode-scanner|cancel").catch(() => {});
   });
 
-  document
-    .getElementById("retry_camera")
-    .addEventListener("click", () => {
-      // The "Retry" button is now just the Scan QR button
-      document.getElementById("scan_qr_btn").click();
-    });
+  document.getElementById("retry_camera").addEventListener("click", () => {
+    // The "Retry" button is now just the Scan QR button
+    document.getElementById("scan_qr_btn").click();
+  });
 
   document.getElementById("to_setup").addEventListener("click", () => {
     show("setup");
@@ -2662,12 +2690,46 @@
       }
     });
 
-  // Trash navigation
-  document.getElementById("settings_trash").addEventListener("click", () => {
-    show("library");
-    // Could add a trash filter here
-    alert("Trash view - use the Library with filter (not yet implemented)");
-  });
+  // Trash view: load trashed items into Settings > Trash section (MOBUI1.1)
+  async function loadTrash() {
+    const listEl = document.getElementById("settings_trash_list");
+    const emptyEl = document.getElementById("settings_trash_empty");
+    try {
+      const items = JSON.parse(await invoke("mobile_list_trashed"));
+      if (!items || items.length === 0) {
+        emptyEl.style.display = "block";
+        return;
+      }
+      emptyEl.style.display = "none";
+      for (const item of items) {
+        const row = document.createElement("div");
+        row.style.cssText = "padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px;";
+        const title = document.createElement("span");
+        title.style.cssText = "flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+        title.textContent = item.title || "Untitled";
+        const restoreBtn = document.createElement("button");
+        restoreBtn.textContent = "Restore";
+        restoreBtn.style.cssText = "background: var(--accent); color: var(--bg); border: none; border-radius: var(--r-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;";
+        restoreBtn.addEventListener("click", async () => {
+          try {
+            await invoke("mobile_restore_trashed", { id: item.id });
+            row.remove();
+            if (listEl.querySelectorAll("div").length <= 1) {
+              emptyEl.style.display = "block";
+            }
+          } catch (e) {
+            alert("Restore failed: " + e);
+          }
+        });
+        row.appendChild(title);
+        row.appendChild(restoreBtn);
+        listEl.appendChild(row);
+      }
+    } catch (e) {
+      emptyEl.textContent = "Failed to load trash";
+    }
+  }
+  loadTrash();
 
   function openChat() {
     show("chat");
@@ -2767,16 +2829,15 @@
 
   bootstrap();
 
-
   // QR.5b: Resume sync when app becomes visible or comes online
-  document.addEventListener('visibilitychange', () => {
+  document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
-      console.log('[resume] visibilitychange - triggering sync');
+      console.log("[resume] visibilitychange - triggering sync");
       if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
     }
   });
-  window.addEventListener('online', () => {
-    console.log('[resume] online event - triggering sync');
+  window.addEventListener("online", () => {
+    console.log("[resume] online event - triggering sync");
     if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
   });
 </script>
