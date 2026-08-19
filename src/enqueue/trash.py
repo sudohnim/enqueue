@@ -24,6 +24,7 @@ import contextlib
 from datetime import datetime, timedelta, timezone
 
 from . import config, db
+from .sync.client import push_artifact
 
 
 def _now() -> datetime:
@@ -60,6 +61,7 @@ def delete(artifact_id: str) -> dict:
         conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
 
     _drop_from_index(artifact_id)
+    push_artifact(artifact_id)
     return {"id": artifact_id, "deleted_at": now, "already": False}
 
 
@@ -76,6 +78,7 @@ def restore(artifact_id: str) -> dict:
         conn.execute("UPDATE artifacts SET deleted_at = NULL WHERE id = ?", (artifact_id,))
 
     ingest_queue.submit(artifact_id)
+    push_artifact(artifact_id)
     return {"id": artifact_id, "restored": True}
 
 
@@ -164,6 +167,7 @@ def purge(artifact_id: str) -> dict:
             blob.unlink(missing_ok=True)
 
     _drop_from_index(artifact_id)
+    # Purge is local-only and final; no relay push.
     return {"id": artifact_id, "purged": True}
 
 

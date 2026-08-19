@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 from . import config, db
 from .ingest import queue as ingest_queue
+from .sync.client import push_artifact
 
 MIMES = {
     ".pdf": "application/pdf",
@@ -112,6 +113,7 @@ def link(url: str, local_only: bool = False) -> dict:
 
     # Returns before anything is fetched, per hard rule 7. The queue resolves it.
     ingest_queue.submit(artifact_id)
+    push_artifact(artifact_id)
     out = {"id": artifact_id, "created": not restored}
     if restored:
         out["restored"] = True
@@ -178,6 +180,7 @@ def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool
 
     # Returns first, per hard rule 7. Extraction and indexing happen behind this.
     ingest_queue.submit(artifact_id)
+    push_artifact(artifact_id)
     out = {"id": artifact_id, "created": not restored}
     if restored:
         out["restored"] = True

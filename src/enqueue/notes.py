@@ -16,6 +16,7 @@ import uuid
 
 from . import db
 from .ingest import queue as ingest_queue
+from .sync.client import push_artifact
 from .ingest import secrets
 
 UNTITLED = "Untitled"
@@ -198,6 +199,7 @@ def annotate(artifact_id: str, text: str, supersedes_id: str | None = None) -> d
     # what was written about it, so its chunks have to rebuild. Same fire-and-forget
     # discipline as editing a note body.
     ingest_queue.submit(artifact_id)
+    push_artifact(artifact_id)
 
     return {"id": entry_id, "supersedes_id": supersedes_id}
 

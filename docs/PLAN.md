@@ -364,7 +364,9 @@ hiding again.
   Done when (pivot): capturing via the global hotkey from another app (e.g. Chrome) plays a
   visible raven flight over that app - because it plays in the capture overlay before it
   dismisses - then the overlay goes away and the person is back in their app; no separate
-  always-on-top window is needed; reduced-motion still fades. Human device-verify.
+  always-on-top window is needed; reduced-motion still fades. Human device-verify (this is
+  the macOS-display escalation #2 in the VERIFICATION PROTOCOL - everything buildable the
+  agent verifies first: cargo build clean, bin/verify green, dead-code greps zero).
 
 ## Phase QRSYNC - QR-linked, hosted-relay, passwordless sync (the refactor)
 
@@ -422,7 +424,7 @@ overstated the coupling; and the camera is now the NATIVE plugin, not a webview 
   are 0 refs = never restored; pure Rust/JNI). Neither needs a working camera to IMPLEMENT.
 - VERIFIABLE WITHOUT THE CAMERA (by injecting a link payload via adb, bypassing the
   scanner): QR.4b's `mobile_link_qr` fix (the `mobile_link_qr` -> save_config -> sync path)
-  and QR.5a (non-blocking sync). The human tester can inject `{relay_url, relay_secret,
+  and QR.5a (non-blocking sync). The agent injects `{relay_url, relay_secret,
   dek}` straight to `mobile_link_qr` to reach a synced state and confirm link + sync +
   non-blocking, independent of QR.4a. So do not treat these as camera-blocked.
 - SEQUENCING NOTE (supersedes "QR.4b depends on QR.4a"): with the plugin pivot there is no
@@ -442,6 +444,44 @@ Do not start a later task until the previous task's "Done when" passes.
 Every task has a VERIFY line: run it and paste the result into PROGRESS.md before
 checking the box. A compile success is NOT the task's "Done when" - it is only the
 minimum bar to attempt device verification.
+
+VERIFICATION PROTOCOL (2026-08-19 - READ THIS BEFORE CLAIMING "HEADLESS, NEEDS A HUMAN"):
+a harness without a display can still drive the PHYSICAL PHONE end to end over USB adb.
+"Headless" only means no macOS window - it does NOT block phone verification. The phone
+is the display. Default to driving it yourself; escalate to the human ONLY for the two
+truly visual checks listed at the bottom, and say exactly WHICH check needs eyes.
+The adb toolkit (phone plugged in via USB):
+  - Build + install: `cargo tauri android build --debug --target aarch64`, then
+    `adb install -r desktop/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk`.
+  - Launch: `adb shell monkey -p com.sudohnim.enqueue -c android.intent.category.LAUNCHER 1`
+    (or `am start -n com.sudohnim.enqueue/.MainActivity`).
+  - Screenshot: `adb exec-out screencap -p > /tmp/shot.png` - then READ the PNG (the agent
+    can see images; OCR/inspect it yourself, do not ask the human to describe the screen).
+  - Drive the UI: `adb shell input tap <x> <y>` / `input swipe` / `input text`; get exact
+    coordinates from `adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml`
+    (the XML has every element's bounds). Tap -> screencap -> assert = a full UI test loop.
+  - WebView console + JS errors (the insertBefore class): forward the webview CDP socket
+    `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` (pid from
+    `adb shell pidof com.sudohnim.enqueue`), then `curl localhost:9222/json` for targets
+    and drive the websocket with any CDP client - console exceptions, network, JS eval,
+    all programmatic. This replaces "chrome://inspect needs a human".
+  - App state + secrets: `adb shell run-as com.sudohnim.enqueue ...` (debug build) - read
+    `sync_config`, `library.db` (sqlite3 via run-as if available, else `run-as ... cat`
+    into a local file), `device_id`.
+  - Permissions: `adb shell dumpsys package com.sudohnim.enqueue | grep CAMERA`.
+  - Camera actually streaming: `adb shell dumpsys media.camera | grep -A2
+    com.sudohnim.enqueue` shows an active camera client - proves the stream is live even
+    though the camera SURFACE does not appear in screencaps.
+  - Logs: `adb logcat -d | grep -i enqueue` (Rust panics, plugin errors).
+  - Engine/desktop state: plain `curl 127.0.0.1:8787/...` and `sqlite3
+    ~/.enqueue-poc/enqueue.db`; relay state: curl the relay URL.
+ESCALATE TO HUMAN only for: (1) the camera-preview VISUAL containment check in SCANUI.1
+(does the feed LOOK boxed - screencap cannot see the camera layer; but verify
+camera-active + box geometry via dumpsys/uiautomator first, so the human only judges
+aesthetics), and (2) the CAP2.2 capture-flight visual on the macOS desktop. Everything
+else - linking, syncing, deleting, rendering, permissions, offline behaviour - is
+agent-verifiable with the toolkit above. When escalating, state the single unanswered
+visual question, not "please test the app".
 
 - [x] **QR.1 [AGENT]** Desktop: passwordless key creation, DEK persisted in the macOS
   Keychain, auto-load on launch. Three sub-changes:
@@ -503,10 +543,11 @@ minimum bar to attempt device verification.
   no browser calls to the relay). Live LAN verification passed: relay on 0.0.0.0:8899
   answered at <http://192.168.86.126:8899> - wrong secret 401, correct secret 200, PUT 201,
   GET returned the opaque bytes (non-localhost URL + auth + byte round-trip proven).
-  The two remaining literal clauses are unreachable here: (a) a PUBLIC tunnel URL needs
-  cloudflared/ngrok, neither installed (brew install + exposing a service to the public
-  internet is a user decision); (b) the physical-phone unplugged push/pull needs driving
-  the phone UI (no scrcpy - same block as SU.5). Reopen with a tunnel tool + scrcpy.
+  The two remaining literal clauses were: (a) a PUBLIC URL - SUPERSEDED by RELAYHOST.1
+  (Railway deploy, no tunnel tool needed); (b) "physical-phone push/pull needs scrcpy" -
+  WRONG, superseded by the VERIFICATION PROTOCOL (top of this file): the agent drives the
+  phone over adb (install/launch/tap/screencap/CDP) with no scrcpy and no display. QR.2's
+  remaining work is fully covered by RELAYHOST.1; once that lands, close QR.2.
 
 - [ ] **QR.3 [AGENT] - CODE RESTORED + COMMITTED (2026-08-18); only device-verify remains.**
   `desktop_link_code` was lost in a revert, then restored in commit `6fa0134` and committed
@@ -514,9 +555,14 @@ minimum bar to attempt device verification.
   `generate_handler!`, emitting the pinned wire format `{"v":1,"relay_url","relay_secret",
   "dek"}`, permission `desktop_link_code.toml` + `home-links` capability reference it). It
   compiles (Android 0 errors) and the wire format was confirmed consistent with QR.4b's
-  parser. Do NOT re-add it. What remains is HUMAN device-verify only: on a launched desktop,
-  reveal the QR and decode it (zbarimg or a scan) to confirm it renders the pinned payload
-  with zero external network calls. Box stays unchecked until that runtime check passes.
+  parser. Do NOT re-add it. What remains is verification, and MOST of it is headless per
+  the VERIFICATION PROTOCOL: add a Rust test that calls the payload builder (or
+  `desktop_link_code` directly) and asserts the decoded JSON is exactly the pinned wire
+  format (keys `v`/`relay_url`/`relay_secret`/`dek`, base64 DEK, no extra keys), and that
+  the rendered QR decodes back to that same JSON (decode the generated image with the
+  `rqrr` crate - pure Rust, no display needed). The only human step: one glance that the
+  QR visibly renders in the Settings UI on the launched desktop (a macOS-display check,
+  same class as CAP2.2). Box stays unchecked until both pass.
   Original task text follows:
   Desktop: show the linking QR. Desktop Settings > Sync (once set
   up) shows a locally-rendered QR (Rust `qrcode` crate, no external service - reuse the
@@ -659,11 +705,15 @@ minimum bar to attempt device verification.
    COMMIT AFTER GREEN: the plugin touches Cargo.toml, gradle, and lib.rs - exactly the class
    of Rust work lost twice (see LOST-WORK RECOVERY MAP). Commit immediately after a green
    full build, before device verification.
-   Done when (device-verified by the human): on a fresh phone, tapping "Scan QR" opens the
-   native scanner, scanning the desktop QR links + syncs the library with no typing, cancel
-   returns silently to setup, a wrong QR shows the "not an Enqueue code" state, first scan
-   works on a fresh install with no manual model download step, and the cleanup-proof greps
-   are zero.
+   Done when (split per the VERIFICATION PROTOCOL): the AGENT verifies programmatically -
+   on a fresh install, tapping "Scan QR" (uiautomator-driven) opens the native scanner,
+   the camera client goes active (dumpsys), cancel returns silently to setup, a
+   wrong-payload injection shows the "not an Enqueue code" state, first scan works with no
+   manual model-download step, and the cleanup-proof greps are zero. The HUMAN's only
+   irreducible step is the 10-second physical act: aiming the phone camera at the desktop
+   screen showing the QR - an agent cannot point a camera. Everything after the scan
+   (config persisted, sync lands, library renders) the agent verifies via run-as +
+   screencap + CDP.
   (b) Paste fallback was REJECTED (puts the raw DEK on the clipboard - the leak QR.3 avoided).
   DEVICE-VERIFIED 2026-08-18 - THE NATIVE PIVOT WORKS, one wiring fix left. Tapping "Scan
   QR" fires the plugin: logcat shows GMS resolving the ML Kit barcode modules
@@ -840,13 +890,27 @@ minimum bar to attempt device verification.
   arrives - it just never renders. Two symptoms, likely related: (1) the "Syncing…" indicator
   never clears when the cursor is caught up (QR.5a's non-blocking sync left the status stuck);
   (2) applied snapshots do not appear in the library list. Debug with the WebView console
-  (chrome://inspect on the device - NOT `adb screencap`): confirm whether `apply_snapshot`
-  writes the row to the local SQLite and whether `renderLibrary()` runs/throws (an earlier
-  `insertBefore` NotFoundError was seen in this exact list render). Fix the render so pulled
-  artifacts show, and clear "Syncing…" once caught up.
-  Done when: after linking, pulled artifacts appear in the phone's library (title + body) and
-  the "Syncing…" state ends when the cursor is caught up; a note captured on the desktop after
-  linking shows up on the phone. (Depends on FULL.1 for the EXISTING library to appear too.)
+  via the CDP recipe in the VERIFICATION PROTOCOL (adb forward + CDP client -
+  programmatic, NOT `adb screencap`, no human at chrome://inspect): confirm whether
+  `apply_snapshot` writes the row to the local SQLite and whether `renderLibrary()`
+  runs/throws (an earlier `insertBefore` NotFoundError was seen in this exact list
+  render). Fix the render so pulled artifacts show, and clear "Syncing…" once caught up.
+  DEPENDS ON QR.5a: the "Syncing…" indicator is driven by QR.5a's
+  `sync-started`/`sync-done` events - if QR.5a is not landed, land it first or this
+  task's indicator fix has nothing to listen to. The sync must also be BIDIRECTIONAL, not
+  just desktop-to-phone: a note captured ON THE PHONE must push to the relay and appear
+  on the desktop (the Rust `push_snapshot` path in `desktop/src/sync.rs` exists - confirm
+  the phone's capture flow calls it, and the desktop pull applies it).
+  Done when: after linking, pulled artifacts appear in the phone's library (title + body)
+  and the "Syncing…" state ends when the cursor is caught up; a note captured on the
+  desktop after linking shows up on the phone; AND a note captured on the phone shows up
+  on the desktop after its next pull. (Depends on FULL.1 for the EXISTING library to
+  appear too.)
+  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors; then on the
+  physical phone with the webview CDP forwarded (VERIFICATION PROTOCOL recipe): linking
+  renders the pulled library (console shows `renderLibrary()` completing, zero
+  exceptions), "Syncing…" clears at caught-up cursor; then one capture in EACH direction
+  confirmed visible on the other device.
 
 ## Phase SCANUI - contain the scanner camera in a box
 
@@ -867,11 +931,21 @@ minimum bar to attempt device verification.
   (b) Build the surround from explicit opaque panels (top/bottom/left/right rectangles)
       around a transparent central box, rather than relying on box-shadow.
   (c) Confirm whether the plugin exposes any windowed/preview option; if it only supports a
-      full-surface preview, (a)/(b) are the only levers.
+      full-surface preview, (a)/(b) are the only levers. DO (c) FIRST, at the desk: read
+      the vendored plugin source (`desktop/plugins/tauri-plugin-barcode-scanner/`) - the
+      team's fork already added a `boxSize` option to `setupCamera()`, so check whether
+      that path is live before rebuilding anything.
   Done when: on the phone, tapping "Scan QR" shows the camera INSIDE a centered box with an
   opaque surround (title + frame + Cancel), a QR still scans + links, and no camera bleeds
-  outside the box. Human device-verify (screencap will not show the camera - look at the
-  physical screen).
+  outside the box. Verification is split per the VERIFICATION PROTOCOL (top of this file):
+  the AGENT verifies programmatically - camera client active (`adb shell dumpsys
+  media.camera | grep com.sudohnim.enqueue`), chrome/box geometry present around the
+  center region (`uiautomator dump`), Cancel returns to setup and releases the camera,
+  and a real desktop QR still scans + links. The HUMAN does only the final one-glance
+  aesthetic check, because the camera surface itself does not appear in screencaps.
+  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors + `bin/verify`
+  green; then the agent-side dumpsys/uiautomator/scan checks above, pasted into
+  PROGRESS.md; then the single human glance.
 
 ## Phase GATE - close the Kotlin/APK hole in bin/verify
 
@@ -890,6 +964,154 @@ minimum bar to attempt device verification.
   Done when: a deliberately broken `.kt` (e.g. an unresolved reference in MainActivity.kt)
   makes a plain `./bin/verify` FAIL (not just a Rust break); it still skips cleanly with no
   Android toolchain; and `docs`-only commits stay instant.
+
+## Phase LINKSTAY - scan once, stay linked (found live 2026-08-19)
+
+DIAGNOSIS (confirmed via adb on the plugged-in phone): the link DOES persist -
+`sync_config` (relay_url, secret, DEK hex) sits in the app data dir and bootstrap
+(`mobile.html bootstrap()`) reloads it on launch. The rescan symptom is NOT lost
+persistence: the scanned QR baked `relay_url: http://127.0.0.1:8788` into the config,
+and loopback only reaches the desktop relay while `adb reverse` is active (USB plugged).
+Unplug -> relay unreachable -> sync fails -> the phone LOOKS unlinked, so the user
+rescans (while plugged in, so it works again). Two fixes: the QR must carry a reachable
+URL, and transient sync failure must never look like an unlinked phone.
+
+- [ ] **LINKSTAY.1 [AGENT]** Refuse to bake an unreachable relay URL into the link QR.
+  In `desktop_link_code` (`desktop/src/lib.rs`), before rendering: read the configured
+  `sync_relay_url`; if it is loopback/127.0.0.1/localhost/LAN-private (192.168/10.x/
+  172.16-31), do NOT render the QR - return an error string the Settings UI shows:
+  "This relay URL is only reachable from this Mac. Set a hosted relay URL first
+  (Settings > Sync, see docs/sync-relay.md), then show the QR again." The QR exists to
+  link a phone that will leave the house; a loopback QR is a broken promise.
+  Done when: with a loopback relay URL, Settings > Sync shows the error instead of a QR;
+  with a hosted URL set, the QR renders and its decoded payload contains that URL.
+  VERIFY: `cd desktop && cargo build` clean; `curl -s -X POST 127.0.0.1:8787/...` (or the
+  UI) with a loopback URL returns the error string; set a dummy public URL and decode the
+  QR to confirm it carries it.
+
+- [ ] **LINKSTAY.2 [AGENT]** Sync failure must never look unlinked. In mobile.html:
+  (a) `bootstrap()` shows the LIBRARY (from the local SQLite copy) whenever
+  `mobile_status` reports configured, regardless of whether sync then succeeds - sync
+  failure shows a small offline/"last synced X ago" banner, never the setup screen;
+  (b) the `sync-error` handler must NOT `alert()` (an alert per failed background sync
+  is spam when the relay is unreachable) - log to console + update the banner instead;
+  (c) add a "re-link (scan again)" action in Settings so re-scanning is an explicit
+  choice, not something the app forces by dumping the user into setup.
+  Done when: phone unplugged from USB (relay unreachable), app relaunch shows the cached
+  library + offline banner, zero alerts, no setup screen; plugging back in (or hosted
+  relay up) syncs without rescanning.
+  VERIFY: `cargo tauri android build --debug --target aarch64` clean; on the phone with
+  USB detached: cold-launch the app, screencap the library-with-banner; reattach network
+  path, confirm sync resumes with no scan.
+
+## Phase RELAYHOST - run the relay on a public host (the "external database")
+
+The user asked "do I need an externally hosted database?" - answer: not a database, the
+EXISTING dumb relay (`src/enqueue/relay/app.py`, `enq relay`) on a public host. It stores
+only ciphertext blobs, so the smallest always-on box is enough. Host chosen 2026-08-19:
+Railway (user has an account; managed TLS + domain + restarts). QR.2's docs cover the
+options (VPS, cloudflared tunnel); this phase is the atomic Railway recipe.
+
+- [ ] **RELAYHOST.1 [HUMAN+AGENT]** Deploy the relay on Railway (chosen 2026-08-19 -
+  user already has a Railway account; supersedes the VPS+Caddy recipe, which stays in
+  docs/sync-relay.md as the self-host alternative). Railway gives TLS + a public domain +
+  restarts for free, so no Caddy/ufw/systemd. Atomic steps:
+  1. Agent: add a `Dockerfile.railway` at the repo root (or `Dockerfile`): base
+     `ghcr.io/astral-sh/uv:python3.13-bookworm-slim`, copy `pyproject.toml` `uv.lock`
+     `src/`, `uv sync --frozen --no-dev`, CMD `uv run enq relay --host 0.0.0.0 --port
+     $PORT`. The `$PORT` env is Railway-injected - `enq relay` must take it (check
+     `cli.py` reads `RELAY_PORT`; add a `$PORT` fallback in the Dockerfile CMD
+     `sh -c 'uv run enq relay --host 0.0.0.0 --port ${PORT:-8788}'` if simpler).
+  2. User (Railway console, ~2 min): New Project -> Deploy from Repo (or `railway up`)
+     -> add a VOLUME mounted at `/data` (WITHOUT the volume every redeploy wipes the
+     synced library - non-negotiable) -> set env vars `RELAY_SECRET=<output of openssl
+     rand -hex 32>` (user generates, never commits), `RELAY_DATA_DIR=/data`,
+     `RELAY_HOST=0.0.0.0` -> Settings -> Generate Domain -> note the
+     `*.up.railway.app` URL.
+  3. Agent verifies from the DESKTOP (replace URL/secret):
+     `curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer <secret>"
+     https://<app>.up.railway.app/objects` -> 200 with the secret, 401 without it,
+     and `http://` (no TLS) redirects or refuses. Then a PUT/GET byte round-trip:
+     PUT a blob, GET it back, diff.
+  4. Desktop: set `sync_relay_url` to `https://<app>.up.railway.app` (Settings > Sync or
+     `PATCH /settings`), the sync secret to the same `RELAY_SECRET`; run FULL.1's
+     backfill so the hosted relay holds the whole library. Then LINKSTAY.1's QR renders
+     with the reachable URL.
+  5. Phone: fresh QR scan on LTE (wifi OFF - the real proof it left the LAN).
+  Done when: the Railway URL answers over TLS with auth from off-LAN; the desktop points
+  at it and a backfill has pushed the full library; a redeploy of the service does NOT
+  lose objects (volume works - redeploy once and re-GET a known object); the phone links
+  from a fresh QR and syncs on LTE.
+  VERIFY: step 3's curl outputs + the redeploy-still-has-data check + the LTE sync,
+  recorded in PROGRESS.md.
+
+## Phase CRUDSYNC - all mutations propagate both ways
+
+Current state (verified in code 2026-08-19): snapshots carry `deleted_at` and the mobile
+apply path (`desktop/src/sync.rs:322`) honors it, so tombstones CAN propagate - but the
+desktop only pushes on note create/edit (`notes.py:74,157`). Nothing pushes on delete,
+restore, purge, pin, tag, or annotate. Mobile has no delete UI at all (only captures go
+to `capture_outbox`).
+
+- [ ] **CRUDSYNC.1 [AGENT]** Desktop: every mutation pushes. Audit every write path and
+  hook `push_artifact` (the existing notes.py pattern: import inside the function, push
+  after commit): `trash.py` `delete()` / `restore()` / `purge_one` / `empty`; the pin /
+  tag / annotation writers in `api/artifacts.py` and `notes.py::annotate`; capture
+  creation in `capture.py`. Rule: any function that writes a column that the snapshot
+  carries must end with `push_artifact(id)`. Purge note: a purged artifact has no row to
+  snapshot, so the other device keeps its trashed copy - acceptable; document this in
+  docs/sync-relay.md ("purge is local-only and final").
+  Done when: deleting, restoring, pinning, tagging, and annotating on the desktop each
+  produce a relay object for that artifact (relay object count increments per action).
+  VERIFY: `bin/verify` green; then against a scratch relay: delete one artifact and
+  confirm the relay gains an object whose decrypted snapshot has `deleted_at` set (reuse
+  the decrypt helper from the SU.7/FULL.1 testing).
+
+- [ ] **CRUDSYNC.2 [AGENT]** Mobile: delete + restore propagate. (a) Add a trash action
+  on the phone (long-press a card or a button in the reader - match the existing mobile
+  idiom): writes `deleted_at` on the local row AND enqueues a mutation into
+  `capture_outbox` (extend its schema with the fields needed, or add a sibling
+  `mutation_outbox` table - whichever is simpler; the push path must upload the updated
+  snapshot for that artifact id). (b) `mobile_outbox_push` already runs on `sync-done` -
+  make sure mutation entries flow through it. (c) Pulled tombstones must HIDE the
+  artifact from the library list (the list query already filters `deleted_at IS NULL` -
+  confirm it applies after a pull that deletes). Restore works the same in reverse.
+  Done when: delete on phone -> desktop trash shows it after its next pull; delete on
+  desktop -> phone library hides it after sync; restore propagates both ways.
+  VERIFY: `cargo tauri android build --debug --target aarch64` clean; one delete in EACH
+  direction confirmed on the other device; `bin/verify` green.
+
+## Phase MOBUI1 - pill menu cleanup + the insertBefore crash (from ui-bug.png)
+
+Screenshot findings: the pill exists and renders, but its overflow menu
+(`#pill_menu_panel`, mobile.html:862) floats above it holding Settings + Trash - user
+direction: Trash moves INTO the Settings page, the pill menu keeps only Settings. The
+cut-off error is `NotFoundError: Failed to execute 'insertBefore' on 'Node'` from the
+card render.
+
+- [ ] **MOBUI1.1 [AGENT]** Trash lives in Settings only. (a) Remove the Trash button from
+  `#pill_menu_panel` (and its listener), leaving Settings as the only menu item.
+  (b) Make the existing Settings > Trash row (mobile.html:1276, handler currently
+  `alert("not yet implemented")` at :2666) open a real trash view: list trashed artifacts
+  (title + deleted date) via a new `mobile_trash_list` command reading the local SQLite
+  (`deleted_at NOT NULL`), each row offering Restore (wires into CRUDSYNC.2's restore).
+  Purge stays desktop-only (matches CRUDSYNC.1's local-final rule).
+  Done when: the pill menu shows only Settings; Settings > Trash opens a working trash
+  list; restore from it propagates per CRUDSYNC.2.
+  VERIFY: `bin/verify` green + phone: open the menu (screencap - one item), trash one
+  note, see it in Settings > Trash, restore it, see it back in the library.
+
+- [ ] **MOBUI1.2 [AGENT]** Fix the insertBefore NotFoundError. mobile.html:1458/1512/1562
+  call `li.insertBefore(thumb, kindDot)`, but `kindDot` is not a child of `li` (it is
+  appended to a different container), so every image/note card with a thumbnail throws
+  NotFoundError - this is the error in the screenshot, and it aborts the render loop
+  mid-list (the same failure MOBRENDER.1 saw). Fix: put the thumbnail where it belongs
+  with a safe call - `content.prepend(thumb)` or append in the intended order - no
+  insertBefore against a non-child. Same fix all three sites.
+  Done when: a library containing image artifacts renders every card with zero console
+  exceptions (seen via the CDP recipe) and no on-page Error text.
+  VERIFY: `bin/verify` green; on the phone, webview CDP forwarded (VERIFICATION PROTOCOL)
+  shows a clean console while scrolling the full library; screencap showing no error text.
 
 ## Out of scope
 

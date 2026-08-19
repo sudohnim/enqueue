@@ -15,6 +15,7 @@ import json
 import uuid
 
 from . import db
+from .sync.client import push_artifact
 
 
 def normalize(name: str) -> str:
@@ -46,6 +47,7 @@ def add(artifact_id: str, name: str) -> dict:
         )
         # Tagging is touching the artifact, and the wall is ordered by last touch.
         conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, artifact_id))
+    push_artifact(artifact_id)
     return {"artifact_id": artifact_id, "name": tag_name}
 
 
@@ -67,6 +69,7 @@ def remove(artifact_id: str, name: str) -> dict:
             (tag_name,),
         )
         conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, artifact_id))
+    push_artifact(artifact_id)
     return {"artifact_id": artifact_id, "name": tag_name, "removed": True}
 
 
