@@ -53,22 +53,3 @@ Verified: `cargo tauri android build --debug` compiles with zero errors and prod
 **SU.2 done** - Added `POST /settings/keyring-init` endpoint (`src/enqueue/api/settings.py`) calling `keyring_file.initialize(password)`. Returns recovery phrase once in response body. Guards with `keyring_file.is_initialized()`: refuses re-init without `force=true` with clear human message. Added keyring state (`keyring_initialized`, `keyring_locked`) to `GET /settings` via `sync_state()` in `settings.py`. Files: `src/enqueue/api/settings.py`, `src/enqueue/settings.py`. Verified: fresh init returns phrase, writes keyring.json with both wrap slots; second init without force refused (409); phrase not in logs; `keyring_file.dek()` non-None after init/unlock; `uv run black --check src/ tests/` passes; `bin/verify` passes (JS parse, 451 pytest, contrast).
 
 **SU.1 done** - Added `enq relay` CLI command (`src/enqueue/cli.py`) wrapping `create_relay()` with uvicorn. Flags: `--host` (default 127.0.0.1), `--port` (default 8788), `--data-dir` (default ./relay-data), `--secret` (default dev-secret). Env overrides: `RELAY_HOST`, `RELAY_PORT`, `RELAY_DATA_DIR`, `RELAY_SECRET`. Updated `README.md` (new "Running the sync relay" section + CLI table entry) and `AGENTS.md` (decision 2). Verified: `enq relay --help` shows flags; server boots on 127.0.0.1:8788, answers GET /sync/objects; wrong Bearer secret returns 401; `uv run black --check src/ tests/` passes; `bin/verify` passes (JS parse, 451 pytest, contrast).
-
-
-**SCANUI.1 [AGENT] IN PROGRESS** - Native scanner camera fills whole screen; need to contain in a box.
-
-**PLUGIN ANALYSIS (2026-08-18, desk review)** - Read the `tauri-plugin-barcode-scanner` v2.4.5 source (`android/src/main/java/BarcodeScannerPlugin.kt`):
-- Plugin has `ScanOptions.windowed: Boolean` but it's BROKEN: when `windowed=true`, it only makes the WebView transparent (`webView.setBackgroundColor(Color.TRANSPARENT)`) and brings it to front. The `PreviewView` (camera) and `GraphicOverlay` are still added as `MATCH_PARENT` filling the entire WebView parent. The camera still fills the whole screen.
-- `setupCamera()` adds `PreviewView` (camera) and `GraphicOverlay` as `MATCH_PARENT` to the WebView's parent ViewGroup - this fills the entire screen.
-- `windowed: true` only makes WebView transparent + brings to front; camera still fills whole screen.
-- `ScanOptions` has `windowed: Boolean` and `cameraDirection: String?` but no option to constrain the preview to a box.
-- The plugin renders full-surface preview ONLY; no native box/windowed option exists.
-
-**CONCLUSION**: The plugin's `windowed` option is broken (only makes WebView transparent, doesn't constrain camera). The plugin ONLY supports full-surface preview. To fix SCANUI.1, we must either:
-(a) Fork/patch the plugin locally to add proper windowed mode with a constrained preview box
-(b) Implement a custom scanner
-
-CHOSEN: (a) Vendor the plugin locally and add proper windowed mode with a constrained centered box. This is the minimal invasive fix.
-
-Next: Vendor the plugin locally and add proper windowed box support.
-

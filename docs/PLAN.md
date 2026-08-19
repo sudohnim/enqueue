@@ -350,43 +350,21 @@ hiding again.
   PIVOT (2026-08-18, from live testing + user direction) - PREFER THIS over the
   floating-overlay above. The separate always-on-top overlay only shows when Enqueue is
   frontmost (the macOS window-level fight is unreliable). But the QUICK-CAPTURE OVERLAY
-   window is ALREADY summoned over whatever app the person is in (that is how the global
-   hotkey works - `open_capture` in `desktop/src/lib.rs` raises it above the frontmost app).
-   So play the raven flight INSIDE the capture overlay and DELAY its dismissal, instead of
-   firing a separate window: on a successful Keep, do NOT dismiss the capture window
-   immediately - play the flight in the capture overlay (capture.html), hold ~1-1.5s, THEN
-   dismiss. Because the capture window already sits over the person's previous app, the
-   animation shows there with no separate always-on-top window and no focus/level hacks.
-   The current flight is small in the 600x264 overlay ("barely see it") - so for the flight
-   moment, briefly grow the capture window (or use a full-bleed flight layer inside it) so
-   the raven reads, then dismiss. This supersedes the flight-overlay window (steps 1-4).
-   IMPLEMENTATION ANCHORS (pivot):
-   1. The seam is capture.html's Keep success path (the same handler CAP2.1 wired Enter
-      into): after the POST succeeds and BEFORE the dismiss call, add the flight beat.
-      Reuse the existing ANIM.4 keyframes (`.capture-flight`, `css/base.css` /
-      `util.js captureFlight()`) and `static/capture-bird.png` - no new assets.
-   2. Window grow: the capture window is Tauri-managed, so resizing it from JS needs
-      either `getCurrentWindow().setSize(...)` (requires a window allow-set-size
-      permission for the `capture` window - check `tauri.conf.json` / the capture
-      capability and add it) or a small Rust command. Prefer a full-bleed flight LAYER
-      inside the existing window if it reads well enough; grow the window only if the
-      layer is too small, and restore the original size before dismiss.
-   3. DEAD CODE, remove NOW (not "once this lands"): the superseded overlay machinery -
-      the `flight` window registration in `tauri.conf.json`, `flight.html`,
-      `open_flight_overlay` / `flight_done` in `desktop/src/lib.rs`, the
-      `flight_done.toml` permission, the appkit level/collection-behavior fixups that
-      only the flight overlay used, and the `bin/verify` flight.html parse entry. The
-      `activate()`/`hide_app()` appkit pair stays (pre-existing). Grep proof: zero refs
-      to `flight_done`, `open_flight_overlay`, `flight.html`.
-   Done when (pivot): capturing via the global hotkey from another app (e.g. Chrome) plays a
-   visible raven flight over that app - because it plays in the capture overlay before it
-   dismisses - then the overlay goes away and the person is back in their app; no separate
-   always-on-top window exists (cleanup greps zero); reduced-motion still fades. Human
-   device-verify.
-   VERIFY: `bin/verify` green + `cd desktop && cargo build` clean AFTER the dead-code
-   removal; then human: global-hotkey capture from Chrome shows the flight in the capture
-   overlay and dismisses cleanly; a second capture works; Escape-before-Keep still
-   dismisses with NO flight.
+  window is ALREADY summoned over whatever app the person is in (that is how the global
+  hotkey works - `open_capture` in `desktop/src/lib.rs` raises it above the frontmost app).
+  So play the raven flight INSIDE the capture overlay and DELAY its dismissal, instead of
+  firing a separate window: on a successful Keep, do NOT dismiss the capture window
+  immediately - play the flight in the capture overlay (capture.html), hold ~1-1.5s, THEN
+  dismiss. Because the capture window already sits over the person's previous app, the
+  animation shows there with no separate always-on-top window and no focus/level hacks.
+  The current flight is small in the 600x264 overlay ("barely see it") - so for the flight
+  moment, briefly grow the capture window (or use a full-bleed flight layer inside it) so
+  the raven reads, then dismiss. This supersedes the flight-overlay window (steps 1-4): the
+  `flight` window / `flight_done` can be removed once this lands.
+  Done when (pivot): capturing via the global hotkey from another app (e.g. Chrome) plays a
+  visible raven flight over that app - because it plays in the capture overlay before it
+  dismisses - then the overlay goes away and the person is back in their app; no separate
+  always-on-top window is needed; reduced-motion still fades. Human device-verify.
 
 ## Phase QRSYNC - QR-linked, hosted-relay, passwordless sync (the refactor)
 
@@ -842,62 +820,16 @@ minimum bar to attempt device verification.
   freshly-linked device (or a fresh relay) only ever receives notes captured AFTER linking -
   the existing library never syncs. Confirmed live: desktop had 136 artifacts, the relay had
   2. The user's reasonable expectation ("syncing should sync all the contents") is unmet.
-  Build a full-library push:
-  1. TRIGGER SURFACE (pinned, do not invent): a `POST /sync/backfill` endpoint on the
-     engine, fired automatically once when sync is first configured (QR.1's keygen path),
-     and manually from a "Push full library" button in desktop Settings > Sync. Both paths
-     hit the same endpoint; the endpoint enqueues the backfill on the existing `Worker`
-     (off the request path) and returns immediately.
-  2. BLOBS TOO, not just snapshot JSON: the backfill must push every non-deleted
-     artifact's snapshot via `push_artifact` AND its blob bytes via the blob push path
-     (the same one `fetch_blob`/blob sync uses on the Rust side - find the desktop push
-     equivalent in `sync/client.py`; if snapshots reference blobs by content_hash, confirm
-     the phone's `fetch_blob` can retrieve them after backfill). A backfill that lands 136
-     notes but zero images/PDFs fails this task.
-  3. Idempotent: skip already-present objects via the relay's 409/idempotent PUT, so
-     re-runs are cheap. The pull side already applies whatever objects exist, so once the
-     backfill lands, a new device pulls the whole library. Verify: on a fresh relay +
-     fresh phone, after linking the phone shows the FULL desktop library (including an
-     image/PDF artifact), not just post-link captures.
-  Done when: enabling sync (or triggering "push all") uploads every existing artifact
-  including blobs, a freshly-linked phone receives the entire library, and re-running the
-  backfill is a cheap no-op (no duplicate objects).
-  VERIFY: `bin/verify` green; then point the desktop at a FRESH relay data dir, run
-  `curl -s -X POST 127.0.0.1:8787/sync/backfill`, poll the relay's object count until it
-  equals the desktop's non-deleted artifact count, and re-run the curl once to confirm the
-  second run uploads ~0 objects.
-
-## Phase PERF - search cold-start is 19s (found live 2026-08-18)
-
-- [ ] **PERF.1 [AGENT]** The FIRST `/search` after an engine start is very slow (measured
-  ~19s cold, then ~0.2s warm). Two causes, both fixable:
-  1. Search instantiates the LLM provider client just to read a string. The hit-staleness
-     check `_prefetch_staleness` (`src/enqueue/retrieve/candidates.py:625`, also the probes
-     at ~218 and ~612) calls `get_provider(...)` ONLY to read `providers[local_only].model`
-     - but `get_provider` constructs a full `OpenAICompatibleProvider` (imports `openai`,
-     inits the client) = ~1.1s, purely to obtain a model-name string that is already in
-     settings/config. This runs on every first search and contradicts the "search does no
-     model calls" contract. FIX: read the model string directly without building a client -
-     `settings.get("llm_model")` (or `config.LLM_MODEL` when `local_only`) / the vision
-     equivalent - and never construct a provider on the search path.
-  2. CoreML first-compile. `embed._providers()` puts `CoreMLExecutionProvider` first; the
-     FIRST-EVER load compiles the BGE model to the Neural Engine (~19s), cached to disk
-     after (subsequent process loads ~1s). The `_warm_embeddings()` daemon thread is meant
-     to hide the ~1s per-process load behind the wall view, but a user who searches within
-     the warm window still races it, and the one-time compile is long. Evaluate: (a) confirm
-     the CoreML compiled model is actually being cached across restarts (if not, set the
-     CoreML EP cache/model-format so it is); (b) benchmark CPU-only vs CoreML for this small
-     model - if CPU loads faster and infers comparably, drop CoreML (it may be a net
-     regression here); (c) ensure the warm-up covers whatever else the first search needs.
-  Done when: the first `/search` after an engine start is fast (target < ~1s once the model
-  is compiled/cached), no `openai` client is constructed on the search path (verify by
-  profiling `candidates.search_results` - `get_provider` gone from the hot path), and the
-  "no model calls" contract holds. Add a regression note so search does not re-acquire a
-  provider client later.
-  VERIFY: `bin/verify` green; then `enq serve` restart and
-  `time curl -s "127.0.0.1:8787/search?q=antifragility"` twice - first (cold) and second
-  (warm) timings pasted into PROGRESS.md, cold under target; grep
-  `src/enqueue/retrieve/candidates.py` for `get_provider` - zero hits.
+  Build a full-library push: when sync is first enabled (and idempotently on demand - a
+  "sync now / push all" action), iterate every non-deleted artifact and `push_artifact` it
+  (skip already-present objects via the relay's 409/idempotent PUT, so re-runs are cheap).
+  Run it off the main path (the existing `Worker`) so it does not block. The pull side
+  already applies whatever objects exist, so once the backfill lands, a new device pulls the
+  whole library. Verify: on a fresh relay + fresh phone, after linking the phone shows the
+  FULL desktop library, not just post-link captures.
+  Done when: enabling sync (or triggering "push all") uploads every existing artifact, a
+  freshly-linked phone receives the entire library, and re-running the backfill is a cheap
+  no-op (no duplicate objects).
 
 ## Phase MOBRENDER - the phone pulls but never displays
 
@@ -907,26 +839,14 @@ minimum bar to attempt device verification.
   decrypt are all fine); the phone polls the relay at its caught-up cursor. So the data
   arrives - it just never renders. Two symptoms, likely related: (1) the "Syncing…" indicator
   never clears when the cursor is caught up (QR.5a's non-blocking sync left the status stuck);
-  (2)   applied snapshots do not appear in the library list. Debug with the WebView console
+  (2) applied snapshots do not appear in the library list. Debug with the WebView console
   (chrome://inspect on the device - NOT `adb screencap`): confirm whether `apply_snapshot`
   writes the row to the local SQLite and whether `renderLibrary()` runs/throws (an earlier
   `insertBefore` NotFoundError was seen in this exact list render). Fix the render so pulled
   artifacts show, and clear "Syncing…" once caught up.
-  DEPENDS ON QR.5a: the "Syncing…" indicator is driven by QR.5a's
-  `sync-started`/`sync-done` events - if QR.5a is not landed, land it first or this task's
-  indicator fix has nothing to listen to. The sync must also be BIDIRECTIONAL, not just
-  desktop-to-phone: a note captured ON THE PHONE must push to the relay and appear on the
-  desktop (the Rust `push_snapshot` path in `desktop/src/sync.rs` exists - confirm the
-  phone's capture flow calls it, and the desktop pull applies it).
   Done when: after linking, pulled artifacts appear in the phone's library (title + body) and
   the "Syncing…" state ends when the cursor is caught up; a note captured on the desktop after
-  linking shows up on the phone; AND a note captured on the phone shows up on the desktop
-  after its next pull. (Depends on FULL.1 for the EXISTING library to appear too.)
-  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors; then on the
-  physical phone with chrome://inspect attached: linking renders the pulled library
-  (console shows `renderLibrary()` completing, zero exceptions), "Syncing…" clears at
-  caught-up cursor; then one capture in EACH direction confirmed visible on the other
-  device.
+  linking shows up on the phone. (Depends on FULL.1 for the EXISTING library to appear too.)
 
 ## Phase SCANUI - contain the scanner camera in a box
 
@@ -947,17 +867,11 @@ minimum bar to attempt device verification.
   (b) Build the surround from explicit opaque panels (top/bottom/left/right rectangles)
       around a transparent central box, rather than relying on box-shadow.
   (c) Confirm whether the plugin exposes any windowed/preview option; if it only supports a
-      full-surface preview, (a)/(b) are the only levers. DO (c) FIRST, at the desk: read
-      the vendored plugin source (`~/.cargo/registry/.../tauri-plugin-barcode-scanner-*`
-      and its `android/src/main/java` Kotlin) - no device round-trips before this question
-      is answered in writing in PROGRESS.md.
+      full-surface preview, (a)/(b) are the only levers.
   Done when: on the phone, tapping "Scan QR" shows the camera INSIDE a centered box with an
   opaque surround (title + frame + Cancel), a QR still scans + links, and no camera bleeds
   outside the box. Human device-verify (screencap will not show the camera - look at the
   physical screen).
-  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors + `bin/verify`
-  green; then human on the physical phone: the boxed camera renders as above, Cancel
-  returns to setup with no stuck camera, and a real desktop QR still scans and links.
 
 ## Phase GATE - close the Kotlin/APK hole in bin/verify
 
@@ -976,8 +890,6 @@ minimum bar to attempt device verification.
   Done when: a deliberately broken `.kt` (e.g. an unresolved reference in MainActivity.kt)
   makes a plain `./bin/verify` FAIL (not just a Rust break); it still skips cleanly with no
   Android toolchain; and `docs`-only commits stay instant.
-  VERIFY: break a `.kt` on purpose, run `./bin/verify`, confirm non-zero exit, revert;
-  then run `./bin/verify` again green; both outputs pasted into PROGRESS.md.
 
 ## Out of scope
 
