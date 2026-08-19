@@ -205,10 +205,17 @@ mod mobile {
             // Emit sync-started event
             let _ = app_handle.emit("sync-started", serde_json::json!({}));
 
-            // Run sync_library in the background (DEK will be loaded from
-            // persisted config in the thread; pass None if not available).
+            // Load the saved config to get the DEK (hex-encoded in config)
+            let dek = load_config(&app_handle)
+                .ok()
+                .flatten()
+                .and_then(|cfg| cfg.get("dek").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                .and_then(|s| hex::decode(&s).ok())
+                .and_then(|bytes| bytes.try_into().ok());
+
+            // Run sync_library in the background with the DEK loaded from config
             let outcome = crate::sync::sync_library(&relay_url_owned, &sync_secret_owned,
-                None,
+                dek.as_ref(),
                 &conn_clone);
             let ids = crate::sync::list_artifact_ids(&conn_clone).unwrap_or_default();
 
