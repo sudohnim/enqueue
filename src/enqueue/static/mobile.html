@@ -774,6 +774,32 @@
   .card .card-snippet {
     -webkit-line-clamp: 2;
   }
+
+  /* QR.4a: during a native barcode scan the plugin renders the camera BEHIND a
+     transparent WebView, so the page must be see-through and the normal UI hidden,
+     leaving only the aiming overlay. */
+  html.scanning, body.scanning { background: transparent !important; }
+  body.scanning * { visibility: hidden !important; }
+  body.scanning #scan_overlay, body.scanning #scan_overlay * { visibility: visible !important; }
+  #scan_overlay { position: fixed; inset: 0; z-index: 99999; display: none; }
+  body.scanning #scan_overlay { display: block; }
+  #scan_overlay .frame {
+    position: absolute; left: 50%; top: 44%; width: 260px; height: 260px;
+    transform: translate(-50%, -50%);
+    border: 3px solid #fff; border-radius: 18px;
+    /* Fully opaque surround (alpha 1) so the camera shows ONLY inside this box,
+       not across the whole screen. */
+    box-shadow: 0 0 0 4000px rgba(0, 0, 0, 1);
+  }
+  #scan_overlay .hint {
+    position: absolute; top: 16%; left: 0; right: 0; text-align: center;
+    color: #fff; font-size: 15px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  }
+  #scan_overlay .cancel {
+    position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
+    padding: 12px 30px; border-radius: 999px; border: none;
+    background: #fff; color: #000; font-weight: 600; font-size: 15px;
+  }
 </style>
 
 <div id="pill" class="pill" role="group" aria-label="Main actions">
@@ -1277,6 +1303,12 @@
     </div>
   </div>
 </section>
+
+<div id="scan_overlay" aria-hidden="true">
+  <div class="hint">Point at the linking QR on your desktop</div>
+  <div class="frame"></div>
+  <button type="button" class="cancel" id="scan_cancel">Cancel</button>
+</div>
 
 <script>
   // md.js's md() escapes input via this helper (defined in util.js on the desktop,
@@ -2032,19 +2064,31 @@
       scanActive = true;
       document.getElementById("scan_qr_btn").disabled = true;
       document.getElementById("scan_status").textContent = "Opening scanner...";
+      // Make the page see-through so the camera (rendered behind the WebView by the
+      // plugin) shows, leaving only the aiming overlay visible.
+      document.documentElement.classList.add("scanning");
+      document.body.classList.add("scanning");
       try {
         const result = await invoke("plugin:barcode-scanner|scan", {
           formats: ["QR_CODE"],
         });
         await handleScanResult(result);
       } catch (e) {
-        setStatus("Scan failed: " + String(e), "error");
+        if (String(e) !== "cancelled" && !String(e).includes("cancel")) {
+          setStatus("Scan failed: " + String(e), "error");
+        }
       } finally {
+        document.documentElement.classList.remove("scanning");
+        document.body.classList.remove("scanning");
         scanActive = false;
         document.getElementById("scan_qr_btn").disabled = false;
         document.getElementById("scan_status").textContent = "";
       }
     });
+
+  document.getElementById("scan_cancel").addEventListener("click", () => {
+    invoke("plugin:barcode-scanner|cancel").catch(() => {});
+  });
 
   document
     .getElementById("retry_camera")
@@ -2433,7 +2477,7 @@
         '<span class="disc"></span></button>' +
         '<button class="round" aria-label="Search" onclick="pillOpenSearch()">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>' +
-        '<button class="round" aria-label="Chat with AI" onclick="openField('ask')">' +
+        '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
         '<button class="round" aria-label="Settings" aria-expanded="false" aria-haspopup="true" onclick="pillToggleMenu(event)">' +

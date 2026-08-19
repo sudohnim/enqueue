@@ -1219,6 +1219,12 @@ mod mobile {
                     tauri::WebviewUrl::App("mobile.html".into()),
                 )
                 .title("Enqueue")
+                // QR.4a: the barcode-scanner plugin renders the camera BEHIND the
+                // WebView; the WebView surface must be transparent for it to show. The
+                // page stays opaque normally (body background: var(--bg)) and goes
+                // transparent only under the `.scanning` class, so this is invisible
+                // except during a scan.
+                .transparent(true)
                 .build()?;
                 // Initialize outbox schema
                 let conn = open_lib(app.handle())?;
