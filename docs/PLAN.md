@@ -549,7 +549,7 @@ visual question, not "please test the app".
   phone over adb (install/launch/tap/screencap/CDP) with no scrcpy and no display. QR.2's
   remaining work is fully covered by RELAYHOST.1; once that lands, close QR.2.
 
-- [ ] **QR.3 [AGENT] - CODE RESTORED + COMMITTED (2026-08-18); only device-verify remains.**
+- [~] **QR.3 [AGENT]** - Headless Rust test added: QR.3 payload asserted via rqrr round-trip decode. The QR encodes the pinned wire format {v:1, relay_url, relay_secret, dek}. Human step remaining: one glance at Settings > Sync UI to confirm QR visibly renders on the launched desktop. (pending human device-verify)
   `desktop_link_code` was lost in a revert, then restored in commit `6fa0134` and committed
   (`fn desktop_link_code` present in `desktop/src/lib.rs`, registered in the desktop
   `generate_handler!`, emitting the pinned wire format `{"v":1,"relay_url","relay_secret",
@@ -1012,7 +1012,7 @@ only ciphertext blobs, so the smallest always-on box is enough. Host chosen 2026
 Railway (user has an account; managed TLS + domain + restarts). QR.2's docs cover the
 options (VPS, cloudflared tunnel); this phase is the atomic Railway recipe.
 
-- [ ] **RELAYHOST.1 [HUMAN+AGENT]** Deploy the relay on Railway (chosen 2026-08-19 -
+- [~] **RELAYHOST.1 [HUMAN+AGENT]** Dockerfile.railway created and verified (builds, serves, 200 with secret/401 without on local relay). Human step: deploy on Railway with volume + env vars, verify off-LAN TLS + phone LTE sync. (pending human device-verify) (chosen 2026-08-19 -
   user already has a Railway account; supersedes the VPS+Caddy recipe, which stays in
   docs/sync-relay.md as the self-host alternative). Railway gives TLS + a public domain +
   restarts for free, so no Caddy/ufw/systemd. Atomic steps:
