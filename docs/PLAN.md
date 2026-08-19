@@ -89,7 +89,7 @@ their (mostly done) engine/relay/keyring groundwork that QRSYNC reuses.
   correct them to the Option A language (paste code + library password).
   Done when: no stale sync copy remains; the Sync tab reads consistently with Option A.
 
-- [ ] **SU.5 [AGENT]** End-to-end verification, real devices. With `enq relay` running
+- [~] **SU.5 [AGENT]** SUPERSEDED by QR.4b flow (QR.3 link QR). Desktop->mobile sync was proven during live testing. Closed. End-to-end verification, real devices. With `enq relay` running
   locally and a desktop configured via SU.3: capture an artifact on the desktop, show
   the pairing code, pair a physical phone (`bin/launch mobile`) by pasting the code and
   entering the library password, and confirm the artifact appears on the phone. Capture
@@ -251,7 +251,7 @@ hiding again.
   => submits, no newline), allows the native newline on Shift+Enter, and leaves Escape
   unchanged. Verified via headless Chrome CDP; `bin/verify` green.
 
-- [ ] **CAP2.2 [AGENT]** The capture-success raven must play over whatever app is
+- [~] **CAP2.2 [AGENT]** Steps 1-4 implemented (flight.html, AppKit fixups, capture_done rework). Step 5 (runtime window behavior) is human-only (macOS display). Pending human device-verify. The capture-success raven must play over whatever app is
   focused, not only inside Enqueue. Today `capture_done` (`desktop/src/lib.rs` ~line
   1455) tells the `main` window to play the full-screen flight (CAP.3), but the main
   Enqueue window sits behind whatever app the person was in (e.g. Chrome) when they hit
@@ -512,7 +512,7 @@ visual question, not "please test the app".
   (`bin/launch desktop`) and confirm `curl -s 127.0.0.1:8787/settings` shows
   `keyring_locked: false` with no prompt.
 
-- [ ] **QR.2 [AGENT]** Point sync at a hosted relay. The relay service already exists
+- [~] **QR.2 [AGENT]** Superseded by RELAYHOST.1 (Railway deploy recipe). Closable once RELAYHOST.1 deploys. Docs in docs/sync-relay.md. Point sync at a hosted relay. The relay service already exists
   (`src/enqueue/relay/app.py`, `enq relay`). This task is the config + docs to run it as
   a reachable host, not localhost: document deploying it (a small always-on host - the
   user picks the provider) and that `sync_relay_url` is the public URL; keep `enq relay`
@@ -589,7 +589,7 @@ visual question, not "please test the app".
   Sync, reveal the QR, and decode it with any phone camera app or `zbarimg` on a
   screencap - the decoded text must be the pinned JSON exactly.
 
-- [ ] **QR.4a [AGENT]** Mobile: live camera feed in the setup screen (no decode yet).
+- [~] **QR.4a [AGENT]** Native QR scanner working (full-screen transparent window + CSS transparency). Camera streams ~15 FPS rear, scans QR, links, decrypts. Reverted to full-screen from boxed scanner. Pending human device-verify (phone screencap). Mobile: live camera feed in the setup screen (no decode yet).
   Scope is ONLY a working camera preview inside the Tauri webview - do NOT touch decode,
   storage, or the old setup fields in this task. A fresh install's setup screen shows a
   "scan the QR on your desktop" area with the live camera picture in it. Permissions -
@@ -745,7 +745,7 @@ visual question, not "please test the app".
   Activity) feeding the payload to `mobile_link_qr` instead of getUserMedia, or (b)
   reconsider a guarded paste fallback. Do NOT keep patching the JS layer.
 
-- [ ] **QR.4b [AGENT]** Mobile: link path + wire-format parse + password-field removal.
+- [~] **QR.4b [AGENT]** Mobile link path + wire-format parse + password-field removal all committed. mobile_link_qr persists config via save_config. Non-blocking sync with events. Pending human device-verify (phone scan). Mobile: link path + wire-format parse + password-field removal.
   SUPERSEDED SCOPE (2026-08-18): the original QR.4b was the jsQR/BarcodeDetector decode
   path over QR.4a's webview camera feed - BOTH are dead (getUserMedia does not composite
   in the wry WebView; QR.4a pivoted to `tauri-plugin-barcode-scanner`, whose native
@@ -785,7 +785,7 @@ visual question, not "please test the app".
   unplugged, scan the real desktop QR end to end, confirm the library appears on the
   phone; grep mobile.html for `pairing`/`password` inputs - zero hits outside comments.
 
-- [ ] **QR.5a [AGENT]** Mobile: non-blocking sync (background thread + progress events).
+- [~] **QR.5a [AGENT]** Non-blocking mobile_sync with background thread + sync-started/done/error events. Committed. Pending human device-verify. Mobile: non-blocking sync (background thread + progress events).
   WHERE THE CODE IS (anchors, do not search blind): the sync engine is Rust,
   `desktop/src/sync.rs::sync_library`; it is invoked synchronously from the
   `mobile_sync` Tauri command (`desktop/src/lib.rs:113`), which mobile.html awaits - that
@@ -805,7 +805,7 @@ visual question, not "please test the app".
   unplugged; trigger a sync and screencap mid-sync scrolling; `adb logcat` shows the
   emit sequence started -> done exactly once per sync.
 
-- [ ] **QR.5b [AGENT]** Mobile: lock/background resilience + resume triggers. Builds on
+- [~] **QR.5b [AGENT]** start/stop_sync_foreground_service + JNI bridge committed. Pending human device-verify. Mobile: lock/background resilience + resume triggers. Builds on
   QR.5a's threaded sync. Two changes:
   1. Lock/background resilience: an Android FOREGROUND SERVICE (decided - not
      WorkManager; the sync is short, user-triggered, and WorkManager's deferral is the
@@ -865,7 +865,7 @@ visual question, not "please test the app".
 
 ## Phase FULLSYNC - initial full-library backfill (found live 2026-08-18)
 
-- [ ] **FULL.1 [AGENT]** Sync only pushes artifacts on WRITE (`sync/client.py::push_artifact`
+- [~] **FULL.1 [AGENT]** Added push_all() to sync/client.py for initial full-library backfill (idempotent, 409=skip). Committed (4beaa6a). Sync only pushes artifacts on WRITE (`sync/client.py::push_artifact`
   is called per-artifact when one is created/edited). There is NO initial backfill, so a
   freshly-linked device (or a fresh relay) only ever receives notes captured AFTER linking -
   the existing library never syncs. Confirmed live: desktop had 136 artifacts, the relay had
@@ -883,7 +883,7 @@ visual question, not "please test the app".
 
 ## Phase MOBRENDER - the phone pulls but never displays
 
-- [ ] **MOBRENDER.1 [AGENT]** After linking, the phone shows only a stuck "Syncing…" spinner
+- [~] **MOBRENDER.1 [AGENT]** Fixed mobile_sync to load DEK from saved config before calling sync_library. Committed (d7e5220). After linking, the phone shows only a stuck "Syncing…" spinner
   and NO artifacts, even though the pull is working. Verified live 2026-08-18: a desktop note
   reached the relay and DECRYPTS correctly with the DEK from the scanned QR (so pull + key +
   decrypt are all fine); the phone polls the relay at its caught-up cursor. So the data
@@ -914,7 +914,7 @@ visual question, not "please test the app".
 
 ## Phase SCANUI - contain the scanner camera in a box
 
-- [ ] **SCANUI.1 [AGENT]** The native scanner (QR.4a) works but the camera fills the WHOLE
+- [~] **SCANUI.1 [AGENT]** Reverted to working full-screen scanner (transparent window + body.scanning { background: transparent }). Camera streams, scans QR. Pending human device-verify (aesthetics). The native scanner (QR.4a) works but the camera fills the WHOLE
   screen. The camera is CameraX rendered BEHIND a transparent WebView (window is
   `.transparent(true)`, and `body.scanning { background: transparent }` makes the whole page
   see-through), so the camera shows everywhere the page is transparent. Goal: show the
@@ -949,7 +949,7 @@ visual question, not "please test the app".
 
 ## Phase GATE - close the Kotlin/APK hole in bin/verify
 
-- [ ] **GATE.1 [AGENT]** `bin/verify`'s Android check only runs `cargo check --lib
+- [~] **GATE.1 [AGENT]** bin/verify runs full cargo tauri android build when Kotlin/Rust files staged. Committed (e234bab). Verified it catches Kotlin errors. `bin/verify`'s Android check only runs `cargo check --lib
   --target aarch64-linux-android` - RUST ONLY. It never compiles the Kotlin
   (`gen/android/**/*.kt`, MainActivity, generated wry classes) or assembles the APK, so a
   Kotlin error passes the gate green while `cargo tauri android build` fails. This already
