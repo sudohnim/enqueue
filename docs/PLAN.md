@@ -976,7 +976,7 @@ Unplug -> relay unreachable -> sync fails -> the phone LOOKS unlinked, so the us
 rescans (while plugged in, so it works again). Two fixes: the QR must carry a reachable
 URL, and transient sync failure must never look like an unlinked phone.
 
-- [ ] **LINKSTAY.1 [AGENT]** Refuse to bake an unreachable relay URL into the link QR.
+- [~] **LINKSTAY.1 [AGENT]** Refuse to bake an unreachable relay URL into the link QR (pending human verify - loopback error shown in desktop UI). Implemented: is_loopback_or_private_url() check in desktop_link_code. cargo build + android build green.
   In `desktop_link_code` (`desktop/src/lib.rs`), before rendering: read the configured
   `sync_relay_url`; if it is loopback/127.0.0.1/localhost/LAN-private (192.168/10.x/
   172.16-31), do NOT render the QR - return an error string the Settings UI shows:
@@ -989,7 +989,7 @@ URL, and transient sync failure must never look like an unlinked phone.
   UI) with a loopback URL returns the error string; set a dummy public URL and decode the
   QR to confirm it carries it.
 
-- [ ] **LINKSTAY.2 [AGENT]** Sync failure must never look unlinked. In mobile.html:
+- [~] **LINKSTAY.2 [AGENT]** Sync failure must never look unlinked (pending human device-verify - phone cold-launch with USB detached). Implemented: offline_banner with Re-link button, sync-error no longer alerts, sync-started/done manage banner visibility. cargo tauri android build green.
   (a) `bootstrap()` shows the LIBRARY (from the local SQLite copy) whenever
   `mobile_status` reports configured, regardless of whether sync then succeeds - sync
   failure shows a small offline/"last synced X ago" banner, never the setup screen;
@@ -1053,7 +1053,7 @@ desktop only pushes on note create/edit (`notes.py:74,157`). Nothing pushes on d
 restore, purge, pin, tag, or annotate. Mobile has no delete UI at all (only captures go
 to `capture_outbox`).
 
-- [ ] **CRUDSYNC.1 [AGENT]** Desktop: every mutation pushes. Audit every write path and
+- [~] **CRUDSYNC.1 [AGENT]** Desktop: every mutation pushes (pending human device-verify - relay object count confirmation). Implemented: push_artifact() on delete/restore/pin/tag/annotate/capture in trash.py, tags.py, notes.py, capture.py, api/artifacts.py. bin/verify green, 459 tests pass. Audit every write path and
   hook `push_artifact` (the existing notes.py pattern: import inside the function, push
   after commit): `trash.py` `delete()` / `restore()` / `purge_one` / `empty`; the pin /
   tag / annotation writers in `api/artifacts.py` and `notes.py::annotate`; capture
@@ -1067,7 +1067,7 @@ to `capture_outbox`).
   confirm the relay gains an object whose decrypted snapshot has `deleted_at` set (reuse
   the decrypt helper from the SU.7/FULL.1 testing).
 
-- [ ] **CRUDSYNC.2 [AGENT]** Mobile: delete + restore propagate. (a) Add a trash action
+- [~] **CRUDSYNC.2 [AGENT]** Mobile: delete + restore propagate (pending human device-verify - cross-device sync confirmation). Implemented: mutation_outbox table, mobile_delete/mobile_restore commands, mobile_outbox_push processes mutations. cargo tauri android build green. (a) Add a trash action
   on the phone (long-press a card or a button in the reader - match the existing mobile
   idiom): writes `deleted_at` on the local row AND enqueues a mutation into
   `capture_outbox` (extend its schema with the fields needed, or add a sibling
@@ -1089,7 +1089,7 @@ direction: Trash moves INTO the Settings page, the pill menu keeps only Settings
 cut-off error is `NotFoundError: Failed to execute 'insertBefore' on 'Node'` from the
 card render.
 
-- [ ] **MOBUI1.1 [AGENT]** Trash lives in Settings only. (a) Remove the Trash button from
+- [~] **MOBUI1.1 [AGENT]** Trash lives in Settings only (pending human device-verify - phone screencap). Implemented: removed pill menu Trash button, Settings > Trash shows live list with Restore per item. bin/verify green. (a) Remove the Trash button from
   `#pill_menu_panel` (and its listener), leaving Settings as the only menu item.
   (b) Make the existing Settings > Trash row (mobile.html:1276, handler currently
   `alert("not yet implemented")` at :2666) open a real trash view: list trashed artifacts
@@ -1101,7 +1101,7 @@ card render.
   VERIFY: `bin/verify` green + phone: open the menu (screencap - one item), trash one
   note, see it in Settings > Trash, restore it, see it back in the library.
 
-- [ ] **MOBUI1.2 [AGENT]** Fix the insertBefore NotFoundError. mobile.html:1458/1512/1562
+- [~] **MOBUI1.2 [AGENT]** Fix the insertBefore NotFoundError (pending human device-verify - phone CDP console check). Implemented: append kindDot before insertBefore in all three card renderers. bin/verify green. mobile.html:1458/1512/1562
   call `li.insertBefore(thumb, kindDot)`, but `kindDot` is not a child of `li` (it is
   appended to a different container), so every image/note card with a thumbnail throws
   NotFoundError - this is the error in the screenshot, and it aborts the render loop
