@@ -2064,13 +2064,14 @@
       scanActive = true;
       document.getElementById("scan_qr_btn").disabled = true;
       document.getElementById("scan_status").textContent = "Opening scanner...";
-      // Make the page see-through so the camera (rendered behind the WebView by the
-      // plugin) shows, leaving only the aiming overlay visible.
-      document.documentElement.classList.add("scanning");
-      document.body.classList.add("scanning");
+      // For windowed box mode, we DON'T make the page transparent.
+      // The plugin handles the camera preview in a centered box internally.
+      // No "scanning" class = page stays opaque, only the plugin's box shows camera.
       try {
         const result = await invoke("plugin:barcode-scanner|scan", {
           formats: ["QR_CODE"],
+          windowed: true,
+          boxSize: 280,
         });
         await handleScanResult(result);
       } catch (e) {
@@ -2078,8 +2079,6 @@
           setStatus("Scan failed: " + String(e), "error");
         }
       } finally {
-        document.documentElement.classList.remove("scanning");
-        document.body.classList.remove("scanning");
         scanActive = false;
         document.getElementById("scan_qr_btn").disabled = false;
         document.getElementById("scan_status").textContent = "";
