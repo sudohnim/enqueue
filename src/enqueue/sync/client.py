@@ -293,3 +293,87 @@ def push_keyring() -> None:
             print(f"[sync] keyring push rejected: {resp.status_code}", flush=True)
     except httpx.HTTPError as exc:
         print(f"[sync] keyring push failed: {exc}", flush=True)
+
+
+def push_all() -> int:
+    """FULL.1: Push all non-deleted, non-local artifacts to the relay.
+
+    Iterates every artifact in the local DB, pushes its snapshot (and blob if any)
+    to the relay. Idempotent: relay returns 409 for already-present objects.
+    Returns the number of artifacts successfully pushed (201 responses).
+    """
+    url = _relay_url()
+    if not url:
+        return 0
+    assert_local_relay(url)
+
+    dek = keyring_file.dek()
+    if dek is None:
+        return 0  # keyring locked; nothing to push
+
+    conn = db.get_conn()
+    try:
+        # Get all non-deleted, non-local artifacts
+        rows = conn.execute(
+            """SELECT id FROM artifacts 
+            WHERE deleted_at IS NULL AND local_only = 0
+            ORDER BY updated_at DESC"""
+        ).fetchall()
+        artifact_ids = [row[0] for row in rows]
+    finally:
+        conn.close()
+
+    pushed = 0
+    for artifact_id in artifact_ids:
+        # Reuse the existing push logic but track 201 responses
+        conn = db.get_conn()
+        try:
+            snapshot = read_artifact_snapshot(db.get_conn(), artifact_id)
+        finally:
+            pass  # read_artifact_snapshot closes its own conn
+        if snapshot is None:
+            continue
+        if snapshot["artifact"].get("local_only"):
+            continue
+
+        snapshot["artifact"]["_device_id"] = device_id()
+        from .snapshot import serialize
+        data = crypto.encrypt(serialize(snapshot), dek)
+
+        name = f"dev/{device_id()}/artifacts/{artifact_id}.enc"
+        headers = {
+            "Authorization": f"Bearer {_secret()}",
+            "Content-Type": "application/octet-stream",
+        }
+        try:
+            with httpx.Client(timeout=30) as client:
+                resp = client.put(
+                    f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+                )
+        except httpx.HTTPError:
+            continue
+        if resp.status_code == 201:
+            pushed += 1
+        elif resp.status_code != 409:
+            continue
+
+        # Push blob if present
+        kind = snapshot["artifact"].get("kind")
+        content_hash = snapshot["artifact"].get("content_hash")
+        if kind in ("image", "pdf", "file") and content_hash:
+            blob_path = config.BLOB_DIR / content_hash
+            if blob_path.exists():
+                blob_name = crypto.blob_name(content_hash, dek)
+                blob_data = crypto.encrypt(blob_path.read_bytes(), dek)
+                try:
+                    with httpx.Client(timeout=60) as client:
+                        bresp = client.put(
+                            f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
+                            content=blob_data, headers=headers
+                        )
+                except httpx.HTTPError:
+                    pass  # blob push failure is non-fatal
+                if bresp.status_code not in (201, 409):
+                    pass  # blob push failure is non-fatal
+
+    return pushed
