@@ -1775,6 +1775,15 @@ mod desktop {
         if relay_url.is_empty() {
             return Err("sync not configured".into());
         }
+
+        // LINKSTAY.1: refuse to bake an unreachable relay URL into the link QR.
+        // A loopback or LAN-private URL is only reachable from this machine, but the
+        // QR is meant to link a phone that will leave the house. Return a clear error.
+        if is_loopback_or_private_url(&relay_url) {
+            return Err(
+                "This relay URL is only reachable from this Mac. Set a hosted relay URL first                  (Settings > Sync, see docs/sync-relay.md), then show the QR again.".into()
+            );
+        }
         
         // Build the pinned wire format JSON: {"v":1,"relay_url":"...","relay_secret":"...","dek":"<base64>"}
         let payload = serde_json::json!({
@@ -1794,6 +1803,45 @@ mod desktop {
             .build();
         
         Ok(qr_svg)
+    }
+
+    /// Check if a URL is loopback or LAN-private (LINKSTAY.1).
+    /// Such URLs are not reachable from a phone on a different network.
+    fn is_loopback_or_private_url(url: &str) -> bool {
+        let lowered = url.to_lowercase();
+        let stripped = if lowered.starts_with("https://") {
+            &lowered[8..]
+        } else if lowered.starts_with("http://") {
+            &lowered[7..]
+        } else {
+            return false;
+        };
+        // Extract host (before first '/', '?', '#', or ':')
+        let host_end = stripped.find(|c: char| c == '/' || c == '?' || c == '#' || c == ':')
+            .unwrap_or(stripped.len());
+        let host = stripped[..host_end].to_lowercase();
+
+        // Loopback
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+            return true;
+        }
+        // LAN private ranges: 10.x, 192.168.x, 172.16-31.x, 169.254.x (link-local)
+        if host.starts_with("10.") || host.starts_with("192.168.") {
+            return true;
+        }
+        if let Some(rest) = host.strip_prefix("172.") {
+            if let Some(octet_str) = rest.split('.').next() {
+                if let Ok(octet) = octet_str.parse::<u8>() {
+                    if (16..=31).contains(&octet) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if host.starts_with("169.254.") {
+            return true;
+        }
+        false
     }
 
     /// Hand a saved address to the system browser. The scheme is checked here rather than
