@@ -28,9 +28,11 @@ What exists in code:
 - Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
 - E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/.enqueue-poc/enqueue.db` at rest is still plain sqlite (see decision 1).
 - Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
-**Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout).** The direction, being built in `docs/PLAN.md` Phase QRSYNC: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop shows a locally-rendered QR encoding `{relay_url, relay_secret, dek}`, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the old recovery phrase becomes a recovery-code-only artifact for total-device-loss. The QR now DOES carry key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. Until Phase QRSYNC lands, the code still contains the Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow); those are being replaced - do not extend them.
-**Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600, NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
-**The gap (what's NOT built):** the desktop sync-setup flow is built (SU.1-SU.4, SU.7) and the keyring is now passwordless with the DEK auto-loaded from the Keychain (QR.1). What remains open is Phase QRSYNC: QR.2 (hosted relay + tunnel docs), QR.3 (Signal-style linking QR carrying {relay_url, relay_secret, dek}), QR.4 (mobile camera-scan linking, replacing the paste-code + password surface), QR.5 (mobile background/lock-resilient sync), QR.6 (loader transparency), QR.7 (mobile bottom pill). This is the current PLAN.md.
+**Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow) is superseded - do not extend it.
+**QR wire format (pinned - both sides parse exactly this):** compact UTF-8 JSON `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}`, where `dek` is RFC 4648 base64 (with padding) of the raw 32-byte DEK, and `v` is the format version (a parser seeing any other `v` refuses with a clear message). CAMERA-ONLY: there is no copyable/pasteable form of the payload anywhere, by decision - the raw DEK must never touch the clipboard or clipboard history. A Rust round-trip test (`rqrr` decode) pins the format.
+**DEK-encoding gotcha (bit us on 2026-08-19):** the macOS Keychain stores `enqueue-sync-dek` ALREADY base64-encoded (44 chars = 32 raw bytes), so `desktop_link_code`/`load_link_credentials` must pass it into the QR VERBATIM. Re-encoding double-encodes it (the phone then base64-decodes to 44 bytes, not 32); `mobile_link_qr` must ERROR on a non-32-byte DEK, never silently zero it (a zero DEK links "successfully" but fails every decrypt).
+**Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600 (`sync_config` in the app data dir, DEK as hex), NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
+**What remains open (see `docs/PLAN.md`):** the code is built and the sync/decrypt/apply/render path is device-verified end to end; the open items are the hosted-relay deploy (Railway, RELAYHOST.1), the scanner camera-box containment (SCANUI.1), the cold-launch bootstrap race (MOBBOOT.1), the CAP2.2 capture-flight over-app pivot, and a handful of pending human device-verifies on already-committed work.
 
 1. **The data directory is `~/.enqueue-poc` on purpose.**
 The `-poc` suffix is intentional for the current phase.
@@ -79,7 +81,7 @@ It never computes embeddings, facets, or entities; enrichment stays desktop-only
 Mobile UI lives in `src/enqueue/static/mobile.html` (relative asset paths). Layout: a single-column list under SAVED / EVERYTHING ELSE shelf headers, newest first; rows open a read-only Reader (note markdown, image with pinch-zoom, link preview card, PDF via vendored pdf.js); a bottom pill (capture in `--purple-bold`, search, the living raven eye for ask, menu). The capture "raven moment" is the ANIM.4 flight, or a fade under reduced motion.
 Build/run the app with `bin/launch mobile` (physical phone only). What remains open is the desktop sync-setup flow (decision 2) and any items in the current `docs/PLAN.md`.
 Sync/mobile scope boundaries (durable): one person, one library - no multi-user or shared libraries. Android-first; iOS is a follow-on. The relay is additive - with sync off, nothing about the desktop changes. `saved_pivots` (saved views) and chats do NOT cross the relay; mobile reads artifacts only, and mobile chat histories are device-local by decision.
-Mobile unlock is password-only, by decision (keep it simple). The phone derives the DEK from the library password; there is deliberately NO recovery-phrase unlock path on the phone. The desktop is the single source of truth and the recovery anchor: forget the phone password and you simply re-pair from the desktop (paste code + password). Do not add a mobile recovery-phrase fallback.
+Mobile linking is passwordless (QR.1/QRSYNC): the phone receives the DEK by camera-scanning the desktop QR and persists it in its sandboxed `sync_config`; there is deliberately NO password and NO recovery-phrase unlock path on the phone. The desktop is the single source of truth and the recovery anchor: lose the phone and you simply re-scan the desktop QR. Do not add a mobile password or recovery-phrase fallback.
 
 10. **The user-facing concept is "view", not "grouping".**
 We use the word "view" for the user-facing concept that was previously called "grouping", "saved grouping", and "collection".
@@ -162,6 +164,7 @@ Two windows:
 
 The capture overlay is a transparent, undecorated, always-on-top window summoned by a global hotkey (default `Alt+Shift+E`).
 It is built once at startup and then only shown and hidden, so there is no webview boot between the keypress and the caret.
+In the overlay, a plain Enter saves (the same path as the Keep button), Shift+Enter inserts a newline, and Escape dismisses without discarding the draft (CAP2.1).
 
 The shell uses `macOSPrivateApi: true` for the transparent capture window.
 This is an App Review exposure to be aware of if the app is ever submitted to the App Store.
@@ -243,15 +246,18 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `desktop/src/main.rs` | Tauri shell: window creation, hotkey, engine lifecycle, capture overlay, AppKit calls. |
+| `desktop/src/lib.rs` | The crate library (`enqueue_lib`). Holds the desktop commands + `#[cfg(target_os="macos")] mod appkit` AND the `#[cfg(mobile)] mod mobile` Tauri commands (link/sync/capture/list/outbox). Both shells load this. |
+| `desktop/src/sync.rs` | Pure-Rust mobile sync: relay pull/apply + the E2E crypto (XSalsa20-Poly1305 secretbox, Argon2id KEK), cross-compiled for Android. |
 | `desktop/build.rs` | Registers Tauri commands for the ACL. |
 | `desktop/tauri.conf.json` | App config, capabilities, CSP, bundle settings. |
-| `desktop/Cargo.toml` | Rust dependencies: tauri 2, global-shortcut plugin, serde_json. |
+| `desktop/Cargo.toml` | Rust dependencies: tauri 2, global-shortcut plugin, serde_json, the sync/crypto crates, `tauri-plugin-barcode-scanner`, `rqrr` (QR round-trip test). |
+| `desktop/plugins/tauri-plugin-barcode-scanner/` | Vendored ML Kit QR scanner (renders CameraX behind the transparent WebView). |
 
 ### Bin
 
 | File | Job |
 | --- | --- |
-| `bin/verify` | JS parse check on both HTML pages, pytest, contrast check. |
+| `bin/verify` | JS parse on the HTML pages, pytest, contrast check, and an Android build check (auto-detects the NDK; runs a full `cargo tauri android build` when Rust/Kotlin/`gen/android` changed, else `cargo check --lib`). Gated on every code commit by `.githooks/pre-commit`. |
 | `bin/check-contrast` | WCAG contrast check on home.html palette tokens. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | Build + install + run on a plugged-in Android phone (emulator rejected). |
@@ -298,6 +304,16 @@ organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
 1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact) do not search. Everything scope uses hybrid search on chunks + facet hits (dense + FTS5 keyword + the trigram recall net).
 2. **Answer** (`chats.py`): model answers from passages. `Answer` schema enforces grounded/cited consistency.
 3. **Title + topics** (`chats.py`): best-effort, non-blocking. Topics regenerated from whole transcript each turn.
+
+### Sync (relay, E2E, device linking)
+
+The desktop engine and the Android app share one E2E model: per-artifact snapshots, last-writer-wins, pushed as opaque ciphertext to a dumb relay, pulled and decrypted on-device.
+
+- **Engine side (Python):** `sync/client.py` (`push_artifact` on every write, `push_all()` for an initial full-library backfill - idempotent, the relay 409s on a duplicate), `sync/snapshot.py` (LWW serialize/apply), `sync/worker.py` (SSE + timer pull). Every desktop write path (`notes.py`, `capture.py`, `trash.py` delete/restore, `api/artifacts.py` pin/tag/annotate) ends with `push_artifact(id)` so mutations propagate, not just creates. Purge is local-only and final (no row left to snapshot).
+- **Mobile side (Rust):** `desktop/src/sync.rs` reimplements the same crypto (XSalsa20-Poly1305 secretbox: nonce(24)||ct||tag; Argon2id KEK) and the relay pull/apply, so it cross-compiles for Android. `desktop/src/lib.rs` `#[cfg(mobile)] mod mobile` holds the Tauri commands: `mobile_link_qr` (persists relay_url + secret + DEK-as-hex via `save_config` into the app-data `sync_config` file), `mobile_sync` (spawns `sync_library` on a background thread, emits `sync-started`/`sync-progress`/`sync-done`/`sync-error`; falls back to the saved config when called with `config:"{}"`), `mobile_status`, `mobile_list`, `mobile_capture`/`mobile_capture_image` (write locally + `push_snapshot`), and `mobile_outbox_push` (drains `capture_outbox` + `mutation_outbox`), `mobile_delete`/`mobile_restore` (enqueue a mutation).
+- **Camera / QR scanner:** `tauri-plugin-barcode-scanner` (ML Kit on Android), vendored under `desktop/plugins/`. It renders the CameraX preview BEHIND a transparent WebView, so the scan handler in `mobile.html` makes the page transparent while scanning. `getUserMedia` is a dead end here: the wry Android WebView does not composite a MediaStream to a `<video>` element - do NOT try to bring it back.
+- **Resilience + reachability:** an Android foreground service (not WorkManager) keeps a sync alive under screen-lock and backgrounding, started when a sync begins and stopped at caught-up cursor; sync re-triggers on app resume and network-regained. `desktop_link_code` REFUSES to render a QR for a loopback/127.0.0.1/localhost/LAN-private relay URL (a phone that leaves the house could never reach it) - set a hosted URL first. A transient sync failure must show a cached library + an offline banner, NEVER the setup screen (the phone stays linked; the config persists), and the `sync-error` handler must not `alert()`.
+- **Gotcha (bit us 2026-08-19):** a null `getElementById(...).addEventListener` in `mobile.html` throws at init and aborts the WHOLE inline script, so the on-load `bootstrap()`/sync never runs and the library just spins. Guard every listener wiring with `?.` when the element may have been removed.
 
 ---
 
@@ -773,7 +789,7 @@ The shell finds the engine repo via (in order):
 
 ### Verification gate limits
 
-`bin/verify` runs JS parse, pytest, contrast check, and an Android compile check (when the NDK is present). A green `bin/verify` is NOT proof the app runs on a device - it only proves the code parses, the tests pass, the palette meets contrast, and the mobile module compiles for the Android target. The desktop window (`bin/launch desktop`) and a real device (`bin/launch mobile`) are the only proof the app runs. This is the AGENTS.md "reproduce in a real setting" rule applied to the shells.
+`bin/verify` runs JS parse, pytest, contrast check, and an Android build check. The Android check auto-detects the SDK/NDK from the standard install location (`~/Library/Android/sdk`, newest `ndk/*`) when `ANDROID_HOME`/`NDK_HOME` are unset (FIX.3), so it runs on a plain `./bin/verify` instead of silently skipping; it skips cleanly only when no SDK/NDK exists on disk. When Rust, Kotlin, or `desktop/gen/android/**` files changed, it runs the full `cargo tauri android build` (GATE.1) rather than just `cargo check --lib`, because `cargo check` never compiles Kotlin/gradle and a broken `.kt` used to pass the gate green. A green `bin/verify` is still NOT proof the app runs on a device - it proves the code parses, tests pass, the palette meets contrast, and the app compiles for Android. The desktop window (`bin/launch desktop`) and a real device (see "Verifying the Android app" above) are the only proof the app runs. A pre-commit hook (`.githooks/pre-commit`, activated via `git config core.hooksPath .githooks`) runs `bin/verify` when code is staged and blocks the commit on failure; docs-only commits stay instant.
 
 ## Working agreement: verification split + commit discipline (do not skip)
 
@@ -784,6 +800,25 @@ Verified work has been lost twice to uncommitted-then-reverted working trees, an
 2. **Commit the same turn work goes green - never leave verified code uncommitted.** The loss happened in the gap between "it works in the working tree" and "someone commits it." Close that gap: as soon as `bin/verify` is green, the working tree is committed (the human commits after each green turn; or, if agreed, an agent commits its own verified work to a branch the human reviews). Uncommitted verified work is treated as work that will be lost.
 
 **The verification split** (why "I can't run the device" is never a reason to stop): implementing code, `cargo check`, and `bin/verify` are HEADLESS and need no hardware - do all of it. The final runtime check on a physical phone / desktop window ("Done when: on the device...") is done by the HUMAN TESTER, who has the device. So the loop is: agent implements + `bin/verify` green + commit, leaving the box UNCHECKED with a "code-complete, pending device verify" note; the human runs the device pass and checks the box. Never stop a turn merely because the device runtime is out of reach - there is almost always headless implementation + gate + commit work to finish first.
+
+---
+
+## Verifying the Android app on a device (headless, over adb)
+
+A harness with no macOS display can still drive the PHYSICAL PHONE end to end over USB adb, and did on 2026-08-19 (proved MOBRENDER.1's full sync/decrypt/apply/render path from the shell alone). "Headless" means no desktop window; it does NOT block phone verification - the phone is the display. Default to driving it yourself; escalate to the human ONLY for a truly visual check that adb cannot see (below).
+
+The adb toolkit (phone on USB, package `com.sudohnim.enqueue`):
+
+- **Build + install:** `cargo tauri android build --debug --target aarch64`, then `adb install -r desktop/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk`. Note: `--debug` bakes a `devUrl` (a LAN dev-server URL) into the apk - if you are not running `cargo tauri android dev`, the webview loads embedded assets from `tauri.localhost` instead, which is what you want for a standalone check.
+- **Launch:** `adb shell monkey -p com.sudohnim.enqueue -c android.intent.category.LAUNCHER 1`.
+- **Screenshot:** `adb exec-out screencap -p > /tmp/shot.png`, then READ the PNG yourself (do not ask the human to describe the screen). The WebView UI renders in screencaps; the camera preview layer does NOT.
+- **Drive the UI:** `adb shell input tap <x> <y>` / `input swipe` / `input text`; get coordinates from `adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml`.
+- **WebView console + JS + programmatic invoke (the real workhorse):** `adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof com.sudohnim.enqueue)`, then `curl localhost:9222/json` for the target's `webSocketDebuggerUrl`, and drive CDP over the websocket (send `Runtime.evaluate` with `suppress_origin=True` - the DevTools endpoint rejects the default Origin). This lets you call `window.__TAURI__.core.invoke('mobile_status'|'mobile_sync'|'mobile_list', ...)`, read the returned JSON, listen for `sync-done` events, and inspect which section is visible - a full functional test with no camera and no human.
+- **App state + secrets (debug build):** `adb shell run-as com.sudohnim.enqueue cat /data/data/com.sudohnim.enqueue/sync_config` (relay_url, secret, DEK hex) and `... cat .../library.db` into a local file, then `sqlite3` it to count applied artifacts. This is how you tell a decrypt/apply failure (cursor advances, 0 rows) from a render bug.
+- **Permissions / camera-active / logs:** `adb shell dumpsys package ... | grep CAMERA`; `adb shell dumpsys media.camera | grep -A2 com.sudohnim.enqueue` proves the camera stream is live even though it never shows in a screencap; `adb logcat -d | grep -iE 'Tauri/Console|enqueue|panic'` catches JS exceptions and Rust panics.
+- **Relay / engine state:** plain `curl` against the relay URL (with the Bearer secret) and `127.0.0.1:8787`.
+
+ESCALATE TO HUMAN only for a visual the camera layer hides or a macOS-display check: the SCANUI.1 camera-box aesthetics (the camera surface is invisible to screencap - verify camera-active + box geometry via dumpsys/uiautomator first, so the human judges only the look), the CAP2.2 capture-flight on the desktop, and the 10-second physical act of aiming the phone camera at the desktop QR. Everything else - linking, syncing, deleting, rendering, permissions, offline behaviour - is agent-verifiable. When escalating, state the single unanswered visual question, not "please test the app".
 
 ---
 

@@ -108,6 +108,15 @@ Environment variables can also be used:
 The relay authenticates all requests with a Bearer token. A wrong secret returns
 `401 Unauthorized`.
 
+`enq relay` binds to `127.0.0.1` by default, which only the same Mac (or a
+USB-tethered phone over `adb reverse`) can reach. To sync a phone from anywhere,
+run the relay on a reachable host - `docs/sync-relay.md` covers a Railway deploy
+and a cloudflared/ngrok dev tunnel. It also documents an important distinction:
+`bin/launch mobile` runs `cargo tauri android dev`, whose connection is
+USB-tethered by design - that is the dev harness, not the app. A built apk
+(`cargo tauri android build`) installed on the phone syncs unplugged over a
+hosted relay.
+
 ---
 
 ## CLI commands
@@ -412,7 +421,7 @@ Key endpoints:
 - **The global capture hotkey opens a window, but that window is the capture overlay, not a full capture flow.** The hotkey is functional (registered via `tauri-plugin-global-shortcut`), but the overlay is a small note-input box, not a full capture interface.
 - **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the home HTML view does not implement infinite scroll or pagination.
 - **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
-- **No sync (planned).** One machine only today. The design is scoped in `docs/e2e/E2E.md` (encrypted per-artifact snapshots, last-writer-wins) and `docs/MOBILE.md` (a relay plus a mobile client), but no sync code exists yet.
+- **Sync and the Android app are built, but the hosted relay is not yet deployed.** End-to-end-encrypted sync (per-artifact snapshots, last-writer-wins, a dumb ciphertext relay) and a Tauri Android app exist and are device-verified: capture on either device, link the phone by scanning a QR the desktop shows, and the library syncs both ways. What is not turned on by default is a public relay - out of the box `enq relay` is localhost-only, so the phone reaches it only on the same Mac (over USB). See `docs/sync-relay.md` for hosting the relay so the phone syncs from anywhere.
 - **The default local model (`llama3.1:8b`) is weak.** Roughly three of four model outputs fail their validators. Conversations work; a better model is needed for reliable chat answers and facet generation.
 - **Search is brute-force.** sqlite-vec does exact nearest-neighbour search over the 768-dim embeddings in `enqueue.db`. At this library's scale that is fast (Phase 19 measured p95 21 ms); at a few hundred thousand chunks it will need quantization or an approximate index.
 - **No Windows or Linux support.** The desktop shell uses macOS-specific AppKit calls (activation, hiding). The Keychain wrapper is macOS-only.

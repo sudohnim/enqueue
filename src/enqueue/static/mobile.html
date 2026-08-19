@@ -2432,31 +2432,48 @@
     .getElementById("capture_image_btn")
     ?.addEventListener("click", doCaptureImage);
 
+  // MOBBOOT.1: robust bootstrap with retry for Tauri runtime readiness
+  // Only show setup when mobile_status resolves with configured:false.
+  // Retry on missing invoke or rejected calls (runtime still coming up).
   function bootstrap() {
-    if (!invoke) {
-      show("setup");
-      startCamera();
-      return;
-    }
-    invoke("mobile_status")
-      .then((raw) => {
-        const r = parse(raw);
-        if (!r.configured) {
+    // Wait for invoke to be available (Tauri injection), then poll mobile_status
+    function waitForInvokeAndStatus(attempt = 1) {
+      if (!invoke) {
+        if (attempt <= 20) {  // ~1 second max wait
+          setTimeout(() => waitForInvokeAndStatus(attempt + 1), 50);
+        } else {
+          // invoke never appeared - show setup as last resort
           show("setup");
           startCamera();
-          return;
         }
-        show("library");
-        document.getElementById("loading").hidden = false;
-        document.getElementById("shelves").replaceChildren();
-        document.getElementById("empty").hidden = true;
-        // QR.5a: mobile_sync returns immediately; sync-done event refreshes
-        invoke("mobile_sync", { config: "{}" }).catch(() => {});
-      })
-      .catch(() => {
-        show("setup");
-        startCamera();
-      });
+        return;
+      }
+      invoke("mobile_status")
+        .then((raw) => {
+          const r = parse(raw);
+          if (!r.configured) {
+            show("setup");
+            startCamera();
+            return;
+          }
+          show("library");
+          document.getElementById("loading").hidden = false;
+          document.getElementById("shelves").replaceChildren();
+          document.getElementById("empty").hidden = true;
+          invoke("mobile_sync", { config: "{}" }).catch(() => {});
+        })
+        .catch((e) => {
+          // mobile_status rejected - runtime may not be fully ready
+          if (attempt <= 5) {  // retry a few times
+            setTimeout(() => waitForInvokeAndStatus(attempt + 1), 100);
+          } else {
+            // After retries, assume unconfigured
+            show("setup");
+            startCamera();
+          }
+        });
+    }
+    waitForInvokeAndStatus();
   }
 
   // QR.5a: sync lifecycle events from the background thread
