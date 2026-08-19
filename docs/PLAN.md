@@ -347,6 +347,25 @@ hiding again.
   Done when: all of step 5 passes on the real desktop, and `bin/verify` is green
   (including the Android compile check, which now runs by default).
 
+  PIVOT (2026-08-18, from live testing + user direction) - PREFER THIS over the
+  floating-overlay above. The separate always-on-top overlay only shows when Enqueue is
+  frontmost (the macOS window-level fight is unreliable). But the QUICK-CAPTURE OVERLAY
+  window is ALREADY summoned over whatever app the person is in (that is how the global
+  hotkey works - `open_capture` in `desktop/src/lib.rs` raises it above the frontmost app).
+  So play the raven flight INSIDE the capture overlay and DELAY its dismissal, instead of
+  firing a separate window: on a successful Keep, do NOT dismiss the capture window
+  immediately - play the flight in the capture overlay (capture.html), hold ~1-1.5s, THEN
+  dismiss. Because the capture window already sits over the person's previous app, the
+  animation shows there with no separate always-on-top window and no focus/level hacks.
+  The current flight is small in the 600x264 overlay ("barely see it") - so for the flight
+  moment, briefly grow the capture window (or use a full-bleed flight layer inside it) so
+  the raven reads, then dismiss. This supersedes the flight-overlay window (steps 1-4): the
+  `flight` window / `flight_done` can be removed once this lands.
+  Done when (pivot): capturing via the global hotkey from another app (e.g. Chrome) plays a
+  visible raven flight over that app - because it plays in the capture overlay before it
+  dismisses - then the overlay goes away and the person is back in their app; no separate
+  always-on-top window is needed; reduced-motion still fades. Human device-verify.
+
 ## Phase QRSYNC - QR-linked, hosted-relay, passwordless sync (the refactor)
 
 Decided 2026-08-16 after live SU.5 testing. This REPLACES the Option A pairing model
@@ -793,6 +812,66 @@ minimum bar to attempt device verification.
   VERIFY: `bin/verify` green, `cargo tauri android build --debug --target aarch64` zero
   errors, then on the physical phone `adb exec-out screencap -p > qr7-after.png` showing
   the full pill above the gesture bar, attached to PROGRESS.md.
+
+## Phase FULLSYNC - initial full-library backfill (found live 2026-08-18)
+
+- [ ] **FULL.1 [AGENT]** Sync only pushes artifacts on WRITE (`sync/client.py::push_artifact`
+  is called per-artifact when one is created/edited). There is NO initial backfill, so a
+  freshly-linked device (or a fresh relay) only ever receives notes captured AFTER linking -
+  the existing library never syncs. Confirmed live: desktop had 136 artifacts, the relay had
+  2. The user's reasonable expectation ("syncing should sync all the contents") is unmet.
+  Build a full-library push: when sync is first enabled (and idempotently on demand - a
+  "sync now / push all" action), iterate every non-deleted artifact and `push_artifact` it
+  (skip already-present objects via the relay's 409/idempotent PUT, so re-runs are cheap).
+  Run it off the main path (the existing `Worker`) so it does not block. The pull side
+  already applies whatever objects exist, so once the backfill lands, a new device pulls the
+  whole library. Verify: on a fresh relay + fresh phone, after linking the phone shows the
+  FULL desktop library, not just post-link captures.
+  Done when: enabling sync (or triggering "push all") uploads every existing artifact, a
+  freshly-linked phone receives the entire library, and re-running the backfill is a cheap
+  no-op (no duplicate objects).
+
+## Phase MOBRENDER - the phone pulls but never displays
+
+- [ ] **MOBRENDER.1 [AGENT]** After linking, the phone shows only a stuck "Syncing…" spinner
+  and NO artifacts, even though the pull is working. Verified live 2026-08-18: a desktop note
+  reached the relay and DECRYPTS correctly with the DEK from the scanned QR (so pull + key +
+  decrypt are all fine); the phone polls the relay at its caught-up cursor. So the data
+  arrives - it just never renders. Two symptoms, likely related: (1) the "Syncing…" indicator
+  never clears when the cursor is caught up (QR.5a's non-blocking sync left the status stuck);
+  (2) applied snapshots do not appear in the library list. Debug with the WebView console
+  (chrome://inspect on the device - NOT `adb screencap`): confirm whether `apply_snapshot`
+  writes the row to the local SQLite and whether `renderLibrary()` runs/throws (an earlier
+  `insertBefore` NotFoundError was seen in this exact list render). Fix the render so pulled
+  artifacts show, and clear "Syncing…" once caught up.
+  Done when: after linking, pulled artifacts appear in the phone's library (title + body) and
+  the "Syncing…" state ends when the cursor is caught up; a note captured on the desktop after
+  linking shows up on the phone. (Depends on FULL.1 for the EXISTING library to appear too.)
+
+## Phase SCANUI - contain the scanner camera in a box
+
+- [ ] **SCANUI.1 [AGENT]** The native scanner (QR.4a) works but the camera fills the WHOLE
+  screen. The camera is CameraX rendered BEHIND a transparent WebView (window is
+  `.transparent(true)`, and `body.scanning { background: transparent }` makes the whole page
+  see-through), so the camera shows everywhere the page is transparent. Goal: show the
+  camera only inside a centered rounded box, with the surrounding area opaque (a normal
+  scanning chrome: a title, the box with a frame, a Cancel button).
+  What was already tried and did NOT contain it (verified live 2026-08-18): giving the
+  `#scan_overlay .frame` a fully-opaque `box-shadow: 0 0 0 4000px rgba(0,0,0,1)` while the
+  body stayed transparent - the camera still filled the screen. So the box-shadow-cutout
+  approach is insufficient here. Next approaches to try (on-device, since the camera layer
+  does not appear in `adb screencap` - a HUMAN must look):
+  (a) Keep the body OPAQUE during scan (do not make the whole page transparent); make ONLY
+      a single centered box element transparent (its ancestors must ALL be transparent down
+      to that box for the camera to show through just there), everything else opaque.
+  (b) Build the surround from explicit opaque panels (top/bottom/left/right rectangles)
+      around a transparent central box, rather than relying on box-shadow.
+  (c) Confirm whether the plugin exposes any windowed/preview option; if it only supports a
+      full-surface preview, (a)/(b) are the only levers.
+  Done when: on the phone, tapping "Scan QR" shows the camera INSIDE a centered box with an
+  opaque surround (title + frame + Cancel), a QR still scans + links, and no camera bleeds
+  outside the box. Human device-verify (screencap will not show the camera - look at the
+  physical screen).
 
 ## Phase GATE - close the Kotlin/APK hole in bin/verify
 

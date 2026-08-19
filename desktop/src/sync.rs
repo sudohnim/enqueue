@@ -11,15 +11,22 @@ use serde_json::Value;
 
 /// libsodium `crypto_pwhash` MODERATE preset (DEC-D5), matching `src/enqueue/crypto.py`.
 /// memlimit is 256 MiB expressed in KiB; opslimit is the iteration count.
+#[allow(dead_code)]
 const ARGON2_M_COST: u32 = 256 * 1024;
+#[allow(dead_code)]
 const ARGON2_T_COST: u32 = 3;
+#[allow(dead_code)]
 const ARGON2_P_COST: u32 = 1;
 
+#[allow(dead_code)]
 const DEK_LEN: usize = 32;
+#[allow(dead_code)]
 const NONCE_LEN: usize = 24; // XSalsa20-Poly1305 secretbox nonce
+#[allow(dead_code)]
 const TAG_LEN: usize = 16; // Poly1305 tag
 
 /// Argon2id key derivation, byte-for-byte the desktop's `crypto.derive_kek`.
+#[allow(dead_code)]
 pub fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; DEK_LEN], String> {
     use argon2::{Algorithm, Argon2, Params, Version};
     let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(DEK_LEN))
@@ -35,6 +42,7 @@ pub fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; DEK_LEN], String> {
 /// XSalsa20-Poly1305 secretbox decrypt - PyNaCl `nacl.secret.SecretBox` (NOT XChaCha:
 /// the shipped code uses `crypto_secretbox`, whose wire format is nonce(24) || ct ||
 /// tag(16)).
+#[allow(dead_code)]
 fn secretbox_decrypt(key: &[u8; DEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     use xsalsa20poly1305::aead::{Aead, KeyInit};
     use xsalsa20poly1305::{Nonce, XSalsa20Poly1305};
@@ -50,6 +58,8 @@ fn secretbox_decrypt(key: &[u8; DEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, 
 
 /// XSalsa20-Poly1305 secretbox encrypt (the inverse of `secretbox_decrypt`), for the
 /// capture push path (MOB.7): fresh nonce prepended, same wire format as the desktop.
+#[allow(dead_code)]
+#[allow(dead_code)]
 pub fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use xsalsa20poly1305::aead::{Aead, KeyInit};
     use xsalsa20poly1305::{Nonce, XSalsa20Poly1305};
@@ -66,12 +76,15 @@ pub fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8
 
 /// Unwrap a DEK wrapped with a KEK (inverse of `secretbox_encrypt`).
 /// Uses the same XSalsa20-Poly1305 secretbox decrypt.
+#[allow(dead_code)]
+#[allow(dead_code)]
 pub fn unwrap(wrapped: &[u8], kek: &[u8; DEK_LEN]) -> Result<Vec<u8>, String> {
     secretbox_decrypt(kek, wrapped)
 }
 
 /// The mobile device's UUID4, generated once and stored in the app data dir (E2E.md
 /// Section 1: a device id is a UUID, never from hardware).
+#[allow(dead_code)]
 pub fn device_id(dir: &std::path::Path) -> String {
     let path = dir.join("device_id");
     if let Ok(existing) = std::fs::read_to_string(&path) {
@@ -87,6 +100,7 @@ pub fn device_id(dir: &std::path::Path) -> String {
 
 /// Read one artifact's snapshot from the local SQLite (the read copy), for the capture
 /// push (MOB.7). Mirrors `read_artifact_snapshot`.
+#[allow(dead_code)]
 pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Value>, String> {
     let artifact: Option<Value> = conn
         .query_row(
@@ -149,6 +163,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
 
 /// Push one snapshot to the relay (MOB.7): serialize, encrypt, PUT under this device's
 /// namespace. Idempotent - a 409 (already present) is a no-op.
+#[allow(dead_code)]
 pub fn push_snapshot(
     relay_url: &str,
     secret: &str,
@@ -172,6 +187,8 @@ pub fn push_snapshot(
 
 /// Unwrap the DEK from the desktop's `keyring.json` plus the recovery phrase
 /// (mirrors `keyring_file.unlock_with_recovery`, per MOB.3a).
+#[allow(dead_code)]
+#[allow(dead_code)]
 pub fn unlock_dek(keyring_json: &str, phrase: &str) -> Result<[u8; DEK_LEN], String> {
     let record: Value =
         serde_json::from_str(keyring_json).map_err(|e| format!("keyring json: {e}"))?;
@@ -198,15 +215,18 @@ pub fn unlock_dek(keyring_json: &str, phrase: &str) -> Result<[u8; DEK_LEN], Str
     Ok(out)
 }
 
+#[allow(dead_code)]
 fn str_at(v: Option<&Value>) -> Option<String> {
     v.and_then(Value::as_str).map(str::to_string)
 }
 
+#[allow(dead_code)]
 fn int_at(v: Option<&Value>) -> Option<i64> {
     v.and_then(Value::as_i64)
 }
 
 /// The LWW key `(updated_at, _device_id)`, compared lexicographically (E2E.md E3).
+#[allow(dead_code)]
 fn lww_key(snapshot: &Value) -> (String, String) {
     let a = &snapshot["artifact"];
     (
@@ -217,6 +237,7 @@ fn lww_key(snapshot: &Value) -> (String, String) {
 
 /// The artifacts read-copy schema, mirroring the desktop's final migrations (0001
 /// baseline + pinned/deleted_at/pages/title_explicit/_device_id).
+#[allow(dead_code)]
 pub fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
@@ -267,6 +288,7 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let artifact = &snapshot["artifact"];
     let id = artifact["id"].as_str().ok_or("snapshot: missing id")?;
@@ -374,6 +396,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn read_cursor(conn: &Connection) -> Result<u64, String> {
     let v: Option<String> = conn
         .query_row(
@@ -386,6 +409,7 @@ fn read_cursor(conn: &Connection) -> Result<u64, String> {
     Ok(v.and_then(|s| s.parse().ok()).unwrap_or(0))
 }
 
+#[allow(dead_code)]
 fn write_cursor(conn: &Connection, cursor: u64) -> Result<(), String> {
     conn.execute(
         "INSERT INTO sync_meta (key,value) VALUES ('cursor',?1)\
@@ -397,6 +421,7 @@ fn write_cursor(conn: &Connection, cursor: u64) -> Result<(), String> {
 }
 
 /// The result of a sync attempt, reduced to a status the UI (MOB.3b) can show.
+#[allow(dead_code)]
 pub struct SyncOutcome {
     pub status: String, // "synced" | "locked" | "error"
     pub pulled: usize,
@@ -405,6 +430,7 @@ pub struct SyncOutcome {
 
 /// Pull the library from the relay into the local read copy. `dek` is None when the
 /// keyring has not been unlocked; then the sync reports "locked" instead of crashing.
+#[allow(dead_code)]
 pub fn sync_library(
     relay_url: &str,
     sync_secret: &str,
@@ -520,6 +546,7 @@ pub fn sync_library(
 }
 
 /// Artifact ids present in the local read copy, newest first, excluding trashed rows.
+#[allow(dead_code)]
 pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare("SELECT id FROM artifacts WHERE deleted_at IS NULL ORDER BY updated_at DESC")
@@ -536,6 +563,7 @@ pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
 
 /// The library rows for the Library surface (MOB.4): id, kind, title, body (for the
 /// snippet), timestamps, and capture metadata. Newest first, trashed excluded.
+#[allow(dead_code)]
 pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
@@ -568,6 +596,7 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
 }
 
 /// One artifact plus its annotations, for the Reader surface (MOB.5).
+#[allow(dead_code)]
 pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
     let artifact: Option<Value> = conn
         .query_row(
@@ -644,6 +673,7 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
 /// Keyword search over titles, bodies, and annotations (MOB.6). No embeddings, no
 /// model - a plain case-insensitive substring match, the same honesty as the desktop's
 /// keyword leg. Returns library rows, newest first.
+#[allow(dead_code)]
 pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
     let needle = format!("%{}%", query);
     let mut stmt = conn
@@ -682,6 +712,7 @@ pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, St
 
 /// A rough mirror of `notes.py:title_from_body` for the capture path: the first
 /// markdown heading, else the first non-empty line, `*_`` stripped, capped at 120.
+#[allow(dead_code)]
 pub fn title_hint(body: &str) -> String {
     for line in body.lines() {
         let line = line.trim();
@@ -704,6 +735,8 @@ pub fn title_hint(body: &str) -> String {
 
 /// The content-addressed blob name: HMAC-SHA256 of the content hash keyed by the DEK
 /// (mirrors `crypto.blob_name`), so a blob's address leaks nothing about its contents.
+#[allow(dead_code)]
+#[allow(dead_code)]
 pub fn blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
@@ -714,6 +747,7 @@ pub fn blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
 
 /// Fetch + decrypt one file blob (an image/PDF/file) from the relay (MOB.5). The blob
 /// is fetched on demand, cached by the caller.
+#[allow(dead_code)]
 pub fn fetch_blob(
     relay_url: &str,
     secret: &str,
@@ -848,6 +882,7 @@ mod tests {
 
 /// Update a note's body, appending a version and respecting title_explicit (MOB2.4).
 /// Returns the updated artifact.
+#[allow(dead_code)]
 pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, new_title: Option<&str>) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
@@ -907,6 +942,7 @@ pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, ne
 }
 
 /// Add an annotation to an artifact (MOB2.4).
+#[allow(dead_code)]
 pub fn add_annotation(conn: &Connection, artifact_id: &str, text: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     let ann_id = uuid::Uuid::new_v4().to_string();
@@ -925,6 +961,7 @@ pub fn add_annotation(conn: &Connection, artifact_id: &str, text: &str) -> Resul
 }
 
 /// Remove an annotation (MOB2.4).
+#[allow(dead_code)]
 pub fn remove_annotation(conn: &Connection, artifact_id: &str, annotation_id: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
@@ -942,6 +979,7 @@ pub fn remove_annotation(conn: &Connection, artifact_id: &str, annotation_id: &s
 }
 
 /// Add a tag to an artifact (MOB2.4).
+#[allow(dead_code)]
 pub fn add_tag(conn: &Connection, artifact_id: &str, tag_name: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     let normalized = tag_name.trim().to_lowercase();
@@ -980,6 +1018,7 @@ pub fn add_tag(conn: &Connection, artifact_id: &str, tag_name: &str) -> Result<V
 }
 
 /// Remove a tag from an artifact (MOB2.4).
+#[allow(dead_code)]
 pub fn remove_tag(conn: &Connection, artifact_id: &str, tag_name: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     let normalized = tag_name.trim().to_lowercase();
@@ -1003,6 +1042,7 @@ pub fn remove_tag(conn: &Connection, artifact_id: &str, tag_name: &str) -> Resul
 }
 
 /// Toggle pin status (MOB2.4).
+#[allow(dead_code)]
 pub fn toggle_pin(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
@@ -1021,6 +1061,7 @@ pub fn toggle_pin(conn: &Connection, artifact_id: &str) -> Result<Value, String>
 }
 
 /// Toggle trash status (MOB2.4). Trash/restore, no purge.
+#[allow(dead_code)]
 pub fn toggle_trash(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
@@ -1041,6 +1082,7 @@ pub fn toggle_trash(conn: &Connection, artifact_id: &str) -> Result<Value, Strin
 }
 
 /// Get tags for an artifact (MOB2.4).
+#[allow(dead_code)]
 pub fn get_tags(conn: &Connection, artifact_id: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare(
@@ -1058,6 +1100,7 @@ pub fn get_tags(conn: &Connection, artifact_id: &str) -> Result<Vec<String>, Str
 }
 
 /// List trashed artifacts (MOB2.4).
+#[allow(dead_code)]
 pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
@@ -1090,6 +1133,7 @@ pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
 
 /// Fetch the keyring.json from the relay (MOB2.10).
 /// The keyring.enc is the raw keyring.json (wrapped DEK only, no extra encryption).
+#[allow(dead_code)]
 pub fn fetch_keyring(relay_url: &str, secret: &str) -> Result<Vec<u8>, String> {
     let resp = ureq::get(&format!(
         "{}/sync/object/lib/keyring.enc",

@@ -23,15 +23,20 @@ mod mobile {
     use rusqlite::Connection;
     use serde_json::Value;
     use sha2::Digest;
-    use tauri::{AppHandle, Manager, Emitter};
+    use tauri::{AppHandle, Emitter, Manager};
+    #[allow(unused_imports)]
+    #[cfg(mobile)]
     use tauri_plugin_dialog::DialogExt;
-    use ureq::Request;
     // JNI for foreground service (QR.5b)
+    #[allow(unused_imports)]
     use jni::JNIEnv;
-    use jni::objects::JClass;
+    #[allow(unused_imports)]
+    use jni::objects::{JClass, JObject};
+    #[allow(unused_imports)]
     use ndk_context::android_context;
 
     /// Start the Android foreground sync service via JNI.
+    #[cfg(mobile)]
     fn jni_start_sync_foreground_service() -> Result<(), String> {
         let ctx = android_context();
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -52,6 +57,7 @@ mod mobile {
     }
 
     /// Stop the Android foreground sync service via JNI.
+    #[cfg(mobile)]
     fn jni_stop_sync_foreground_service() -> Result<(), String> {
         let ctx = android_context();
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -71,6 +77,7 @@ mod mobile {
     }
 
     /// Start the Android foreground sync service (QR.5b).
+    #[cfg(mobile)]
     #[tauri::command]
     fn start_sync_foreground_service() -> Result<String, String> {
         jni_start_sync_foreground_service()?;
@@ -78,6 +85,7 @@ mod mobile {
     }
 
     /// Stop the Android foreground sync service (QR.5b).
+    #[cfg(mobile)]
     #[tauri::command]
     fn stop_sync_foreground_service() -> Result<String, String> {
         jni_stop_sync_foreground_service()?;
@@ -188,8 +196,8 @@ mod mobile {
         // Copy the needed values into the closure so cfg is not captured.
         let relay_url_owned = relay_url.clone();
         let sync_secret_owned = sync_secret.clone();
-        let keyring_json_owned = keyring_json.clone();
-        let recovery_phrase_owned = recovery_phrase.clone();
+        let _keyring_json_owned = keyring_json.clone();
+        let _recovery_phrase_owned = recovery_phrase.clone();
         let app_handle = app.clone();
         let conn_clone = conn;
 
@@ -697,7 +705,7 @@ mod mobile {
 
 /// Mobile chat: keyword search + LLM answer (MOB2.7).
     #[tauri::command]
-    fn mobile_chat(app: AppHandle, query: String, history: String) -> Result<String, String> {
+    fn mobile_chat(app: AppHandle, query: String, _history: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
         
         // 1. Keyword search over local copy (MOB.6)
@@ -734,7 +742,7 @@ mod mobile {
         
         // 3. Load config for LLM backend and API key
         let cfg = load_config(&app)?.ok_or("not configured")?;
-        let dek = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).ok_or("locked")?;
+        let _dek = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).ok_or("locked")?;
         let backend = cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama");
         let model = cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b");
         let custom_url = if backend == "custom" { cfg.get("llm_url").and_then(Value::as_str).unwrap_or("") } else { "" };
@@ -1067,6 +1075,7 @@ mod mobile {
     /// The config contains {{relay_url, sync_secret, dek}} decoded from the desktop linking QR.
     /// Persists the relay URL, sync secret, and DEK (hex-encoded) via save_config so
     /// load_config can find them, and sync can start.
+    #[cfg(mobile)]
     #[tauri::command]
     fn mobile_link_qr(app: AppHandle, config: String) -> Result<String, String> {
         let cfg: serde_json::Value = serde_json::from_str(&config).map_err(|e| e.to_string())?;
@@ -1180,6 +1189,7 @@ mod mobile {
             .plugin(tauri_plugin_barcode_scanner::init())
             .invoke_handler(tauri::generate_handler![
                 mobile_sync,
+                mobile_link_qr,
                 mobile_status,
                 mobile_list,
                 mobile_get,

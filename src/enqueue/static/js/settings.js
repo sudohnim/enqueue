@@ -948,9 +948,9 @@ async function showLinkCode() {
 	try {
 		// QR.3: the command returns ONLY the rendered SVG - there is deliberately no
 		// textual form of the payload anywhere (camera-scanning is the only transport).
+		// desktop_link_code returns the rendered SVG string directly (no JSON wrapper).
 		const response = await bridge("desktop_link_code", {});
-		const data = JSON.parse(response);
-		const svg = String(data.qr_svg || "");
+		const svg = String(response || "");
 		// Parse and inject as a real SVG element via DOMParser - never innerHTML,
 		// and never raw content: a non-SVG or malformed document is rejected.
 		const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
