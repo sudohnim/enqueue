@@ -455,6 +455,14 @@ mod mobile {
               title_explicit INTEGER NOT NULL DEFAULT 0,
               _device_id    TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS mutation_outbox (
+              id            TEXT PRIMARY KEY,
+              artifact_id   TEXT NOT NULL,
+              mutation_type TEXT NOT NULL,  -- 'delete' | 'restore'
+              created_at    TEXT NOT NULL,
+              synced        INTEGER NOT NULL DEFAULT 0
+            );
             "#,
         )
         .map_err(|e| e.to_string())?;
@@ -1034,7 +1042,7 @@ mod mobile {
         Ok(serde_json::json!({ "configured": true }).to_string())
     }
 
-    /// Push any queued offline captures to the relay (MOB.7).
+    /// Push any queued offline captures and mutations to the relay (MOB.7 + CRUDSYNC.2).
     #[tauri::command]
     fn mobile_outbox_push(app: AppHandle) -> Result<String, String> {
         let conn = open_lib(&app)?;
@@ -1048,17 +1056,18 @@ mod mobile {
         let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
         let device_id = crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?);
         
+        // 1. Push capture_outbox (pending captures)
         let mut stmt = conn
             .prepare("SELECT id FROM capture_outbox ORDER BY created_at")
             .map_err(|e| e.to_string())?;
-        let ids: Vec<String> = stmt
+        let capture_ids: Vec<String> = stmt
             .query_map([], |r| r.get(0))
             .map_err(|e| e.to_string())?
             .filter_map(Result::ok)
             .collect();
         
         let mut pushed = 0;
-        for id in ids {
+        for id in capture_ids {
             if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id).map_err(|e| e.to_string())? {
                 let mut snapshot = snapshot;
                 snapshot["artifact"]["_device_id"] = serde_json::Value::String(device_id.clone());
@@ -1066,6 +1075,36 @@ mod mobile {
                 if result.is_ok() {
                     let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
                     let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
+                    pushed += 1;
+                }
+            }
+        }
+        
+        // 2. Push mutation_outbox (delete/restore mutations)
+        let mut stmt = conn
+            .prepare("SELECT id, artifact_id, mutation_type FROM mutation_outbox WHERE synced = 0 ORDER BY created_at")
+            .map_err(|e| e.to_string())?;
+        let mutations: Vec<(String, String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        
+        for (mutation_id, artifact_id, mutation_type) in mutations {
+            if let Some(snapshot) = crate::sync::build_snapshot(&conn, &artifact_id).map_err(|e| e.to_string())? {
+                let mut snapshot = snapshot;
+                snapshot["artifact"]["_device_id"] = serde_json::Value::String(device_id.clone());
+                
+                // For restore, we need to clear deleted_at; for delete, we need to set it
+                if mutation_type == "restore" {
+                    // The local restore already cleared deleted_at, just push
+                } else if mutation_type == "delete" {
+                    // The local delete already set deleted_at, just push
+                }
+                
+                let result = crate::sync::push_snapshot(&relay_url, &secret, &dek, &device_id, &snapshot);
+                if result.is_ok() {
+                    let _ = conn.execute("DELETE FROM mutation_outbox WHERE id = ?1", [&mutation_id]);
                     pushed += 1;
                 }
             }
@@ -1087,6 +1126,65 @@ mod mobile {
             .filter_map(Result::ok)
             .collect();
         Ok(serde_json::json!({ "pending": ids }).to_string())
+    }
+
+    /// Delete an artifact on mobile (CRUDSYNC.2).
+    /// Marks deleted_at locally and enqueues a 'delete' mutation for sync.
+    #[cfg(mobile)]
+    #[tauri::command]
+    fn mobile_delete(app: AppHandle, artifact_id: String) -> Result<String, String> {
+        let now = now_iso();
+        let conn = open_lib(&app)?;
+
+        // Mark as deleted locally
+        let deleted = {
+            let mut stmt = conn.prepare("UPDATE artifacts SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL")
+                .map_err(|e| e.to_string())?;
+            stmt.execute([&now, &artifact_id]).map_err(|e| e.to_string())?
+        };
+        if deleted == 0 {
+            return Err("artifact not found or already deleted".into());
+        }
+
+        // Enqueue mutation for sync
+        let mutation_id = uuid::Uuid::new_v4().to_string();
+        let now_iso = now_iso();
+        conn.execute(
+            "INSERT INTO mutation_outbox (id, artifact_id, mutation_type, created_at, synced)
+             VALUES (?, ?, 'delete', ?, 0)",
+            [&mutation_id, &artifact_id, &now_iso],
+        ).map_err(|e| e.to_string())?;
+
+        Ok(serde_json::json!({ "deleted": true, "id": artifact_id }).to_string())
+    }
+
+    /// Restore an artifact on mobile (CRUDSYNC.2).
+    /// Clears deleted_at locally and enqueues a 'restore' mutation for sync.
+    #[cfg(mobile)]
+    #[tauri::command]
+    fn mobile_restore(app: AppHandle, artifact_id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+
+        // Clear deleted_at locally
+        let restored = {
+            let mut stmt = conn.prepare("UPDATE artifacts SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL")
+                .map_err(|e| e.to_string())?;
+            stmt.execute([&artifact_id]).map_err(|e| e.to_string())?
+        };
+        if restored == 0 {
+            return Err("artifact not found or not deleted".into());
+        }
+
+        // Enqueue mutation for sync
+        let mutation_id = uuid::Uuid::new_v4().to_string();
+        let now_iso = now_iso();
+        conn.execute(
+            "INSERT INTO mutation_outbox (id, artifact_id, mutation_type, created_at, synced)
+             VALUES (?, ?, 'restore', ?, 0)",
+            [&mutation_id, &artifact_id, &now_iso],
+        ).map_err(|e| e.to_string())?;
+
+        Ok(serde_json::json!({ "restored": true, "id": artifact_id }).to_string())
     }
 
     /// Link device by scanning a linking QR code (QR.4b).
@@ -1240,6 +1338,8 @@ mod mobile {
                 mobile_get_tags,
                 mobile_list_trashed,
                 mobile_restore_trashed,
+                mobile_delete,
+                mobile_restore,
                 start_sync_foreground_service,
                 stop_sync_foreground_service,
             ])
