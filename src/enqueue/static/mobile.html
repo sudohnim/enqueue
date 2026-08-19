@@ -1487,6 +1487,7 @@
       const thumb = document.createElement("img");
       thumb.className = "card-preview-image";
       thumb.alt = "";
+      li.appendChild(kindDot);
       li.insertBefore(thumb, kindDot);
       invoke("mobile_blob", { id: a.id })
         .then((raw) => {
@@ -1541,6 +1542,7 @@
     const thumb = document.createElement("img");
     thumb.className = "card-full-image";
     thumb.alt = a.title || "";
+    li.appendChild(kindDot);
     li.insertBefore(thumb, kindDot);
     invoke("mobile_blob", { id: a.id })
       .then((raw) => {
@@ -1591,6 +1593,7 @@
 
     const thumb = document.createElement("canvas");
     thumb.className = "card-pdf-thumb";
+    li.appendChild(kindDot);
     li.insertBefore(thumb, kindDot);
 
     // Fetch and render first page thumbnail
