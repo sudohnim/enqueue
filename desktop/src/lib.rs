@@ -177,10 +177,21 @@ mod mobile {
     #[tauri::command]
     fn mobile_sync(app: AppHandle, config: String) -> Result<String, String> {
         let cfg: Value = serde_json::from_str(&config).unwrap_or(Value::Null);
-        let relay_url = cfg.get("relay_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let sync_secret = cfg.get("sync_secret").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let keyring_json = cfg.get("keyring_json").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let recovery_phrase = cfg.get("recovery_phrase").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // The UI calls this with config "{}" and relies on the persisted config
+        // (mobile.html sends no args on the on-load and Sync Now paths). Fall back to
+        // the saved config for relay_url and the secret so those paths are not treated
+        // as "not configured". The saved config stores the secret under `secret`.
+        let saved = load_config(&app).ok().flatten().unwrap_or(Value::Null);
+        let pick = |k: &str| cfg.get(k).and_then(|v| v.as_str())
+            .or_else(|| saved.get(k).and_then(|v| v.as_str()))
+            .unwrap_or("").to_string();
+        let relay_url = pick("relay_url");
+        let sync_secret = {
+            let s = pick("sync_secret");
+            if s.is_empty() { saved.get("secret").and_then(|v| v.as_str()).unwrap_or("").to_string() } else { s }
+        };
+        let keyring_json = pick("keyring_json");
+        let recovery_phrase = pick("recovery_phrase");
 
         // Validate config exists
         if relay_url.is_empty() || sync_secret.is_empty() {
@@ -1092,8 +1103,11 @@ mod mobile {
         
         // Decode the DEK from base64; the sync path expects hex-encoded DEK in config
         let dek_bytes = base64::engine::general_purpose::STANDARD.decode(dek_b64.as_bytes()).map_err(|e| e.to_string())?;
-        // Ensure we have exactly 32 bytes (DEK_LEN); if not, treat as empty
-        let dek_array: [u8; 32] = dek_bytes.try_into().unwrap_or([0u8; 32]);
+        // Must be exactly 32 bytes (DEK_LEN). Erroring here is deliberate: a silent
+        // fallback to an all-zero key links "successfully" but then fails every decrypt,
+        // so the phone pulls objects yet stores zero artifacts.
+        let dek_array: [u8; 32] = dek_bytes.try_into()
+            .map_err(|v: Vec<u8>| format!("DEK must be 32 bytes, got {}", v.len()))?;
         let keyring_json_or_empty = String::new();
         
         // Persist relay_url, sync_secret, and DEK (hex) via save_config so
@@ -1642,7 +1656,10 @@ mod desktop {
                 .output()
                 .ok()
                 .and_then(|out| String::from_utf8(out.stdout).ok())
-                .map(|s| base64::engine::general_purpose::STANDARD.encode(s.trim().as_bytes()))
+                // The keychain already stores the DEK base64-encoded (44 chars = 32 raw
+                // bytes). Pass it through verbatim; re-encoding would double-encode and the
+                // phone would decode to 44 bytes, not 32, silently zeroing the DEK.
+                .map(|s| s.trim().to_string())
                 .unwrap_or_default()
         } else {
             // On other platforms, read from the sync-dek.bin file

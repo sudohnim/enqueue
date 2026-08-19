@@ -2122,7 +2122,10 @@
       .catch(() => renderSections([], "Nothing matches."));
   });
 
-  document.getElementById("capture_btn").addEventListener("click", () => {
+  // capture_btn was removed in the openField refactor; guard so a missing element
+  // does not throw at init and abort the rest of this script (the on-load sync
+  // bootstrap below it), which left the library spinning forever with no sync.
+  document.getElementById("capture_btn")?.addEventListener("click", () => {
     document.getElementById("capture_field").value = "";
     document.getElementById("capture_status").textContent = "";
     history.pushState({ v: "capture" }, "");
@@ -2375,12 +2378,15 @@
     show("library");
   });
 
+  // Guard: capture_image_btn no longer exists. An unguarded listener on a null
+  // element throws here and aborts init before bootstrap() (line ~2765) runs, so
+  // sync never fires and the library spins forever.
   document
     .getElementById("capture_image")
-    .addEventListener("click", doCaptureImage);
+    ?.addEventListener("click", doCaptureImage);
   document
     .getElementById("capture_image_btn")
-    .addEventListener("click", doCaptureImage);
+    ?.addEventListener("click", doCaptureImage);
 
   function bootstrap() {
     if (!invoke) {
