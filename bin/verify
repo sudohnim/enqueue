@@ -29,7 +29,6 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = [
     "src/enqueue/static/home.html",
     "src/enqueue/static/capture.html",
-    "src/enqueue/static/flight.html",
     "src/enqueue/static/mobile.html",
 ]
 JS_DIR = os.path.join(HERE, "src", "enqueue", "static", "js")
@@ -243,15 +242,10 @@ def main():
         pass_flag = False
 
     print("")
-    print(f"=== {SRC}: JS parse: {FILES[2]} ===")
-    if not check_inline_js(FILES[2]):
-        pass_flag = False
-
-    print("")
-    print(f"=== {SRC}: JS parse: {FILES[3]} (mobile shell) ===")
+    print(f"=== {SRC}: JS parse: {FILES[2]} (mobile shell) ===")
     if not check_mobile_js():
         pass_flag = False
-    if not check_inline_js(FILES[3]):
+    if not check_inline_js(FILES[2]):
         pass_flag = False
 
     print("")

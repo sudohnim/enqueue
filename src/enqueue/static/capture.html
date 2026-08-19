@@ -371,9 +371,65 @@
     }
   }
 
-  /* The capture-success flight now lives in the main window (CAP.3): the overlay
-     invokes capture_done, which dismisses it and tells the main window to fly the
-     raven full-screen. No bird is mounted here, so none can persist in the overlay. */
+  /* CAP2.2 pivot: the capture-success raven flies INSIDE this overlay, then the
+     overlay dismisses. The capture window is already transparent, always-on-top, and
+     summoned over whatever app the person captured from, so the raven shows over that
+     app with no separate always-on-top window and no macOS window-level hacks. The
+     card is hidden for the flight so only the raven paints over the app. Inlined from
+     the shared ANIM.4 keyframes; GPU transform/opacity only; reduced motion fades. */
+  #card.flying {
+    visibility: hidden;
+  }
+  .capture-flight {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 220px;
+    height: auto;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0;
+    will-change: transform, opacity;
+  }
+  .capture-flight:not(.reduced) {
+    animation: raven-flight 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .capture-flight.reduced {
+    animation: raven-fade 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes raven-flight {
+    0% {
+      transform: translate(calc(-50% - 100vw), -50%);
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    31.6% {
+      transform: translate(-50%, -50%);
+    }
+    84.2% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes raven-fade {
+    0% {
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    84.2% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
 </style>
 
 <div id="card">
@@ -641,6 +697,38 @@
     field.contentEditable = on ? "false" : "true";
   }
 
+  /// CAP2.2 pivot: fly the raven across the overlay once, over whatever app the person
+  /// captured from, and resolve when it lands (or a safety timer fires). A fresh img is
+  /// mounted each time so the CSS animation restarts; it is removed on end so nothing
+  /// persists into the next summon. Reduced motion surfaces a fade instead of the fly.
+  function overlayFlight() {
+    return new Promise((resolve) => {
+      const old = document.getElementById("flightBird");
+      if (old) old.remove();
+      const bird = document.createElement("img");
+      bird.id = "flightBird";
+      bird.className =
+        "capture-flight" +
+        (window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? " reduced"
+          : "");
+      bird.src = "/static/capture-bird.png";
+      bird.alt = "";
+      bird.setAttribute("aria-hidden", "true");
+      document.body.appendChild(bird);
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        bird.remove();
+        resolve();
+      };
+      bird.addEventListener("animationend", finish);
+      // Safety: a hidden/paused tab never fires animationend, so never hang the dismiss.
+      setTimeout(finish, 2100);
+    });
+  }
+
   /// Put the overlay away and hand focus back to wherever the person was. Rust owns
   /// this because hiding the window is not enough on macOS: showing it activated
   /// Enqueue at the process level, so the app has to be hidden too or the person
@@ -732,15 +820,18 @@
       seedField();
       paint();
       busy(false);
-      // The card leaves first, then the overlay dismisses and the main window plays
-      // the full-screen flight (CAP.3).
+      // CAP2.2 pivot: a brief "kept" beat, then the raven flies INSIDE this overlay
+      // (which already sits over the app the person captured from) before the overlay
+      // dismisses. Reduced motion still fades. See the .capture-flight CSS above.
       card.classList.add("kept");
-      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!reduced) {
         await new Promise((r) => setTimeout(r, 160));
       }
-      // The capture completed: dismiss the overlay and let the main window play the
-      // full-screen flight (CAP.3). No bird is mounted here, so none can persist.
-      if (invoke) invoke("capture_done").catch(() => {});
+      card.classList.add("flying");
+      await overlayFlight();
+      if (invoke) invoke("capture_dismiss").catch(() => {});
+      card.classList.remove("flying", "kept");
     } catch (err) {
       // The text stays. Losing what someone just typed because a background
       // process is down is the one failure this whole surface exists to avoid.
@@ -811,7 +902,11 @@
       );
       busy(false);
       await keptBeat();
-      if (invoke) invoke("capture_done").catch(() => {});
+      // CAP2.2 pivot: fly the raven inside the overlay (over the app), then dismiss.
+      card.classList.add("flying");
+      await overlayFlight();
+      if (invoke) invoke("capture_dismiss").catch(() => {});
+      card.classList.remove("flying");
     } catch (err) {
       say("Not kept: " + err.message, true);
     } finally {
@@ -866,7 +961,11 @@
       await keepFiles(files);
       busy(false);
       await keptBeat();
-      if (invoke) invoke("capture_done").catch(() => {});
+      // CAP2.2 pivot: fly the raven inside the overlay (over the app), then dismiss.
+      card.classList.add("flying");
+      await overlayFlight();
+      if (invoke) invoke("capture_dismiss").catch(() => {});
+      card.classList.remove("flying");
     } catch (err) {
       say("Not kept: " + err.message, true);
     } finally {

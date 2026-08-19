@@ -155,18 +155,6 @@ function captureFlight() {
 	});
 }
 
-// CAP.3: the capture overlay signals a completed capture through the shell
-// (capture_done -> "capture-flight" event), so the raven flies full-screen here in
-// the main window rather than as a tiny sweep in the 600x264 overlay. A no-op when
-// there is no Tauri (plain-browser view).
-if (
-	window.__TAURI__ &&
-	window.__TAURI__.event &&
-	window.__TAURI__.event.listen
-) {
-	window.__TAURI__.event.listen("capture-flight", () => captureFlight());
-}
-
 // DI.1: settings is one tabbed surface, not four stacked full pages. Each tab
 // renders only the form content below the shared tab bar, and switching tabs
 // swaps that one pane - no teardown, no back button, no loading flash.

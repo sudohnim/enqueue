@@ -1379,7 +1379,7 @@ mod desktop {
     use std::time::{Duration, Instant};
 
     use base64::Engine as Base64Engine;
-    use tauri::{AppHandle, Emitter, Manager};
+    use tauri::{AppHandle, Manager};
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
     const ENGINE: &str = "http://127.0.0.1:8787";
@@ -1690,16 +1690,6 @@ mod desktop {
         appkit::hide_app();
     }
 
-    /// A capture completed successfully: put the overlay away (same as dismiss) and
-    /// tell the main window to play the full-screen flight (CAP.3). The overlay used
-    /// to fly its own tiny bird in the 600x264 window; now the raven flies across the
-    /// whole main window instead.
-    #[tauri::command]
-    fn capture_done(app: AppHandle) {
-        capture_dismiss(app.clone());
-        let _ = app.emit("capture-flight", ());
-    }
-
     /// Reposition the overlay by its title bar. Called on mousedown from the page.
     #[tauri::command]
     fn capture_drag(app: AppHandle) -> Result<(), String> {
@@ -1897,7 +1887,6 @@ mod desktop {
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             .invoke_handler(tauri::generate_handler![
                 capture_dismiss,
-                capture_done,
                 capture_drag,
                 hotkey_changed,
                 open_external,

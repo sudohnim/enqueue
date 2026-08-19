@@ -30,4 +30,4 @@ These items are code-complete and committed; each awaits one human pass on a rea
 - **MOBUI1.1** - the pill menu shows only Settings; Settings > Trash lists trashed notes with a working Restore.
 - **MOBUI1.2** - the library renders every card (including image thumbnails) with zero console exceptions (insertBefore fix); exercised during the MOBRENDER.1 render check, still worth one clean CDP console pass.
 - **FULL.1** - on a fresh relay + fresh phone, the phone receives the FULL desktop library after linking, not just post-link captures.
-- **CAP2.2** - the capture-flight visual on the macOS desktop (over another app, no focus steal, click-through, auto-close) - see the PLAN.md task for the pivot.
+- **CAP2.2** - PIVOT IMPLEMENTED 2026-08-19 (raven flies inside the capture overlay over the app, then dismisses; the dead flight-overlay-window path was removed; cargo check + bin/verify green). Human macOS visual left: global-hotkey capture from another app (e.g. Chrome) shows the raven over that app, focus stays in the other app, overlay dismisses with no stuck window.

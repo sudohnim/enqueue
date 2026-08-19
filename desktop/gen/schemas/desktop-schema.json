@@ -351,12 +351,6 @@
           "markdownDescription": "Enables the capture_dismiss command without any pre-configured scope."
         },
         {
-          "description": "Enables the capture_done command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-capture-done",
-          "markdownDescription": "Enables the capture_done command without any pre-configured scope."
-        },
-        {
           "description": "Enables the capture_drag command without any pre-configured scope.",
           "type": "string",
           "const": "allow-capture-drag",
@@ -367,12 +361,6 @@
           "type": "string",
           "const": "allow-desktop-link-code",
           "markdownDescription": "Enables the desktop_link_code command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the flight_done command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-flight-done",
-          "markdownDescription": "Enables the flight_done command without any pre-configured scope."
         },
         {
           "description": "Enables the hotkey_changed command without any pre-configured scope.",
@@ -585,12 +573,6 @@
           "markdownDescription": "Denies the capture_dismiss command without any pre-configured scope."
         },
         {
-          "description": "Denies the capture_done command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-capture-done",
-          "markdownDescription": "Denies the capture_done command without any pre-configured scope."
-        },
-        {
           "description": "Denies the capture_drag command without any pre-configured scope.",
           "type": "string",
           "const": "deny-capture-drag",
@@ -601,12 +583,6 @@
           "type": "string",
           "const": "deny-desktop-link-code",
           "markdownDescription": "Denies the desktop_link_code command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the flight_done command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-flight-done",
-          "markdownDescription": "Denies the flight_done command without any pre-configured scope."
         },
         {
           "description": "Denies the hotkey_changed command without any pre-configured scope.",

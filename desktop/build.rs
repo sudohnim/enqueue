@@ -12,9 +12,7 @@ fn main() {
         tauri_build::Attributes::new().app_manifest(
             tauri_build::AppManifest::new().commands(&[
                 "capture_dismiss",
-                "capture_done",
                 "capture_drag",
-                "flight_done",
                 "hotkey_changed",
                 "mobile_blob",
                 "mobile_capture",

@@ -89,12 +89,6 @@ def capture_window() -> HTMLResponse:
     return HTMLResponse(_bust(html), headers=_NO_CACHE)
 
 
-@router.get("/flight", response_class=HTMLResponse)
-def flight_window() -> HTMLResponse:
-    html = resources.files("enqueue").joinpath("static/flight.html").read_text(encoding="utf-8")
-    return HTMLResponse(_bust(html), headers=_NO_CACHE)
-
-
 @router.get("/health")
 def health() -> dict:
     return {

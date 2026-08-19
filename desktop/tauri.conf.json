@@ -26,26 +26,9 @@
           },
           "permissions": [
             "allow-capture-dismiss",
-            "allow-capture-done",
             "allow-capture-drag",
             "core:event:allow-listen",
             "core:event:allow-unlisten"
-          ]
-        },
-        {
-          "identifier": "flight-overlay",
-          "description": "Lets the capture-success raven flight overlay (CAP2.2) ask the shell to retire itself by invoking flight_done.",
-          "windows": [
-            "flight"
-          ],
-          "remote": {
-            "urls": [
-              "http://127.0.0.1:8787/*",
-              "http://localhost:8787/*"
-            ]
-          },
-          "permissions": [
-            "allow-flight-done"
           ]
         },
         {
