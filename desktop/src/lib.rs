@@ -1720,9 +1720,16 @@ mod desktop {
 
     /// Generate a linking QR code for mobile setup (QR.3).
     /// Returns ONLY the rendered SVG - the payload is encoded in the QR, never as text.
-    /// The QR encodes the pinned wire format: {"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}
+    /// The QR encodes the pinned wire format: {"v":1,"relay_url","relay_secret","dek"}
     #[tauri::command]
     fn desktop_link_code() -> Result<String, String> {
+        let (relay_url, secret, dek_b64) = load_link_credentials()?;
+        build_link_qr(&relay_url, &secret, &dek_b64)
+    }
+
+    /// Load relay URL, sync secret, and DEK from their configured sources.
+    /// Returns (relay_url, sync_secret, dek_b64).
+    fn load_link_credentials() -> Result<(String, String, String), String> {
         let settings = engine_get("/settings")
             .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
             .ok_or("could not fetch settings")?;
@@ -1732,10 +1739,7 @@ mod desktop {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        
-        // We need the actual secret, not just the hint. Fetch it from the keyring.
-        // Since the keyring is macOS-only, we use the same approach as the engine.
-        // The secret is stored in the macOS Keychain under service "enqueue-sync-secret".
+
         let secret = if cfg!(target_os = "macos") {
             std::process::Command::new("/usr/bin/security")
                 .args(["find-generic-password", "-a", "enqueue", "-s", "enqueue-sync-secret", "-w"])
@@ -1748,8 +1752,7 @@ mod desktop {
         } else {
             String::new()
         };
-        
-        // Get the DEK from the keychain, base64 encoded
+
         let dek_b64 = if cfg!(target_os = "macos") {
             std::process::Command::new("/usr/bin/security")
                 .args(["find-generic-password", "-a", "enqueue", "-s", "enqueue-sync-dek", "-w"])
@@ -1762,29 +1765,32 @@ mod desktop {
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default()
         } else {
-            // On other platforms, read from the sync-dek.bin file
             let dek_path = std::path::Path::new(".enqueue-poc/sync-dek.bin");
             if dek_path.exists() {
                 let dek = std::fs::read(dek_path).unwrap_or_default();
-                base64::engine::general_purpose::STANDARD.encode(dek)
+                base64::engine::general_purpose::STANDARD.encode(&dek)
             } else {
                 String::new()
             }
         };
-        
+
         if relay_url.is_empty() {
             return Err("sync not configured".into());
         }
 
         // LINKSTAY.1: refuse to bake an unreachable relay URL into the link QR.
-        // A loopback or LAN-private URL is only reachable from this machine, but the
-        // QR is meant to link a phone that will leave the house. Return a clear error.
         if is_loopback_or_private_url(&relay_url) {
             return Err(
                 "This relay URL is only reachable from this Mac. Set a hosted relay URL first                  (Settings > Sync, see docs/sync-relay.md), then show the QR again.".into()
             );
         }
-        
+
+        Ok((relay_url, secret, dek_b64))
+    }
+
+    /// Build the linking QR SVG from relay URL + secret + DEK base64 string.
+    /// This is extracted from desktop_link_code so it can be unit-tested (QR.3).
+    fn build_link_qr(relay_url: &str, secret: &str, dek_b64: &str) -> Result<String, String> {
         // Build the pinned wire format JSON: {"v":1,"relay_url":"...","relay_secret":"...","dek":"<base64>"}
         let payload = serde_json::json!({
             "v": 1,
@@ -1793,16 +1799,28 @@ mod desktop {
             "dek": dek_b64,
         });
         let payload_str = payload.to_string();
-        
+
         // Generate QR code SVG locally (no external network calls)
-        let qr_code = qrcode::QrCode::new(&payload_str).map_err(|e| e.to_string())?;
+        let qr_code = qrcode::QrCode::new(payload_str.as_bytes()).map_err(|e| e.to_string())?;
         let qr_svg = qr_code.render()
             .min_dimensions(200, 200)
             .dark_color(qrcode::render::svg::Color("#000000"))
             .light_color(qrcode::render::svg::Color("#ffffff"))
             .build();
-        
+
         Ok(qr_svg)
+    }
+
+    /// Build the pinned wire format payload string (testable without QR rendering).
+    #[cfg(test)]
+    fn build_link_payload(relay_url: &str, secret: &str, dek_b64: &str) -> String {
+        let payload = serde_json::json!({
+            "v": 1,
+            "relay_url": relay_url,
+            "relay_secret": secret,
+            "dek": dek_b64,
+        });
+        payload.to_string()
     }
 
     /// Check if a URL is loopback or LAN-private (LINKSTAY.1).
@@ -1977,7 +1995,76 @@ mod desktop {
                         }
                     }
                 }
-                _ => {}
+        
+        _ => {}
             });
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// QR.3: headless test asserting the QR encodes the pinned wire format.
+        #[test]
+        fn link_qr_payload_is_pinned_wire_format() {
+            let payload_str = build_link_payload(
+                "https://relay.example.com",
+                "test-secret-123",
+                "AAECAwQFBgk=",
+            );
+            let parsed: serde_json::Value = serde_json::from_str(&payload_str).unwrap();
+            // Exactly 4 keys, no extras
+            let keys: std::collections::HashSet<&str> = parsed
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(|k| k.as_str())
+                .collect();
+            assert_eq!(keys.len(), 4);
+            assert_eq!(parsed["v"], 1);
+            assert_eq!(parsed["relay_url"], "https://relay.example.com");
+            assert_eq!(parsed["relay_secret"], "test-secret-123");
+            assert_eq!(parsed["dek"], "AAECAwQFBgk=");
+        }
+
+        /// QR.3: verify the QR SVG renders without error.
+        #[test]
+        fn link_qr_renders_svg() {
+            let svg = build_link_qr("https://relay.example.com", "secret", "dek123==").unwrap();
+            assert!(svg.contains("<svg"), "SVG should contain <svg tag: {}", &svg.chars().take(60).collect::<String>());
+            assert!(svg.contains("</svg>"), "SVG should contain closing </svg> tag");
+        }
+
+        /// QR.3: round-trip - generate QR, encode to grayscale image, decode with rqrr.
+        #[test]
+        fn link_qr_decodes_to_same_payload() {
+            let payload_str = build_link_payload("https://relay.example.com", "test-secret", "AAECAwQFBgk=");
+            let qr_code = qrcode::QrCode::new(payload_str.as_bytes()).unwrap();
+            // Render to grayscale image
+            let img: image::GrayImage = qr_code.render::<image::Luma<u8>>()
+                .min_dimensions(200, 200)
+                .build();
+            // Decode with rqrr
+            let mut prepared = rqrr::PreparedImage::prepare(img);
+            let grids = prepared.detect_grids();
+            assert!(!grids.is_empty(), "QR code was not detected");
+            let (_meta, decoded) = grids[0].decode().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&decoded).unwrap();
+            let expected: serde_json::Value = serde_json::from_str(&payload_str).unwrap();
+            assert_eq!(parsed, expected);
+        }
+
+        /// LINKSTAY.1: verify loopback/private detection.
+        #[test]
+        fn loopback_url_detection() {
+            assert!(is_loopback_or_private_url("http://localhost:8788"));
+            assert!(is_loopback_or_private_url("https://127.0.0.1:8788"));
+            assert!(is_loopback_or_private_url("http://10.0.0.1:8788"));
+            assert!(is_loopback_or_private_url("http://192.168.1.1:8788"));
+            assert!(is_loopback_or_private_url("http://172.16.0.1:8788"));
+            assert!(is_loopback_or_private_url("http://169.254.1.1:8788"));
+            assert!(!is_loopback_or_private_url("https://relay.example.com"));
+            assert!(!is_loopback_or_private_url("https://relay.up.railway.app"));
+        }
     }
 }

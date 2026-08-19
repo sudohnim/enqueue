@@ -53,6 +53,10 @@ ndk-context = { version = "0.1", default-features = false }
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 
+[dev-dependencies]
+rqrr = "0.9"
+image = "0.25"
+
 [profile.release]
 opt-level = "s"
 lto = true
