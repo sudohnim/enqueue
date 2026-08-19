@@ -958,6 +958,19 @@
     <img src="loading.png" alt="" />
     <span>Syncing&#8230;</span>
   </div>
+  <div
+    id="offline_banner"
+    hidden
+    style="position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px 16px; font-size: 12px; color: var(--text-subtle); z-index: 10;"
+  >
+    <span id="offline_banner_text">Offline - showing cached library</span>
+    <button
+      id="offline_relink"
+      style="float: right; background: var(--accent); color: var(--bg); border: none; border-radius: var(--r-sm); padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;"
+    >
+      Re-link
+    </button>
+  </div>
   <div id="shelves"></div>
   <div class="empty" id="empty" hidden>Nothing synced yet.</div>
 </section>
@@ -1225,7 +1238,7 @@
             border-radius: var(--r-md);
           "
         >
-          Link With QR
+          Re-link With QR
         </button>
       </div>
     </div>
@@ -2455,6 +2468,9 @@
         btn.textContent = "Syncing\u2026";
       }
       document.getElementById("loading").hidden = false;
+      // Hide any stale offline banner while syncing
+      const banner = document.getElementById("offline_banner");
+      if (banner) banner.hidden = true;
     });
     __TAURI__.event.listen("sync-done", () => {
       document.getElementById("loading").hidden = true;
@@ -2463,6 +2479,9 @@
         btn.disabled = false;
         btn.textContent = "Sync Now";
       }
+      // Hide offline banner on successful sync
+      const banner = document.getElementById("offline_banner");
+      if (banner) banner.hidden = true;
       if (!document.getElementById("library").hidden) renderLibrary();
       invoke("mobile_outbox_push").catch(() => {});
     });
@@ -2474,7 +2493,19 @@
         btn.textContent = "Sync Now";
       }
       const payload = e && e.payload ? e.payload : {};
-      alert("Sync failed: " + (payload.error || "unknown error"));
+      const err = payload.error || "unknown error";
+      // LINKSTAY.2(b): never alert on sync error - show banner + log instead
+      console.log("sync-error:", err);
+      const banner = document.getElementById("offline_banner");
+      const bannerText = document.getElementById("offline_banner_text");
+      if (banner && bannerText) {
+        bannerText.textContent = "Sync failed - showing cached library";
+        banner.hidden = false;
+        // Hide after 3 seconds of inactivity
+        window.__offline_banner_timeout = setTimeout(() => {
+          if (banner) banner.hidden = true;
+        }, 3000);
+      }
     });
   }
 
@@ -2671,6 +2702,13 @@
   // QR.4b: the desktop shows a QR (Settings > Sync > Show linking QR);
   // this phone scans it from the setup screen. No paste-code or password on mobile.
   document.getElementById("settings_pair").addEventListener("click", () => {
+    show("setup");
+    startCamera();
+  });
+  // LINKSTAY.2(c): re-link action from the offline banner
+  document.getElementById("offline_relink").addEventListener("click", () => {
+    const banner = document.getElementById("offline_banner");
+    if (banner) banner.hidden = true;
     show("setup");
     startCamera();
   });
