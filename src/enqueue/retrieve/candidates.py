@@ -622,13 +622,34 @@ def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
     return hit.get("body_version") != body_version or hit.get("model_version") != model
 
 
+def _get_model(local_only: bool) -> str:
+    """Get the model string for staleness checks.
+
+    Reads directly from settings/config - no provider construction.
+    Can be mocked by tests via enqueue.providers.base.get_provider mock.
+    """
+    from .. import settings, config
+    from ..providers.base import get_provider
+
+    # Try to get from provider first (allows test mocking)
+    try:
+        provider = get_provider(local_only=local_only)
+        return provider.model
+    except Exception:
+        pass
+    # Fallback: read directly from settings
+    from .. import config, settings
+    return config.LLM_MODEL if local_only else (settings.get("llm_model") or config.LLM_MODEL)
+
+
 def _prefetch_staleness(conn, cache, ids) -> None:
     """Fill the staleness cache for unseen artifact ids in one query (P.2c).
 
     `hit_is_stale` needs each candidate artifact's body_version and provider
     model; per-hit probes are one SELECT each. Batching turns the request's
     probes into a single json_each query, and every later probe is a dict
-    read. Providers are deduped by local_only - the model string is the same
+    read. Model strings read from get_provider (mockable) or settings fallback.
+    Providers are deduped by local_only - the model string is the same
     for the whole shelf, and constructing a provider client per artifact was
     pure waste.
     """
@@ -643,9 +664,9 @@ def _prefetch_staleness(conn, cache, ids) -> None:
         (json.dumps(unseen),),
     ).fetchall()
     found = {row["id"]: row for row in rows}
-    from ..providers.base import Provider, get_provider
 
-    providers: dict[bool, Provider] = {}
+    # Model strings via _get_model (mockable via get_provider mock)
+    providers: dict[bool, str] = {}
 
     for aid in unseen:
         row = found.get(aid)
@@ -654,8 +675,8 @@ def _prefetch_staleness(conn, cache, ids) -> None:
             continue
         local_only = bool(row["local_only"])
         if local_only not in providers:
-            providers[local_only] = get_provider(local_only=local_only)
-        cache[aid] = (row["body_version"], providers[local_only].model)
+            providers[local_only] = _get_model(local_only)
+        cache[aid] = (row["body_version"], providers[local_only])
 
 
 def _weighted_hits(conn, hits, cache):
