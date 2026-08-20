@@ -375,7 +375,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Verify headlessly per the VERIFICATION PROTOCOL (CDP: listen for the events, assert the indicator element toggles).
   Done when: a sync shows "Syncing..." then clears to the library on completion, on a real device/emulator.
 
-- [ ] **MOBILEUI.3 [AGENT]** Notes should render as SQUARES (like the desktop app), not horizontal bars.
+- [~] **MOBILEUI.3 [AGENT]** Notes render as SQUARES like desktop app. Changed .rows to CSS grid, .row to .card with flex-column and min-height: 140px. renderRows now uses div.card. bin/verify green.
   The mobile library currently lists notes as full-width horizontal rows; change them to square cards matching the desktop app's card idiom.
   The desktop card styles to mirror live in `src/enqueue/static/css/home.css` (card + `.pivotcard` rules, ~line 481 on) - match that feel, do not invent a new card language.
   Use the `impeccable` skill's `shape` flow to work out the card layout/grid before building.
