@@ -396,7 +396,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Caveat to handle: values only refresh on a fresh QR link - if the desktop AI config changed after linking, the phone shows the linked snapshot; display a "as of linking" label rather than building a live sync.
   Done when: mobile Settings shows a read-only AI section reflecting the desktop's config as of the last link, with no edit affordances; verified on the emulator via CDP + screencap.
 
-- [ ] **MOBILEUI.6 [AGENT]** Bottom pill: exactly THREE icons - plus, eye, gear.
+- [~] **MOBILEUI.6 [AGENT]** Bottom pill: exactly THREE icons (plus, eye, gear). Removed search button, changed capture to plus/add. bin/verify green.
   Replace the current pill (capture / `pill_search` / eye / menu) with three actions: `+` (add artifact, opens MOBILEUI.7's menu), an eye (ask a question), a gear (settings).
   Fate of evicted items, pinned so there is no design decision left: SEARCH stays as the library screen's own search field (the `#search` input + `mobile_search` wiring stay - only the pill's search button goes); CAPTURE moves into the `+` menu (MOBILEUI.7); MENU's contents move to the gear/settings screen.
   Done when: the bottom pill shows only those three icons, each wired to its action, and looks clean (not the current weird layout).
