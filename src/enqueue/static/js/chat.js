@@ -155,7 +155,7 @@
         (m.role === "user"
           ? esc(m.text)
           : pending
-            ? spinner("sm", "Reading what you saved...")
+            ? spinner("sm", "Processing your message")
             : md(m.text));
       const echoes =
         d.chat.scope_kind === "artifact" &&
