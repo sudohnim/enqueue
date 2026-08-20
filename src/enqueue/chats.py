@@ -566,8 +566,13 @@ def _ask_model(
     # marker to the right kind of artifact. The artifact_id still rides in
     # context (offered_artifact_ids below) and in every cited[] the model writes
     # back; the header is for shape, the id is in the answer's metadata.
+    # CHATBUG.1: the model is asked to cite artifact ids, and the Answer validator
+    # rejects any cited id it was not offered. So the id MUST appear in the passage the
+    # model reads - otherwise it cites the only label it can see (the title) and the turn
+    # fails validation. Put the id in the header so `cited` can be a real, valid id.
     body = "\n\n".join(
-        f"[{p.get('kind', 'artifact')}] {p['title']}\n{_clip(p['text'])}" for p in found
+        f"[{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n{_clip(p['text'])}"
+        for p in found
     )
     return get_provider().complete(
         system=CHAT_ANSWER,

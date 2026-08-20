@@ -970,9 +970,10 @@ class TestPassageShapeForTheAnswerModel:
             ],
         )
 
-        assert "[image] chopper.png" in captured.last_user, (
+        assert "[image] (id: aid-image) chopper.png" in captured.last_user, (
             "the kind prefix must ride with the passage header so the model knows "
-            "the artifact kind (L.1); got:\n" + captured.last_user
+            "the artifact kind (L.1), and the artifact id must be on screen so the "
+            "model can cite it (CHATBUG.1); got:\n" + captured.last_user
         )
 
     def test_annotation_sourced_chunk_text_is_tagged_as_a_note(self, store):

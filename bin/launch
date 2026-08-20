@@ -3,6 +3,7 @@
 #
 #   bin/launch desktop          rebuild the shell, restart engine + macOS window, front
 #   bin/launch mobile           build + install + run on a PLUGGED-IN Android phone
+#   bin/launch emulator         build + install + run on a headless Android emulator (AVD)
 #
 # Desktop always rebuilds first (cargo is incremental, so it is near-instant when
 # nothing changed) - the window you see is always the current code.
@@ -11,13 +12,19 @@
 # window closes, so they come up together or not at all. Mobile is a separate target -
 # it needs a real phone on USB (debugging on); an emulator is deliberately NOT accepted
 # here, because "bin/launch mobile" means "put it on my phone."
+#
+# The emulator path is for headless device verification (CDP, uiautomator, screencap,
+# run-as) without a physical phone. The emulator reaches the LOCAL relay at
+# 10.0.2.2:8788 (the host's loopback); a hosted relay (Railway) is normal internet.
+# The debug apk now loads the embedded frontend (devUrl removed in RELEASE.1), so the
+# debug build works on the emulator without a dev server.
 
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  echo "usage: bin/launch <desktop|mobile>" >&2
+  echo "usage: bin/launch <desktop|mobile|emulator>" >&2
   exit 2
 }
 
@@ -155,11 +162,81 @@ launch_mobile() {
   exec cargo tauri android dev
 }
 
+launch_emulator() {
+  # Android toolchain env - same as launch_mobile
+  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+  if [[ -z "${NDK_HOME:-}" ]]; then
+    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
+  fi
+  export NDK_HOME
+  export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+
+  local ADB="$ANDROID_HOME/platform-tools/adb"
+  local EMU="$ANDROID_HOME/emulator/emulator"
+  if [[ ! -x "$ADB" ]]; then
+    echo "adb not found at $ADB. Is the Android SDK installed?" >&2
+    exit 1
+  fi
+  if [[ ! -x "$EMU" ]]; then
+    echo "emulator not found at $EMU. Install 'Android Emulator' in SDK Manager." >&2
+    exit 1
+  fi
+
+  # AVD name - default to 'enqueue-avd', allow override via env
+  local AVD_NAME="${ENQUEUE_AVD:-enqueue}"
+
+  # Check if AVD exists, create if not (requires human to run once interactively)
+  if ! "$EMU" -list-avds | grep -q "^${AVD_NAME}$"; then
+    echo "AVD '$AVD_NAME' not found." >&2
+    echo "Create it once interactively:" >&2
+    echo "  \$ sdkmanager 'system-images;android-36;google_apis;arm64-v8a'" >&2
+    echo "  \$ avdmanager create avd -n ${AVD_NAME} -k 'system-images;android-36;google_apis;arm64-v8a' -d pixel_7" >&2
+    echo "Or set ENQUEUE_AVD to an existing AVD name." >&2
+    exit 1
+  fi
+
+  js_gate "mobile"
+
+  echo "Starting emulator '$AVD_NAME' headless..."
+  # Boot headless, no audio, no snapshot, wait for boot
+  "$EMU" -avd "$AVD_NAME" -no-window -no-audio -no-snapshot-load -no-snapshot-save -gpu swiftshader_indirect &
+  local EMU_PID=$!
+
+  # Wait for device to appear and boot to complete
+  echo "Waiting for emulator to boot..."
+  local serial=""
+  for _ in $(seq 1 60); do
+    serial="$("$ADB" devices 2>/dev/null | awk '/emulator-/{print $1; exit}')"
+    [[ -n "$serial" ]] && break
+    sleep 2
+  done
+  [[ -n "$serial" ]] || { echo "emulator never appeared" >&2; kill $EMU_PID 2>/dev/null; exit 1; }
+
+  # Wait for boot_completed
+  for _ in $(seq 1 120); do
+    if "$ADB" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | grep -q "1"; then
+      break
+    fi
+    sleep 1
+  done
+  "$ADB" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | grep -q "1" || { echo "emulator boot timeout" >&2; kill $EMU_PID 2>/dev/null; exit 1; }
+
+  echo "Emulator booted: $serial"
+  export ANDROID_SERIAL="$serial"
+
+  # Build and install debug apk (cargo tauri android dev builds + installs + launches)
+  # Use the same approach as launch_mobile but pinned to emulator serial
+  cd "$REPO/desktop"
+  exec cargo tauri android dev
+}
+
 [[ $# -ge 1 ]] || usage
 platform="$1"
 shift
 case "$platform" in
   desktop) launch_desktop "$@" ;;
   mobile)  launch_mobile "$@" ;;
+  emulator) launch_emulator "$@" ;;
   *)       usage ;;
 esac

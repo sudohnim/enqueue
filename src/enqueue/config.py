@@ -137,15 +137,18 @@ def llm_api_key() -> str:
 # import and will not see a key stored later.
 LLM_API_KEY = os.getenv("ENQ_LLM_API_KEY", "ollama")
 
-# Retries *after* the first attempt, so 1 means two tries. Kept low on purpose: a
-# failed judgment is a dropped candidate rather than a crisis, and on a placeholder
-# model most of them fail, so each extra retry buys almost nothing and costs a full
-# generation. Set to 0 for the fastest, worst run.
-_MODEL_RETRIES = os.getenv("ENQ_MODEL_RETRIES", "1")
+# Total attempts handed to instructor's `max_retries` (NOT retries-after-first - that
+# was the old, wrong reading: `max_retries=1` gives ONE attempt and no reprompt, which
+# defeats instructor's whole point). Reprompting only fires when validation FAILS, so a
+# good first response never costs extra; the retries only spend tokens on the outputs we
+# would otherwise drop. A thinking model (e.g. deepseek) often answers in prose on the
+# first try and needs a reprompt to emit the schema (CHATBUG.1), so the default is 3.
+# Set ENQ_MODEL_RETRIES=1 for the fastest, worst run (one shot, no reprompt).
+_MODEL_RETRIES = os.getenv("ENQ_MODEL_RETRIES", "3")
 try:
     MODEL_RETRIES = int(_MODEL_RETRIES)
 except ValueError:
-    MODEL_RETRIES = 1
+    MODEL_RETRIES = 3
 
 # The vector store backend. sqlite-vec is the default: the index lives inside
 # the SQLite file (one encrypted file later), search is exact, and there is no

@@ -11,9 +11,12 @@ capture.html still carries its JS inline: every <script> block is wrapped in
 { } so const/let scoping cannot collide across blocks, then run through
 node --check.
 
-The Android compile check runs `cargo check --lib --target aarch64-linux-android`
-in the desktop/ directory with the NDK environment. It is skipped with a clear
-message when the Android toolchain/NDK is absent (so non-mobile machines are not
+The Android compile check runs the full `cargo tauri android build --debug` when a
+changed file (staged, unstaged, or untracked) could break the apk in a way `cargo
+check` never parses - Kotlin/gradle/manifest/resource files under desktop/gen/android,
+or the build config (desktop/tauri.conf.json, build.rs, Cargo.toml). Otherwise it runs
+the faster `cargo check --lib --target aarch64-linux-android`. It is skipped with a
+clear message when the Android toolchain/NDK is absent (so non-mobile machines are not
 blocked). A green bin/verify is NOT proof the app runs - the desktop window and
 a real device are the only proof (per AGENTS.md "reproduce in a real setting"
 rule).
@@ -180,21 +183,42 @@ def check_android_compile():
             print(f"{SRC}: Android compile check SKIPPED - aarch64-linux-android-clang not found in NDK")
             return True
     
-    # Check if any Android Kotlin or Rust source files are staged
-    # If so, run the full cargo tauri android build to catch Kotlin errors
-    staged_files = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"],
+    # Decide whether to run the full `cargo tauri android build` (catches Kotlin/gradle/
+    # config breakage that `cargo check --lib` never parses) or the fast Rust-only check.
+    # Look at BOTH staged and unstaged/untracked changes vs HEAD: this is run standalone,
+    # not only as a staged pre-commit step, so an unstaged broken gradle/conf must still
+    # trip the full build (`git status --porcelain` covers staged + unstaged + untracked).
+    changed = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=HERE,
         capture_output=True,
         text=True,
         timeout=10
-    ).stdout.strip().splitlines()
-    
-    android_files_staged = any(
-        f.startswith("desktop/gen/android/") and (f.endswith(".kt") or f.endswith(".rs"))
-        for f in staged_files
-    )
-    
+    ).stdout.splitlines()
+    changed_files = []
+    for line in changed:
+        if not line.strip():
+            continue
+        path = line[3:].strip()
+        if " -> " in path:  # renames render as "old -> new"
+            path = path.split(" -> ", 1)[1].strip()
+        changed_files.append(path)
+
+    def _needs_full_android_build(f):
+        # Kotlin, gradle scripts, manifests, and android resources are invisible to
+        # `cargo check` and only fail in the full build. Note `.kts` (not just `.kt`).
+        if f.startswith("desktop/gen/android/") and f.endswith(
+            (".kt", ".kts", ".gradle", ".xml", ".properties", ".pro")
+        ):
+            return True
+        # Build config that shapes the apk itself (devUrl, bundle targets, signing,
+        # the registered command list) - a bad value here breaks the build, not the check.
+        if f in ("desktop/tauri.conf.json", "desktop/build.rs", "desktop/Cargo.toml"):
+            return True
+        return False
+
+    android_files_staged = any(_needs_full_android_build(f) for f in changed_files)
+
     print(f"=== {SRC}: Android compile check ===")
     env = os.environ.copy()
     env["ANDROID_HOME"] = android_home
@@ -203,7 +227,7 @@ def check_android_compile():
     env["PATH"] = f"{toolchain_bin}:{android_home}/platform-tools:{env.get('PATH', '')}"
     
     if android_files_staged:
-        print(f"{SRC}: Android source files staged, running full cargo tauri android build")
+        print(f"{SRC}: Android/build files changed, running full cargo tauri android build")
         result = subprocess.run(
             ["cargo", "tauri", "android", "build", "--debug"],
             cwd=desktop_dir,

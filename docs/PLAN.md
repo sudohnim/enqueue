@@ -15,7 +15,7 @@ in docs/PROGRESS.md, not here.
 
 ## Phase CAP2 - quick-capture UX fixes
 
-- [~] **CAP2.2 [AGENT]** PIVOT IMPLEMENTED 2026-08-19, pending human macOS-display visual verify. The earlier "steps 1-4" flight-overlay-window work had been LOST (the lib.rs half was never committed; only flight.html + the /flight route + the flight-overlay capability + flight_done.toml survived, all dangling). Rather than resurrect the dead overlay-window path, the chosen PIVOT is built: the raven now flies INSIDE the capture overlay, which already sits over the app the person captured from, then the overlay dismisses. `capture.html` plays a full-bleed `.capture-flight` raven (reused ANIM.4 keyframes) on every successful keep/paste/drop, hides the card during the flight, and calls `capture_dismiss` when it lands (reduced motion fades); no window resize, no always-on-top hacks. Removed the dead path entirely: `capture_done` (lib.rs + build.rs + the `allow-capture-done` capability + `capture_done.toml`), `flight_done`, `flight.html`, the `/flight` route, the `flight-overlay` capability + `flight_done.toml`, the main-window `capture-flight` listener in util.js, and flight.html from bin/verify's FILES. `cargo check` clean (0 warnings) and full `bin/verify` green (incl. Android build). REMAINING: the human macOS visual - capture via the global hotkey from another app (e.g. Chrome) and confirm the raven shows over that app, focus stays in the other app, and the overlay dismisses cleanly with no stuck window. The obsolete flight-overlay recipe below is kept only for history; do NOT rebuild it.
+- [x] **CAP2.2 [AGENT]** DONE - human-verified on macOS 2026-08-20 (raven plays over the focused app, then dismisses). The earlier "steps 1-4" flight-overlay-window work had been LOST (the lib.rs half was never committed; only flight.html + the /flight route + the flight-overlay capability + flight_done.toml survived, all dangling). Rather than resurrect the dead overlay-window path, the chosen PIVOT is built: the raven now flies INSIDE the capture overlay, which already sits over the app the person captured from, then the overlay dismisses. `capture.html` plays a full-bleed `.capture-flight` raven (reused ANIM.4 keyframes) on every successful keep/paste/drop, hides the card during the flight, and calls `capture_dismiss` when it lands (reduced motion fades); no window resize, no always-on-top hacks. Removed the dead path entirely: `capture_done` (lib.rs + build.rs + the `allow-capture-done` capability + `capture_done.toml`), `flight_done`, `flight.html`, the `/flight` route, the `flight-overlay` capability + `flight_done.toml`, the main-window `capture-flight` listener in util.js, and flight.html from bin/verify's FILES. `cargo check` clean (0 warnings) and full `bin/verify` green (incl. Android build). REMAINING: the human macOS visual - capture via the global hotkey from another app (e.g. Chrome) and confirm the raven shows over that app, focus stays in the other app, and the overlay dismisses cleanly with no stuck window. The obsolete flight-overlay recipe below is kept only for history; do NOT rebuild it.
   Original task text (flight-overlay approach, now superseded by the pivot above):
   The capture-success raven must play over whatever app is
   focused, not only inside Enqueue. Today `capture_done` (`desktop/src/lib.rs` ~line
@@ -301,6 +301,117 @@ emulator.
   VERIFY: on a machine with no phone plugged in, `bin/launch emulator` boots + installs + the
   app loads its UI (embedded frontend), and `mobile_sync` against Railway lands the library -
   all via adb, recorded in PROGRESS.md.
+
+## Phase DESKTOPUI - desktop settings + chat polish (queued 2026-08-19)
+
+- [ ] **DESKTOPUI.1 [AGENT]** Sync tab: show ONLY the QR code and the reset control.
+  In `src/enqueue/static/js/settings.js`, the configured Sync tab currently shows hand-edit relay/secret fields.
+  Remove exactly these blocks and their save wiring: the `s_sync_relay_url` label+input (~line 703) and its `sync_relay_url` PATCH (~line 871), and the `s_sync_secret` label+password-input (~line 823) plus the code that reads `s_sync_secret` (~line 853).
+  Keep untouched: the QR rendering path (`desktop_link_code`, ~line 951) and the reset-sync control.
+  The tab should present only the linking QR (the passwordless flow - config is not hand-entered any more) and the reset-sync control.
+  Done when: the Sync tab shows the QR and reset, nothing else; linking + reset still work; `bin/verify` green.
+
+- [ ] **DESKTOPUI.2 [AGENT]** Sync tab: QR and reset live in TWO SEPARATE boxes.
+  They are two different actions (link a device vs wipe the key), so give each its own bordered card/section rather than one combined block.
+  Depends on DESKTOPUI.1. Done when: the QR is in one box, the reset in a distinct box, visually separated.
+
+- [ ] **DESKTOPUI.3 [AGENT]** Chat loading copy: "Reading what you saved..." -> "Processing your message".
+  The string is at `src/enqueue/static/js/chat.js:158`, inside a `spinner("sm", ...)` call.
+  Change only the string; grep afterwards to confirm zero remaining occurrences.
+  Done when: asking a question shows "Processing your message" while it works; `bin/verify` green.
+
+- [ ] **DESKTOPUI.4 [AGENT]** Settings: "Rebuild concepts" must read as a real button + give live progress.
+  Current state (verified 2026-08-20): `src/enqueue/static/js/settings.js:385` already renders `<button class="btn tertiary" onclick="rebuildFacets()">Rebuild concepts</button>`, wired to `rebuildFacets()` (~line 396) which POSTs `/facets` with redo and writes status into `#facetRebuildState`.
+  So do NOT add a new control.
+  The remaining work: the `btn tertiary` styling makes it not read as a button, and the feedback is thin.
+  Restyle it to the primary/secondary button idiom so it is obviously clickable, and strengthen the in-progress/done feedback in `#facetRebuildState` (disable the button + show "Rebuilding..." while the POST runs, then a clear done/failure message).
+  Done when: the control is visually unmistakable as a button, clicking it runs the rebuild, and the state text goes in-progress -> done (or error) without a page reload; `bin/verify` green.
+
+- [ ] **DESKTOPUI.5 [AGENT]** AI settings: break the one giant blob into small per-section boxes.
+  The AI/"Connection" section is built in `src/enqueue/static/js/settings.js` ~lines 243-330: the backend select (`s_backend`, ~249), the model field (`llm_model`, ~280-291), the endpoint field (`llm_url`, ~304-308, shown only for `custom`), and the API-key block (~315-323).
+  Split these into small bordered boxes, one per logical group (backend, model, API key, URL), reusing the existing settings card/box CSS class used elsewhere on the page for consistency.
+  Use the `impeccable` skill (layout) for the grouping + spacing. Done when: each AI setting group is its own small box, no single giant blob; `bin/verify` green.
+
+- [ ] **DESKTOPUI.6 [AGENT]** Desktop "gear" icon looks like a SUN, not a gear.
+  Root cause pinned: `src/enqueue/static/js/icons.js:27` defines `gear:` as a circle plus eight straight rays (`M12 2v3 M12 19v3 M22 12h-3 ...`) - that is literally a sun glyph.
+  Replace its path data with a real gear outline; copy the gear SVG the mobile app uses (grep `src/enqueue/static/mobile.html` for the settings/gear icon in the pill) so the two surfaces match exactly.
+  Keep the same viewBox/stroke convention as the other entries in `icons.js`.
+  Done when: the desktop settings icon is a recognizable gear consistent with mobile; `bin/verify` green.
+
+- [~] **CHATBUG.1 [AGENT]** FIXED + verified end-to-end 2026-08-20 against the real backend (opencode-go `deepseek-v4-pro`). Two real bugs, both ruled out the red herrings first:
+  - The error card's "try a larger model" was WRONG - deepseek-v4-pro is large. And switching instructor mode is NOT the fix: tested against opencode-go, `Mode.TOOLS`/`TOOLS_STRICT`/`JSON_SCHEMA` are all REJECTED by the provider ("Thinking mode does not support tool_choice", "response_format unavailable") - `Mode.JSON`/`MD_JSON` are the only ones it accepts, so `Mode.JSON` stays.
+  - ROOT CAUSE 1 (the decisive one): `chats.py::_ask_model` formatted passages as `[kind] title` with NO artifact id, but CHAT_ANSWER tells the model "each passage has an id" and the `Answer` validator rejects any cited id it was not offered. The model cited the only label it could see (the title) -> "cited artifacts that were not provided" -> failed turn. FIX: put the id in the passage header (`[kind] (id: <id>) title`) so `cited` can be a real, valid id.
+  - ROOT CAUSE 2: `config.MODEL_RETRIES` defaulted to `1`, which instructor treats as ONE attempt with NO reprompt (the comment's "1 = two tries" was an off-by-one - `max_retries` is total attempts). A thinking model answers in prose on the first try and needs a reprompt to emit the schema. FIX: default `MODEL_RETRIES` to `3` (retries only fire on a validation failure, so the happy path costs nothing extra).
+  Files: `src/enqueue/chats.py` (id in passage header), `src/enqueue/config.py` (retries default + corrected comment), `tests/test_chats.py` (header assertion updated to require the id). `bin/verify` green. Verified: the exact failing call ("do i have anything on shoes") now returns grounded=True with a VALID cited id and a real answer. NOTE: the running desktop engine must be RESTARTED (`bin/launch desktop`) to pick up the fix.
+  Prior scoping notes:
+  Reported 2026-08-19 (screenshot): asking "do i have anything on shoes" with backend `deepseek-v4-pro` returns "That answer could not be completed. deepseek-v4-pro answered, but not in the shape this asked for. A smaller model often cannot hold a format; try a larger one."
+  This is the `Answer` schema (instructor/pydantic) validation failing on the model's output - the model answered but not in the required JSON shape.
+  Reproduce in an end-to-end setting (real backend, a real query), capture the raw model output vs the `Answer` schema (`schemas.py` / `chats.py`), and find why validation fails: too-strict schema, a prompt that does not steer the model to the shape, or a provider/mode mismatch (`instructor.Mode.JSON`).
+  Note deepseek-v4-pro is a large capable model, so "use a bigger model" is likely the WRONG diagnosis - the schema/prompt is the more probable cause.
+  Done when: the same question returns a real grounded answer (or an honest "nothing found" if there are no shoe artifacts), not a format-failure card; add a regression test if the fix is in the schema/prompt.
+
+## Phase MOBILEUI - mobile app UI overhaul (queued 2026-08-19)
+
+Several of these are design-skill tasks; run the named skill during the BUILD, not while queuing.
+
+VERIFY THESE PROGRAMMATICALLY - DO NOT default to "requires a human with a plugged-in phone".
+Read AGENTS.md "Verifying the Android app on a device (headless, over adb)" and Phase EMULATOR before starting.
+The overwhelming majority of every mobile task here is agent-verifiable with NO human and NO physical phone:
+- Boot a headless Android EMULATOR (an AVD is a full adb device - see EMULATOR.1); the phone does not need to be plugged in.
+- Install the apk, then drive and inspect it entirely over adb: `adb exec-out screencap -p` (READ the PNG yourself - the WebView UI renders in screencaps), `adb shell input tap/swipe/text`, `adb shell uiautomator dump` for exact element bounds, `adb logcat` for JS/Rust errors.
+- Drive the app logic and read its state over the WebView CDP socket (`adb forward ... webview_devtools_remote_<pid>` then `Runtime.evaluate` with `suppress_origin=True`): call `window.__TAURI__.core.invoke(...)`, read returned JSON, listen for events, assert which section is visible, count rendered cards.
+- Read the app's own SQLite + config with `adb shell run-as com.sudohnim.enqueue ...` (debug build only - a release apk is not debuggable, so use the DEBUG apk for verification).
+So a UI change (square cards, the 3-icon pill, the add-artifact submenu, colors, the settings sections, the "Syncing..." indicator) is verified by: build the debug apk, install on the emulator, screencap + read the DOM/CDP + tap-and-re-screencap, and READ the images yourself.
+ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at a real QR - MOBILEUI.7's Camera path can still be checked for "the camera Activity opens" via dumpsys), and a final one-glance aesthetic judgement on a real device. Never stop a mobile task with "needs the phone plugged in" before doing all of the above.
+
+- [ ] **MOBILEUI.1 [AGENT]** App icon is wrong: it shows the logo very small on a white background.
+  Do NOT hand-craft PNGs - generator scripts already exist: `desktop/icons/make_adaptive_icons.py` (Android adaptive icon: foreground + background layers) and `desktop/icons/make_icon.py`.
+  Read those scripts first, adjust the scaling/padding so the logo fills the icon (no tiny centred mark, no white-box framing), regenerate, and commit the regenerated `desktop/gen/android/app/src/main/res/mipmap-*` outputs plus any changed sources under `desktop/icons/`.
+  Done when: the installed app's launcher icon shows the logo at proper size, no white-box framing; verify on the emulator by installing the debug apk and screencapping the launcher/home screen with the icon visible.
+
+- [ ] **MOBILEUI.2 [AGENT]** "Syncing..." indicator never actually completes/clears.
+  The user reports the "Syncing..." state was never really working.
+  Trace the QR.5a event path (`sync-started`/`sync-done`/`sync-error` from `mobile_sync` -> the mobile.html listeners) and confirm the indicator appears on start and CLEARS on done; fix wherever it sticks.
+  Verify headlessly per the VERIFICATION PROTOCOL (CDP: listen for the events, assert the indicator element toggles).
+  Done when: a sync shows "Syncing..." then clears to the library on completion, on a real device/emulator.
+
+- [ ] **MOBILEUI.3 [AGENT]** Notes should render as SQUARES (like the desktop app), not horizontal bars.
+  The mobile library currently lists notes as full-width horizontal rows; change them to square cards matching the desktop app's card idiom.
+  The desktop card styles to mirror live in `src/enqueue/static/css/home.css` (card + `.pivotcard` rules, ~line 481 on) - match that feel, do not invent a new card language.
+  Use the `impeccable` skill's `shape` flow to work out the card layout/grid before building.
+  Done when: the mobile library shows square note cards in a grid, responsive, matching the desktop card feel.
+
+- [ ] **MOBILEUI.4 [AGENT]** Add color to the mobile main screen.
+  The main screen is monochrome; add strategic color.
+  The brand palette source is `src/enqueue/static/css/tokens.css` (e.g. `--purple-bold`, already used for the mobile capture action) - pull colors from those tokens, do not invent new hex values.
+  Use the `impeccable` skill's `colorize` flow.
+  Done when: the main screen has deliberate, on-brand color (not a rainbow), passing contrast (`bin/check-contrast` stays green).
+
+- [ ] **MOBILEUI.5 [AGENT]** Mobile Settings: a READ-ONLY AI section (the Trash half is DONE).
+  (a) Trash: already shipped (MOBUI1.1 in PROGRESS.md) - Settings > Trash lists trashed notes with working Restore, backed by `mobile_list_trashed` / `mobile_restore_trashed` (`desktop/src/lib.rs:1285,1293`).
+  Do not rebuild it; only restyle if MOBILEUI.8's design pass touches Settings.
+  (b) AI section, READ-ONLY: display the AI configuration the phone already holds, no editing.
+  The sync channel is ALREADY BUILT - do not design a new one: the QR link payload carries the desktop's `llm_backend` / `llm_model` / `llm_api_key` / `llm_url` into the phone's `sync_config` (`save_config`, `desktop/src/lib.rs:125-153`), and the mobile settings command (~line 858) already exposes them to the webview.
+  The work is UI-only: render a read-only "AI" box in mobile Settings showing backend / model / URL (mask the API key - show presence + hint, never the value), with a note that AI config is managed on the desktop.
+  Caveat to handle: values only refresh on a fresh QR link - if the desktop AI config changed after linking, the phone shows the linked snapshot; display a "as of linking" label rather than building a live sync.
+  Done when: mobile Settings shows a read-only AI section reflecting the desktop's config as of the last link, with no edit affordances; verified on the emulator via CDP + screencap.
+
+- [ ] **MOBILEUI.6 [AGENT]** Bottom pill: exactly THREE icons - plus, eye, gear.
+  Replace the current pill (capture / `pill_search` / eye / menu) with three actions: `+` (add artifact, opens MOBILEUI.7's menu), an eye (ask a question), a gear (settings).
+  Fate of evicted items, pinned so there is no design decision left: SEARCH stays as the library screen's own search field (the `#search` input + `mobile_search` wiring stay - only the pill's search button goes); CAPTURE moves into the `+` menu (MOBILEUI.7); MENU's contents move to the gear/settings screen.
+  Done when: the bottom pill shows only those three icons, each wired to its action, and looks clean (not the current weird layout).
+
+- [ ] **MOBILEUI.7 [AGENT]** Add-artifact flow: dim the background + a type submenu.
+  Tapping `+` (depends on MOBILEUI.6) dims the background and shows a submenu with four choices:
+  - "Note" - a plain text note; saves via the existing `mobile_capture` command.
+  - "Upload" - opens the mobile file system to upload artifacts (the existing file-picker path already in `mobile.html` - find and reuse it, do not build a second picker).
+  - "Camera" - opens the camera capture path (`mobile_capture_image`).
+  - "Link" - two fields: one for the URL, one for optional notes/annotation. `mobile_capture` (`desktop/src/lib.rs:303-318`) already auto-detects a URL inside the submitted text and kinds it as a link - reuse that command (submit the URL + notes text together); add a dedicated Rust command ONLY if the auto-detect path cannot carry the annotation.
+  Done when: `+` dims the background and offers Note/Upload/Camera/Link, each opening the right input and saving the artifact; verified on the emulator per the protocol at the top of this phase (Camera checked via `dumpsys` for the Activity opening).
+
+- [ ] **MOBILEUI.8 [AGENT]** Build MOBILEUI.3/.6/.7 with the design skills.
+  Run the `impeccable` skill's `shape`, `layout`, and `delight` flows to design the square cards, the three-icon pill, and the add-artifact submenu before/while building, so the mobile UI reaches the same craft bar as the desktop.
+  Done when: the above land as designed, responsive, with tasteful motion, verified on a real device/emulator.
 
 ## Out of scope
 
