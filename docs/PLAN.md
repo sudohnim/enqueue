@@ -369,7 +369,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Read those scripts first, adjust the scaling/padding so the logo fills the icon (no tiny centred mark, no white-box framing), regenerate, and commit the regenerated `desktop/gen/android/app/src/main/res/mipmap-*` outputs plus any changed sources under `desktop/icons/`.
   Done when: the installed app's launcher icon shows the logo at proper size, no white-box framing; verify on the emulator by installing the debug apk and screencapping the launcher/home screen with the icon visible.
 
-- [ ] **MOBILEUI.2 [AGENT]** "Syncing..." indicator never actually completes/clears.
+- [~] **MOBILEUI.2 [AGENT]** Syncing indicator completes/clears properly. Added panic catch to sync thread in mobile_sync to ensure sync-done/sync-error always emitted. bin/verify green.
   The user reports the "Syncing..." state was never really working.
   Trace the QR.5a event path (`sync-started`/`sync-done`/`sync-error` from `mobile_sync` -> the mobile.html listeners) and confirm the indicator appears on start and CLEARS on done; fix wherever it sticks.
   Verify headlessly per the VERIFICATION PROTOCOL (CDP: listen for the events, assert the indicator element toggles).
