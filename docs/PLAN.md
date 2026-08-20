@@ -136,7 +136,7 @@ in docs/PROGRESS.md, not here.
 
 ## Phase MOBBOOT - cold-launch bootstrap race
 
-- [~] **MOBBOOT.1 [AGENT]** bootstrap() retry logic implemented (waitForInvokeAndStatus polls for invoke + retries mobile_status on rejection). Only shows setup when mobile_status resolves configured:false. Code committed. Pending human device-verify (cold launch lands on library). shows the SETUP screen even when the phone is configured with 73 synced notes. Found during MOBRENDER.1 device-verify: after a cold launch the library was stuck on "Scan the linking QR", but CDP showed `mobile_status` = configured:true and calling `bootstrap()` again immediately rendered the library (4 shelves). So the data is fine; bootstrap just decided "setup" too early and never retried.
+- [~] **MOBBOOT.1 [AGENT]** bootstrap() retry logic implemented (waitForInvokeAndStatus polls for invoke + retries mobile_status on rejection). Only shows setup when mobile_status resolves configured:false. Code committed + looks correct. DEVICE-VERIFY BLOCKED by Phase RELEASE, not failing: on the debug apk a cold launch loads the dev-server URL and shows a "Failed to request .../mobile.html" error page, so mobile.html never loads and bootstrap never runs (the `__TAURI__` bridge still answers, but the DOM is the error page). Re-verify this on a RELEASE build that loads the embedded frontend. Prior finding (the race being fixed): shows the SETUP screen even when the phone is configured with 73 synced notes. Found during MOBRENDER.1 device-verify: after a cold launch the library was stuck on "Scan the linking QR", but CDP showed `mobile_status` = configured:true and calling `bootstrap()` again immediately rendered the library (4 shelves). So the data is fine; bootstrap just decided "setup" too early and never retried.
   Root cause in `src/enqueue/static/mobile.html` `function bootstrap()` (~line 2435): two paths fall through to `show("setup")` when the Tauri runtime is not ready yet, conflating "runtime/invoke not ready" with "genuinely not configured":
   1. `if (!invoke) { show("setup"); startCamera(); return; }` - if `window.__TAURI__` (and thus `invoke`) is not injected yet at the `bootstrap()` call on line ~2871, it gives up and shows setup.
   2. `invoke("mobile_status").then(...).catch(() => { show("setup"); startCamera(); })` - if the very first `mobile_status` call rejects because the runtime is still coming up, the catch shows setup.
@@ -186,7 +186,7 @@ only ciphertext blobs, so the smallest always-on box is enough. Host chosen 2026
 Railway (user has an account; managed TLS + domain + restarts). QR.2's docs cover the
 options (VPS, cloudflared tunnel); this phase is the atomic Railway recipe.
 
-- [~] **RELAYHOST.1 [HUMAN+AGENT]** Dockerfile.railway created and verified (builds, serves, 200 with secret/401 without on local relay). Human step: deploy on Railway with volume + env vars, verify off-LAN TLS + phone LTE sync. (pending human device-verify) (chosen 2026-08-19 -
+- [~] **RELAYHOST.1 [HUMAN+AGENT]** DEPLOYED + verified from the desktop 2026-08-19. The relay is live at `https://enqueue-production-cd3d.up.railway.app`: over TLS it returns 401 without the Bearer secret and 200 with it, and holds 90 objects. The phone was pointed at it (config injected) and pulled 74 artifacts over the public internet (not the Mac) - so off-LAN sync is PROVEN without needing the wifi-off LTE test. TWO things remain, both now their own phases, not human steps: (a) the desktop's FULL library is not on the relay yet - desktop has 143 artifacts but the relay has 90, because FULL.1's `push_all()` is dead code (see Phase BACKFILL); (b) the phone cannot run standalone/unplugged on the current DEBUG apk because it bakes a dev-server URL (see Phase RELEASE), which is what blocks the literal "fresh QR scan on LTE" clause. Human step left is only the 10-second camera-aim once RELEASE lands. Original recipe follows. (chosen 2026-08-19 -
   user already has a Railway account; supersedes the VPS+Caddy recipe, which stays in
   docs/sync-relay.md as the self-host alternative). Railway gives TLS + a public domain +
   restarts for free, so no Caddy/ufw/systemd. Atomic steps:
@@ -218,6 +218,65 @@ options (VPS, cloudflared tunnel); this phase is the atomic Railway recipe.
   from a fresh QR and syncs on LTE.
   VERIFY: step 3's curl outputs + the redeploy-still-has-data check + the LTE sync,
   recorded in PROGRESS.md.
+
+## Phase BACKFILL - wire the full-library push (FULL.1 is dead code)
+
+Found 2026-08-19 driving the phone against Railway: the desktop has 143 artifacts, the
+Railway relay has 90, the phone pulled 74.
+The full library never reaches the relay because `push_all()` (`src/enqueue/sync/client.py:298`)
+has ZERO callers - no endpoint, no CLI, no worker trigger.
+`push_artifact()` fires on each write, so only notes touched since the relay came up land
+there; everything older is stranded on the desktop.
+A freshly-linked phone therefore gets a partial library, which breaks the whole "syncing
+syncs all my contents" promise.
+
+- [ ] **BACKFILL.1 [AGENT]** Wire `push_all()` to a real trigger and run it once against Railway.
+  `push_all()` already does the right thing (iterate every non-deleted, non-local artifact,
+  `push_artifact` each, idempotent so the relay 409s on a duplicate, returns None-safe when
+  the DEK is not loaded).
+  Add two entry points:
+  1. A CLI command `enq sync push-all` (or `enq sync backfill`) in `cli.py` that hits a new
+     engine endpoint, prints how many were pushed. This is the manual "push everything now".
+  2. A trigger so a fresh sync-enable backfills automatically: call `push_all()` off the main
+     path (the existing `Worker`, a background thread - never block the request) when sync is
+     first enabled / the secret is set, so a new relay or a re-point to Railway fills without
+     a manual step. Guard it so it does not re-run the full scan on every launch (a one-shot
+     flag, or rely on the relay's idempotent 409s if a full re-scan is cheap enough).
+  Then RUN the backfill once against the live Railway relay so it holds all 143.
+  Done when: after the backfill, the Railway relay's object count covers every non-deleted
+  desktop artifact (not 90 of 143); a freshly-linked phone pulls the FULL library; re-running
+  the backfill is a cheap no-op (no duplicate objects).
+  VERIFY (agent, headless): `curl -H "Authorization: Bearer <secret>" <railway>/sync/objects?since=0`
+  object count matches the desktop's non-deleted artifact count; re-run and confirm the count
+  does not grow; `bin/verify` green.
+
+## Phase RELEASE - a phone build that runs unplugged (no dev-server URL)
+
+Found 2026-08-19: the `cargo tauri android build --debug` apk bakes a dev-server URL
+(`devUrl`, e.g. `http://192.168.86.126:1430/`) into the app, so on a cold launch with no
+`cargo tauri android dev` running it shows a "Failed to request .../mobile.html" error page
+instead of loading the embedded frontend.
+The `__TAURI__` bridge still answers (so headless `invoke` checks pass), but the UI never
+loads.
+This is why the "install the apk and use it unplugged / scan on LTE" flow cannot pass today,
+and why MOBBOOT.1 and the bidirectional-capture checks are blocked.
+
+- [ ] **RELEASE.1 [AGENT+HUMAN]** Produce a phone build that loads the EMBEDDED frontend, not the dev-server URL.
+  Figure out why the debug apk carries `devUrl` (the built `assets/tauri.conf.json` inside the
+  apk has `"devUrl":"http://<lan-ip>:1430/"` even though `cargo tauri android build` is meant
+  to embed `frontendDist`) and make a build that never points at the dev server: either a
+  proper release build (`cargo tauri android build` without `--debug`) or a debug build with
+  the dev URL stripped.
+  A release build needs Android signing set up (a keystore + `signingConfig` in the gradle /
+  `tauri.conf.json` bundle config); document the keystore steps for the human (the human
+  creates/holds the keystore; the agent wires the config and the build command).
+  Then install that apk and confirm it cold-launches straight into the app (the embedded
+  `tauri.localhost/mobile.html`), unplugged, with no dev server running.
+  Done when: an installed apk, phone unplugged and no `cargo tauri android dev` running,
+  cold-launches into the Enqueue UI (not the error page); this unblocks the MOBBOOT.1 and
+  bidirectional-capture device-verifies.
+  VERIFY: install the apk, force-stop, launch, `adb exec-out screencap` shows the app UI (not
+  "Failed to request"); the webview CDP target URL is `tauri.localhost`, not the LAN dev URL.
 
 ## Out of scope
 

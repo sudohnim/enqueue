@@ -307,7 +307,8 @@ def push_all() -> int:
         return 0
     assert_local_relay(url)
 
-    dek = keyring_file.dek()
+    # Ensure DEK is loaded (may be called from a background thread)
+    dek = keyring_file.load_dek_from_keychain()
     if dek is None:
         return 0  # keyring locked; nothing to push
 

@@ -246,6 +246,20 @@ def facet_gate() -> None:
 
 
 @app.command()
+def sync_push_all() -> None:
+    """BACKFILL.1: Push all non-deleted, non-local artifacts to the relay.
+
+    Iterates every artifact in the local DB, pushes its snapshot (and blob if any)
+    to the relay. Idempotent: relay returns 409 for already-present objects.
+    Returns the number of artifacts successfully pushed (201 responses).
+    """
+    from enqueue.sync.client import push_all
+
+    count = push_all()
+    typer.secho(f"Pushed {count} artifacts to relay", fg=typer.colors.GREEN)
+
+
+@app.command()
 def relay(
     host: str = typer.Option(
         "127.0.0.1",

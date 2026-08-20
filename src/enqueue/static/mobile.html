@@ -2526,6 +2526,30 @@
     });
   }
 
+  // Mobile makeEye: populate the pill-eye with the living eye markup (simplified from icons.js)
+  const EYE_ASSET_V = "?v=1";
+  function makeEye(el) {
+    if (!el) return;
+    const wrap = document.createElement("div");
+    wrap.className = "eye-blinkwrap";
+    const socket = document.createElement("div");
+    socket.className = "eye-socket";
+    const pupil = document.createElement("img");
+    pupil.className = "eye-pupil";
+    pupil.src = "/static/eye-pupil.png" + EYE_ASSET_V;
+    pupil.alt = "";
+    pupil.draggable = false;
+    socket.appendChild(pupil);
+    const frame = document.createElement("img");
+    frame.className = "eye-frame";
+    frame.src = "/static/eye-frame.png" + EYE_ASSET_V;
+    frame.alt = "";
+    frame.draggable = false;
+    wrap.appendChild(socket);
+    wrap.appendChild(frame);
+    el.replaceChildren(wrap);
+  }
+
   // Pill (MOB2.3) - mirrors desktop pill.js logic
   let pillPlace = "library";
   let pillMenu = null;

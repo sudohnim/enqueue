@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import threading
 
 from .. import db, greeting, keyring, keyring_file, settings
 from ..sync.client import push_keyring
@@ -87,6 +88,27 @@ def store_sync_secret(req: SyncSecret) -> dict:
     # so mobile devices can pull it during pairing (MOB2.10).
     push_keyring()
     return settings.sync_state()
+
+
+@router.post("/settings/sync/push-all")
+def sync_push_all() -> dict:
+    """BACKFILL.1: Push all non-deleted, non-local artifacts to the relay.
+
+    Iterates every artifact in the local DB, pushes its snapshot (and blob if any)
+    to the relay. Idempotent: relay returns 409 for already-present objects.
+    Returns the number of artifacts successfully pushed (201 responses).
+
+    Runs in a background thread so the request returns immediately. The sync
+    worker's lifecycle events (sync-started/sync-done/sync-error) track progress.
+    """
+    from ..sync.client import push_all
+
+    def _bg():
+        count = push_all()
+        print(f"[sync] backfill pushed {count} artifacts", flush=True)
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"started": True, "message": "full-library push started in background"}
 
 
 @router.delete("/settings/sync-secret")
