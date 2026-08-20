@@ -921,21 +921,39 @@
 </div>
 
 <div id="pill_menu_panel" class="pill-menu" hidden role="menu">
-  <button role="menuitem" id="pill_menu_settings">
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3"></circle>
-      <path
-        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
-      ></path>
-    </svg>
-    Settings
-  </button>
+  <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px;">
+    <button role="menuitem" id="pill_menu_note" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: none; border: none; text-align: left; font-size: 15px; color: var(--text);">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
+        <path d="M4 4h11l5 5v11H4z"/><path d="M15 4l5 5v11H4z"/>
+      </svg>
+      <span>Note</span>
+    </button>
+    <button role="menuitem" id="pill_menu_upload" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: none; border: none; text-align: left; font-size: 15px; color: var(--text);">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
+        <path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/>
+      </svg>
+      <span>Upload</span>
+    </button>
+    <button role="menuitem" id="pill_menu_camera" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: none; border: none; text-align: left; font-size: 15px; color: var(--text);">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-8.3a1 1 0 0 1 .58-.9l4.6-3.8a1 1 0 0 1 1.24 0l5 4.1a1 1 0 0 1 .6.9V19z"/>
+      </svg>
+      <span>Camera</span>
+    </button>
+    <button role="menuitem" id="pill_menu_link" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: none; border: none; text-align: left; font-size: 15px; color: var(--text);">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
+        <path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>
+      </svg>
+      <span>Link</span>
+    </button>
+    <button role="menuitem" id="pill_menu_settings" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: none; border: none; text-align: left; font-size: 15px; color: var(--text); margin-top: 8px; border-top: 1px solid var(--line); padding-top: 20px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px;">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      <span>Settings</span>
+    </button>
+  </div>
 </div>
 
 <section id="setup">
@@ -2678,9 +2696,98 @@
 
     pillMenu = document.getElementById("pill_menu_panel");
     pillMenu.hidden = false;
+
+    // Add dimming overlay
+    const overlay = document.createElement("div");
+    overlay.id = "pill_menu_overlay";
+    overlay.style.cssText = "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
+    overlay.addEventListener("click", () => pillCloseMenu(true));
+    document.body.appendChild(overlay);
   }
 
-  function pillOpenSearch() {
+    function pillToggleMenu(e) {
+    if (e) e.stopPropagation();
+    if (pillMenu) return pillCloseMenu();
+
+    const btn = document.getElementById("pill_menu");
+    btn.setAttribute("aria-expanded", "true");
+
+    pillMenu = document.getElementById("pill_menu_panel");
+    pillMenu.hidden = false;
+
+    // Add dimming overlay
+    const overlay = document.createElement("div");
+    overlay.id = "pill_menu_overlay";
+    overlay.style.cssText = "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
+    overlay.addEventListener("click", () => pillCloseMenu(true));
+    document.body.appendChild(overlay);
+  }
+
+  // Set up menu item click handlers (MOBILEUI.7)
+  function setupPillMenuHandlers() {
+    // Note
+    const noteBtn = document.getElementById("pill_menu_note");
+    if (noteBtn) noteBtn.addEventListener("click", () => {
+      pillCloseMenu(true);
+      // Note: plain text note
+      document.getElementById("capture_field").value = "";
+      document.getElementById("capture_status").textContent = "";
+      history.pushState({ v: "capture" }, "");
+      show("capture");
+      document.getElementById("capture_field").focus();
+    });
+
+    // Upload
+    const uploadBtn = document.getElementById("pill_menu_upload");
+    if (uploadBtn) uploadBtn.addEventListener("click", () => {
+      pillCloseMenu(true);
+      // Upload: open file picker
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "*/*";
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const arrayBuffer = await file.arrayBuffer();
+          await invoke("mobile_capture", { file: arrayBuffer, name: file.name, type: file.type });
+          toast("Uploaded");
+        }
+      };
+      input.click();
+    });
+
+    // Camera
+    const cameraBtn = document.getElementById("pill_menu_camera");
+    if (cameraBtn) cameraBtn.addEventListener("click", () => {
+      pillCloseMenu(true);
+      invoke("mobile_capture_image").catch(() => {});
+    });
+
+    // Link
+    const linkBtn = document.getElementById("pill_menu_link");
+    if (linkBtn) linkBtn.addEventListener("click", () => {
+      pillCloseMenu(true);
+      // Link: open a prompt for URL + optional notes
+      const url = prompt("Enter URL:");
+      if (!url) return;
+      const notes = prompt("Optional notes for this link:") || "";
+      const text = notes ? `${url}
+
+${notes}` : url;
+      await invoke("mobile_capture", { text: text });
+      toast("Link saved");
+    });
+
+    // Settings
+    const settingsBtn = document.getElementById("pill_menu_settings");
+    if (settingsBtn) settingsBtn.addEventListener("click", () => {
+      pillCloseMenu(true);
+      showSettings();
+    });
+  }
+
+  // Call setup when DOM is ready
+  setupPillMenuHandlers();
     document.getElementById("search").focus();
   }
 
@@ -2699,6 +2806,8 @@
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
+    // Initialize pill menu handlers after settings are loaded
+    setupPillMenuHandlers();
   }
 
   function populateSettings(s) {
