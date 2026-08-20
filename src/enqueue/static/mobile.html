@@ -1229,6 +1229,50 @@
         </label>
       </div>
     </div>
+    <!-- AI Section (read-only, synced from desktop via QR link) -->
+    <div>
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        AI
+      </h2>
+      <div
+        style="
+          background: var(--surface);
+          border: 1px solid var(--line);
+          border-radius: var(--r-lg);
+          padding: 16px;
+        "
+      >
+        <div style="display: flex; flex-direction: column; gap: 12px">
+          <div class="field">
+            <label>Backend</label>
+            <div id="ai_backend" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+          </div>
+          <div class="field">
+            <label>Model</label>
+            <div id="ai_model" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+          </div>
+          <div id="ai_url_field" class="field" style="display: none;">
+            <label>Endpoint</label>
+            <div id="ai_url" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <div id="ai_key" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+          </div>
+          <div class="aside" style="font-size: 12px; color: var(--text-mute);">
+            AI configuration is synced from desktop. Edit on desktop and re-link.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Sync Section -->
     <div>
       <h2
@@ -2659,6 +2703,23 @@
   }
 
   function populateSettings(s) {
+    // AI section (read-only, synced from desktop)
+    const aiBackend = document.getElementById("ai_backend");
+    const aiModel = document.getElementById("ai_model");
+    const aiUrl = document.getElementById("ai_url");
+    const aiKey = document.getElementById("ai_key");
+    const aiUrlField = document.getElementById("ai_url_field");
+    if (aiBackend) aiBackend.textContent = s.llm_backend || "not set";
+    if (aiModel) aiModel.textContent = s.llm_model || "not set";
+    if (aiUrl) aiUrl.textContent = s.llm_url || "not set";
+    if (aiKey) {
+      const key = s.llm_api_key || "";
+      aiKey.textContent = key ? key.slice(0, 4) + "****" + key.slice(-4) : "not set";
+    }
+    if (aiUrlField) {
+      aiUrlField.style.display = (s.llm_backend === "custom" && s.llm_url) ? "block" : "none";
+    }
+
     // Backend select
     const backendSelect = document.getElementById("settings_backend");
     const backends = [
