@@ -128,6 +128,9 @@
     list-style: none;
     margin: 0;
     padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--sp-3);
   }
   .shelf-label {
     font-size: 12px;
@@ -142,15 +145,25 @@
     flex-shrink: 0;
     background: var(--surface-2);
   }
-  .row {
+  .card {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--line-soft);
+    flex-direction: column;
+    min-height: 140px;
+    min-width: 0;
+    overflow: hidden;
     cursor: pointer;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: var(--sp-3);
+    transition: background var(--dur) ease, border-color var(--dur) ease, box-shadow var(--dur) ease;
   }
-  .row:active {
+  .card:hover {
+    background: var(--surface-2);
+    border-color: var(--line-strong);
+    box-shadow: var(--shadow-card);
+  }
+  .card:active {
     background: var(--surface);
   }
   .dot {
@@ -1422,22 +1435,22 @@
   function renderRows(arts, container) {
     container.replaceChildren();
     for (const a of arts) {
-      const li = document.createElement("li");
-      li.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
+      const card = document.createElement("div");
+      card.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
 
       if (a.kind === "note") {
-        renderNoteCard(li, a);
+        renderNoteCard(card, a);
       } else if (a.kind === "link") {
-        renderLinkCard(li, a);
+        renderLinkCard(card, a);
       } else if (a.kind === "image") {
-        renderImageCard(li, a);
+        renderImageCard(card, a);
       } else if (a.kind === "pdf") {
-        renderPdfCard(li, a);
+        renderPdfCard(card, a);
       } else {
-        renderGenericCard(li, a);
+        renderGenericCard(card, a);
       }
 
-      container.appendChild(li);
+      container.appendChild(card);
     }
   }
 
