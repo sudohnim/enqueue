@@ -2759,7 +2759,7 @@
 
     // Link
     const linkBtn = document.getElementById("pill_menu_link");
-    if (linkBtn) linkBtn.addEventListener("click", () => {
+    if (linkBtn) linkBtn.addEventListener("click", async () => {
       pillCloseMenu(true);
       // Link: open a prompt for URL + optional notes
       const url = prompt("Enter URL:");
