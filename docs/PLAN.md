@@ -272,8 +272,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Fate of evicted items, pinned so there is no design decision left: SEARCH stays as the library screen's own search field (the `#search` input + `mobile_search` wiring stay - only the pill's search button goes); CAPTURE moves into the `+` menu (MOBILEUI.7); MENU's contents move to the gear/settings screen.
   Done when: the bottom pill shows only those three icons, each wired to its action, and looks clean (not the current weird layout).
 
-- [~] **MOBILEUI.7 [AGENT]** Add-artifact flow: dim background + type submenu. Pill menu shows Note/Upload/Camera/Link/Settings. Background dims with click-to-close overlay. Each option opens the right input and saves via mobile_capture/mobile_capture_image. bin/verify green.
-  SPEC DRIFT TO FIX (review 2026-08-20): the `+` menu must offer EXACTLY the four add-types - Note / Upload / Camera / Link - and NOT "Settings". Settings is the gear icon (MOBILEUI.6), a separate action; putting it inside the add-artifact menu is redundant and wrong. Remove "Settings" from this submenu.
+- [~] **MOBILEUI.7 [AGENT]** Add-artifact flow: dim background + type submenu. Pill menu shows exactly four add-types: Note/Upload/Camera/Link. Settings is accessed via gear icon (MOBILEUI.6). Background dims with click-to-close overlay. Each option opens the right input and saves via mobile_capture/mobile_capture_image. bin/verify green. SPEC DRIFT FIXED: removed Settings from + menu (now exactly 4 add-types: Note/Upload/Camera/Link).
   Tapping `+` (depends on MOBILEUI.6) dims the background and shows a submenu with four choices:
   - "Note" - a plain text note; saves via the existing `mobile_capture` command.
   - "Upload" - opens the mobile file system to upload artifacts (the existing file-picker path already in `mobile.html` - find and reuse it, do not build a second picker).
