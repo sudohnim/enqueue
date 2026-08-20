@@ -866,8 +866,8 @@
 <div id="pill" class="pill" role="group" aria-label="Main actions">
   <button
     class="keep"
-    id="pill_capture"
-    aria-label="Capture"
+    id="pill_add"
+    aria-label="Add"
     aria-expanded="false"
     onclick="pillToggleMenu(event)"
   >
@@ -2655,10 +2655,9 @@
         "</button>";
     } else {
       html =
-        '<button class="keep" id="pill_capture" aria-label="Capture" aria-expanded="false" onclick="pillToggleMenu(event)">' +
+        '<button class="keep" id="pill_add" aria-label="Add" aria-expanded="false" onclick="pillToggleMenu(event)">' +
         '<span class="disc"></span></button>' +
-        '<button class="round" aria-label="Search" onclick="pillOpenSearch()">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>' +
+
         '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
