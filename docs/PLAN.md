@@ -409,7 +409,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   - "Link" - two fields: one for the URL, one for optional notes/annotation. `mobile_capture` (`desktop/src/lib.rs:303-318`) already auto-detects a URL inside the submitted text and kinds it as a link - reuse that command (submit the URL + notes text together); add a dedicated Rust command ONLY if the auto-detect path cannot carry the annotation.
   Done when: `+` dims the background and offers Note/Upload/Camera/Link, each opening the right input and saving the artifact; verified on the emulator per the protocol at the top of this phase (Camera checked via `dumpsys` for the Activity opening).
 
-- [ ] **MOBILEUI.8 [AGENT]** Build MOBILEUI.3/.6/.7 with the design skills.
+- [~] **MOBILEUI.8 [AGENT]** Built MOBILEUI.3/.6/.7 with design skills. Verified responsive grid, 3-icon pill, add-artifact submenu with dimming overlay. bin/verify green.
   Run the `impeccable` skill's `shape`, `layout`, and `delight` flows to design the square cards, the three-icon pill, and the add-artifact submenu before/while building, so the mobile UI reaches the same craft bar as the desktop.
   Done when: the above land as designed, responsive, with tasteful motion, verified on a real device/emulator.
 
