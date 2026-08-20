@@ -327,7 +327,7 @@ emulator.
   Restyle it to the primary/secondary button idiom so it is obviously clickable, and strengthen the in-progress/done feedback in `#facetRebuildState` (disable the button + show "Rebuilding..." while the POST runs, then a clear done/failure message).
   Done when: the control is visually unmistakable as a button, clicking it runs the rebuild, and the state text goes in-progress -> done (or error) without a page reload; `bin/verify` green.
 
-- [ ] **DESKTOPUI.5 [AGENT]** AI settings: break the one giant blob into small per-section boxes.
+- [~] **DESKTOPUI.5 [AGENT]** AI settings split into small per-section boxes. Connection, API Key, Custom Headers, Behavior each in their own card with margins. bin/verify green.
   The AI/"Connection" section is built in `src/enqueue/static/js/settings.js` ~lines 243-330: the backend select (`s_backend`, ~249), the model field (`llm_model`, ~280-291), the endpoint field (`llm_url`, ~304-308, shown only for `custom`), and the API-key block (~315-323).
   Split these into small bordered boxes, one per logical group (backend, model, API key, URL), reusing the existing settings card/box CSS class used elsewhere on the page for consistency.
   Use the `impeccable` skill (layout) for the grouping + spacing. Done when: each AI setting group is its own small box, no single giant blob; `bin/verify` green.
