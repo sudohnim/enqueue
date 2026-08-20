@@ -153,6 +153,11 @@ activemq-data/
 .venv
 env/
 venv/
+
+# Android release signing (RELEASE.1) - never commit the keystore or its passwords
+*.keystore
+*.jks
+key.properties
 ENV/
 env.bak/
 venv.bak/

@@ -4,8 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.sudohnim.enqueue",
   "build": {
-    "frontendDist": "../src/enqueue/static",
-    "devUrl": ""
+    "frontendDist": "../src/enqueue/static"
   },
   "app": {
     "windows": [],
@@ -104,18 +103,8 @@
     "active": true,
     "targets": [
       "app",
-      "dmg",
-      "apk",
-      "aab"
+      "dmg"
     ],
-    "android": {
-      "signingConfig": {
-        "keystorePath": "../release.keystore",
-        "keyAlias": "enqueue",
-        "storePassword": "RELEASE_STORE_PASSWORD",
-        "keyPassword": "RELEASE_KEY_PASSWORD"
-      }
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

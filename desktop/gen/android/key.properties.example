@@ -1,0 +1,22 @@
+# RELEASE.1: Android release signing (template - copy to key.properties and fill in).
+#
+# key.properties and the keystore are git-ignored; never commit either one.
+# The app build (desktop/gen/android/app/build.gradle.kts) reads these values, and
+# falls back to the matching environment variables when a value is absent here:
+#   storePassword -> RELEASE_STORE_PASSWORD
+#   keyPassword   -> RELEASE_KEY_PASSWORD
+#   keyAlias      -> RELEASE_KEY_ALIAS   (default: enqueue)
+#   storeFile     -> RELEASE_KEYSTORE    (default: release.keystore, relative to gen/android)
+#
+# Create the keystore once (from the repo root), then fill this file in:
+#   keytool -genkey -v -keystore desktop/gen/android/release.keystore \
+#           -alias enqueue -keyalg RSA -keysize 2048 -validity 10000
+#
+# Then build the signed release apk/aab:
+#   cd desktop && cargo tauri android build --target aarch64
+# (a release build - no --debug - loads the embedded frontend and is signed with this key)
+
+storeFile=release.keystore
+keyAlias=enqueue
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME

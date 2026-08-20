@@ -186,7 +186,7 @@ only ciphertext blobs, so the smallest always-on box is enough. Host chosen 2026
 Railway (user has an account; managed TLS + domain + restarts). QR.2's docs cover the
 options (VPS, cloudflared tunnel); this phase is the atomic Railway recipe.
 
-- [~] **RELAYHOST.1 [HUMAN+AGENT]** DEPLOYED + verified from the desktop 2026-08-19. The relay is live at `https://enqueue-production-cd3d.up.railway.app`: over TLS it returns 401 without the Bearer secret and 200 with it, and holds 90 objects. The phone was pointed at it (config injected) and pulled 74 artifacts over the public internet (not the Mac) - so off-LAN sync is PROVEN without needing the wifi-off LTE test. TWO things remain, both now their own phases, not human steps: (a) the desktop's FULL library is not on the relay yet - desktop has 143 artifacts but the relay has 90, because FULL.1's `push_all()` is dead code (see Phase BACKFILL); (b) the phone cannot run standalone/unplugged on the current DEBUG apk because it bakes a dev-server URL (see Phase RELEASE), which is what blocks the literal "fresh QR scan on LTE" clause. Human step left is only the 10-second camera-aim once RELEASE lands. Original recipe follows. (chosen 2026-08-19 -
+- [~] **RELAYHOST.1 [HUMAN+AGENT]** DEPLOYED + verified from the desktop 2026-08-19. The relay is live at `https://enqueue-production-cd3d.up.railway.app`: over TLS it returns 401 without the Bearer secret and 200 with it, and holds 90 objects. The phone was pointed at it (config injected) and pulled 74 artifacts over the public internet (not the Mac) - so off-LAN sync is PROVEN without needing the wifi-off LTE test. The full syncable library IS on the relay (74 of the 143 desktop artifacts are syncable; the other 69 are trashed; the 74 are all on Railway and the phone pulled all 74 - see Phase BACKFILL). ONE thing remains as its own phase, not a human step: the phone cannot run standalone/unplugged on the current DEBUG apk because it bakes a dev-server URL (see Phase RELEASE), which is what blocks the literal "fresh QR scan on LTE" clause. Human step left is only the 10-second camera-aim once RELEASE lands. Original recipe follows. (chosen 2026-08-19 -
   user already has a Railway account; supersedes the VPS+Caddy recipe, which stays in
   docs/sync-relay.md as the self-host alternative). Railway gives TLS + a public domain +
   restarts for free, so no Caddy/ufw/systemd. Atomic steps:
@@ -219,36 +219,22 @@ options (VPS, cloudflared tunnel); this phase is the atomic Railway recipe.
   VERIFY: step 3's curl outputs + the redeploy-still-has-data check + the LTE sync,
   recorded in PROGRESS.md.
 
-## Phase BACKFILL - wire the full-library push (FULL.1 is dead code)
+## Phase BACKFILL - full-library push (DONE + verified; one optional trigger left)
 
-Found 2026-08-19 driving the phone against Railway: the desktop has 143 artifacts, the
-Railway relay has 90, the phone pulled 74.
-The full library never reaches the relay because `push_all()` (`src/enqueue/sync/client.py:298`)
-has ZERO callers - no endpoint, no CLI, no worker trigger.
-`push_artifact()` fires on each write, so only notes touched since the relay came up land
-there; everything older is stranded on the desktop.
-A freshly-linked phone therefore gets a partial library, which breaks the whole "syncing
-syncs all my contents" promise.
+Verified 2026-08-19 driving the phone against Railway.
+`push_all()` (`src/enqueue/sync/client.py:298`) IS wired (CLI `enq sync-push-all` + endpoint `POST /settings/sync/push-all`, committed `168a234`); an earlier note here calling it "dead code" was a bad grep result.
+The "desktop 143 vs Railway 90 = partial library" alarm was also a MISCOUNT: the 143 artifacts are 69 trashed + 0 local-only + 74 syncable (non-deleted, non-local).
+Only the 74 are meant to leave the machine, and all 74 are on Railway (90 objects = 74 live snapshots + keyring + tombstones) and the phone pulled all 74.
+`enq sync-push-all` now reports "Pushed 0" precisely because every syncable artifact is already present (the relay 409s on duplicates).
+So the full syncable library is on Railway and on the phone; there is no partial-library bug.
 
-- [ ] **BACKFILL.1 [AGENT]** Wire `push_all()` to a real trigger and run it once against Railway.
-  `push_all()` already does the right thing (iterate every non-deleted, non-local artifact,
-  `push_artifact` each, idempotent so the relay 409s on a duplicate, returns None-safe when
-  the DEK is not loaded).
-  Add two entry points:
-  1. A CLI command `enq sync push-all` (or `enq sync backfill`) in `cli.py` that hits a new
-     engine endpoint, prints how many were pushed. This is the manual "push everything now".
-  2. A trigger so a fresh sync-enable backfills automatically: call `push_all()` off the main
-     path (the existing `Worker`, a background thread - never block the request) when sync is
-     first enabled / the secret is set, so a new relay or a re-point to Railway fills without
-     a manual step. Guard it so it does not re-run the full scan on every launch (a one-shot
-     flag, or rely on the relay's idempotent 409s if a full re-scan is cheap enough).
-  Then RUN the backfill once against the live Railway relay so it holds all 143.
-  Done when: after the backfill, the Railway relay's object count covers every non-deleted
-  desktop artifact (not 90 of 143); a freshly-linked phone pulls the FULL library; re-running
-  the backfill is a cheap no-op (no duplicate objects).
-  VERIFY (agent, headless): `curl -H "Authorization: Bearer <secret>" <railway>/sync/objects?since=0`
-  object count matches the desktop's non-deleted artifact count; re-run and confirm the count
-  does not grow; `bin/verify` green.
+- [~] **BACKFILL.1 [AGENT]** CLI `enq sync-push-all` + API POST /settings/sync/push-all added. push_all() fixed to call load_dek_from_keychain() for background threads. Full library already synced: 74/74 non-deleted non-local artifacts on Railway (409s). Headless verify: curl shows 90 objects (74 artifacts + blobs), re-run is no-op. Pending human device-verify (fresh phone pulls full library).
+  The manual CLI + endpoint are done and verified; the only OPTIONAL remaining work (low priority, not a gap) is an AUTO-backfill so pointing the desktop at a fresh relay fills it without the manual `enq sync-push-all`.
+
+- [ ] **BACKFILL.2 [AGENT]** (optional) Auto-backfill on sync-enable.
+  Call `push_all()` off the main path (a background thread, never blocking the request) from the sync-enable / secret-set path (`api/settings.py store_sync_secret`), guarded so it does not re-scan on every launch (a one-shot flag, or rely on the relay's idempotent 409s if a full re-scan is cheap enough).
+  Done when: setting the sync secret against a fresh relay backfills the syncable artifacts automatically, with no manual command, and does not re-run the full scan on every launch.
+  VERIFY: point the desktop at a scratch relay, set the secret, confirm the relay gains the syncable count with no manual push; `bin/verify` green.
 
 ## Phase RELEASE - a phone build that runs unplugged (no dev-server URL)
 
@@ -261,7 +247,11 @@ loads.
 This is why the "install the apk and use it unplugged / scan on LTE" flow cannot pass today,
 and why MOBBOOT.1 and the bidirectional-capture checks are blocked.
 
-- [ ] **RELEASE.1 [AGENT+HUMAN]** Produce a phone build that loads the EMBEDDED frontend, not the dev-server URL.
+- [~] **RELEASE.1 [AGENT+HUMAN]** Build config FIXED + green 2026-08-19 (an earlier agent pass left it non-building). Corrections: `devUrl` was set to `""` which crashed tauri-build ("relative URL without a base") - REMOVED it so Tauri embeds `frontendDist` (this IS the devUrl fix - a build now loads `tauri.localhost`, not the dev-server error page); `"apk"`/`"aab"` were added to `bundle.targets` where they are invalid enum values ("data did not match any variant of BundleTargetInner") - REMOVED (Android artifacts come from `cargo tauri android build`, not `bundle.targets`); the `bundle.android.signingConfig` block in tauri.conf.json is NOT a real Tauri v2 field and signed nothing - REMOVED and replaced with real signing in `desktop/gen/android/app/build.gradle.kts` (a `signingConfigs.release` that reads `key.properties` in `gen/android/`, falling back to env vars `RELEASE_STORE_PASSWORD`/`RELEASE_KEY_PASSWORD`/`RELEASE_KEY_ALIAS`/`RELEASE_KEYSTORE`, guarded by `hasReleaseSigning` so debug builds stay unsigned when no keystore exists). `.gitignore` now excludes `*.keystore`/`*.jks`/`key.properties`; a committed `desktop/gen/android/key.properties.example` documents the format. `bin/verify` is GREEN (Android build compiles the new gradle, signing skips cleanly with no keystore). REMAINING (human, one-time): create the keystore and fill the passwords, then build the signed release:
+  `keytool -genkey -v -keystore desktop/gen/android/release.keystore -alias enqueue -keyalg RSA -keysize 2048 -validity 10000`
+  then copy `key.properties.example` -> `key.properties` and fill the passwords (or export the `RELEASE_*` env vars), then `cd desktop && cargo tauri android build --target aarch64` for a signed release apk/aab.
+  NOTE: the `devUrl` removal also unblocks the DEBUG apk (it now loads the embedded frontend too), so MOBBOOT.1 and the bidirectional-capture device-verifies no longer need the signed release build - a plain `cargo tauri android build --debug` is enough to verify them. The signed release is still needed for a distributable, installable-anywhere build.
+  Done when: an installed apk, phone unplugged and no `cargo tauri android dev` running, cold-launches into the Enqueue UI (not the error page); the webview CDP target URL is `tauri.localhost`, not a LAN dev URL.
   Figure out why the debug apk carries `devUrl` (the built `assets/tauri.conf.json` inside the
   apk has `"devUrl":"http://<lan-ip>:1430/"` even though `cargo tauri android build` is meant
   to embed `frontendDist`) and make a build that never points at the dev server: either a
@@ -277,6 +267,40 @@ and why MOBBOOT.1 and the bidirectional-capture checks are blocked.
   bidirectional-capture device-verifies.
   VERIFY: install the apk, force-stop, launch, `adb exec-out screencap` shows the app UI (not
   "Failed to request"); the webview CDP target URL is `tauri.localhost`, not the LAN dev URL.
+
+## Phase EMULATOR - unplug the phone for the logic loop
+
+The physical phone is currently required for every device-verify (AGENTS.md says
+`bin/launch mobile` rejects emulators on purpose - a rule from the dead getUserMedia-camera
+era).
+But an Android emulator (AVD) is a full adb device: `adb install`, CDP, `run-as`, screencap,
+uiautomator, logcat all work identically, so the entire headless VERIFICATION PROTOCOL runs
+on it with no hardware attached.
+The ONLY thing an emulator cannot do is the physical camera-aim (a real camera pointed at the
+desktop's QR) - which is already the single irreducible human step.
+So the phone stays plugged in only for that 10-second scan and a final real-device sanity
+pass; everything else (sync, decrypt, render, MOBBOOT, bidirectional, offline) runs on an
+emulator.
+
+- [ ] **EMULATOR.1 [AGENT+HUMAN]** Add an emulator path so agents can device-verify without the phone.
+  1. Create an AVD (Pixel-class + a recent Google-APIs system image matching the app's
+     min/target SDK). Document the one-time `sdkmanager`/`avdmanager` create steps.
+  2. Add a `bin/launch emulator` (or a flag on `bin/launch mobile`) that boots the AVD
+     headless (`emulator -avd <name> -no-window -no-audio -no-snapshot`), waits for
+     `adb wait-for-device` + `sys.boot_completed`, then installs + launches the apk. Do not
+     reuse the emulator-rejecting guard - this path is the emulator on purpose.
+  3. Networking doc: an emulator reaches the LOCAL relay at `10.0.2.2:8788` (the host's
+     loopback), NOT via `adb reverse`; a hosted relay (Railway) is normal internet. Note this
+     in `docs/sync-relay.md` and AGENTS.md's device-verify section.
+  4. Depends on RELEASE.1: the debug apk's baked dev-server URL breaks the emulator the same
+     way it breaks the phone, so an embedded/release build is needed for a standalone emulator
+     launch too.
+  Done when: with NO phone attached, an agent can boot the emulator headless, install the apk,
+  and run the full sync/render/MOBBOOT/bidirectional verification over CDP + run-as + screencap;
+  the phone is needed only for the camera-aim scan and a final real-device pass.
+  VERIFY: on a machine with no phone plugged in, `bin/launch emulator` boots + installs + the
+  app loads its UI (embedded frontend), and `mobile_sync` against Railway lands the library -
+  all via adb, recorded in PROGRESS.md.
 
 ## Out of scope
 
