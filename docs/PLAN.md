@@ -320,7 +320,7 @@ emulator.
   Change only the string; grep afterwards to confirm zero remaining occurrences.
   Done when: asking a question shows "Processing your message" while it works; `bin/verify` green.
 
-- [ ] **DESKTOPUI.4 [AGENT]** Settings: "Rebuild concepts" must read as a real button + give live progress.
+- [~] **DESKTOPUI.4 [AGENT]** Rebuild concepts button: real button + live progress. Changed to btn secondary with id, disables during rebuild, shows progress text, re-enables on done/error. bin/verify green.
   Current state (verified 2026-08-20): `src/enqueue/static/js/settings.js:385` already renders `<button class="btn tertiary" onclick="rebuildFacets()">Rebuild concepts</button>`, wired to `rebuildFacets()` (~line 396) which POSTs `/facets` with redo and writes status into `#facetRebuildState`.
   So do NOT add a new control.
   The remaining work: the `btn tertiary` styling makes it not read as a button, and the feedback is thin.
