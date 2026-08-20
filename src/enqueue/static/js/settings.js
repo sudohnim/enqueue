@@ -889,7 +889,7 @@ function generateSyncSecret() {
 }
 
 function renderSyncConfigured(sync) {
-	let html = '<div class="shelf">Link a device</div><div class="group">';
+	let html = '<div class="shelf">Link a device</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
 	html +=
 		'<div class="aside">On your phone, open the Enqueue app and choose "Link a device". ' +
 		"The phone camera scans the QR below and receives the encryption key in one " +
@@ -906,9 +906,10 @@ function renderSyncConfigured(sync) {
 		'<button class="btn ghost" onclick="hideLinkCode()">Hide QR</button>' +
 		"</div>" +
 		"</div>" +
+		"</div>" +
 		"</div>";
 
-	html += '<div class="shelf">Reset sync</div><div class="group">';
+	html += '<div class="shelf">Reset sync</div><div class="card" style="margin-top: var(--sp-4);"><div class="group">';
 	html +=
 		'<div class="aside caution">' +
 		"Resetting sync wipes the current encryption key and orphans anything " +
@@ -917,6 +918,7 @@ function renderSyncConfigured(sync) {
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
 		'<button class="btn harm" onclick="confirmResetSync()">Reset sync</button>' +
+		"</div>" +
 		"</div>" +
 		"</div>";
 
