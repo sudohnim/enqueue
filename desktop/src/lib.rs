@@ -213,34 +213,50 @@ mod mobile {
         let conn_clone = conn;
 
         std::thread::spawn(move || {
-            // Emit sync-started event
-            let _ = app_handle.emit("sync-started", serde_json::json!({}));
+            // Use a panic catch to ensure we always emit a completion event
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                // Emit sync-started event
+                let _ = app_handle.emit("sync-started", serde_json::json!({}));
 
-            // Load the saved config to get the DEK (hex-encoded in config)
-            let dek = load_config(&app_handle)
-                .ok()
-                .flatten()
-                .and_then(|cfg| cfg.get("dek").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                .and_then(|s| hex::decode(&s).ok())
-                .and_then(|bytes| bytes.try_into().ok());
+                // Load the saved config to get the DEK (hex-encoded in config)
+                let dek = load_config(&app_handle)
+                    .ok()
+                    .flatten()
+                    .and_then(|cfg| cfg.get("dek").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                    .and_then(|s| hex::decode(&s).ok())
+                    .and_then(|bytes| bytes.try_into().ok());
 
-            // Run sync_library in the background with the DEK loaded from config
-            let outcome = crate::sync::sync_library(&relay_url_owned, &sync_secret_owned,
-                dek.as_ref(),
-                &conn_clone);
-            let ids = crate::sync::list_artifact_ids(&conn_clone).unwrap_or_default();
+                // Run sync_library in the background with the DEK loaded from config
+                let outcome = crate::sync::sync_library(&relay_url_owned, &sync_secret_owned,
+                    dek.as_ref(),
+                    &conn_clone);
+                let ids = crate::sync::list_artifact_ids(&conn_clone).unwrap_or_default();
 
-            // Emit the result event
-            let err_str = outcome.error.as_deref().unwrap_or("");
-            let _ = app_handle.emit(
-                if err_str.is_empty() { "sync-done" } else { "sync-error" },
-                serde_json::json!({
-                    "status": outcome.status,
-                    "pulled": outcome.pulled,
-                    "error": outcome.error,
-                    "artifact_ids": ids,
-                }),
-            );
+                // Emit the result event
+                let err_str = outcome.error.as_deref().unwrap_or("");
+                let _ = app_handle.emit(
+                    if err_str.is_empty() { "sync-done" } else { "sync-error" },
+                    serde_json::json!({
+                        "status": outcome.status,
+                        "pulled": outcome.pulled,
+                        "error": outcome.error,
+                        "artifact_ids": ids,
+                    }),
+                );
+            }));
+            
+            // If the thread panicked, emit sync-error
+            if result.is_err() {
+                let _ = app_handle.emit(
+                    "sync-error",
+                    serde_json::json!({
+                        "status": "error",
+                        "pulled": 0,
+                        "error": Some("sync thread panicked".to_string()),
+                        "artifact_ids": Vec::<String>::new(),
+                    }),
+                );
+            }
         });
 
         // Return immediately; the UI will listen for sync events
