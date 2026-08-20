@@ -87,6 +87,16 @@ def store_sync_secret(req: SyncSecret) -> dict:
     # After sync secret is configured, push the encrypted keyring to the relay
     # so mobile devices can pull it during pairing (MOB2.10).
     push_keyring()
+    # BACKFILL.2: Auto-backfill on first sync-enable (guarded by one-shot flag).
+    # Only runs when DEK is loaded (keyring unlocked) and backfill hasn't run yet.
+    if keyring_file.load_dek_from_keychain() is not None:
+        if not settings.get("sync_backfill_done"):
+            def _bg():
+                from ..sync.client import push_all
+                count = push_all()
+                print(f"[sync] auto-backfill pushed {count} artifacts", flush=True)
+            threading.Thread(target=_bg, daemon=True).start()
+            settings.update({"sync_backfill_done": True})
     return settings.sync_state()
 
 

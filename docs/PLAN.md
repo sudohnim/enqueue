@@ -282,7 +282,7 @@ So the phone stays plugged in only for that 10-second scan and a final real-devi
 pass; everything else (sync, decrypt, render, MOBBOOT, bidirectional, offline) runs on an
 emulator.
 
-- [ ] **EMULATOR.1 [AGENT+HUMAN]** Add an emulator path so agents can device-verify without the phone.
+- [~] **EMULATOR.1 [AGENT+HUMAN]** bin/launch emulator implemented: boots AVD headless, waits for boot_completed, installs debug apk via cargo tauri android dev. CDP verified (WebView at port 9222, Runtime.evaluate works). Emulator reaches local relay at 10.0.2.2:8788. Human creates AVD once (sdkmanager/avdmanager). bin/verify green.
   1. Create an AVD (Pixel-class + a recent Google-APIs system image matching the app's
      min/target SDK). Document the one-time `sdkmanager`/`avdmanager` create steps.
   2. Add a `bin/launch emulator` (or a flag on `bin/launch mobile`) that boots the AVD

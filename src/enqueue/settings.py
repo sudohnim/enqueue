@@ -60,6 +60,8 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "llm_headers": ("ENQ_LLM_HEADERS", "", True),
     # Days a deleted artifact survives before it is destroyed for good.
     "trash_days": ("ENQ_TRASH_DAYS", 30, True),
+    # BACKFILL.2: one-shot flag so auto-backfill runs only once on sync-enable.
+    "sync_backfill_done": ("ENQ_SYNC_BACKFILL_DONE", False, True),
 }
 
 WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}
