@@ -315,7 +315,7 @@ emulator.
   They are two different actions (link a device vs wipe the key), so give each its own bordered card/section rather than one combined block.
   Depends on DESKTOPUI.1. Done when: the QR is in one box, the reset in a distinct box, visually separated.
 
-- [ ] **DESKTOPUI.3 [AGENT]** Chat loading copy: "Reading what you saved..." -> "Processing your message".
+- [~] **DESKTOPUI.3 [AGENT]** Chat loading copy updated: "Reading what you saved..." -> "Processing your message". bin/verify green.
   The string is at `src/enqueue/static/js/chat.js:158`, inside a `spinner("sm", ...)` call.
   Change only the string; grep afterwards to confirm zero remaining occurrences.
   Done when: asking a question shows "Processing your message" while it works; `bin/verify` green.
