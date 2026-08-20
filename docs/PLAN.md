@@ -387,7 +387,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Use the `impeccable` skill's `colorize` flow.
   Done when: the main screen has deliberate, on-brand color (not a rainbow), passing contrast (`bin/check-contrast` stays green).
 
-- [ ] **MOBILEUI.5 [AGENT]** Mobile Settings: a READ-ONLY AI section (the Trash half is DONE).
+- [~] **MOBILEUI.5 [AGENT]** Mobile Settings: read-only AI section added. Shows backend, model, endpoint, masked API key from synced config. Note about desktop-managed config. bin/verify green.
   (a) Trash: already shipped (MOBUI1.1 in PROGRESS.md) - Settings > Trash lists trashed notes with working Restore, backed by `mobile_list_trashed` / `mobile_restore_trashed` (`desktop/src/lib.rs:1285,1293`).
   Do not rebuild it; only restyle if MOBILEUI.8's design pass touches Settings.
   (b) AI section, READ-ONLY: display the AI configuration the phone already holds, no editing.
