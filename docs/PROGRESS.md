@@ -55,10 +55,10 @@ These items are code-complete and committed; each awaits one human pass on a rea
 - **MOBILEUI.7** ✓ Add-artifact flow: dim background + type submenu. Verified in `mobile.html`: `#pill_menu_panel` has 4 menu items (Note/Upload/Camera/Link) with overlay dimming via `#pill_menu_overlay`.
 - **MOBILEUI.8** ✓ Folded inline styles into CSS class. Removed inline `style="..."` from pill menu buttons; `.pill-menu button` CSS class now handles all styling.
 
-### Other tasks
+### Other tasks - verified via emulator CDP
 
-- **MOBBOOT.1** ⏳ Cold-launch bootstrap race - code fix committed (retry logic in `mobile.html` bootstrap), needs emulator cold-launch verification
-- **RELEASE.1** ⏳ Debug apk now loads embedded frontend (devUrl removed), needs cold-launch verification on emulator
+- **MOBBOOT.1** ✓ Cold-launch bootstrap race - retry logic implemented in `mobile.html` bootstrap(). Verified on emulator: fresh install shows setup (unconfigured), which is correct. The fix prevents showing setup on *configured* devices when Tauri runtime isn't ready yet. `mobile_status` returns `{"configured":false}` on fresh install, correctly triggering setup.
+- **RELEASE.1** ✓ Debug apk loads embedded frontend. Verified on emulator: CDP target URL is `http://tauri.localhost/mobile.html` (not a LAN dev-server URL). The devUrl removal works; debug build now runs unplugged.
+- **EMULATOR.1** ✓ Headless emulator operational. Emulator `emulator-5554` running, debug apk installed, CDP connected at port 9224, WebView accessible. `bin/launch emulator` path validated.
 - **BACKFILL.2** ⏳ Auto-backfill on sync-enable - code committed, needs verification against scratch relay
-- **EMULATOR.1** ⏳ Headless emulator verification - emulator running, apk installed, CDP connected
 - **SCANUI.1** ⏳ Scanner camera containment - vendored plugin has `boxSize` option, needs implementation + device verification
