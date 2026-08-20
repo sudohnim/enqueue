@@ -382,7 +382,7 @@ async function renderSettingsAI() {
 	html +=
 		'<div class="shelf">Search concepts</div><div class="group">' +
 		'<div class="field"><label>Concepts (facets)</label>' +
-		'<button class="btn tertiary" onclick="rebuildFacets()">Rebuild concepts</button>' +
+		'<button class="btn secondary" id="rebuildFacetsBtn" onclick="rebuildFacets()">Rebuild concepts</button>' +
 		'<div class="aside">Concepts are what an item could be an example of - ' +
 		'"lamp", "sour", "packing list". The model reads them when you save, and ' +
 		"search and the looks-like groupings use them. Rebuilding re-analyzes every " +
@@ -405,7 +405,10 @@ async function rebuildFacets() {
 		"Rebuild",
 	);
 	if (!yes) return;
+	const btn = document.getElementById("rebuildFacetsBtn");
 	const el = document.getElementById("facetRebuildState");
+	if (btn) btn.disabled = true;
+	if (btn) btn.textContent = "Rebuilding...";
 	if (el) el.textContent = "Rebuilding in the background...";
 	toast("Rebuilding concepts in the background.");
 	api("/facets", {
@@ -421,11 +424,19 @@ async function rebuildFacets() {
 					" items re-analyzed, " +
 					(r.facets || 0) +
 					" concepts.";
+			if (btn) {
+				btn.disabled = false;
+				btn.textContent = "Rebuild concepts";
+			}
 		})
 		.catch((err) => {
 			if (el)
 				el.textContent =
 					"Rebuild failed: " + String((err && err.message) || err);
+			if (btn) {
+				btn.disabled = false;
+				btn.textContent = "Rebuild concepts";
+			}
 		});
 }
 
