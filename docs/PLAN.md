@@ -381,7 +381,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Use the `impeccable` skill's `shape` flow to work out the card layout/grid before building.
   Done when: the mobile library shows square note cards in a grid, responsive, matching the desktop card feel.
 
-- [ ] **MOBILEUI.4 [AGENT]** Add color to the mobile main screen.
+- [~] **MOBILEUI.4 [AGENT]** Color added to mobile main screen. Cards have kind-based accent top borders using token colors (--kind-note/link/image/pdf/file). bin/verify green.
   The main screen is monochrome; add strategic color.
   The brand palette source is `src/enqueue/static/css/tokens.css` (e.g. `--purple-bold`, already used for the mobile capture action) - pull colors from those tokens, do not invent new hex values.
   Use the `impeccable` skill's `colorize` flow.
