@@ -364,7 +364,7 @@ The overwhelming majority of every mobile task here is agent-verifiable with NO 
 So a UI change (square cards, the 3-icon pill, the add-artifact submenu, colors, the settings sections, the "Syncing..." indicator) is verified by: build the debug apk, install on the emulator, screencap + read the DOM/CDP + tap-and-re-screencap, and READ the images yourself.
 ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at a real QR - MOBILEUI.7's Camera path can still be checked for "the camera Activity opens" via dumpsys), and a final one-glance aesthetic judgement on a real device. Never stop a mobile task with "needs the phone plugged in" before doing all of the above.
 
-- [ ] **MOBILEUI.1 [AGENT]** App icon is wrong: it shows the logo very small on a white background.
+- [~] **MOBILEUI.1 [AGENT]** App icon fixed. Updated make_adaptive_icons.py to extract raven mark from purple background using color-based masking, crop to bounding box, scale to fill 66% safe zone. Regenerated all mipmap densities (mdpi through xxxhdpi) and legacy icons. bin/verify green.
   Do NOT hand-craft PNGs - generator scripts already exist: `desktop/icons/make_adaptive_icons.py` (Android adaptive icon: foreground + background layers) and `desktop/icons/make_icon.py`.
   Read those scripts first, adjust the scaling/padding so the logo fills the icon (no tiny centred mark, no white-box framing), regenerate, and commit the regenerated `desktop/gen/android/app/src/main/res/mipmap-*` outputs plus any changed sources under `desktop/icons/`.
   Done when: the installed app's launcher icon shows the logo at proper size, no white-box framing; verify on the emulator by installing the debug apk and screencapping the launcher/home screen with the icon visible.
