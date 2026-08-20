@@ -209,7 +209,7 @@ emulator.
   Keep the same viewBox/stroke convention as the other entries in `icons.js`.
   Done when: the desktop settings icon is a recognizable gear consistent with mobile; `bin/verify` green.
 
-- [~] **CHATBUG.1 [AGENT]** FIXED + verified end-to-end 2026-08-20 against the real backend (opencode-go `deepseek-v4-pro`). Two real bugs, both ruled out the red herrings first:
+- [x] **CHATBUG.1 [AGENT]** FIXED + verified end-to-end 2026-08-20 against the real backend (opencode-go `deepseek-v4-pro`). Two real bugs, both ruled out the red herrings first:
   - The error card's "try a larger model" was WRONG - deepseek-v4-pro is large. And switching instructor mode is NOT the fix: tested against opencode-go, `Mode.TOOLS`/`TOOLS_STRICT`/`JSON_SCHEMA` are all REJECTED by the provider ("Thinking mode does not support tool_choice", "response_format unavailable") - `Mode.JSON`/`MD_JSON` are the only ones it accepts, so `Mode.JSON` stays.
   - ROOT CAUSE 1 (the decisive one): `chats.py::_ask_model` formatted passages as `[kind] title` with NO artifact id, but CHAT_ANSWER tells the model "each passage has an id" and the `Answer` validator rejects any cited id it was not offered. The model cited the only label it could see (the title) -> "cited artifacts that were not provided" -> failed turn. FIX: put the id in the passage header (`[kind] (id: <id>) title`) so `cited` can be a real, valid id.
   - ROOT CAUSE 2: `config.MODEL_RETRIES` defaulted to `1`, which instructor treats as ONE attempt with NO reprompt (the comment's "1 = two tries" was an off-by-one - `max_retries` is total attempts). A thinking model answers in prose on the first try and needs a reprompt to emit the schema. FIX: default `MODEL_RETRIES` to `3` (retries only fire on a validation failure, so the happy path costs nothing extra).
@@ -273,6 +273,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Done when: the bottom pill shows only those three icons, each wired to its action, and looks clean (not the current weird layout).
 
 - [~] **MOBILEUI.7 [AGENT]** Add-artifact flow: dim background + type submenu. Pill menu shows Note/Upload/Camera/Link/Settings. Background dims with click-to-close overlay. Each option opens the right input and saves via mobile_capture/mobile_capture_image. bin/verify green.
+  SPEC DRIFT TO FIX (review 2026-08-20): the `+` menu must offer EXACTLY the four add-types - Note / Upload / Camera / Link - and NOT "Settings". Settings is the gear icon (MOBILEUI.6), a separate action; putting it inside the add-artifact menu is redundant and wrong. Remove "Settings" from this submenu.
   Tapping `+` (depends on MOBILEUI.6) dims the background and shows a submenu with four choices:
   - "Note" - a plain text note; saves via the existing `mobile_capture` command.
   - "Upload" - opens the mobile file system to upload artifacts (the existing file-picker path already in `mobile.html` - find and reuse it, do not build a second picker).
