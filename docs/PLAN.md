@@ -304,7 +304,7 @@ emulator.
 
 ## Phase DESKTOPUI - desktop settings + chat polish (queued 2026-08-19)
 
-- [ ] **DESKTOPUI.1 [AGENT]** Sync tab: show ONLY the QR code and the reset control.
+- [~] **DESKTOPUI.1 [AGENT]** Sync tab shows ONLY QR code and reset control. Removed Relay URL, Sync secret, This device fields. Renamed shelf to "Link a device". bin/verify green.
   In `src/enqueue/static/js/settings.js`, the configured Sync tab currently shows hand-edit relay/secret fields.
   Remove exactly these blocks and their save wiring: the `s_sync_relay_url` label+input (~line 703) and its `sync_relay_url` PATCH (~line 871), and the `s_sync_secret` label+password-input (~line 823) plus the code that reads `s_sync_secret` (~line 853).
   Keep untouched: the QR rendering path (`desktop_link_code`, ~line 951) and the reset-sync control.
