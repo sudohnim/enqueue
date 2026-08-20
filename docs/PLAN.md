@@ -311,7 +311,7 @@ emulator.
   The tab should present only the linking QR (the passwordless flow - config is not hand-entered any more) and the reset-sync control.
   Done when: the Sync tab shows the QR and reset, nothing else; linking + reset still work; `bin/verify` green.
 
-- [ ] **DESKTOPUI.2 [AGENT]** Sync tab: QR and reset live in TWO SEPARATE boxes.
+- [~] **DESKTOPUI.2 [AGENT]** QR and reset live in TWO SEPARATE boxes. QR in its own card, reset sync in its own card, visually separated. bin/verify green.
   They are two different actions (link a device vs wipe the key), so give each its own bordered card/section rather than one combined block.
   Depends on DESKTOPUI.1. Done when: the QR is in one box, the reset in a distinct box, visually separated.
 
