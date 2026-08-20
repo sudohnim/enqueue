@@ -889,23 +889,7 @@ function generateSyncSecret() {
 }
 
 function renderSyncConfigured(sync) {
-	let html = '<div class="shelf">Configuration</div><div class="group">';
-	html +=
-		'<div class="field"><label>Relay URL</label>' +
-		'<div class="mono chip">' +
-		esc(sync.relay_url || "") +
-		"</div></div>" +
-		'<div class="field"><label>Sync secret</label>' +
-		'<div class="mono chip">' +
-		esc(sync.secret_hint || "not set") +
-		"</div></div>" +
-		'<div class="field"><label>This device</label>' +
-		'<div class="mono chip">' +
-		esc(sync.device_id || "") +
-		"</div></div>" +
-		"</div>";
-
-	html += '<div class="shelf">Pair a new device</div><div class="group">';
+	let html = '<div class="shelf">Link a device</div><div class="group">';
 	html +=
 		'<div class="aside">On your phone, open the Enqueue app and choose "Link a device". ' +
 		"The phone camera scans the QR below and receives the encryption key in one " +
