@@ -332,7 +332,7 @@ emulator.
   Split these into small bordered boxes, one per logical group (backend, model, API key, URL), reusing the existing settings card/box CSS class used elsewhere on the page for consistency.
   Use the `impeccable` skill (layout) for the grouping + spacing. Done when: each AI setting group is its own small box, no single giant blob; `bin/verify` green.
 
-- [ ] **DESKTOPUI.6 [AGENT]** Desktop "gear" icon looks like a SUN, not a gear.
+- [~] **DESKTOPUI.6 [AGENT]** Desktop gear icon fixed. Replaced sun-like rays with proper gear teeth in icons.js. Mobile pill uses same svg("gear") so both surfaces match. bin/verify green.
   Root cause pinned: `src/enqueue/static/js/icons.js:27` defines `gear:` as a circle plus eight straight rays (`M12 2v3 M12 19v3 M22 12h-3 ...`) - that is literally a sun glyph.
   Replace its path data with a real gear outline; copy the gear SVG the mobile app uses (grep `src/enqueue/static/mobile.html` for the settings/gear icon in the pill) so the two surfaces match exactly.
   Keep the same viewBox/stroke convention as the other entries in `icons.js`.
