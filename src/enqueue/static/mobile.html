@@ -157,6 +157,7 @@
     border-radius: var(--r-lg);
     padding: var(--sp-3);
     transition: background var(--dur) ease, border-color var(--dur) ease, box-shadow var(--dur) ease;
+    position: relative;
   }
   .card:hover {
     background: var(--surface-2);
@@ -165,6 +166,19 @@
   }
   .card:active {
     background: var(--surface);
+  }
+
+  /* Kind-based accent color - thin top border */
+  .card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    background: var(--kind, var(--purple-bold));
+    opacity: 0.8;
   }
   .dot {
     width: 8px;
@@ -1437,6 +1451,8 @@
     for (const a of arts) {
       const card = document.createElement("div");
       card.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
+      // Set kind color for accent border
+      card.style.setProperty("--kind", "var(--kind-" + a.kind + ")");
 
       if (a.kind === "note") {
         renderNoteCard(card, a);
