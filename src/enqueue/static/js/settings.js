@@ -243,7 +243,7 @@ async function renderSettingsAI() {
 	// Connection: how the app reaches a model - the backend, the model name,
 	// the URL, the key, and any extra headers. Reads first, because a person
 	// sets the wire before they tune behaviour (N.7b).
-	html += '<div class="shelf">Connection</div><div class="group">';
+	html += '<div class="shelf">Connection</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
 	const chosen = d.settings.llm_backend;
 	html +=
 		'<div class="field"><label for="s_backend">Answers come from</label>' +
@@ -313,6 +313,11 @@ async function renderSettingsAI() {
 	}
 
 	const keyed = d.storage.api_key_present;
+	html += "</div></div>";
+
+	// --- API Key ---
+	html += '<div class="shelf">API Key</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
+	const keyed = d.storage.api_key_present;
 	html +=
 		'<div class="field"><label for="s_key">API key</label>' +
 		(d.storage.api_key_editable
@@ -340,18 +345,23 @@ async function renderSettingsAI() {
 				"</div>") +
 		'<div id="keyState" class="aside caution"></div></div>';
 
+	html += "</div></div>;
+
+	html += "</div></div>";
+
+	// --- Custom Headers ---
+	html += '<div class="shelf">Custom Headers</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
 	html +=
 		'<div class="field"><label for="s_headers">' +
 		esc(SETTING_LABELS.llm_headers) +
 		"</label>" +
 		'<textarea id="s_headers" rows="3" spellcheck="false" placeholder="' +
 		"HTTP-Referer: https://your-app&#10;X-Title: Enqueue" +
-		'" onchange="stageSetting(\'llm_headers\', this.value)">' +
+		'" onchange="stageSetting('llm_headers', this.value)">' +
 		esc(String(d.settings.llm_headers.value || "")) +
 		"</textarea>" +
 		'<div class="aside">One <b>Name: value</b> per line.</div></div>';
-
-	html += "</div>";
+	html += "</div></div>;
 
 	// Behavior: how the model is used once connected - retries, the vision
 	// model, and the concept-layer rebuild.
