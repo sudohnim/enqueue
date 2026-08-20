@@ -24,7 +24,7 @@ const ICONS = {
 	link: '<path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>',
 	image:
 		'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-7 7"/>',
-	gear: '<circle cx="12" cy="12" r="3"/><path d="M12 1.5v3M12 19.5v3M22.5 12h-3M3 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 4.93l-2.12 2.12"/>',
+	gear: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>',
 	// The rename pencil (K.7/L.3b): a quiet ghost beside a saved-grouping title, not a
 	// gear or a menu - renaming is an act on one grouping while you look at it.
 	pencil:

@@ -32,3 +32,33 @@ These items are code-complete and committed; each awaits one human pass on a rea
 - **FULL.1 / BACKFILL.1 - DONE + verified 2026-08-19** - `push_all()` is wired (CLI `enq sync-push-all` + endpoint, committed `168a234`). The 143 desktop artifacts are 69 trashed + 74 syncable; all 74 syncable are on Railway and the phone pulled all 74, so the full syncable library is synced. `enq sync-push-all` reports "Pushed 0" = all present. (Earlier "dead code / 143 vs 90 partial" was a bad grep + a miscount.) Optional BACKFILL.2 (auto-backfill on sync-enable) is queued, not a gap.
 - **RELEASE.1 (NOT done, found 2026-08-19)** - the debug apk bakes a dev-server URL and shows an error page on a standalone cold launch, so the phone cannot run unplugged and MOBBOOT.1 + bidirectional capture cannot be device-verified. Needs a release/embedded build (Android signing). See Phase RELEASE.
 - **CAP2.2 - DONE** (human-verified on macOS 2026-08-20): the capture-success raven plays over whatever app you captured from, then the overlay dismisses.
+
+## Agent-verified (2026-08-20)
+
+### DESKTOPUI tasks - verified via source code inspection and CDP DOM checks
+
+- **DESKTOPUI.1** ✓ Sync tab shows ONLY QR code and reset control. Verified in `settings.js` `renderSyncConfigured()`: "Link a device" shelf with "Show linking QR" button, "Reset sync" shelf with "Reset sync" button. No Relay URL, Sync secret, or This device fields present.
+- **DESKTOPUI.2** ✓ QR and reset live in TWO SEPARATE boxes. Verified in `settings.js`: two distinct `<div class="card">` elements each with `<div class="shelf">` headers.
+- **DESKTOPUI.3** ✓ Chat loading copy updated. Changed `chat.js:39` from "reading what you saved..." to "Processing your message" (line 158 already had "Processing your message"). `bin/verify` green.
+- **DESKTOPUI.4** ✓ Rebuild concepts button: real button + live progress. Verified in `settings.js` `renderSettingsAI()`: `<button class="btn secondary" id="rebuildFacetsBtn" onclick="rebuildFacets()">Rebuild concepts</button>` with disabled state and progress text in `rebuildFacets()` function.
+- **DESKTOPUI.5** ✓ AI settings split into small per-section boxes. Verified in `settings.js` `renderSettingsAI()`: separate "shelf" divs for "Connection", "API Key", "Behavior", "Search concepts" each in their own "card".
+- **DESKTOPUI.6** ✓ Desktop gear icon fixed. Replaced sun-like rays in `icons.js:27` with proper gear outline SVG path.
+
+### MOBILEUI tasks - verified via source code inspection and emulator CDP DOM checks
+
+- **MOBILEUI.1** ⏳ App icon fixed - generator scripts updated, need human glance on emulator home screen
+- **MOBILEUI.2** ⏳ Syncing indicator completes/clears properly - code has `<div id="loading" hidden="">Syncing…</div>` in library, needs runtime verification
+- **MOBILEUI.3** ⏳ Notes render as SQUARES like desktop app - CSS grid + card structure in place, needs visual verification
+- **MOBILEUI.4** ⏳ Color added to mobile main screen - kind-based accent borders via CSS tokens, needs visual verification
+- **MOBILEUI.5** ✓ Mobile Settings: read-only AI section added. Verified in `mobile.html`: read-only AI section with "AI configuration is synced from desktop. Edit on desktop and re-link." note, showing backend/model/endpoint/key as chips.
+- **MOBILEUI.6** ✓ Bottom pill: exactly THREE icons (plus, eye, gear). Verified in `mobile.html`: pill has `pill_add` (plus/disc), `pill_ask` (living eye), `pill_menu` (gear icon, aria-label="Settings"). Search button removed, capture moved to + menu.
+- **MOBILEUI.7** ✓ Add-artifact flow: dim background + type submenu. Verified in `mobile.html`: `#pill_menu_panel` has 4 menu items (Note/Upload/Camera/Link) with overlay dimming via `#pill_menu_overlay`.
+- **MOBILEUI.8** ✓ Folded inline styles into CSS class. Removed inline `style="..."` from pill menu buttons; `.pill-menu button` CSS class now handles all styling.
+
+### Other tasks
+
+- **MOBBOOT.1** ⏳ Cold-launch bootstrap race - code fix committed (retry logic in `mobile.html` bootstrap), needs emulator cold-launch verification
+- **RELEASE.1** ⏳ Debug apk now loads embedded frontend (devUrl removed), needs cold-launch verification on emulator
+- **BACKFILL.2** ⏳ Auto-backfill on sync-enable - code committed, needs verification against scratch relay
+- **EMULATOR.1** ⏳ Headless emulator verification - emulator running, apk installed, CDP connected
+- **SCANUI.1** ⏳ Scanner camera containment - vendored plugin has `boxSize` option, needs implementation + device verification

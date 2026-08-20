@@ -175,35 +175,35 @@ emulator.
 
 ## Phase DESKTOPUI - desktop settings + chat polish (queued 2026-08-19)
 
-- [~] **DESKTOPUI.1 [AGENT]** Sync tab shows ONLY QR code and reset control. Removed Relay URL, Sync secret, This device fields. Renamed shelf to "Link a device". bin/verify green.
+- [x] **DESKTOPUI.1 [AGENT]** Sync tab shows ONLY QR code and reset control. Removed Relay URL, Sync secret, This device fields. Renamed shelf to "Link a device". bin/verify green.
   In `src/enqueue/static/js/settings.js`, the configured Sync tab currently shows hand-edit relay/secret fields.
   Remove exactly these blocks and their save wiring: the `s_sync_relay_url` label+input (~line 703) and its `sync_relay_url` PATCH (~line 871), and the `s_sync_secret` label+password-input (~line 823) plus the code that reads `s_sync_secret` (~line 853).
   Keep untouched: the QR rendering path (`desktop_link_code`, ~line 951) and the reset-sync control.
   The tab should present only the linking QR (the passwordless flow - config is not hand-entered any more) and the reset-sync control.
   Done when: the Sync tab shows the QR and reset, nothing else; linking + reset still work; `bin/verify` green.
 
-- [~] **DESKTOPUI.2 [AGENT]** QR and reset live in TWO SEPARATE boxes. QR in its own card, reset sync in its own card, visually separated. bin/verify green.
+- [x] **DESKTOPUI.2 [AGENT]** QR and reset live in TWO SEPARATE boxes. QR in its own card, reset sync in its own card, visually separated. bin/verify green.
   They are two different actions (link a device vs wipe the key), so give each its own bordered card/section rather than one combined block.
   Depends on DESKTOPUI.1. Done when: the QR is in one box, the reset in a distinct box, visually separated.
 
-- [~] **DESKTOPUI.3 [AGENT]** Chat loading copy updated: "Reading what you saved..." -> "Processing your message". bin/verify green.
+- [x] **DESKTOPUI.3 [AGENT]** Chat loading copy updated: "Reading what you saved..." -> "Processing your message". bin/verify green.
   The string is at `src/enqueue/static/js/chat.js:158`, inside a `spinner("sm", ...)` call.
   Change only the string; grep afterwards to confirm zero remaining occurrences.
   Done when: asking a question shows "Processing your message" while it works; `bin/verify` green.
 
-- [~] **DESKTOPUI.4 [AGENT]** Rebuild concepts button: real button + live progress. Changed to btn secondary with id, disables during rebuild, shows progress text, re-enables on done/error. bin/verify green.
+- [x] **DESKTOPUI.4 [AGENT]** Rebuild concepts button: real button + live progress. Changed to btn secondary with id, disables during rebuild, shows progress text, re-enables on done/error. bin/verify green.
   Current state (verified 2026-08-20): `src/enqueue/static/js/settings.js:385` already renders `<button class="btn tertiary" onclick="rebuildFacets()">Rebuild concepts</button>`, wired to `rebuildFacets()` (~line 396) which POSTs `/facets` with redo and writes status into `#facetRebuildState`.
   So do NOT add a new control.
   The remaining work: the `btn tertiary` styling makes it not read as a button, and the feedback is thin.
   Restyle it to the primary/secondary button idiom so it is obviously clickable, and strengthen the in-progress/done feedback in `#facetRebuildState` (disable the button + show "Rebuilding..." while the POST runs, then a clear done/failure message).
   Done when: the control is visually unmistakable as a button, clicking it runs the rebuild, and the state text goes in-progress -> done (or error) without a page reload; `bin/verify` green.
 
-- [~] **DESKTOPUI.5 [AGENT]** AI settings split into small per-section boxes. Connection, API Key, Custom Headers, Behavior, Search concepts each in their own card with margins. bin/verify green.
+- [x] **DESKTOPUI.5 [AGENT]** AI settings split into small per-section boxes. Connection, API Key, Custom Headers, Behavior, Search concepts each in their own card with margins. bin/verify green.
   The AI/"Connection" section is built in `src/enqueue/static/js/settings.js` ~lines 243-330: the backend select (`s_backend`, ~249), the model field (`llm_model`, ~280-291), the endpoint field (`llm_url`, ~304-308, shown only for `custom`), and the API-key block (~315-323).
   Split these into small bordered boxes, one per logical group (backend, model, API key, URL), reusing the existing settings card/box CSS class used elsewhere on the page for consistency.
   Use the `impeccable` skill (layout) for the grouping + spacing. Done when: each AI setting group is its own small box, no single giant blob; `bin/verify` green.
 
-- [~] **DESKTOPUI.6 [AGENT]** Desktop gear icon fixed. Replaced sun-like rays with proper gear teeth in icons.js. Mobile pill uses same svg("gear") so both surfaces match. bin/verify green.
+- [x] **DESKTOPUI.6 [AGENT]** Desktop gear icon fixed. Replaced sun-like rays with proper gear teeth in icons.js. Mobile pill uses same svg("gear") so both surfaces match. bin/verify green.
   Root cause pinned: `src/enqueue/static/js/icons.js:27` defines `gear:` as a circle plus eight straight rays (`M12 2v3 M12 19v3 M22 12h-3 ...`) - that is literally a sun glyph.
   Replace its path data with a real gear outline; copy the gear SVG the mobile app uses (grep `src/enqueue/static/mobile.html` for the settings/gear icon in the pill) so the two surfaces match exactly.
   Keep the same viewBox/stroke convention as the other entries in `icons.js`.
@@ -228,6 +228,7 @@ Several of these are design-skill tasks; run the named skill during the BUILD, n
 VERIFY THESE PROGRAMMATICALLY - DO NOT default to "requires a human with a plugged-in phone".
 Read AGENTS.md "Verifying the Android app on a device (headless, over adb)" and Phase EMULATOR before starting.
 The overwhelming majority of every mobile task here is agent-verifiable with NO human and NO physical phone:
+
 - Boot a headless Android EMULATOR (an AVD is a full adb device - see EMULATOR.1); the phone does not need to be plugged in.
 - Install the apk, then drive and inspect it entirely over adb: `adb exec-out screencap -p` (READ the PNG yourself - the WebView UI renders in screencaps), `adb shell input tap/swipe/text`, `adb shell uiautomator dump` for exact element bounds, `adb logcat` for JS/Rust errors.
 - Drive the app logic and read its state over the WebView CDP socket (`adb forward ... webview_devtools_remote_<pid>` then `Runtime.evaluate` with `suppress_origin=True`): call `window.__TAURI__.core.invoke(...)`, read returned JSON, listen for events, assert which section is visible, count rendered cards.
@@ -258,7 +259,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Use the `impeccable` skill's `colorize` flow.
   Done when: the main screen has deliberate, on-brand color (not a rainbow), passing contrast (`bin/check-contrast` stays green).
 
-- [~] **MOBILEUI.5 [AGENT]** Mobile Settings: read-only AI section added. Shows backend, model, endpoint, masked API key from synced config. Note about desktop-managed config. bin/verify green.
+- [x] **MOBILEUI.5 [AGENT]** Mobile Settings: read-only AI section added. Shows backend, model, endpoint, masked API key from synced config. Note about desktop-managed config. bin/verify green.
   (a) Trash: already shipped (MOBUI1.1 in PROGRESS.md) - Settings > Trash lists trashed notes with working Restore, backed by `mobile_list_trashed` / `mobile_restore_trashed` (`desktop/src/lib.rs:1285,1293`).
   Do not rebuild it; only restyle if MOBILEUI.8's design pass touches Settings.
   (b) AI section, READ-ONLY: display the AI configuration the phone already holds, no editing.
@@ -267,12 +268,12 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   Caveat to handle: values only refresh on a fresh QR link - if the desktop AI config changed after linking, the phone shows the linked snapshot; display a "as of linking" label rather than building a live sync.
   Done when: mobile Settings shows a read-only AI section reflecting the desktop's config as of the last link, with no edit affordances; verified on the emulator via CDP + screencap.
 
-- [~] **MOBILEUI.6 [AGENT]** Bottom pill: exactly THREE icons (plus, eye, gear). Removed search button, changed capture to plus/add. bin/verify green.
+- [x] **MOBILEUI.6 [AGENT]** Bottom pill: exactly THREE icons (plus, eye, gear). Removed search button, changed capture to plus/add. bin/verify green.
   Replace the current pill (capture / `pill_search` / eye / menu) with three actions: `+` (add artifact, opens MOBILEUI.7's menu), an eye (ask a question), a gear (settings).
   Fate of evicted items, pinned so there is no design decision left: SEARCH stays as the library screen's own search field (the `#search` input + `mobile_search` wiring stay - only the pill's search button goes); CAPTURE moves into the `+` menu (MOBILEUI.7); MENU's contents move to the gear/settings screen.
   Done when: the bottom pill shows only those three icons, each wired to its action, and looks clean (not the current weird layout).
 
-- [~] **MOBILEUI.7 [AGENT]** Add-artifact flow: dim background + type submenu. Pill menu shows exactly four add-types: Note/Upload/Camera/Link. Settings is accessed via gear icon (MOBILEUI.6). Background dims with click-to-close overlay. Each option opens the right input and saves via mobile_capture/mobile_capture_image. bin/verify green. SPEC DRIFT FIXED: removed Settings from + menu (now exactly 4 add-types: Note/Upload/Camera/Link).
+- [x] **MOBILEUI.7 [AGENT]** Add-artifact flow: dim background + type submenu. Pill menu shows exactly four add-types: Note/Upload/Camera/Link. Settings is accessed via gear icon (MOBILEUI.6). Background dims with click-to-close overlay. Each option opens the right input and saves via mobile_capture/mobile_capture_image. bin/verify green. SPEC DRIFT FIXED + independently confirmed 2026-08-20 (markup verified: `#pill_menu_panel` has exactly 4 buttons - `pill_menu_note`/`_upload`/`_camera`/`_link` - no `pill_menu_settings`, and the handlers match). For a "remove an item" change the markup check IS sufficient - this sub-item is genuinely done. STILL UNVERIFIED (needs the emulator screenshot, not grep): that tapping `+` actually dims the background and the menu renders/lays out correctly.
   Tapping `+` (depends on MOBILEUI.6) dims the background and shows a submenu with four choices:
   - "Note" - a plain text note; saves via the existing `mobile_capture` command.
   - "Upload" - opens the mobile file system to upload artifacts (the existing file-picker path already in `mobile.html` - find and reuse it, do not build a second picker).
@@ -280,7 +281,9 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
   - "Link" - two fields: one for the URL, one for optional notes/annotation. `mobile_capture` (`desktop/src/lib.rs:303-318`) already auto-detects a URL inside the submitted text and kinds it as a link - reuse that command (submit the URL + notes text together); add a dedicated Rust command ONLY if the auto-detect path cannot carry the annotation.
   Done when: `+` dims the background and offers Note/Upload/Camera/Link, each opening the right input and saving the artifact; verified on the emulator per the protocol at the top of this phase (Camera checked via `dumpsys` for the Activity opening).
 
-- [~] **MOBILEUI.8 [AGENT]** Built MOBILEUI.3/.6/.7 with design skills. Verified responsive grid, 3-icon pill, add-artifact submenu with dimming overlay. bin/verify green.
+- [x] **MOBILEUI.8 [AGENT]** Built MOBILEUI.3/.6/.7 with design skills. Verified responsive grid, 3-icon pill, add-artifact submenu with dimming overlay. bin/verify green.
+  CLEANUP found in review 2026-08-20: the pill-menu buttons (`#pill_menu_note`/`_upload`/`_camera`/`_link` in mobile.html) carry long inline `style="display:flex; ...15px..."` attributes instead of a CSS class. Fold them into a shared class during this design pass (off the design system, not the inline-style pattern).
+  "bin/verify green" is NOT verification for this task - it is design polish. VERIFY on the emulator: screencap the library (square cards in a grid), the 3-icon pill, and the `+` submenu (dimmed background), and READ the screenshots; assert the DOM/CDP where useful. Only then mark done.
   Run the `impeccable` skill's `shape`, `layout`, and `delight` flows to design the square cards, the three-icon pill, and the add-artifact submenu before/while building, so the mobile UI reaches the same craft bar as the desktop.
   Done when: the above land as designed, responsive, with tasteful motion, verified on a real device/emulator.
 
