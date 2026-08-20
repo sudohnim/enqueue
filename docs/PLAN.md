@@ -231,7 +231,7 @@ So the full syncable library is on Railway and on the phone; there is no partial
 - [~] **BACKFILL.1 [AGENT]** CLI `enq sync-push-all` + API POST /settings/sync/push-all added. push_all() fixed to call load_dek_from_keychain() for background threads. Full library already synced: 74/74 non-deleted non-local artifacts on Railway (409s). Headless verify: curl shows 90 objects (74 artifacts + blobs), re-run is no-op. Pending human device-verify (fresh phone pulls full library).
   The manual CLI + endpoint are done and verified; the only OPTIONAL remaining work (low priority, not a gap) is an AUTO-backfill so pointing the desktop at a fresh relay fills it without the manual `enq sync-push-all`.
 
-- [ ] **BACKFILL.2 [AGENT]** (optional) Auto-backfill on sync-enable.
+- [~] **BACKFILL.2 [AGENT]** Auto-backfill on sync-enable implemented. store_sync_secret triggers push_all() in background when DEK is loaded and backfill hasn't run. One-shot flag (sync_backfill_done) prevents re-run. bin/verify green.
   Call `push_all()` off the main path (a background thread, never blocking the request) from the sync-enable / secret-set path (`api/settings.py store_sync_secret`), guarded so it does not re-scan on every launch (a one-shot flag, or rely on the relay's idempotent 409s if a full re-scan is cheap enough).
   Done when: setting the sync secret against a fresh relay backfills the syncable artifacts automatically, with no manual command, and does not re-run the full scan on every launch.
   VERIFY: point the desktop at a scratch relay, set the secret, confirm the relay gains the syncable count with no manual push; `bin/verify` green.
