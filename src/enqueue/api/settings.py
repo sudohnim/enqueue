@@ -91,10 +91,13 @@ def store_sync_secret(req: SyncSecret) -> dict:
     # Only runs when DEK is loaded (keyring unlocked) and backfill hasn't run yet.
     if keyring_file.load_dek_from_keychain() is not None:
         if not settings.get("sync_backfill_done"):
+
             def _bg():
                 from ..sync.client import push_all
+
                 count = push_all()
                 print(f"[sync] auto-backfill pushed {count} artifacts", flush=True)
+
             threading.Thread(target=_bg, daemon=True).start()
             settings.update({"sync_backfill_done": True})
     return settings.sync_state()

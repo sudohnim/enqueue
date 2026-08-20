@@ -312,8 +312,7 @@ async function renderSettingsAI() {
 		});
 	}
 
-	const keyed = d.storage.api_key_present;
-	html += "</div></div>";
+		html += "</div></div>";
 
 	// --- API Key ---
 	html += '<div class="shelf">API Key</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
@@ -345,28 +344,12 @@ async function renderSettingsAI() {
 				"</div>") +
 		'<div id="keyState" class="aside caution"></div></div>';
 
-	html += "</div></div>;
-
 	html += "</div></div>";
-
-	// --- Custom Headers ---
-	html += '<div class="shelf">Custom Headers</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
-	html +=
-		'<div class="field"><label for="s_headers">' +
-		esc(SETTING_LABELS.llm_headers) +
-		"</label>" +
-		'<textarea id="s_headers" rows="3" spellcheck="false" placeholder="' +
-		"HTTP-Referer: https://your-app&#10;X-Title: Enqueue" +
-		'" onchange="stageSetting('llm_headers', this.value)">' +
-		esc(String(d.settings.llm_headers.value || "")) +
-		"</textarea>" +
-		'<div class="aside">One <b>Name: value</b> per line.</div></div>';
-	html += "</div></div>;
 
 	// Behavior: how the model is used once connected - retries, the vision
 	// model, and the concept-layer rebuild.
 	html += '<div class="settings-divider"></div>';
-	html += '<div class="shelf">Behavior</div><div class="group">';
+	html += '<div class="shelf">Behavior</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">';
 	for (const name of ["model_retries", "vision_model"]) {
 		const f = d.settings[name];
 		html += fieldRow(name, esc(SETTING_LABELS[name]), {
@@ -390,7 +373,7 @@ async function renderSettingsAI() {
 	// setting: it fires now and runs in the background, so it lives outside the
 	// Save/Discard bar below.
 	html +=
-		'<div class="shelf">Search concepts</div><div class="group">' +
+		'<div class="shelf">Search concepts</div><div class="card" style="margin-bottom: var(--sp-4);"><div class="group">' +
 		'<div class="field"><label>Concepts (facets)</label>' +
 		'<button class="btn secondary" id="rebuildFacetsBtn" onclick="rebuildFacets()">Rebuild concepts</button>' +
 		'<div class="aside">Concepts are what an item could be an example of - ' +
