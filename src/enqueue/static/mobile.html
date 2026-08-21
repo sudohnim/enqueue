@@ -1120,6 +1120,33 @@
   <div id="capture_status"></div>
 </section>
 
+<!-- Link capture (MOBFIX.4) -->
+<section id="link_capture" hidden>
+  <header>
+    <button class="back" id="link_cancel">&larr;</button>
+    <h1>Save a link</h1>
+  </header>
+  <input
+    id="link_url"
+    type="url"
+    inputmode="url"
+    autocomplete="off"
+    autocapitalize="off"
+    placeholder="https://example.com"
+  />
+  <label for="link_url" style="display:none;">URL</label>
+  <textarea
+    id="link_notes"
+    rows="3"
+    placeholder="Notes (optional)"
+    autocomplete="off"
+  ></textarea>
+  <div id="capture_actions">
+    <button id="link_save">Save</button>
+  </div>
+  <div id="capture_status"></div>
+</section>
+
 <!-- Crop/Rotate sheet (MOB2.6) -->
 <section id="crop" hidden>
   <header>
@@ -2398,6 +2425,40 @@
       }
     });
 
+  // Link capture handlers (MOBFIX.4)
+  document.getElementById("link_cancel").addEventListener("click", () => {
+    show("library");
+    renderLibrary();
+  });
+  document.getElementById("link_save").addEventListener("click", async () => {
+    const url = document.getElementById("link_url").value.trim();
+    if (!url) {
+      document.getElementById("link_url").focus();
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      url = "https://" + url;
+    }
+    const notes = document.getElementById("link_notes").value.trim();
+    const text = notes
+      ? `${url}
+
+${notes}`
+      : url;
+    const status = document.getElementById("capture_status");
+    status.textContent = "";
+    try {
+      await invoke("mobile_capture", { text });
+      document.getElementById("link_url").value = "";
+      document.getElementById("link_notes").value = "";
+      toast("Link saved");
+      show("library");
+      renderLibrary();
+    } catch (e) {
+      status.textContent = String(e);
+    }
+  });
+
   // Image capture -> gallery pick -> Crop/Rotate sheet (MOBFIX.2, MOB.7)
   let cropData = null; // { base64, mime, rotation, cropRect }
 
@@ -2867,19 +2928,15 @@
     // Link
     const linkBtn = document.getElementById("pill_menu_link");
     if (linkBtn)
-      linkBtn.addEventListener("click", async () => {
+      linkBtn.addEventListener("click", () => {
         pillCloseMenu(true);
-        // Link: open a prompt for URL + optional notes
-        const url = prompt("Enter URL:");
-        if (!url) return;
-        const notes = prompt("Optional notes for this link:") || "";
-        const text = notes
-          ? `${url}
-
-${notes}`
-          : url;
-        await invoke("mobile_capture", { text: text });
-        toast("Link saved");
+        // Link: open the link capture form
+        document.getElementById("link_url").value = "";
+        document.getElementById("link_notes").value = "";
+        document.getElementById("capture_status").textContent = "";
+        history.pushState({ v: "link_capture" }, "");
+        show("link_capture");
+        document.getElementById("link_url").focus();
       });
   }
 
