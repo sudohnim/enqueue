@@ -156,7 +156,10 @@
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
     padding: var(--sp-3);
-    transition: background var(--dur) ease, border-color var(--dur) ease, box-shadow var(--dur) ease;
+    transition:
+      background var(--dur) ease,
+      border-color var(--dur) ease,
+      box-shadow var(--dur) ease;
     position: relative;
   }
   .card:hover {
@@ -873,23 +876,7 @@
   >
     <span class="disc"></span>
   </button>
-  <button
-    class="round"
-    id="pill_search"
-    aria-label="Search"
-    onclick="pillOpenSearch()"
-  >
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="8"></circle>
-      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-    </svg>
-  </button>
+
   <button
     class="round"
     id="pill_ask"
@@ -913,38 +900,64 @@
       stroke-width="2"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+      <path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+      ></path>
     </svg>
   </button>
 </div>
 
 <div id="pill_menu_panel" class="pill-menu" hidden role="menu">
-  <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px;">
+  <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px">
     <button role="menuitem" id="pill_menu_note">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 4h11l5 5v11H4z"/><path d="M15 4l5 5v11H4z"/>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M4 4h11l5 5v11H4z" />
+        <path d="M15 4l5 5v11H4z" />
       </svg>
       <span>Note</span>
     </button>
     <button role="menuitem" id="pill_menu_upload">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3" />
       </svg>
       <span>Upload</span>
     </button>
     <button role="menuitem" id="pill_menu_camera">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-8.3a1 1 0 0 1 .58-.9l4.6-3.8a1 1 0 0 1 1.24 0l5 4.1a1 1 0 0 1 .6.9V19z"/>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-8.3a1 1 0 0 1 .58-.9l4.6-3.8a1 1 0 0 1 1.24 0l5 4.1a1 1 0 0 1 .6.9V19z"
+        />
       </svg>
       <span>Camera</span>
     </button>
     <button role="menuitem" id="pill_menu_link">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1" />
+        <path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1" />
       </svg>
       <span>Link</span>
     </button>
-
   </div>
 </div>
 
@@ -998,12 +1011,31 @@
   <div
     id="offline_banner"
     hidden
-    style="position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--line); padding: 8px 16px; font-size: 12px; color: var(--text-subtle); z-index: 10;"
+    style="
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      padding: 8px 16px;
+      font-size: 12px;
+      color: var(--text-subtle);
+      z-index: 10;
+    "
   >
     <span id="offline_banner_text">Offline - showing cached library</span>
     <button
       id="offline_relink"
-      style="float: right; background: var(--accent); color: var(--bg); border: none; border-radius: var(--r-sm); padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;"
+      style="
+        float: right;
+        background: var(--accent);
+        color: var(--bg);
+        border: none;
+        border-radius: var(--r-sm);
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      "
     >
       Re-link
     </button>
@@ -1262,22 +1294,39 @@
         <div style="display: flex; flex-direction: column; gap: 12px">
           <div class="field">
             <label>Backend</label>
-            <div id="ai_backend" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+            <div
+              id="ai_backend"
+              class="mono chip"
+              style="min-height: 44px; display: flex; align-items: center"
+            ></div>
           </div>
           <div class="field">
             <label>Model</label>
-            <div id="ai_model" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+            <div
+              id="ai_model"
+              class="mono chip"
+              style="min-height: 44px; display: flex; align-items: center"
+            ></div>
           </div>
-          <div id="ai_url_field" class="field" style="display: none;">
+          <div id="ai_url_field" class="field" style="display: none">
             <label>Endpoint</label>
-            <div id="ai_url" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+            <div
+              id="ai_url"
+              class="mono chip"
+              style="min-height: 44px; display: flex; align-items: center"
+            ></div>
           </div>
           <div class="field">
             <label>API Key</label>
-            <div id="ai_key" class="mono chip" style="min-height: 44px; display: flex; align-items: center;"></div>
+            <div
+              id="ai_key"
+              class="mono chip"
+              style="min-height: 44px; display: flex; align-items: center"
+            ></div>
           </div>
-          <div class="aside" style="font-size: 12px; color: var(--text-mute);">
-            AI configuration is synced from desktop. Edit on desktop and re-link.
+          <div class="aside" style="font-size: 12px; color: var(--text-mute)">
+            AI configuration is synced from desktop. Edit on desktop and
+            re-link.
           </div>
         </div>
       </div>
@@ -1504,7 +1553,8 @@
     container.replaceChildren();
     for (const a of arts) {
       const card = document.createElement("div");
-      card.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
+      card.className =
+        "card" + (a.status === "pending" ? " card-unsynced" : "");
       // Set kind color for accent border
       card.style.setProperty("--kind", "var(--kind-" + a.kind + ")");
 
@@ -2522,7 +2572,8 @@
     // Wait for invoke to be available (Tauri injection), then poll mobile_status
     function waitForInvokeAndStatus(attempt = 1) {
       if (!invoke) {
-        if (attempt <= 20) {  // ~1 second max wait
+        if (attempt <= 20) {
+          // ~1 second max wait
           setTimeout(() => waitForInvokeAndStatus(attempt + 1), 50);
         } else {
           // invoke never appeared - show setup as last resort
@@ -2547,7 +2598,8 @@
         })
         .catch((e) => {
           // mobile_status rejected - runtime may not be fully ready
-          if (attempt <= 5) {  // retry a few times
+          if (attempt <= 5) {
+            // retry a few times
             setTimeout(() => waitForInvokeAndStatus(attempt + 1), 100);
           } else {
             // After retries, assume unconfigured
@@ -2611,6 +2663,14 @@
 
   // Mobile makeEye: populate the pill-eye with the living eye markup (simplified from icons.js)
   const EYE_ASSET_V = "?v=1";
+  // Minimal svg function for mobile (mirrors icons.js gear icon)
+  const MOBILE_ICONS = {
+    gear: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
+  };
+  const svg = (k) =>
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
+    MOBILE_ICONS[k] +
+    "</svg>";
   function makeEye(el) {
     if (!el) return;
     const wrap = document.createElement("div");
@@ -2619,13 +2679,13 @@
     socket.className = "eye-socket";
     const pupil = document.createElement("img");
     pupil.className = "eye-pupil";
-    pupil.src = "/static/eye-pupil.png" + EYE_ASSET_V;
+    pupil.src = "/eye-pupil.png" + EYE_ASSET_V;
     pupil.alt = "";
     pupil.draggable = false;
     socket.appendChild(pupil);
     const frame = document.createElement("img");
     frame.className = "eye-frame";
-    frame.src = "/static/eye-frame.png" + EYE_ASSET_V;
+    frame.src = "/eye-frame.png" + EYE_ASSET_V;
     frame.alt = "";
     frame.draggable = false;
     wrap.appendChild(socket);
@@ -2667,12 +2727,12 @@
       html =
         '<button class="keep" id="pill_add" aria-label="Add" aria-expanded="false" onclick="pillToggleMenu(event)">' +
         '<span class="disc"></span></button>' +
-
         '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
         '<button class="round" aria-label="Settings" aria-expanded="false" aria-haspopup="true" onclick="pillToggleMenu(event)">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg></button>';
+        svg("gear") +
+        "</button>";
     }
     const parsed = new DOMParser().parseFromString(html, "text/html");
     pill.replaceChildren(...parsed.body.childNodes);
@@ -2692,12 +2752,13 @@
     // Add dimming overlay
     const overlay = document.createElement("div");
     overlay.id = "pill_menu_overlay";
-    overlay.style.cssText = "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
+    overlay.style.cssText =
+      "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
     overlay.addEventListener("click", () => pillCloseMenu(true));
     document.body.appendChild(overlay);
   }
 
-    function pillToggleMenu(e) {
+  function pillToggleMenu(e) {
     if (e) e.stopPropagation();
     if (pillMenu) return pillCloseMenu();
 
@@ -2710,7 +2771,8 @@
     // Add dimming overlay
     const overlay = document.createElement("div");
     overlay.id = "pill_menu_overlay";
-    overlay.style.cssText = "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
+    overlay.style.cssText =
+      "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
     overlay.addEventListener("click", () => pillCloseMenu(true));
     document.body.appendChild(overlay);
   }
@@ -2719,57 +2781,66 @@
   function setupPillMenuHandlers() {
     // Note
     const noteBtn = document.getElementById("pill_menu_note");
-    if (noteBtn) noteBtn.addEventListener("click", () => {
-      pillCloseMenu(true);
-      // Note: plain text note
-      document.getElementById("capture_field").value = "";
-      document.getElementById("capture_status").textContent = "";
-      history.pushState({ v: "capture" }, "");
-      show("capture");
-      document.getElementById("capture_field").focus();
-    });
+    if (noteBtn)
+      noteBtn.addEventListener("click", () => {
+        pillCloseMenu(true);
+        // Note: plain text note
+        document.getElementById("capture_field").value = "";
+        document.getElementById("capture_status").textContent = "";
+        history.pushState({ v: "capture" }, "");
+        show("capture");
+        document.getElementById("capture_field").focus();
+      });
 
     // Upload
     const uploadBtn = document.getElementById("pill_menu_upload");
-    if (uploadBtn) uploadBtn.addEventListener("click", () => {
-      pillCloseMenu(true);
-      // Upload: open file picker
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "*/*";
-      input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          const arrayBuffer = await file.arrayBuffer();
-          await invoke("mobile_capture", { file: arrayBuffer, name: file.name, type: file.type });
-          toast("Uploaded");
-        }
-      };
-      input.click();
-    });
+    if (uploadBtn)
+      uploadBtn.addEventListener("click", () => {
+        pillCloseMenu(true);
+        // Upload: open file picker
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "*/*";
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            const arrayBuffer = await file.arrayBuffer();
+            await invoke("mobile_capture", {
+              file: arrayBuffer,
+              name: file.name,
+              type: file.type,
+            });
+            toast("Uploaded");
+          }
+        };
+        input.click();
+      });
 
     // Camera
     const cameraBtn = document.getElementById("pill_menu_camera");
-    if (cameraBtn) cameraBtn.addEventListener("click", () => {
-      pillCloseMenu(true);
-      invoke("mobile_capture_image").catch(() => {});
-    });
+    if (cameraBtn)
+      cameraBtn.addEventListener("click", () => {
+        pillCloseMenu(true);
+        invoke("mobile_capture_image").catch(() => {});
+      });
 
     // Link
     const linkBtn = document.getElementById("pill_menu_link");
-    if (linkBtn) linkBtn.addEventListener("click", async () => {
-      pillCloseMenu(true);
-      // Link: open a prompt for URL + optional notes
-      const url = prompt("Enter URL:");
-      if (!url) return;
-      const notes = prompt("Optional notes for this link:") || "";
-      const text = notes ? `${url}
+    if (linkBtn)
+      linkBtn.addEventListener("click", async () => {
+        pillCloseMenu(true);
+        // Link: open a prompt for URL + optional notes
+        const url = prompt("Enter URL:");
+        if (!url) return;
+        const notes = prompt("Optional notes for this link:") || "";
+        const text = notes
+          ? `${url}
 
-${notes}` : url;
-      await invoke("mobile_capture", { text: text });
-      toast("Link saved");
-    });
-
+${notes}`
+          : url;
+        await invoke("mobile_capture", { text: text });
+        toast("Link saved");
+      });
   }
 
   // Call setup when DOM is ready
@@ -2807,10 +2878,13 @@ ${notes}` : url;
     if (aiUrl) aiUrl.textContent = s.llm_url || "not set";
     if (aiKey) {
       const key = s.llm_api_key || "";
-      aiKey.textContent = key ? key.slice(0, 4) + "****" + key.slice(-4) : "not set";
+      aiKey.textContent = key
+        ? key.slice(0, 4) + "****" + key.slice(-4)
+        : "not set";
     }
     if (aiUrlField) {
-      aiUrlField.style.display = (s.llm_backend === "custom" && s.llm_url) ? "block" : "none";
+      aiUrlField.style.display =
+        s.llm_backend === "custom" && s.llm_url ? "block" : "none";
     }
 
     // Backend select
@@ -2968,13 +3042,16 @@ ${notes}` : url;
       emptyEl.style.display = "none";
       for (const item of items) {
         const row = document.createElement("div");
-        row.style.cssText = "padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px;";
+        row.style.cssText =
+          "padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px;";
         const title = document.createElement("span");
-        title.style.cssText = "flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+        title.style.cssText =
+          "flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
         title.textContent = item.title || "Untitled";
         const restoreBtn = document.createElement("button");
         restoreBtn.textContent = "Restore";
-        restoreBtn.style.cssText = "background: var(--accent); color: var(--bg); border: none; border-radius: var(--r-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;";
+        restoreBtn.style.cssText =
+          "background: var(--accent); color: var(--bg); border: none; border-radius: var(--r-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;";
         restoreBtn.addEventListener("click", async () => {
           try {
             await invoke("mobile_restore_trashed", { id: item.id });

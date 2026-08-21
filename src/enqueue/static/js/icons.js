@@ -52,6 +52,9 @@ const svg = (k) => '<svg viewBox="0 0 24 24">' + ICONS[k] + "</svg>";
 // per-page-load version query fixes that: the same value for every mount in a
 // session (so the WebView caches within the session), a fresh value each app
 // launch (so a relaunch always pulls a changed eye-frame/pupil/eye-only).
+// On desktop, eye assets are at /static/; on mobile (tauri.localhost) they're at root /
+const IS_MOBILE = location.origin.includes("tauri.localhost");
+const EYE_ASSET_BASE = IS_MOBILE ? "" : "/static";
 const EYE_ASSET_V = "?v=" + Date.now();
 
 const EYE_MARKUP = (() => {
@@ -61,13 +64,13 @@ const EYE_MARKUP = (() => {
 	socket.className = "eye-socket";
 	const pupil = document.createElement("img");
 	pupil.className = "eye-pupil";
-	pupil.src = "/static/eye-pupil.png" + EYE_ASSET_V;
+	pupil.src = EYE_ASSET_BASE + "/eye-pupil.png" + EYE_ASSET_V;
 	pupil.alt = "";
 	pupil.draggable = false;
 	socket.appendChild(pupil);
 	const frame = document.createElement("img");
 	frame.className = "eye-frame";
-	frame.src = "/static/eye-frame.png" + EYE_ASSET_V;
+	frame.src = EYE_ASSET_BASE + "/eye-frame.png" + EYE_ASSET_V;
 	frame.alt = "";
 	frame.draggable = false;
 	wrap.appendChild(socket);
