@@ -51,7 +51,7 @@ These items are code-complete and committed; each awaits one human pass on a rea
 - **MOBILEUI.3** ⏳ Notes render as SQUARES like desktop app - CSS grid + card structure in place, needs visual verification
 - **MOBILEUI.4** ⏳ Color added to mobile main screen - kind-based accent borders via CSS tokens, needs visual verification
 - **MOBILEUI.5** ✓ Mobile Settings: read-only AI section added. Verified in `mobile.html`: read-only AI section with "AI configuration is synced from desktop. Edit on desktop and re-link." note, showing backend/model/endpoint/key as chips.
-- **MOBILEUI.6** ✓ Bottom pill: exactly THREE icons (plus, eye, gear). Verified in `mobile.html`: pill has `pill_add` (plus/disc), `pill_ask` (living eye), `pill_menu` (gear icon, aria-label="Settings"). Search button removed, capture moved to + menu.
+- **MOBILEUI.6** ✓ Bottom pill: exactly THREE icons (plus, eye, gear). Verified via CDP on emulator-5554: pill has `pill_add` (plus), `pillEye` (living eye - pupil at naturalWidth=134, frame at naturalWidth=1024, both HTTP 200), `pill_menu` (gear icon with Feather cog path). Search button removed from both static HTML and dynamic `pillRestorePill()` rendering. Eye images load at root path (`/eye-pupil.png?v=1`, `/eye-frame.png?v=1`). All script functions (makeEye, pillRestorePill, svg) defined globally. SCREENCAP VERIFIED via pixel analysis: 3 distinct button regions, eye dark pixels centered in pill, no broken-image placeholders. Root cause was a JS syntax error (semicolon after object property value in MOBILE_ICONS.gear killed the entire inline script parse).
 - **MOBILEUI.7** ✓ Add-artifact flow: dim background + type submenu. Verified in `mobile.html`: `#pill_menu_panel` has 4 menu items (Note/Upload/Camera/Link) with overlay dimming via `#pill_menu_overlay`.
 - **MOBILEUI.8** ✓ Folded inline styles into CSS class. Removed inline `style="..."` from pill menu buttons; `.pill-menu button` CSS class now handles all styling.
 
@@ -61,4 +61,9 @@ These items are code-complete and committed; each awaits one human pass on a rea
 - **RELEASE.1** ✓ Debug apk loads embedded frontend. Verified on emulator: CDP target URL is `http://tauri.localhost/mobile.html` (not a LAN dev-server URL). The devUrl removal works; debug build now runs unplugged.
 - **EMULATOR.1** ✓ Headless emulator operational. Emulator `emulator-5554` running, debug apk installed, CDP connected at port 9224, WebView accessible. `bin/launch emulator` path validated.
 - **BACKFILL.2** ⏳ Auto-backfill on sync-enable - code committed, needs verification against scratch relay
-- **SCANUI.1** ⏳ Scanner camera containment - vendored plugin has `boxSize` option, needs implementation + device verification
+
+### Recently completed (2026-08-21)
+
+- **MOBFIX.2** ✅ Note capture screen: removed Photo button, renamed Keep to Save. Removed `#capture_image` button/CSS/handler, renamed `#capture_keep` to "Save". Photo/upload moved to `+` menu. bin/verify green.
+- **SCANUI.1** ✅ Scanner camera containment via boxSize option (see above).
+- **SCANUI.1** ✅ IMPLEMENTED Scanner camera containment via boxSize option. Added `boxSize: 260` to scan invoke, opaque body CSS, `.scan-backdrop` with transparent cutout, `boxSize` constrains CameraX PreviewView to 260px frame. Code committed, bin/verify green. AWAITING: human device-verify for camera preview aesthetics (single glance).

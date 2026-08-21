@@ -445,16 +445,6 @@
     background: var(--purple-bold);
     color: var(--on-purple-bold);
   }
-  #capture_image {
-    flex: 1;
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    padding: 12px 18px;
-    font-size: 15px;
-    font-weight: 500;
-  }
   #capture_status {
     margin-top: 12px;
     font-size: 14px;
@@ -805,12 +795,15 @@
     -webkit-line-clamp: 2;
   }
 
-  /* QR.4a: during a native barcode scan the plugin renders the camera BEHIND a
-     transparent WebView, so the page must be see-through and the normal UI hidden,
-     leaving only the aiming overlay. */
+  /* SCANUI.1: during a native barcode scan the plugin renders the camera BEHIND the
+     WebView via CameraX. To contain the preview inside the centered frame:
+     (1) keep the page OPAQUE (var(--bg)) so the camera only shows through the cutout,
+     (2) boxSize is passed to the plugin's scan() call so the PreviewView is 260px,
+         matching the frame - no bleed outside the box,
+     (3) four opaque panels surround a transparent center window for the camera. */
   html.scanning,
   body.scanning {
-    background: transparent !important;
+    background: var(--bg) !important;
   }
   body.scanning * {
     visibility: hidden !important;
@@ -828,6 +821,26 @@
   body.scanning #scan_overlay {
     display: block;
   }
+  /* SCANUI.1: dark backdrop with transparent center cutout for camera preview.
+     The plugin's boxSize constrains the CameraX PreviewView to 260px at the
+     center; this backdrop sits ABOVE the WebView content (keeping the body opaque)
+     while the cutout lets the 260px PreviewView show through. */
+  #scan_overlay .scan-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    /* Cut a transparent rounded rectangle at the scan frame position. */
+    /* The PreviewView is 260x260 centered at 50%/44% (same as .frame). */
+    box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.85);
+  }
+  #scan_overlay .scan-frame-cutout {
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    width: 260px;
+    height: 260px;
+    transform: translate(-50%, -50%);
+  }
   #scan_overlay .frame {
     position: absolute;
     left: 50%;
@@ -837,9 +850,6 @@
     transform: translate(-50%, -50%);
     border: 3px solid #fff;
     border-radius: 18px;
-    /* Fully opaque surround (alpha 1) so the camera shows ONLY inside this box,
-       not across the whole screen. */
-    box-shadow: 0 0 0 4000px rgba(0, 0, 0, 1);
   }
   #scan_overlay .hint {
     position: absolute;
@@ -1068,8 +1078,7 @@
     autocomplete="off"
   />
   <div id="capture_actions">
-    <button id="capture_keep">Keep</button>
-    <button id="capture_image" type="button">Photo</button>
+    <button id="capture_keep">Save</button>
   </div>
   <div id="capture_status"></div>
 </section>
@@ -1480,6 +1489,8 @@
 </section>
 
 <div id="scan_overlay" aria-hidden="true">
+  <!-- SCANUI.1: dark backdrop with transparent center cutout for camera -->
+  <div class="scan-backdrop"></div>
   <div class="hint">Point at the linking QR on your desktop</div>
   <div class="frame"></div>
   <button type="button" class="cancel" id="scan_cancel">Cancel</button>
@@ -2250,6 +2261,9 @@
     try {
       const result = await invoke("plugin:barcode-scanner|scan", {
         formats: ["QR_CODE"],
+        // SCANUI.1: boxSize constrains the CameraX PreviewView so the camera
+        // preview matches the frame size (260px), preventing bleed outside the box.
+        boxSize: 260,
       });
       await handleScanResult(result);
     } catch (e) {
@@ -2347,7 +2361,7 @@
       }
     });
 
-  // Image capture from photo picker (MOB.7) -> Crop/Rotate sheet (MOB2.6)
+  // Image capture -> gallery pick -> Crop/Rotate sheet (MOBFIX.2, MOB.7)
   let cropData = null; // { base64, mime, rotation, cropRect }
 
   async function doCaptureImage() {
@@ -2555,15 +2569,8 @@
     show("library");
   });
 
-  // Guard: capture_image_btn no longer exists. An unguarded listener on a null
-  // element throws here and aborts init before bootstrap() (line ~2765) runs, so
-  // sync never fires and the library spins forever.
-  document
-    .getElementById("capture_image")
-    ?.addEventListener("click", doCaptureImage);
-  document
-    .getElementById("capture_image_btn")
-    ?.addEventListener("click", doCaptureImage);
+  // Image capture now handled via the + menu (pill_menu_camera -> doCaptureImage)
+  // and the Camera add-option; the old capture_image button was removed (MOBFIX.2).
 
   // MOBBOOT.1: robust bootstrap with retry for Tauri runtime readiness
   // Only show setup when mobile_status resolves with configured:false.

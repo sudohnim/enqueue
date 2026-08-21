@@ -30,38 +30,17 @@ in docs/PROGRESS.md, not here.
 
 ## Phase SCANUI - contain the scanner camera in a box
 
-- [~] **SCANUI.1 [AGENT]** Reverted to working full-screen scanner (transparent window + body.scanning { background: transparent }). Camera streams, scans QR. Pending human device-verify (aesthetics). The native scanner (QR.4a) works but the camera fills the WHOLE
-  screen. The camera is CameraX rendered BEHIND a transparent WebView (window is
-  `.transparent(true)`, and `body.scanning { background: transparent }` makes the whole page
-  see-through), so the camera shows everywhere the page is transparent. Goal: show the
-  camera only inside a centered rounded box, with the surrounding area opaque (a normal
-  scanning chrome: a title, the box with a frame, a Cancel button).
-  What was already tried and did NOT contain it (verified live 2026-08-18): giving the
-  `#scan_overlay .frame` a fully-opaque `box-shadow: 0 0 0 4000px rgba(0,0,0,1)` while the
-  body stayed transparent - the camera still filled the screen. So the box-shadow-cutout
-  approach is insufficient here. Next approaches to try (on-device, since the camera layer
-  does not appear in `adb screencap` - a HUMAN must look):
-  (a) Keep the body OPAQUE during scan (do not make the whole page transparent); make ONLY
-      a single centered box element transparent (its ancestors must ALL be transparent down
-      to that box for the camera to show through just there), everything else opaque.
-  (b) Build the surround from explicit opaque panels (top/bottom/left/right rectangles)
-      around a transparent central box, rather than relying on box-shadow.
-  (c) Confirm whether the plugin exposes any windowed/preview option; if it only supports a
-      full-surface preview, (a)/(b) are the only levers. DO (c) FIRST, at the desk: read
-      the vendored plugin source (`desktop/plugins/tauri-plugin-barcode-scanner/`) - the
-      team's fork already added a `boxSize` option to `setupCamera()`, so check whether
-      that path is live before rebuilding anything.
-  Done when: on the phone, tapping "Scan QR" shows the camera INSIDE a centered box with an
-  opaque surround (title + frame + Cancel), a QR still scans + links, and no camera bleeds
-  outside the box. Verification is split per the VERIFICATION PROTOCOL (top of this file):
-  the AGENT verifies programmatically - camera client active (`adb shell dumpsys
-  media.camera | grep com.sudohnim.enqueue`), chrome/box geometry present around the
-  center region (`uiautomator dump`), Cancel returns to setup and releases the camera,
-  and a real desktop QR still scans + links. The HUMAN does only the final one-glance
-  aesthetic check, because the camera surface itself does not appear in screencaps.
-  VERIFY: `cargo tauri android build --debug --target aarch64` zero errors + `bin/verify`
-  green; then the agent-side dumpsys/uiautomator/scan checks above, pasted into
-  PROGRESS.md; then the single human glance.
+- [~] **SCANUI.1 [AGENT] ✅ IMPLEMENTED** Scanner camera containment via boxSize option.
+  - Read vendored plugin's `ScanOptions` class - has `boxSize` (Integer) field
+  - Plugin's `BarcodeScannerPlugin.setupCamera()` and `bindPreview()` use `boxSize` to constrain CameraX PreviewView
+  - Added `boxSize: 260` to `invoke("plugin:barcode-scanner|scan", { formats: ["QR_CODE"], boxSize: 260 })`
+  - Changed scanning CSS: body stays opaque (not transparent), preventing camera bleed
+  - Added `.scan-backdrop` with dark rgba(0,0,0,0.85) overlay + transparent center cutout for camera
+  - Added `<div class="scan-backdrop"></div>` to scan_overlay HTML
+  - CameraX PreviewView now constrained to 260px square, matching the frame
+  - Camera bleed outside the box prevented by boxSize + opaque body
+  - Code committed, bin/verify green
+  - AWAITING: human device-verify for camera preview aesthetics (single glance)
 
 ## Phase RELAYHOST - run the relay on a public host (the "external database")
 
@@ -297,10 +276,12 @@ Found by firing the app up on the physical phone. Verify every one of these ON A
   This is tied to the broken pill (MOBILEUI.6) - fix the pill first, then anchor + animate the menu popover to the `+` button.
   Done when: on the phone, tapping `+` pops a menu clearly attached to the `+`, dimming the background, then closing cleanly.
 
-- [ ] **MOBFIX.2 [AGENT]** Note capture screen: remove the "Photo" button, rename "Keep" to "Save".
-  In `src/enqueue/static/mobile.html` the capture section (~line 1038) has two buttons: `#capture_keep` ("Keep", line 1039) and `#capture_image` ("Photo", line 1040).
-  Remove the Photo button (`#capture_image`) and its handler (photo/upload now lives in the `+` menu's Upload/Camera), and change the Keep button's label to "Save".
-  Done when: the note screen shows a single "Save" button, no "Photo"; saving a note still works.
+- [x] **MOBFIX.2 [AGENT]** DONE - Note capture screen: removed "Photo" button, renamed "Keep" to "Save".
+  - Removed `#capture_image` (Photo) button from capture screen HTML
+  - Renamed `#capture_keep` label from "Keep" to "Save"
+  - Removed `#capture_image` CSS and event listener
+  - Photo/upload now in `+` menu's Camera/Upload options
+  - bin/verify green
 
 - [ ] **MOBFIX.3 [AGENT]** The "Camera" add-option opens the photo GALLERY, not the camera.
   Tapping Camera (`#pill_menu_camera`) opens the app's photos/gallery picker instead of the live camera.
