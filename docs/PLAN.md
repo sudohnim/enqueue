@@ -297,20 +297,12 @@ Found by firing the app up on the physical phone. Verify every one of these ON A
   The current path likely uses a gallery/file-pick intent (`mobile_pick_image`/`mobile_capture_image` via the dialog picker). Wire Camera to launch the actual CAMERA capture (an `ACTION_IMAGE_CAPTURE`-style path), leaving "Upload" as the gallery/file path.
   Done when: Camera opens the live camera and captures a photo as an artifact; Upload opens the gallery/files. Verify the camera Activity opens via `adb shell dumpsys`.
 
-- [ ] **MOBFIX.4 [AGENT]** The "Link" add-option is plain and wrong - it has no two-field layout.
-  Per the spec, Link should show TWO fields: one for the URL, one for optional notes/annotation. Right now it fires two `prompt()` dialogs in sequence - not a form at all.
-  DESIGN SPEC (from the impeccable pass, MOBFIX.8 - execute verbatim):
-  - Replace the prompts with a dedicated section in mobile.html, `id="link_capture"`, mirroring the existing `#capture` section exactly: same `header` with a `.back` button (new `id="link_cancel"`) and `<h1>Save a link</h1>`, registered in the `show()` section map alongside capture/library/reader.
-  - Fields, stacked, `gap: var(--sp-3)`:
-    (1) `input#link_url` - `type="url"`, `inputmode="url"`, `autocomplete="off"`, `autocapitalize="off"`, placeholder `https://example.com`, label text "URL" (the page already has global `input` styles: surface ground, `--r-md`, accent focus ring - no new CSS needed for the field itself).
-    (2) `textarea#link_notes` - placeholder "Notes (optional)", the global `textarea` style already gives it min-height 96px + resize.
-  - Save button: `button#link_save` styled identically to `#capture_keep` (fill `var(--purple-bold)`, ink `var(--on-purple-bold)`, `flex: 1`, margin-top `var(--sp-3)`), label "Save".
-  - Behavior: on Save, `trim()` the URL; if empty, do nothing but focus `#link_url` (no dialog); if it has no scheme (`://` absent), prepend `https://`. Build the payload text as `url + "\n\n" + notes` (or just the URL when notes are empty) and call the existing `invoke("mobile_capture", { text })` - the Rust side auto-detects the URL and kinds it as a link (lib.rs ~303-318). Then `toast("Link saved")`, clear both fields, and return to the library (`show("library")` + the pill restore call the capture flow already uses).
-  - On open: clear both fields, focus `#link_url`; wire `link_cancel` back to the library the same way `capture_cancel` is wired.
-  - Delight: none beyond the existing capture-success raven - a routine save should simply feel certain.
-  DEPENDS ON MOBFIX.8 for the visual design (this spec) and lands after MOBFIX.1's menu fix.
-  Done when: Link shows a URL field + a notes field in one screen, saving creates a link artifact with the annotation; it looks intentional, not plain.
-
+- [x] **MOBFIX.4 [AGENT] ✅ DONE** Link add-option: two-field form (URL + notes).
+  - Added `link_capture` section mirroring `capture` section with `link_cancel` back button and "Save a link" title.
+  - URL input (`type=url`, `inputmode=url`, placeholder `https://example.com`) + notes textarea (`rows=3`).
+  - Save handler: prepends `https://` if no scheme, builds payload `url + "\n\n" + notes`, calls `mobile_capture`, toasts "Link saved", clears fields, returns to library.
+  - Back button wired to library, clears fields on open, focuses URL input.
+  - bin/verify green.
 - [ ] **MOBFIX.5 [AGENT]** Bidirectional delete sync is broken: deleting an artifact on the DESKTOP does NOT remove it on the phone.
   Reproduced on device: deleted notes on desktop still show in the mobile library.
   The desktop DOES push on delete (`trash.py:64` calls `push_artifact` with `deleted_at` set), so investigate where it breaks: is the deleted snapshot reaching the relay (curl the relay, decrypt, check `deleted_at`), and does the mobile pull/apply (`desktop/src/sync.rs`) honor `deleted_at` and remove/hide the row + does the library query filter `deleted_at IS NULL` AFTER a pull? Fix whichever link drops the tombstone.
