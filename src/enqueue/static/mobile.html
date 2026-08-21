@@ -1,4 +1,6 @@
 <!doctype html>
+<html>
+<head>
 <meta charset="utf-8" />
 <meta
   name="viewport"
@@ -406,6 +408,27 @@
       0 12px 36px rgba(16, 17, 20, 0.12);
     z-index: calc(var(--z-pill) - 1);
     min-width: 160px;
+    /* MOBFIX.1: entrance animation - rise from the pill */
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+    animation: menu-in var(--dur-fast) var(--ease) forwards;
+    transform-origin: bottom center;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes menu-in {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+  }
+  .pill-menu:not([hidden]) {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
   .pill-menu button {
     display: flex;
@@ -430,6 +453,14 @@
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+  }
+
+  /* MOBFIX.1: disc rotation delight - plus becomes x when menu open */
+  @media (prefers-reduced-motion: no-preference) {
+    .pill .keep[aria-expanded="true"] .disc svg {
+      transform: rotate(45deg);
+      transition: transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
   }
 
   /* #capture_field {
@@ -875,6 +906,9 @@
     font-size: 15px;
   }
 </style>
+</head>
+<body>
+
 
 <div id="pill" class="pill" role="group" aria-label="Main actions">
   <button
@@ -884,14 +918,18 @@
     aria-expanded="false"
     onclick="pillToggleMenu(event)"
   >
-    <span class="disc"></span>
+    <span class="disc">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    </span>
   </button>
 
   <button
     class="round"
     id="pill_ask"
     aria-label="Chat with AI"
-    onclick="openField('ask')"
+    onclick="openField(\'ask\')"
   >
     <span class="pill-eye eye" id="pillEye"></span>
   </button>
@@ -919,7 +957,6 @@
 </div>
 
 <div id="pill_menu_panel" class="pill-menu" hidden role="menu">
-  <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px">
     <button role="menuitem" id="pill_menu_note">
       <svg
         viewBox="0 0 24 24"
@@ -2673,6 +2710,7 @@
   // Minimal svg function for mobile (mirrors icons.js gear icon)
   const MOBILE_ICONS = {
     gear: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
+    plus: '<path d="M12 5v14M5 12h14"></path>'
   };
   const svg = (k) =>
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
@@ -2709,10 +2747,18 @@
       pillMenu.hidden = true;
       pillMenu = null;
     }
-    const btn = document.getElementById("pill_menu");
-    if (btn) {
-      btn.setAttribute("aria-expanded", "false");
-      if (restoreFocus) btn.focus();
+    // Fade out and remove scrim overlay (MOBFIX.1)
+    const overlay = document.getElementById("pill_menu_overlay");
+    if (overlay) {
+      overlay.style.transition = "opacity var(--dur-fast) var(--ease)";
+      overlay.style.opacity = "0";
+      setTimeout(() => overlay.remove(), 140);
+    }
+    // Clear aria-expanded on the button that opened the menu (MOBFIX.1)
+    const expandedBtn = document.querySelector(".pill [aria-expanded='true']");
+    if (expandedBtn) {
+      expandedBtn.setAttribute("aria-expanded", "false");
+      if (restoreFocus) expandedBtn.focus();
     }
   }
 
@@ -2730,17 +2776,16 @@
         '<button class="round" aria-label="Chat with AI" onclick="chatOrAsk()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>";
-    } else {
+        } else {
       html =
         '<button class="keep" id="pill_add" aria-label="Add" aria-expanded="false" onclick="pillToggleMenu(event)">' +
-        '<span class="disc"></span></button>' +
+        '<span class="disc">' + svg("plus") + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
         '<button class="round" aria-label="Settings" aria-expanded="false" aria-haspopup="true" onclick="pillToggleMenu(event)">' +
         svg("gear") +
         "</button>";
-    }
     const parsed = new DOMParser().parseFromString(html, "text/html");
     pill.replaceChildren(...parsed.body.childNodes);
     makeEye(document.getElementById("pillEye"));
@@ -2750,38 +2795,25 @@
     if (e) e.stopPropagation();
     if (pillMenu) return pillCloseMenu();
 
-    const btn = document.getElementById("pill_menu");
+    // Use the button that was actually tapped (pill_add or pill_menu)
+    const btn = e.currentTarget;
     btn.setAttribute("aria-expanded", "true");
 
     pillMenu = document.getElementById("pill_menu_panel");
     pillMenu.hidden = false;
 
-    // Add dimming overlay
+    // Add dimming overlay (MOBFIX.1: z-index 38 = below menu 39, below pill 40)
     const overlay = document.createElement("div");
     overlay.id = "pill_menu_overlay";
     overlay.style.cssText =
-      "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
+      "position: fixed; inset: 0; background: var(--scrim); z-index: 38; opacity: 0;";
     overlay.addEventListener("click", () => pillCloseMenu(true));
     document.body.appendChild(overlay);
-  }
-
-  function pillToggleMenu(e) {
-    if (e) e.stopPropagation();
-    if (pillMenu) return pillCloseMenu();
-
-    const btn = document.getElementById("pill_menu");
-    btn.setAttribute("aria-expanded", "true");
-
-    pillMenu = document.getElementById("pill_menu_panel");
-    pillMenu.hidden = false;
-
-    // Add dimming overlay
-    const overlay = document.createElement("div");
-    overlay.id = "pill_menu_overlay";
-    overlay.style.cssText =
-      "position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: var(--z-pill);";
-    overlay.addEventListener("click", () => pillCloseMenu(true));
-    document.body.appendChild(overlay);
+    // Fade in scrim (MOBFIX.1: 140ms fade-in matching menu)
+    requestAnimationFrame(() => {
+      overlay.style.transition = "opacity var(--dur-fast) var(--ease)";
+      overlay.style.opacity = "1";
+    });
   }
 
   // Set up menu item click handlers (MOBILEUI.7)
@@ -3188,5 +3220,8 @@ ${notes}`
   window.addEventListener("online", () => {
     console.log("[resume] online event - triggering sync");
     if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
-  });
+  })}
+;
 </script>
+</body>
+</html>
