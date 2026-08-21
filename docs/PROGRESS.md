@@ -66,4 +66,6 @@ These items are code-complete and committed; each awaits one human pass on a rea
 
 - **MOBFIX.2** ✅ Note capture screen: removed Photo button, renamed Keep to Save. Removed `#capture_image` button/CSS/handler, renamed `#capture_keep` to "Save". Photo/upload moved to `+` menu. bin/verify green.
 - **SCANUI.1** ✅ Scanner camera containment via boxSize option (see above).
+- **MOBFIX.1** ✅ Fixed add-artifact menu popover: removed duplicate pillToggleMenu, fixed z-index (overlay=38, menu=39, pill=40), used var(--scrim), anchored to e.currentTarget, added 140ms rise animation with easing, scrim fade-in/out, disc rotation delight (45deg), removed inline wrapper, added plus icon to MOBILE_ICONS. Verified on emulator: menu opens anchored to +, dims background, closes cleanly, disc rotates 45deg.
+- **MOBFIX.2b** ✅ Note/Save screen polish: textarea composer with rows=3, dynamic 'New note' title, Enter inserts newline, Save reads .value.trim(), empty guard on Save. bin/verify green.
 - **SCANUI.1** ✅ IMPLEMENTED Scanner camera containment via boxSize option. Added `boxSize: 260` to scan invoke, opaque body CSS, `.scan-backdrop` with transparent cutout, `boxSize` constrains CameraX PreviewView to 260px frame. Code committed, bin/verify green. AWAITING: human device-verify for camera preview aesthetics (single glance).

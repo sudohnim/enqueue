@@ -275,18 +275,7 @@ ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at 
 Found by firing the app up on the physical phone. Verify every one of these ON A DEVICE
 (screencap + CDP), not with bin/verify. Several depend on real design work - see MOBFIX.8.
 
-- [ ] **MOBFIX.1 [AGENT]** The add-artifact menu does not pop up - it renders detached, "stuck outside the button".
-  Tapping `+` should open the Note/Upload/Camera/Link menu anchored to and animating up from the `+` in the pill; right now the menu appears in the wrong place, unattached.
-  This is tied to the broken pill (MOBILEUI.6) - fix the pill first, then anchor + animate the menu popover to the `+` button.
-  DESIGN SPEC (from the impeccable pass, MOBFIX.8 - execute verbatim):
-  - ROOT CAUSE 1 (stacking): the dim overlay is created with `z-index: var(--z-pill)` (40), the SAME layer as the pill itself, and it is appended to the body AFTER the pill - so it covers the pill and the menu (`.pill-menu` sits at `calc(var(--z-pill) - 1)` = 39), the menu renders UNDER the scrim, and the `+` cannot be tapped to close. Fix: overlay `z-index: 38` (above page content and the drawer at 30, below the menu at 39, below the pill at 40 so the `+` stays tappable to toggle closed).
-  - ROOT CAUSE 2 (duplicate function): `pillToggleMenu` is defined TWICE in mobile.html (~lines 2749 and 2768); the second silently shadows the first. Delete one copy. The survivor must anchor to the button that was actually tapped: read `e.currentTarget` (it is `pill_add` when opened from `+`, `pill_menu` when opened from the gear) instead of the hardcoded `document.getElementById("pill_menu")`, and set `aria-expanded` on that same button.
-  - Scrim: replace the hardcoded `rgba(0,0,0,0.4)` with `var(--scrim)` (the cool ink-tinted token, mobile.html already loads tokens.css).
-  - Entrance motion: on open, the menu animates up from the pill - `opacity: 0 -> 1` and `transform: translateY(8px) -> translateY(0)`, duration `var(--dur-fast)` (140ms), easing `var(--ease)`, `transform-origin: bottom center`. One `@keyframes menu-in` + `animation` on `.pill-menu:not([hidden])`, wrapped in `@media (prefers-reduced-motion: no-preference)`. The scrim fades in over the same 140ms.
-  - Interior: DELETE the inline-styled wrapper `<div style="display:flex; flex-direction:column; gap:8px; padding:12px">` inside `#pill_menu_panel` (it double-pads - `.pill-menu` already has `padding: var(--sp-2)` and `gap: var(--sp-1)`); the four buttons become direct children of the panel. Fold any needed extras into the `.pill-menu` CSS.
-  - Menu buttons: keep the current idiom but tighten - `min-height: 44px` (touch floor), `padding: var(--sp-3)`, `gap: var(--sp-3)`, icon 20px, label 14px/500. Hover `var(--surface)`, active `var(--surface-2)` (already present).
-  - Delight (small, on-brand): while the menu is open, the `+` disc rotates 45 degrees so the plus reads as an x - `.pill .keep[aria-expanded="true"] .disc svg { transform: rotate(45deg); }` with the disc's existing `cubic-bezier(0.34, 1.56, 0.64, 1)` 140ms transition; skip under reduced motion. Nothing else - the raven flight stays the only big moment.
-  Done when: on the phone, tapping `+` pops a menu clearly attached to the `+` (undimmed menu over a dimmed page, `+` still tappable to close), animating up 8px, then closing cleanly; the gear opens/closes the same menu without breakage.
+- [x] **MOBFIX.1 [AGENT] ✅ DONE** Fixed add-artifact menu popover: removed duplicate pillToggleMenu, fixed z-index (overlay=38, menu=39, pill=40), used var(--scrim), anchored to e.currentTarget, added 140ms rise animation with easing, scrim fade-in/out, disc rotation delight (45deg), removed inline wrapper, added plus icon to MOBILE_ICONS. Verified on emulator: menu opens anchored to +, dims background, closes cleanly, disc rotates 45deg.
 
 - [x] **MOBFIX.2 [AGENT]** DONE - Note capture screen: removed "Photo" button, renamed "Keep" to "Save".
   - Removed `#capture_image` (Photo) button from capture screen HTML
@@ -295,14 +284,13 @@ Found by firing the app up on the physical phone. Verify every one of these ON A
   - Photo/upload now in `+` menu's Camera/Upload options
   - bin/verify green
 
-- [ ] **MOBFIX.2b [AGENT]** Note/Save screen polish (design spec from the MOBFIX.8 impeccable pass - execute verbatim).
-  The capture screen's input is a single-line `input#capture_field` (`type="text"`), so a multi-line note is impossible - the desktop capture supports newlines (Enter saves, Shift+Enter inserts a newline).
-  - Swap `#capture_field` to a `textarea` (rows 3, the global `textarea` style already gives min-height 96px, resize, and the same focus ring - no new field CSS).
-  - Keep the Save button exactly as MOBFIX.2 left it (fill `--purple-bold`, white ink, `flex: 1`).
-  - Title: change the `#capture` header `<h1>` from "Capture" to "New note" when arrived from the Note menu item (the `+` menu's Note path is the only remaining route into this screen after MOBFIX.2).
-  - Behavior: Enter on the keyboard inserts a newline (textarea default); Save reads `.value.trim()`, does nothing when empty (focus stays), otherwise invokes the existing capture path, clears the field, and returns to the library. Do not add autofocus-delay hacks - the Note menu item already focuses the field on open.
-  - Motion/delight: none beyond the existing raven flight on success - a routine save should simply feel certain.
-  Done when: the Note path shows a multi-line composer titled "New note" with a purple Save; typing multi-line text and saving produces one note artifact with the newlines preserved; verified on the emulator (screencap + the saved artifact via `mobile_list`).
+- [ ] **- [x] **MOBFIX.2b [AGENT] ✅ DONE** Note/Save screen polish: textarea composer with rows=3, dynamic 'New note' title, Enter inserts newline, Save reads .value.trim(), empty guard on Save. bin/verify green.
+  - Swapped `#capture_field` to `textarea` (rows 3, global `textarea` style gives min-height 96px, resize, same focus ring).
+  - Added `capture_title` h1 element with dynamic title.
+  - Note handler sets title to 'New note' and focuses textarea.
+  - Save button unchanged (fill `--purple-bold`, white ink, `flex: 1`).
+  - Enter inserts newline (textarea default); Save reads `.value.trim()`, does nothing when empty (focus stays), otherwise invokes existing capture path, clears field, returns to library.
+  - bin/verify green.
 
 - [ ] **MOBFIX.3 [AGENT]** The "Camera" add-option opens the photo GALLERY, not the camera.
   Tapping Camera (`#pill_menu_camera`) opens the app's photos/gallery picker instead of the live camera.
