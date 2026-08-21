@@ -1106,14 +1106,14 @@
 <section id="capture" hidden>
   <header>
     <button class="back" id="capture_cancel">&larr;</button>
-    <h1>Capture</h1>
+    <h1 id="capture_title">Capture</h1>
   </header>
-  <input
+  <textarea
     id="capture_field"
-    type="text"
+    rows="3"
     placeholder="Toss it here - text or a link"
     autocomplete="off"
-  />
+  ></textarea>
   <div id="capture_actions">
     <button id="capture_keep">Save</button>
   </div>
@@ -2826,6 +2826,7 @@
         // Note: plain text note
         document.getElementById("capture_field").value = "";
         document.getElementById("capture_status").textContent = "";
+        document.getElementById("capture_title").textContent = "New note";
         history.pushState({ v: "capture" }, "");
         show("capture");
         document.getElementById("capture_field").focus();
