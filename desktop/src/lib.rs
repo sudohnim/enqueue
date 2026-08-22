@@ -17,6 +17,46 @@ pub fn run() {
 }
 
 #[cfg(mobile)]
+// Global storage for JavaVM captured during JNI_OnLoad (runs on Android UI thread)
+#[cfg(target_os = "android")]
+static ANDROID_JAVA_VM: std::sync::OnceLock<std::sync::Arc<jni::JavaVM>> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+static MAIN_ACTIVITY_CLASS: std::sync::OnceLock<jni::objects::GlobalRef> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut std::ffi::c_void) -> jni::sys::jint {
+    use jni::JavaVM;
+    let vm = unsafe { JavaVM::from_raw(vm as *mut _) }.expect("Failed to create JavaVM from raw pointer");
+    let mut env = vm.get_env().expect("Failed to get JNIEnv");
+    
+    // Store the MainActivity class as a global reference
+    let main_activity_class = env.find_class("com/sudohnim/enqueue/MainActivity")
+        .expect("Failed to find MainActivity class");
+    let global_ref = env.new_global_ref(main_activity_class)
+        .expect("Failed to create global ref for MainActivity");
+    MAIN_ACTIVITY_CLASS.set(global_ref).ok();
+    
+    ANDROID_JAVA_VM.set(std::sync::Arc::new(vm)).ok();
+    jni::sys::JNI_VERSION_1_6 as jni::sys::jint
+}
+
+#[cfg(target_os = "android")]
+pub(crate) fn get_android_vm() -> Result<std::sync::Arc<jni::JavaVM>, String> {
+    ANDROID_JAVA_VM.get()
+        .cloned()
+        .ok_or_else(|| "JavaVM not initialized - JNI_OnLoad may not have run".into())
+}
+
+#[cfg(target_os = "android")]
+pub(crate) fn get_main_activity_class() -> Result<jni::objects::GlobalRef, String> {
+    MAIN_ACTIVITY_CLASS.get()
+        .cloned()
+        .ok_or_else(|| "MainActivity class not initialized - JNI_OnLoad may not have run".into())
+}
+
+#[cfg(mobile)]
 mod mobile {
     use base64::engine::general_purpose;
     use base64::Engine;
@@ -27,12 +67,12 @@ mod mobile {
     #[allow(unused_imports)]
     #[cfg(mobile)]
     use tauri_plugin_dialog::DialogExt;
-    // JNI for foreground service (QR.5b)
-    #[allow(unused_imports)]
+    // JNI for foreground service (QR.5b) - only on Android
+    #[cfg(target_os = "android")]
     use jni::JNIEnv;
-    #[allow(unused_imports)]
+    #[cfg(target_os = "android")]
     use jni::objects::{JClass, JObject};
-    #[allow(unused_imports)]
+    #[cfg(target_os = "android")]
     use ndk_context::android_context;
 
     /// Start the Android foreground sync service via JNI.
@@ -638,6 +678,91 @@ mod mobile {
         
         let base64 = general_purpose::STANDARD.encode(&bytes);
         Ok(serde_json::json!({ "base64": base64, "mime": mime }).to_string())
+    }
+
+    /// Capture an image using the device camera (MOBFIX.3).
+    /// Uses Android's ACTION_IMAGE_CAPTURE intent via MainActivity.
+    #[cfg(target_os = "android")]
+    #[tauri::command]
+    async fn mobile_capture_camera(_app: AppHandle) -> Result<String, String> {
+        use std::sync::mpsc;
+        use jni::objects::{JClass, JString, JValue};
+        
+        let (tx, rx) = mpsc::channel();
+        
+        // Run JNI code on a background thread
+        std::thread::spawn(move || -> Result<(), String> {
+            use jni::objects::{JClass, JString, JValue};
+            use jni::JNIEnv;
+            
+            let result: Result<String, String> = (|| {
+                let vm_arc = crate::get_android_vm()?;
+                let mut env = vm_arc.attach_current_thread()
+                    .map_err(|e| format!("Failed to attach thread: {}", e))?;
+                
+                // Get the MainActivity class from global reference (stored in JNI_OnLoad)
+                let main_activity_class_global = crate::get_main_activity_class()?;
+                // Clone the JObject from the GlobalRef (JObject implements Clone)
+                let main_activity_class = unsafe {
+                    jni::objects::JClass::from(jni::objects::JObject::from_raw(main_activity_class_global.as_obj().as_raw()))
+                };
+                
+                // Call static MainActivity.getCurrentActivity() to get the activity instance
+                let activity = env.call_static_method::<_, &str, &str>(
+                    &main_activity_class,
+                    "getCurrentActivity",
+                    "()Lcom/sudohnim/enqueue/MainActivity;",
+                    &[]
+                ).map_err(|e| format!("Failed to call getCurrentActivity: {:?}", e))?.l().map_err(|e| format!("Failed to get activity: {:?}", e))?;
+                
+                // Call instance method captureImage() on the activity
+                let future = env.call_method(
+                    &activity,
+                    "captureImage",
+                    "()Ljava/util/concurrent/CompletableFuture;",
+                    &[]
+                ).map_err(|e| format!("Failed to call captureImage: {:?}", e))?.l().map_err(|e| format!("Failed to get future: {:?}", e))?;
+                
+                // Wait for the future to complete (blocking - in production use a timeout)
+                let future_obj = unsafe { jni::objects::JObject::from_raw(future.as_raw()) };
+                let result_obj = env.call_method(
+                    &future_obj,
+                    "get",
+                    "()Ljava/lang/Object;",
+                    &[]
+                ).map_err(|e| format!("Failed to call get: {:?}", e))?.l().map_err(|e| format!("Failed to get result: {:?}", e));
+                
+                // Convert result to string
+                let result_obj = result_obj.map_err(|e| format!("Failed to get result object: {}", e))?;
+                let result_str = if result_obj.is_null() {
+                    return Err("Camera capture cancelled or failed".into());
+                } else {
+                    let string_class = env.find_class("java/lang/String")
+                        .map_err(|e| format!("Failed to find String class: {}", e))?;
+                    if env.is_instance_of(&result_obj, &string_class).unwrap_or(false) {
+                        let jstring = jni::objects::JString::from(result_obj);
+                        let java_str = env.get_string(&jstring)
+                            .map_err(|e| format!("Failed to get string: {}", e))?;
+                        java_str.into()
+                    } else {
+                        return Err("Unexpected result type from camera".into());
+                    }
+                };
+                
+                Ok(result_str)
+            })();
+            
+            tx.send(result).map_err(|e| format!("Failed to send result: {}", e))?;
+            Ok(())
+        });
+        
+        // Wait for the result from the background thread
+        rx.recv().map_err(|e| format!("Channel error: {}", e))?
+    }
+    #[cfg(not(target_os = "android"))]
+    #[tauri::command]
+    async fn mobile_capture_camera(_app: AppHandle) -> Result<String, String> {
+        Err("Camera capture only available on Android".into())
     }
 
     /// Save a cropped/rotated image as an artifact (MOB2.6).
@@ -1336,6 +1461,7 @@ mod mobile {
                 mobile_outbox_list,
                 mobile_pick_image,
                 mobile_save_cropped_image,
+                mobile_capture_camera,
                 mobile_chat,
                 mobile_settings_get,
                 mobile_settings_set,
@@ -1841,7 +1967,7 @@ mod desktop {
             return false;
         };
         // Extract host (before first '/', '?', '#', or ':')
-        let host_end = stripped.find(|c: char| c == '/' || c == '?' || c == '#' || c == ':')
+        let host_end = stripped.find(['/', '?', '#', ':'])
             .unwrap_or(stripped.len());
         let host = stripped[..host_end].to_lowercase();
 

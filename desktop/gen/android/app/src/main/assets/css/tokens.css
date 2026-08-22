@@ -1,0 +1,236 @@
+  /* IBM Plex Sans, vendored as static cuts. The type scale (DESIGN.md section 3)
+     uses 400 for body, 500 for titles and buttons, 600 for display and eyebrows;
+     every one of those weights has a bundled face below, so nothing falls back to
+     a system font. The 700 face stays declared but unused, kept because the file
+     is vendored and the scale may grow into it. Nothing is fetched: these are
+     files on disk beside this page. */
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    src:
+      url("../fonts/IBM-Plex-Sans-400.woff2") format("woff2"),
+      url("../fonts/IBMPlexSans-Regular.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+    src:
+      url("../fonts/IBM-Plex-Sans-500.woff2") format("woff2"),
+      url("../fonts/IBMPlexSans-Medium.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+    src:
+      url("../fonts/IBM-Plex-Sans-600.woff2") format("woff2"),
+      url("../fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+    src:
+      url("../fonts/IBM-Plex-Sans-700.woff2") format("woff2"),
+      url("../fonts/IBMPlexSans-Bold.ttf") format("truetype");
+  }
+  :root {
+    /* The app is light only. Without this the browser assumes it may be either, and
+       on a machine set to dark mode it paints native scrollbars, the caret and select
+       menus dark against the canvas. */
+    color-scheme: light;
+
+    /* The light surface ladder, per DESIGN.md section 2. --bg is the canvas;
+       --surface is one step up (cards, panels, inputs); --surface-2 two steps
+       (hovered cards, selected chips); --surface-3 three (pressed fills, recessed
+       wells). --surface-doc is the reading pane's faint-cool-tint canvas, the tint
+       DESIGN.md allows on the page background. */
+    --bg: #ffffff;
+    --surface: #f6f7f9;
+    --surface-doc: #fbfbfd;
+    --surface-2: #eef0f3;
+    --surface-3: #e4e6eb;
+
+    /* Ink. --surface-3 is the darkest ground anything sits on, so it is the binding
+       case: --text-mute (ink-subtle) measures 4.19 there, --text-dim 6.38. */
+    --text: #101114;
+    --text-dim: #4d5061;
+    --text-mute: #686b82;
+    /* The faintest ink that can carry text. DESIGN.md's #9497a9 measures 2.89:1 on
+       the canvas and fails 4.5, so the token is pulled up to #6c6f84: 4.62:1 on
+       surface-1 (the darkest ground a placeholder renders on - inputs sit on
+       surface-1), 4.95:1 on the canvas. It is not permitted on surface-2 (4.33). */
+    --ink-faint: #6c6f84;
+
+    /* The chromatic accent is the raven eye's bold purple #60079f (the loud Kraken
+       purple #7132f5 stays banned). It is a fill, a focus ring, a link - never a
+       section background or a card wash. It is dark, so a filled control wears WHITE
+       ink; as a sole boundary and as link text it clears 3:1 / 4.5:1 comfortably. */
+    --accent: #60079f;
+    /* Hover and pressed steps for filled accent controls: a lighter lift on hover
+       (--lavender-focus #7a1fc0) and a deeper press (--lavender-deep #4a0578), both
+       dark enough to carry white text. */
+    --accent-strong: #60079f;
+    /* The ink motif on the accent disc (the drop icon): WHITE on #60079f (~13:1),
+       because the accent is now dark - dark ink would fail on it. */
+    --accent-ink: #ffffff;
+    /* The accent as text. #60079f on white is ~8:1 and clears 4.5:1 on every
+       surface in the ladder, so accented text (aside.dirty, .title-action.lit,
+       links) uses it directly. */
+    --accent-text: #60079f;
+
+    /* The accent family (the eye's purple). The --lavender* names are kept as
+       aliases so existing consumers resolve, but they now point at the purple. */
+    --lavender: #60079f;
+    --lavender-focus: #7a1fc0;
+    --lavender-deep: #4a0578;
+    --lavender-subtle: rgba(96, 7, 159, 0.12);
+    --on-lavender: #ffffff;
+
+    /* The vivid purple of the eye pupil (#60079f) - bolder and more saturated
+       than the muted lavender accent. Used only where the brand wants the eye's
+       own saturation to carry: the header wash, the capture disc, the greeting
+       period. It is dark, so it always wears white ink (dark ink fails on it);
+       --purple-bold-hover is the lighter lift for the disc's hover. */
+    --purple-bold: #60079f;
+    --purple-bold-hover: #7a1fc0;
+    --purple-bold-wash: rgba(96, 7, 159, 0.1);
+    /* A stronger version of the wash for the home header, so the purple carries
+       further down the frozen header before fading to the white ground. */
+    --purple-bold-wash-strong: rgba(96, 7, 159, 0.22);
+    --on-purple-bold: #ffffff;
+
+    --line: #dedee5;
+    --line-soft: #eceef2;
+    /* The only line token allowed to be a sole boundary. DESIGN.md's #c4c6d0
+       measures 1.70:1 on the canvas and fails the 3:1 boundary rule, so the token
+       is pulled up to #7f8296: 3.32:1 on surface-2 (the darkest ground a control
+       border sits on), 3.79:1 on the canvas. */
+    --line-strong: #7f8296;
+
+    /* Link emphasis is lavender. Links render on the canvas and on raised grounds
+       (bubbles, cards), so they use --accent-text #5741d8, which clears 4.5:1 on
+       every surface (6.66 canvas, 6.21 surface-1, 5.83 surface-2, 5.33 surface-3). */
+    --link: #5741d8;
+    /* Code ink: a cool machine-blue for code text. 7.50:1 on the code block's
+       --surface-2 ground, 8.56:1 on white for inline code. */
+    --code-ink: #0a5270;
+
+    /* Semantic colours. --danger carries white text on its fill (6.09:1) and is
+       safe as text on the canvas. --success is 3.45:1 on white: a fill and a
+       graphic only, never text - success text steps to the badge ink (#026b3f). */
+    --danger: #b4332b;
+    --success: #149e61;
+    --warning: #c47d1f;
+    --info: #3b6bb5;
+
+    /* Callout washes carry --text or --text-dim only. --text-mute measures 4.33-4.50
+       on these and fails 4.5, which is why it is not permitted on any of them. */
+    --tint-info: rgba(59, 107, 181, 0.14);
+    --tint-ok: rgba(20, 158, 97, 0.16);
+    --tint-warn: rgba(196, 125, 31, 0.16);
+    --tint-note: rgba(113, 50, 245, 0.14);
+
+    /* Badge fills and inks (DESIGN.md section 7). Each ink clears 4.5:1 on its own
+       fill: success #026b3f on the ok wash 5.49:1, neutral #4d5061 on the neutral
+       wash 6.82:1, lavender #5741d8 on the lavender-subtle wash 5.17:1, danger
+       #7a241c on the danger wash 8.02:1. */
+    --badge-success-fill: rgba(20, 158, 97, 0.16);
+    --badge-success-ink: #026b3f;
+    --badge-neutral-fill: rgba(104, 107, 130, 0.12);
+    --badge-danger-fill: rgba(180, 51, 43, 0.14);
+    --badge-danger-ink: #7a241c;
+
+    /* Kind colours live on an 8px dot, which is a graphic, so they answer to 3:1
+       rather than the 4.5:1 text needs. Re-measured on the new white canvas: every
+       hue clears 3:1 (green 4.87, blue 5.83, peach 4.90, pink 6.57, teal 6.37,
+       chat 4.27), and under colour-vision deficiency the closest pair sits 8.5
+       apart under deuteranopia and 5.2 under protanopia (both the peach-teal pair,
+       clearly distinct - the just-noticeable difference is 2.3). The blue-violet
+       pair that used to collapse now sits 12.1 deutan / 10.4 protan apart.
+
+       --teal holds an olive-gold and --peach a burnt terracotta. The names are wrong
+       and the values are right: an actual teal collapses into --green under
+       deuteranopia. Do not "fix" a value to match its name. */
+    --green: #30804b;
+    --blue: #376899;
+    --peach: #ad5a31;
+    --pink: #8f4273;
+    --teal: #755c12;
+
+    /* Kind is a fact about a thing, never an action, so none of these is the accent. */
+    --kind-note: var(--green);
+    --kind-link: var(--blue);
+    --kind-pdf: var(--peach);
+    --kind-image: var(--pink);
+    --kind-file: var(--teal);
+    /* A conversation is its own kind of kept thing, so it earns its own hue: a
+       desaturated violet, the one patch of the band the five kinds do not occupy.
+       The original deep plum collapsed into --blue under deuteranopia (2.7 apart),
+       so the violet is lifted until it reads as violet in every vision - 12.1
+       deutan / 10.4 protan away from blue - which still leaves it 4.27:1 on white. */
+    --kind-chat: #7f6ad4;
+
+    /* The near-black focus ring this replaced is gone: :focus-visible now draws a
+       2px --lavender-focus outline at 50% opacity (AU.1). */
+    /* Tinted with the ink rather than black, so it stays cool on the canvas. */
+    --scrim: rgba(16, 17, 20, 0.32);
+
+    /* Spacing, per DESIGN.md section 4 (4, 8, 12, 16, 24, 32, 48, 96). The old 20px
+       --sp-4 is gone; the numeric names keep the binding points the component CSS
+       already references, and --sp-md/--sp-lg are the DESIGN.md names for 16 and 24. */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+    --sp-6: 32px;
+    --sp-7: 48px;
+    --sp-md: 16px;
+    --sp-lg: 24px;
+    --sp-section: 96px;
+
+    /* Radius, per DESIGN.md section 5: buttons and inputs 8px (--r-md), cards and
+       panels 12px (--r-lg), status pills pill. */
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r: 8px;
+    --r-lg: 12px;
+    --r-full: 9999px;
+    --r-pill: 9999px;
+
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* System-only on purpose. Monospace here is information - hashes, paths, byte
+       sizes - never decoration, and it is not worth a second font file. Nothing is
+       named here that is not already on the machine. */
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    --z-base: 1;
+    --z-raised: 2;
+    /* S.5: the frozen home header sits above the wall cards but below the
+       drawer, pill, and drag strip. */
+    --z-sticky: 5;
+    --z-pill: 40;
+    --z-menu: 50;
+    /* The tags-and-summary drawer sits above the artifact content but below the
+       drag strip and the pill, so the window still drags and the pill still wins. */
+    --z-drawer: 30;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-fast: 140ms;
+    --dur: 160ms;
+    --dur-slow: 200ms;
+
+    /* The cool whisper shadow scale, per DESIGN.md section 6. Shadows are cool and
+       low-opacity; the surface ladder and hairlines carry most of the hierarchy.
+       The old warm 24/48/96px halos are gone. */
+    --shadow-micro: 0 1px 3px rgba(16, 17, 20, 0.04);
+    --shadow-card: 0 4px 16px rgba(16, 17, 20, 0.06);
+    --shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08);
+  }
+

@@ -12,6 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api"] }
@@ -40,13 +41,13 @@ qrcode = { version = "0.14", features = ["svg"] }
 tauri-plugin-dialog = { version = "2", default-features = false }
 tauri-plugin-opener = { version = "2", default-features = false }
 tauri-plugin-clipboard-manager = { version = "2", default-features = false }
-# QR.4a: native QR scanner via ML Kit (tauri-plugin-barcode-scanner)
-tauri-plugin-barcode-scanner = { version = "2.4.5", default-features = false }
 
 # JNI for foreground service (QR.5b) - mobile only
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 jni = { version = "0.21", default-features = false }
 ndk-context = { version = "0.1", default-features = false }
+# QR.4a: native QR scanner via ML Kit (tauri-plugin-barcode-scanner) - mobile only
+tauri-plugin-barcode-scanner = { version = "2.4.5", default-features = false }
 
 # The global-shortcut plugin and the engine/AppKit machinery are desktop-only;
 # none of it compiles or makes sense on Android/iOS (no local Python engine there).

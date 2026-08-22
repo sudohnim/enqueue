@@ -8,6 +8,64 @@ fn main() {
     // matching permission the call is refused at runtime with "not allowed. Command
     // not found", which reads like the handler is missing when in fact it is present
     // and the ACL is doing its job.
+    
+    // For desktop builds, override capabilities via TAURI_CONFIG env var to exclude
+    // mobile-only capabilities that reference plugins not available on desktop
+    // (e.g., barcode-scanner). This env var is merged into the config at compile time
+    // by tauri-codegen's get_config function.
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let is_mobile = target_os == "ios" || target_os == "android";
+    
+    if !is_mobile {
+        let desktop_capabilities = serde_json::json!({
+            "app": {
+                "security": {
+                    "capabilities": [
+                        {
+                            "identifier": "capture-overlay",
+                            "description": "Lets the quick-capture overlay put itself away and be dragged by its title bar.",
+                            "windows": ["capture"],
+                            "remote": {
+                                "urls": [
+                                    "http://127.0.0.1:8787/*",
+                                    "http://localhost:8787/*"
+                                ]
+                            },
+                            "permissions": [
+                                "allow-capture-dismiss",
+                                "allow-capture-drag",
+                                "core:event:allow-listen",
+                                "core:event:allow-unlisten"
+                            ]
+                        },
+                        {
+                            "identifier": "home-links",
+                            "description": "Lets the home window hand a saved http(s) address to the system browser, drag its own window by the top strip, and show the Signal-style linking QR for mobile setup (QR.3). All are refused by default because the page is served from a remote origin.",
+                            "windows": ["main"],
+                            "remote": {
+                                "urls": [
+                                    "http://127.0.0.1:8787/*",
+                                    "http://localhost:8787/*"
+                                ]
+                            },
+                            "permissions": [
+                                "allow-hotkey-changed",
+                                "allow-open-external",
+                                "allow-window-drag",
+                                "allow-desktop-link-code",
+                                "core:event:allow-listen",
+                                "core:event:allow-unlisten"
+                            ]
+                        }
+                    ]
+                }
+            }
+        });
+        // Use cargo:rustc-env to pass TAURI_CONFIG to the compiler for macro expansion
+        println!("cargo:rustc-env=TAURI_CONFIG={}", desktop_capabilities);
+        println!("cargo:rerun-if-changed=tauri.conf.json");
+    }
+    
     tauri_build::try_build(
         tauri_build::Attributes::new().app_manifest(
             tauri_build::AppManifest::new().commands(&[

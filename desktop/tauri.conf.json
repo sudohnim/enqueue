@@ -90,6 +90,7 @@
             "allow-mobile-get-tags",
             "allow-mobile-list-trashed",
             "allow-mobile-restore-trashed",
+            "allow-mobile-capture-camera",
             "core:event:allow-listen",
             "core:event:allow-unlisten",
             "barcode-scanner:default"
