@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
 import numpy as np
+from PIL import Image, ImageDraw
 
 HERE = Path(__file__).parent
 SOURCE = HERE / "icon.png"  # The composed icon (raven on purple)
@@ -52,25 +52,24 @@ def create_adaptive_layers(size: int) -> tuple[Image.Image, Image.Image]:
     # Create foreground with transparent background
     fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
 
-    # The safe zone is 66% of the icon size
-    safe_zone = int(size * 0.66)
+    # The safe zone is 80% of the icon size (was 66%) - fills the icon properly
+    safe_zone = int(size * 0.80)
     inset = (size - safe_zone) // 2
 
     # The raven in the source icon is small and centered. We need to extract it
-    # and scale it up to fill the safe zone. First, find the non-purple content.
+    # and scale it up to fill the safe zone. Use the source's alpha channel
+    # directly: opaque pixels = raven, transparent = background.
     src_array = np.array(src)
-    
-    # Find non-white/purple pixels (the raven mark)
-    # Purple background is roughly #6B46C1 (107, 70, 193) - look for non-background pixels
-    # We'll create an alpha mask based on color difference from the purple background
-    purple_r, purple_g, purple_b = 107, 70, 193
-    diff = np.abs(src_array[:, :, 0] - purple_r) + np.abs(src_array[:, :, 1] - purple_g) + np.abs(src_array[:, :, 2] - purple_b)
-    # Threshold: pixels significantly different from purple are the raven
-    alpha_mask = (diff > 60).astype(np.uint8) * 255
-    
-    # Find bounding box of the raven
-    rows = np.any(alpha_mask, axis=1)
-    cols = np.any(alpha_mask, axis=0)
+    # Guard: source must be RGBA (4 channels) for alpha mask
+    if src_array.ndim != 3 or src_array.shape[2] != 4:
+        raise ValueError(f"Source icon must be RGBA, got shape {src_array.shape}")
+    alpha_mask = src_array[
+        :, :, 3
+    ]  # Alpha channel: 255 = opaque (raven), 0 = transparent (background)
+
+    # Find bounding box of the raven (opaque pixels)
+    rows = np.any(alpha_mask > 0, axis=1)
+    cols = np.any(alpha_mask > 0, axis=0)
     if np.any(rows):
         rmin, rmax = np.where(rows)[0][[0, -1]]
         cmin, cmax = np.where(cols)[0][[0, -1]]
@@ -81,11 +80,11 @@ def create_adaptive_layers(size: int) -> tuple[Image.Image, Image.Image]:
         rmax = min(h, rmax + pad)
         cmin = max(0, cmin - pad)
         cmax = min(w, cmax + pad)
-        # Crop to the raven
+        # Crop to the raven's opaque bbox
         src = Image.fromarray(src_array[rmin:rmax, cmin:cmax])
     else:
         # Fallback: use center crop
-        src = src.crop((size//4, size//4, 3*size//4, 3*size//4))
+        src = src.crop((size // 4, size // 4, 3 * size // 4, 3 * size // 4))
 
     # Now scale the cropped raven to fill the safe zone
     src = src.resize((safe_zone, safe_zone), Image.Resampling.LANCZOS)

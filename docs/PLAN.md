@@ -1,6 +1,48 @@
 # PLAN.md - open work
 
 Swept 2026-08-19: finished work folded into AGENTS.md and README.md; git history holds the raw detail.
+Swept 2026-08-22: state audit + impeccable design pass + QR-scan-error fix.
+
+## State summary (2026-08-22)
+
+Legend: `[x]` done + verified. `[~]` code-complete, awaiting verify. `[ ]` open work.
+
+| Phase | Item | State |
+| --- | --- | --- |
+| CAP2 | CAP2.2 capture-flight over-app | `[x]` DONE + human-verified 2026-08-20 |
+| MOBBOOT | MOBBOOT.1 cold-launch race | `[x]` DONE + emulator-verified 2026-08-20 |
+| SCANUI | SCANUI.1 scanner camera box | `[~]` code committed, AWAITING human glance |
+| RELAYHOST | RELAYHOST.1 Railway deploy | `[~]` deployed + desktop-verified 2026-08-19, phone LTE scan blocked only by RELEASE signing |
+| BACKFILL | BACKFILL.1 manual push-all | `[x]` DONE + verified 2026-08-19/20 |
+| BACKFILL | BACKFILL.2 auto-backfill on sync-enable | `[~]` code committed, needs verify against scratch relay |
+| RELEASE | RELEASE.1 unplugged debug apk | `[x]` build config FIXED + emulator-verified 2026-08-20; signed release build PROVEN 2026-08-20 (keystore created) |
+| EMULATOR | EMULATOR.1 headless AVD path | `[x]` DONE + emulator-verified 2026-08-20 |
+| DESKTOPUI | DESKTOPUI.1..6 + CHATBUG.1 | `[x]` ALL DONE + verified 2026-08-20 |
+| MOBILEUI | MOBILEUI.5/6/7/8 | `[x]` DONE + verified |
+| MOBILEUI | MOBILEUI.1 app icon | `[~]` generator updated, SUPERSEDED by MOBFIX.6 (still too small on phone) |
+| MOBILEUI | MOBILEUI.2 stuck "Syncing..." | `[~]` FIXED in working tree (uncommitted) - retry listener wiring added |
+| MOBILEUI | MOBILEUI.3 square cards | `[~]` code committed, AWAITING device screencap verify |
+| MOBILEUI | MOBILEUI.4 color accents | `[~]` code committed, AWAITING device screencap verify |
+| MOBFIX | MOBFIX.1/2/2b/4/8 | `[x]` ALL DONE + verified |
+| MOBFIX | MOBFIX.3 camera opens gallery | `[~]` FIXED in working tree (Kotlin/Rust committed in 8b4e0a2, JS wiring uncommitted) - `mobile_capture_camera` via JNI + `ACTION_IMAGE_CAPTURE` |
+| MOBFIX | MOBFIX.5 bidirectional delete sync | `[~]` FIXED in working tree (uncommitted) - `trash.py` bumps `updated_at` on delete/restore |
+| MOBFIX | MOBFIX.6 app icon STILL too small | `[~]` FIXED in working tree (uncommitted) - alpha-channel mask replaces broken purple-diff mask |
+| MOBFIX | MOBFIX.7 re-verify MOBILEUI.2/6 on device | `[ ]` OPEN umbrella - depends on the above being committed + device-verified |
+| QRSCANFIX | QRSCANFIX.1 "Scan failed [object Object]" | `[~]` FIXED 2026-08-22 (this commit) - `errString()` helper added; bin/verify green; AWAITING device scan |
+
+Items still requiring a HUMAN device-verify live in docs/PROGRESS.md.
+
+## How to execute (read first, every agent)
+
+This file is the only work queue. Do one task per turn. Each task block is self-contained: pre-conditions, exact files/lines, exact tokens/CSS to write, exact test commands, exact "Done when".
+
+1. **Read AGENTS.md first** - especially "Verifying the Android app on a device (headless, over adb)". It is the authority on emulator vs phone, CDP, screencap, run-as, and when to escalate to a human.
+2. **Headless-first.** Almost every mobile task is verifiable with NO phone attached. Boot the headless emulator (`bin/launch emulator`), install the debug apk, drive the UI over CDP + screencap. Only the physical camera-aim and a final one-glance aesthetic judgement need a human.
+3. **Token authority is `src/enqueue/static/css/tokens.css`.** Every color/spacing/motion value in a spec resolves to a token there. Do NOT invent hex values, do NOT introduce new spacing steps, do NOT add a dark mode (light only per DESIGN.md section 1).
+4. **`bin/verify` is the gate, not the proof.** It runs JS parse, pytest, contrast, Android compile. It is HEADLESS and needs no hardware - run it on every change. A green `bin/verify` does NOT prove the app runs; it proves the code parses, tests pass, palette meets contrast, app compiles. The emulator or phone is the only proof of runtime.
+5. **Commit green the same turn.** Verified code that is not committed is treated as work that will be lost. The pre-commit hook (`.githooks/pre-commit`, activated via `git config core.hooksPath .githooks`) runs `bin/verify` on staged code and blocks the commit on failure.
+6. **Marking done.** `[x]` only after the task's "Done when" is met AND `bin/verify` is green. `[~]` means code-complete, awaiting the verify step. `[ ]` means not started. If a verify step fails, open a new task for the fix - do not silently revert.
+7. **Caveman mode is on for this repo.** Code, commits, PRs, security warnings: write normal. Everything else: terse fragments, drop articles/filler.
 
 ## Context
 
@@ -215,16 +257,15 @@ The overwhelming majority of every mobile task here is agent-verifiable with NO 
 So a UI change (square cards, the 3-icon pill, the add-artifact submenu, colors, the settings sections, the "Syncing..." indicator) is verified by: build the debug apk, install on the emulator, screencap + read the DOM/CDP + tap-and-re-screencap, and READ the images yourself.
 ESCALATE TO A HUMAN ONLY for: the physical camera-aim (a real camera pointed at a real QR - MOBILEUI.7's Camera path can still be checked for "the camera Activity opens" via dumpsys), and a final one-glance aesthetic judgement on a real device. Never stop a mobile task with "needs the phone plugged in" before doing all of the above.
 
-- [~] **MOBILEUI.1 [AGENT]** App icon fixed. Updated make_adaptive_icons.py to extract raven mark from purple background using color-based masking, crop to bounding box, scale to fill 66% safe zone. Regenerated all mipmap densities (mdpi through xxxhdpi) and legacy icons. bin/verify green.
-  Do NOT hand-craft PNGs - generator scripts already exist: `desktop/icons/make_adaptive_icons.py` (Android adaptive icon: foreground + background layers) and `desktop/icons/make_icon.py`.
-  Read those scripts first, adjust the scaling/padding so the logo fills the icon (no tiny centred mark, no white-box framing), regenerate, and commit the regenerated `desktop/gen/android/app/src/main/res/mipmap-*` outputs plus any changed sources under `desktop/icons/`.
+- [~] **MOBILEUI.1 [AGENT]** App icon generator updated (color-mask extraction + safe-zone fill). SUPERSEDED by MOBFIX.6 - the phone still shows the raven too small after this pass, so MOBFIX.6 re-tunes the scale. Treat this entry as history; do not re-do its work separately from MOBFIX.6.
+  Original spec kept for reference: do NOT hand-craft PNGs - generator scripts already exist: `desktop/icons/make_adaptive_icons.py` (Android adaptive icon: foreground + background layers) and `desktop/icons/make_icon.py`. Read those scripts first, adjust the scaling/padding so the logo fills the icon (no tiny centred mark, no white-box framing), regenerate, and commit the regenerated `desktop/gen/android/app/src/main/res/mipmap-*` outputs plus any changed sources under `desktop/icons/`.
   Done when: the installed app's launcher icon shows the logo at proper size, no white-box framing; verify on the emulator by installing the debug apk and screencapping the launcher/home screen with the icon visible.
 
-- [~] **MOBILEUI.2 [DEVICE-VERIFY 2026-08-20: still sticks]** Fired up on the phone: after syncing 75 artifacts over Railway, a "Syncing…" indicator was STILL on screen (a `<span>`, separate from `#loading` which was correctly hidden). So the primary `#loading` clears but a second "Syncing…" element does not. Find that span and make it clear on sync-done too. (Note: one library note is literally titled "syncing", which muddies a text grep - target the actual indicator element, not the text.)
-  The user reports the "Syncing..." state was never really working.
-  Trace the QR.5a event path (`sync-started`/`sync-done`/`sync-error` from `mobile_sync` -> the mobile.html listeners) and confirm the indicator appears on start and CLEARS on done; fix wherever it sticks.
-  Verify headlessly per the VERIFICATION PROTOCOL (CDP: listen for the events, assert the indicator element toggles).
-  Done when: a sync shows "Syncing..." then clears to the library on completion, on a real device/emulator.
+- [~] **MOBILEUI.2 [AGENT]** FIXED in working tree (uncommitted). Root cause: sync-event listeners (`sync-started`/`sync-done`/`sync-error`) were wired once at script parse time with a guard `if (window.__TAURI__ && window.__TAURI__.event)` that fails on cold launch when the Tauri bridge is slow to inject. The sync thread (`desktop/src/lib.rs:255-300`) still runs and emits events, but they fire into the void. `#loading` was set visible by the QR-link path or `bootstrap()` and nothing ever hid it. Same class as MOBBOOT.1.
+  Fix (in working tree): extracted the three `listen()` calls into `wireSyncListeners()` (idempotent via `syncListenersWired` flag), called from `waitForEventApi(attempt=1)` which polls for `window.__TAURI__.event` up to 20 times at 50ms (same budget as the invoke poller). Also added `#loading[hidden] { display: none }` CSS rule to ensure the `[hidden]` attribute wins over `display: flex`.
+  Files: `src/enqueue/static/mobile.html` (lines ~2738-2801 for the retry wiring, line ~567 for the CSS rule).
+  Done when: a sync shows "Syncing..." then clears to the library on completion, on a cold launch where `__TAURI__` is slow to inject.
+  VERIFY: CDP - `adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof com.sudohnim.enqueue)`, force-stop + launch (cold), then `Runtime.evaluate` `window.__TAURI__.core.invoke('mobile_sync', { config: '{}' })` and assert `#loading.hidden === true` after `sync-done` fires. Record in PROGRESS.md.
 
 - [~] **MOBILEUI.3 [AGENT]** Notes render as SQUARES like desktop app. Changed .rows to CSS grid, .row to .card with flex-column and min-height: 140px. renderRows now uses div.card. bin/verify green.
   The mobile library currently lists notes as full-width horizontal rows; change them to square cards matching the desktop app's card idiom.
@@ -292,10 +333,16 @@ Found by firing the app up on the physical phone. Verify every one of these ON A
   - Enter inserts newline (textarea default); Save reads `.value.trim()`, does nothing when empty (focus stays), otherwise invokes existing capture path, clears field, returns to library.
   - bin/verify green.
 
-- [ ] **MOBFIX.3 [AGENT]** The "Camera" add-option opens the photo GALLERY, not the camera.
-  Tapping Camera (`#pill_menu_camera`) opens the app's photos/gallery picker instead of the live camera.
-  The current path likely uses a gallery/file-pick intent (`mobile_pick_image`/`mobile_capture_image` via the dialog picker). Wire Camera to launch the actual CAMERA capture (an `ACTION_IMAGE_CAPTURE`-style path), leaving "Upload" as the gallery/file path.
-  Done when: Camera opens the live camera and captures a photo as an artifact; Upload opens the gallery/files. Verify the camera Activity opens via `adb shell dumpsys`.
+- [~] **MOBFIX.3 [AGENT]** FIXED in working tree. Kotlin/Rust committed in `8b4e0a2`; JS button wiring uncommitted.
+  Root cause: `#pill_menu_camera` was wired to `doCaptureImage()` which calls `invoke("mobile_pick_image")` (gallery picker). Camera and Upload both opened the gallery.
+  Fix (implemented):
+  - New Rust command `mobile_capture_camera` in `desktop/src/lib.rs:687` (Android) + `:764` (non-Android stub). Uses JNI to call `MainActivity.captureImage()` which returns a `CompletableFuture<String>`.
+  - New Kotlin: `CameraHelper.kt` (144 lines) launches `ACTION_IMAGE_CAPTURE` intent with a `FileProvider` URI, reads the captured JPEG as base64 on `onActivityResult`. `MainActivity.kt:36` exposes `captureImage()` which delegates to `CameraHelper`. `AndroidManifest.xml:29-37` registers the `FileProvider` with authority `${applicationId}.fileprovider`. `res/xml/file_paths.xml` exists.
+  - JS wiring in `mobile.html`: `#pill_menu_camera` now calls `invoke("mobile_capture_camera")` (line ~2959) instead of `doCaptureImage()`. Upload keeps `doCaptureImage` (gallery path).
+  - Command registered in `build.rs` / `lib.rs:1464`.
+  Files: `desktop/src/lib.rs`, `desktop/gen/android/app/src/main/java/com/sudohnim/enqueue/CameraHelper.kt` (new), `MainActivity.kt`, `AndroidManifest.xml`, `res/xml/file_paths.xml`, `src/enqueue/static/mobile.html`.
+  Done when: Camera opens the LIVE camera and captures a photo; Upload opens the gallery. Verify via `adb shell dumpsys media.camera | grep -A2 com.sudohnim.enqueue` (camera stream active) AND `adb shell dumpsys activity activities | grep ImageCapture`.
+  VERIFY: build debug apk, install on emulator/phone, tap `+` > Camera, confirm camera Activity opens (dumpsys), capture photo, confirm it saves as artifact.
 
 - [x] **MOBFIX.4 [AGENT] ✅ DONE** Link add-option: two-field form (URL + notes).
   - Added `link_capture` section mirroring `capture` section with `link_cancel` back button and "Save a link" title.
@@ -303,16 +350,24 @@ Found by firing the app up on the physical phone. Verify every one of these ON A
   - Save handler: prepends `https://` if no scheme, builds payload `url + "\n\n" + notes`, calls `mobile_capture`, toasts "Link saved", clears fields, returns to library.
   - Back button wired to library, clears fields on open, focuses URL input.
   - bin/verify green.
-- [ ] **MOBFIX.5 [AGENT]** Bidirectional delete sync is broken: deleting an artifact on the DESKTOP does NOT remove it on the phone.
-  Reproduced on device: deleted notes on desktop still show in the mobile library.
-  The desktop DOES push on delete (`trash.py:64` calls `push_artifact` with `deleted_at` set), so investigate where it breaks: is the deleted snapshot reaching the relay (curl the relay, decrypt, check `deleted_at`), and does the mobile pull/apply (`desktop/src/sync.rs`) honor `deleted_at` and remove/hide the row + does the library query filter `deleted_at IS NULL` AFTER a pull? Fix whichever link drops the tombstone.
-  Done when: deleting on desktop -> the note disappears from the phone after its next sync; restore reappears; verified on the device.
+- [~] **MOBFIX.5 [AGENT]** FIXED in working tree (uncommitted). Root cause: `src/enqueue/trash.py` delete (line 58) and restore (line 78) set/clear `deleted_at` but did NOT bump `updated_at`. LWW resolution (`src/enqueue/sync/snapshot.py:160`, mirrored in `desktop/src/sync.rs:307`) compares `(updated_at, _device_id)` tuples. The tombstone snapshot had the SAME key as the live snapshot, so `apply_snapshot` on the phone was a no-op - the tombstone was silently dropped.
+  Fix (in working tree): `trash.py:61` now `UPDATE artifacts SET deleted_at = ?, updated_at = ? WHERE id = ?` (bumps `updated_at = now`). `trash.py:86` now `UPDATE artifacts SET deleted_at = NULL, updated_at = ? WHERE id = ?` (same bump on restore). Both have explanatory comments referencing MOBFIX.5. The `push_artifact(id)` call that follows now carries a tombstone with a NEWER `updated_at`, so LWW on the phone picks it up.
+  Files: `src/enqueue/trash.py` (lines 58-63 for delete, 84-88 for restore).
+  Done when: deleting on desktop -> the note disappears from the phone after its next sync; restore reappears.
+  VERIFY: `adb shell run-as com.sudohnim.enqueue sqlite3 /data/data/com.sudohnim.enqueue/library.db "SELECT id, deleted_at, updated_at FROM artifacts"` (debug apk) - the tombstoned row must have `deleted_at` set AND `updated_at` newer than pre-delete. Plus `bin/verify` green. A regression test asserting `lww_key(tombstone) > lww_key(live)` should be added to `tests/test_sync.py` or `tests/test_trash.py`.
 
-- [ ] **MOBFIX.6 [AGENT]** App icon is STILL too small (MOBILEUI.1 did not actually fix it).
-  On the phone the launcher icon shows the raven too small. Re-do the adaptive-icon foreground scale in `desktop/icons/make_adaptive_icons.py` so the raven fills the icon's safe zone properly (it is currently under-scaled), regenerate all `mipmap-*` densities, reinstall, and confirm on the phone's launcher via screencap.
-  Done when: the launcher icon shows the raven at a proper, filling size.
+- [~] **MOBFIX.6 [AGENT]** FIXED in working tree (uncommitted). Root cause: `desktop/icons/make_adaptive_icons.py` used a color-difference mask subtracting phantom purple `(107, 70, 193)` from the source `icon.png`. But `icon.png` is a 1024x1024 RGBA image with a TRANSPARENT background (alpha=0) and a near-WHITE raven (RGB 253,253,253). There is NO purple in the source. All pixels (transparent and white alike) had diff > 60, so ALL classified as "raven" -> bbox = full canvas -> no crop -> raven at ~65% of launcher icon.
+  Fix (in working tree): replaced the color-difference mask (old lines 63-73) with `alpha_mask = src_array[:, :, 3]` (the source's alpha channel: opaque = raven, transparent = background). The bbox detection now finds the raven's actual opaque bbox (rows 97-926, cols 97-926 = 81% of canvas), crops to it, and scales to `safe_zone` (80% of target). Added a guard checking `src_array.ndim == 3 and shape[2] == 4`. All mipmap PNGs regenerated (sizes increased ~35%, confirming the raven now fills more of the icon).
+  Files: `desktop/icons/make_adaptive_icons.py` (mask logic, lines 59-68), `desktop/gen/android/app/src/main/res/mipmap-*/ic_launcher*.png` (20 regenerated files).
+  Done when: the launcher icon shows the raven at a proper, filling size on the emulator launcher AND (one human glance) on the phone launcher.
+  VERIFY: install debug apk on emulator, screencap launcher home screen, READ the PNG - raven fills the inner circle, no excessive padding, no clipped wingtips.
 
-- [ ] **MOBFIX.7 [AGENT]** Re-verify the still-broken prior tasks on the device once the above land: MOBILEUI.6 (pill = 3 clean icons plus/eye/gear, icons actually render), MOBILEUI.2 (the stuck "Syncing…" span clears). These were marked [x] but failed device-verify 2026-08-20.
+- [ ] **MOBFIX.7 [AGENT]** Re-verify the previously-broken tasks on the device once the working-tree fixes are committed and a fresh apk is built. The fixes are in the working tree but NOT committed and NOT device-verified:
+  1. Commit all uncommitted working-tree changes (MOBILEUI.2 listener retry, MOBFIX.3 JS wiring, MOBFIX.5 `updated_at` bump, MOBFIX.6 alpha-mask icon regen, QRSCANFIX.1 `errString` helper).
+  2. Build a fresh debug apk: `cd desktop && cargo tauri android build --debug --target aarch64`.
+  3. Install on emulator: `adb install -r desktop/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk`.
+  4. Verify each fix per its "Done when" / "VERIFY" section above.
+  Done when: all four fixes confirmed on emulator/phone; record in PROGRESS.md.
 
 - [x] **MOBFIX.8 [HUMAN-WITH-SKILL + AGENT]** DESIGN PASS RUN 2026-08-20 (impeccable skill: shape/layout/delight/colorize against DESIGN.md + tokens.css + the incumbent mobile.html). The concrete specs are BAKED into the tasks; the executing agent needs no design skill:
   - MOBFIX.1 now carries the `+` menu popover spec: the two root causes (overlay z-index collision covering pill + menu; duplicate `pillToggleMenu` shadowing), the scrim token swap (`var(--scrim)`), the 140ms `--dur-fast`/`--ease` rise-from-the-pill entrance, the inline-style wrapper removal, 44px menu-button touch floor, and the disc-rotates-45-degrees delight.
@@ -321,6 +376,20 @@ Found by firing the app up on the physical phone. Verify every one of these ON A
   - MOBILEUI.6 now carries the pill polish spec: the empty-disc fix (inject `svg("plus")` into the disc in both pill build sites) and the eye-geometry correction (delete the wrong 52.6%/51.5% overrides, copy the canonical geometry from `css/home.css:199-246` at a 34px frame).
   Design-authority notes for the executing agent: every value in those specs resolves to an existing token in `css/tokens.css` (no new hex values, no new spacing steps); light-only; the purple `#60079f` stays confined to the disc, Save fills, and the capture moment per DESIGN.md section 8; all new motion wraps in `@media (prefers-reduced-motion: no-preference)`.
   Done when: MOBFIX.1/.2b/.4 and the MOBILEUI.6 polish land matching their baked specs, verified on the emulator per the phase protocol.
+
+## Phase QRSCANFIX - "Scan failed [object Object]" on QR scan
+
+Reported 2026-08-22: tapping "Scan QR" on the phone, the camera opens, but on scan (or cancel) the status reads `Scan failed [object Object]` instead of either linking or showing "cancelled".
+
+- [~] **QRSCANFIX.1 [AGENT]** FIXED 2026-08-22 (this commit). Root cause: Tauri invoke rejections arrive as `{ message, code, data }` objects (see `desktop/plugins/tauri-plugin-barcode-scanner/android/.tauri/tauri-api/src/main/java/app/tauri/plugin/Invoke.kt:48-64` - `Invoke.reject(msg, code, ex, data)` builds a `PluginResult` with a `message` field). `String(obj)` returns `"[object Object]"`, so both the error display AND the cancel-suppression check (`String(e) !== "cancelled"`) failed - the cancel path also threw "Scan failed [object Object]".
+  Fix: added `errString(e)` helper in `src/enqueue/static/mobile.html` next to `setStatus` (search for `function setStatus` - the helper is immediately below it). Behaviour:
+  - `typeof e === "string"` -> return `e`.
+  - `e.message` (or `e.error.message`, or `e.code`) -> return that.
+  - Fallback `JSON.stringify(e)`, then `String(e)`.
+  Replaced every `String(e)` site in mobile.html (scan handler - search `Scan failed`, link handler - search `Link failed`, capture handlers - search `status.textContent = `, chat error - search `Error: ` in the chat section) with `errString(e)`. Cancel check now reads `msg.toLowerCase().includes("cancel")` so a rejection carrying `{ message: "cancelled" }` is suppressed cleanly.
+  Files: `src/enqueue/static/mobile.html` (helper + 7 call sites). `bin/verify` green.
+  Done when: on a real device or emulator, scanning the desktop QR links the phone (no "[object Object]"); tapping Cancel returns to setup with no error status.
+  VERIFY headlessly is NOT enough here - the scan path needs a real camera frame. Emulator can prove the cancel path (open scanner, tap Cancel, assert status stays empty); the link path needs either a real QR held to a phone camera OR the QR-payload injection path (skip the camera, call `handleScanResult({...})` directly over CDP - this exercises the parse + link + sync flow without the camera). Both: `bin/verify` green, then either CDP injection OR human scan.
 
 ## Out of scope
 

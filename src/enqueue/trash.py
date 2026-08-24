@@ -55,7 +55,12 @@ def delete(artifact_id: str) -> dict:
         if row["deleted_at"]:
             return {"id": artifact_id, "deleted_at": row["deleted_at"], "already": True}
 
-        conn.execute("UPDATE artifacts SET deleted_at = ? WHERE id = ?", (now, artifact_id))
+        # Bump updated_at so the tombstone snapshot has a NEWER LWW key than the live
+        # snapshot, ensuring the phone's apply_snapshot picks up the tombstone (MOBFIX.5).
+        conn.execute(
+            "UPDATE artifacts SET deleted_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, artifact_id),
+        )
         # Derived rows are rebuildable, so they are dropped rather than filtered. A
         # deleted artifact must not be able to come back as a citation.
         conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
@@ -69,13 +74,18 @@ def restore(artifact_id: str) -> dict:
     """Put it back, and rebuild everything that was dropped."""
     from .ingest import queue as ingest_queue
 
+    now = _now().isoformat()
     with db.transaction() as conn:
         row = conn.execute(
             "SELECT deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
         ).fetchone()
         if row is None:
             raise KeyError(artifact_id)
-        conn.execute("UPDATE artifacts SET deleted_at = NULL WHERE id = ?", (artifact_id,))
+        # Bump updated_at so the un-tombstone snapshot has a NEWER LWW key (MOBFIX.5).
+        conn.execute(
+            "UPDATE artifacts SET deleted_at = NULL, updated_at = ? WHERE id = ?",
+            (now, artifact_id),
+        )
 
     ingest_queue.submit(artifact_id)
     push_artifact(artifact_id)
@@ -144,8 +154,10 @@ def purge(artifact_id: str) -> dict:
             "artifact_versions",
         ):
             column = "artifact_id"
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
-            conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (artifact_id,))
+            # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
+            conn.execute(
+                f"DELETE FROM {table} WHERE {column} = ?", (artifact_id,)
+            )  # table names are hardcoded tuple
         # A tag the purged artifact was the last user of has nothing left to
         # reference it; drop the orphan so the cloud never lists a dead tag.
         conn.execute(

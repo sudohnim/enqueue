@@ -150,7 +150,7 @@
   .card {
     display: flex;
     flex-direction: column;
-    min-height: 140px;
+    aspect-ratio: 1;
     min-width: 0;
     overflow: hidden;
     cursor: pointer;
@@ -563,6 +563,9 @@
     padding: 48px 0;
     color: var(--text-mute);
     font-size: 14px;
+  }
+  #loading[hidden] {
+    display: none;
   }
   #loading img {
     width: 48px;
@@ -1599,6 +1602,20 @@
     el.className = cls || "";
   }
 
+  // Tauri invoke rejections arrive as { message, code, data } objects, not strings.
+  // String(obj) yields "[object Object]" - flatten to the real reason.
+  function errString(e) {
+    if (e == null) return "";
+    if (typeof e === "string") return e;
+    const msg = e.message || (e.error && e.error.message) || e.code;
+    if (msg) return String(msg);
+    try {
+      return JSON.stringify(e);
+    } catch (_) {
+      return String(e);
+    }
+  }
+
   function relativeTime(iso) {
     const t = new Date(iso).getTime();
     if (!t) return "";
@@ -2309,7 +2326,7 @@
       // QR.5a: mobile_sync now returns immediately; events drive the UI
       await invoke("mobile_sync", { config: "{}" });
     } catch (e) {
-      setStatus("Link failed: " + String(e), "error");
+      setStatus("Link failed: " + errString(e), "error");
     }
   }
 
@@ -2331,8 +2348,9 @@
       });
       await handleScanResult(result);
     } catch (e) {
-      if (String(e) !== "cancelled" && !String(e).includes("cancel")) {
-        setStatus("Scan failed: " + String(e), "error");
+      const msg = errString(e);
+      if (msg !== "cancelled" && !msg.toLowerCase().includes("cancel")) {
+        setStatus("Scan failed: " + msg, "error");
       }
     } finally {
       document.documentElement.classList.remove("scanning");
@@ -2421,7 +2439,7 @@
         show("library");
         renderLibrary();
       } catch (e) {
-        status.textContent = String(e);
+        status.textContent = errString(e);
       }
     });
 
@@ -2455,7 +2473,7 @@ ${notes}`
       show("library");
       renderLibrary();
     } catch (e) {
-      status.textContent = String(e);
+      status.textContent = errString(e);
     }
   });
 
@@ -2482,8 +2500,9 @@ ${notes}`
       // Show crop sheet
       await showCropSheet();
     } catch (e) {
-      if (String(e) !== "cancelled") {
-        status.textContent = String(e);
+      const msg = errString(e);
+      if (msg !== "cancelled") {
+        status.textContent = msg;
       }
     }
   }
@@ -2653,7 +2672,7 @@ ${notes}`
       show("library");
       renderLibrary();
     } catch (e) {
-      status.textContent = String(e);
+      status.textContent = errString(e);
     }
   });
 
@@ -2717,7 +2736,11 @@ ${notes}`
   }
 
   // QR.5a: sync lifecycle events from the background thread
-  if (window.__TAURI__ && window.__TAURI__.event) {
+  // The Tauri event bridge may not be ready at script parse time. Wire with retry.
+  let syncListenersWired = false;
+  function wireSyncListeners() {
+    if (syncListenersWired) return;
+    if (!window.__TAURI__ || !window.__TAURI__.event) return;
     __TAURI__.event.listen("sync-started", () => {
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
@@ -2764,7 +2787,18 @@ ${notes}`
         }, 3000);
       }
     });
+    syncListenersWired = true;
   }
+  function waitForEventApi(attempt = 1) {
+    if (!window.__TAURI__ || !window.__TAURI__.event) {
+      if (attempt <= 20) {
+        setTimeout(() => waitForEventApi(attempt + 1), 50);
+      }
+      return;
+    }
+    wireSyncListeners();
+  }
+  waitForEventApi();
 
   // Mobile makeEye: populate the pill-eye with the living eye markup (simplified from icons.js)
   const EYE_ASSET_V = "?v=1";
@@ -2878,7 +2912,9 @@ ${notes}`
   }
 
   // Set up menu item click handlers (MOBILEUI.7)
+  let pillMenuHandlersWired = false;
   function setupPillMenuHandlers() {
+    if (pillMenuHandlersWired) return;
     // Note
     const noteBtn = document.getElementById("pill_menu_note");
     if (noteBtn)
@@ -2938,6 +2974,7 @@ ${notes}`
         show("link_capture");
         document.getElementById("link_url").focus();
       });
+    pillMenuHandlersWired = true;
   }
 
   // Call setup when DOM is ready
@@ -3244,7 +3281,7 @@ ${notes}`
         appendMessage("assistant", data.answer, data.citations);
       }
     } catch (e) {
-      appendMessage("assistant", "Error: " + String(e));
+      appendMessage("assistant", "Error: " + errString(e));
     } finally {
       chatInProgress = false;
       document.getElementById("chat_loading").hidden = true;
