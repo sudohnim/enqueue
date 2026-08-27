@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 HERE = Path(__file__).parent
 SOURCE = HERE / "icon.png"  # The composed icon (raven on purple)
@@ -40,67 +40,46 @@ def create_adaptive_layers(size: int) -> tuple[Image.Image, Image.Image]:
     """Create foreground and background layers for adaptive icon at given size.
 
     Returns (foreground, background) where:
-    - foreground: RGBA image with transparency, content centered in safe zone
+    - foreground: RGBA image (full size), raven centered in 66% safe zone
     - background: solid color image
     """
-    # Source icon (composed: raven on purple)
+    # Source icon (composed: raven on purple with transparency)
     src = Image.open(SOURCE).convert("RGBA")
 
-    # Resize source to target size
-    src = src.resize((size, size), Image.Resampling.LANCZOS)
-
-    # Create foreground with transparent background
-    fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-
-    # The safe zone is 80% of the icon size (was 66%) - fills the icon properly
-    safe_zone = int(size * 0.80)
-    inset = (size - safe_zone) // 2
-
-    # The raven in the source icon is small and centered. We need to extract it
-    # and scale it up to fill the safe zone. Use the source's alpha channel
-    # directly: opaque pixels = raven, transparent = background.
+    # Extract raven using alpha channel: opaque = raven, transparent = background
     src_array = np.array(src)
-    # Guard: source must be RGBA (4 channels) for alpha mask
     if src_array.ndim != 3 or src_array.shape[2] != 4:
         raise ValueError(f"Source icon must be RGBA, got shape {src_array.shape}")
-    alpha_mask = src_array[
-        :, :, 3
-    ]  # Alpha channel: 255 = opaque (raven), 0 = transparent (background)
+    alpha_mask = src_array[:, :, 3]
 
     # Find bounding box of the raven (opaque pixels)
     rows = np.any(alpha_mask > 0, axis=1)
     cols = np.any(alpha_mask > 0, axis=0)
-    if np.any(rows):
-        rmin, rmax = np.where(rows)[0][[0, -1]]
-        cmin, cmax = np.where(cols)[0][[0, -1]]
-        # Add some padding
-        h, w = src_array.shape[:2]
-        pad = max(h, w) // 20
-        rmin = max(0, rmin - pad)
-        rmax = min(h, rmax + pad)
-        cmin = max(0, cmin - pad)
-        cmax = min(w, cmax + pad)
-        # Crop to the raven's opaque bbox
-        src = Image.fromarray(src_array[rmin:rmax, cmin:cmax])
-    else:
-        # Fallback: use center crop
-        src = src.crop((size // 4, size // 4, 3 * size // 4, 3 * size // 4))
+    if not np.any(rows):
+        raise ValueError("No opaque pixels found in source icon")
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+    # Add minimal padding to keep anti-aliased edges
+    h, w = src_array.shape[:2]
+    pad = max(h, w) // 50
+    rmin = max(0, rmin - pad)
+    rmax = min(h, rmax + pad)
+    cmin = max(0, cmin - pad)
+    cmax = min(w, cmax + pad)
+    raven_cropped = Image.fromarray(src_array[rmin:rmax, cmin:cmax])
 
-    # Now scale the cropped raven to fill the safe zone
-    src = src.resize((safe_zone, safe_zone), Image.Resampling.LANCZOS)
+    # Android adaptive icon safe zone is 66% (spec).
+    # Size raven to ~62% of icon to fit comfortably within 66% safe zone
+    # after launcher applies its mask (circle/rounded-square).
+    raven_target_size = int(size * 0.62)
+    raven_scaled = raven_cropped.resize(
+        (raven_target_size, raven_target_size), Image.Resampling.LANCZOS
+    )
 
-    # Create a circular mask for the foreground content (safe zone size)
-    mask = Image.new("L", (safe_zone, safe_zone), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.ellipse([0, 0, safe_zone, safe_zone], fill=255)
-
-    # Apply the mask to the resized raven
-    fg_safe = Image.new("RGBA", (safe_zone, safe_zone), (0, 0, 0, 0))
-    fg_safe.paste(src, (0, 0), mask)
-
-    # Now place the masked safe zone content into the full-size foreground
+    # Create full-size foreground layer (launcher will mask this)
     fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    fg.paste(fg_safe, (inset, inset))
+    inset = (size - raven_target_size) // 2
+    fg.paste(raven_scaled, (inset, inset), raven_scaled)
 
     # Background: solid light canvas color
     bg = Image.new("RGB", (size, size), LIGHT_CANVAS)

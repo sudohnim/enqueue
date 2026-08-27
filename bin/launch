@@ -225,10 +225,34 @@ launch_emulator() {
   echo "Emulator booted: $serial"
   export ANDROID_SERIAL="$serial"
 
-  # Build and install debug apk (cargo tauri android dev builds + installs + launches)
-  # Use the same approach as launch_mobile but pinned to emulator serial
+  # Build the debug apk ONE-SHOT, then install + launch via adb and EXIT. Do NOT use
+  # `cargo tauri android dev` here: it starts a dev-server/watch loop that never returns
+  # (and hangs on "pick a device"), which is useless for headless agent verification.
+  # A one-shot build + adb install lets an agent drive the app (screencap, CDP,
+  # uiautomator, run-as) over adb with no hung foreground process.
   cd "$REPO/desktop"
-  exec cargo tauri android dev
+  echo "Building debug apk (recompiles from scratch if target was cleaned)..."
+  cargo tauri android build --debug --target aarch64
+
+  local APK
+  APK="$(ls -t "$REPO"/desktop/gen/android/app/build/outputs/apk/*/debug/*.apk 2>/dev/null | head -1)"
+  [[ -n "$APK" ]] || { echo "no debug apk produced" >&2; exit 1; }
+
+  echo "Installing $(basename "$APK") on $serial ..."
+  "$ADB" -s "$serial" install -r "$APK" || {
+    echo "install -r failed (signature mismatch?); reinstalling clean"
+    "$ADB" -s "$serial" uninstall com.sudohnim.enqueue >/dev/null 2>&1
+    "$ADB" -s "$serial" install "$APK"
+  }
+  "$ADB" -s "$serial" shell am start -n com.sudohnim.enqueue/.MainActivity >/dev/null 2>&1 || true
+
+  echo ""
+  echo "Ready. Emulator serial: $serial (app installed + launched). This command has EXITED."
+  echo "Drive it over adb (nothing hangs):"
+  echo "  $ADB -s $serial exec-out screencap -p > /tmp/shot.png"
+  echo "  $ADB -s $serial shell input tap <x> <y>"
+  echo "  $ADB -s $serial forward tcp:9222 localabstract:webview_devtools_remote_\$($ADB -s $serial shell pidof com.sudohnim.enqueue)"
+  echo "The emulator keeps running in the background (pid $EMU_PID). Stop it with: kill $EMU_PID"
 }
 
 [[ $# -ge 1 ]] || usage

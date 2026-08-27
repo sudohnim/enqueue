@@ -158,9 +158,11 @@
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
     padding: var(--sp-3);
+    box-shadow: var(--shadow-micro);
     transition:
       background var(--dur) ease,
       border-color var(--dur) ease,
+      transform var(--dur-fast) var(--ease),
       box-shadow var(--dur) ease;
     position: relative;
   }
@@ -168,22 +170,11 @@
     background: var(--surface-2);
     border-color: var(--line-strong);
     box-shadow: var(--shadow-card);
+    transform: translateY(-1px);
   }
   .card:active {
     background: var(--surface);
-  }
-
-  /* Kind-based accent color - thin top border */
-  .card::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-    background: var(--kind, var(--purple-bold));
-    opacity: 0.8;
+    transform: translateY(0);
   }
   .dot {
     width: 8px;
@@ -376,26 +367,38 @@
     height: 44px;
   }
   .pill .pill-eye .eye-frame {
-    width: 100%;
-    height: 100%;
+    width: 34px;
+    height: auto;
   }
+  /* Pill eye geometry from css/pill.css (EYE.6) - uses eye-only.png (cropped eye),
+     so socket/pupil fractions differ from the home emblem. */
   .pill .pill-eye .eye-socket {
-    width: 52.6%;
-    height: 51.5%;
-    top: 80%;
-    left: 69.3%;
+    position: absolute;
+    left: 52.6%;
+    top: 51.5%;
+    width: 80%;
+    height: 69.3%;
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    border-radius: 50%;
   }
   .pill .pill-eye .eye-pupil {
-    width: 120%;
-    height: 156%;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 96%;
+    height: 125%;
+    transform: translate(-50%, -50%);
+    will-change: transform;
   }
 
   /* Pill Menu (MOB2.3) */
   .pill-menu {
     position: fixed;
-    left: 50%;
-    bottom: calc(56px + var(--sp-5) + env(safe-area-inset-bottom));
-    transform: translateX(-50%);
+    /* left is set by pillToggleMenu to the + button's left edge so the menu rises
+       from the + it belongs to, not the screen centre. */
+    left: var(--sp-4);
+    bottom: calc(56px + var(--sp-5) + env(safe-area-inset-bottom) + var(--sp-2));
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
@@ -403,32 +406,33 @@
     background: var(--surface-2);
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
-    box-shadow:
-      0 4px 12px rgba(16, 17, 20, 0.06),
-      0 12px 36px rgba(16, 17, 20, 0.12);
+    box-shadow: var(--shadow-lifted);
     z-index: calc(var(--z-pill) - 1);
-    min-width: 160px;
-    /* MOBFIX.1: entrance animation - rise from the pill */
+    min-width: 176px;
+    /* MOBFIX.1: entrance - rise from the pill, anchored to the + */
     opacity: 0;
-    transform: translateX(-50%) translateY(8px);
+    transform: translateY(8px);
     animation: menu-in var(--dur-fast) var(--ease) forwards;
-    transform-origin: bottom center;
+    transform-origin: bottom left;
   }
-  @media (prefers-reduced-motion: no-preference) {
-    @keyframes menu-in {
-      from {
-        opacity: 0;
-        transform: translateX(-50%) translateY(8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(-50%) translateY(0);
-      }
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pill-menu {
+      animation: none;
     }
   }
   .pill-menu:not([hidden]) {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
   .pill-menu button {
     display: flex;
@@ -940,9 +944,7 @@
     class="round"
     id="pill_menu"
     aria-label="Settings"
-    aria-expanded="false"
-    aria-haspopup="true"
-    onclick="pillToggleMenu(event)"
+    onclick="openSettings()"
   >
     <svg
       viewBox="0 0 24 24"
@@ -1591,9 +1593,17 @@
   };
 
   function show(id) {
-    for (const s of ["setup", "library", "reader", "capture", "chat"]) {
+    for (const s of ["setup", "library", "reader", "capture", "chat", "settings"]) {
       document.getElementById(s).hidden = s !== id;
     }
+  }
+
+  // The pill gear opens Settings (MOBILEUI.6 / gear-wiring fix). Before this, the gear
+  // was wired to pillToggleMenu (the add-artifact menu) and "settings" was not even a
+  // section show() knew about, so the Settings screen was unreachable.
+  function openSettings() {
+    show("settings");
+    loadSettings();
   }
 
   function setStatus(text, cls) {
@@ -2409,6 +2419,12 @@
     show("library");
     renderLibrary();
   });
+  // Settings back arrow returns to the library (the gear-wiring fix made Settings
+  // reachable; this makes it exitable).
+  document.getElementById("settings_cancel").addEventListener("click", () => {
+    show("library");
+    renderLibrary();
+  });
   // Raven flight animation (ANIM.4, MOB.7)
   function captureFlight() {
     const existing = document.getElementById("captureFlight");
@@ -2718,7 +2734,9 @@ ${notes}`
           document.getElementById("loading").hidden = false;
           document.getElementById("shelves").replaceChildren();
           document.getElementById("empty").hidden = true;
-          invoke("mobile_sync", { config: "{}" }).catch(() => {});
+          invoke("mobile_sync", { config: "{}" }).catch(() => {
+            document.getElementById("loading").hidden = true;
+          });
         })
         .catch((e) => {
           // mobile_status rejected - runtime may not be fully ready
@@ -2825,7 +2843,12 @@ ${notes}`
     socket.appendChild(pupil);
     const frame = document.createElement("img");
     frame.className = "eye-frame";
-    frame.src = "/eye-frame.png" + EYE_ASSET_V;
+    // Pill eye uses eye-only.png (cropped eye), not the full raven frame
+    if (el.classList.contains("pill-eye")) {
+      frame.src = "/eye-only.png" + EYE_ASSET_V;
+    } else {
+      frame.src = "/eye-frame.png" + EYE_ASSET_V;
+    }
     frame.alt = "";
     frame.draggable = false;
     wrap.appendChild(socket);
@@ -2867,20 +2890,21 @@ ${notes}`
     if (inside) {
       html =
         '<button class="keep" aria-label="Home" onclick="home()">' +
-        '<span class="disc"></span></button>' +
+        '<span class="disc">' + svg("plus") + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="chatOrAsk()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>";
-        } else {
+    } else {
       html =
         '<button class="keep" id="pill_add" aria-label="Add" aria-expanded="false" onclick="pillToggleMenu(event)">' +
         '<span class="disc">' + svg("plus") + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
-        '<button class="round" aria-label="Settings" aria-expanded="false" aria-haspopup="true" onclick="pillToggleMenu(event)">' +
+        '<button class="round" aria-label="Settings" onclick="openSettings()">' +
         svg("gear") +
         "</button>";
+    }
     const parsed = new DOMParser().parseFromString(html, "text/html");
     pill.replaceChildren(...parsed.body.childNodes);
     makeEye(document.getElementById("pillEye"));
@@ -2896,6 +2920,15 @@ ${notes}`
 
     pillMenu = document.getElementById("pill_menu_panel");
     pillMenu.hidden = false;
+
+    // Anchor the menu's left edge to the + button it rises from (the pill is centered,
+    // so a CSS left:50% would float the menu off in the middle - the "stuck outside the
+    // button" bug). Clamp so it never runs off the right edge.
+    const r = btn.getBoundingClientRect();
+    const menuW = pillMenu.offsetWidth || 176;
+    const maxLeft = window.innerWidth - menuW - 12;
+    pillMenu.style.left = Math.max(12, Math.min(r.left, maxLeft)) + "px";
+    pillMenu.style.right = "auto";
 
     // Add dimming overlay (MOBFIX.1: z-index 38 = below menu 39, below pill 40)
     const overlay = document.createElement("div");
@@ -3125,9 +3158,11 @@ ${notes}`
     const btn = document.getElementById("settings_sync_now");
     btn.disabled = true;
     btn.textContent = "Syncing\u2026";
+    document.getElementById("loading").hidden = false;
     invoke("mobile_sync", { config: "{}" }).catch(() => {
       btn.disabled = false;
       btn.textContent = "Sync Now";
+      document.getElementById("loading").hidden = true;
     });
   });
 
@@ -3315,7 +3350,7 @@ ${notes}`
   window.addEventListener("online", () => {
     console.log("[resume] online event - triggering sync");
     if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
-  })}
+  });
 </script>
 </body>
 </html>
