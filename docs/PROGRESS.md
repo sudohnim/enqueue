@@ -14,9 +14,14 @@ Durable engineering context (the relay/E2E model, the relay immutability limitat
 ## Known-broken / in-flight (see docs/PLAN.md for the tasks)
 
 - **MOBFIX.5 - sync is create-only for the mobile client.** Edits/deletes to an already-synced artifact do NOT propagate: the relay is immutable by object name (id-based), so a second push for the same id is refused (409). Verified 2026-08-27 (deleted a note on desktop, the relay object still decrypts to `deleted_at=None`, the phone kept it). This invalidates the old "CRUDSYNC both ways" claims for synced artifacts.
-- **MOBBOOT.1 - configured device stuck on setup.** Verified 2026-08-27: `configured:true` + 48 artifacts synced, but the UI stays on the setup screen and will not show the library. The earlier "[x] verified" only checked the unconfigured case.
-- **MOBILEUI.2 - "Syncing..." indicator sticks** after a sync completes (fix in working tree, uncommitted, unverified).
-- **MOBILEUI.6 - pill defects**: the `+` disc renders empty (no plus glyph) and the eye geometry is wrong (pupil paints outside the lid). Gear is fixed and opens Settings.
+- **MOBBOOT.1 - configured device stuck on setup** [x] VERIFIED 2026-08-28:
+  - Root cause: setup section in initial HTML + WebView compositor not repainting on hide
+  - Fix: dynamic setup injection via `SETUP_HTML` template + `waitForInvokeAndStatus()` + `waitForSyncListeners()`
+  - Verified on emulator-5554: cold launch on configured device shows Library (not setup), cards render, pill visible
+  - Screencap: header left-aligned, loading hidden, cards rendered, pill visible
+- **MOBILEUI.2 - "Syncing..." indicator sticks** [x] VERIFIED 2026-08-28: sync-started → sync-done events wired via retry poller; #loading hides on sync-done.
+- **SETUPBTN.1 - stray "← Setup" button on library header** [x] VERIFIED 2026-08-28: added `hidden` to `#to_setup`; `show()` toggles visibility. Configured cold launch: no back button, cards render, pill visible.
+- **MOBILEUI.6 - pill defects** [x] VERIFIED 2026-08-28: plus disc, eye (frame+pupil), gear all render; navigation works.
 - **MOBFIX.3 (camera opens gallery), MOBFIX.6 (icon size)** - fixes in the working tree, uncommitted, need a build + emulator verify (MOBFIX.7 umbrella).
 - **QRSCANFIX.1** - the "[object Object]" scan error is fixed (errString helper); a real camera scan still needs the phone.
 

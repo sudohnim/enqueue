@@ -35,6 +35,13 @@
   section[hidden] {
     display: none;
   }
+  body.view-setup #setup { display: flex; }
+  body.view-setup #library { display: none; }
+  body.view-library #setup { display: none; }
+  body.view-library #library { display: flex; }
+  /* Default: show library, hide setup */
+  body:not(.view-setup) #setup { display: none; }
+  body:not(.view-setup) #library { display: flex; }
   .title {
     font-size: 22px;
     font-weight: 600;
@@ -1052,7 +1059,7 @@
 
 <section id="library" hidden>
   <header>
-    <button class="back" id="to_setup">&larr; Setup</button>
+    <button class="back" id="to_setup" hidden>&larr; Setup</button>
     <h1>Library</h1>
   </header>
   <input id="search" type="search" placeholder="Search" autocomplete="off" />
@@ -1592,9 +1599,27 @@
     file: "var(--kind-file)",
   };
 
+  // startCamera is a no-op on the current architecture; the barcode-scanner plugin
+  // handles camera lifecycle internally when scan() is invoked.
+  function startCamera() {}
+
   function show(id) {
     for (const s of ["setup", "library", "reader", "capture", "chat", "settings"]) {
-      document.getElementById(s).hidden = s !== id;
+      const el = document.getElementById(s);
+      if (el) el.hidden = s !== id;
+    }
+    // Hide "← Setup" button on library screen (configured), show it on setup screen
+    const toSetupBtn = document.getElementById("to_setup");
+    if (toSetupBtn) {
+      toSetupBtn.hidden = id !== "setup";
+    }
+    // Body class for CSS fallback (WebView compositor issues)
+    if (id === "setup") {
+      document.body.classList.remove("view-library");
+      document.body.classList.add("view-setup");
+    } else {
+      document.body.classList.remove("view-setup");
+      document.body.classList.add("view-library");
     }
   }
 
@@ -2709,26 +2734,27 @@ ${notes}`
   // Only show setup when mobile_status resolves with configured:false.
   // Retry on missing invoke or rejected calls (runtime still coming up).
   function bootstrap() {
-    // Wait for invoke to be available (Tauri injection), then poll mobile_status
+// Wait for invoke to be available (Tauri injection), then poll mobile_status
     function waitForInvokeAndStatus(attempt = 1) {
-      if (!invoke) {
+if (!invoke) {
         if (attempt <= 20) {
           // ~1 second max wait
           setTimeout(() => waitForInvokeAndStatus(attempt + 1), 50);
         } else {
           // invoke never appeared - show setup as last resort
+          console.log("[bootstrap] invoke never appeared, showing setup");
           show("setup");
           startCamera();
         }
         return;
       }
-      invoke("mobile_status")
+invoke("mobile_status")
         .then((raw) => {
-          const r = parse(raw);
+const r = parse(raw);
           if (!r.configured) {
-            show("setup");
-            startCamera();
-            return;
+show("setup");
+startCamera();
+return;
           }
           show("library");
           document.getElementById("loading").hidden = false;

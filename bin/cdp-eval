@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Evaluate a JS expression inside the running Android WebView over CDP.
+
+The one supported way for an agent to read the app's runtime state on the
+emulator/phone. Hand-rolling a websocket loop is banned: the failure mode is a
+blocking `ws.recv()` with no timeout that hangs for the full command budget
+(observed 3000s) when CDP does not send the number of messages the loop assumed.
+This helper wraps every recv in a hard timeout, so it either returns a value or
+fails fast - it can never hang.
+
+What it does end to end:
+  1. finds the app pid on the device,
+  2. `adb forward`s a local port to the WebView devtools socket,
+  3. curls `/json` for the page's webSocketDebuggerUrl,
+  4. sends Runtime.evaluate (awaitPromise + returnByValue) with suppress_origin
+     (the Android DevTools endpoint 403s the default Origin header),
+  5. reads until the matching id (ignoring unrelated events), each recv under a
+     timeout, and prints the JSON result value to stdout.
+
+Usage:
+  bin/cdp-eval "document.getElementById('library').hidden"
+  bin/cdp-eval "await window.__TAURI__.core.invoke('mobile_status')"
+  bin/cdp-eval --serial emulator-5554 --timeout 15 "location.href"
+
+Exit 0 and print the JSON value on success. Exit 1 with a one-line reason on
+any failure (no device, app not running, JS threw, timeout). The expression is
+evaluated with `await` allowed at top level, so `invoke(...)` promises resolve.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import urllib.request
+
+PKG = "com.sudohnim.enqueue"
+SRC = "bin/cdp-eval"
+
+
+def die(msg: str) -> "None":
+    print(f"{SRC}: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def adb(args: list[str], serial: str | None) -> subprocess.CompletedProcess:
+    cmd = ["adb"] + (["-s", serial] if serial else []) + args
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("expression", help="JS expression to evaluate (top-level await OK)")
+    ap.add_argument("--serial", help="adb device serial (default: the only device)")
+    ap.add_argument("--port", type=int, default=9222, help="local forward port")
+    ap.add_argument("--timeout", type=float, default=10.0, help="per-recv timeout (s)")
+    ap.add_argument("--raw", action="store_true", help="print the full CDP result object")
+    args = ap.parse_args()
+
+    try:
+        from websocket import create_connection  # websocket-client
+    except ImportError:
+        die("needs websocket-client: uv pip install websocket-client")
+
+    # 1. pid
+    r = adb(["shell", "pidof", PKG], args.serial)
+    pid = (r.stdout or "").strip().split()
+    if not pid:
+        die(f"{PKG} not running on the device (pidof empty). Launch the app first.")
+    pid = pid[0]
+
+    # 2. forward (idempotent - re-running just resets the same rule)
+    fwd = adb(["forward", f"tcp:{args.port}", f"localabstract:webview_devtools_remote_{pid}"], args.serial)
+    if fwd.returncode != 0:
+        die(f"adb forward failed: {fwd.stderr.strip() or fwd.stdout.strip()}")
+
+    # 3. the page target
+    try:
+        with urllib.request.urlopen(f"http://localhost:{args.port}/json", timeout=args.timeout) as f:
+            targets = json.load(f)
+    except Exception as e:  # noqa: BLE001 - report whatever went wrong, once
+        die(f"could not read /json on the devtools socket: {e}")
+    pages = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
+    if not pages:
+        die("no debuggable page target (is this a DEBUG apk? release apks are not debuggable)")
+    ws_url = pages[0]["webSocketDebuggerUrl"]
+
+    # 4-5. evaluate, read until our id, every recv under a timeout
+    try:
+        ws = create_connection(ws_url, timeout=args.timeout, suppress_origin=True)
+    except Exception as e:  # noqa: BLE001
+        die(f"websocket connect failed: {e}")
+    try:
+        ws.send(json.dumps({
+            "id": 1,
+            "method": "Runtime.evaluate",
+            "params": {
+                "expression": args.expression,
+                "returnByValue": True,
+                "awaitPromise": True,
+                "userGesture": True,
+            },
+        }))
+        while True:
+            msg = json.loads(ws.recv())  # ws has its own recv timeout from connect
+            if msg.get("id") != 1:
+                continue  # unrelated event, keep reading
+            result = msg.get("result", {})
+            if "exceptionDetails" in result:
+                exc = result["exceptionDetails"]
+                text = exc.get("exception", {}).get("description") or exc.get("text") or json.dumps(exc)
+                die(f"JS threw: {text.splitlines()[0]}")
+            if args.raw:
+                print(json.dumps(result, indent=2))
+            else:
+                print(json.dumps(result.get("result", {}).get("value")))
+            return 0
+    except Exception as e:  # noqa: BLE001 - includes recv timeout
+        die(f"eval failed (timeout or socket error): {e}")
+    finally:
+        try:
+            ws.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
