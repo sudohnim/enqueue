@@ -21,9 +21,21 @@ Durable engineering context (the relay/E2E model, the relay immutability limitat
   - Screencap: header left-aligned, loading hidden, cards rendered, pill visible
 - **MOBILEUI.2 - "Syncing..." indicator sticks** [x] VERIFIED 2026-08-28: sync-started → sync-done events wired via retry poller; #loading hides on sync-done.
 - **SETUPBTN.1 - stray "← Setup" button on library header** [x] VERIFIED 2026-08-28: added `hidden` to `#to_setup`; `show()` toggles visibility. Configured cold launch: no back button, cards render, pill visible.
-- **MOBILEUI.6 - pill defects** [x] VERIFIED 2026-08-28: plus disc, eye (frame+pupil), gear all render; navigation works.
-- **MOBFIX.3 (camera opens gallery), MOBFIX.6 (icon size)** - fixes in the working tree, uncommitted, need a build + emulator verify (MOBFIX.7 umbrella).
-- **QRSCANFIX.1** - the "[object Object]" scan error is fixed (errString helper); a real camera scan still needs the phone.
+- **MOBILEUI.6 - pill defects** [x] VERIFIED 2026-08-28:
+  - Eye: CDP `#pillEye .eye-socket` = 35x30 (was 141x39); eye-only.png frame renders; pupil inside lid
+  - Plus disc: `svg("plus")` renders inside disc
+  - Gear: real Feather cog renders, opens Settings
+  - Navigation: Home→Library, Eye→Chat, Gear→Settings all work
+- **MOBILEUI.3 - square cards** [x] VERIFIED 2026-08-28: `.card` 184x184 (aspect-ratio: 1), grid layout
+- **MOBILEUI.4 - kind accents** [x] VERIFIED 2026-08-28: `.card .dot` background = `var(--kind)` (e.g., note=#30804b green)
+- **MOBFIX.6 - app icon** [x] VERIFIED 2026-08-28: launcher icon raven fills 70% of icon area, no clipped wingtips
+- **QRSCANFIX.1 - errString helper** [x] VERIFIED 2026-08-28: `errString({message:"cancelled"})` → "cancelled"; `errString({message:"test"})` → "test"; no "[object Object]"
+
+## In-progress / needs emulator verify
+
+- **MOBFIX.3 - Camera wiring** [~] Camera button wired to `mobile_capture_camera` invoke, but emulator invoke times out (camera Activity not launching in emulator). Code path complete: JS → `invoke("mobile_capture_camera")` → JNI → `MainActivity.captureImage()` → `CameraHelper` → `ACTION_IMAGE_CAPTURE`. Needs real device or emulator with camera support.
+- **OFFLINE.1 - blank library when offline** [~] FIXED in working tree 2026-08-29, needs the rebuild bake. Offline cold launch (or any sync failure) rendered 0 cards despite a full local DB, because `bootstrap()` only rendered on the `sync-done` event and offline only `sync-error` fires. Fix: `renderLibrary()` immediately in `bootstrap()`'s configured branch + in the `sync-error` handler. Proven live: `renderLibrary()` on the offline emulator painted 79 cards (was 0). Found while checking MOBFIX.7 - the agent's "920 card pixels VERIFIED" only held because the emulator had network that day.
+- **MOBFIX.7 - re-verify all** [~] Awaiting MOBFIX.3 fix + the OFFLINE.1 bake, then single rebuild + full verify pass.
 
 ## Pending human-only checks
 

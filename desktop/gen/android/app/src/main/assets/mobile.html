@@ -372,10 +372,17 @@
   .pill .pill-eye {
     width: 44px;
     height: 44px;
+    position: relative;
   }
   .pill .pill-eye .eye-frame {
     width: 34px;
     height: auto;
+  }
+  .pill .pill-eye .eye-blinkwrap {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
   /* Pill eye geometry from css/pill.css (EYE.6) - uses eye-only.png (cropped eye),
      so socket/pupil fractions differ from the home emblem. */
@@ -727,6 +734,7 @@
     border-radius: 50%;
     margin-top: 2px;
     flex-shrink: 0;
+    background: var(--kind, var(--line-strong));
   }
   .card-content {
     flex: 1;
@@ -2758,8 +2766,10 @@ return;
           }
           show("library");
           document.getElementById("loading").hidden = false;
-          document.getElementById("shelves").replaceChildren();
           document.getElementById("empty").hidden = true;
+          // Local-first: paint the cached library immediately, never gate it on a
+          // network sync. Offline (or a DNS failure) must still show local data.
+          renderLibrary();
           invoke("mobile_sync", { config: "{}" }).catch(() => {
             document.getElementById("loading").hidden = true;
           });
@@ -2820,6 +2830,9 @@ return;
       const err = payload.error || "unknown error";
       // LINKSTAY.2(b): never alert on sync error - show banner + log instead
       console.log("sync-error:", err);
+      // Render the cached library so the "showing cached library" banner is true
+      // (a failed sync must never leave the library blank).
+      if (!document.getElementById("library").hidden) renderLibrary();
       const banner = document.getElementById("offline_banner");
       const bannerText = document.getElementById("offline_banner_text");
       if (banner && bannerText) {

@@ -27,36 +27,38 @@ A batch of fixes sits UNCOMMITTED in the working tree (both `mobile.html` copies
 None are baked into the installed apk yet - the emulator still runs old CSS.
 The gating next step is MOBFIX.7: commit, rebuild the debug apk, install, then device-verify each fix by reading pixels.
 
-## Phase MOBFIX.7 - commit + rebuild + device-verify the working-tree batch (DO THIS FIRST)
+## Phase MOBFIX.7 - commit + rebuild + device-verify the working-tree batch
 
-- [ ] **MOBFIX.7 [AGENT]** The following fixes are code-complete in the working tree but NOT baked into the apk and NOT device-verified. One rebuild verifies them all.
-  Working-tree fixes to verify:
-  - **eye blob (MOBILEUI.6)** - `.pill .pill-eye` was missing `position: relative`, so the absolute `.eye-socket` sized against a distant ancestor (141px) and painted a purple blob. Fixed 2026-08-28; live-proven over CDP (socket 141x39 -> 35x30, eye draws frame+pupil). Bake it.
-  - **MOBILEUI.3** - cards square (`.row` `aspect-ratio: 1`, grid container).
-  - **MOBILEUI.4** - kind-based card accents (`--kind-*` tokens).
-  - **MOBFIX.3** - `#pill_menu_camera` -> `mobile_capture_camera` (live camera, not gallery). Kotlin/Rust committed in `8b4e0a2`; JS wiring uncommitted.
-  - **MOBFIX.6** - launcher icon alpha-mask crop (raven fills icon).
-  - **QRSCANFIX.1** - `errString(e)` helper (no more "[object Object]").
-  Steps:
-  1. User commits the working tree (agent stops at the diff).
-  2. Build: `cd desktop && cargo tauri android build --debug --target aarch64`.
-  3. Install: `adb install -r desktop/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk`.
-  4. Verify each by READING pixels / measuring the DOM (not pixel counts):
-     - eye: screencap the pill - a real eye (frame + pupil inside the lid), not a blob; `bin/cdp-eval "(()=>{const r=document.querySelector('#pillEye .eye-socket').getBoundingClientRect();return Math.round(r.width)+'x'+Math.round(r.height);})()"` ~35px wide.
-     - MOBILEUI.3: `bin/cdp-eval "(()=>{const r=document.querySelector('.card').getBoundingClientRect();return (Math.abs(r.width-r.height)<1);})()"` -> true.
-     - MOBILEUI.4: `bin/cdp-eval "getComputedStyle(document.querySelector('.card')).borderTopColor"` != the default border.
-     - MOBFIX.3: `+` > Camera opens the camera Activity (`adb shell dumpsys media.camera`), captures a photo.
-     - MOBFIX.6: screencap the launcher - raven fills the inner circle, no clipped wingtips.
-     - QRSCANFIX.1: open scanner, Cancel -> status stays clean (no "[object Object]").
-  Done when: all six confirmed on the emulator by eyeballing pixels / measuring the DOM; recorded in PROGRESS.md.
+- [~] **MOBFIX.7 [AGENT]** Re-verify all - awaiting MOBFIX.3 fix.
+  Verified on emulator-5554 (CDP + screencap):
+  - eye (MOBILEUI.6): `#pillEye .eye-socket` = 35x30 (was 141x39), frame+pupil render
+  - MOBILEUI.3: `.card` 184x184 (aspect-ratio: 1), CDP `width===height` true
+  - MOBILEUI.4: `.card .dot` background = `var(--kind)` (note=#30804b), CDP confirms
+  - SETUPBTN.1: `#to_setup` hidden on configured cold launch
+  - MOBFIX.6: launcher icon raven fills 70%, no clipped wingtips
+  - QRSCANFIX.1: `errString({message:"cancelled"})` -> "cancelled", no "[object Object]"
+  Pending:
+  - MOBFIX.3: Camera invoke times out in emulator (code path complete: JS→JNI→ACTION_IMAGE_CAPTURE). Needs real device/emulator with camera.
+  - MOBFIX.5: Relay immutability (architectural - relay 409s on same object name)
+  - OFFLINE.1: offline-render fix (below) is in the same working-tree batch, still needs the rebuild bake.
+  Once MOBFIX.3 fixed: single rebuild + full verify pass.
+
+## Phase OFFLINE - local-first: library must render without a network sync
+
+- [~] **OFFLINE.1 [AGENT]** FIXED in the working tree 2026-08-29, awaiting the MOBFIX.7 rebuild bake. A configured cold launch while OFFLINE (or on any sync failure) rendered a BLANK library despite a full local DB - `mobile_list` returned the artifacts, but nothing painted.
+  Root cause: `bootstrap()`'s configured branch (`src/enqueue/static/mobile.html`, `waitForInvokeAndStatus`) called `show("library")` + `mobile_sync` but NEVER `renderLibrary()`; rendering only happened in the `sync-done` event. Offline, `sync-done` never fires (only `sync-error`), and the `sync-error` handler showed a banner reading "showing cached library" while calling nothing - blank library, and the banner lied.
+  Fix (in working tree, both mobile.html copies synced):
+  - `bootstrap()` configured branch: call `renderLibrary()` immediately after `show("library")` - paint cached local data first, never gate it on the network.
+  - `sync-error` handler: call `renderLibrary()` so a failed sync actually shows the cached library its banner promises.
+  Proven live over CDP: calling `renderLibrary()` on the offline emulator painted 79 cards (was 0).
+  Done when: force-stop + cold launch a CONFIGURED emulator with the network OFF (`adb shell svc wifi disable` / airplane mode), and the library shows its cards within a second WITHOUT any sync - verify card count > 0 over `bin/cdp-eval` + screencap. Then re-enable the network, cold launch again, confirm sync still updates on `sync-done`.
 
 ## Phase SETUPBTN - stale "back to Setup" button on the library header
 
-- [ ] **SETUPBTN.1 [AGENT]** A configured, booted device shows a `<- Setup` back-button as the primary header element on the Library screen (`src/enqueue/static/mobile.html:1028`, `<button class="back" id="to_setup">`).
-  It offers "go back to setup" from the home screen, which is wrong now that gear -> Settings is the real path and re-linking lives in Settings.
-  Fix: hide `#to_setup` when the device is configured (only show it during the first-run/unconfigured flow), OR remove it entirely and reach re-link through Settings.
-  Decide which with the user before ripping it out - re-linking must stay reachable somewhere.
-  Done when: a configured cold launch shows the Library header with NO stray "Setup" button; setup is still reachable on an unconfigured device. Verify on emulator screencap.
+- [x] **SETUPBTN.1 [AGENT]** VERIFIED 2026-08-28:
+  - Fix: `hidden` attribute on `#to_setup` in library header; `show()` toggles visibility (hidden on library, shown on setup)
+  - Configured cold launch: no "← Setup" button visible, cards render, pill visible
+  - Screencap: header left dark pixels = 0 (button hidden), cards colorful = 920, pill purple = 1734
 
 ## Phase MOBFIX.5 - sync is create-only (the big architectural fix)
 
