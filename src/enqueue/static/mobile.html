@@ -150,19 +150,74 @@
     font-size: 14px;
     color: var(--text-dim);
   }
+  /* Sections scroll HORIZONTALLY: each shelf is a single row of fixed-width
+     cards you swipe through, so a section never grows the page vertically. The
+     row bleeds to the screen edges (negative margin + matching padding) so cards
+     can scroll under the edge instead of stopping at the content gutter. */
   .rows {
     list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    margin: 0 calc(-1 * var(--sp-4));
+    padding: 0 var(--sp-4) var(--sp-2);
+    display: flex;
     gap: var(--sp-3);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .rows::-webkit-scrollbar {
+    display: none;
   }
   .shelf-label {
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     color: var(--text-mute);
     padding: 4px 2px 2px;
+  }
+  /* One shelf = label + its horizontal row, stacked; shelves stack vertically. */
+  .shelf {
+    margin-bottom: var(--sp-4);
+  }
+  .shelf-label .shelf-count {
+    color: var(--text-dim);
+    font-weight: 500;
+    margin-left: 6px;
+  }
+  /* View-mode chips (Last touch / Type / Tags / Custom), mirroring the desktop.
+     They scroll horizontally if they overflow so no chip is ever cut off. */
+  .viewchips {
+    display: flex;
+    gap: var(--sp-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 calc(-1 * var(--sp-4)) var(--sp-3);
+    padding: 0 var(--sp-4);
+  }
+  .viewchips::-webkit-scrollbar {
+    display: none;
+  }
+  .chip {
+    flex: 0 0 auto;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text-mute);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: var(--r-full);
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease);
+  }
+  .chip[aria-pressed="true"] {
+    background: var(--purple-bold);
+    border-color: var(--purple-bold);
+    color: var(--on-purple-bold);
   }
   .thumb-placeholder {
     width: 44px;
@@ -174,8 +229,10 @@
   .card {
     display: flex;
     flex-direction: column;
-    aspect-ratio: 1;
-    min-width: 0;
+    flex: 0 0 168px;
+    width: 168px;
+    height: 168px;
+    scroll-snap-align: start;
     overflow: hidden;
     cursor: pointer;
     background: var(--surface);
@@ -1103,6 +1160,12 @@
     <h1 id="lib_greeting">Library</h1>
   </header>
   <input id="search" type="search" placeholder="Search" autocomplete="off" />
+  <div class="viewchips" id="viewchips" role="tablist">
+    <button class="chip" data-mode="touched" aria-pressed="true">Last touch</button>
+    <button class="chip" data-mode="type" aria-pressed="false">Type</button>
+    <button class="chip" data-mode="tags" aria-pressed="false">Tags</button>
+    <button class="chip" data-mode="custom" aria-pressed="false">Custom</button>
+  </div>
   <div id="loading" hidden>
     <img src="loading.png" alt="" />
     <span>Syncing&#8230;</span>
@@ -1512,6 +1575,34 @@
     el.replaceChildren(...Array.from(doc.body.childNodes));
   }
 
+  // Lazy thumbnail loader: render a card's PDF/image thumbnail only when it
+  // scrolls into view. With horizontal-scroll shelves most cards are off-screen,
+  // and rendering every PDF eagerly (fetch the blob + parse + paint via pdf.js)
+  // janked the main thread. One shared observer; renders once per card.
+  let _thumbObserver = null;
+  function observeThumb(el, renderFn) {
+    if (typeof IntersectionObserver === "undefined") {
+      renderFn();
+      return;
+    }
+    if (!_thumbObserver) {
+      _thumbObserver = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            _thumbObserver.unobserve(e.target);
+            const fn = e.target.__thumbFn;
+            e.target.__thumbFn = null;
+            if (fn) fn();
+          }
+        },
+        { rootMargin: "300px" },
+      );
+    }
+    el.__thumbFn = renderFn;
+    _thumbObserver.observe(el);
+  }
+
   function renderRows(arts, container) {
     container.replaceChildren();
     for (const a of arts) {
@@ -1653,14 +1744,17 @@
     thumb.alt = a.title || "";
     li.appendChild(kindDot);
     li.insertBefore(thumb, kindDot);
-    invoke("mobile_blob", { id: a.id })
-      .then((raw) => {
-        const b = parse(raw);
-        thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
-      })
-      .catch(() => {
-        thumb.remove();
-      });
+    // Lazy: pull the (potentially large) image blob only when the card is in view.
+    observeThumb(li, () => {
+      invoke("mobile_blob", { id: a.id })
+        .then((raw) => {
+          const b = parse(raw);
+          thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
+        })
+        .catch(() => {
+          thumb.remove();
+        });
+    });
 
     const content = document.createElement("div");
     content.className = "card-content";
@@ -1705,26 +1799,31 @@
     li.appendChild(kindDot);
     li.insertBefore(thumb, kindDot);
 
-    // Fetch and render first page thumbnail
-    invoke("mobile_blob", { id: a.id })
-      .then((raw) => {
-        const b = parse(raw);
-        const bytes = base64ToUint8Array(b.base64);
-        loadPdfJs().then(() => {
-          pdfjsLib.getDocument({ data: bytes }).promise.then((pdf) => {
-            pdf.getPage(1).then((page) => {
-              const viewport = page.getViewport({ scale: 0.5 });
-              thumb.width = viewport.width;
-              thumb.height = viewport.height;
-              const ctx = thumb.getContext("2d");
-              page.render({ canvasContext: ctx, viewport: viewport });
+    // Fetch + render the first-page thumbnail only when the card scrolls into
+    // view (lazy), so a shelf of PDFs does not parse them all up front.
+    observeThumb(li, () => {
+      invoke("mobile_blob", { id: a.id })
+        .then((raw) => {
+          const b = parse(raw);
+          const bytes = base64ToUint8Array(b.base64);
+          loadPdfJs().then(() => {
+            pdfjsLib.getDocument({ data: bytes }).promise.then((pdf) => {
+              pdf.getPage(1).then((page) => {
+                const viewport = page.getViewport({ scale: 0.5 });
+                thumb.width = viewport.width;
+                thumb.height = viewport.height;
+                // willReadFrequently avoids the slow getImageData readback path
+                // pdf.js warns about on the WebView canvas.
+                const ctx = thumb.getContext("2d", { willReadFrequently: true });
+                page.render({ canvasContext: ctx, viewport: viewport });
+              });
             });
           });
+        })
+        .catch(() => {
+          thumb.remove();
         });
-      })
-      .catch(() => {
-        thumb.remove();
-      });
+    });
 
     const content = document.createElement("div");
     content.className = "card-content";
@@ -1804,37 +1903,133 @@
     li.addEventListener("click", () => openArtifact(a.id));
   }
 
+  // View-mode engine (mirrors the desktop's Last touch / Type / Tags / Custom).
+  // A mode is just a grouping over the SAME cards already in hand - switching a
+  // chip regroups the cache with no refetch. Tags and Custom need data the phone
+  // does not compute itself (tags are desktop-assigned; custom views are saved
+  // pivots); those maps are populated by the sync (mobile_tags / mobile_pivots)
+  // and stay empty-with-a-hint until the desktop has synced them.
+  let libraryMode = "touched";
+  let libraryArts = [];
+  let libraryTags = {}; // artifact_id -> [tag]
+  let libraryPivots = []; // [{ name, ids: [artifact_id] }]
+
+  function _byTouchDesc(list) {
+    return [...list].sort((a, b) =>
+      (b.updated_at || b.created_at || "").localeCompare(
+        a.updated_at || a.created_at || "",
+      ),
+    );
+  }
+
+  function groupShelves(mode, arts) {
+    if (mode === "type") {
+      const known = ["note", "link", "image", "pdf"];
+      const order = [
+        ["note", "Notes"],
+        ["link", "Links"],
+        ["image", "Images"],
+        ["pdf", "PDFs"],
+        ["file", "Files"],
+      ];
+      return order
+        .map(([k, label]) => ({
+          label,
+          arts: _byTouchDesc(
+            arts.filter((a) =>
+              k === "file" ? !known.includes(a.kind) : a.kind === k,
+            ),
+          ),
+        }))
+        .filter((g) => g.arts.length);
+    }
+    if (mode === "tags") {
+      // Tags ride on each artifact's snapshot (a.tags), synced from the desktop.
+      const byTag = {};
+      for (const a of arts)
+        for (const t of a.tags || libraryTags[a.id] || [])
+          (byTag[t] = byTag[t] || []).push(a);
+      return Object.keys(byTag)
+        .sort((a, b) => a.localeCompare(b))
+        .map((t) => ({ label: t, arts: _byTouchDesc(byTag[t]) }));
+    }
+    if (mode === "custom") {
+      const byId = Object.fromEntries(arts.map((a) => [a.id, a]));
+      return libraryPivots
+        .map((p) => ({
+          label: p.name,
+          arts: (p.ids || []).map((id) => byId[id]).filter(Boolean),
+        }))
+        .filter((g) => g.arts.length);
+    }
+    // touched (default): the saved shelf, then everything else, newest first.
+    const byTime = _byTouchDesc(arts);
+    const saved = byTime.filter((a) => a.pinned);
+    const rest = byTime.filter((a) => !a.pinned);
+    const out = [];
+    if (saved.length) out.push({ label: "Saved", arts: saved });
+    out.push({ label: "Everything else", arts: rest });
+    return out;
+  }
+
+  function renderShelf(label, arts, container) {
+    const shelf = document.createElement("div");
+    shelf.className = "shelf";
+    const lbl = document.createElement("div");
+    lbl.className = "shelf-label";
+    lbl.textContent = label;
+    const count = document.createElement("span");
+    count.className = "shelf-count";
+    count.textContent = String(arts.length);
+    lbl.appendChild(count);
+    const ul = document.createElement("ul");
+    ul.className = "rows";
+    shelf.appendChild(lbl);
+    shelf.appendChild(ul);
+    container.appendChild(shelf);
+    renderRows(arts, ul);
+  }
+
   function renderSections(arts, emptyMsg) {
+    if (arts) libraryArts = arts;
     const shelves = document.getElementById("shelves");
     const empty = document.getElementById("empty");
-    const saved = arts.filter((a) => a.pinned);
-    const rest = arts.filter((a) => !a.pinned);
-    empty.hidden = arts.length > 0;
-    if (!arts.length) {
+    shelves.replaceChildren();
+    if (!libraryArts.length) {
+      empty.hidden = false;
       empty.textContent = emptyMsg || "Nothing synced yet.";
-      shelves.replaceChildren();
       return;
     }
-    shelves.replaceChildren();
-    if (saved.length) {
-      const label = document.createElement("div");
-      label.className = "shelf-label";
-      label.textContent = "SAVED";
-      const ul = document.createElement("ul");
-      ul.className = "rows";
-      shelves.appendChild(label);
-      shelves.appendChild(ul);
-      renderRows(saved, ul);
+    const groups = groupShelves(libraryMode, libraryArts);
+    if (!groups.length) {
+      empty.hidden = false;
+      empty.textContent =
+        libraryMode === "tags"
+          ? "No tags yet. Tag artifacts on the desktop and they sync here."
+          : libraryMode === "custom"
+            ? "No custom views yet. Create them on the desktop and they sync here."
+            : "Nothing here.";
+      return;
     }
-    const label2 = document.createElement("div");
-    label2.className = "shelf-label";
-    label2.textContent = "EVERYTHING ELSE";
-    const ul2 = document.createElement("ul");
-    ul2.className = "rows";
-    shelves.appendChild(label2);
-    shelves.appendChild(ul2);
-    renderRows(rest, ul2);
+    empty.hidden = true;
+    for (const g of groups) renderShelf(g.label, g.arts, shelves);
   }
+
+  function setLibraryMode(mode) {
+    libraryMode = mode;
+    for (const c of document.querySelectorAll("#viewchips .chip"))
+      c.setAttribute("aria-pressed", String(c.dataset.mode === mode));
+    renderSections();
+  }
+
+  (function wireViewChips() {
+    const bar = document.getElementById("viewchips");
+    if (!bar) return;
+    bar.addEventListener("click", (e) => {
+      const chip = e.target.closest(".chip");
+      if (chip) setLibraryMode(chip.dataset.mode);
+    });
+  })();
 
   // The phone's front door mirrors the desktop hero: a time-of-day greeting with
   // a single violet period, the same phrase set the desktop picks by the clock.
@@ -1854,12 +2049,25 @@
 
   function renderLibrary() {
     setLibraryGreeting();
-    invoke("mobile_list")
-      .then((raw) => renderSections(parse(raw)))
-      .catch((e) => {
-        const empty = document.getElementById("empty");
-        empty.hidden = false;
-        empty.textContent = "Error: " + e;
+    // Load the synced custom views first (best-effort), then the artifacts, so a
+    // Custom-mode render has its pivots in hand.
+    invoke("mobile_pivots")
+      .then((raw) => {
+        try {
+          libraryPivots = JSON.parse(raw).views || [];
+        } catch (e) {
+          /* leave as-is */
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        invoke("mobile_list")
+          .then((raw) => renderSections(parse(raw)))
+          .catch((e) => {
+            const empty = document.getElementById("empty");
+            empty.hidden = false;
+            empty.textContent = "Error: " + e;
+          });
       });
   }
 
@@ -2670,7 +2878,7 @@ return;
       const banner = document.getElementById("offline_banner");
       if (banner) banner.hidden = true;
     });
-    __TAURI__.event.listen("sync-done", () => {
+    __TAURI__.event.listen("sync-done", (e) => {
       document.getElementById("loading").hidden = true;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
@@ -2680,7 +2888,11 @@ return;
       // Hide offline banner on successful sync
       const banner = document.getElementById("offline_banner");
       if (banner) banner.hidden = true;
-      if (!document.getElementById("library").hidden) renderLibrary();
+      // Only re-render when the pull actually applied something. The live SSE
+      // listener fires a sync on every relay event (including our own pushes),
+      // so re-rendering the whole library on every no-op sync was pure jank.
+      const pulled = (e && e.payload && e.payload.pulled) || 0;
+      if (pulled > 0 && !document.getElementById("library").hidden) renderLibrary();
       invoke("mobile_outbox_push").catch(() => {});
     });
     __TAURI__.event.listen("sync-error", (e) => {

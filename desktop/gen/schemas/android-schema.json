@@ -477,6 +477,12 @@
           "markdownDescription": "Enables the mobile_pick_image command without any pre-configured scope."
         },
         {
+          "description": "Enables the mobile_pivots command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mobile-pivots",
+          "markdownDescription": "Enables the mobile_pivots command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mobile_remove_annotation command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mobile-remove-annotation",
@@ -703,6 +709,12 @@
           "type": "string",
           "const": "deny-mobile-pick-image",
           "markdownDescription": "Denies the mobile_pick_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mobile_pivots command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mobile-pivots",
+          "markdownDescription": "Denies the mobile_pivots command without any pre-configured scope."
         },
         {
           "description": "Denies the mobile_remove_annotation command without any pre-configured scope.",

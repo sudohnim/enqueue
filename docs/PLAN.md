@@ -27,6 +27,33 @@ A batch of fixes sits UNCOMMITTED in the working tree (both `mobile.html` copies
 None are baked into the installed apk yet - the emulator still runs old CSS.
 The gating next step is MOBFIX.7: commit, rebuild the debug apk, install, then device-verify each fix by reading pixels.
 
+## Phase MOBVIEWS - mobile library view modes + full reverify (2026-08-30)
+
+Big mobile round this session: view modes, horizontal scroll, a real logo, tags + custom-view sync, and the phone->desktop create fix.
+All code-complete and emulator-verified during the build; this task is the from-scratch device reverify on a freshly installed apk.
+
+- [~] **MOBVIEWS.1 [AGENT]** Reverify every mobile feature added 2026-08-30 on a clean install. Build + install first, then check each by READING pixels / measuring the DOM over `bin/cdp-eval` (device: emulator-5554 unless a phone is attached; the physical phone auto-locks, so screencaps there show the lock screen - drive it headless or use the emulator for visuals).
+
+  SETUP (do once):
+  1. `cd desktop && cargo tauri android build --debug --target aarch64` then `adb -s emulator-5554 install -r gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`.
+  2. The desktop engine must run THIS session's code for tags/pivots to push - restart `enq serve` (the running one predates `sync/client.py::push_pivots` and `pivots_saved` hooks).
+  3. Seed the relay so the phone has data to group: on the desktop, load the DEK and `push_all()` (backfills artifacts + tags + `lib/pivots.enc`). Tags ride on artifact snapshots; custom views are `lib/pivots.enc`.
+  4. On the device: cold launch, run `mobile_sync`, wait for the pull.
+
+  VERIFY (each is a separate check, READ the result):
+  - **Logo**: launcher icon is the raven on purple (matches desktop `icon.png`), not a small raven on white. Screencap the launcher home screen.
+  - **View chips**: `Last touch / Type / Tags / Custom` render; tapping one sets `aria-pressed` and regroups with no refetch. `bin/cdp-eval "[...document.querySelectorAll('#viewchips .chip')].map(c=>c.textContent)"`.
+  - **Horizontal scroll**: a section's `.rows` is `display:flex; overflow-x:auto`; cards are fixed 168px and swipe sideways, never growing the page. Screencap + `getComputedStyle('.rows').overflowX === 'auto'`.
+  - **Type mode**: `setLibraryMode('type')` -> shelves Notes/Links/Images/PDFs/Files with counts, only non-empty ones.
+  - **Tags mode**: `setLibraryMode('tags')` -> one shelf per tag. Needs tagged artifacts synced; `mobile_list` items carry a `tags` array (stored in the mobile `tags_json` column by `apply_snapshot`). If empty, tag something on desktop (bumps updated_at + pushes) then re-sync.
+  - **Custom mode**: `setLibraryMode('custom')` -> one shelf per saved view. `mobile_pivots` returns `{views:[{name,ids}]}` from `lib/pivots.enc`; each shelf shows the local artifacts in that view. Create a saved view on desktop and confirm it appears after a sync (the `pivots_saved` mutations now call `push_pivots()` on a daemon thread).
+  - **Pill**: eye centered, `+`/eye/gear balanced sizes (space-between), eye opens Chat, gear opens Settings, `+` toggles the add-menu (hidden by default).
+  - **Settings**: only Sync Now + Re-link (all other settings are desktop-only); renders at the top, not mid-page.
+  - **Phone create -> desktop**: capture a note on the phone (`mobile_capture`), it queues to `capture_outbox`, `mobile_outbox_push` lands it under `dev/{phone_device}/artifacts/{id}.enc`, and a desktop `pull()` receives it. (Was broken: text captures never queued.)
+  - **Delete sync (MOBFIX.5)**: delete a note on desktop -> it disappears on the phone after sync (relay object decrypts to `deleted_at` set).
+  - **Offline**: turn the network off, cold launch -> the library still renders from the local DB.
+  Done when: every bullet confirmed on the rebuilt apk by reading pixels / DOM, recorded in PROGRESS.md.
+
 ## Phase MOBFIX.7 - commit + rebuild + device-verify the working-tree batch
 
 - [x] **MOBFIX.7 [AGENT]** VERIFIED 2026-08-29 (emulator-5554, rebuilt apk).

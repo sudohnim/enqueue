@@ -62,6 +62,7 @@
             "allow-mobile-sync",
             "allow-mobile-link-qr",
             "allow-mobile-list",
+            "allow-mobile-pivots",
             "allow-mobile-get",
             "allow-mobile-status",
             "allow-mobile-search",

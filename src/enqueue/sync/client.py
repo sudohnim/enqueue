@@ -297,6 +297,57 @@ def push_keyring() -> None:
         print(f"[sync] keyring push failed: {exc}", flush=True)
 
 
+def push_pivots() -> None:
+    """PUT the saved views (custom pivots) to the relay as `lib/pivots.enc`.
+
+    A saved view's membership is `included_ids - excluded_ids` (mirroring
+    pivot.run), so the mobile client can render each view as a shelf without the
+    pivot engine. The payload is a list of `{name, ids}`, encrypted with the DEK
+    like an artifact snapshot. Overwritten in place (the relay upserts by name).
+    """
+    from .. import pivot, pivots_saved
+
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+    dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
+    if dek is None:
+        return
+
+    views = []
+    for saved in pivots_saved.all_specs():
+        spec = saved.get("spec") or {}
+        # A view's membership is its resolved subset, adjusted by the manual
+        # include/exclude chips (mirrors pivot.run). resolve_subset is the cheap
+        # part of the pivot - no model call, unlike bucketize grouping.
+        try:
+            base, _ = pivot.resolve_subset(spec.get("subset") or {"kind": "everything"})
+        except Exception:  # noqa: BLE001 - a malformed subset must not break the sync
+            base = []
+        ids = sorted(
+            (set(base) | set(spec.get("included_ids") or []))
+            - set(spec.get("excluded_ids") or [])
+        )
+        if ids:
+            views.append({"name": saved.get("name") or "Untitled view", "ids": ids})
+
+    data = crypto.encrypt(serialize({"views": views}), dek)
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{url.rstrip('/')}/sync/object/lib/pivots.enc", content=data, headers=headers
+            )
+        if resp.status_code not in (201, 409):
+            print(f"[sync] pivots push rejected: {resp.status_code}", flush=True)
+    except httpx.HTTPError as exc:
+        print(f"[sync] pivots push failed: {exc}", flush=True)
+
+
 def push_all() -> int:
     """FULL.1: Push every non-local artifact to the relay, tombstones included.
 
@@ -386,4 +437,6 @@ def push_all() -> int:
                 if bresp.status_code not in (201, 409):
                     pass  # blob push failure is non-fatal
 
+    # Custom views ride alongside the artifacts so the phone's Custom mode has data.
+    push_pivots()
     return pushed

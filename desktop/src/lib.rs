@@ -210,6 +210,96 @@ mod mobile {
         }
     }
 
+    /// One sync in flight at a time. The SSE listener and the on-load / resume /
+    /// Sync Now paths all funnel through this so a burst of events collapses to a
+    /// single pull instead of stacking overlapping DB writers.
+    static SYNC_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// Run one sync from the persisted config, emitting sync-started/done/error to
+    /// the webview (same events the UI already listens for). Non-blocking: it spawns
+    /// its own thread and returns immediately, and it no-ops if a sync is already
+    /// running. Used by the live SSE listener; the UI's Sync Now path keeps its own
+    /// spawn in `mobile_sync`.
+    fn run_sync_once(app: &AppHandle) {
+        use std::sync::atomic::Ordering;
+        if SYNC_RUNNING.swap(true, Ordering::SeqCst) {
+            return; // a sync is already in flight; it will pull the latest
+        }
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let saved = load_config(&app).ok().flatten().unwrap_or(Value::Null);
+                let relay_url = saved.get("relay_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let secret = saved.get("secret").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if relay_url.is_empty() || secret.is_empty() {
+                    return;
+                }
+                let conn = match open_lib(&app) {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+                let _ = app.emit("sync-started", serde_json::json!({}));
+                let dek = saved
+                    .get("dek")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| hex::decode(s).ok())
+                    .and_then(|b| b.try_into().ok());
+                let outcome = crate::sync::sync_library(&relay_url, &secret, dek.as_ref(), &conn);
+                let ids = crate::sync::list_artifact_ids(&conn).unwrap_or_default();
+                let err = outcome.error.as_deref().unwrap_or("");
+                let _ = app.emit(
+                    if err.is_empty() { "sync-done" } else { "sync-error" },
+                    serde_json::json!({
+                        "status": outcome.status,
+                        "pulled": outcome.pulled,
+                        "error": outcome.error,
+                        "artifact_ids": ids,
+                    }),
+                );
+            }));
+            SYNC_RUNNING.store(false, Ordering::SeqCst);
+        });
+    }
+
+    /// Live sync (MOBLIVE): subscribe to the relay's SSE change feed and pull on
+    /// every event, so an already-open app updates without a foreground/resume.
+    /// Mirrors the desktop worker. Reconnects on drop; idles cheaply between.
+    fn spawn_sse_listener(app: AppHandle) {
+        use std::io::BufRead;
+        std::thread::spawn(move || loop {
+            let saved = load_config(&app).ok().flatten().unwrap_or(Value::Null);
+            let relay = saved.get("relay_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let secret = saved.get("secret").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if relay.is_empty() || secret.is_empty() {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+            let url = format!(
+                "{}/sync/events?token={}",
+                relay.trim_end_matches('/'),
+                secret
+            );
+            // A read timeout longer than the relay's 15s heartbeat: a live stream
+            // never trips it, a dead one breaks within the window and reconnects.
+            let agent = ureq::AgentBuilder::new()
+                .timeout_read(std::time::Duration::from_secs(45))
+                .build();
+            if let Ok(resp) = agent.get(&url).call() {
+                let reader = std::io::BufReader::new(resp.into_reader());
+                for line in reader.lines() {
+                    match line {
+                        // A data line means something changed on the relay; heartbeats
+                        // (": ping") and blank lines are ignored.
+                        Ok(l) if l.starts_with("data:") => run_sync_once(&app),
+                        Ok(_) => {}
+                        Err(_) => break, // stream dropped; fall through to reconnect
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        });
+    }
+
     /// Pull the encrypted library into the local SQLite read copy (MOB.3). A non-empty
     /// config unlocks the DEK from the imported keyring + phrase, then persists the
     /// secret + DEK (MOB.3b). An empty config falls back to the persisted one, so a
@@ -317,6 +407,17 @@ mod mobile {
         let conn = open_lib(&app)?;
         let arts = crate::sync::list_artifacts(&conn).map_err(|e| e.to_string())?;
         Ok(serde_json::json!(arts).to_string())
+    }
+
+    /// The saved views (custom pivots) synced from the desktop, as
+    /// `{"views":[{name, ids}]}`. Empty until the desktop has pushed lib/pivots.enc.
+    #[tauri::command]
+    fn mobile_pivots(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let json: Option<String> = conn
+            .query_row("SELECT value FROM sync_meta WHERE key='pivots'", [], |r| r.get(0))
+            .ok();
+        Ok(json.unwrap_or_else(|| "{\"views\":[]}".to_string()))
     }
 
     /// One artifact plus its annotations for the Reader surface (MOB.5).
@@ -1463,6 +1564,7 @@ mod mobile {
                 mobile_link_qr,
                 mobile_status,
                 mobile_list,
+                mobile_pivots,
                 mobile_get,
                 mobile_search,
                 mobile_capture,
@@ -1513,6 +1615,9 @@ mod mobile {
                 // Initialize outbox schema
                 let conn = open_lib(app.handle())?;
                 init_outbox_schema(&conn).map_err(|e| e.to_string())?;
+                // MOBLIVE: start the live SSE sync listener so the library stays
+                // current while the app is open, not only on launch/resume.
+                spawn_sse_listener(app.handle().clone());
                 Ok(())
             })
             .run(tauri::generate_context!())

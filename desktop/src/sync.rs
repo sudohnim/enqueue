@@ -259,7 +259,8 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           deleted_at     TEXT,
           pages          INTEGER,
           title_explicit INTEGER NOT NULL DEFAULT 0,
-          _device_id     TEXT
+          _device_id     TEXT,
+          tags_json      TEXT
         );
         CREATE TABLE IF NOT EXISTS annotations (
           id            TEXT PRIMARY KEY,
@@ -286,7 +287,11 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         "#,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    // Migration: tags_json was added after the first release. ALTER fails with a
+    // "duplicate column" on installs that already have it, which is fine.
+    let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN tags_json TEXT", []);
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -344,6 +349,20 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
         ],
     )
     .map_err(|e| format!("insert artifact: {e}"))?;
+
+    // Tags ride on the snapshot as a string array; store them as JSON for the
+    // library's Tags view mode. Absent -> empty array.
+    let tags_json = snapshot
+        .get("tags")
+        .filter(|v| v.is_array())
+        .cloned()
+        .unwrap_or_else(|| Value::Array(vec![]))
+        .to_string();
+    conn.execute(
+        "UPDATE artifacts SET tags_json = ?1 WHERE id = ?2",
+        rusqlite::params![tags_json, id],
+    )
+    .map_err(|e| e.to_string())?;
 
     for table in ["annotations", "page_text", "artifact_versions"] {
         conn.execute(&format!("DELETE FROM {table} WHERE artifact_id = ?1"), [id])
@@ -500,6 +519,28 @@ pub fn sync_library(
     let mut pulled = 0usize;
     for obj in body["objects"].as_array().into_iter().flatten() {
         let Some(name) = obj["name"].as_str() else { continue };
+        // Custom views (saved pivots) are a single library-level object; pull it,
+        // decrypt, and cache the JSON in sync_meta for the Custom view mode.
+        if name == "lib/pivots.enc" {
+            if let Ok(r) = ureq::get(&format!("{base}/sync/object/{name}"))
+                .set("Authorization", &auth)
+                .call()
+            {
+                let mut bytes = Vec::new();
+                if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
+                    if let Ok(plain) = secretbox_decrypt(dek, &bytes) {
+                        if let Ok(s) = std::str::from_utf8(&plain) {
+                            let _ = conn.execute(
+                                "INSERT INTO sync_meta (key,value) VALUES ('pivots',?1)\
+                                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                                [s],
+                            );
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         // Blobs are fetched on demand (MOB.5), not pulled here.
         if !name.starts_with("dev/") || !name.ends_with(".enc") {
             continue;
@@ -568,12 +609,16 @@ pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
 pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned,status
+            "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned,status,tags_json
              FROM artifacts WHERE deleted_at IS NULL ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| {
+            let tags: Value = r
+                .get::<_, Option<String>>(11)?
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| Value::Array(vec![]));
             Ok(serde_json::json!({
                 "id": r.get::<_, String>(0)?,
                 "kind": r.get::<_, String>(1)?,
@@ -586,6 +631,7 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
                 "updated_at": r.get::<_, String>(8)?,
                 "pinned": r.get::<_, i64>(9)?,
                 "status": r.get::<_, String>(10)?,
+                "tags": tags,
             }))
         })
         .map_err(|e| e.to_string())?;

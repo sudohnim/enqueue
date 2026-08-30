@@ -15,9 +15,29 @@ happens in this module; it is storage over the `saved_pivots` table (0013).
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 
 from . import db
+
+
+def _resync_pivots() -> None:
+    """Best-effort push of the saved views to the relay so the mobile client's
+    Custom mode reflects a create/edit/rename/delete without a full backfill.
+
+    Runs on a daemon thread (resolve_subset can be slow for a search subset) and
+    swallows everything: a sync hiccup must never break saving a view locally.
+    """
+
+    def _run() -> None:
+        try:
+            from .sync.client import push_pivots
+
+            push_pivots()
+        except Exception:  # noqa: BLE001 - never surface a sync error to the caller
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def save(name: str, spec: dict) -> str:
@@ -36,6 +56,7 @@ def save(name: str, spec: dict) -> str:
             "INSERT INTO saved_pivots (id, name, spec_json, created_at) VALUES (?,?,?,?)",
             (pivot_id, name[:120], json.dumps(spec), db.now()),
         )
+    _resync_pivots()
     return pivot_id
 
 
@@ -125,7 +146,9 @@ def update_spec(pivot_id: str, spec: dict) -> dict:
         updated = conn.execute(
             "SELECT id, name, created_at FROM saved_pivots WHERE id = ?", (pivot_id,)
         ).fetchone()
-        return dict(updated)
+        result = dict(updated)
+    _resync_pivots()
+    return result
 
 
 def rename(pivot_id: str, name: str) -> dict:
@@ -146,10 +169,13 @@ def rename(pivot_id: str, name: str) -> dict:
         updated = conn.execute(
             "SELECT id, name, created_at FROM saved_pivots WHERE id = ?", (pivot_id,)
         ).fetchone()
-        return dict(updated)
+        result = dict(updated)
+    _resync_pivots()
+    return result
 
 
 def delete(pivot_id: str) -> None:
     """Forget a saved view. Idempotent: deleting one already gone is not an error."""
     with db.transaction() as conn:
         conn.execute("DELETE FROM saved_pivots WHERE id = ?", (pivot_id,))
+    _resync_pivots()

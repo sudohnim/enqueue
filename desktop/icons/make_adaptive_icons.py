@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 HERE = Path(__file__).parent
@@ -32,58 +31,31 @@ SIZES = {
     "xxxhdpi": 192,
 }
 
-# Light canvas color from DESIGN.md
-LIGHT_CANVAS = "#ffffff"
+def _bg_purple(src: Image.Image) -> tuple[int, int, int]:
+    """The icon's own purple, sampled from the rounded square's upper-left field
+    (above the raven, clear of the drop shadow). Used to fill the adaptive icon's
+    background so the mask-cropped corners stay purple, matching the desktop icon.
+    """
+    sw, sh = src.size
+    r, g, b = src.getpixel((int(sw * 0.20), int(sh * 0.18)))[:3]
+    return (r, g, b)
 
 
 def create_adaptive_layers(size: int) -> tuple[Image.Image, Image.Image]:
-    """Create foreground and background layers for adaptive icon at given size.
+    """Create foreground and background layers for the adaptive icon.
 
-    Returns (foreground, background) where:
-    - foreground: RGBA image (full size), raven centered in 66% safe zone
-    - background: solid color image
+    The desktop's composed icon (raven on a purple rounded square, `icon.png`) is
+    already the finished mark, so the foreground IS that icon scaled to fill the
+    adaptive canvas - no re-extraction, no shrink-to-safe-zone. Its transparent
+    corners fall onto a matching purple background, and the launcher's circle /
+    squircle mask crops to raven-on-purple, identical to the desktop icon. The
+    previous approach keyed on alpha (but icon.png's purple is opaque, so it kept
+    the whole square) and then shrank it onto a WHITE field - the "tiny raven on a
+    big white background" this replaces.
     """
-    # Source icon (composed: raven on purple with transparency)
     src = Image.open(SOURCE).convert("RGBA")
-
-    # Extract raven using alpha channel: opaque = raven, transparent = background
-    src_array = np.array(src)
-    if src_array.ndim != 3 or src_array.shape[2] != 4:
-        raise ValueError(f"Source icon must be RGBA, got shape {src_array.shape}")
-    alpha_mask = src_array[:, :, 3]
-
-    # Find bounding box of the raven (opaque pixels)
-    rows = np.any(alpha_mask > 0, axis=1)
-    cols = np.any(alpha_mask > 0, axis=0)
-    if not np.any(rows):
-        raise ValueError("No opaque pixels found in source icon")
-    rmin, rmax = np.where(rows)[0][[0, -1]]
-    cmin, cmax = np.where(cols)[0][[0, -1]]
-    # Add minimal padding to keep anti-aliased edges
-    h, w = src_array.shape[:2]
-    pad = max(h, w) // 50
-    rmin = max(0, rmin - pad)
-    rmax = min(h, rmax + pad)
-    cmin = max(0, cmin - pad)
-    cmax = min(w, cmax + pad)
-    raven_cropped = Image.fromarray(src_array[rmin:rmax, cmin:cmax])
-
-    # Android adaptive icon safe zone is 66% (spec).
-    # Size raven to ~62% of icon to fit comfortably within 66% safe zone
-    # after launcher applies its mask (circle/rounded-square).
-    raven_target_size = int(size * 0.62)
-    raven_scaled = raven_cropped.resize(
-        (raven_target_size, raven_target_size), Image.Resampling.LANCZOS
-    )
-
-    # Create full-size foreground layer (launcher will mask this)
-    fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    inset = (size - raven_target_size) // 2
-    fg.paste(raven_scaled, (inset, inset), raven_scaled)
-
-    # Background: solid light canvas color
-    bg = Image.new("RGB", (size, size), LIGHT_CANVAS)
-
+    fg = src.resize((size, size), Image.Resampling.LANCZOS)
+    bg = Image.new("RGB", (size, size), _bg_purple(src))
     return fg, bg
 
 
@@ -102,15 +74,13 @@ def main() -> None:
         # Save background
         bg.save(Path(mipmap_dir) / "ic_launcher_background.png")
 
-        # Also create the legacy ic_launcher.png (composed for legacy support)
-        legacy = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        bg_rgba = Image.new("RGBA", (size, size), LIGHT_CANVAS + "ff")
-        legacy.paste(bg_rgba, (0, 0))
-        legacy.paste(fg, (0, 0), fg)
-        legacy.save(Path(mipmap_dir) / "ic_launcher.png")
-
-        # Round icon (same as foreground for now)
-        fg.save(Path(mipmap_dir) / "ic_launcher_round.png")
+        # Legacy + round launcher icons: the composed icon on the purple field
+        # (foreground over background), so pre-adaptive launchers show the same
+        # raven-on-purple as the desktop icon.
+        composed = bg.convert("RGBA")
+        composed.paste(fg, (0, 0), fg)
+        composed.save(Path(mipmap_dir) / "ic_launcher.png")
+        composed.save(Path(mipmap_dir) / "ic_launcher_round.png")
 
         print(f"Generated {density} ({size}x{size})")
 
