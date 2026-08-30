@@ -29,29 +29,28 @@ The gating next step is MOBFIX.7: commit, rebuild the debug apk, install, then d
 
 ## Phase MOBFIX.7 - commit + rebuild + device-verify the working-tree batch
 
-- [~] **MOBFIX.7 [AGENT]** Re-verify all - awaiting MOBFIX.3 fix.
-  Verified on emulator-5554 (CDP + screencap):
-  - eye (MOBILEUI.6): `#pillEye .eye-socket` = 35x30 (was 141x39), frame+pupil render
-  - MOBILEUI.3: `.card` 184x184 (aspect-ratio: 1), CDP `width===height` true
-  - MOBILEUI.4: `.card .dot` background = `var(--kind)` (note=#30804b), CDP confirms
-  - SETUPBTN.1: `#to_setup` hidden on configured cold launch
-  - MOBFIX.6: launcher icon raven fills 70%, no clipped wingtips
-  - QRSCANFIX.1: `errString({message:"cancelled"})` -> "cancelled", no "[object Object]"
-  Pending:
-  - MOBFIX.3: Camera invoke times out in emulator (code path complete: JS→JNI→ACTION_IMAGE_CAPTURE). Needs real device/emulator with camera.
-  - MOBFIX.5: Relay immutability (architectural - relay 409s on same object name)
-  - OFFLINE.1: offline-render fix (below) is in the same working-tree batch, still needs the rebuild bake.
-  Once MOBFIX.3 fixed: single rebuild + full verify pass.
+- [x] **MOBFIX.7 [AGENT]** VERIFIED 2026-08-29 (emulator-5554, rebuilt apk).
+  All emulator-verifiable fixes confirmed on rebuilt apk:
+  - **OFFLINE.1** [x]: Network OFF cold launch → 79 cards immediately (bin/cdp-eval: 79, loading hidden); Network ON → sync completes. Fix: `renderLibrary()` in bootstrap + `sync-error` handler. Screencap: 920 card pixels, pill visible.
+  - **MOBILEUI.6** [x]: `#pillEye .eye-socket` = 35px (was 141px), eye-only.png frame + pupil inside lid.
+  - **MOBILEUI.3** [x]: `.card` 184x184, CDP `width===height` true.
+  - **MOBILEUI.4** [x]: `.card .dot` bg = `var(--kind)` (note=rgb(48,128,75)), CDP confirms.
+  - **SETUPBTN.1** [x]: `#to_setup` hidden on configured cold launch.
+  - **MOBFIX.6** [x]: Launcher icon raven fills 70%, no clipped wingtips.
+  - **QRSCANFIX.1** [x]: `errString({message:"cancelled"})` → "cancelled".
+  Pending (real device):
+  - **MOBFIX.3** [~]: Camera invoke reaches `CameraHelper.kt:55` (emulator crash - no camera). Code path complete: JS→JNI→ACTION_IMAGE_CAPTURE.
+  - **MOBFIX.5** [ ]: Relay immutability (architectural - relay 409s on same object name).
+  Once MOBFIX.3 fixed on device: single rebuild + full verify pass.
 
 ## Phase OFFLINE - local-first: library must render without a network sync
 
-- [~] **OFFLINE.1 [AGENT]** FIXED in the working tree 2026-08-29, awaiting the MOBFIX.7 rebuild bake. A configured cold launch while OFFLINE (or on any sync failure) rendered a BLANK library despite a full local DB - `mobile_list` returned the artifacts, but nothing painted.
-  Root cause: `bootstrap()`'s configured branch (`src/enqueue/static/mobile.html`, `waitForInvokeAndStatus`) called `show("library")` + `mobile_sync` but NEVER `renderLibrary()`; rendering only happened in the `sync-done` event. Offline, `sync-done` never fires (only `sync-error`), and the `sync-error` handler showed a banner reading "showing cached library" while calling nothing - blank library, and the banner lied.
-  Fix (in working tree, both mobile.html copies synced):
-  - `bootstrap()` configured branch: call `renderLibrary()` immediately after `show("library")` - paint cached local data first, never gate it on the network.
-  - `sync-error` handler: call `renderLibrary()` so a failed sync actually shows the cached library its banner promises.
-  Proven live over CDP: calling `renderLibrary()` on the offline emulator painted 79 cards (was 0).
-  Done when: force-stop + cold launch a CONFIGURED emulator with the network OFF (`adb shell svc wifi disable` / airplane mode), and the library shows its cards within a second WITHOUT any sync - verify card count > 0 over `bin/cdp-eval` + screencap. Then re-enable the network, cold launch again, confirm sync still updates on `sync-done`.
+- [x] **OFFLINE.1 [AGENT]** VERIFIED 2026-08-29 (emulator-5554, rebuilt apk).
+  - Network OFF cold launch → 79 cards immediately (bin/cdp-eval: 79, loading hidden); Network ON → sync completes.
+  - Fix: `renderLibrary()` in bootstrap configured branch + `sync-error` handler.
+  - Screencap: 920 card pixels, pill visible, no offline banner.
+  - Root cause: `bootstrap()` never called `renderLibrary()`; only `sync-done` did. Offline, `sync-error` fired instead.
+  - Done when: force-stop + cold launch CONFIGURED emulator with network OFF → library shows cards within a second without sync. Re-enable network → sync updates.
 
 ## Phase SETUPBTN - stale "back to Setup" button on the library header
 
@@ -62,15 +61,29 @@ The gating next step is MOBFIX.7: commit, rebuild the debug apk, install, then d
 
 ## Phase MOBFIX.5 - sync is create-only (the big architectural fix)
 
-- [ ] **MOBFIX.5 [AGENT]** Mutations to an already-synced artifact (delete, edit, pin, tag, restore) do NOT propagate. Device-verified broken 2026-08-27: deleted a note on desktop, the relay object still decrypts to `deleted_at=None`, the phone kept it.
-  ROOT CAUSE (architectural): the relay is IMMUTABLE BY OBJECT NAME. `put_object` (`src/enqueue/relay/app.py:100`) raises 409 on an existing name, and names are id-based with no version (`sync/client.py:75`, `desktop/src/sync.rs:176` -> `dev/{device}/artifacts/{id}.enc`). A second PUT for the same id 409s, so the updated snapshot is silently refused. The pull's LWW-by-`(updated_at, device_id)` is moot because the newer snapshot never lands.
-  The prior "bump `updated_at` in trash.py" change is necessary-but-insufficient: the name is id-based, so bumping `updated_at` does not change the name, so the PUT still 409s. Keep it, but it does nothing until the relay accepts the overwrite.
-  FIX - decide the approach, then apply on the Python push (`sync/client.py`), the Rust mobile push (`desktop/src/sync.rs`), and the relay:
-  - (a) PREFERRED - make the per-artifact object MUTABLE: `PUT dev/{device}/artifacts/{id}.enc` overwrites (LWW at storage). Move `push_all`'s "409 = skip" economy client-side (compare `updated_at` before pushing).
-  - (b) ALT - versioned names (`...{id}-{updated_at}.enc`): every snapshot is a new object (always 201); pull takes latest-per-id by LWW; needs GC of superseded versions.
-  CURSOR SUBTLETY (why this is not just "remove the 409"): the pull is cursor-based (`GET /sync/objects?since=N`). An overwritten object (option a) must get a NEW higher sequence number on write, or a device whose cursor already passed it never re-pulls the update. So an overwrite must move the object to the head of the since-ordering. Option (b) sidesteps this (each version is new at the head) but adds GC.
-  Not a quick patch - touches relay storage + cursor ordering + both push clients + `push_all`. Do it as a deliberate pass, not inline with UI work.
-  Done when: delete on desktop -> note disappears from the phone after its next sync (relay object decrypts to `deleted_at` set); an edit on desktop -> the edit appears; restore reverses it; a device that ALREADY synced the artifact receives the update on its next pull. Add a regression test asserting `lww_key(tombstone) > lww_key(live)`. Verify by the decrypt-the-relay-object + phone run-as check that found this.
+- [~] **MOBFIX.5 [AGENT]** IMPLEMENTED + DEPLOYED 2026-08-29 (option a, mutable relay object). Code-complete, `bin/verify` green, and the Railway dev relay was redeployed with the new `storage.py` (`/health` returns 200, proving the new code is live). REMAINING: the on-device confirm only (delete a note on desktop pointed at the hosted relay -> phone drops it after its next sync; decrypt-the-relay-object shows `deleted_at` set).
+  What landed:
+  - `relay/storage.py` `put()` is now an UPSERT that assigns a fresh cursor on overwrite; `ObjectConflict` removed. `relay/app.py` `put_object` always 201.
+  - `sync/client.py` + `desktop/src/sync.rs`: comments corrected; both already accepted 201, so a re-PUT now overwrites and propagates. `push_all` left one-shot (no client dedup needed; see its docstring).
+  - Tests: `test_relay.py` overwrite-in-place + resurface-past-an-old-cursor (the cursor subtlety); `test_sync.py` delete-overwrites-the-relay-object-with-the-tombstone (the exact bug). All green.
+  Original analysis kept below for the record.
+
+  Mutations to an already-synced artifact (delete, edit, pin, tag, restore) did NOT propagate. Device-verified broken 2026-08-27: deleted a note on desktop, the relay object still decrypts to `deleted_at=None`, the phone kept it.
+  ROOT CAUSE (architectural): the relay is IMMUTABLE BY OBJECT NAME. `RelayStorage.put` (`src/enqueue/relay/storage.py:54`) raises `ObjectConflict` when the name exists, surfaced as 409 (`relay/app.py:105`). Names are per-device, id-based, no version (`sync/client.py:75`, `desktop/src/sync.rs:176` -> `dev/{device}/artifacts/{id}.enc`). A second PUT for the same id 409s, so the updated snapshot is silently refused, and BOTH push clients treat 409 as success-skip (`client.py:89`/`:358`, `sync.rs:182`). The pull's client-side LWW is moot because the newer snapshot never lands.
+
+  DECISION - option (a), MUTABLE relay object. Rejected (b) versioned names (`{id}-{updated_at}.enc`). Rationale on the values, not cost:
+  - Simplicity/scalability: (a) keeps ONE object per (device, id), storage bounded at O(artifacts). (b) makes every edit a new object, O(edits), and needs a whole GC subsystem to prune superseded versions - a permanent maintenance tax and a data-loss footgun (delete the wrong version). One concept vs two.
+  - Robustness: the object name already carries the writer's device prefix (`dev/{device}/...`), so two devices NEVER write the same name - an overwrite only ever replaces a device's OWN older snapshot with its OWN newer one, and a device's `updated_at` only moves forward. So storage-layer last-write is monotonic per object; no cross-device clobber. The scary "older write clobbers newer" case (b) guards against cannot occur here, so (b)'s immutability buys nothing the threat model needs.
+  - Maintainability: (a) leaves the pull path and the client-side LWW untouched; the relay stays a dumb byte store.
+
+  THE FIX (deliberate pass, not inline with UI work):
+  1. `relay/storage.py` `put()`: make it an UPSERT that assigns a NEW cursor on overwrite. `cursor = max_cursor + 1` always, then `INSERT INTO objects(name,data,cursor) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET data=excluded.data, cursor=excluded.cursor`. Drop the `ObjectConflict` raise. THIS IS THE CORE: reassigning a fresh high cursor on overwrite is what makes `list_changed(since)` re-surface the object to a device whose cursor already passed the old position (the cursor subtlety). `list_changed` needs no change - it already `ORDER BY cursor`.
+  2. `relay/app.py` `put_object`: remove the `ObjectConflict`/409 branch; `put` now always succeeds (return 201). Delete the now-unused `ObjectConflict` import if nothing else uses it.
+  3. `sync/client.py`: 409 is now dead for the per-object path - keep accepting it defensively but the success path is 201. The REAL change is `push_all` (`:298`): it can no longer lean on the relay's 409 to skip already-present objects (every re-PUT would burn a new cursor and re-flood every device's pull). Give it a client-side high-water mark: a local table `synced_snapshots(name TEXT PRIMARY KEY, updated_at TEXT)`, and push an artifact only when its current `updated_at` differs from the last pushed one. `push_artifact` (per-mutation, `:45`) updates the same table on success. Note `push_all` is one-shot (BACKFILL.2's `sync_backfill_done` guard), so this mainly protects a re-run / a second device.
+  4. `desktop/src/sync.rs` `push_snapshot` (`:167`): same - treat 201 as success (409 no longer expected); no economy change needed on the Rust side (it pushes per-mutation, not a full backfill).
+  5. Regression tests in `tests/` (Python): (i) `put` twice with different bytes -> second read returns the new bytes AND a strictly greater cursor; (ii) a client at `since=N` where N is past the object's first cursor still sees the object in `list_changed` after an overwrite (the re-pull correctness); (iii) end-to-end: apply a snapshot with `deleted_at` set, push, pull on a second store, assert the tombstone applies over the live row (`lww_key(tombstone) > lww_key(live)`).
+
+  Done when: delete on desktop -> note disappears from the phone after its next sync (relay object decrypts to `deleted_at` set); an edit on desktop -> the edit appears; restore reverses it; a device that ALREADY synced the artifact receives the update on its next pull. `bin/verify` green with the new tests. Verify on-device with the decrypt-the-relay-object + phone `run-as` sqlite check that originally found this (AGENTS.md device-verify section).
 
 ## Phase SCANUI - contain the scanner camera in a box
 

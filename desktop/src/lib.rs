@@ -404,6 +404,17 @@ mod mobile {
         )
         .map_err(|e| e.to_string())?;
 
+        // Queue to the outbox so a failed inline push (e.g. offline) is retried by
+        // mobile_outbox_push on the next sync. Text notes previously skipped this,
+        // so a note captured offline never synced up after reconnecting.
+        conn.execute(
+            "INSERT INTO capture_outbox (id,kind,title,body,source_url,content_hash,mime,filename,
+             created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)
+             VALUES (?1,?2,?3,?4,?5,?6,NULL,NULL,?7,?7,0,'pending',0,NULL,NULL,0,NULL)",
+            rusqlite::params![id, kind, title, body, source_url, uuid::Uuid::new_v4().to_string(), now],
+        )
+        .map_err(|e| e.to_string())?;
+
         if let Some(note) = annotation {
             conn.execute(
                 "INSERT INTO annotations (id,artifact_id,supersedes_id,text,created_at)
@@ -631,7 +642,7 @@ mod mobile {
                         let relay_url = cfg2.get("relay_url").and_then(Value::as_str).unwrap_or("");
                         let secret = cfg2.get("secret").and_then(Value::as_str).unwrap_or("");
                         // Check if object exists on relay
-                        let client = ureq::get(&format!("{}/sync/object/dev/{}/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
+                        let client = ureq::get(&format!("{}/sync/object/dev/{}/artifacts/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
                             .set("Authorization", &format!("Bearer {}", secret))
                             .call();
                         if client.is_ok() && client.as_ref().unwrap().status() == 200 {
@@ -852,7 +863,7 @@ mod mobile {
                     if let Some(cfg2) = load_config(&app)? {
                         let relay_url = cfg2.get("relay_url").and_then(Value::as_str).unwrap_or("");
                         let secret = cfg2.get("secret").and_then(Value::as_str).unwrap_or("");
-                        let client = ureq::get(&format!("{}/sync/object/dev/{}/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
+                        let client = ureq::get(&format!("{}/sync/object/dev/{}/artifacts/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
                             .set("Authorization", &format!("Bearer {}", secret))
                             .call();
                         if client.is_ok() && client.as_ref().unwrap().status() == 200 {

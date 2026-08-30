@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from .storage import ObjectConflict, RelayStorage
+from .storage import RelayStorage
 
 
 async def _sse_stream(request: Request, queue: asyncio.Queue, hub: RelayHub):
@@ -85,6 +85,12 @@ def create_relay(data_dir: Path | None = None, secret: str | None = None) -> Fas
         if authorization != f"Bearer {the_secret}":
             raise HTTPException(status_code=401, detail="bad secret")
 
+    @app.get("/health")
+    def health() -> dict:
+        # Unauthenticated liveness probe for the deploy script and Railway. It
+        # reveals nothing: no object names, no counts, just that the app is up.
+        return {"status": "ok"}
+
     @app.get("/sync/objects")
     def list_objects(since: int = 0, _: None = Depends(_require_header)):
         objects, cursor = storage.list_changed(since)
@@ -99,11 +105,10 @@ def create_relay(data_dir: Path | None = None, secret: str | None = None) -> Fas
 
     @app.put("/sync/object/{name:path}", status_code=201)
     async def put_object(name: str, request: Request, _: None = Depends(_require_header)):
+        # UPSERT by name (MOBFIX.5): create or overwrite, always 201. An overwrite
+        # takes a fresh cursor so the change feed re-surfaces the updated object.
         data = await request.body()
-        try:
-            cursor, size = storage.put(name, data)
-        except ObjectConflict:
-            raise HTTPException(status_code=409, detail="object already exists") from None
+        cursor, size = storage.put(name, data)
         hub.publish({"name": name, "cursor": cursor})
         return {"name": name, "size": size}
 

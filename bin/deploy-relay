@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Deploy the Enqueue sync relay to Railway.
+#
+# Usage: ./bin/deploy-relay <dev|prod>
+#
+# The relay is a dumb ciphertext byte store (src/enqueue/relay). This ships the
+# repo's Dockerfile to a Railway service and waits for /health to go green.
+#
+# Why the staging copy: `railway up` uploads its working directory, and this
+# repo carries a multi-hundred-MB desktop/target and Android build output that
+# the relay image does not need. We rsync only the Docker build context
+# (Dockerfile + pyproject.toml + uv.lock + src/) into a tmp dir and deploy from
+# there, so the upload is small and reproducible.
+#
+# Environments map to Railway services (both live in the one "production"
+# Railway environment; isolation is per-service vars, not per-environment,
+# mirroring the dequeue backend split):
+#   dev  -> enqueue        (override with RELAY_SERVICE_DEV)
+#   prod -> enqueue-prod   (override with RELAY_SERVICE_PROD)
+set -euo pipefail
+
+ENV="${1:?usage: deploy-relay <dev|prod>}"
+case "$ENV" in
+  dev)  SERVICE="${RELAY_SERVICE_DEV:-enqueue}" ;;
+  prod) SERVICE="${RELAY_SERVICE_PROD:-enqueue-prod}" ;;
+  *) echo "env must be dev or prod" >&2; exit 1 ;;
+esac
+
+PROJECT="${RAILWAY_PROJECT:-enqueue}"
+RAILWAY_ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STAGE="$(mktemp -d /tmp/enqueue-relay-deploy.XXXXXX)"
+trap 'rm -rf "$STAGE"' EXIT
+
+# --- preflight ---------------------------------------------------------------
+command -v railway >/dev/null || { echo "railway CLI not installed (brew install railway)" >&2; exit 1; }
+railway whoami >/dev/null 2>&1 || { echo "not logged in: run 'railway login'" >&2; exit 1; }
+command -v rsync >/dev/null || { echo "rsync not found" >&2; exit 1; }
+
+# The relay tests must pass before shipping: the whole reason to redeploy right
+# now is the MOBFIX.5 upsert, and a broken put() would silently drop every
+# sync. Cheap to gate here rather than discover it against the live relay.
+echo "running relay tests before deploy ..."
+(cd "$ROOT" && uv run pytest tests/test_relay.py -q) \
+  || { echo "relay tests failed - not deploying" >&2; exit 1; }
+
+if [[ "$ENV" == "prod" ]]; then
+  read -r -p "Deploy relay to PROD ($SERVICE)? [y/N] " ans
+  [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted"; exit 1; }
+fi
+
+# --- stage the Docker build context -----------------------------------------
+# Only what the Dockerfile COPYs, plus the Dockerfile itself.
+rsync -a \
+  "$ROOT/Dockerfile" \
+  "$ROOT/pyproject.toml" \
+  "$ROOT/uv.lock" \
+  "$STAGE/"
+rsync -a --exclude='__pycache__' --exclude='*.egg-info' "$ROOT/src/" "$STAGE/src/"
+
+cd "$STAGE"
+railway link --project "$PROJECT" --environment "$RAILWAY_ENVIRONMENT" --service "$SERVICE" >/dev/null 2>&1 \
+  || { echo "could not link service '$SERVICE' in project '$PROJECT' ($RAILWAY_ENVIRONMENT)." >&2
+       echo "For a new prod service: create it once in the Railway dashboard (add a" >&2
+       echo "volume at /data and set RELAY_SECRET, RELAY_DATA_DIR=/data), then re-run." >&2
+       exit 1; }
+railway up --service "$SERVICE" --detach
+
+# --- verify ------------------------------------------------------------------
+URL="$(railway domain list --service "$SERVICE" 2>/dev/null | awk '/up\.railway\.app/ {print "https://"$1; exit}')"
+if [[ -z "$URL" ]]; then
+  echo "deploy started, but no public domain yet."
+  echo "run once: railway domain --service $SERVICE   then re-check /health"
+  exit 0
+fi
+
+echo "waiting for $URL/health ..."
+for _ in $(seq 1 30); do
+  sleep 10
+  body="$(curl -sS -m 10 "$URL/health" 2>/dev/null || true)"
+  if [[ "$body" == *'"status":"ok"'* ]]; then
+    echo "healthy: $body"
+    echo "relay is live at $URL"
+    exit 0
+  fi
+done
+echo "did not become healthy in 5min - check: railway logs --service $SERVICE" >&2
+exit 1

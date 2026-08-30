@@ -42,18 +42,41 @@ def test_put_then_get_is_byte_identical(tmp_path):
     assert got.content == payload
 
 
-def test_put_an_existing_name_is_a_conflict(tmp_path):
+def test_put_an_existing_name_overwrites_in_place(tmp_path):
+    # MOBFIX.5: the relay upserts by name. A second PUT overwrites the bytes so a
+    # mutation (edit/delete) to an already-synced artifact actually lands.
     client = _client(tmp_path)
 
-    first = client.put("/sync/object/blobs/abc", content=b"one", headers=_auth())
+    first = client.put("/sync/object/dev/d1/artifacts/a.enc", content=b"one", headers=_auth())
     assert first.status_code == 201
 
-    second = client.put("/sync/object/blobs/abc", content=b"two", headers=_auth())
-    assert second.status_code == 409
+    second = client.put("/sync/object/dev/d1/artifacts/a.enc", content=b"two", headers=_auth())
+    assert second.status_code == 201
 
-    # The first bytes survive: never overwrite in place.
-    got = client.get("/sync/object/blobs/abc", headers=_auth())
-    assert got.content == b"one"
+    # The new bytes win: an overwrite replaces the stored object.
+    got = client.get("/sync/object/dev/d1/artifacts/a.enc", headers=_auth())
+    assert got.content == b"two"
+
+
+def test_overwrite_resurfaces_the_object_past_an_old_cursor(tmp_path):
+    # MOBFIX.5 cursor subtlety: a device that already pulled an object (cursor past
+    # its first position) must still see the OVERWRITE on its next list-changed.
+    client = _client(tmp_path)
+
+    client.put("/sync/object/dev/d1/artifacts/a.enc", content=b"v1", headers=_auth())
+    listing = client.get("/sync/objects", params={"since": 0}, headers=_auth()).json()
+    cursor = listing["cursor"]  # the device has now pulled up to here
+
+    # Nothing new at the head yet.
+    assert client.get("/sync/objects", params={"since": cursor}, headers=_auth()).json()["objects"] == []
+
+    # Overwrite the same name; it must reappear after the device's old cursor.
+    client.put("/sync/object/dev/d1/artifacts/a.enc", content=b"v2", headers=_auth())
+    after = client.get("/sync/objects", params={"since": cursor}, headers=_auth()).json()
+    assert [o["name"] for o in after["objects"]] == ["dev/d1/artifacts/a.enc"]
+    assert after["cursor"] > cursor
+    got = client.get("/sync/object/dev/d1/artifacts/a.enc", headers=_auth())
+    assert got.content == b"v2"
 
 
 def test_list_changed_since_shows_new_objects_with_a_cursor(tmp_path):

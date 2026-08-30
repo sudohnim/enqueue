@@ -7,6 +7,12 @@
   content="width=device-width, initial-scale=1, viewport-fit=cover"
 />
 <title>Enqueue</title>
+<!-- Preload the branded cuts so the first paint is IBM Plex, not the swap
+     fallback (tokens.css declares font-display: swap). The files are bundled in
+     the apk under assets/fonts, so these resolve offline. -->
+<link rel="preload" href="fonts/IBM-Plex-Sans-400.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="fonts/IBM-Plex-Sans-500.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="fonts/IBM-Plex-Sans-600.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="css/tokens.css" />
 <script src="js/md.js"></script>
 
@@ -33,7 +39,11 @@
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
   }
   section[hidden] {
-    display: none;
+    /* !important so a hidden section always collapses: the body-class fallback
+       rules below (body.view-library #library { display: flex }) have higher
+       specificity and were keeping #library rendered full-height on the Settings
+       and Chat screens, pushing their content below the fold. */
+    display: none !important;
   }
   body.view-setup #setup { display: flex; }
   body.view-setup #library { display: none; }
@@ -125,6 +135,13 @@
     font-weight: 600;
     margin: 0;
     flex: 1;
+    letter-spacing: -0.02em;
+  }
+  /* The greeting's trailing period is the one violet character - the same brand
+     ink the desktop hero uses (home.css P.7), tying the phone's front door to
+     the raven eye without recoloring the line. */
+  header h1 .greet-mark {
+    color: var(--purple-bold);
   }
   .back {
     background: transparent;
@@ -286,7 +303,11 @@
     transform: translateX(-50%);
     display: flex;
     align-items: center;
+    /* Distribute the three controls evenly so the eye sits centered, with the
+       + and gear symmetric at the edges (min-width creates the room to spread). */
+    justify-content: space-between;
     gap: var(--sp-2);
+    min-width: 206px;
     height: 56px;
     padding: 0 var(--sp-4);
     z-index: var(--z-pill);
@@ -312,9 +333,11 @@
   .pill .keep {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: var(--sp-2);
+    width: 44px;
     height: 44px;
-    padding: 0 var(--sp-2) 0 0;
+    padding: 0;
     border: 0;
     background: transparent;
     border-radius: var(--r-full);
@@ -329,8 +352,8 @@
   .pill .keep .disc {
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
     border-radius: var(--r-full);
     background: var(--purple-bold);
@@ -366,8 +389,8 @@
     background: var(--surface-2);
   }
   .pill .round svg {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
   }
   .pill .pill-eye {
     width: 44px;
@@ -384,14 +407,16 @@
     width: 100%;
     height: 100%;
   }
-  /* Pill eye geometry from css/pill.css (EYE.6) - uses eye-only.png (cropped eye),
-     so socket/pupil fractions differ from the home emblem. */
+  /* Pill eye geometry, tuned for a STATIC phone eye. The desktop values
+     (socket 80%/69.3%, pupil 96%/125%) are sized for the cursor-follow, so at
+     rest the oversized pupil overflowed and sat low. Here the pupil is a round
+     iris centered in the eye-opening: no tracking, just a centered eye. */
   .pill .pill-eye .eye-socket {
     position: absolute;
-    left: 52.6%;
-    top: 51.5%;
-    width: 80%;
-    height: 69.3%;
+    left: 50%;
+    top: 40%;
+    width: 64%;
+    height: 52%;
     transform: translate(-50%, -50%);
     overflow: hidden;
     border-radius: 50%;
@@ -400,10 +425,10 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 96%;
-    height: 125%;
+    width: 74%;
+    height: 74%;
     transform: translate(-50%, -50%);
-    will-change: transform;
+    /* No cursor-follow on the phone: the pupil is static and centered. */
   }
 
   /* Pill Menu (MOB2.3) */
@@ -428,6 +453,13 @@
     transform: translateY(8px);
     animation: menu-in var(--dur-fast) var(--ease) forwards;
     transform-origin: bottom left;
+  }
+  /* The add-menu is toggled by the `hidden` attribute, but the rule above sets
+     `display: flex`, which overrides the UA `[hidden] { display: none }` - so the
+     menu was ALWAYS visible. This higher-specificity rule restores hide-on-hidden
+     (same fix as #loading[hidden]). */
+  .pill-menu[hidden] {
+    display: none;
   }
   @keyframes menu-in {
     from {
@@ -951,7 +983,7 @@
     class="round"
     id="pill_ask"
     aria-label="Chat with AI"
-    onclick="openField(\'ask\')"
+    onclick="openChat()"
   >
     <span class="pill-eye eye" id="pillEye"></span>
   </button>
@@ -1068,7 +1100,7 @@
 <section id="library" hidden>
   <header>
     <button class="back" id="to_setup" hidden>&larr; Setup</button>
-    <h1>Library</h1>
+    <h1 id="lib_greeting">Library</h1>
   </header>
   <input id="search" type="search" placeholder="Search" autocomplete="off" />
   <div id="loading" hidden>
@@ -1312,119 +1344,6 @@
     <h1>Settings</h1>
   </header>
   <div style="padding: 16px; display: flex; flex-direction: column; gap: 24px">
-    <!-- AI Section -->
-    <div>
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        AI
-      </h2>
-      <div style="display: flex; flex-direction: column; gap: 12px">
-        <label
-          >Backend
-          <select
-            id="settings_backend"
-            style="width: 100%; padding: 12px; font-size: 15px"
-          ></select>
-        </label>
-        <label
-          >Model
-          <input
-            id="settings_model"
-            type="text"
-            placeholder="Model name"
-            style="width: 100%; padding: 12px; font-size: 15px"
-            autocomplete="off"
-          />
-        </label>
-        <label
-          >API Key
-          <input
-            id="settings_api_key"
-            type="password"
-            placeholder="API key (stored locally)"
-            style="width: 100%; padding: 12px; font-size: 15px"
-            autocomplete="off"
-          />
-        </label>
-        <label id="settings_custom_url_label" style="display: none"
-          >Custom Endpoint
-          <input
-            id="settings_custom_url"
-            type="url"
-            placeholder="https://..."
-            style="width: 100%; padding: 12px; font-size: 15px"
-            autocomplete="off"
-          />
-        </label>
-      </div>
-    </div>
-    <!-- AI Section (read-only, synced from desktop via QR link) -->
-    <div>
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        AI
-      </h2>
-      <div
-        style="
-          background: var(--surface);
-          border: 1px solid var(--line);
-          border-radius: var(--r-lg);
-          padding: 16px;
-        "
-      >
-        <div style="display: flex; flex-direction: column; gap: 12px">
-          <div class="field">
-            <label>Backend</label>
-            <div
-              id="ai_backend"
-              class="mono chip"
-              style="min-height: 44px; display: flex; align-items: center"
-            ></div>
-          </div>
-          <div class="field">
-            <label>Model</label>
-            <div
-              id="ai_model"
-              class="mono chip"
-              style="min-height: 44px; display: flex; align-items: center"
-            ></div>
-          </div>
-          <div id="ai_url_field" class="field" style="display: none">
-            <label>Endpoint</label>
-            <div
-              id="ai_url"
-              class="mono chip"
-              style="min-height: 44px; display: flex; align-items: center"
-            ></div>
-          </div>
-          <div class="field">
-            <label>API Key</label>
-            <div
-              id="ai_key"
-              class="mono chip"
-              style="min-height: 44px; display: flex; align-items: center"
-            ></div>
-          </div>
-          <div class="aside" style="font-size: 12px; color: var(--text-mute)">
-            AI configuration is synced from desktop. Edit on desktop and
-            re-link.
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Sync Section -->
     <div>
       <h2
@@ -1463,110 +1382,6 @@
         >
           Re-link With QR
         </button>
-      </div>
-    </div>
-    <!-- Features Section -->
-    <div>
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        Features
-      </h2>
-      <div style="display: flex; flex-direction: column; gap: 12px">
-        <label
-          style="display: flex; align-items: center; gap: 12px; cursor: pointer"
-        >
-          <input id="settings_auto_preview" type="checkbox" />
-          <span>Auto-preview links</span>
-        </label>
-        <label
-          style="display: flex; align-items: center; gap: 12px; cursor: pointer"
-        >
-          Trash retention
-          <select
-            id="settings_trash_days"
-            style="flex: 1; padding: 8px; font-size: 15px"
-          >
-            <option value="7">7 days</option>
-            <option value="30">30 days</option>
-            <option value="90">90 days</option>
-            <option value="0">Never auto-delete</option>
-          </select>
-        </label>
-      </div>
-    </div>
-    <!-- Storage Section -->
-    <div>
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        Storage
-      </h2>
-      <div
-        style="
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          font-size: 14px;
-          color: var(--text-mute);
-        "
-      >
-        <div>Library size: <span id="storage_lib"></span></div>
-        <div>Blob cache: <span id="storage_blob"></span></div>
-        <button
-          id="settings_clear_cache"
-          type="button"
-          style="
-            background: var(--surface);
-            color: var(--danger);
-            border: 1px solid var(--line);
-            padding: 12px 18px;
-            border-radius: var(--r-md);
-            margin-top: 8px;
-          "
-        >
-          Clear Blob Cache
-        </button>
-      </div>
-    </div>
-    <!-- Trash Section -->
-    <div>
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        Trash
-      </h2>
-      <div
-        id="settings_trash_list"
-        style="
-          background: var(--surface);
-          border: 1px solid var(--line);
-          border-radius: var(--r-md);
-          padding: 0;
-          overflow: hidden;
-        "
-      >
-        <div
-          id="settings_trash_empty"
-          style="padding: 12px 18px; color: var(--text-subtle); font-size: 13px"
-        >
-          No trashed items
-        </div>
       </div>
     </div>
   </div>
@@ -1616,6 +1431,10 @@
       const el = document.getElementById(s);
       if (el) el.hidden = s !== id;
     }
+    // Sections are siblings in one scroll container, so switching from a
+    // scrolled library would land the new section mid-page (Settings appeared
+    // "at the bottom"). Reset scroll to the top on every switch.
+    window.scrollTo(0, 0);
     // Hide "← Setup" button on library screen (configured), show it on setup screen
     const toSetupBtn = document.getElementById("to_setup");
     if (toSetupBtn) {
@@ -1637,6 +1456,15 @@
   function openSettings() {
     show("settings");
     loadSettings();
+  }
+
+  // The inside-layout pill's Home button (reader/chat) returns to the library and
+  // flips the pill back to its outside layout. Was referenced by onclick="home()"
+  // but never defined, so every Home tap from a child screen threw.
+  function home() {
+    show("library");
+    pillRestorePill("library");
+    renderLibrary();
   }
 
   function setStatus(text, cls) {
@@ -2008,7 +1836,24 @@
     renderRows(rest, ul2);
   }
 
+  // The phone's front door mirrors the desktop hero: a time-of-day greeting with
+  // a single violet period, the same phrase set the desktop picks by the clock.
+  function setLibraryGreeting() {
+    const el = document.getElementById("lib_greeting");
+    if (!el) return;
+    const hour = new Date().getHours();
+    const phrase =
+      hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    el.replaceChildren();
+    el.appendChild(document.createTextNode(phrase));
+    const mark = document.createElement("span");
+    mark.className = "greet-mark";
+    mark.textContent = ".";
+    el.appendChild(mark);
+  }
+
   function renderLibrary() {
+    setLibraryGreeting();
     invoke("mobile_list")
       .then((raw) => renderSections(parse(raw)))
       .catch((e) => {
@@ -2375,6 +2220,25 @@
 
   document.getElementById("scan_qr_btn").addEventListener("click", async () => {
     if (scanActive) return;
+    // Camera permission gate: the plugin rejects scan() outright with "No
+    // permission to use camera. Did you request it yet?" if the app never asked.
+    // Check, then request, then guide the user to Settings if still denied.
+    try {
+      let perm = await invoke("plugin:barcode-scanner|check_permissions");
+      if (!perm || perm.camera !== "granted") {
+        perm = await invoke("plugin:barcode-scanner|request_permissions");
+      }
+      if (!perm || perm.camera !== "granted") {
+        setStatus(
+          "Camera access is needed to scan the linking QR. Enable it for Enqueue in Android Settings > Apps.",
+          "error",
+        );
+        return;
+      }
+    } catch (e) {
+      setStatus("Camera permission check failed: " + errString(e), "error");
+      return;
+    }
     scanActive = true;
     document.getElementById("scan_qr_btn").disabled = true;
     document.getElementById("scan_status").textContent = "Opening scanner...";
@@ -2930,14 +2794,14 @@ return;
       html =
         '<button class="keep" aria-label="Home" onclick="home()">' +
         '<span class="disc">' + svg("plus") + '</span></button>' +
-        '<button class="round" aria-label="Chat with AI" onclick="chatOrAsk()">' +
+        '<button class="round" aria-label="Chat with AI" onclick="openChat()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>";
     } else {
       html =
         '<button class="keep" id="pill_add" aria-label="Add" aria-expanded="false" onclick="pillToggleMenu(event)">' +
         '<span class="disc">' + svg("plus") + '</span></button>' +
-        '<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
+        '<button class="round" aria-label="Chat with AI" onclick="openChat()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>" +
         '<button class="round" aria-label="Settings" onclick="openSettings()">' +
@@ -3073,62 +2937,9 @@ return;
   }
 
   function populateSettings(s) {
-    // AI section (read-only, synced from desktop)
-    const aiBackend = document.getElementById("ai_backend");
-    const aiModel = document.getElementById("ai_model");
-    const aiUrl = document.getElementById("ai_url");
-    const aiKey = document.getElementById("ai_key");
-    const aiUrlField = document.getElementById("ai_url_field");
-    if (aiBackend) aiBackend.textContent = s.llm_backend || "not set";
-    if (aiModel) aiModel.textContent = s.llm_model || "not set";
-    if (aiUrl) aiUrl.textContent = s.llm_url || "not set";
-    if (aiKey) {
-      const key = s.llm_api_key || "";
-      aiKey.textContent = key
-        ? key.slice(0, 4) + "****" + key.slice(-4)
-        : "not set";
-    }
-    if (aiUrlField) {
-      aiUrlField.style.display =
-        s.llm_backend === "custom" && s.llm_url ? "block" : "none";
-    }
-
-    // Backend select
-    const backendSelect = document.getElementById("settings_backend");
-    const backends = [
-      { value: "ollama", label: "Ollama (local)" },
-      { value: "openrouter", label: "OpenRouter" },
-      { value: "opencode-go", label: "OpenCode Go" },
-      { value: "custom", label: "Custom" },
-    ];
-    backendSelect.replaceChildren();
-    for (const b of backends) {
-      const opt = document.createElement("option");
-      opt.value = b.value;
-      opt.textContent = b.label;
-      backendSelect.appendChild(opt);
-    }
-    backendSelect.value = s.llm_backend || "ollama";
-
-    // Model
-    document.getElementById("settings_model").value = s.llm_model || "";
-
-    // API Key
-    document.getElementById("settings_api_key").value = s.llm_api_key || "";
-
-    // Custom URL
-    const customUrlLabel = document.getElementById("settings_custom_url_label");
-    const customUrlInput = document.getElementById("settings_custom_url");
-    customUrlInput.value = s.llm_url || "";
-    customUrlLabel.style.display =
-      s.llm_backend === "custom" ? "block" : "none";
-
-    // Features
-    document.getElementById("settings_auto_preview").checked =
-      s.auto_preview !== false;
-    document.getElementById("settings_trash_days").value = s.trash_days || "30";
-
-    // Update sync status
+    // Mobile Settings is sync-only now: AI backend/model/key, features, storage,
+    // and trash all live on the desktop (edit there, then re-link). The only
+    // thing to reflect here is the sync status.
     updateSyncStatus();
   }
 
@@ -3149,19 +2960,23 @@ return;
     }
   }
 
-  // Backend change handler
-  document
-    .getElementById("settings_backend")
-    .addEventListener("change", (e) => {
+  // Backend change handler (AI settings removed from mobile; guard the wiring)
+  const _backendSel = document.getElementById("settings_backend");
+  if (_backendSel) {
+    _backendSel.addEventListener("change", (e) => {
       const customUrlLabel = document.getElementById(
         "settings_custom_url_label",
       );
-      customUrlLabel.style.display =
-        e.target.value === "custom" ? "block" : "none";
+      if (customUrlLabel)
+        customUrlLabel.style.display =
+          e.target.value === "custom" ? "block" : "none";
     });
+  }
 
-  // Save settings
+  // Save settings. AI fields live on the desktop now, so this only runs if those
+  // inputs exist; with them removed there are no change-listeners to call it.
   async function saveSettings() {
+    if (!document.getElementById("settings_backend")) return;
     const s = {
       llm_backend: document.getElementById("settings_backend").value,
       llm_model: document.getElementById("settings_model").value,
@@ -3219,10 +3034,10 @@ return;
     startCamera();
   });
 
-  // Clear cache
-  document
-    .getElementById("settings_clear_cache")
-    .addEventListener("click", async () => {
+  // Clear cache (Storage section removed from mobile Settings; guard the wiring)
+  const _clearCacheBtn = document.getElementById("settings_clear_cache");
+  if (_clearCacheBtn) {
+    _clearCacheBtn.addEventListener("click", async () => {
       if (
         !confirm(
           "Clear all cached blobs? They will be re-downloaded on demand.",
@@ -3236,11 +3051,14 @@ return;
         alert("Failed: " + e);
       }
     });
+  }
 
   // Trash view: load trashed items into Settings > Trash section (MOBUI1.1)
   async function loadTrash() {
     const listEl = document.getElementById("settings_trash_list");
     const emptyEl = document.getElementById("settings_trash_empty");
+    // Trash section removed from mobile Settings; nothing to render.
+    if (!listEl || !emptyEl) return;
     try {
       const items = JSON.parse(await invoke("mobile_list_trashed"));
       if (!items || items.length === 0) {
@@ -3300,27 +3118,29 @@ return;
           ? "background: var(--purple-bold); color: var(--on-purple-bold); align-self: flex-end;"
           : "background: var(--surface); color: var(--text); align-self: flex-start; border: 1px solid var(--line);");
       div.textContent = msg.content;
-      container.appendChild(div);
-    }
-    // Add citations for assistant messages
-    if (msg.citations && msg.citations.length) {
-      const citeDiv = document.createElement("div");
-      citeDiv.className = "chat-citations";
-      citeDiv.style.cssText =
-        "display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;";
-      for (const id of msg.citations) {
-        const chip = document.createElement("button");
-        chip.className = "citation-chip";
-        chip.textContent = id.slice(0, 8);
-        chip.style.cssText =
-          "padding: 2px 8px; font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text-mute);";
-        chip.onclick = () => {
-          show("reader");
-          openArtifact(id);
-        };
-        citeDiv.appendChild(chip);
+      // Citations ride with their own message, so this must stay INSIDE the
+      // loop: msg and div only exist here (moving it out threw "msg is not
+      // defined" and broke openChat entirely).
+      if (msg.citations && msg.citations.length) {
+        const citeDiv = document.createElement("div");
+        citeDiv.className = "chat-citations";
+        citeDiv.style.cssText =
+          "display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;";
+        for (const id of msg.citations) {
+          const chip = document.createElement("button");
+          chip.className = "citation-chip";
+          chip.textContent = id.slice(0, 8);
+          chip.style.cssText =
+            "padding: 2px 8px; font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text-mute);";
+          chip.onclick = () => {
+            show("reader");
+            openArtifact(id);
+          };
+          citeDiv.appendChild(chip);
+        }
+        div.appendChild(citeDiv);
       }
-      div.appendChild(citeDiv);
+      container.appendChild(div);
     }
     container.scrollTop = container.scrollHeight;
   }

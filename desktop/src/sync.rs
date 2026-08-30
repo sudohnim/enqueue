@@ -162,7 +162,8 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
 }
 
 /// Push one snapshot to the relay (MOB.7): serialize, encrypt, PUT under this device's
-/// namespace. Idempotent - a 409 (already present) is a no-op.
+/// namespace. The relay upserts by name (MOBFIX.5), so a re-PUT of an edited or deleted
+/// snapshot overwrites in place and returns 201; a 409 (older relay) is still tolerated.
 #[allow(dead_code)]
 pub fn push_snapshot(
     relay_url: &str,

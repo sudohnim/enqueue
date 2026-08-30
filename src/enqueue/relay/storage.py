@@ -13,17 +13,15 @@ import threading
 from pathlib import Path
 
 
-class ObjectConflict(Exception):
-    """A PUT of a name that already exists. Write-by-unique-name."""
-
-
 class RelayStorage:
     """Disk-backed object store with a monotonic change cursor.
 
     Objects live as BLOBs in a SQLite file under `data_dir`, keyed by name.
     The cursor is `MAX(cursor)` over the objects table, so it survives a
-    restart. Writes are write-by-unique-name: a second PUT of an existing name
-    raises `ObjectConflict` and leaves the stored object untouched.
+    restart. Writes are UPSERTs: a second PUT of an existing name overwrites the
+    bytes and assigns a fresh (higher) cursor, so the object moves to the head
+    of the change feed and any device whose cursor already passed the old
+    position re-pulls the update (MOBFIX.5).
     """
 
     def __init__(self, data_dir: Path):
@@ -52,13 +50,19 @@ class RelayStorage:
         return row["c"]
 
     def put(self, name: str, data: bytes) -> tuple[int, int]:
-        """Store an object, returning `(cursor, size)`. Raises ObjectConflict."""
+        """Store or overwrite an object, returning `(cursor, size)`.
+
+        UPSERT by name: an overwrite replaces the bytes AND takes a fresh cursor
+        at the head of the change feed, so `list_changed(since)` re-surfaces the
+        object to a device that already pulled past its old position. Object
+        names carry the writer's device prefix (`dev/{device}/...`), so an
+        overwrite only ever replaces that device's own older snapshot.
+        """
         with self._lock, self._connect() as conn:
-            if conn.execute("SELECT 1 FROM objects WHERE name = ?", (name,)).fetchone():
-                raise ObjectConflict(name)
             cursor = self._max_cursor(conn) + 1
             conn.execute(
-                "INSERT INTO objects (name, data, cursor) VALUES (?, ?, ?)",
+                "INSERT INTO objects (name, data, cursor) VALUES (?, ?, ?)"
+                " ON CONFLICT(name) DO UPDATE SET data = excluded.data, cursor = excluded.cursor",
                 (name, data, cursor),
             )
             return cursor, len(data)

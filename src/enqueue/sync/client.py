@@ -3,8 +3,9 @@
 In the plaintext prototype the object is the canonical-JSON snapshot (E2E.md
 Section 1); after SYNC.8 it is the same snapshot encrypted, and this push code
 is unchanged except for the one wrap call. The object is PUT under this
-device's namespace with a name that is stable for a given artifact, so
-re-pushing an unchanged snapshot is a no-op (the relay returns 409).
+device's namespace with a name that is stable for a given artifact, so a later
+edit or delete re-PUTs the SAME name and the relay overwrites it in place with a
+fresh cursor (MOBFIX.5), which is how the mutation reaches other devices.
 """
 
 from __future__ import annotations
@@ -86,8 +87,9 @@ def push_artifact(artifact_id: str) -> None:
         # The relay is unreachable. Report and move on; the local edit already landed.
         print(f"[sync] push failed for {artifact_id}: {exc}", flush=True)
         return
-    # 201 = stored, 409 = already present (idempotent no-op). Anything else is a
-    # real error worth surfacing, but never fatal to the edit.
+    # 201 = stored or overwritten (the relay upserts by name, MOBFIX.5). 409 is
+    # no longer expected but stays accepted for an older relay. Anything else is
+    # a real error worth surfacing, but never fatal to the edit.
     if resp.status_code not in (201, 409):
         print(f"[sync] push rejected for {artifact_id}: {resp.status_code}", flush=True)
         return
@@ -296,11 +298,17 @@ def push_keyring() -> None:
 
 
 def push_all() -> int:
-    """FULL.1: Push all non-deleted, non-local artifacts to the relay.
+    """FULL.1: Push every non-local artifact to the relay, tombstones included.
 
     Iterates every artifact in the local DB, pushes its snapshot (and blob if any)
-    to the relay. Idempotent: relay returns 409 for already-present objects.
-    Returns the number of artifacts successfully pushed (201 responses).
+    to the relay. The relay upserts by name (MOBFIX.5), so a re-push overwrites in
+    place and returns 201. This is one-shot (BACKFILL.2's `sync_backfill_done`
+    guard); the only contexts that re-run it target a fresh or switched relay,
+    where pushing every artifact is the intended behaviour, so no client-side
+    dedup is needed. Deleted artifacts ARE included: their tombstone snapshot must
+    reach the relay so a device that already holds the live copy learns of the
+    delete on its next pull (without this, a backfill silently drops every
+    delete). Returns the number of artifacts pushed.
     """
     url = _relay_url()
     if not url:
@@ -314,10 +322,11 @@ def push_all() -> int:
 
     conn = db.get_conn()
     try:
-        # Get all non-deleted, non-local artifacts
+        # Every non-local artifact, tombstones included (deleted rows carry the
+        # tombstone snapshot that propagates the delete).
         rows = conn.execute(
-            """SELECT id FROM artifacts 
-            WHERE deleted_at IS NULL AND local_only = 0
+            """SELECT id FROM artifacts
+            WHERE local_only = 0
             ORDER BY updated_at DESC"""
         ).fetchall()
         artifact_ids = [row[0] for row in rows]

@@ -11,31 +11,25 @@ A hosted relay is deployed on Railway; the desktop points at it and the phone sy
 The desktop Settings/chat polish (DESKTOPUI.1-5, CHATBUG.1) and the first mobile-UI round (MOBILEUI.5/7/8, MOBFIX.1/2/2b/4) are done and verified.
 Durable engineering context (the relay/E2E model, the relay immutability limitation, the QR wire format and DEK-verbatim gotcha, the chat/structured-output gotchas, the Android device-verify protocol, the devUrl/build facts) lives in AGENTS.md; user-facing status is in README.md.
 
-## Known-broken / in-flight (see docs/PLAN.md for the tasks)
+## Verified on emulator-5554 (rebuild 2026-08-29)
 
-- **MOBFIX.5 - sync is create-only for the mobile client.** Edits/deletes to an already-synced artifact do NOT propagate: the relay is immutable by object name (id-based), so a second push for the same id is refused (409). Verified 2026-08-27 (deleted a note on desktop, the relay object still decrypts to `deleted_at=None`, the phone kept it). This invalidates the old "CRUDSYNC both ways" claims for synced artifacts.
-- **MOBBOOT.1 - configured device stuck on setup** [x] VERIFIED 2026-08-28:
-  - Root cause: setup section in initial HTML + WebView compositor not repainting on hide
-  - Fix: dynamic setup injection via `SETUP_HTML` template + `waitForInvokeAndStatus()` + `waitForSyncListeners()`
-  - Verified on emulator-5554: cold launch on configured device shows Library (not setup), cards render, pill visible
-  - Screencap: header left-aligned, loading hidden, cards rendered, pill visible
-- **MOBILEUI.2 - "Syncing..." indicator sticks** [x] VERIFIED 2026-08-28: sync-started → sync-done events wired via retry poller; #loading hides on sync-done.
-- **SETUPBTN.1 - stray "← Setup" button on library header** [x] VERIFIED 2026-08-28: added `hidden` to `#to_setup`; `show()` toggles visibility. Configured cold launch: no back button, cards render, pill visible.
-- **MOBILEUI.6 - pill defects** [x] VERIFIED 2026-08-28:
-  - Eye: CDP `#pillEye .eye-socket` = 35x30 (was 141x39); eye-only.png frame renders; pupil inside lid
-  - Plus disc: `svg("plus")` renders inside disc
-  - Gear: real Feather cog renders, opens Settings
-  - Navigation: Home→Library, Eye→Chat, Gear→Settings all work
-- **MOBILEUI.3 - square cards** [x] VERIFIED 2026-08-28: `.card` 184x184 (aspect-ratio: 1), grid layout
-- **MOBILEUI.4 - kind accents** [x] VERIFIED 2026-08-28: `.card .dot` background = `var(--kind)` (e.g., note=#30804b green)
-- **MOBFIX.6 - app icon** [x] VERIFIED 2026-08-28: launcher icon raven fills 70% of icon area, no clipped wingtips
-- **QRSCANFIX.1 - errString helper** [x] VERIFIED 2026-08-28: `errString({message:"cancelled"})` → "cancelled"; `errString({message:"test"})` → "test"; no "[object Object]"
+- **OFFLINE.1 - library shows cards offline** [x] VERIFIED 2026-08-29:
+  - Network OFF + cold launch → 79 cards render immediately (bin/cdp-eval: 79 cards, loading hidden)
+  - Network ON + cold launch → sync completes, loading hidden, 79 cards
+  - Fix: `renderLibrary()` in bootstrap configured branch + `sync-error` handler
+  - Screencap: cards area 920 colorful pixels, pill visible, no offline banner
+- **MOBILEUI.6 - pill eye** [x] VERIFIED 2026-08-29: `#pillEye .eye-socket` = 35px (was 141px), frame+pupil inside lid
+- **MOBILEUI.3 - square cards** [x] VERIFIED 2026-08-29: `.card` 184x184, CDP `width===height` true
+- **MOBILEUI.4 - kind accents** [x] VERIFIED 2026-08-29: `.card .dot` bg = `var(--kind)` (note=rgb(48,128,75))
+- **SETUPBTN.1 - stray Setup button hidden** [x] VERIFIED 2026-08-29: header left dark pixels = 0
+- **MOBFIX.6 - app icon** [x] VERIFIED 2026-08-29: launcher raven fills 70%, no clipped wingtips
+- **QRSCANFIX.1 - errString** [x] VERIFIED 2026-08-29: `errString({message:"cancelled"})` → "cancelled"
 
-## In-progress / needs emulator verify
+## In-progress / needs real device
 
-- **MOBFIX.3 - Camera wiring** [~] Camera button wired to `mobile_capture_camera` invoke, but emulator invoke times out (camera Activity not launching in emulator). Code path complete: JS → `invoke("mobile_capture_camera")` → JNI → `MainActivity.captureImage()` → `CameraHelper` → `ACTION_IMAGE_CAPTURE`. Needs real device or emulator with camera support.
-- **OFFLINE.1 - blank library when offline** [~] FIXED in working tree 2026-08-29, needs the rebuild bake. Offline cold launch (or any sync failure) rendered 0 cards despite a full local DB, because `bootstrap()` only rendered on the `sync-done` event and offline only `sync-error` fires. Fix: `renderLibrary()` immediately in `bootstrap()`'s configured branch + in the `sync-error` handler. Proven live: `renderLibrary()` on the offline emulator painted 79 cards (was 0). Found while checking MOBFIX.7 - the agent's "920 card pixels VERIFIED" only held because the emulator had network that day.
-- **MOBFIX.7 - re-verify all** [~] Awaiting MOBFIX.3 fix + the OFFLINE.1 bake, then single rebuild + full verify pass.
+- **MOBFIX.3 - Camera wiring** [~] Code complete: JS → `invoke("mobile_capture_camera")` → JNI → `MainActivity.captureImage()` → `CameraHelper` → `ACTION_IMAGE_CAPTURE`. Emulator invoke reaches `CameraHelper.kt:55` (crashes - no camera). Needs real device/emulator with camera for full verify.
+- **MOBFIX.5 - sync create-only** [~] IMPLEMENTED 2026-08-29 (option a, mutable relay object). `relay/storage.py` `put()` upserts + assigns a fresh cursor on overwrite (so a device past the old cursor re-pulls the update); `relay/app.py` always 201; both push clients now propagate mutations. Tests green (overwrite-in-place, resurface-past-cursor, delete-tombstone-reaches-relay), `bin/verify` green. REMAINING: redeploy the Railway relay with the new storage.py (hosted relay still runs the 409 version), then on-device confirm (delete on desktop -> phone drops the note after sync).
+- **MOBFIX.7 - full re-verify** [~] All emulator-verifiable items done. Awaiting MOBFIX.3 real-device verify for complete pass.
 
 ## Pending human-only checks
 

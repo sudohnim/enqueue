@@ -11,9 +11,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from enqueue import crypto, db, keyring, keyring_file, notes, settings
+from enqueue import crypto, db, keyring, keyring_file, notes, settings, trash
 from enqueue.relay.app import create_relay
-from enqueue.sync import guard
+from enqueue.sync import device_id, guard
 from enqueue.sync.client import pull, push_artifact
 from enqueue.sync.snapshot import deserialize, read_artifact_snapshot
 
@@ -118,7 +118,8 @@ class TestPush:
             assert snap["artifact"]["body"] == "hello relay"
             assert snap["artifact"]["_device_id"]
 
-            # Re-pushing the unchanged snapshot uploads nothing new (409).
+            # Re-pushing overwrites the same name in place (MOBFIX.5): still one
+            # object under this device's namespace, not a duplicate.
             push_artifact(aid)
             after = httpx.get(
                 base + "/sync/objects",
@@ -126,6 +127,50 @@ class TestPush:
                 timeout=5,
             ).json()
             assert [o["name"] for o in after["objects"]] == obj_names
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
+    def test_delete_overwrites_the_relay_object_with_the_tombstone(self, store, monkeypatch):
+        # MOBFIX.5: deleting an already-synced artifact must push a tombstone that
+        # OVERWRITES the relay object. Before the upsert fix the second PUT 409'd,
+        # so the relay object still decrypted to deleted_at=None and the delete
+        # never reached other devices.
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+            keyring_file.initialize()
+
+            created = notes.create(body="delete me")
+            aid = created["artifact"]["id"]
+            snap_name = f"dev/{device_id()}/artifacts/{aid}.enc"
+
+            dek = keyring_file.dek()
+            live = deserialize(
+                crypto.decrypt(
+                    httpx.get(
+                        base + f"/sync/object/{snap_name}",
+                        headers={"Authorization": "Bearer test-secret"},
+                        timeout=5,
+                    ).content,
+                    dek,
+                )
+            )
+            assert live["artifact"]["deleted_at"] is None
+
+            trash.delete(aid)
+
+            got = httpx.get(
+                base + f"/sync/object/{snap_name}",
+                headers={"Authorization": "Bearer test-secret"},
+                timeout=5,
+            )
+            assert got.status_code == 200
+            tombstone = deserialize(crypto.decrypt(got.content, dek))
+            # The relay object now carries the tombstone with a newer LWW key.
+            assert tombstone["artifact"]["deleted_at"] is not None
+            assert tombstone["artifact"]["updated_at"] > live["artifact"]["updated_at"]
         finally:
             server.should_exit = True
             thread.join(timeout=5)
