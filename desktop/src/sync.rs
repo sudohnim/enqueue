@@ -105,7 +105,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     let artifact: Option<Value> = conn
         .query_row(
             "SELECT id,kind,title,body,source_url,content_hash,mime,filename,created_at,
-                    updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id
+                    updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at
              FROM artifacts WHERE id = ?1",
             [artifact_id],
             |r| {
@@ -127,6 +127,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
                     "pages": r.get::<_, Option<i64>>(14)?,
                     "title_explicit": r.get::<_, i64>(15)?,
                     "_device_id": r.get::<_, Option<String>>(16)?,
+                    "purged_at": r.get::<_, Option<String>>(17)?,
                 }))
             },
         )
@@ -153,9 +154,27 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     for row in rows {
         anns.push(row.map_err(|e| e.to_string())?);
     }
+    // Tags live in the artifact's tags_json column on mobile (there is no tags table
+    // here). They MUST ride the snapshot: the desktop's apply DELETEs an artifact's
+    // tags then re-inserts from snapshot["tags"], so omitting them (as this did before)
+    // made every mobile push WIPE that artifact's desktop tags. Carrying them also makes
+    // a tag added on the phone propagate to the desktop.
+    let tags: Value = conn
+        .query_row(
+            "SELECT tags_json FROM artifacts WHERE id = ?1",
+            [artifact_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .filter(|v| v.is_array())
+        .unwrap_or_else(|| Value::Array(vec![]));
     Ok(Some(serde_json::json!({
         "artifact": artifact,
         "annotations": anns,
+        "tags": tags,
         "page_text": [],
         "versions": [],
     })))
@@ -260,7 +279,8 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           pages          INTEGER,
           title_explicit INTEGER NOT NULL DEFAULT 0,
           _device_id     TEXT,
-          tags_json      TEXT
+          tags_json      TEXT,
+          purged_at      TEXT
         );
         CREATE TABLE IF NOT EXISTS annotations (
           id            TEXT PRIMARY KEY,
@@ -291,6 +311,8 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     // Migration: tags_json was added after the first release. ALTER fails with a
     // "duplicate column" on installs that already have it, which is fine.
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN tags_json TEXT", []);
+    // Migration: purged_at (cross-device purge tombstone), same duplicate-safe pattern.
+    let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN purged_at TEXT", []);
     Ok(())
 }
 
@@ -301,16 +323,22 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
 
     // LWW no-op check. A read-only device has no local edits, so this only makes a
     // re-pull of the same snapshot idempotent.
-    let local: Option<(String, String)> = conn
+    let local: Option<(String, String, Option<String>)> = conn
         .query_row(
-            "SELECT updated_at, COALESCE(_device_id,'') FROM artifacts WHERE id = ?1",
+            "SELECT updated_at, COALESCE(_device_id,''), purged_at FROM artifacts WHERE id = ?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    if let Some(local_key) = local {
-        if local_key >= lww_key(snapshot) {
+    if let Some((local_updated, local_device, local_purged)) = local {
+        // A tombstone is terminal: once purged locally, a non-purge snapshot (e.g. a
+        // stale edit from a device that had not seen the purge) never revives it.
+        let incoming_purged = artifact.get("purged_at").and_then(Value::as_str).is_some();
+        if local_purged.is_some() && !incoming_purged {
+            return Ok(());
+        }
+        if (local_updated, local_device) >= lww_key(snapshot) {
             return Ok(());
         }
     }
@@ -318,8 +346,8 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let g = |c: &str| artifact.get(c);
     conn.execute(
         "INSERT INTO artifacts (id,kind,title,body,source_url,content_hash,mime,filename,\
-         created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+         created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
          ON CONFLICT(id) DO UPDATE SET
            kind=excluded.kind, title=excluded.title, body=excluded.body,
            source_url=excluded.source_url, content_hash=excluded.content_hash,
@@ -327,7 +355,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
            updated_at=excluded.updated_at, local_only=excluded.local_only,
            status=excluded.status, pinned=excluded.pinned, deleted_at=excluded.deleted_at,
            pages=excluded.pages, title_explicit=excluded.title_explicit,
-           _device_id=excluded._device_id",
+           _device_id=excluded._device_id, purged_at=excluded.purged_at",
         rusqlite::params![
             id,
             str_at(g("kind")),
@@ -346,6 +374,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             int_at(g("pages")),
             int_at(g("title_explicit")).unwrap_or(0),
             str_at(g("_device_id")),
+            str_at(g("purged_at")),
         ],
     )
     .map_err(|e| format!("insert artifact: {e}"))?;
@@ -535,6 +564,50 @@ pub fn sync_library(
                                  ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                                 [s],
                             );
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+        // Desktop settings (MOB2.9): the desktop's effective LLM config - backend,
+        // model, url, and the provider api_key - encrypted under the DEK. Each push
+        // is a fresh timestamped object; keep the newest by `updated_at` so a later
+        // desktop edit wins, and cache it in sync_meta for mobile_chat / settings to
+        // read. This is what makes the desktop config propagate fully to the phone.
+        if name.starts_with("lib/settings/") {
+            if let Ok(r) = ureq::get(&format!("{base}/sync/object/{name}"))
+                .set("Authorization", &auth)
+                .call()
+            {
+                let mut bytes = Vec::new();
+                if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
+                    if let Ok(plain) = secretbox_decrypt(dek, &bytes) {
+                        if let Ok(incoming) = serde_json::from_slice::<Value>(&plain) {
+                            let incoming_ts =
+                                incoming["updated_at"].as_str().unwrap_or("").to_string();
+                            let stored_ts: String = conn
+                                .query_row(
+                                    "SELECT value FROM sync_meta WHERE key = 'settings'",
+                                    [],
+                                    |row| row.get::<_, String>(0),
+                                )
+                                .ok()
+                                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                                .and_then(|v| {
+                                    v["updated_at"].as_str().map(str::to_string)
+                                })
+                                .unwrap_or_default();
+                            // ISO-8601 timestamps sort lexicographically.
+                            if incoming_ts >= stored_ts {
+                                if let Ok(s) = std::str::from_utf8(&plain) {
+                                    let _ = conn.execute(
+                                        "INSERT INTO sync_meta (key,value) VALUES ('settings',?1)\
+                                         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                                        [s],
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -1152,7 +1225,8 @@ pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned
-             FROM artifacts WHERE deleted_at IS NOT NULL ORDER BY updated_at DESC",
+             FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL
+             ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt

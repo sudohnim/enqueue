@@ -20,9 +20,29 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Any
 
 from . import config
+
+
+def _resync_to_relay() -> None:
+    """Best-effort push of the settings to the relay so a linked phone picks up a
+    desktop config change (LLM backend/model/url/key) without re-entering it.
+
+    Daemon thread + swallow-all, matching the saved-views resync: a sync hiccup
+    must never break saving a setting locally, and the push does network I/O.
+    """
+
+    def _run() -> None:
+        try:
+            from .sync.client import push_settings
+
+            push_settings()
+        except Exception:  # noqa: BLE001 - never surface a sync error to the caller
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def settings_path():
@@ -172,6 +192,8 @@ def update(changes: dict) -> dict:
     settings_path().write_text(json.dumps(stored, indent=2), encoding="utf-8")
     # Not a secret, but not everyone's business either.
     settings_path().chmod(0o600)
+    # Propagate the change to a linked phone (LLM backend/model/url/auto-preview).
+    _resync_to_relay()
     return all_settings()
 
 

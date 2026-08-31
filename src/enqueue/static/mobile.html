@@ -137,6 +137,48 @@
     flex: 1;
     letter-spacing: -0.02em;
   }
+  /* The library greeting is the hero: bigger and centered across the header (the
+     back button is hidden on the library screen, so it fills the width). Other
+     headers keep the compact left-aligned h1 above. */
+  /* Library hero: the raven mark over a soft purple wash, then the centered
+     greeting - the app's one atmospheric purple moment (DESIGN.md keeps violet
+     scarce, so this is the single wash), mirroring the desktop home header. */
+  .lib-hero {
+    display: block;
+    position: relative;
+    text-align: center;
+    margin-bottom: 14px;
+    padding-top: 4px;
+  }
+  .lib-hero::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -28px;
+    transform: translateX(-50%);
+    width: 340px;
+    max-width: 108%;
+    height: 230px;
+    background: radial-gradient(
+      ellipse at center,
+      var(--purple-bold-wash),
+      transparent 68%
+    );
+    z-index: -1;
+    pointer-events: none;
+  }
+  .lib-raven {
+    display: block;
+    width: 78px;
+    height: auto;
+    margin: 0 auto 6px;
+  }
+  #lib_greeting {
+    font-size: 30px;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    text-align: center;
+  }
   /* The greeting's trailing period is the one violet character - the same brand
      ink the desktop hero uses (home.css P.7), tying the phone's front door to
      the raven eye without recoloring the line. */
@@ -169,12 +211,21 @@
   .rows::-webkit-scrollbar {
     display: none;
   }
+  /* The shelf header is a tap target: click it to expand the section from a
+     horizontal row into a vertical grid (faster to scan a big group). The ">"
+     rotates to "v" when expanded. */
   .shelf-label {
-    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--text-mute);
-    padding: 4px 2px 2px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    padding: 6px 2px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
   /* One shelf = label + its horizontal row, stacked; shelves stack vertically. */
   .shelf {
@@ -183,7 +234,28 @@
   .shelf-label .shelf-count {
     color: var(--text-dim);
     font-weight: 500;
-    margin-left: 6px;
+    font-size: 14px;
+  }
+  .shelf-label .shelf-chevron {
+    margin-left: auto;
+    color: var(--purple-bold);
+    font-size: 24px;
+    line-height: 1;
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  /* The shelf page: the section's cards as a wrapping vertical grid (the page
+     scrolls), which is faster to scan than swiping the horizontal rail. */
+  .page-rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--sp-3);
+    overflow-x: visible;
+    margin: 0;
+    padding: 0 0 90px;
+  }
+  .page-rows .card {
+    flex: initial;
+    width: auto;
   }
   /* View-mode chips (Last touch / Type / Tags / Custom), mirroring the desktop.
      They scroll horizontally if they overflow so no chip is ever cut off. */
@@ -352,6 +424,371 @@
     margin: 0 0 10px;
   }
 
+  /* Reader toolbar */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 {
+    flex: 1;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reader-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .reader-actions button {
+    /* grid + place-items (like the pill), NOT flex: a flex item svg with no reliable
+       intrinsic main-size collapses to 0 width in the Android WebView. */
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    border-radius: var(--r-md);
+    color: var(--text);
+    cursor: pointer;
+  }
+  /* Without an explicit size the createIcon <svg> (viewBox only) computes to 0x0, so
+     the Pin/Edit/Delete glyphs were invisible even though the buttons were there. */
+  .reader-actions button svg {
+    width: 22px;
+    height: 22px;
+  }
+  .reader-actions button:hover,
+  .reader-actions button:focus {
+    background: var(--surface-2);
+  }
+  .reader-actions button.lit {
+    color: var(--accent);
+  }
+  .reader-actions button.danger {
+    color: var(--danger);
+  }
+
+  /* Tag row in reader */
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-full);
+    font-size: 13px;
+    color: var(--text);
+  }
+  .tag-chip .tag-x {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .tag-chip .tag-x:hover {
+    background: var(--surface-3);
+    color: var(--danger);
+  }
+  .tag-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px dashed var(--line);
+    background: transparent;
+    border-radius: var(--r-full);
+    font-size: 13px;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .tag-add:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .tag-add input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font: inherit;
+    color: var(--text);
+    width: 100px;
+  }
+
+  /* Annotation input */
+  .annotation-input {
+    padding: 16px;
+    border-top: 1px solid var(--line-soft);
+    background: var(--surface);
+  }
+  .annotation-input textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    resize: vertical;
+  }
+  .annotation-input textarea:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+  .annotation-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .annotation-actions button {
+    padding: 8px 16px;
+    border-radius: var(--r-md);
+    font: inherit;
+    cursor: pointer;
+  }
+  .annotation-actions button.keep {
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    border: none;
+  }
+  .annotation-actions button:not(.keep) {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+
+  /* Editable note body: a real textarea (Android raises the keyboard for it, unlike a
+     contenteditable div). Matches the reader's body type + surface so editing does not
+     feel like a different screen. */
+  .reader-edit-area {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 240px;
+    resize: vertical;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 16px; /* >=16px so mobile Safari/WebView never zooms on focus */
+    line-height: 1.6;
+    outline: none;
+  }
+  .reader-edit-area:focus {
+    border-color: var(--purple-bold);
+  }
+  /* The note body is tappable to edit; hint it with a text caret. */
+  #reader_body.note-tappable {
+    cursor: text;
+  }
+
+  /* In-app confirm dialog. The native window.confirm() BLOCKS the Android WebView
+     (no JS-dialog handler is wired), so it hangs the page - this replaces it. */
+  .mconfirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(16, 17, 20, 0.45);
+  }
+  .mconfirm-card {
+    width: min(100%, 340px);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lifted, 0 12px 36px rgba(16, 17, 20, 0.24));
+    padding: 20px;
+  }
+  .mconfirm-msg {
+    margin: 0 0 18px;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .mconfirm-row {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .mconfirm-row button {
+    padding: 10px 16px;
+    font-size: 15px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .mconfirm-row button.mconfirm-ok {
+    border-color: transparent;
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+  }
+  .mconfirm-row button.mconfirm-ok.danger {
+    background: var(--danger, #b4332b);
+    color: #fff;
+  }
+
+  /* Details side panel (tags + AI summary), slides in from the right over a backdrop. */
+  /* Toggled by an `.open` class, not [hidden]: display:none would kill the slide. */
+  .details-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(16, 17, 20, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur) ease;
+  }
+  .details-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .details-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 61;
+    width: min(86%, 380px);
+    background: var(--surface);
+    border-left: 1px solid var(--line);
+    box-shadow: -12px 0 36px rgba(16, 17, 20, 0.16);
+    transform: translateX(100%);
+    pointer-events: none;
+    transition: transform var(--dur-slow) cubic-bezier(0.22, 1, 0.36, 1);
+    display: flex;
+    flex-direction: column;
+    /* Clear the status bar at the top and the gesture bar at the bottom. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow-y: auto;
+  }
+  .details-panel.open {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+  .details-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .details-head h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .details-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .details-block h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+  }
+  #details_summary {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+  .details-empty {
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  /* Trash list: a contained, scrollable area so a big trash does not stretch the whole
+     Settings page. Rows scroll inside; the last row drops its divider. */
+  #settings_trash_list {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 0 14px;
+  }
+  #settings_trash_list:empty {
+    display: none;
+  }
+  #settings_trash_list > div:last-child {
+    border-bottom: none;
+  }
+
+  .details-tag-input {
+    margin-top: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-size: 16px; /* >=16px so the WebView never zooms on focus */
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+  }
+  .details-tag-input:focus {
+    border-color: var(--purple-bold);
+  }
+  /* Editable tag chip: label + a small remove control. */
+  #details_tags .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #details_tags .tag-chip button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--text-mute);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  #details_tags .tag-chip button:hover {
+    color: var(--text);
+  }
+
   /* Mobile Pill (MOB2.3) - mirrors desktop pill.css */
   .pill {
     position: fixed;
@@ -360,16 +797,15 @@
     transform: translateX(-50%);
     display: flex;
     align-items: center;
-    /* Distribute the three controls evenly so the eye sits centered, with the
-       + and gear symmetric at the edges (min-width creates the room to spread). */
-    justify-content: space-between;
-    gap: var(--sp-2);
-    min-width: 206px;
-    height: 56px;
-    padding: 0 var(--sp-4);
+    /* Three controls, centered group. */
+    justify-content: center;
+    gap: 8px;
+    height: 52px;
+    padding: 0 var(--sp-3);
     z-index: var(--z-pill);
     background: var(--surface-2);
-    border: 1px solid var(--line);
+    /* Purple ring for a touch of brand color on the one persistent chrome. */
+    border: 2px solid color-mix(in oklab, var(--purple-bold) 55%, transparent);
     border-radius: var(--r-full);
     box-shadow:
       0 4px 12px rgba(16, 17, 20, 0.06),
@@ -392,8 +828,8 @@
     align-items: center;
     justify-content: center;
     gap: var(--sp-2);
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border: 0;
     background: transparent;
@@ -409,8 +845,8 @@
   .pill .keep .disc {
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     flex-shrink: 0;
     border-radius: var(--r-full);
     background: var(--purple-bold);
@@ -429,9 +865,10 @@
   .pill .round {
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     flex-shrink: 0;
+    padding: 0;
     border: 0;
     background: transparent;
     border-radius: var(--r-full);
@@ -446,16 +883,21 @@
     background: var(--surface-2);
   }
   .pill .round svg {
-    width: 28px;
-    height: 28px;
+    width: 34px;
+    height: 34px;
   }
   .pill .pill-eye {
-    width: 44px;
-    height: 44px;
+    /* A span is inline by default, so width was ignored and the eye drifted
+       off-center in its button (the "lopsided" pill). Grid makes the box real and
+       centers the frame. */
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
     position: relative;
   }
   .pill .pill-eye .eye-frame {
-    width: 34px;
+    width: 37px;
     height: auto;
   }
   .pill .pill-eye .eye-blinkwrap {
@@ -471,7 +913,9 @@
   .pill .pill-eye .eye-socket {
     position: absolute;
     left: 50%;
-    top: 40%;
+    /* Pupil at the vertical center of the almond so the eye looks straight ahead
+       (34% read as looking up, 48% as looking down; 42% is centered). */
+    top: 42%;
     width: 64%;
     height: 52%;
     transform: translate(-50%, -50%);
@@ -482,8 +926,8 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 74%;
-    height: 74%;
+    width: 90%;
+    height: 90%;
     transform: translate(-50%, -50%);
     /* No cursor-follow on the phone: the pupil is static and centered. */
   }
@@ -851,6 +1295,9 @@
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
+    /* Keep the note's line breaks in the preview (they were collapsed to spaces);
+       pre-line still collapses runs of spaces so the clamp stays clean. */
+    white-space: pre-line;
   }
   .card-meta {
     display: flex;
@@ -869,8 +1316,20 @@
     font-size: 11px;
     color: var(--ink-faint);
   }
+  /* Pinned indicator: the drawn star from the icon set (matching the reader's pin
+     control), filled in the brand accent - not an emoji, which renders as a flat
+     platform glyph off the icon family. */
   .card-pin {
-    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--purple-bold);
+  }
+  .card-pin svg {
+    width: 15px;
+    height: 15px;
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 1.5;
   }
 
   /* Note card */
@@ -898,18 +1357,28 @@
   }
 
   /* Image card */
+  /* Image card reads as an image tile: the picture fills the top of the square and
+     the title/meta sit under it, so the 168px card is used instead of an 80px thumb
+     floating in an empty box (the old row layout left half the card blank). */
   .card-image {
-    flex-direction: row;
+    flex-direction: column;
+  }
+  /* The image itself signals the kind, so the corner kind-dot is redundant here and
+     (in this column layout) would take its own row and clip the title. */
+  .card-image .dot {
+    display: none;
   }
   .card-image .card-content {
     flex: 1;
+    min-height: 0;
   }
   .card-full-image {
-    width: 80px;
-    height: 80px;
+    width: 100%;
+    height: 92px;
     border-radius: var(--r-sm);
     object-fit: cover;
     flex-shrink: 0;
+    margin-bottom: 8px;
     background: var(--surface-2);
   }
 
@@ -1155,8 +1624,9 @@
 </section>
 
 <section id="library" hidden>
-  <header>
+  <header class="lib-hero">
     <button class="back" id="to_setup" hidden>&larr; Setup</button>
+    <img class="lib-raven" src="raven-mark.png" alt="" aria-hidden="true" />
     <h1 id="lib_greeting">Library</h1>
   </header>
   <input id="search" type="search" placeholder="Search" autocomplete="off" />
@@ -1206,17 +1676,60 @@
   <div class="empty" id="empty" hidden>Nothing synced yet.</div>
 </section>
 
+<!-- A single section opened full-screen (tap a shelf header): its artifacts as a
+     vertical grid, faster to scan than the horizontal rail. -->
+<section id="shelf_page" hidden>
+  <header>
+    <button class="back" id="shelf_page_back">&larr;</button>
+    <h1 id="shelf_page_title"></h1>
+  </header>
+  <ul id="shelf_page_rows" class="rows page-rows"></ul>
+</section>
+
 <section id="reader" hidden>
   <header>
     <button class="back" id="to_library">&larr;</button>
     <h1 id="reader_title"></h1>
+    <div class="reader-actions" id="reader_actions"></div>
   </header>
   <div class="kind-hint" id="reader_kind"></div>
   <div id="reader_body"></div>
   <div class="ann" id="reader_ann" hidden>
     <h2>Notes</h2>
   </div>
+  <div class="tag-row" id="reader_tags" hidden></div>
+  <div class="annotation-input" id="reader_annotation_input" hidden>
+    <textarea
+      id="annotation_text"
+      rows="3"
+      placeholder="Add a note…"
+      autocomplete="off"
+    ></textarea>
+    <div class="annotation-actions">
+      <button id="annotation_save" class="keep">Save</button>
+      <button id="annotation_cancel">Cancel</button>
+    </div>
+  </div>
 </section>
+
+<!-- Details side panel: read-only tags + AI summary for the open artifact. -->
+<div id="details_backdrop" class="details-backdrop"></div>
+<aside id="details_panel" class="details-panel" aria-label="Details">
+  <header class="details-head">
+    <h2>Details</h2>
+    <button id="details_close" class="back" aria-label="Close">&times;</button>
+  </header>
+  <div class="details-body">
+    <section class="details-block">
+      <h3>Tags</h3>
+      <div id="details_tags" class="tag-row"></div>
+    </section>
+    <section class="details-block">
+      <h3>Summary</h3>
+      <div id="details_summary"></div>
+    </section>
+  </div>
+</aside>
 
 <section id="capture" hidden>
   <header>
@@ -1369,6 +1882,9 @@
       gap: 8px;
       padding: 16px;
       border-top: 1px solid var(--line);
+      /* Lift the ask box above the fixed pill (pill height + its bottom offset +
+         a small gap) so the persistent pill never sits over the input. */
+      margin-bottom: calc(var(--sp-5) + env(safe-area-inset-bottom) + 60px);
     "
   >
     <input
@@ -1443,9 +1959,52 @@
             border-radius: var(--r-md);
           "
         >
-          Re-link With QR
+          Re-link with QR
         </button>
       </div>
+    </div>
+
+    <!-- AI Section (read-only; the desktop is the source of truth) -->
+    <div id="settings_ai">
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        AI
+      </h2>
+      <dl id="settings_ai_rows" style="margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px"></dl>
+      <p style="margin: 12px 0 0; font-size: 13px; color: var(--text-mute)">
+        Managed on the desktop. Change the model or key there and it syncs here.
+      </p>
+    </div>
+
+    <!-- Trash: deleted artifacts, restorable. Delete moves here; Restore brings it back. -->
+    <div id="settings_trash">
+      <h2
+        style="
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--text-mute);
+          margin-bottom: 12px;
+        "
+      >
+        Trash
+      </h2>
+      <div id="settings_trash_empty" style="display: none; font-size: 13px; color: var(--text-mute)">
+        Trash is empty.
+      </div>
+      <div id="settings_trash_list"></div>
+      <button
+        id="settings_empty_trash"
+        type="button"
+        style="display: none; margin-top: 12px; width: 100%; padding: 12px; font-size: 14px; font-weight: 600; color: var(--danger, #b4332b); background: transparent; border: 1px solid var(--danger, #b4332b); border-radius: var(--r-md); cursor: pointer"
+      >
+        Empty trash
+      </button>
     </div>
   </div>
 </section>
@@ -1490,7 +2049,13 @@
   function startCamera() {}
 
   function show(id) {
-    for (const s of ["setup", "library", "reader", "capture", "chat", "settings"]) {
+    // Any view switch closes the details side panel so it never lingers over a
+    // different screen (this also makes the Android back gesture dismiss it).
+    const dp = document.getElementById("details_panel");
+    const db = document.getElementById("details_backdrop");
+    if (dp) dp.classList.remove("open");
+    if (db) db.classList.remove("open");
+    for (const s of ["setup", "library", "reader", "capture", "chat", "settings", "shelf_page"]) {
       const el = document.getElementById(s);
       if (el) el.hidden = s !== id;
     }
@@ -1604,7 +2169,9 @@
   }
 
   function renderRows(arts, container) {
-    container.replaceChildren();
+    // Build every card into a fragment and attach once, so a big shelf costs a
+    // single reflow instead of one per card (was the view-toggle / sync jank).
+    const frag = document.createDocumentFragment();
     for (const a of arts) {
       const card = document.createElement("div");
       card.className =
@@ -1624,8 +2191,9 @@
         renderGenericCard(card, a);
       }
 
-      container.appendChild(card);
+      frag.appendChild(card);
     }
+    container.replaceChildren(frag);
   }
 
   function renderNoteCard(li, a) {
@@ -1657,7 +2225,8 @@
     if (a.pinned) {
       const pin = document.createElement("span");
       pin.className = "card-pin";
-      pin.textContent = "📌";
+      pin.setAttribute("aria-label", "Pinned");
+      pin.appendChild(createIcon("star"));
       meta.appendChild(pin);
     }
 
@@ -1717,7 +2286,8 @@
     if (a.pinned) {
       const pin = document.createElement("span");
       pin.className = "card-pin";
-      pin.textContent = "📌";
+      pin.setAttribute("aria-label", "Pinned");
+      pin.appendChild(createIcon("star"));
       meta.appendChild(pin);
     }
 
@@ -1773,7 +2343,8 @@
     if (a.pinned) {
       const pin = document.createElement("span");
       pin.className = "card-pin";
-      pin.textContent = "📌";
+      pin.setAttribute("aria-label", "Pinned");
+      pin.appendChild(createIcon("star"));
       meta.appendChild(pin);
     }
 
@@ -1848,7 +2419,8 @@
     if (a.pinned) {
       const pin = document.createElement("span");
       pin.className = "card-pin";
-      pin.textContent = "📌";
+      pin.setAttribute("aria-label", "Pinned");
+      pin.appendChild(createIcon("star"));
       meta.appendChild(pin);
     }
 
@@ -1889,7 +2461,8 @@
     if (a.pinned) {
       const pin = document.createElement("span");
       pin.className = "card-pin";
-      pin.textContent = "📌";
+      pin.setAttribute("aria-label", "Pinned");
+      pin.appendChild(createIcon("star"));
       meta.appendChild(pin);
     }
 
@@ -1972,16 +2545,32 @@
     return out;
   }
 
+  // Open one shelf full-screen as a vertical grid (its own page, with a back
+  // arrow). Faster to scan a big group than swiping the horizontal rail.
+  function openShelfPage(label, arts) {
+    document.getElementById("shelf_page_title").textContent = label;
+    renderRows(arts, document.getElementById("shelf_page_rows"));
+    show("shelf_page");
+    window.scrollTo(0, 0);
+  }
+
   function renderShelf(label, arts, container) {
     const shelf = document.createElement("div");
     shelf.className = "shelf";
     const lbl = document.createElement("div");
     lbl.className = "shelf-label";
-    lbl.textContent = label;
+    lbl.appendChild(document.createTextNode(label));
     const count = document.createElement("span");
     count.className = "shelf-count";
     count.textContent = String(arts.length);
     lbl.appendChild(count);
+    const chev = document.createElement("span");
+    chev.className = "shelf-chevron";
+    chev.textContent = "›"; // a clean single chevron ">"
+    chev.setAttribute("aria-hidden", "true");
+    lbl.appendChild(chev);
+    // Tap the header -> open this shelf as its own page.
+    lbl.addEventListener("click", () => openShelfPage(label, arts));
     const ul = document.createElement("ul");
     ul.className = "rows";
     shelf.appendChild(lbl);
@@ -1994,6 +2583,8 @@
     if (arts) libraryArts = arts;
     const shelves = document.getElementById("shelves");
     const empty = document.getElementById("empty");
+    // Drop the previous render's thumbnail observations; the fresh cards re-observe.
+    if (_thumbObserver) _thumbObserver.disconnect();
     shelves.replaceChildren();
     if (!libraryArts.length) {
       empty.hidden = false;
@@ -2012,13 +2603,24 @@
       return;
     }
     empty.hidden = true;
-    for (const g of groups) renderShelf(g.label, g.arts, shelves);
+    // Once there is content on screen, the first-load "Syncing..." raven has done
+    // its job - hide it even if a (possibly slow) sync is still in flight.
+    document.getElementById("loading").hidden = true;
+    // Assemble all shelves off-DOM, then swap them in with one reflow.
+    const frag = document.createDocumentFragment();
+    for (const g of groups) renderShelf(g.label, g.arts, frag);
+    shelves.replaceChildren(frag);
   }
 
   function setLibraryMode(mode) {
     libraryMode = mode;
     for (const c of document.querySelectorAll("#viewchips .chip"))
       c.setAttribute("aria-pressed", String(c.dataset.mode === mode));
+    // Custom mode needs the pivots; if a lazy render never fetched them, fetch now
+    // and repaint once they land. Every other mode renders from cache immediately.
+    if (mode === "custom" && !_pivotsLoaded) {
+      loadPivots().then(renderSections);
+    }
     renderSections();
   }
 
@@ -2029,6 +2631,11 @@
       const chip = e.target.closest(".chip");
       if (chip) setLibraryMode(chip.dataset.mode);
     });
+  })();
+
+  (function wireShelfPageBack() {
+    const b = document.getElementById("shelf_page_back");
+    if (b) b.addEventListener("click", () => show("library"));
   })();
 
   // The phone's front door mirrors the desktop hero: a time-of-day greeting with
@@ -2047,27 +2654,48 @@
     el.appendChild(mark);
   }
 
-  function renderLibrary() {
-    setLibraryGreeting();
-    // Load the synced custom views first (best-effort), then the artifacts, so a
-    // Custom-mode render has its pivots in hand.
-    invoke("mobile_pivots")
+  // Custom-view pivots change rarely (only on a desktop edit that syncs down), so
+  // fetch them once and reuse. renderLibrary refreshes them only when they have not
+  // loaded yet or the person is actually looking at Custom mode - not on every render.
+  let _pivotsLoaded = false;
+  function loadPivots() {
+    return invoke("mobile_pivots")
       .then((raw) => {
         try {
           libraryPivots = JSON.parse(raw).views || [];
+          _pivotsLoaded = true;
         } catch (e) {
           /* leave as-is */
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        invoke("mobile_list")
-          .then((raw) => renderSections(parse(raw)))
-          .catch((e) => {
-            const empty = document.getElementById("empty");
-            empty.hidden = false;
-            empty.textContent = "Error: " + e;
-          });
+      .catch(() => {});
+  }
+
+  // renderLibrary is called from many places (nav, sync-done, search-clear); a burst
+  // of them would each do an IPC round-trip + a full card rebuild. Coalesce to one
+  // render per frame so a flurry of triggers costs a single rebuild, not N. This is
+  // the fix for the sync "blip": several sync events in a row now repaint once.
+  let _renderQueued = false;
+  function renderLibrary() {
+    if (_renderQueued) return;
+    _renderQueued = true;
+    requestAnimationFrame(() => {
+      _renderQueued = false;
+      _renderLibraryNow();
+    });
+  }
+
+  function _renderLibraryNow() {
+    setLibraryGreeting();
+    // Pivots are only needed to render Custom mode; fetch them lazily (first load or
+    // while in Custom), in parallel with the artifacts rather than chained before them.
+    if (!_pivotsLoaded || libraryMode === "custom") loadPivots();
+    invoke("mobile_list")
+      .then((raw) => renderSections(parse(raw)))
+      .catch((e) => {
+        const empty = document.getElementById("empty");
+        empty.hidden = false;
+        empty.textContent = "Error: " + e;
       });
   }
 
@@ -2198,187 +2826,542 @@
     });
   }
 
+  let currentArtifactId = null;
+  let isEditingNote = false;
+  let originalNoteBody = "";
+
   function openArtifact(id) {
+    currentArtifactId = id;
+    isEditingNote = false;
     invoke("mobile_get", { id })
       .then((raw) => {
         const data = parse(raw);
         const a = data.artifact;
-        document.getElementById("reader_title").textContent =
-          a.title || "Untitled";
-        document.getElementById("reader_kind").textContent = a.kind;
-        const body = document.getElementById("reader_body");
-        const ann = document.getElementById("reader_ann");
-        for (const c of Array.from(ann.children)) {
-          if (c.tagName !== "H2") c.remove();
-        }
-        ann.hidden = true;
-        if (a.kind === "note") {
-          renderMd(body, a.body || "");
-        } else if (a.kind === "link") {
-          // Render stored preview card if available, else fall back to plain link
-          const preview = data.preview;
-          if (preview && preview.title) {
-            const card = document.createElement("div");
-            card.className = "link-card";
-            card.style.cursor = "pointer";
-            const url = a.source_url || "";
-            // Preview image
-            if (preview.image_hash) {
-              const img = document.createElement("img");
-              img.className = "link-card-image";
-              img.alt = "";
-              // Fetch and set the preview image
-              invoke("mobile_blob", {
-                id: preview.image_hash,
-                mime: preview.image_mime || "image/png",
-              })
-                .then((raw) => {
-                  const blob = parse(raw);
-                  img.src =
-                    "data:" +
-                    (blob.mime || "image/png") +
-                    ";base64," +
-                    blob.base64;
-                })
-                .catch(() => {
-                  img.remove();
-                });
-              card.appendChild(img);
-            }
-            const content = document.createElement("div");
-            content.className = "link-card-content";
-            const title = document.createElement("div");
-            title.className = "link-card-title";
-            title.textContent = preview.title;
-            const desc = document.createElement("div");
-            desc.className = "link-card-desc";
-            desc.textContent = preview.description || "";
-            const site = document.createElement("div");
-            site.className = "link-card-site";
-            let host = "";
-            try {
-              host = new URL(url).hostname.replace("www.", "");
-            } catch (e) {}
-            site.textContent = preview.site_name || host || "";
-            content.appendChild(title);
-            if (desc.textContent) content.appendChild(desc);
-            content.appendChild(site);
-            card.appendChild(content);
-            card.addEventListener("click", () => {
-              if (typeof url === "string" && /^https?:\/\//i.test(url)) {
-                try {
-                  window.open(
-                    new URL(url).href,
-                    "_system",
-                    "noopener,noreferrer",
-                  );
-                } catch (e) {}
-              }
-            });
-            body.replaceChildren(card);
-          } else {
-            // Fallback: plain link
-            const p = document.createElement("p");
-            const link = document.createElement("a");
-            link.href = a.source_url || "";
-            link.textContent = a.title || a.source_url || "link";
-            p.appendChild(link);
-            body.replaceChildren(p);
-          }
-        } else if (a.kind === "image") {
-          const p = document.createElement("p");
-          p.className = "empty";
-          p.textContent = "Loading\u2026";
-          body.replaceChildren(p);
-          invoke("mobile_blob", { id })
+        renderReader(a, data);
+      })
+      .catch((e) => {
+        document.getElementById("reader_body").textContent = "Error: " + e;
+        show("reader");
+      });
+  }
+
+  function renderReader(a, data) {
+    document.getElementById("reader_title").textContent = a.title || "Untitled";
+    document.getElementById("reader_kind").textContent = a.kind;
+    const body = document.getElementById("reader_body");
+    const ann = document.getElementById("reader_ann");
+    const actions = document.getElementById("reader_actions");
+    const tagsEl = document.getElementById("reader_tags");
+    const annotationInput = document.getElementById("reader_annotation_input");
+
+    // Clear previous state
+    for (const c of Array.from(ann.children)) {
+      if (c.tagName !== "H2") c.remove();
+    }
+    ann.hidden = true;
+    body.removeAttribute("contenteditable");
+    body.removeAttribute("data-placeholder");
+    actions.replaceChildren();
+    tagsEl.replaceChildren();
+    tagsEl.hidden = true;
+    annotationInput.hidden = true;
+    document.getElementById("annotation_text").value = "";
+
+    // Build toolbar actions
+    const isNote = a.kind === "note";
+    const isPinned = a.pinned === 1;
+
+    // Pin button
+    const pinBtn = document.createElement("button");
+    pinBtn.appendChild(createIcon("star"));
+    pinBtn.title = isPinned ? "Unpin" : "Pin";
+    pinBtn.ariaLabel = isPinned ? "Unpin" : "Pin";
+    if (isPinned) pinBtn.classList.add("lit");
+    pinBtn.addEventListener("click", async () => {
+      try {
+        const raw = await invoke("mobile_toggle_pin", { id: a.id });
+        const updated = parse(raw);
+        renderReader(updated.artifact, updated);
+        invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
+      } catch (e) {
+        toast("Pin failed: " + e, true);
+      }
+    });
+    actions.appendChild(pinBtn);
+
+    // Mobile writes are deliberately the light, in-the-moment ones: edit / delete /
+    // pin. Tagging and annotating are curation - a sit-down pass that belongs on the
+    // desktop workbench - so those controls are intentionally NOT on the phone reader.
+
+    // Edit button (only for notes). Enters edit SYNCHRONOUSLY inside the click so the
+    // Android soft keyboard rises (it only rises when focus() runs within the gesture).
+    if (isNote) {
+      const editBtn = document.createElement("button");
+      editBtn.appendChild(createIcon("pencil"));
+      editBtn.title = "Edit";
+      editBtn.ariaLabel = "Edit note";
+      editBtn.addEventListener("click", () => beginNoteEdit(a, data, body));
+      actions.appendChild(editBtn);
+    }
+
+    // Delete button
+    const deleteBtn = document.createElement("button");
+    deleteBtn.appendChild(createIcon("trash"));
+    deleteBtn.title = "Delete";
+    deleteBtn.ariaLabel = "Move to trash";
+    deleteBtn.classList.add("danger");
+    deleteBtn.addEventListener("click", async () => {
+      if (!(await mobileConfirm("Move this to trash?", "Delete", true))) return;
+      try {
+        await invoke("mobile_delete", { artifactId: a.id });
+      } catch (e) {
+        toast("Delete failed: " + e, true);
+        return;
+      }
+      // Delete succeeded: leave the (now-gone) note and return to the library. This is
+      // outside the try so a stray toast/render error can never strand us on the reader.
+      invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
+      show("library");
+      renderLibrary();
+      toast("Moved to trash");
+    });
+    actions.appendChild(deleteBtn);
+
+    // Details button: opens the side panel with the artifact's tags + AI summary
+    // (both read-only - curation happens on the desktop, the phone only shows them).
+    const detailsBtn = document.createElement("button");
+    detailsBtn.appendChild(createIcon("info"));
+    detailsBtn.title = "Details";
+    detailsBtn.ariaLabel = "Tags and summary";
+    detailsBtn.addEventListener("click", () => openDetails(a, data));
+    actions.appendChild(detailsBtn);
+
+    // Render body based on kind
+    if (isNote) {
+      renderMd(body, a.body || "");
+      // Editing is via the pencil button only (it calls beginNoteEdit synchronously so
+      // the Android keyboard rises). Tapping the note text does NOT edit - deliberate,
+      // so reading a note never risks dropping into the editor by accident.
+    } else if (a.kind === "link") {
+      // Render stored preview card if available, else fall back to plain link
+      const preview = data.preview;
+      if (preview && preview.title) {
+        const card = document.createElement("div");
+        card.className = "link-card";
+        card.style.cursor = "pointer";
+        const url = a.source_url || "";
+        // Preview image
+        if (preview.image_hash) {
+          const img = document.createElement("img");
+          img.className = "link-card-image";
+          img.alt = "";
+          // Fetch and set the preview image
+          invoke("mobile_blob", {
+            id: preview.image_hash,
+            mime: preview.image_mime || "image/png",
+          })
             .then((raw) => {
               const blob = parse(raw);
-              const img = document.createElement("img");
               img.src =
-                "data:" + (blob.mime || "image/png") + ";base64," + blob.base64;
-              img.alt = a.title || "";
-              const wrap = document.createElement("div");
-              wrap.className = "img-zoom-wrap";
-              body.replaceChildren(wrap);
-              wrap.appendChild(img);
-              setupImageZoom(img);
+                "data:" +
+                (blob.mime || "image/png") +
+                ";base64," +
+                blob.base64;
             })
-            .catch((e) => {
-              const p2 = document.createElement("p");
-              p2.className = "empty";
-              p2.textContent = "Could not load: " + e;
-              body.replaceChildren(p2);
+            .catch(() => {
+              img.remove();
             });
-        } else if (a.kind === "pdf") {
-          const spinner = document.createElement("div");
-          spinner.className = "pdf-loading";
-          const spinnerImg = document.createElement("img");
-          spinnerImg.src = "loading.png";
-          spinnerImg.alt = "";
-          spinner.appendChild(spinnerImg);
-          body.replaceChildren(spinner);
-          invoke("mobile_blob", { id })
-            .then((raw) => {
-              const blob = parse(raw);
-              const bytes = base64ToUint8Array(blob.base64);
-              loadPdfJs()
-                .then(() => {
-                  const loadingTask = pdfjsLib.getDocument({
-                    data: bytes,
-                  });
-                  loadingTask.promise
-                    .then((pdf) => {
-                      body.replaceChildren();
-                      for (let i = 1; i <= pdf.numPages; i++) {
-                        const canvas = document.createElement("canvas");
-                        canvas.className = "pdf-page";
-                        canvas.width = 1;
-                        canvas.height = 1;
-                        renderPdfPage(pdf, i, canvas);
-                        body.appendChild(canvas);
-                      }
-                    })
-                    .catch((e) => {
-                      const p = document.createElement("p");
-                      p.className = "empty";
-                      p.textContent = "Could not load: " + e.message;
-                      body.replaceChildren(p);
-                    });
+          card.appendChild(img);
+        }
+        const content = document.createElement("div");
+        content.className = "link-card-content";
+        const title = document.createElement("div");
+        title.className = "link-card-title";
+        title.textContent = preview.title;
+        const desc = document.createElement("div");
+        desc.className = "link-card-desc";
+        desc.textContent = preview.description || "";
+        const site = document.createElement("div");
+        site.className = "link-card-site";
+        let host = "";
+        try {
+          host = new URL(url).hostname.replace("www.", "");
+        } catch (e) {}
+        site.textContent = preview.site_name || host || "";
+        content.appendChild(title);
+        if (desc.textContent) content.appendChild(desc);
+        content.appendChild(site);
+        card.appendChild(content);
+        card.addEventListener("click", () => {
+          if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+            try {
+              const parsed = new URL(url);
+              // Only allow http/https protocols to prevent open redirect
+              if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+                window.open(parsed.href, "_system", "noopener,noreferrer");
+              }
+            } catch (e) {}
+          }
+        });
+        body.replaceChildren(card);
+      } else {
+        // Fallback: plain link
+        const p = document.createElement("p");
+        const link = document.createElement("a");
+        link.href = a.source_url || "";
+        link.textContent = a.title || a.source_url || "link";
+        p.appendChild(link);
+        body.replaceChildren(p);
+      }
+      // Show annotation input for links
+      annotationInput.hidden = false;
+      setupAnnotationInput(a.id);
+    } else if (a.kind === "image") {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Loading\u2026";
+      body.replaceChildren(p);
+      invoke("mobile_blob", { id })
+        .then((raw) => {
+          const blob = parse(raw);
+          const img = document.createElement("img");
+          img.src =
+            "data:" + (blob.mime || "image/png") + ";base64," + blob.base64;
+          img.alt = a.title || "";
+          const wrap = document.createElement("div");
+          wrap.className = "img-zoom-wrap";
+          body.replaceChildren(wrap);
+          wrap.appendChild(img);
+          setupImageZoom(img);
+        })
+        .catch((e) => {
+          const p2 = document.createElement("p");
+          p2.className = "empty";
+          p2.textContent = "Could not load: " + e;
+          body.replaceChildren(p2);
+        });
+      // Show annotation input for images
+      annotationInput.hidden = false;
+      setupAnnotationInput(a.id);
+    } else if (a.kind === "pdf") {
+      const spinner = document.createElement("div");
+      spinner.className = "pdf-loading";
+      const spinnerImg = document.createElement("img");
+      spinnerImg.src = "loading.png";
+      spinnerImg.alt = "";
+      spinner.appendChild(spinnerImg);
+      body.replaceChildren(spinner);
+      invoke("mobile_blob", { id })
+        .then((raw) => {
+          const blob = parse(raw);
+          const bytes = base64ToUint8Array(blob.base64);
+          loadPdfJs()
+            .then(() => {
+              const loadingTask = pdfjsLib.getDocument({
+                data: bytes,
+              });
+              loadingTask.promise
+                .then((pdf) => {
+                  body.replaceChildren();
+                  for (let i = 1; i <= pdf.numPages; i++) {
+                    const canvas = document.createElement("canvas");
+                    canvas.className = "pdf-page";
+                    canvas.width = 1;
+                    canvas.height = 1;
+                    renderPdfPage(pdf, i, canvas);
+                    body.appendChild(canvas);
+                  }
                 })
                 .catch((e) => {
                   const p = document.createElement("p");
                   p.className = "empty";
-                  p.textContent = "Could not load pdf.js: " + e;
+                  p.textContent = "Could not load: " + e.message;
                   body.replaceChildren(p);
                 });
             })
             .catch((e) => {
               const p = document.createElement("p");
               p.className = "empty";
-              p.textContent = "Could not load: " + e;
+              p.textContent = "Could not load pdf.js: " + e;
               body.replaceChildren(p);
             });
-        } else {
+        })
+        .catch((e) => {
           const p = document.createElement("p");
           p.className = "empty";
-          p.textContent = a.kind + " - not rendered yet";
+          p.textContent = "Could not load: " + e;
           body.replaceChildren(p);
-        }
-        if (data.annotations && data.annotations.length) {
-          ann.hidden = false;
-          for (const an of data.annotations) {
-            const p = document.createElement("p");
-            p.textContent = an.text;
-            ann.appendChild(p);
-          }
-        }
-        history.pushState({ v: "reader" }, "");
-        show("reader");
-      })
-      .catch((e) => {
-        document.getElementById("reader_body").textContent = "Error: " + e;
-        show("reader");
+        });
+      // Show annotation input for PDFs
+      annotationInput.hidden = false;
+      setupAnnotationInput(a.id);
+    } else {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = a.kind + " - not rendered yet";
+      body.replaceChildren(p);
+    }
+
+    // Tags and annotations (the AI summary) are shown on demand in the Details side
+    // panel (the info button), not inline - so the reader stays focused on the content.
+    // The inline `#reader_ann` / `#reader_tags` blocks stay hidden.
+
+    history.pushState({ v: "reader" }, "");
+    show("reader");
+  }
+
+  // Enter note edit mode IN PLACE, synchronously. Must be called directly from a user
+  // gesture (a tap on the note text, or on the pencil) so `area.focus()` runs inside
+  // that gesture - Android's WebView raises the soft keyboard only then, never from a
+  // focus() deferred to a timeout or a later re-render (the bug that made notes look
+  // editable but impossible to type into).
+  function beginNoteEdit(a, data, body) {
+    if (isEditingNote) return; // already editing; a bubbled click must not rebuild
+    isEditingNote = true;
+    // Detach the tap-to-edit listener so clicks inside the editor (textarea / Cancel)
+    // do not bubble back to the body and re-enter edit.
+    if (body._tapToEdit) {
+      body.removeEventListener("click", body._tapToEdit);
+      body._tapToEdit = null;
+    }
+    body.replaceChildren();
+    body.classList.remove("note-tappable");
+    body.removeAttribute("contenteditable");
+
+    const area = document.createElement("textarea");
+    area.className = "reader-edit-area";
+    area.value = a.body || "";
+    area.placeholder = "Start writing.";
+    body.appendChild(area);
+    area.focus(); // synchronous, inside the gesture -> keyboard rises
+    const end = area.value.length;
+    try {
+      area.setSelectionRange(end, end);
+    } catch (e) {
+      /* selection not supported */
+    }
+
+    const saveBar = document.createElement("div");
+    saveBar.style.cssText =
+      "position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:8px 16px;display:flex;gap:8px;justify-content:flex-end;";
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "keep";
+    saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const newBody = area.value || "";
+      try {
+        const raw = await invoke("mobile_update_note", { id: a.id, body: newBody });
+        invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
+        const updated = parse(raw);
+        isEditingNote = false;
+        renderReader(updated.artifact, updated);
+      } catch (e) {
+        toast("Save failed: " + e, true);
+      }
+    });
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.style.cssText =
+      "background:var(--surface-2);color:var(--text);border:1px solid var(--line);padding:8px 16px;border-radius:var(--r-md);";
+    cancelBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      isEditingNote = false;
+      renderReader(a, data);
+    });
+    saveBar.appendChild(cancelBtn);
+    saveBar.appendChild(saveBtn);
+    body.appendChild(saveBar);
+  }
+
+  // The details side panel: editable tags + the AI summary for the open artifact. Tags
+  // are created/removed here and sync to the desktop (TAGSYNC); the summary is read-only
+  // (annotations are generated on the desktop and sync down).
+  function openDetails(a, data) {
+    const tagsEl = document.getElementById("details_tags");
+    const sumEl = document.getElementById("details_summary");
+
+    // renderTagChips draws removable chips + an "add tag" input, wired to the mobile
+    // tag commands (which now mutate tags_json and push). Seed from mobile_get_tags,
+    // falling back to the artifact's own tags if that call ever fails.
+    invoke("mobile_get_tags", { id: a.id })
+      .then((raw) => renderTagChips(tagsEl, parse(raw) || [], a.id))
+      .catch(() => {
+        const cached =
+          (typeof libraryArts !== "undefined" && libraryArts.find((x) => x.id === a.id)) || null;
+        renderTagChips(tagsEl, a.tags || (cached && cached.tags) || [], a.id);
       });
+
+    sumEl.replaceChildren();
+    const anns = (data && data.annotations) || [];
+    if (!anns.length) {
+      const e = document.createElement("span");
+      e.className = "details-empty";
+      e.textContent = "No summary yet. Summaries are generated on the desktop.";
+      sumEl.appendChild(e);
+    } else {
+      sumEl.textContent = anns.map((an) => an.text).join("\n\n");
+    }
+
+    document.getElementById("details_backdrop").classList.add("open");
+    document.getElementById("details_panel").classList.add("open");
+  }
+
+  function closeDetails() {
+    document.getElementById("details_backdrop").classList.remove("open");
+    document.getElementById("details_panel").classList.remove("open");
+  }
+
+  // Non-blocking confirm. window.confirm() hangs the Android WebView, so this builds
+  // a small in-app dialog and resolves a Promise on the tap. Returns true/false.
+  function mobileConfirm(message, okLabel, danger) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "mconfirm-backdrop";
+      const card = document.createElement("div");
+      card.className = "mconfirm-card";
+      const msg = document.createElement("p");
+      msg.className = "mconfirm-msg";
+      msg.textContent = message;
+      const row = document.createElement("div");
+      row.className = "mconfirm-row";
+      const cancel = document.createElement("button");
+      cancel.textContent = "Cancel";
+      const ok = document.createElement("button");
+      ok.className = "mconfirm-ok" + (danger ? " danger" : "");
+      ok.textContent = okLabel || "OK";
+      const done = (v) => {
+        backdrop.remove();
+        resolve(v);
+      };
+      cancel.addEventListener("click", () => done(false));
+      ok.addEventListener("click", () => done(true));
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) done(false);
+      });
+      row.append(cancel, ok);
+      card.append(msg, row);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+      ok.focus();
+    });
+  }
+
+  (function wireDetailsPanel() {
+    const close = document.getElementById("details_close");
+    const backdrop = document.getElementById("details_backdrop");
+    if (close) close.addEventListener("click", closeDetails);
+    if (backdrop) backdrop.addEventListener("click", closeDetails);
+  })();
+
+  function renderTagChips(container, tags, artifactId) {
+    container.replaceChildren();
+    for (const tag of tags) {
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.dataset.tag = tag;
+      const label = document.createElement("span");
+      label.className = "taglabel";
+      label.textContent = tag;
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "tag-x";
+      removeBtn.ariaLabel = "Remove tag " + tag;
+      removeBtn.appendChild(createIcon("close"));
+      removeBtn.addEventListener("click", async () => {
+        try {
+          await invoke("mobile_remove_tag", { id: artifactId, tag });
+          invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
+          // Re-fetch tags and re-render
+          const raw = await invoke("mobile_get_tags", { id: artifactId });
+          const updatedTags = parse(raw);
+          renderTagChips(container, updatedTags, artifactId);
+        } catch (e) {
+          toast("Remove tag failed: " + e, true);
+        }
+      });
+      chip.appendChild(label);
+      chip.appendChild(removeBtn);
+      container.appendChild(chip);
+    }
+    // Add tag input
+    const addChip = document.createElement("span");
+    addChip.className = "tag-add";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "add tag";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        const name = input.value.trim();
+        if (!name) return;
+        input.value = "";
+        try {
+          await invoke("mobile_add_tag", { id: artifactId, tag: name });
+          invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
+          const raw = await invoke("mobile_get_tags", { id: artifactId });
+          const updatedTags = parse(raw);
+          renderTagChips(container, updatedTags, artifactId);
+        } catch (err) {
+          toast("Add tag failed: " + err, true);
+        }
+      } else if (e.key === "Escape") {
+        input.value = "";
+        input.blur();
+      }
+    });
+    addChip.appendChild(input);
+    container.appendChild(addChip);
+    container.hidden = false;
+  }
+
+  function renderTags(artifactId) {
+    const tagsEl = document.getElementById("reader_tags");
+    invoke("mobile_get_tags", { id: artifactId })
+      .then((raw) => {
+        const tags = parse(raw);
+        renderTagChips(tagsEl, tags, artifactId);
+      })
+      .catch(() => {});
+  }
+
+  function setupAnnotationInput(artifactId) {
+    const saveBtn = document.getElementById("annotation_save");
+    const cancelBtn = document.getElementById("annotation_cancel");
+    const textArea = document.getElementById("annotation_text");
+
+    // Remove old listeners by cloning
+    const newSave = saveBtn.cloneNode(true);
+    const newCancel = cancelBtn.cloneNode(true);
+    saveBtn.parentNode.replaceChild(newSave, saveBtn);
+    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+
+    newSave.addEventListener("click", async () => {
+      const text = textArea.value.trim();
+      if (!text) return;
+      textArea.value = "";
+      try {
+        await invoke("mobile_add_annotation", { id: artifactId, text });
+        invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
+        // Re-render to show new annotation
+        const raw = await invoke("mobile_get", { id: artifactId });
+        const data = parse(raw);
+        renderReader(data.artifact, data);
+      } catch (e) {
+        toast("Add note failed: " + e, true);
+      }
+    });
+
+    newCancel.addEventListener("click", () => {
+      textArea.value = "";
+      document.getElementById("reader_annotation_input").hidden = true;
+    });
+  }
+
+  async function refreshLibrary() {
+    const raw = await invoke("mobile_list", {});
+    const arts = parse(raw);
+    renderLibrary(arts);
   }
 
   // QR.4a/QR.4b: native QR scanner via tauri-plugin-barcode-scanner (ML Kit on Android)
@@ -2491,7 +3474,12 @@
   });
   document
     .getElementById("to_library")
-    .addEventListener("click", () => show("library"));
+    // Re-render the library on the way back so a pin / edit made in the reader is
+    // reflected (the Saved shelf, ordering) instead of showing the stale cached list.
+    .addEventListener("click", () => {
+      show("library");
+      renderLibrary();
+    });
   // The Android system Back gesture pops the webview history; a pop while the reader
   // or capture sheet is open returns to the library (never traps the user).
   window.addEventListener("popstate", () => {
@@ -2499,15 +3487,22 @@
     show("library");
     renderLibrary();
   });
+  // Debounce the search: without it, every keystroke fired a `mobile_search` IPC and
+  // a full re-render, so typing a word queued a storm of round-trips and rebuilds
+  // (visible lag on a real phone). One search ~140ms after the last keystroke instead.
+  let _searchTimer;
   document.getElementById("search").addEventListener("input", (e) => {
     const q = e.target.value.trim();
-    if (!q) {
-      renderLibrary();
-      return;
-    }
-    invoke("mobile_search", { query: q })
-      .then((raw) => renderSections(parse(raw), "Nothing matches."))
-      .catch(() => renderSections([], "Nothing matches."));
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => {
+      if (!q) {
+        renderLibrary();
+        return;
+      }
+      invoke("mobile_search", { query: q })
+        .then((raw) => renderSections(parse(raw), "Nothing matches."))
+        .catch(() => renderSections([], "Nothing matches."));
+    }, 140);
   });
 
   // capture_btn was removed in the openField refactor; guard so a missing element
@@ -2873,13 +3868,25 @@ return;
         btn.disabled = true;
         btn.textContent = "Syncing\u2026";
       }
-      document.getElementById("loading").hidden = false;
+      // Only show the full-screen "Syncing..." raven on the FIRST load (nothing
+      // rendered yet). A live SSE sync on an already-populated library must not
+      // flash the loader - that was the blip when a new item arrived; the item
+      // just appears via the incremental re-render instead.
+      const hasCards = !!document.querySelector("#shelves .card");
+      if (!hasCards) document.getElementById("loading").hidden = false;
       // Hide any stale offline banner while syncing
       const banner = document.getElementById("offline_banner");
       if (banner) banner.hidden = true;
     });
     __TAURI__.event.listen("sync-done", (e) => {
       document.getElementById("loading").hidden = true;
+      // Record when we last caught up, so Settings shows a real time, not "Never
+      // synced" (the engine does not persist a mobile last_synced timestamp).
+      try {
+        localStorage.setItem("enqueue_last_synced", new Date().toISOString());
+      } catch (err) {
+        /* storage may be unavailable */
+      }
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
         btn.disabled = false;
@@ -2936,14 +3943,61 @@ return;
   // Mobile makeEye: populate the pill-eye with the living eye markup (simplified from icons.js)
   const EYE_ASSET_V = "?v=1";
   // Minimal svg function for mobile (mirrors icons.js gear icon)
-  const MOBILE_ICONS = {
-    gear: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
-    plus: '<path d="M12 5v14M5 12h14"></path>'
+    const MOBILE_ICONS = {
+    gear: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 0 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
+    plus: '<path d="M12 5v14M5 12h14"></path>',
+    star: '<path d="M12 4.2l2.3 4.9 5.2.7-3.8 3.7 1 5.3-4.7-2.6-4.7 2.6 1-5.3-3.8-3.7 5.2-.7z"></path>',
+    move: '<path d="M3 8h13"></path><path d="M12 4l4 4-4 4"></path><path d="M21 16H8"></path><path d="M12 12l-4 4 4 4"></path>',
+    pencil: '<path d="M4 20l4.5-1 10-10-3.5-3.5-10 10z"></path><path d="M14 6.5l3.5 3.5"></path>',
+    note: '<path d="M4 4h11l5 5v11H4z"></path><path d="M15 4v5h5"></path>',
+    trash: '<path d="M4 7h16"></path><path d="M9.5 7V5h5v2"></path><path d="M6.5 7l1 13h9l1-13"></path>',
+    close: '<path d="M6 6l12 12M18 6L6 18"></path>',
+    info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>'
   };
   const svg = (k) =>
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
     MOBILE_ICONS[k] +
     "</svg>";
+  // Build an <svg> element from an icon's markup. The MOBILE_ICONS entries are full
+  // inner-SVG markup (one or more <path>/<circle> elements), NOT a bare `d` value, so
+  // this parses that markup with the SVG namespace rather than shoving it into a
+  // single path's `d` (which produced "Expected moveto" errors and empty glyphs, and
+  // dropped every element after the first for multi-part icons like the gear).
+  const _SVG_NS = "http://www.w3.org/2000/svg";
+  function createIcon(name) {
+    // Build the <svg> in THIS document (a foreign <svg> from DOMParser lays out a box
+    // but the Android WebView won't paint its adopted paths), then import the parsed
+    // path/circle children into it so the namespace is preserved and it renders.
+    const svgEl = document.createElementNS(_SVG_NS, "svg");
+    svgEl.setAttribute("viewBox", "0 0 24 24");
+    // Explicit width/height attributes give the svg an intrinsic size so it does not
+    // collapse to 0 width as a flex item (the reader toolbar's icons did); CSS width/
+    // height still overrides these to the per-context size.
+    svgEl.setAttribute("width", "24");
+    svgEl.setAttribute("height", "24");
+    svgEl.setAttribute("fill", "none");
+    svgEl.setAttribute("stroke", "currentColor");
+    svgEl.setAttribute("stroke-width", "2");
+    svgEl.setAttribute("aria-hidden", "true");
+    const markup = MOBILE_ICONS[name];
+    if (markup) {
+      const parsed = new DOMParser().parseFromString(svg(name), "image/svg+xml").documentElement;
+      if (parsed && parsed.nodeName.toLowerCase() !== "parsererror") {
+        // Re-create each child in the SVG namespace explicitly. importNode leaves the
+        // node namespaceless in an HTML document (namespaceURI === null), and a
+        // namespaceless <path> inside an <svg> never paints (getBBox is 0x0). Copying
+        // the tag + attributes into a createElementNS node guarantees it renders.
+        for (const child of Array.from(parsed.children)) {
+          const el = document.createElementNS(_SVG_NS, child.tagName.toLowerCase());
+          for (const attr of Array.from(child.attributes)) {
+            el.setAttribute(attr.name, attr.value);
+          }
+          svgEl.appendChild(el);
+        }
+      }
+    }
+    return svgEl;
+  }
   function makeEye(el) {
     if (!el) return;
     const wrap = document.createElement("div");
@@ -3144,15 +4198,37 @@ return;
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
+    loadTrash(); // refresh the Trash list every time Settings opens
     // Initialize pill menu handlers after settings are loaded
     setupPillMenuHandlers();
   }
 
   function populateSettings(s) {
-    // Mobile Settings is sync-only now: AI backend/model/key, features, storage,
-    // and trash all live on the desktop (edit there, then re-link). The only
-    // thing to reflect here is the sync status.
+    // Mobile Settings reflects, never edits: the AI config lives on the desktop and
+    // syncs down (MOB2.9). Show the sync status and the read-only AI config.
     updateSyncStatus();
+    renderAiRows(s);
+  }
+
+  function renderAiRows(s) {
+    const dl = document.getElementById("settings_ai_rows");
+    if (!dl || !s) return;
+    const rows = [
+      ["Backend", s.llm_backend || "-"],
+      ["Model", s.llm_model || "-"],
+      ["API key", s.llm_api_key_present ? "Set" : "Not set"],
+    ];
+    dl.replaceChildren();
+    for (const [k, v] of rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = k;
+      dt.style.cssText = "color: var(--text-mute); margin: 0";
+      const dd = document.createElement("dd");
+      dd.textContent = v;
+      dd.style.cssText = "margin: 0; color: var(--text); font-variant-numeric: tabular-nums";
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    }
   }
 
   function updateSyncStatus() {
@@ -3161,8 +4237,19 @@ return;
       el.textContent = "Not configured";
       return;
     }
-    if (settingsCache.last_synced) {
-      const d = new Date(settingsCache.last_synced);
+    // Prefer the engine's last_synced; fall back to a locally-recorded stamp from the
+    // last sync-done event, so the status is not a misleading "Never synced" after a
+    // sync the engine did not persist a timestamp for.
+    let stamp = settingsCache.last_synced;
+    if (!stamp) {
+      try {
+        stamp = localStorage.getItem("enqueue_last_synced");
+      } catch (e) {
+        /* storage may be unavailable */
+      }
+    }
+    if (stamp) {
+      const d = new Date(stamp);
       el.textContent = "Last synced: " + d.toLocaleString();
     } else {
       el.textContent = "Never synced";
@@ -3202,7 +4289,7 @@ return;
       settingsCache = { ...settingsCache, ...s };
       updateSyncStatus();
     } catch (e) {
-      alert("Failed to save: " + e);
+      toast("Failed to save: " + e, true);
     }
   }
 
@@ -3251,16 +4338,18 @@ return;
   if (_clearCacheBtn) {
     _clearCacheBtn.addEventListener("click", async () => {
       if (
-        !confirm(
+        !(await mobileConfirm(
           "Clear all cached blobs? They will be re-downloaded on demand.",
-        )
+          "Clear",
+          true,
+        ))
       )
         return;
       try {
         await invoke("mobile_clear_blob_cache");
-        alert("Cache cleared");
+        toast("Cache cleared");
       } catch (e) {
-        alert("Failed: " + e);
+        toast("Failed: " + e, true);
       }
     });
   }
@@ -3269,19 +4358,22 @@ return;
   async function loadTrash() {
     const listEl = document.getElementById("settings_trash_list");
     const emptyEl = document.getElementById("settings_trash_empty");
-    // Trash section removed from mobile Settings; nothing to render.
+    const emptyBtn = document.getElementById("settings_empty_trash");
     if (!listEl || !emptyEl) return;
+    listEl.replaceChildren(); // clear so re-opening Settings does not stack duplicates
     try {
       const items = JSON.parse(await invoke("mobile_list_trashed"));
       if (!items || items.length === 0) {
         emptyEl.style.display = "block";
+        if (emptyBtn) emptyBtn.style.display = "none";
         return;
       }
       emptyEl.style.display = "none";
+      if (emptyBtn) emptyBtn.style.display = "block";
       for (const item of items) {
         const row = document.createElement("div");
         row.style.cssText =
-          "padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px;";
+          "padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px;";
         const title = document.createElement("span");
         title.style.cssText =
           "flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
@@ -3289,16 +4381,21 @@ return;
         const restoreBtn = document.createElement("button");
         restoreBtn.textContent = "Restore";
         restoreBtn.style.cssText =
-          "background: var(--accent); color: var(--bg); border: none; border-radius: var(--r-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;";
+          "background: var(--purple-bold); color: var(--on-purple-bold); border: none; border-radius: var(--r-md); padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;";
         restoreBtn.addEventListener("click", async () => {
+          restoreBtn.disabled = true;
           try {
             await invoke("mobile_restore_trashed", { id: item.id });
+            invoke("mobile_outbox_push").catch(() => {}); // propagate the restore to desktop
             row.remove();
-            if (listEl.querySelectorAll("div").length <= 1) {
+            if (!listEl.children.length) {
               emptyEl.style.display = "block";
+              if (emptyBtn) emptyBtn.style.display = "none";
             }
+            toast("Restored");
           } catch (e) {
-            alert("Restore failed: " + e);
+            restoreBtn.disabled = false;
+            toast("Restore failed: " + e, true);
           }
         });
         row.appendChild(title);
@@ -3306,10 +4403,34 @@ return;
         listEl.appendChild(row);
       }
     } catch (e) {
-      emptyEl.textContent = "Failed to load trash";
+      emptyEl.style.display = "block";
+      emptyEl.textContent = "Could not load trash: " + e;
     }
   }
-  loadTrash();
+
+  (function wireEmptyTrash() {
+    const btn = document.getElementById("settings_empty_trash");
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      if (
+        !(await mobileConfirm(
+          "Permanently delete everything in trash on this phone? This cannot be undone.",
+          "Empty trash",
+          true,
+        ))
+      )
+        return;
+      btn.disabled = true;
+      try {
+        await invoke("mobile_empty_trash");
+        toast("Trash emptied");
+        loadTrash();
+      } catch (e) {
+        toast("Empty trash failed: " + e, true);
+      }
+      btn.disabled = false;
+    });
+  })();
 
   function openChat() {
     show("chat");

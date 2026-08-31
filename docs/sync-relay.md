@@ -235,19 +235,21 @@ in the QR payload). TLS is provided by the tunnel, so the Bearer secret is safe
 in transit. The tunnel is for development/testing only - a real host is the
 production answer.
 
-## The dev harness is USB by design; the app is not
+## The installed app is standalone; only a hosted relay reaches it unplugged
 
-`bin/launch mobile` runs `cargo tauri android dev`, whose dev-server connection
-is USB-tethered by design (`adb reverse`). That is the DEV HARNESS, not the
-product: an app that only syncs while plugged in is a bug in the test setup, not
-in sync.
+`bin/launch mobile` now does a one-shot `cargo tauri android build --debug` plus
+`adb install` plus launch, then exits - it installs a real, self-contained apk
+(no `cargo tauri android dev`, no USB-tethered dev server, no `adb reverse`). So
+the app runs unplugged.
 
-To verify the app works unplugged, do NOT use `bin/launch mobile`:
-build the apk, install it, and launch it from the phone with USB disconnected:
+What it can REACH unplugged is a separate matter: a phone off USB cannot reach a
+`127.0.0.1` relay on your Mac, so to sync away from the machine you need a relay
+on a reachable host (the Railway deploy, or a tunnel - see above). Building the
+apk by hand is equivalent:
 
 ```bash
 cargo tauri android build --debug --target aarch64
-# install the apk, disconnect USB, launch from the phone
+# adb install the apk, disconnect USB, launch from the phone
 ```
 
 The installed app syncs over the hosted/tunnelled relay (QR.2) with no USB at

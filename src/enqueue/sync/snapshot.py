@@ -153,9 +153,14 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
     artifact_id = artifact["id"]
 
     local_row = conn.execute(
-        "SELECT updated_at, _device_id FROM artifacts WHERE id = ?", (artifact_id,)
+        "SELECT updated_at, _device_id, purged_at FROM artifacts WHERE id = ?", (artifact_id,)
     ).fetchone()
     if local_row is not None:
+        # A tombstone is terminal: once an artifact is purged locally, no non-purge
+        # snapshot (e.g. a stale edit made on a device that had not seen the purge yet)
+        # may revive it, regardless of timestamps. A purge always wins and stays won.
+        if local_row["purged_at"] and not artifact.get("purged_at"):
+            return
         local_key = (local_row["updated_at"], local_row["_device_id"] or device_id())
         if local_key >= lww_key(snapshot):
             # Still need to apply children (tags, annotations, etc.) even if

@@ -208,7 +208,9 @@ def get(artifact_id: str) -> dict:
     conn = db.get_conn()
     try:
         row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
-        if row is None:
+        # A purged artifact is a tombstone (the row is kept only so the delete can sync);
+        # to every reader it is gone, same as if the row did not exist.
+        if row is None or row["purged_at"]:
             raise KeyError(artifact_id)
 
         versions = conn.execute(

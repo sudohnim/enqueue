@@ -57,6 +57,9 @@ def store_api_key(req: ApiKey) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    # The key is part of the config the phone needs to run chat; propagate it
+    # (E2E-encrypted) the same way a settings change is propagated.
+    settings._resync_to_relay()
     return settings.api_key_state()
 
 
@@ -64,6 +67,7 @@ def store_api_key(req: ApiKey) -> dict:
 def forget_api_key() -> dict:
 
     keyring.clear()
+    settings._resync_to_relay()
     return settings.api_key_state()
 
 

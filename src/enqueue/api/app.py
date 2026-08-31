@@ -85,6 +85,17 @@ def _start_sync_worker() -> None:
     except Exception as exc:  # noqa: BLE001 - sync is additive; never block startup
         print(f"[engine] could not start the sync worker: {exc}")
 
+    # Publish the current settings once at startup so a phone that links (or was
+    # linked before the last config change) can pull the desktop's LLM config
+    # without waiting for the next edit. Best-effort on a daemon thread; a relay
+    # hiccup must never delay or fail the engine boot.
+    try:
+        from .. import settings
+
+        settings._resync_to_relay()
+    except Exception as exc:  # noqa: BLE001 - additive; never block startup
+        print(f"[engine] could not publish settings at startup: {exc}")
+
 
 def _warm_embeddings() -> None:
     """Load the embedding model in the background so the first search is not cold.

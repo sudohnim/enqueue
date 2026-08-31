@@ -182,27 +182,36 @@ def push_settings() -> None:
     if dek is None:
         return
 
-    # Load current settings from local config
-    cfg = settings.load()
-    s = {
-        "llm_backend": cfg.get("llm_backend", "ollama"),
-        "llm_model": cfg.get("llm_model", "llama3.1:8b"),
-        "llm_url": cfg.get("llm_url", ""),
-        "auto_preview": cfg.get("auto_preview", True),
-        "trash_days": cfg.get("trash_days", "30"),
-        "updated_at": "",  # will be filled by caller
-    }
+    # The effective LLM config the desktop is actually using, resolved through the
+    # env -> settings.json -> default chain (all_settings) plus the provider key,
+    # which lives in the Keychain and is never in settings.json. It rides the same
+    # DEK-encrypted object as everything else, so the relay only ever sees
+    # ciphertext - the phone is the only place it decrypts, and it needs the key to
+    # call the provider directly (the whole mobile-chat design). This is what makes
+    # "the desktop config propagates fully to mobile" true, key included.
+    from .. import config
+
+    resolved = settings.all_settings()
+
+    def _val(name: str, default: str) -> object:
+        entry = resolved.get(name)
+        return entry["value"] if entry else default
+
     import datetime
 
-    s["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    s = {
+        "llm_backend": _val("llm_backend", "ollama"),
+        "llm_model": _val("llm_model", "llama3.1:8b"),
+        "llm_url": _val("llm_url", ""),
+        "llm_api_key": config.llm_api_key() or "",
+        "auto_preview": _val("auto_preview", True),
+        "trash_days": _val("trash_days", "30"),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
     data = crypto.encrypt(serialize(s), dek)
     timestamp = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     name = f"lib/settings/{timestamp}-{device_id()}.enc"
-    headers = {
-        "Authorization": f"Bearer {_secret()}",
-        "Content-Type": "application/octet-stream",
-    }
     headers = {
         "Authorization": f"Bearer {_secret()}",
         "Content-Type": "application/octet-stream",
@@ -326,8 +335,7 @@ def push_pivots() -> None:
         except Exception:  # noqa: BLE001 - a malformed subset must not break the sync
             base = []
         ids = sorted(
-            (set(base) | set(spec.get("included_ids") or []))
-            - set(spec.get("excluded_ids") or [])
+            (set(base) | set(spec.get("included_ids") or [])) - set(spec.get("excluded_ids") or [])
         )
         if ids:
             views.append({"name": saved.get("name") or "Untitled view", "ids": ids})
@@ -375,11 +383,9 @@ def push_all() -> int:
     try:
         # Every non-local artifact, tombstones included (deleted rows carry the
         # tombstone snapshot that propagates the delete).
-        rows = conn.execute(
-            """SELECT id FROM artifacts
+        rows = conn.execute("""SELECT id FROM artifacts
             WHERE local_only = 0
-            ORDER BY updated_at DESC"""
-        ).fetchall()
+            ORDER BY updated_at DESC""").fetchall()
         artifact_ids = [row[0] for row in rows]
     finally:
         conn.close()
@@ -399,6 +405,7 @@ def push_all() -> int:
 
         snapshot["artifact"]["_device_id"] = device_id()
         from .snapshot import serialize
+
         data = crypto.encrypt(serialize(snapshot), dek)
 
         name = f"dev/{device_id()}/artifacts/{artifact_id}.enc"
@@ -430,7 +437,8 @@ def push_all() -> int:
                     with httpx.Client(timeout=60) as client:
                         bresp = client.put(
                             f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
-                            content=blob_data, headers=headers
+                            content=blob_data,
+                            headers=headers,
                         )
                 except httpx.HTTPError:
                     pass  # blob push failure is non-fatal

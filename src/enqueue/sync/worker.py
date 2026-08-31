@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 import httpx
 from httpx import HTTPError
@@ -26,8 +27,46 @@ log = logging.getLogger(__name__)
 # and returns nothing).
 POLL_SECONDS = 5.0
 RECONNECT_SECONDS = 5.0
+# When the relay is unreachable, stop pulling every 5s: back off exponentially
+# (10s, 20s, ... capped) so an outage is a handful of quiet retries, not a
+# traceback every tick. Reset the moment a pull succeeds.
+BACKOFF_MAX_SECONDS = 300.0
 
-_worker = Worker("sync", lambda _: pull())
+# monotonic timestamp before which the timer loop skips submitting a pull.
+_backoff_until = 0.0
+_fail_streak = 0
+
+
+def _pull_handler(_item: object) -> object:
+    """Run one pull, turning a relay outage into a terse warning + backoff.
+
+    A network failure to a flaky relay is expected operation, not a bug, so it
+    must not reach the shared Worker's `log.exception` (a full traceback every
+    tick). We swallow the network-error families here with a one-line warning and
+    arm an exponential backoff the timer loop honours. Any OTHER exception is a
+    real defect and is left to propagate so the Worker logs it in full.
+    """
+    global _backoff_until, _fail_streak
+    try:
+        result = pull()
+    except (httpx.TimeoutException, httpx.TransportError, HTTPError) as exc:
+        _fail_streak += 1
+        delay = min(POLL_SECONDS * 2**_fail_streak, BACKOFF_MAX_SECONDS)
+        _backoff_until = time.monotonic() + delay
+        log.warning(
+            "sync pull failed (relay unreachable: %s); backing off %.0fs",
+            type(exc).__name__,
+            delay,
+        )
+        return None
+    if _fail_streak:
+        log.info("sync pull recovered after %d failed attempt(s)", _fail_streak)
+    _fail_streak = 0
+    _backoff_until = 0.0
+    return result
+
+
+_worker = Worker("sync", _pull_handler)
 _stop = threading.Event()
 _threads: list[threading.Thread] = []
 
@@ -53,6 +92,10 @@ def _spawn(fn, name: str) -> threading.Thread:
 
 def _timer_loop() -> None:
     while not _stop.wait(POLL_SECONDS):
+        # Honour the backoff armed by a failed pull: while the relay is down the
+        # timer stays quiet instead of queuing a doomed pull every 5s.
+        if time.monotonic() < _backoff_until:
+            continue
         _worker.submit("pull")
 
 

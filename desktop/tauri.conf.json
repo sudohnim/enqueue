@@ -61,6 +61,9 @@
           "permissions": [
             "allow-mobile-sync",
             "allow-mobile-link-qr",
+            "allow-mobile-delete",
+            "allow-mobile-restore",
+            "allow-mobile-empty-trash",
             "allow-mobile-list",
             "allow-mobile-pivots",
             "allow-mobile-get",

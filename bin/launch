@@ -13,6 +13,11 @@
 # it needs a real phone on USB (debugging on); an emulator is deliberately NOT accepted
 # here, because "bin/launch mobile" means "put it on my phone."
 #
+# Both mobile and emulator do a ONE-SHOT build + adb install + launch, then EXIT. They
+# never run `cargo tauri android dev`: that starts a watch loop that never returns and
+# holds the Gradle lock, which deadlocks the next `cargo tauri android build`. Re-run
+# the command to push a new build; nothing is left running in between.
+#
 # The emulator path is for headless device verification (CDP, uiautomator, screencap,
 # run-as) without a physical phone. The emulator reaches the LOCAL relay at
 # 10.0.2.2:8788 (the host's loopback); a hosted relay (Railway) is normal internet.
@@ -156,10 +161,30 @@ launch_mobile() {
 
   js_gate "mobile"
 
-  # cargo tauri android dev builds the debug apk, installs it on $ANDROID_SERIAL,
-  # launches it, and streams the device log. Runs from the Tauri project root (desktop/).
+  # One-shot build + install + launch, then EXIT. Do NOT use `cargo tauri android dev`:
+  # it starts a dev-server/watch loop that never returns and holds the Gradle lock, so
+  # the next `cargo tauri android build` deadlocks waiting for it (the recurring lock
+  # bug). A plain build + adb install puts the app on the phone and leaves nothing
+  # running - re-open the app on the device to see later changes after another launch.
   cd "$REPO/desktop"
-  exec cargo tauri android dev
+  echo "Building debug apk..."
+  cargo tauri android build --debug --target aarch64
+
+  local APK
+  APK="$(ls -t "$REPO"/desktop/gen/android/app/build/outputs/apk/*/debug/*.apk 2>/dev/null | head -1)"
+  [[ -n "$APK" ]] || { echo "no debug apk produced" >&2; exit 1; }
+
+  echo "Installing $(basename "$APK") on $serial ..."
+  "$ADB" -s "$serial" install -r "$APK" || {
+    echo "install -r failed (signature mismatch?); reinstalling clean"
+    "$ADB" -s "$serial" uninstall com.sudohnim.enqueue >/dev/null 2>&1
+    "$ADB" -s "$serial" install "$APK"
+  }
+  "$ADB" -s "$serial" shell am start -n com.sudohnim.enqueue/.MainActivity >/dev/null 2>&1 || true
+
+  echo ""
+  echo "Installed + launched on $serial. This command has EXITED (nothing hangs)."
+  echo "Device logs, if you want them:  $ADB -s $serial logcat"
 }
 
 launch_emulator() {

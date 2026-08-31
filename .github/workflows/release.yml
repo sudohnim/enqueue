@@ -1,0 +1,98 @@
+# Publish downloadable builds on a version tag, so people can install Enqueue
+# without cloning the repo or setting up the Android/Rust toolchain.
+#
+# Today this ships the Android APK only. The macOS desktop app is NOT bundled here:
+# the shell spawns the Python engine with `uv run enq serve` from the repo, so a
+# .dmg would not run on a Mac that lacks the repo + uv + Python. Shipping a .dmg
+# needs the engine bundled as a Tauri sidecar binary first (see AGENTS.md); until
+# then a broken .dmg would be worse than none, so it is deliberately omitted.
+#
+# Trigger: on-demand only. Run it by hand from the Actions tab (Actions -> release ->
+# Run workflow) and give it the version tag to publish under. It never runs on a push
+# to main - only when you deliberately start it. The tag is created on the commit the
+# run checks out if it does not already exist.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish the APK under (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write # needed to create/update the GitHub Release and upload assets
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Android build reads the frontend from src/enqueue/static (frontendDist),
+      # so no Python or Node runtime is needed to compile the apk.
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Pin the NDK to the version the project builds with locally.
+      - name: Install Android NDK
+        run: sdkmanager "ndk;27.1.12297006"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+
+      # Debug apk: unsigned-for-a-store but installable on any device with "install
+      # unknown apps" enabled, and it needs no signing secrets. To ship a signed
+      # RELEASE apk instead, set the RELEASE_KEYSTORE (base64), RELEASE_STORE_PASSWORD,
+      # RELEASE_KEY_PASSWORD, and RELEASE_KEY_ALIAS repo secrets and switch the build
+      # line below to `cargo tauri android build --target aarch64` (release), decoding
+      # the keystore to desktop/gen/android/release.keystore first - the gradle config
+      # already reads those env vars.
+      - name: Build APK
+        working-directory: desktop
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
+          cargo tauri android build --debug --target aarch64
+
+      - name: Name the artifact
+        id: apk
+        run: |
+          SRC="desktop/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+          TAG="${{ inputs.tag }}"
+          OUT="enqueue-${TAG}-android.apk"
+          cp "$SRC" "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.apk.outputs.tag }}
+          files: ${{ steps.apk.outputs.path }}
+          fail_on_unmatched_files: true
+          body: |
+            Android app for Enqueue.
+
+            Install: download the `.apk`, enable "install unknown apps" for your browser
+            or file manager, open it, then link it to a running desktop by scanning the
+            QR from the desktop's sync panel.
+
+            This is a debug-signed build (no Play Store signing key). The macOS desktop
+            app is not yet distributed as a download - it still runs from source (see the
+            README), because its Python engine is not yet bundled as a standalone binary.

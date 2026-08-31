@@ -10,14 +10,40 @@ Nothing is uploaded anywhere unless you deliberately point it at an outside mode
 
 ---
 
+## Download
+
+**Android app:** grab the latest `.apk` from the [Releases](https://github.com/sudohnim/enqueue/releases) page, enable "install unknown apps" for your browser or file manager, open it, and link it to a running desktop by scanning the QR from the desktop's sync panel.
+The APK is built on demand from the Actions tab (see `.github/workflows/release.yml`).
+
+**macOS desktop:** there is no downloadable build yet.
+The desktop app still runs from source (see below), because its Python engine is not yet bundled as a standalone binary - a `.dmg` would not run on a Mac without the repo, `uv`, and Python present.
+
+---
+
 ## Prerequisites
 
 - **macOS.** The desktop shell uses Tauri with macOS-specific APIs, and the API key store uses the macOS Keychain.
 - **Python >= 3.12.** The engine is Python and targets 3.12 exactly (see `.python-version`).
 - **[uv](https://docs.astral.sh/uv/).** All commands in this repo and in the desktop shell go through `uv run`, so it must be on your PATH. The shell looks for it at `/opt/homebrew/bin/uv` or `/usr/local/bin/uv`.
-- **[Rust](https://www.rust-lang.org/) and [Tauri](https://v2.tauri.app/) prerequisites**, only if you want to build the desktop window from source. The pre-built binary at `desktop/target/debug/enqueue-desktop` is what `bin/launch desktop` runs.
+- **[Rust](https://www.rust-lang.org/) and the [Tauri v2](https://v2.tauri.app/) prerequisites**, to build the desktop window from source. `bin/launch desktop` runs `cargo build` and then launches the binary at `desktop/target/debug/Enqueue`.
 - **[Node.js](https://nodejs.org/)**, only for the JS parse check that `bin/launch` and `bin/verify` run before launching. If `node` is not on the PATH, the check is skipped silently.
 - **[Ollama](https://ollama.com/)** running locally, if you want the default AI backend (model: `llama3.1:8b`). Not required for capture, search, or browsing; only for conversations and rooms.
+
+### Extra prerequisites for the Android app
+
+The Android app is optional. You only need these to build and run it; the desktop app and engine do not.
+
+- **[Android Studio](https://developer.android.com/studio)** (or a standalone Android SDK). The build looks for the SDK at `$ANDROID_HOME`, defaulting to `~/Library/Android/sdk`.
+- **Android NDK.** Install it through Android Studio's SDK Manager. The build auto-selects the newest one under `$ANDROID_HOME/ndk/*` unless `NDK_HOME` is set.
+- **A JDK.** The build defaults `JAVA_HOME` to the JBR that ships with Android Studio (`/Applications/Android Studio.app/Contents/jbr/Contents/Home`).
+- **The Tauri CLI and the Android Rust targets:**
+
+  ```bash
+  cargo install tauri-cli --version '^2'
+  rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+  ```
+
+The generated Android project is committed at `desktop/gen/android`, so you do not need to run `cargo tauri android init` on a fresh clone.
 
 ---
 
@@ -40,7 +66,7 @@ cargo build
 cd ..
 ```
 
-That produces `desktop/target/debug/enqueue-desktop`, which `bin/launch desktop` expects.
+That produces `desktop/target/debug/Enqueue`, which `bin/launch desktop` expects.
 
 ---
 
@@ -54,14 +80,66 @@ bin/launch desktop
 
 This rebuilds the shell with `cargo build` first (incremental, so it is near-instant when nothing changed, and a compile error stops it rather than launching a stale binary), starts the Python engine (`enq serve`), waits for it to answer on `127.0.0.1:8787`, then launches the Tauri desktop window and brings it to the front.
 
-To run on a plugged-in Android phone (USB debugging on; an emulator is rejected):
+The script kills any existing `Enqueue` and `enq serve` processes first, so engine and window always come up together.
+Engine output is logged to `$TMPDIR/enqueue-app.log` (or `/tmp/enqueue-app.log`).
+
+To run on Android, see [Running on Android](#running-on-android) below.
+
+---
+
+## Running on Android
+
+The Android app is a Tauri v2 mobile build of the same Rust shell that runs the desktop window.
+It syncs the desktop library to the phone over an end-to-end-encrypted relay, then reads, captures, and chats offline against the local copy.
+It never runs the engine itself; the phone holds a decrypted SQLite copy of the library and calls the configured LLM backend directly.
+
+Make sure the [Android prerequisites](#extra-prerequisites-for-the-android-app) are installed first.
+
+### On a plugged-in phone
+
+Plug in an Android phone with USB debugging enabled, accept the pairing prompt, then:
 
 ```bash
 bin/launch mobile
 ```
 
-The script kills any existing `enqueue-desktop` and `enq serve` processes first, so engine and window always come up together.
-Engine output is logged to `$TMPDIR/enqueue-app.log` (or `/tmp/enqueue-app.log`).
+This builds the debug apk once, installs it on the phone, launches it, and exits - it does not run `cargo tauri android dev` (that watch loop never returns and holds the Gradle lock, which then deadlocks the next build). Re-run the command to push a new build.
+An emulator is rejected here on purpose - `bin/launch mobile` means "put it on my real phone."
+
+### On an emulator (headless)
+
+```bash
+bin/launch emulator
+```
+
+This boots a headless AVD (named `enqueue` by default, override with `ENQUEUE_AVD`), builds a debug apk once, installs it, launches it, and then exits - the emulator keeps running in the background so you can drive it over `adb`.
+If the AVD does not exist, the script prints the one-time `avdmanager` command to create it.
+
+### Building the apk by hand
+
+If you just want the debug apk to install yourself:
+
+```bash
+cd desktop
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)"
+cargo tauri android build --debug --target aarch64
+```
+
+The apk lands at `desktop/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`.
+Install it with `adb install -r <apk>` and launch with `adb shell am start -n com.sudohnim.enqueue/.MainActivity`.
+
+### Linking the phone to the desktop
+
+The phone starts empty.
+To fill it, link it to a running desktop over a relay both can reach (a phone that leaves the house cannot reach a `127.0.0.1` relay, so use a hosted relay - see [Running the sync relay](#running-the-sync-relay) and `docs/sync-relay.md`).
+
+1. On the desktop, open the sync panel; it renders a QR that encodes the relay URL, the sync secret, and the encryption key (DEK).
+2. In the phone app, scan that QR. The phone stores the credentials in its app-sandboxed config and pulls the library.
+
+After linking, the desktop's LLM settings - backend, model, and API key - propagate to the phone (encrypted end to end), so mobile chat uses the same provider without re-entering anything.
+Mobile writes (edit a note, delete, pin) sync back to the desktop; tagging and annotating are deliberately desktop-only (curation is a sit-down job).
 
 ---
 
@@ -197,6 +275,25 @@ Exits non-zero if any token fails.
 
 ---
 
+## Publishing a release (maintainers)
+
+Cutting a release is on-demand and publishes the Android APK.
+Nothing publishes automatically; no push to `main` ever triggers it.
+
+1. Make sure `.github/workflows/release.yml` is on the default branch (the manual trigger only appears once the workflow exists on `main`).
+2. On GitHub, go to the **Actions** tab, pick the **release** workflow, and choose **Run workflow**.
+3. Enter the version tag to publish under (for example `v0.1.0`) and start it.
+4. The runner installs the Android + Rust toolchain, builds the APK, creates the release for that tag if it does not exist, and attaches `enqueue-<tag>-android.apk`.
+
+The build takes roughly five to ten minutes.
+The APK is debug-signed, so it installs on any device with "install unknown apps" enabled, but it is not signed with a Play Store key.
+To publish a signed release APK instead, set the `RELEASE_KEYSTORE` (base64), `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_PASSWORD`, and `RELEASE_KEY_ALIAS` repository secrets and switch the build to the release variant, as noted in the workflow.
+
+The macOS desktop app is not part of a release yet.
+It is distributed as source, because its Python engine is not yet bundled as a standalone binary; see [Known gaps](#known-gaps).
+
+---
+
 ## Environment variables
 
 All environment variables use the `ENQ_` prefix and can override `settings.json` at runtime.
@@ -325,12 +422,16 @@ enqueue/
     verify             # JS parse + pytest + contrast check
     check-contrast     # WCAG contrast validation on home.html palette
   desktop/
-    src/main.rs        # Tauri shell: window, hotkey, engine lifecycle, capture overlay
+    src/main.rs        # Thin binary entry point; calls enqueue_lib::run()
+    src/lib.rs         # The shell: window, hotkey, engine lifecycle, capture overlay, AND the mobile (Android) Tauri commands
+    src/sync.rs        # Pure-Rust mobile sync: relay pull/apply + E2E crypto, cross-compiled for Android
+    gen/android/       # Committed Tauri Android project (built by cargo tauri android build)
     Cargo.toml         # Tauri 2 + global-shortcut plugin
     tauri.conf.json    # Window config, capabilities, CSP
   src/enqueue/
     cli.py             # `enq` entry point (Typer)
-    api.py             # FastAPI engine: all HTTP endpoints
+    api/               # FastAPI engine, split by area (app, artifacts, chats, search, settings, static, ...)
+    sync/              # Relay client, snapshots, background pull worker, settings propagation
     config.py          # Constants: paths, models, backends, env var overrides
     settings.py        # settings.json read/write, three-layer resolution
     db.py              # SQLite + Alembic migration at startup
@@ -361,8 +462,10 @@ enqueue/
     migrations/
       versions/        # 0001-0020 Alembic migrations
     static/
-      home.html        # Main wall view (inline JS/CSS)
+      home.html        # Main wall view
       capture.html     # Quick-capture overlay
+      mobile.html      # The Android app UI (loaded by the mobile shell)
+      js/              # Desktop front-end modules (home, search, pivot, chat, ...)
       fonts/           # IBM Plex Sans
   tests/
     conftest.py
@@ -416,13 +519,12 @@ Key endpoints:
 
 ## Known gaps
 
-- **No bundled `.app` yet.** The desktop shell runs from `desktop/target/debug/enqueue-desktop` and spawns the engine via `uv run enq serve` from the repo. There is no packaged sidecar binary, so the app cannot be distributed as a double-clickable `.app` without the repo and `uv` present.
-- **No CI pipeline.** There is no GitHub Actions or other CI configuration in the repo. `bin/verify` is the closest thing to a pre-commit gate.
+- **No bundled `.app` yet.** The desktop shell runs from `desktop/target/debug/Enqueue` and spawns the engine via `uv run enq serve` from the repo. There is no packaged sidecar binary, so the app cannot be distributed as a double-clickable `.app` without the repo and `uv` present.
+- **CI runs lint, tests, and an eval gate** (`.github/workflows/ci.yml`); an on-demand workflow builds and publishes the Android APK to a release (`.github/workflows/release.yml`, run manually from the Actions tab). `bin/verify` is the local pre-commit gate.
 - **The global capture hotkey opens a window, but that window is the capture overlay, not a full capture flow.** The hotkey is functional (registered via `tauri-plugin-global-shortcut`), but the overlay is a small note-input box, not a full capture interface.
 - **The wall does not page beyond 120 items.** The API supports `limit` and `offset`, but the home HTML view does not implement infinite scroll or pagination.
 - **No encryption at rest (planned).** The database and blobs are plaintext today. Encryption is a planned milestone.
-- **Sync and the Android app are built and device-verified; a hosted relay is deployed.** End-to-end-encrypted sync (per-artifact snapshots, last-writer-wins, a dumb ciphertext relay) and a Tauri Android app exist: link the phone by scanning a QR the desktop shows, and the desktop library syncs to the phone over a hosted relay (a Railway deploy is running; `enq relay` remains the localhost/self-host option, see `docs/sync-relay.md`).
-- **Sync is currently create-only for the mobile client.** New captures propagate, but an EDIT or DELETE (or pin/tag) of an artifact that was ALREADY synced does not yet reach a device that already has it. The relay is immutable by object name, so a second push for the same artifact id is refused. Making mutations propagate is planned work (PLAN.md MOBFIX.5).
+- **Sync and the Android app are built and device-verified; a hosted relay is deployed.** End-to-end-encrypted sync (per-artifact snapshots, last-writer-wins, a dumb ciphertext relay) and a Tauri Android app exist: link the phone by scanning a QR the desktop shows, and the desktop library syncs to the phone over a hosted relay (a Railway deploy is running; `enq relay` remains the localhost/self-host option, see `docs/sync-relay.md`). Mutations now propagate both ways - an edit, delete, or pin on either side reaches the other after sync (the relay object is an upsert, not create-only), and the desktop's LLM settings (backend, model, API key) propagate to the phone end-to-end.
 - **The default local model (`llama3.1:8b`) is weak.** Roughly three of four model outputs fail their validators. Conversations work; a better model is needed for reliable chat answers and facet generation.
 - **Search is brute-force.** sqlite-vec does exact nearest-neighbour search over the 768-dim embeddings in `enqueue.db`. At this library's scale that is fast (Phase 19 measured p95 21 ms); at a few hundred thousand chunks it will need quantization or an approximate index.
 - **No Windows or Linux support.** The desktop shell uses macOS-specific AppKit calls (activation, hiding). The Keychain wrapper is macOS-only.

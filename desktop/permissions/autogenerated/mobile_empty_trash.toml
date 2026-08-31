@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-empty-trash"
+description = "Enables the mobile_empty_trash command without any pre-configured scope."
+commands.allow = ["mobile_empty_trash"]
+
+[[permission]]
+identifier = "deny-mobile-empty-trash"
+description = "Denies the mobile_empty_trash command without any pre-configured scope."
+commands.deny = ["mobile_empty_trash"]

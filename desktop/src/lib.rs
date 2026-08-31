@@ -60,7 +60,7 @@ pub(crate) fn get_main_activity_class() -> Result<jni::objects::GlobalRef, Strin
 mod mobile {
     use base64::engine::general_purpose;
     use base64::Engine;
-    use rusqlite::Connection;
+    use rusqlite::{Connection, OptionalExtension};
     use serde_json::Value;
     use sha2::Digest;
     use tauri::{AppHandle, Emitter, Manager};
@@ -982,11 +982,26 @@ mod mobile {
 
 
 
+    /// The LLM config synced from the desktop (MOB2.9), cached in sync_meta by the
+    /// pull loop. This is the source of truth for mobile chat: the desktop pushes its
+    /// effective backend / model / url / api_key (E2E-encrypted), so the phone runs
+    /// chat with the same provider without anyone re-entering it here. Returns None
+    /// when nothing has synced yet, and the caller falls back to the local config.
+    fn synced_settings(conn: &Connection) -> Option<Value> {
+        conn.query_row(
+            "SELECT value FROM sync_meta WHERE key = 'settings'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+    }
+
 /// Mobile chat: keyword search + LLM answer (MOB2.7).
     #[tauri::command]
     fn mobile_chat(app: AppHandle, query: String, _history: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
-        
+
         // 1. Keyword search over local copy (MOB.6)
         let arts = crate::sync::search_artifacts(&conn, &query).map_err(|e| e.to_string())?;
         if arts.is_empty() {
@@ -1019,13 +1034,32 @@ mod mobile {
             }).to_string());
         }
         
-        // 3. Load config for LLM backend and API key
+        // 3. Load config for LLM backend and API key. The desktop-synced settings
+        //    (MOB2.9) win over the phone-local config when present, so mobile chat
+        //    uses whatever provider the desktop is configured with - key included.
         let cfg = load_config(&app)?.ok_or("not configured")?;
         let _dek = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).ok_or("locked")?;
-        let backend = cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama");
-        let model = cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b");
-        let custom_url = if backend == "custom" { cfg.get("llm_url").and_then(Value::as_str).unwrap_or("") } else { "" };
-        let api_key = cfg.get("llm_api_key").and_then(Value::as_str).unwrap_or("");
+        let synced = synced_settings(&conn);
+        // Prefer synced[field], fall back to the local config, then the default.
+        let pick = |field: &str, default: &str| -> String {
+            synced
+                .as_ref()
+                .and_then(|s| s.get(field))
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+                .or_else(|| cfg.get(field).and_then(Value::as_str))
+                .unwrap_or(default)
+                .to_string()
+        };
+        let backend = pick("llm_backend", "ollama");
+        let model = pick("llm_model", "llama3.1:8b");
+        let llm_url = pick("llm_url", "");
+        let api_key = pick("llm_api_key", "");
+        // call_llm_mobile reads a url only for the ollama/custom backends.
+        let custom_url = if backend == "custom" || backend == "ollama" { llm_url.as_str() } else { "" };
+        let backend = backend.as_str();
+        let model = model.as_str();
+        let api_key = api_key.as_str();
         
         // 4. Build prompt
         let context = passages.join("\n\n---\n\n");
@@ -1107,14 +1141,32 @@ mod mobile {
     #[tauri::command]
     fn mobile_settings_get(app: AppHandle) -> Result<String, String> {
         let cfg = load_config(&app)?.unwrap_or_default();
+        // Reflect the desktop-synced config (MOB2.9) when it has arrived, so the
+        // Settings screen shows what chat will actually use; fall back to local.
+        let synced = open_lib(&app).ok().and_then(|c| synced_settings(&c));
+        let get = |field: &str, default: &str| -> String {
+            synced
+                .as_ref()
+                .and_then(|s| s.get(field))
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+                .or_else(|| cfg.get(field).and_then(Value::as_str))
+                .unwrap_or(default)
+                .to_string()
+        };
+        // The key is a secret: report only whether one is set, never the value.
+        let has_key = !get("llm_api_key", "").is_empty();
+        let managed = synced.is_some();
         Ok(serde_json::json!({
-            "llm_backend": cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama"),
-            "llm_model": cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b"),
-            "llm_api_key": cfg.get("llm_api_key").and_then(Value::as_str).unwrap_or(""),
-            "llm_url": cfg.get("llm_url").and_then(Value::as_str).unwrap_or(""),
+            "llm_backend": get("llm_backend", "ollama"),
+            "llm_model": get("llm_model", "llama3.1:8b"),
+            "llm_api_key_present": has_key,
+            "llm_url": get("llm_url", ""),
             "auto_preview": cfg.get("auto_preview").and_then(Value::as_bool).unwrap_or(true),
-            "trash_days": cfg.get("trash_days").and_then(Value::as_str).unwrap_or("30"),
+            "trash_days": get("trash_days", "30"),
             "last_synced": cfg.get("last_synced").and_then(Value::as_str),
+            // When settings are desktop-managed the phone shows them read-only.
+            "managed_by_desktop": managed,
             "outbox_count": 0,
         }).to_string())
     }
@@ -1389,11 +1441,14 @@ mod mobile {
         let now = now_iso();
         let conn = open_lib(&app)?;
 
-        // Mark as deleted locally
+        // Mark as deleted locally AND bump updated_at - the delete snapshot must be
+        // newer than the desktop's copy or LWW rejects it and the deletion never lands
+        // on the desktop (the bug: deleted on the phone, still present on the desktop).
         let deleted = {
-            let mut stmt = conn.prepare("UPDATE artifacts SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL")
+            let mut stmt = conn
+                .prepare("UPDATE artifacts SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL")
                 .map_err(|e| e.to_string())?;
-            stmt.execute([&now, &artifact_id]).map_err(|e| e.to_string())?
+            stmt.execute(rusqlite::params![&now, &artifact_id]).map_err(|e| e.to_string())?
         };
         if deleted == 0 {
             return Err("artifact not found or already deleted".into());
@@ -1469,11 +1524,33 @@ mod mobile {
         Ok("linked".to_string())
     }
 
+    /// Bump updated_at and queue the artifact for push, so a mobile edit / tag /
+    /// pin / annotation propagates to the desktop. mobile_outbox_push sends the
+    /// artifact's CURRENT snapshot on the next sync (the mutation_type is only a
+    /// label; the whole snapshot is what travels). Without this the sync fns
+    /// mutated only the local read-copy and the change never left the phone.
+    fn queue_mutation_push(conn: &Connection, artifact_id: &str, kind: &str) -> Result<(), String> {
+        let now = now_iso();
+        conn.execute(
+            "UPDATE artifacts SET updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, artifact_id],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO mutation_outbox (id, artifact_id, mutation_type, created_at, synced)\
+             VALUES (?1, ?2, ?3, ?4, 0)",
+            rusqlite::params![uuid::Uuid::new_v4().to_string(), artifact_id, kind, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Update a note's body (MOB2.4).
     #[tauri::command]
     fn mobile_update_note(app: AppHandle, id: String, body: String, title: Option<String>) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let art = crate::sync::update_note_body(&conn, &id, &body, title.as_deref()).map_err(|e| e.to_string())?;
+        queue_mutation_push(&conn, &id, "update")?;
         Ok(art.to_string())
     }
 
@@ -1482,6 +1559,7 @@ mod mobile {
     fn mobile_add_annotation(app: AppHandle, id: String, text: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let art = crate::sync::add_annotation(&conn, &id, &text).map_err(|e| e.to_string())?;
+        queue_mutation_push(&conn, &id, "annotate")?;
         Ok(art.to_string())
     }
 
@@ -1490,23 +1568,64 @@ mod mobile {
     fn mobile_remove_annotation(app: AppHandle, id: String, annotation_id: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let art = crate::sync::remove_annotation(&conn, &id, &annotation_id).map_err(|e| e.to_string())?;
+        queue_mutation_push(&conn, &id, "annotate")?;
         Ok(art.to_string())
     }
 
-    /// Add a tag to an artifact (MOB2.4).
+    /// The artifact's tags, from its tags_json column (mobile has no tags table).
+    fn read_tags_json(conn: &Connection, id: &str) -> Result<Vec<String>, String> {
+        let raw: Option<String> = conn
+            .query_row("SELECT tags_json FROM artifacts WHERE id = ?1", [id], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?
+            .flatten();
+        Ok(raw
+            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+            .unwrap_or_default())
+    }
+
+    fn write_tags_json(conn: &Connection, id: &str, tags: &[String]) -> Result<(), String> {
+        let json = serde_json::to_string(tags).map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE artifacts SET tags_json = ?1 WHERE id = ?2",
+            rusqlite::params![json, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Add a tag on the phone (TAGSYNC). Tags live in tags_json here, NOT a tags table -
+    /// the old `crate::sync::add_tag` targeted that missing table and always threw. On a
+    /// real change we bump updated_at + queue the push, and build_snapshot now carries
+    /// tags, so the new tag reaches the desktop.
     #[tauri::command]
     fn mobile_add_tag(app: AppHandle, id: String, tag: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
-        let art = crate::sync::add_tag(&conn, &id, &tag).map_err(|e| e.to_string())?;
-        Ok(art.to_string())
+        let tag = tag.trim().to_string();
+        if tag.is_empty() {
+            return Err("a tag cannot be empty".into());
+        }
+        let mut tags = read_tags_json(&conn, &id)?;
+        if !tags.iter().any(|t| t.eq_ignore_ascii_case(&tag)) {
+            tags.push(tag);
+            write_tags_json(&conn, &id, &tags)?;
+            queue_mutation_push(&conn, &id, "tag")?;
+        }
+        Ok(serde_json::to_string(&tags).map_err(|e| e.to_string())?)
     }
 
-    /// Remove a tag from an artifact (MOB2.4).
+    /// Remove a tag on the phone (TAGSYNC). Mirrors mobile_add_tag over tags_json.
     #[tauri::command]
     fn mobile_remove_tag(app: AppHandle, id: String, tag: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
-        let art = crate::sync::remove_tag(&conn, &id, &tag).map_err(|e| e.to_string())?;
-        Ok(art.to_string())
+        let mut tags = read_tags_json(&conn, &id)?;
+        let before = tags.len();
+        tags.retain(|t| !t.eq_ignore_ascii_case(&tag));
+        if tags.len() != before {
+            write_tags_json(&conn, &id, &tags)?;
+            queue_mutation_push(&conn, &id, "tag")?;
+        }
+        Ok(serde_json::to_string(&tags).map_err(|e| e.to_string())?)
     }
 
     /// Toggle pin status (MOB2.4).
@@ -1514,6 +1633,7 @@ mod mobile {
     fn mobile_toggle_pin(app: AppHandle, id: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let art = crate::sync::toggle_pin(&conn, &id).map_err(|e| e.to_string())?;
+        queue_mutation_push(&conn, &id, "pin")?;
         Ok(art.to_string())
     }
 
@@ -1525,12 +1645,13 @@ mod mobile {
         Ok(art.to_string())
     }
 
-    /// Get tags for an artifact (MOB2.4).
+    /// Get tags for an artifact, from tags_json (TAGSYNC - the old `get_tags` queried a
+    /// tags table the mobile DB does not have and threw "no such table: tags").
     #[tauri::command]
     fn mobile_get_tags(app: AppHandle, id: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
-        let tags = crate::sync::get_tags(&conn, &id).map_err(|e| e.to_string())?;
-        Ok(serde_json::json!(tags).to_string())
+        let tags = read_tags_json(&conn, &id)?;
+        Ok(serde_json::to_string(&tags).map_err(|e| e.to_string())?)
     }
 
     /// List trashed artifacts (MOB2.4).
@@ -1544,10 +1665,55 @@ mod mobile {
     /// Restore a trashed artifact (MOB2.4).
     #[tauri::command]
     fn mobile_restore_trashed(app: AppHandle, id: String) -> Result<String, String> {
-        // Reuse toggle_trash - if it's trashed, this restores it
+        // Reuse toggle_trash - if it's trashed, this restores it (clears deleted_at).
         let conn = open_lib(&app)?;
         let art = crate::sync::toggle_trash(&conn, &id).map_err(|e| e.to_string())?;
+        // Push the restore so the desktop un-trashes it too - build_snapshot carries
+        // deleted_at, and queue_mutation_push bumps updated_at so LWW accepts it.
+        queue_mutation_push(&conn, &id, "restore")?;
         Ok(art.to_string())
+    }
+
+    /// Empty the trash: permanently remove every trashed artifact from the LOCAL library
+    /// (the phone's copy) plus its child rows. This is a local purge - the items stay
+    /// trashed on the desktop until its own retention window purges them; a normal
+    /// cursor-based pull will not resurrect them (their relay object is already past the
+    /// pull cursor). Returns how many were purged.
+    #[tauri::command]
+    fn mobile_empty_trash(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        // Only items still in trash and not already a tombstone.
+        let mut stmt = conn
+            .prepare("SELECT id FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL")
+            .map_err(|e| e.to_string())?;
+        let ids: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        drop(stmt);
+        let now = now_iso();
+        for id in &ids {
+            // Drop the child rows locally.
+            for table in ["annotations", "page_text", "artifact_versions"] {
+                let _ = conn
+                    .execute(&format!("DELETE FROM {table} WHERE artifact_id = ?1"), [id]);
+            }
+            // Tombstone the artifact instead of hard-deleting it: keep the row with
+            // purged_at set and its body stripped, so build_snapshot carries the purge to
+            // the desktop (which strips its own copy). queue_mutation_push bumps
+            // updated_at so LWW accepts it. content_hash is left intact - it is NOT NULL
+            // on the desktop schema, so a snapshot that nulled it would crash the
+            // desktop's apply on that constraint; the row is hidden everywhere anyway.
+            conn.execute(
+                "UPDATE artifacts SET purged_at = ?1, updated_at = ?1, body = NULL,\
+                 tags_json = NULL WHERE id = ?2",
+                rusqlite::params![now, id],
+            )
+            .map_err(|e| e.to_string())?;
+            queue_mutation_push(&conn, id, "purge")?;
+        }
+        Ok(serde_json::json!({ "purged": ids.len() }).to_string())
     }
 
     /// The mobile shell: it builds and launches on the device (MOB.2). The synced
@@ -1593,6 +1759,7 @@ mod mobile {
                 mobile_get_tags,
                 mobile_list_trashed,
                 mobile_restore_trashed,
+                mobile_empty_trash,
                 mobile_delete,
                 mobile_restore,
                 start_sync_foreground_service,
@@ -2155,8 +2322,14 @@ mod desktop {
                 // The webview loads the engine's URL, so it cannot be built until the
                 // engine answers. By now Tauri has initialised concurrently with the
                 // boot, so this waits only for whatever time the engine still needs.
-                if spawned_here && !wait_for_engine(Duration::from_secs(30)) {
-                    eprintln!("[shell] engine did not come up within 30s");
+                // 60s (was 30) covers a cold start where the embedding load and index
+                // bootstrap run long; a tight window meant the webview was built against
+                // an engine that had not bound yet, loaded an error page, and never
+                // retried - the "cannot load artifacts" blank the reload-watcher below
+                // now recovers from.
+                let engine_ready = !spawned_here || wait_for_engine(Duration::from_secs(60));
+                if !engine_ready {
+                    eprintln!("[shell] engine did not come up within 60s; will reload the window when it does");
                 }
 
                 let window = tauri::WebviewWindowBuilder::new(
@@ -2202,6 +2375,25 @@ mod desktop {
 
                 if let Some((x, y)) = saved_position() {
                     let _ = capture.set_position(tauri::PhysicalPosition::new(x, y));
+                }
+
+                // If the engine had not bound by the time the windows were built, they
+                // are showing an error page pinned to a URL that now works. Nothing in a
+                // webview retries a failed top-level load on its own, so poll for the
+                // engine on a background thread and reload both windows once it answers.
+                // This is the recovery path for a slow cold start (and for an engine that
+                // died and was restarted): the window heals instead of staying blank.
+                if !engine_ready {
+                    let main_win = window.clone();
+                    let capture_win = capture.clone();
+                    thread::spawn(move || {
+                        // Keep waiting well past the initial 60s - a truly stuck engine is
+                        // rare, and a long poll costs nothing but a refused connection.
+                        if wait_for_engine(Duration::from_secs(120)) {
+                            let _ = main_win.eval("window.location.reload()");
+                            let _ = capture_win.eval("window.location.reload()");
+                        }
+                    });
                 }
 
                 let binding = hotkey();

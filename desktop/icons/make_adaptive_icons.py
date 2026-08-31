@@ -20,7 +20,8 @@ from pathlib import Path
 from PIL import Image
 
 HERE = Path(__file__).parent
-SOURCE = HERE / "icon.png"  # The composed icon (raven on purple)
+SOURCE = HERE / "icon.png"  # The composed icon (raven on purple), for the bg color
+RAVEN_MARK = HERE.parent.parent / "src" / "enqueue" / "static" / "raven-mark.png"  # transparent raven
 
 # Android adaptive icon sizes
 SIZES = {
@@ -41,22 +42,44 @@ def _bg_purple(src: Image.Image) -> tuple[int, int, int]:
     return (r, g, b)
 
 
-def create_adaptive_layers(size: int) -> tuple[Image.Image, Image.Image]:
-    """Create foreground and background layers for the adaptive icon.
+# The foreground raven is placed at this fraction of the icon canvas. Adaptive
+# launchers mask the 108dp canvas down to a ~66-72% circle, so a raven scaled to
+# the FULL canvas gets its head/feet clipped by that circle. The standing raven is
+# taller than wide, so we scale by its height to 0.56 of the canvas: the whole bird
+# lands inside the launcher circle, centered, with breathing room on every side.
+RAVEN_FILL = 0.56
 
-    The desktop's composed icon (raven on a purple rounded square, `icon.png`) is
-    already the finished mark, so the foreground IS that icon scaled to fill the
-    adaptive canvas - no re-extraction, no shrink-to-safe-zone. Its transparent
-    corners fall onto a matching purple background, and the launcher's circle /
-    squircle mask crops to raven-on-purple, identical to the desktop icon. The
-    previous approach keyed on alpha (but icon.png's purple is opaque, so it kept
-    the whole square) and then shrank it onto a WHITE field - the "tiny raven on a
-    big white background" this replaces.
+
+def create_adaptive_layers(size: int) -> tuple[Image.Image, Image.Image]:
+    """Create the adaptive icon's (foreground, background).
+
+    Foreground is the TRANSPARENT raven mark centered on a clear canvas; background
+    is solid brand purple. The launcher composites them and masks to its own shape
+    (circle / squircle), so every Android 8+ launcher shows raven-on-purple with no
+    white ring. This needs the `mipmap-anydpi-v26/ic_launcher.xml` written by main()
+    to point at these two layers - without that XML the launcher falls back to the
+    legacy square PNG and wraps it in a white circle (the bug this fixes).
     """
-    src = Image.open(SOURCE).convert("RGBA")
-    fg = src.resize((size, size), Image.Resampling.LANCZOS)
-    bg = Image.new("RGB", (size, size), _bg_purple(src))
+    bg = Image.new("RGB", (size, size), _bg_purple(Image.open(SOURCE).convert("RGBA")))
+    raven = Image.open(RAVEN_MARK).convert("RGBA")
+    target = int(size * RAVEN_FILL)
+    scale = target / max(raven.size)
+    raven = raven.resize(
+        (max(1, int(raven.width * scale)), max(1, int(raven.height * scale))),
+        Image.Resampling.LANCZOS,
+    )
+    fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    fg.paste(raven, ((size - raven.width) // 2, (size - raven.height) // 2), raven)
     return fg, bg
+
+
+_ADAPTIVE_XML = (
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+    '    <background android:drawable="@mipmap/ic_launcher_background" />\n'
+    '    <foreground android:drawable="@mipmap/ic_launcher_foreground" />\n'
+    "</adaptive-icon>\n"
+)
 
 
 def main() -> None:
@@ -83,6 +106,14 @@ def main() -> None:
         composed.save(Path(mipmap_dir) / "ic_launcher_round.png")
 
         print(f"Generated {density} ({size}x{size})")
+
+    # The adaptive-icon descriptor (Android 8+). Without this, launchers ignore the
+    # foreground/background layers and wrap the legacy square PNG in a white circle.
+    anydpi = Path(RES_DIR) / "mipmap-anydpi-v26"
+    anydpi.mkdir(parents=True, exist_ok=True)
+    (anydpi / "ic_launcher.xml").write_text(_ADAPTIVE_XML, encoding="utf-8")
+    (anydpi / "ic_launcher_round.xml").write_text(_ADAPTIVE_XML, encoding="utf-8")
+    print("Wrote mipmap-anydpi-v26/ic_launcher.xml (+round)")
 
     print("Done!")
 

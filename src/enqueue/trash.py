@@ -99,7 +99,8 @@ def listing() -> dict:
     try:
         rows = conn.execute(
             "SELECT id, kind, title, source_url, filename, created_at, deleted_at"
-            " FROM artifacts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+            " FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL"
+            " ORDER BY deleted_at DESC"
         ).fetchall()
     finally:
         conn.close()
@@ -130,7 +131,15 @@ def _drop_from_index(artifact_id: str) -> None:
 
 
 def purge(artifact_id: str) -> dict:
-    """Destroy one artifact for good. The only irreversible operation here."""
+    """Destroy one artifact for good, as a TOMBSTONE so the delete propagates.
+
+    A hard-deleted row has no state to snapshot, so a peer could never learn the
+    artifact is gone. Instead the row is KEPT with `purged_at` set and its content
+    stripped, and pushed like any other change - other devices apply the tombstone
+    and strip their own copy. The tombstone keeps `deleted_at` set, so every
+    `deleted_at IS NULL` query already treats it as gone; only the trash views add
+    `purged_at IS NULL` to hide the tombstone itself.
+    """
     with db.transaction() as conn:
         row = conn.execute(
             "SELECT content_hash, deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
@@ -165,21 +174,37 @@ def purge(artifact_id: str) -> dict:
             "  SELECT 1 FROM artifact_tags WHERE tag_id = tags.id"
             ")"
         )
-        conn.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
+        # Tombstone the artifact: keep the row (so the purge can sync) but strip its
+        # body and stamp purged_at. updated_at is bumped so LWW carries it to peers.
+        # content_hash is left as-is: it is NOT NULL on this schema, and a snapshot that
+        # nulled it would crash the peer's apply on the same constraint. The row is
+        # excluded from every view, so the dangling hash is harmless.
+        now = db.now()
+        conn.execute(
+            "UPDATE artifacts SET purged_at = ?, updated_at = ?, body = NULL WHERE id = ?",
+            (now, now, artifact_id),
+        )
 
-        # Content-addressed blobs are shared. Unlink only when nothing else points at
-        # these bytes, or deleting one of two identical uploads empties the other.
+        # Content-addressed blobs are shared. Unlink only when NO OTHER artifact points
+        # at these bytes (this tombstone still carries the hash, so exclude it by id).
         still_used = conn.execute(
-            "SELECT 1 FROM artifacts WHERE content_hash = ? LIMIT 1", (row["content_hash"],)
+            "SELECT 1 FROM artifacts WHERE content_hash = ? AND id != ? LIMIT 1",
+            (row["content_hash"], artifact_id),
         ).fetchone()
 
-    if not still_used:
+    if row["content_hash"] and not still_used:
         blob = config.BLOB_DIR / row["content_hash"]
         with contextlib.suppress(OSError):
             blob.unlink(missing_ok=True)
 
     _drop_from_index(artifact_id)
-    # Purge is local-only and final; no relay push.
+    # Propagate the tombstone so other devices drop their copy too.
+    try:
+        from .sync.client import push_artifact
+
+        push_artifact(artifact_id)
+    except Exception:  # noqa: BLE001 - a sync hiccup must not fail the local purge
+        pass
     return {"id": artifact_id, "purged": True}
 
 
@@ -188,7 +213,10 @@ def empty() -> dict:
     conn = db.get_conn()
     try:
         ids = [
-            r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NOT NULL")
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL"
+            )
         ]
     finally:
         conn.close()
@@ -211,7 +239,8 @@ def purge_expired() -> dict:
         ids = [
             r["id"]
             for r in conn.execute(
-                "SELECT id FROM artifacts WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+                "SELECT id FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL"
+                " AND deleted_at < ?",
                 (cutoff,),
             )
         ]
