@@ -365,9 +365,12 @@ def _fuzzy_hits(query: str, limit: int) -> list[dict]:
     "chopper" share too few trigrams for FTS5 to see. Fuzzy matching over the
     whole corpus's chunk text is too slow, so this branch is scoped to the
     short fields a name lives in: artifact titles, `entities.entity` values,
-    and current annotation texts (same NOT EXISTS filter as R.2a). The corpus
-    is hundreds to low thousands of rows, so scoring every candidate stays
-    single-digit milliseconds.
+    and current annotation texts (same NOT EXISTS filter as R.2a). Even so it
+    loads every one of those rows into Python and runs SequenceMatcher over all
+    of them, so it is the most expensive leg per query. The corpus is hundreds to
+    low thousands of rows, so a run stays single-digit milliseconds - but it is
+    not free, which is why callers gate it behind `_needs_fuzzy` (PERF.1) and
+    only reach here when the hybrid leg produced no strong hit.
 
     Returns one entry per artifact with a best ratio at or above FUZZY_RATIO,
     carrying the matched text as the snippet source.
@@ -426,38 +429,63 @@ def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dic
     if not fuzzy:
         return results
     by_aid = {h["artifact_id"]: h for h in results}
-    conn = db.get_conn()
-    try:
-        for f in fuzzy:
-            aid = f["artifact_id"]
-            if aid in by_aid:
-                if f["score"] > by_aid[aid]["score"]:
-                    by_aid[aid] = {**by_aid[aid], "score": f["score"], "why": "fuzzy"}
-            else:
-                row = conn.execute(
-                    "SELECT title, kind FROM artifacts WHERE id = ?", (aid,)
-                ).fetchone()
-                if row is None:
-                    continue
-                # Q.2: a fuzzy-only hit IS a lexical hit (it's a one-edit typo
-                # over a short lexical field - title, entity name, annotation
-                # text), so the relevance floor treats it as such. There is no
-                # dense-similarity reading here: the branch never queries the
-                # dense store. The 0.0 below matches the Q.3 convention - the
-                # floor checks `had_lexical_hit` first.
-                by_aid[aid] = {
-                    "score": f["score"],
-                    "artifact_id": aid,
-                    "title": row["title"],
-                    "kind": row["kind"],
-                    "why": "fuzzy",
-                    "snippet": " ".join(f["matched"].split())[:200],
-                    "dense_similarity": 0.0,
-                    "had_lexical_hit": True,
-                }
-    finally:
-        conn.close()
+    # Title/kind for the fuzzy-only hits (those not already in the hybrid rollup) are
+    # fetched in ONE json_each query instead of a SELECT per hit (PERF.5).
+    missing = [f["artifact_id"] for f in fuzzy if f["artifact_id"] not in by_aid]
+    meta: dict = {}
+    if missing:
+        conn = db.get_conn()
+        try:
+            meta = {
+                r["id"]: r
+                for r in conn.execute(
+                    "SELECT id, title, kind FROM artifacts"
+                    " WHERE id IN (SELECT value FROM json_each(?))",
+                    (json.dumps(missing),),
+                ).fetchall()
+            }
+        finally:
+            conn.close()
+    for f in fuzzy:
+        aid = f["artifact_id"]
+        if aid in by_aid:
+            if f["score"] > by_aid[aid]["score"]:
+                by_aid[aid] = {**by_aid[aid], "score": f["score"], "why": "fuzzy"}
+        else:
+            row = meta.get(aid)
+            if row is None:
+                continue
+            # Q.2: a fuzzy-only hit IS a lexical hit (it's a one-edit typo over a
+            # short lexical field - title, entity name, annotation text), so the
+            # relevance floor treats it as such. There is no dense-similarity reading
+            # here: the branch never queries the dense store. The 0.0 below matches the
+            # Q.3 convention - the floor checks `had_lexical_hit` first.
+            by_aid[aid] = {
+                "score": f["score"],
+                "artifact_id": aid,
+                "title": row["title"],
+                "kind": row["kind"],
+                "why": "fuzzy",
+                "snippet": " ".join(f["matched"].split())[:200],
+                "dense_similarity": 0.0,
+                "had_lexical_hit": True,
+            }
     return sorted(by_aid.values(), key=lambda h: h["score"], reverse=True)[:limit]
+
+
+def _needs_fuzzy(hybrid: list[dict]) -> bool:
+    """Whether the fuzzy branch is worth running for this query (PERF.1).
+
+    `_fuzzy_hits` is a full O(N) Python scan over titles/entities/annotations - the
+    worst per-query cost in the pipeline. It only rescues a one-edit typo the lexical
+    and dense legs missed, so it is pointless when the hybrid already found a confident
+    answer: any lexical hit, or a dense match at/above KEEP_ABOVE. An empty or all-weak
+    hybrid (the shape a typo produces) is exactly when fuzzy earns its cost.
+    """
+    return not any(
+        h.get("had_lexical_hit") or h.get("dense_similarity", 0.0) >= KEEP_ABOVE
+        for h in hybrid
+    )
 
 
 # R.10 exact-needle escape hatch: a free-text query wrapped in double quotes
@@ -857,9 +885,9 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         # R.9: re-score a wider fused window than the final limit, so the
         # reranker can promote a candidate that ranked just past the cutoff.
         window = max(limit, _RERANK_WINDOW)
-        fused = _merge_fuzzy(
-            _hybrid_results(query_text, window), _fuzzy_hits(query_text, window), window
-        )
+        hybrid = _hybrid_results(query_text, window)
+        fuzzy = _fuzzy_hits(query_text, window) if _needs_fuzzy(hybrid) else []
+        fused = _merge_fuzzy(hybrid, fuzzy, window)
         # Q.3: the floor reads the per-leg signals from _hybrid_results /
         # _merge_fuzzy. The wider window means we floor before the reranker
         # so a gibberish query cannot waste the reranker's budget.
@@ -867,9 +895,9 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         ranked = _rerank(query_text, fused)[:limit]
 
     else:
-        fused = _merge_fuzzy(
-            _hybrid_results(query_text, limit), _fuzzy_hits(query_text, limit), limit
-        )
+        hybrid = _hybrid_results(query_text, limit)
+        fuzzy = _fuzzy_hits(query_text, limit) if _needs_fuzzy(hybrid) else []
+        fused = _merge_fuzzy(hybrid, fuzzy, limit)
         # Q.3: drop result that has no lexical hit AND whose dense similarity
         # is below DROP_BELOW (or sits in the gray zone and the Q.3b judge
         # says no). A query left with zero kept results returns [] - the

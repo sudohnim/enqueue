@@ -184,6 +184,43 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
 /// namespace. The relay upserts by name (MOBFIX.5), so a re-PUT of an edited or deleted
 /// snapshot overwrites in place and returns 201; a 409 (older relay) is still tolerated.
 #[allow(dead_code)]
+/// PUT an encrypted object to the relay, retrying transient transport failures.
+///
+/// A phone's network flaps (cellular <-> wifi handoff, IPv6/IPv4 races), so a
+/// single attempt often dies on a DNS lookup or an aborted TLS handshake while a
+/// retry a moment later succeeds - that flakiness was why a captured image could
+/// stay stuck `pending` even though the relay was reachable. 201 = stored, 409 =
+/// already present (both success); any other HTTP status is a real rejection and is
+/// NOT retried. Backoff grows with the attempt.
+fn put_object_with_retry(url: &str, secret: &str, body: &[u8], label: &str) -> Result<(), String> {
+    const ATTEMPTS: usize = 3;
+    let mut last = String::new();
+    for attempt in 1..=ATTEMPTS {
+        match ureq::put(url)
+            .set("Authorization", &format!("Bearer {secret}"))
+            .set("Content-Type", "application/octet-stream")
+            .send_bytes(body)
+        {
+            Ok(resp) => {
+                let status = resp.status();
+                if status == 201 || status == 409 {
+                    return Ok(());
+                }
+                eprintln!("[sync] {label} rejected: {status}");
+                return Err(format!("push rejected: {status}"));
+            }
+            Err(e) => {
+                last = e.to_string();
+                eprintln!("[sync] {label} transport error (attempt {attempt}/{ATTEMPTS}): {last}");
+                if attempt < ATTEMPTS {
+                    std::thread::sleep(std::time::Duration::from_millis(400 * attempt as u64));
+                }
+            }
+        }
+    }
+    Err(format!("push transport error after {ATTEMPTS} attempts: {last}"))
+}
+
 pub fn push_snapshot(
     relay_url: &str,
     secret: &str,
@@ -194,15 +231,8 @@ pub fn push_snapshot(
     let bytes = serde_json::to_vec(snapshot).map_err(|e| e.to_string())?;
     let ciphertext = secretbox_encrypt(dek, &bytes)?;
     let name = format!("dev/{device}/artifacts/{}.enc", snapshot["artifact"]["id"].as_str().unwrap_or(""));
-    let resp = ureq::put(&format!("{}/sync/object/{}", relay_url.trim_end_matches('/'), name))
-        .set("Authorization", &format!("Bearer {secret}"))
-        .set("Content-Type", "application/octet-stream")
-        .send_bytes(&ciphertext)
-        .map_err(|e| e.to_string())?;
-    if resp.status() != 201 && resp.status() != 409 {
-        return Err(format!("push rejected: {}", resp.status()));
-    }
-    Ok(())
+    let url = format!("{}/sync/object/{}", relay_url.trim_end_matches('/'), name);
+    put_object_with_retry(&url, secret, &ciphertext, &format!("push_snapshot {name}"))
 }
 
 /// Unwrap the DEK from the desktop's `keyring.json` plus the recovery phrase
@@ -486,6 +516,78 @@ pub struct SyncOutcome {
 /// Pull the library from the relay into the local read copy. `dek` is None when the
 /// keyring has not been unlocked; then the sync reports "locked" instead of crashing.
 #[allow(dead_code)]
+/// PERF.2: fetch and decrypt many artifact snapshots concurrently.
+///
+/// The pull used to do one blocking `GET /sync/object/{name}` per changed object,
+/// so a cold backfill of a few hundred artifacts was a few hundred sequential
+/// round trips (~100ms each over the internet). Network + decrypt touch no DB, so
+/// a bounded worker pool runs them in parallel; the caller applies the results on
+/// the single connection afterwards. Order is irrelevant - `apply_snapshot` is LWW
+/// per artifact - and this changes no wire format: it is the same per-object GET,
+/// just not serialized. Failures are skipped exactly as the sequential path did.
+fn fetch_snapshots_parallel(
+    base: &str,
+    auth: &str,
+    dek: &[u8; DEK_LEN],
+    names: &[String],
+) -> Vec<Value> {
+    const WORKERS: usize = 8;
+    if names.is_empty() {
+        return Vec::new();
+    }
+    // One agent, cloned per worker: `ureq::Agent` is Send + Sync and shares a
+    // connection pool, so cloning is cheap and keeps sockets warm across a chunk.
+    let agent = ureq::AgentBuilder::new().build();
+    let chunk = (names.len() + WORKERS - 1) / WORKERS;
+    let mut out: Vec<Value> = Vec::new();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = names
+            .chunks(chunk)
+            .map(|group| {
+                let agent = agent.clone();
+                scope.spawn(move || {
+                    let mut local: Vec<Value> = Vec::new();
+                    for name in group {
+                        let resp = match agent
+                            .get(&format!("{base}/sync/object/{name}"))
+                            .set("Authorization", auth)
+                            .call()
+                        {
+                            Ok(r) => r,
+                            Err(_) => continue, // unreachable relay: skip this object
+                        };
+                        if resp.status() != 200 {
+                            continue;
+                        }
+                        let mut bytes = Vec::new();
+                        if resp.into_reader().read_to_end(&mut bytes).is_err() {
+                            continue;
+                        }
+                        // The payload is secretbox-encrypted (PERF.6): the LWW key is
+                        // unreadable until after decrypt, so every fetched object is
+                        // decrypted here; the caller's apply_snapshot does the no-op
+                        // LWW check.
+                        let plain = match secretbox_decrypt(dek, &bytes) {
+                            Ok(p) => p,
+                            Err(_) => continue, // unreadable = "not yet arrived"
+                        };
+                        if let Ok(v) = serde_json::from_slice::<Value>(&plain) {
+                            local.push(v);
+                        }
+                    }
+                    local
+                })
+            })
+            .collect();
+        for h in handles {
+            if let Ok(mut v) = h.join() {
+                out.append(&mut v);
+            }
+        }
+    });
+    out
+}
+
 pub fn sync_library(
     relay_url: &str,
     sync_secret: &str,
@@ -552,6 +654,10 @@ pub fn sync_library(
     let new_cursor = body["cursor"].as_u64().unwrap_or(cursor);
 
     let mut pulled = 0usize;
+    // PERF.2: artifact object names are collected here and fetched concurrently
+    // after the listing walk; the library-level objects (pivots, settings) stay
+    // inline since there are only a handful of them.
+    let mut dev_names: Vec<String> = Vec::new();
     for obj in body["objects"].as_array().into_iter().flatten() {
         let Some(name) = obj["name"].as_str() else { continue };
         // Custom views (saved pivots) are a single library-level object; pull it,
@@ -624,28 +730,18 @@ pub fn sync_library(
         if !name.starts_with("dev/") || !name.ends_with(".enc") {
             continue;
         }
-        let resp = match ureq::get(&format!("{base}/sync/object/{name}"))
-            .set("Authorization", &auth)
-            .call()
-        {
-            Ok(r) => r,
-            Err(_) => continue, // unreachable relay; the cursor is not advanced
-        };
-        if resp.status() != 200 {
-            continue;
-        }
-        let mut bytes = Vec::new();
-        if resp.into_reader().read_to_end(&mut bytes).is_err() {
-            continue;
-        }
-        let plain = match secretbox_decrypt(dek, &bytes) {
-            Ok(p) => p,
-            Err(_) => continue, // unreadable = "not yet arrived", never corruption
-        };
-        let snapshot: Value = match serde_json::from_slice(&plain) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
+        // PERF.2: defer the artifact fetch. Collect the name and pull them all
+        // concurrently below instead of one blocking GET per object here.
+        dev_names.push(name.to_string());
+    }
+
+    // PERF.2: fetch + decrypt every artifact snapshot concurrently (no DB touched),
+    // then apply them on the single connection. `apply_snapshot` is LWW per artifact,
+    // so the order they come back in does not matter, and the stale/no-op LWW check
+    // still runs on each one - we just no longer pay hundreds of round trips in
+    // series. (Why every object is decrypted at all: PERF.6 - the payload is
+    // secretbox-encrypted, so the LWW key cannot be peeked before decrypt.)
+    for snapshot in fetch_snapshots_parallel(base, &auth, dek, &dev_names) {
         if apply_snapshot(conn, &snapshot).is_ok() {
             pulled += 1;
         }
@@ -874,6 +970,26 @@ pub fn blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(dek).map_err(|e| e.to_string()).unwrap();
     mac.update(content_hash.as_bytes());
     hex::encode(mac.finalize().into_bytes())
+}
+
+/// Upload one file blob to the relay, encrypted and content-addressed exactly as
+/// `fetch_blob` expects (`blobs/{HMAC(content_hash, DEK)}`, secretbox under the
+/// DEK). This is the mobile capture counterpart to the desktop `push_artifact`
+/// blob push: without it a picture taken or uploaded on the phone never leaves the
+/// phone - notes and links carry no blob, but an image/pdf/file needs its bytes on
+/// the relay for any other device to fetch them (MOB.5). Idempotent: a re-push of
+/// the same content-addressed name returns 409, which is accepted.
+pub fn push_blob(
+    relay_url: &str,
+    secret: &str,
+    dek: &[u8; DEK_LEN],
+    content_hash: &str,
+    plaintext: &[u8],
+) -> Result<(), String> {
+    let name = blob_name(content_hash, dek);
+    let ciphertext = secretbox_encrypt(dek, plaintext)?;
+    let url = format!("{}/sync/object/blobs/{}", relay_url.trim_end_matches('/'), name);
+    put_object_with_retry(&url, secret, &ciphertext, "push_blob")
 }
 
 /// Fetch + decrypt one file blob (an image/PDF/file) from the relay (MOB.5). The blob

@@ -53,6 +53,28 @@ class MainActivity : TauriActivity() {
     return future
   }
 
+  // Instance method to pick an image from the gallery - called from JNI. Mirrors
+  // captureImage: post to the UI thread, then hand back the CameraHelper's future.
+  fun pickImage(): CompletableFuture<String> {
+    val future = CompletableFuture<String>()
+    uiHandler?.post {
+      try {
+        val helper = CameraHelper.getInstance(this)
+        val pickFuture = helper.pickImage()
+        pickFuture.whenComplete { result, ex ->
+          if (ex != null) {
+            future.completeExceptionally(ex)
+          } else {
+            future.complete(result)
+          }
+        }
+      } catch (e: Exception) {
+        future.completeExceptionally(e)
+      }
+    }
+    return future
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     WebView.setWebContentsDebuggingEnabled(true)

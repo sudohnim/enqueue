@@ -1040,9 +1040,15 @@
     )
       ed.classList.add("titled");
 
+    // applyInputRules mutates the block at the caret, so it must run synchronously
+    // on every keystroke - deferring it would fire the transform after the caret
+    // has moved on. refreshTitleHeader only re-derives the (cosmetic) header title
+    // by serialising the whole body to markdown, so debounce that expensive read to
+    // fire once the typing pauses (UIUX.3).
+    const refreshTitleHeaderSoon = debounce(refreshTitleHeader, 150);
     ed.addEventListener("input", () => {
       applyInputRules(ed);
-      refreshTitleHeader();
+      refreshTitleHeaderSoon();
     });
     ed.addEventListener("blur", saveBody);
     ed.addEventListener("keydown", (e) => {

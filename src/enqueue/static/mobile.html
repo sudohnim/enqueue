@@ -2055,7 +2055,21 @@
     const db = document.getElementById("details_backdrop");
     if (dp) dp.classList.remove("open");
     if (db) db.classList.remove("open");
-    for (const s of ["setup", "library", "reader", "capture", "chat", "settings", "shelf_page"]) {
+    // Every full-screen <section> must be listed here, or `show(id)` hides all the
+    // others and never un-hides the target - a blank screen. "crop" and
+    // "link_capture" were missing, which is why taking/uploading a photo (which ends
+    // in show("crop")) and the link form silently showed nothing.
+    for (const s of [
+      "setup",
+      "library",
+      "reader",
+      "capture",
+      "crop",
+      "link_capture",
+      "chat",
+      "settings",
+      "shelf_page",
+    ]) {
       const el = document.getElementById(s);
       if (el) el.hidden = s !== id;
     }
@@ -2168,6 +2182,24 @@
     _thumbObserver.observe(el);
   }
 
+  // mobile_blob is an IPC round trip that reads, decrypts, and base64-encodes a
+  // file blob. The library grid rebuilds every card on each mode switch (Last touch
+  // <-> Tags <-> Type), and re-fetching every image/pdf/link-preview blob on each
+  // rebuild was the switch lag. Cache the parsed result per artifact id - a blob is
+  // content-addressed and immutable for a given id - so it is fetched at most once a
+  // session; caching the Promise also dedupes concurrent requests. A failed fetch is
+  // evicted so a later render can retry.
+  const _blobCache = new Map();
+  function fetchBlob(id) {
+    let p = _blobCache.get(id);
+    if (!p) {
+      p = invoke("mobile_blob", { id }).then((raw) => parse(raw));
+      _blobCache.set(id, p);
+      p.catch(() => _blobCache.delete(id));
+    }
+    return p;
+  }
+
   function renderRows(arts, container) {
     // Build every card into a fragment and attach once, so a big shelf costs a
     // single reflow instead of one per card (was the view-toggle / sync jank).
@@ -2258,9 +2290,8 @@
       thumb.alt = "";
       li.appendChild(kindDot);
       li.insertBefore(thumb, kindDot);
-      invoke("mobile_blob", { id: a.id })
-        .then((raw) => {
-          const b = parse(raw);
+      fetchBlob(a.id)
+        .then((b) => {
           thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
         })
         .catch(() => {
@@ -2316,9 +2347,8 @@
     li.insertBefore(thumb, kindDot);
     // Lazy: pull the (potentially large) image blob only when the card is in view.
     observeThumb(li, () => {
-      invoke("mobile_blob", { id: a.id })
-        .then((raw) => {
-          const b = parse(raw);
+      fetchBlob(a.id)
+        .then((b) => {
           thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
         })
         .catch(() => {
@@ -2373,9 +2403,8 @@
     // Fetch + render the first-page thumbnail only when the card scrolls into
     // view (lazy), so a shelf of PDFs does not parse them all up front.
     observeThumb(li, () => {
-      invoke("mobile_blob", { id: a.id })
-        .then((raw) => {
-          const b = parse(raw);
+      fetchBlob(a.id)
+        .then((b) => {
           const bytes = base64ToUint8Array(b.base64);
           loadPdfJs().then(() => {
             pdfjsLib.getDocument({ data: bytes }).promise.then((pdf) => {
@@ -3020,9 +3049,8 @@
       p.className = "empty";
       p.textContent = "Loading\u2026";
       body.replaceChildren(p);
-      invoke("mobile_blob", { id })
-        .then((raw) => {
-          const blob = parse(raw);
+      fetchBlob(a.id)
+        .then((blob) => {
           const img = document.createElement("img");
           img.src =
             "data:" + (blob.mime || "image/png") + ";base64," + blob.base64;
@@ -3050,9 +3078,8 @@
       spinnerImg.alt = "";
       spinner.appendChild(spinnerImg);
       body.replaceChildren(spinner);
-      invoke("mobile_blob", { id })
-        .then((raw) => {
-          const blob = parse(raw);
+      fetchBlob(a.id)
+        .then((blob) => {
           const bytes = base64ToUint8Array(blob.base64);
           loadPdfJs()
             .then(() => {
@@ -3494,16 +3521,6 @@
     }, 140);
   });
 
-  // capture_btn was removed in the openField refactor; guard so a missing element
-  // does not throw at init and abort the rest of this script (the on-load sync
-  // bootstrap below it), which left the library spinning forever with no sync.
-  document.getElementById("capture_btn")?.addEventListener("click", () => {
-    document.getElementById("capture_field").value = "";
-    document.getElementById("capture_status").textContent = "";
-    history.pushState({ v: "capture" }, "");
-    show("capture");
-    document.getElementById("capture_field").focus();
-  });
   document.getElementById("capture_cancel").addEventListener("click", () => {
     show("library");
     renderLibrary();
@@ -3608,6 +3625,50 @@ ${notes}`
       const msg = errString(e);
       if (msg !== "cancelled") {
         status.textContent = msg;
+      }
+    }
+  }
+
+  // Take a photo with the device camera. `mobile_capture_camera` returns the same
+  // {base64, mime} shape as mobile_pick_image, so it feeds the exact same crop ->
+  // mobile_save_cropped_image pipeline (which creates the artifact AND uploads its
+  // blob). The camera button used to invoke this and throw the result away, so a
+  // photo was captured but never became an artifact - that was the "can't capture"
+  // bug. On a real error we surface it; a plain cancel stays silent.
+  async function doCaptureCamera() {
+    const status = document.getElementById("capture_status");
+    if (status) status.textContent = "";
+    try {
+      // The app declares android.permission.CAMERA (for the QR scanner), and once
+      // a runtime permission is DECLARED the OS appop-denies ACTION_IMAGE_CAPTURE
+      // until it is actually GRANTED - that denial ("requires android:camera") was
+      // why the camera button did nothing. Gate on the permission exactly as the QR
+      // scanner does, requesting it if needed, before launching the capture intent.
+      let perm = await invoke("plugin:barcode-scanner|check_permissions");
+      if (!perm || perm.camera !== "granted") {
+        perm = await invoke("plugin:barcode-scanner|request_permissions");
+      }
+      if (!perm || perm.camera !== "granted") {
+        const msg =
+          "Camera access is needed to take a photo. Enable it for Enqueue in Android Settings > Apps.";
+        if (status) status.textContent = msg;
+        return;
+      }
+      const result = await invoke("mobile_capture_camera");
+      const data = JSON.parse(result);
+      if (data.cancelled) return;
+      cropData = {
+        base64: data.base64,
+        mime: data.mime,
+        rotation: 0,
+        cropRect: null,
+      };
+      await showCropSheet();
+    } catch (e) {
+      const msg = errString(e);
+      if (msg !== "cancelled") {
+        console.log("camera capture:", msg);
+        if (status) status.textContent = msg;
       }
     }
   }
@@ -4125,23 +4186,11 @@ return;
     if (uploadBtn)
       uploadBtn.addEventListener("click", () => {
         pillCloseMenu(true);
-        // Upload: open file picker
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "*/*";
-        input.onchange = async (e) => {
-          const file = e.target.files[0];
-          if (file) {
-            const arrayBuffer = await file.arrayBuffer();
-            await invoke("mobile_capture", {
-              file: arrayBuffer,
-              name: file.name,
-              type: file.type,
-            });
-            toast("Uploaded");
-          }
-        };
-        input.click();
+        // Upload an image from the gallery. This used to hand-roll a file input and
+        // invoke `mobile_capture` (the TEXT-note command) with file args - a command
+        // + argument mismatch that silently failed, so uploads never landed. Route it
+        // through the real image path: mobile_pick_image -> crop -> save.
+        doCaptureImage();
       });
 
     // Camera
@@ -4149,7 +4198,9 @@ return;
     if (cameraBtn)
       cameraBtn.addEventListener("click", () => {
         pillCloseMenu(true);
-        invoke("mobile_capture_camera").catch(() => {});
+        // Route the captured photo through the crop -> save pipeline instead of
+        // discarding its result (the old `.catch(() => {})` swallowed everything).
+        doCaptureCamera();
       });
 
     // Link

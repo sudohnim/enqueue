@@ -736,20 +736,19 @@ mod mobile {
                     );
                     let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
                     let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-                    let _ = crate::sync::push_snapshot(relay_url, secret, &dek, &snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot);
-                    
-                    // If push succeeded, update status
-                    if let Some(cfg2) = load_config(&app)? {
-                        let relay_url = cfg2.get("relay_url").and_then(Value::as_str).unwrap_or("");
-                        let secret = cfg2.get("secret").and_then(Value::as_str).unwrap_or("");
-                        // Check if object exists on relay
-                        let client = ureq::get(&format!("{}/sync/object/dev/{}/artifacts/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
-                            .set("Authorization", &format!("Bearer {}", secret))
-                            .call();
-                        if client.is_ok() && client.as_ref().unwrap().status() == 200 {
-                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
-                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
-                        }
+                    // The push result is authoritative (DEAD.7): if push_snapshot returned
+                    // Ok the object is on the relay, so mark it synced and drop the outbox
+                    // row - no extra GET to read the object back.
+                    // Mark synced only when BOTH the snapshot and the blob are on the
+                    // relay - an image is not really synced until its bytes are up, and
+                    // flipping status to 'ok' early left blob-less images that render as
+                    // text_only on the desktop. On any failure the row stays 'pending'
+                    // with its outbox entry, so mobile_outbox_push retries it later.
+                    if crate::sync::push_snapshot(relay_url, secret, &dek, snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot).is_ok()
+                        && push_capture_blob(&app, &conn, &id, relay_url, secret, &dek).unwrap_or(false)
+                    {
+                        let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
+                        let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
                     }
                 }
             }
@@ -760,24 +759,109 @@ mod mobile {
     }
 
 
-    /// Pick an image from the photo picker and return base64 data (MOB2.6).
-    /// Does NOT create an artifact - just returns the image data for crop/rotate.
+    /// Pick an image from the gallery and return {base64, mime} (MOB2.6). Does NOT
+    /// create an artifact - just returns the image data for crop/rotate.
+    ///
+    /// On Android the system photo picker returns a content:// URI, which the tauri
+    /// dialog surfaces as `FilePath::Url` and which `std::fs::read` cannot open - so
+    /// the pick is done in Kotlin (MainActivity.pickImage) and the bytes are read via
+    /// the ContentResolver, exactly like the camera path. The desktop build keeps the
+    /// plain file dialog.
+    #[cfg(target_os = "android")]
+    #[tauri::command]
+    async fn mobile_pick_image(_app: AppHandle) -> Result<String, String> {
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel();
+
+        std::thread::spawn(move || -> Result<(), String> {
+            let result: Result<String, String> = (|| {
+                let vm_arc = crate::get_android_vm()?;
+                let mut env = vm_arc
+                    .attach_current_thread()
+                    .map_err(|e| format!("Failed to attach thread: {}", e))?;
+
+                let main_activity_class_global = crate::get_main_activity_class()?;
+                let main_activity_class = unsafe {
+                    jni::objects::JClass::from(jni::objects::JObject::from_raw(
+                        main_activity_class_global.as_obj().as_raw(),
+                    ))
+                };
+
+                let activity = env
+                    .call_static_method::<_, &str, &str>(
+                        &main_activity_class,
+                        "getCurrentActivity",
+                        "()Lcom/sudohnim/enqueue/MainActivity;",
+                        &[],
+                    )
+                    .map_err(|e| format!("Failed to call getCurrentActivity: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get activity: {:?}", e))?;
+
+                let future = env
+                    .call_method(
+                        &activity,
+                        "pickImage",
+                        "()Ljava/util/concurrent/CompletableFuture;",
+                        &[],
+                    )
+                    .map_err(|e| format!("Failed to call pickImage: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get future: {:?}", e))?;
+
+                let future_obj = unsafe { jni::objects::JObject::from_raw(future.as_raw()) };
+                let result_obj = env
+                    .call_method(&future_obj, "get", "()Ljava/lang/Object;", &[])
+                    .map_err(|e| format!("Failed to call get: {:?}", e))?
+                    .l()
+                    .map_err(|e| format!("Failed to get result: {:?}", e));
+
+                let result_obj = result_obj.map_err(|e| format!("Failed to get result object: {}", e))?;
+                let result_str = if result_obj.is_null() {
+                    return Err("Image pick cancelled or failed".into());
+                } else {
+                    let string_class = env
+                        .find_class("java/lang/String")
+                        .map_err(|e| format!("Failed to find String class: {}", e))?;
+                    if env.is_instance_of(&result_obj, &string_class).unwrap_or(false) {
+                        let jstring = jni::objects::JString::from(result_obj);
+                        let java_str = env
+                            .get_string(&jstring)
+                            .map_err(|e| format!("Failed to get string: {}", e))?;
+                        java_str.into()
+                    } else {
+                        return Err("Unexpected result type from picker".into());
+                    }
+                };
+
+                Ok(result_str)
+            })();
+
+            tx.send(result).map_err(|e| format!("Failed to send result: {}", e))?;
+            Ok(())
+        });
+
+        rx.recv().map_err(|e| format!("Channel error: {}", e))?
+    }
+
+    #[cfg(not(target_os = "android"))]
     #[tauri::command]
     async fn mobile_pick_image(app: AppHandle) -> Result<String, String> {
         use tauri_plugin_dialog::DialogExt;
-        
+
         let file_path = app
             .dialog()
             .file()
             .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "heic"])
             .blocking_pick_file()
             .ok_or("cancelled")?;
-        
+
         let path = match file_path {
             tauri_plugin_dialog::FilePath::Path(p) => p,
             tauri_plugin_dialog::FilePath::Url(_) => return Err("unsupported file path type".into()),
         };
-        
+
         let bytes = std::fs::read(&path).map_err(|e| format!("read image: {e}"))?;
         let mime = match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase().as_str() {
             "jpg" | "jpeg" => "image/jpeg",
@@ -787,7 +871,7 @@ mod mobile {
             "heic" => "image/heic",
             _ => "application/octet-stream",
         };
-        
+
         let base64 = general_purpose::STANDARD.encode(&bytes);
         Ok(serde_json::json!({ "base64": base64, "mime": mime }).to_string())
     }
@@ -958,19 +1042,17 @@ mod mobile {
                     );
                     let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
                     let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-                    let _ = crate::sync::push_snapshot(relay_url, secret, &dek, &snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot);
-                    
-                    // If push succeeded, update status
-                    if let Some(cfg2) = load_config(&app)? {
-                        let relay_url = cfg2.get("relay_url").and_then(Value::as_str).unwrap_or("");
-                        let secret = cfg2.get("secret").and_then(Value::as_str).unwrap_or("");
-                        let client = ureq::get(&format!("{}/sync/object/dev/{}/artifacts/{}.enc", relay_url.trim_end_matches('/'), crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?), id))
-                            .set("Authorization", &format!("Bearer {}", secret))
-                            .call();
-                        if client.is_ok() && client.as_ref().unwrap().status() == 200 {
-                            let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
-                            let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
-                        }
+                    // The push result is authoritative (DEAD.7): no GET-back needed.
+                    // Mark synced only when BOTH the snapshot and the blob are on the
+                    // relay - an image is not really synced until its bytes are up, and
+                    // flipping status to 'ok' early left blob-less images that render as
+                    // text_only on the desktop. On any failure the row stays 'pending'
+                    // with its outbox entry, so mobile_outbox_push retries it later.
+                    if crate::sync::push_snapshot(relay_url, secret, &dek, snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot).is_ok()
+                        && push_capture_blob(&app, &conn, &id, relay_url, secret, &dek).unwrap_or(false)
+                    {
+                        let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
+                        let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
                     }
                 }
             }
@@ -1237,19 +1319,55 @@ mod mobile {
             .collect();
         
         let mut pushed = 0;
+        let mut push_pending = |id: &str| -> bool {
+            let snapshot = match crate::sync::build_snapshot(&conn, id) {
+                Ok(Some(s)) => s,
+                _ => return false,
+            };
+            let mut snapshot = snapshot;
+            snapshot["artifact"]["_device_id"] = serde_json::Value::String(device_id.clone());
+            // Snapshot AND blob must both land before we call it synced (an image with
+            // no blob renders as text_only on the desktop). On failure the row stays
+            // 'pending' and is retried on the next sync.
+            if crate::sync::push_snapshot(&relay_url, &secret, &dek, &device_id, &snapshot).is_ok()
+                && push_capture_blob(&app, &conn, id, &relay_url, &secret, &dek).unwrap_or(false)
+            {
+                let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [id]);
+                let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [id]);
+                true
+            } else {
+                false
+            }
+        };
+
         for id in capture_ids {
-            if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id).map_err(|e| e.to_string())? {
-                let mut snapshot = snapshot;
-                snapshot["artifact"]["_device_id"] = serde_json::Value::String(device_id.clone());
-                let result = crate::sync::push_snapshot(&relay_url, &secret, &dek, &device_id, &snapshot);
-                if result.is_ok() {
-                    let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
-                    let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
-                    pushed += 1;
-                }
+            if push_pending(&id) {
+                pushed += 1;
             }
         }
-        
+
+        // Backstop: any artifact still 'pending' with no outbox row (an earlier build
+        // could clear the outbox entry without a successful push, orphaning the row so
+        // it never retried). status='pending' in `artifacts` is the real "needs push"
+        // signal; drive off it directly. Push is idempotent (relay upserts), so
+        // re-pushing costs nothing.
+        let orphan_ids: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT id FROM artifacts WHERE status = 'pending' AND deleted_at IS NULL AND local_only = 0")
+                .map_err(|e| e.to_string())?;
+            let ids = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?
+                .filter_map(Result::ok)
+                .collect();
+            ids
+        };
+        for id in orphan_ids {
+            if push_pending(&id) {
+                pushed += 1;
+            }
+        }
+
         // 2. Push mutation_outbox (delete/restore mutations)
         let mut stmt = conn
             .prepare("SELECT id, artifact_id, mutation_type FROM mutation_outbox WHERE synced = 0 ORDER BY created_at")
@@ -1365,6 +1483,51 @@ mod mobile {
     /// artifact's CURRENT snapshot on the next sync (the mutation_type is only a
     /// label; the whole snapshot is what travels). Without this the sync fns
     /// mutated only the local read-copy and the change never left the phone.
+    /// Push a captured artifact's file blob to the relay if it has one.
+    ///
+    /// Returns Ok(true) when nothing needed uploading (a note/link, or no cached
+    /// blob) OR the upload succeeded, and Ok(false) only when the artifact has a
+    /// local blob that failed to upload - the caller keeps its outbox row so the
+    /// next `mobile_outbox_push` retries. A picture only reaches other devices once
+    /// its blob is on the relay; snapshot-only propagation is why images used to
+    /// stay stuck on the phone that took them while notes and links synced fine.
+    fn push_capture_blob(
+        app: &AppHandle,
+        conn: &Connection,
+        id: &str,
+        relay_url: &str,
+        secret: &str,
+        dek: &[u8; 32],
+    ) -> Result<bool, String> {
+        let row: Option<(String, Option<String>)> = conn
+            .query_row(
+                "SELECT kind, content_hash FROM artifacts WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let Some((kind, Some(content_hash))) = row else {
+            return Ok(true);
+        };
+        if !matches!(kind.as_str(), "image" | "pdf" | "file") || content_hash.is_empty() {
+            return Ok(true);
+        }
+        let cache_path = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("blobs")
+            .join(&content_hash);
+        let bytes = match std::fs::read(&cache_path) {
+            Ok(b) => b,
+            // No local blob (e.g. a pulled-only artifact): nothing for this device
+            // to upload, so do not block the outbox on it.
+            Err(_) => return Ok(true),
+        };
+        Ok(crate::sync::push_blob(relay_url, secret, dek, &content_hash, &bytes).is_ok())
+    }
+
     fn queue_mutation_push(conn: &Connection, artifact_id: &str, kind: &str) -> Result<(), String> {
         let now = now_iso();
         conn.execute(

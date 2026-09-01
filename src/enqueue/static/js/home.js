@@ -219,6 +219,10 @@ function mountCollapsible(sectionSel, storageKey) {
 	// and `view` is a reused container where a persistent delegation listener
 	// would need its own teardown lifecycle.
 	const collapsed = collapsedSet(storageKey);
+	// Each Type/Tags switch rebuilds `#wallbody` via innerHTML (setWallGroup), so
+	// these toggles are fresh nodes every time and listeners cannot stack - bind
+	// directly. (An earlier clone-replace guard here was pure DOM churn against an
+	// already-fresh tree and showed up as switch lag.)
 	view.querySelectorAll(sectionSel + " .grouptoggle").forEach((btn) => {
 		btn.addEventListener("click", () => {
 			const section = btn.closest(sectionSel);

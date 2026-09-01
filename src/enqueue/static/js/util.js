@@ -34,6 +34,43 @@ const api = async (p, o) => {
 	return r.json();
 };
 
+// Trailing-edge debounce: coalesce a burst of calls into one, `ms` after the
+// last. Used for the per-keystroke work that only needs to land once the typing
+// pauses (UIUX.3 title derivation, the mobile search box).
+function debounce(fn, ms) {
+	let timer = null;
+	return (...args) => {
+		if (timer) clearTimeout(timer);
+		timer = setTimeout(() => fn(...args), ms);
+	};
+}
+
+// Backoff poller (UIUX.4): repeat `fn` until it returns truthy, spacing ticks
+// out from `min` to `max` by `factor` so a long wait (index rebuild, a slow
+// answer) stops hammering the engine every second. Returns a cancel function;
+// a thrown `fn` is treated as "not done yet" so a transient error keeps polling.
+function poll(fn, { min = 1000, max = 5000, factor = 1.5 } = {}) {
+	let delay = min;
+	let timer = null;
+	let stopped = false;
+	const tick = async () => {
+		let done = false;
+		try {
+			done = await fn();
+		} catch (_) {
+			done = false;
+		}
+		if (stopped || done) return;
+		delay = Math.min(delay * factor, max);
+		timer = setTimeout(tick, delay);
+	};
+	timer = setTimeout(tick, min);
+	return () => {
+		stopped = true;
+		if (timer) clearTimeout(timer);
+	};
+}
+
 // Capture is the one act the whole product rests on, and it used to fail in silence:
 // a link that errored and an upload that 500ed both re-rendered the wall exactly like
 // success. "Nothing is ever lost" cannot be true of a thing that can drop your capture

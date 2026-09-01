@@ -32,13 +32,14 @@
         // required message, then poll /doctor and re-run the search when the
         // rebuild lands - the index is never queried in its stale state.
         view.innerHTML = spinner("lg", msg);
-        const timer = setInterval(async () => {
+        poll(async () => {
           const d = await api("/doctor").catch(() => null);
           if (d && d.index_state === "ready") {
-            clearInterval(timer);
             doSearch(q);
+            return true;
           }
-        }, 1000);
+          return false;
+        });
         return;
       }
       view.innerHTML = '<div class="state">' + esc(msg) + "</div>";

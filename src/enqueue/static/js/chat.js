@@ -560,11 +560,17 @@ async function sendInChat(text, skill) {
 // it no longer owns, and opening a different chat starts its own.
 let pollTimer = null;
 let pollChatId = null;
+// UIUX.4: back off from 2s toward 8s while a turn stays pending, so a slow
+// answer stops re-fetching the whole transcript every 2s. Reset on each start.
+const POLL_MIN = 2000;
+const POLL_MAX = 8000;
+let pollDelay = POLL_MIN;
 
 function stopPolling() {
 	clearTimeout(pollTimer);
 	pollTimer = null;
 	pollChatId = null;
+	pollDelay = POLL_MIN;
 }
 
 function hasPending(d) {
@@ -577,7 +583,8 @@ function startPolling(id) {
 	if (pollChatId !== id) stopPolling();
 	if (pollTimer) return;
 	pollChatId = id;
-	pollTimer = setTimeout(pollTick, 2000);
+	pollDelay = POLL_MIN;
+	pollTimer = setTimeout(pollTick, pollDelay);
 }
 
 async function pollTick() {
@@ -597,8 +604,10 @@ async function pollTick() {
 		chat = d;
 		renderChat(d);
 	}
-	if (hasPending(d)) pollTimer = setTimeout(pollTick, 2000);
-	else stopPolling();
+	if (hasPending(d)) {
+		pollDelay = Math.min(pollDelay * 1.5, POLL_MAX);
+		pollTimer = setTimeout(pollTick, pollDelay);
+	} else stopPolling();
 }
 
 // Re-render only when the transcript actually moved: a poller that redraws the

@@ -604,7 +604,6 @@ def _load_corpus_into_db(test_dir: Path, entries: list[dict]) -> None:
 
 EVALS_DIR = Path(__file__).resolve().parent.parent.parent / "evals"
 QUERIES_PATH = EVALS_DIR / "queries.yaml"
-RESULTS_DIR = EVALS_DIR / "results"
 
 
 @app.command()

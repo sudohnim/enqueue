@@ -22,7 +22,9 @@ class CameraHelper(
   private var photoFile: File? = null
   private var photoUri: Uri? = null
   private var resultFuture: CompletableFuture<String>? = null
+  private var pickFuture: CompletableFuture<String>? = null
   private val REQUEST_IMAGE_CAPTURE = 42
+  private val REQUEST_PICK_IMAGE = 43
 
   fun captureImage(): CompletableFuture<String> {
     val future = CompletableFuture<String>()
@@ -57,6 +59,19 @@ class CameraHelper(
     return future
   }
 
+  // Pick an existing image from the gallery / photo picker. The picker returns a
+  // content:// URI (not a filesystem path), which is why reading it from Rust with
+  // std::fs::read failed - it must be read through the ContentResolver here.
+  fun pickImage(): CompletableFuture<String> {
+    val future = CompletableFuture<String>()
+    this.pickFuture = future
+    val intent = Intent(Intent.ACTION_GET_CONTENT)
+    intent.type = "image/*"
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    activity.startActivityForResult(intent, REQUEST_PICK_IMAGE)
+    return future
+  }
+
   private fun createImageFile(): File? {
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     val imageFileName = "IMG_${timeStamp}_"
@@ -81,7 +96,11 @@ class CameraHelper(
           // Read the file and convert to base64
           try {
             val bytes = photoFile.readBytes()
-            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+            // NO_WRAP: DEFAULT inserts newlines every 76 chars, and those raw \n land
+            // inside the JSON string we build below, so the JS JSON.parse throws "bad
+            // control character" and the captured photo silently never becomes an
+            // artifact. A single-line base64 is valid inside the JSON string.
+            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             val mime = "image/jpeg"
             resultFuture?.complete("{\"base64\":\"$base64\",\"mime\":\"$mime\"}")
           } catch (e: IOException) {
@@ -92,6 +111,25 @@ class CameraHelper(
         }
       } else {
         resultFuture?.completeExceptionally(IOException("Camera capture cancelled"))
+      }
+      return true
+    }
+    if (requestCode == REQUEST_PICK_IMAGE) {
+      if (resultCode == Activity.RESULT_OK && data?.data != null) {
+        val uri = data.data!!
+        try {
+          val bytes =
+            activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+              ?: throw IOException("could not open picked image")
+          // NO_WRAP: newlines from DEFAULT break the JSON string on the JS side.
+          val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+          val mime = activity.contentResolver.getType(uri) ?: "image/jpeg"
+          pickFuture?.complete("{\"base64\":\"$base64\",\"mime\":\"$mime\"}")
+        } catch (e: Exception) {
+          pickFuture?.completeExceptionally(IOException("Failed to read picked image: $e"))
+        }
+      } else {
+        pickFuture?.completeExceptionally(IOException("Image pick cancelled"))
       }
       return true
     }

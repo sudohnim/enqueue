@@ -125,6 +125,45 @@ def push_artifact(artifact_id: str) -> None:
         conn.execute("UPDATE artifacts SET _device_id = ? WHERE id = ?", (device_id(), artifact_id))
 
 
+def fetch_blob_to_cache(content_hash: str) -> bool:
+    """Download one file blob from the relay into BLOB_DIR by content hash (E5).
+
+    A capture made on another device (a phone photo) uploads its blob to the relay
+    but only pushes the *snapshot* to peers; the bytes live on the relay until a
+    device that pulled the snapshot fetches them on demand. The mobile app already
+    does this (`fetch_blob`); the desktop had no equivalent, so a pulled image or
+    PDF had a row but no bytes and `/artifacts/{id}/blob` 404'd - the image never
+    rendered. This is the desktop's on-demand fetch: GET the content-addressed,
+    DEK-named object, decrypt, and cache it under its content hash. Returns True
+    when the blob is now on disk; a no-op (False) when sync is unconfigured, the
+    keyring is locked, or the relay does not have the object.
+    """
+    url = _relay_url()
+    if not url:
+        return False
+    dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
+    if dek is None:
+        return False
+    name = crypto.blob_name(content_hash, dek)
+    try:
+        with httpx.Client(timeout=60) as client:
+            resp = client.get(
+                f"{url.rstrip('/')}/sync/object/blobs/{name}",
+                headers={"Authorization": f"Bearer {_secret()}"},
+            )
+    except httpx.HTTPError:
+        return False
+    if resp.status_code != 200:
+        return False
+    try:
+        plain = crypto.decrypt(resp.content, dek)
+    except Exception:  # noqa: BLE001 - an undecryptable blob is "not here", never fatal
+        return False
+    config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
+    (config.BLOB_DIR / content_hash).write_bytes(plain)
+    return True
+
+
 def pull() -> dict:
     """List changed objects since the cursor, download and apply snapshots (SYNC.5).
 
@@ -153,22 +192,39 @@ def pull() -> dict:
         new_cursor = listing.json()["cursor"]
 
         pulled = 0
+        skipped = 0
         for obj in listing.json()["objects"]:
             name = obj["name"]
             if name.startswith(mine):
                 continue
             if not (name.startswith("dev/") and name.endswith(".enc")):
                 continue  # blobs are fetched on demand (SYNC.8/E5), not pulled here
+            # The object GET's transport errors are left to propagate (the worker
+            # turns them into backoff, and the cursor is NOT advanced, so the object
+            # is retried next pull - a transient download failure is never mistaken
+            # for a permanent skip).
             resp = client.get(f"{base}/sync/object/{name}", headers=headers)
             if resp.status_code != 200:
                 continue
-            snapshot = deserialize(crypto.decrypt(resp.content, dek))
-            with db.transaction() as conn:
-                apply_pulled_snapshot(conn, snapshot)
-            pulled += 1
+            try:
+                snapshot = deserialize(crypto.decrypt(resp.content, dek))
+                with db.transaction() as conn:
+                    apply_pulled_snapshot(conn, snapshot)
+                pulled += 1
+            except Exception as exc:  # noqa: BLE001
+                # A single poison snapshot must NEVER wedge the whole pull. This
+                # bit us hard: a phone can push two artifacts that share a
+                # content_hash (identical bytes), but the desktop's
+                # `artifacts.content_hash` is UNIQUE, so applying the second threw
+                # IntegrityError, the exception escaped the loop, `_write_cursor`
+                # never ran, and the cursor sat frozen re-hitting the same object -
+                # so nothing after it ever synced. Now we log, skip that one object,
+                # keep applying the rest, and advance the cursor past it.
+                skipped += 1
+                print(f"[sync] pull skipped {name}: {type(exc).__name__}: {exc}", flush=True)
 
     _write_cursor(new_cursor)
-    return {"pulled": pulled}
+    return {"pulled": pulled, "skipped": skipped}
 
 
 def push_settings() -> None:
@@ -391,13 +447,11 @@ def push_all() -> int:
         conn.close()
 
     pushed = 0
+    # One HTTP client for the whole backfill (PERF.3): reused across every artifact and
+    # blob PUT, keeping the connection pool warm instead of a fresh open/close each time.
+    client = httpx.Client(timeout=60)
     for artifact_id in artifact_ids:
-        # Reuse the existing push logic but track 201 responses
-        conn = db.get_conn()
-        try:
-            snapshot = read_artifact_snapshot(db.get_conn(), artifact_id)
-        finally:
-            pass  # read_artifact_snapshot closes its own conn
+        snapshot = read_artifact_snapshot(db.get_conn(), artifact_id)
         if snapshot is None:
             continue
         if snapshot["artifact"].get("local_only"):
@@ -414,10 +468,9 @@ def push_all() -> int:
             "Content-Type": "application/octet-stream",
         }
         try:
-            with httpx.Client(timeout=30) as client:
-                resp = client.put(
-                    f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
-                )
+            resp = client.put(
+                f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+            )
         except httpx.HTTPError:
             continue
         if resp.status_code == 201:
@@ -434,17 +487,17 @@ def push_all() -> int:
                 blob_name = crypto.blob_name(content_hash, dek)
                 blob_data = crypto.encrypt(blob_path.read_bytes(), dek)
                 try:
-                    with httpx.Client(timeout=60) as client:
-                        bresp = client.put(
-                            f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
-                            content=blob_data,
-                            headers=headers,
-                        )
+                    bresp = client.put(
+                        f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
+                        content=blob_data,
+                        headers=headers,
+                    )
                 except httpx.HTTPError:
                     pass  # blob push failure is non-fatal
                 if bresp.status_code not in (201, 409):
                     pass  # blob push failure is non-fatal
 
+    client.close()
     # Custom views ride alongside the artifacts so the phone's Custom mode has data.
     push_pivots()
     return pushed

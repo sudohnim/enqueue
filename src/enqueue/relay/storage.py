@@ -44,6 +44,9 @@ class RelayStorage:
                 " data BLOB NOT NULL,"
                 " cursor INTEGER NOT NULL)"
             )
+            # The change feed (`list_changed`) filters+orders by cursor on every pull;
+            # index it so it is a range scan instead of a full table scan (SYNC.2).
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_objects_cursor ON objects(cursor)")
 
     def _max_cursor(self, conn: sqlite3.Connection) -> int:
         row = conn.execute("SELECT COALESCE(MAX(cursor), 0) AS c FROM objects").fetchone()

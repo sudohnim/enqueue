@@ -26,7 +26,6 @@ def _point_evals_at(tmp_path):
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(cli, "EVALS_DIR", tmp_path)
     monkeypatch.setattr(cli, "QUERIES_PATH", tmp_path / "queries.yaml")
-    monkeypatch.setattr(cli, "RESULTS_DIR", tmp_path / "results")
     return monkeypatch
 
 

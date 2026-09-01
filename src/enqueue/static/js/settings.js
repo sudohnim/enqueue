@@ -998,12 +998,6 @@ async function confirmResetSync() {
 	}
 }
 
-function copyPairingCode() {
-	if (!pairCodeCache) return;
-	navigator.clipboard.writeText(pairCodeCache);
-	toast("Pairing code copied");
-}
-
 const BACKEND_MODELS = {
 	ollama: "llama3.1:8b",
 	openrouter: "google/gemini-3-flash",

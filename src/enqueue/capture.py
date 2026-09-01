@@ -199,7 +199,13 @@ def blob_path(artifact_id: str) -> tuple[Path, str, str] | None:
         return None
     path = config.BLOB_DIR / row["content_hash"]
     if not path.exists():
-        return None
+        # A blob captured on another device (e.g. a phone photo) lives only on the
+        # relay until we fetch it. Pull it on demand, then serve from the local
+        # cache like any other blob. Lazy import avoids a sync<->capture cycle.
+        from .sync.client import fetch_blob_to_cache
+
+        if not fetch_blob_to_cache(row["content_hash"]) or not path.exists():
+            return None
     return path, row["mime"] or "application/octet-stream", row["filename"] or artifact_id
 
 
