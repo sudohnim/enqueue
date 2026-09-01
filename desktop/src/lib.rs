@@ -1200,22 +1200,6 @@ mod mobile {
         Ok("ok".to_string())
     }
 
-    /// Generate pairing code (MOB2.10).
-    #[tauri::command]
-    fn mobile_pairing_code(app: AppHandle) -> Result<String, String> {
-        let cfg = load_config(&app)?.ok_or("not configured")?;
-        let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
-        let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-        
-        let code = serde_json::json!({
-            "v": 1,
-            "relay_url": relay_url,
-            "secret": secret,
-        });
-        let code_b64 = general_purpose::STANDARD.encode(code.to_string());
-        Ok(serde_json::json!({ "code": code_b64 }).to_string())
-    }
-
     /// Clear blob cache (MOB2.8).
     #[tauri::command]
     fn mobile_clear_blob_cache(app: AppHandle) -> Result<String, String> {
@@ -1227,125 +1211,6 @@ mod mobile {
         Ok("ok".to_string())
     }
 
-    /// Get settings for sync (MOB2.9 - desktop calls this).
-    #[tauri::command]
-    fn mobile_settings_sync(app: AppHandle) -> Result<String, String> {
-        let cfg = load_config(&app)?.unwrap_or_default();
-        Ok(serde_json::json!({
-            "llm_backend": cfg.get("llm_backend").and_then(Value::as_str).unwrap_or("ollama"),
-            "llm_model": cfg.get("llm_model").and_then(Value::as_str).unwrap_or("llama3.1:8b"),
-            "llm_url": cfg.get("llm_url").and_then(Value::as_str).unwrap_or(""),
-            "auto_preview": cfg.get("auto_preview").and_then(Value::as_bool).unwrap_or(true),
-            "trash_days": cfg.get("trash_days").and_then(Value::as_str).unwrap_or("30"),
-        }).to_string())
-    }
-
-    /// Apply synced settings (MOB2.9).
-    #[tauri::command]
-    fn mobile_settings_apply(app: AppHandle, settings: String) -> Result<String, String> {
-        let new_settings: Value = serde_json::from_str(&settings).map_err(|e| e.to_string())?;
-        let mut cfg = load_config(&app)?.unwrap_or_else(|| serde_json::json!({}));
-        
-        if let Some(v) = new_settings.get("llm_backend") { cfg["llm_backend"] = v.clone(); }
-        if let Some(v) = new_settings.get("llm_model") { cfg["llm_model"] = v.clone(); }
-        if let Some(v) = new_settings.get("llm_url") { cfg["llm_url"] = v.clone(); }
-        if let Some(v) = new_settings.get("auto_preview") { cfg["auto_preview"] = v.clone(); }
-        if let Some(v) = new_settings.get("trash_days") { cfg["trash_days"] = v.clone(); }
-        
-        save_config(
-            &app,
-            cfg.get("relay_url").and_then(Value::as_str).unwrap_or(""),
-            cfg.get("secret").and_then(Value::as_str).unwrap_or(""),
-            cfg.get("keyring_json").and_then(Value::as_str).unwrap_or(""),
-            &cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).unwrap_or([0u8; 32]),
-            cfg.get("llm_backend").and_then(Value::as_str),
-            cfg.get("llm_model").and_then(Value::as_str),
-            None,
-            cfg.get("llm_url").and_then(Value::as_str),
-            cfg.get("auto_preview").and_then(Value::as_bool),
-            cfg.get("trash_days").and_then(Value::as_str),
-        )?;
-        Ok("ok".to_string())
-    }
-
-
-
-    /// Setup from pairing code + password (MOB2.10 - new flow).
-    /// Takes a pairing code (relay URL + secret) and a library password,
-    /// pulls keyring.enc from relay, unlocks with password, and syncs.
-    #[tauri::command]
-    fn mobile_pairing_setup(app: AppHandle, code: String, password: String) -> Result<String, String> {
-        use base64::Engine as _;
-        
-        // Decode the pairing code (contains only relay_url + secret)
-        let decoded = base64::engine::general_purpose::STANDARD.decode(&code)
-            .map_err(|e| format!("invalid base64: {e}"))?;
-        let config: serde_json::Value = serde_json::from_slice(&decoded)
-            .map_err(|e| format!("invalid JSON: {e}"))?;
-        
-        let relay_url = config["relay_url"].as_str().unwrap_or("");
-        let secret = config["secret"].as_str().unwrap_or("");
-        
-        if relay_url.is_empty() || secret.is_empty() {
-            return Err("incomplete pairing code".into());
-        }
-        
-        // Fetch keyring.json from relay (now stored as raw keyring.json, no DEK encryption)
-        let keyring_bytes = crate::sync::fetch_keyring(relay_url, secret)
-            .map_err(|e| e.to_string())?;
-        
-        // Parse keyring.json to get the wrapped DEK and salts
-        let keyring: serde_json::Value = serde_json::from_slice(&keyring_bytes)
-            .map_err(|e| format!("invalid keyring: {e}"))?;
-        
-        // Extract the password-wrapped DEK and password salt
-        let dek_by_password_hex = keyring["dek_by_password"].as_str()
-            .ok_or("missing dek_by_password")?;
-        let password_salt_hex = keyring["password_salt"].as_str()
-            .ok_or("missing password_salt")?;
-        
-        let dek_by_password = hex::decode(dek_by_password_hex)
-            .map_err(|e| format!("invalid dek_by_password hex: {e}"))?;
-        let password_salt = hex::decode(password_salt_hex)
-            .map_err(|e| format!("invalid password_salt hex: {e}"))?;
-        
-        // Derive KEK from password and unwrap DEK
-        let kek = crate::sync::derive_kek(&password, &password_salt)
-            .map_err(|e| e.to_string())?;
-        let dek_vec = crate::sync::unwrap(&dek_by_password, &kek)
-            .map_err(|e| format!("wrong password: {e}"))?;
-        let dek: [u8; 32] = dek_vec
-            .as_slice()
-            .try_into()
-            .map_err(|_| "unwrapped DEK is not 32 bytes")?;
-
-        // Save config with unlocked DEK
-        let keyring_json = String::from_utf8(keyring_bytes).unwrap_or_default();
-        save_config(
-            &app,
-            relay_url,
-            secret,
-            &keyring_json,
-            &dek,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )?;
-        
-        // Sync
-        let conn = open_lib(&app)?;
-        crate::sync::init_schema(&conn).map_err(|e| e.to_string())?;
-        
-        let outcome = crate::sync::sync_library(relay_url, secret, Some(&dek), &conn);
-        if outcome.status != "synced" {
-            return Err(outcome.error.unwrap_or_else(||"sync failed".into()));
-        }
-        
-        Ok(serde_json::json!({ "configured": true }).to_string())
-    }
 
     /// Push any queued offline captures and mutations to the relay (MOB.7 + CRUDSYNC.2).
     #[tauri::command]
@@ -1464,35 +1329,6 @@ mod mobile {
         ).map_err(|e| e.to_string())?;
 
         Ok(serde_json::json!({ "deleted": true, "id": artifact_id }).to_string())
-    }
-
-    /// Restore an artifact on mobile (CRUDSYNC.2).
-    /// Clears deleted_at locally and enqueues a 'restore' mutation for sync.
-    #[cfg(mobile)]
-    #[tauri::command]
-    fn mobile_restore(app: AppHandle, artifact_id: String) -> Result<String, String> {
-        let conn = open_lib(&app)?;
-
-        // Clear deleted_at locally
-        let restored = {
-            let mut stmt = conn.prepare("UPDATE artifacts SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL")
-                .map_err(|e| e.to_string())?;
-            stmt.execute([&artifact_id]).map_err(|e| e.to_string())?
-        };
-        if restored == 0 {
-            return Err("artifact not found or not deleted".into());
-        }
-
-        // Enqueue mutation for sync
-        let mutation_id = uuid::Uuid::new_v4().to_string();
-        let now_iso = now_iso();
-        conn.execute(
-            "INSERT INTO mutation_outbox (id, artifact_id, mutation_type, created_at, synced)
-             VALUES (?, ?, 'restore', ?, 0)",
-            [&mutation_id, &artifact_id, &now_iso],
-        ).map_err(|e| e.to_string())?;
-
-        Ok(serde_json::json!({ "restored": true, "id": artifact_id }).to_string())
     }
 
     /// Link device by scanning a linking QR code (QR.4b).
@@ -1637,14 +1473,6 @@ mod mobile {
         Ok(art.to_string())
     }
 
-    /// Toggle trash status (MOB2.4).
-    #[tauri::command]
-    fn mobile_toggle_trash(app: AppHandle, id: String) -> Result<String, String> {
-        let conn = open_lib(&app)?;
-        let art = crate::sync::toggle_trash(&conn, &id).map_err(|e| e.to_string())?;
-        Ok(art.to_string())
-    }
-
     /// Get tags for an artifact, from tags_json (TAGSYNC - the old `get_tags` queried a
     /// tags table the mobile DB does not have and threw "no such table: tags").
     #[tauri::command]
@@ -1744,24 +1572,18 @@ mod mobile {
                 mobile_chat,
                 mobile_settings_get,
                 mobile_settings_set,
-                mobile_pairing_code,
                 mobile_clear_blob_cache,
-                mobile_settings_sync,
-                mobile_settings_apply,
-                mobile_pairing_setup,
                 mobile_update_note,
                 mobile_add_annotation,
                 mobile_remove_annotation,
                 mobile_add_tag,
                 mobile_remove_tag,
                 mobile_toggle_pin,
-                mobile_toggle_trash,
                 mobile_get_tags,
                 mobile_list_trashed,
                 mobile_restore_trashed,
                 mobile_empty_trash,
                 mobile_delete,
-                mobile_restore,
                 start_sync_foreground_service,
                 stop_sync_foreground_service,
             ])

@@ -305,6 +305,12 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           key   TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
+        -- Cover the hot library / list / search query (deleted_at filter + updated_at
+        -- ordering) and the annotations join, so they use an index instead of a full
+        -- table scan + sort.
+        CREATE INDEX IF NOT EXISTS idx_artifacts_live ON artifacts(deleted_at, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_annotations_artifact ON annotations(artifact_id);
+        CREATE INDEX IF NOT EXISTS idx_page_text_artifact ON page_text(artifact_id);
         "#,
     )
     .map_err(|e| e.to_string())?;
@@ -682,7 +688,10 @@ pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
 pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned,status,tags_json
+            // body is trimmed to a prefix: the library card shows a 3-line clamped
+            // excerpt, so shipping full note bodies bloated this payload ~5x for nothing
+            // (the reader fetches the full body via mobile_get). 280 chars covers 3 lines.
+            "SELECT id,kind,title,substr(body,1,280),source_url,mime,filename,created_at,updated_at,pinned,status,tags_json
              FROM artifacts WHERE deleted_at IS NULL ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -798,7 +807,9 @@ pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, St
     let needle = format!("%{}%", query);
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT a.id,a.kind,a.title,a.body,a.source_url,a.mime,a.filename,
+            // Match on the full body (LIKE) but SELECT only a prefix - result cards show
+            // the same clamped excerpt as the library, so the full body is never needed.
+            "SELECT DISTINCT a.id,a.kind,a.title,substr(a.body,1,280),a.source_url,a.mime,a.filename,
                     a.created_at,a.updated_at,a.pinned
              FROM artifacts a
              LEFT JOIN annotations an ON an.artifact_id = a.id
@@ -1098,69 +1109,6 @@ pub fn remove_annotation(conn: &Connection, artifact_id: &str, annotation_id: &s
     get_artifact(conn, artifact_id)
 }
 
-/// Add a tag to an artifact (MOB2.4).
-#[allow(dead_code)]
-pub fn add_tag(conn: &Connection, artifact_id: &str, tag_name: &str) -> Result<Value, String> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
-    let normalized = tag_name.trim().to_lowercase();
-    if normalized.is_empty() {
-        return Err("a tag needs a name".into());
-    }
-    
-    let tag_id: String = conn
-        .query_row(
-            "SELECT id FROM tags WHERE name = ?1",
-            [&normalized],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| {
-            let new_id = uuid::Uuid::new_v4().to_string();
-            let _ = conn.execute(
-                "INSERT INTO tags (id, name, created_at) VALUES (?,?,?)",
-                rusqlite::params![new_id, normalized, now],
-            );
-            new_id
-        });
-    
-    conn.execute(
-        "INSERT OR IGNORE INTO artifact_tags (artifact_id, tag_id, created_at) VALUES (?,?,?)",
-        rusqlite::params![artifact_id, tag_id, now],
-    ).map_err(|e| e.to_string())?;
-    
-    conn.execute(
-        "UPDATE artifacts SET updated_at = ? WHERE id = ?",
-        rusqlite::params![now, artifact_id],
-    ).map_err(|e| e.to_string())?;
-    
-    get_artifact(conn, artifact_id)
-}
-
-/// Remove a tag from an artifact (MOB2.4).
-#[allow(dead_code)]
-pub fn remove_tag(conn: &Connection, artifact_id: &str, tag_name: &str) -> Result<Value, String> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
-    let normalized = tag_name.trim().to_lowercase();
-    
-    conn.execute(
-        "DELETE FROM artifact_tags WHERE artifact_id = ?1 AND tag_id = (SELECT id FROM tags WHERE name = ?2)",
-        rusqlite::params![artifact_id, normalized],
-    ).map_err(|e| e.to_string())?;
-    
-    conn.execute(
-        "DELETE FROM tags WHERE name = ?1 AND NOT EXISTS (SELECT 1 FROM artifact_tags WHERE tag_id = tags.id)",
-        rusqlite::params![normalized],
-    ).map_err(|e| e.to_string())?;
-    
-    conn.execute(
-        "UPDATE artifacts SET updated_at = ? WHERE id = ?",
-        rusqlite::params![now, artifact_id],
-    ).map_err(|e| e.to_string())?;
-    
-    get_artifact(conn, artifact_id)
-}
-
 /// Toggle pin status (MOB2.4).
 #[allow(dead_code)]
 pub fn toggle_pin(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
@@ -1201,24 +1149,6 @@ pub fn toggle_trash(conn: &Connection, artifact_id: &str) -> Result<Value, Strin
     get_artifact(conn, artifact_id)
 }
 
-/// Get tags for an artifact (MOB2.4).
-#[allow(dead_code)]
-pub fn get_tags(conn: &Connection, artifact_id: &str) -> Result<Vec<String>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT t.name FROM tags t JOIN artifact_tags at ON at.tag_id = t.id WHERE at.artifact_id = ?1 ORDER BY t.name",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([artifact_id], |r| r.get::<_, String>(0))
-        .map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row.map_err(|e| e.to_string())?);
-    }
-    Ok(out)
-}
-
 /// List trashed artifacts (MOB2.4).
 #[allow(dead_code)]
 pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
@@ -1252,23 +1182,3 @@ pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
     Ok(out)
 }
 
-/// Fetch the keyring.json from the relay (MOB2.10).
-/// The keyring.enc is the raw keyring.json (wrapped DEK only, no extra encryption).
-#[allow(dead_code)]
-pub fn fetch_keyring(relay_url: &str, secret: &str) -> Result<Vec<u8>, String> {
-    let resp = ureq::get(&format!(
-        "{}/sync/object/lib/keyring.enc",
-        relay_url.trim_end_matches('/')
-    ))
-    .set("Authorization", &format!("Bearer {secret}"))
-    .call()
-    .map_err(|e| e.to_string())?;
-    if resp.status() != 200 {
-        return Err(format!("keyring fetch: {}", resp.status()));
-    }
-    let mut bytes = Vec::new();
-    resp.into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    Ok(bytes)
-}

@@ -49,7 +49,7 @@ function restorePill(where) {
 			"</button>";
 	} else {
 		html =
-			'<button class="keep" id="btnAdd" aria-expanded="false" ' +
+			'<button class="keep" id="btnAdd" aria-label="Capture" aria-expanded="false" ' +
 			'onclick="toggleMenu(event)">' +
 			'<span class="disc">' +
 			svg("plus") +

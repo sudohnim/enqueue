@@ -2828,7 +2828,6 @@
 
   let currentArtifactId = null;
   let isEditingNote = false;
-  let originalNoteBody = "";
 
   function openArtifact(id) {
     currentArtifactId = id;
@@ -3313,16 +3312,6 @@
     addChip.appendChild(input);
     container.appendChild(addChip);
     container.hidden = false;
-  }
-
-  function renderTags(artifactId) {
-    const tagsEl = document.getElementById("reader_tags");
-    invoke("mobile_get_tags", { id: artifactId })
-      .then((raw) => {
-        const tags = parse(raw);
-        renderTagChips(tagsEl, tags, artifactId);
-      })
-      .catch(() => {});
   }
 
   function setupAnnotationInput(artifactId) {
