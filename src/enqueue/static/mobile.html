@@ -815,6 +815,12 @@
       box-shadow var(--dur-slow) ease,
       transform var(--dur-fast) var(--ease);
   }
+  /* `display:flex` above outranks the UA `[hidden]` rule, so hiding the pill needs
+     this explicit rule. Hidden on full-screen forms (crop confirm, settings) where
+     it floats over the screen's own Save/Cancel controls. */
+  .pill[hidden] {
+    display: none;
+  }
   .pill:hover {
     transform: translateX(-50%) translateY(-2px);
   }
@@ -853,7 +859,7 @@
     color: var(--on-purple-bold);
     transition:
       background var(--dur-fast) var(--ease),
-      transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform var(--dur-fast) cubic-bezier(0.22, 1, 0.36, 1);
   }
   .pill .keep:hover .disc {
     background: var(--purple-bold-hover);
@@ -1010,7 +1016,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .pill .keep[aria-expanded="true"] .disc svg {
       transform: rotate(45deg);
-      transition: transform var(--dur-fast) cubic-bezier(0.34, 1.56, 0.64, 1);
+      transition: transform var(--dur-fast) cubic-bezier(0.22, 1, 0.36, 1);
     }
   }
 
@@ -2073,6 +2079,10 @@
       const el = document.getElementById(s);
       if (el) el.hidden = s !== id;
     }
+    // The floating pill is chrome for the library; on the crop-confirm and settings
+    // screens it sits over the screen's own Save/Cancel controls, so hide it there.
+    const pillEl = document.getElementById("pill");
+    if (pillEl) pillEl.hidden = id === "crop" || id === "settings";
     // Sections are siblings in one scroll container, so switching from a
     // scrolled library would land the new section mid-page (Settings appeared
     // "at the bottom"). Reset scroll to the top on every switch.
