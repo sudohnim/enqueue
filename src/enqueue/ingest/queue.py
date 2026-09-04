@@ -126,6 +126,13 @@ def process(artifact_id: str) -> dict:
     # by its own words regardless.
     entities_made = _entities_artifact(artifact_id) if chunks else 0
 
+    try:
+        from .. import events
+
+        events.emit("ingest", f"{artifact_id[:8]}: {chunks} chunks, {facets_made} facets")
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
         "artifact_id": artifact_id,
         "pages": pages,
@@ -324,7 +331,7 @@ def submit_all() -> int:
 
     conn = db.get_conn()
     try:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL")]
+        ids = [r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL")]
     finally:
         conn.close()
 
@@ -349,7 +356,7 @@ def submit_images() -> int:
         ids = [
             r["id"]
             for r in conn.execute(
-                "SELECT id FROM artifacts WHERE kind = 'image' AND deleted_at IS NULL"
+                "SELECT id FROM artifacts WHERE kind = 'image' AND deleted_at IS NULL AND vaulted_at IS NULL"
                 " AND (body IS NULL OR TRIM(body) = '')"
             )
         ]

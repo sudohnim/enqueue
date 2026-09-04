@@ -162,7 +162,7 @@ def run(spec: dict) -> dict:
         conn = db.get_conn()
         try:
             rows = conn.execute(
-                "SELECT id FROM artifacts WHERE deleted_at IS NULL"
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL"
                 " AND id IN (SELECT value FROM json_each(?))",
                 (json.dumps(sorted(included)),),
             ).fetchall()

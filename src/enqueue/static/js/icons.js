@@ -15,6 +15,7 @@ const ICONS = {
 	trash:
 		'<path d="M4 7h16"/><path d="M9.5 7V5h5v2"/><path d="M6.5 7l1 13h9l1-13"/>',
 	close: '<path d="M6 6l12 12M18 6L6 18"/>',
+	lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 	// Move/redistribute: two horizontal arrows pointing outward - one left, one
 	// right. Reads as "move this artifact to another place".
 	move: '<path d="M3 8h13"/><path d="M12 4l4 4-4 4"/><path d="M21 16H8"/><path d="M12 12l-4 4 4 4"/>',

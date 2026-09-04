@@ -25,4 +25,11 @@ def search(q: str, limit: int = 20) -> dict:
         )
     # Chunk and facet hits rolled up to one row per artifact (deduplicated),
     # so an artifact whose six chunks match does not occupy every slot.
-    return {"query": q, "hits": search_results(q, limit=limit)}
+    hits = search_results(q, limit=limit)
+    try:
+        from .. import events
+
+        events.emit("search", f'"{q}" -> {len(hits)} hits')
+    except Exception:  # noqa: BLE001
+        pass
+    return {"query": q, "hits": hits}

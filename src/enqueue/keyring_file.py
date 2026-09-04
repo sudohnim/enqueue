@@ -183,6 +183,37 @@ def regenerate_recovery(dek: bytes) -> str:
     return phrase
 
 
+def vault_wrap_get() -> dict | None:
+    """The stored vault-key wrap (`vault_salt` + `vault_by_pin`), or None if no
+    vault has been set up. Lives alongside `dek_by_recovery` in keyring.json - the
+    natural home for wrapped-key material - but is a SEPARATE secret: the DEK's
+    recovery wrap and the vault's PIN wrap never share a key (the vault is
+    zero-knowledge, unrecoverable without the PIN)."""
+    record = _read()
+    if not record or "vault_salt" not in record or "vault_by_pin" not in record:
+        return None
+    return {"vault_salt": record["vault_salt"], "vault_by_pin": record["vault_by_pin"]}
+
+
+def vault_wrap_set(salt_hex: str, wrapped_hex: str) -> None:
+    """Persist the vault-key wrap into keyring.json (creating the file if needed)."""
+    record = _read() or {}
+    record["vault_salt"] = salt_hex
+    record["vault_by_pin"] = wrapped_hex
+    _write(record)
+
+
+def vault_wrap_clear() -> None:
+    """Forget the vault wrap. The vaulted CONTENT stays encrypted-at-rest and
+    becomes permanently unreadable - callers must confirm before calling this."""
+    record = _read()
+    if not record:
+        return
+    record.pop("vault_salt", None)
+    record.pop("vault_by_pin", None)
+    _write(record)
+
+
 def clear_keyring() -> None:
     """Remove keyring.json and the stored DEK (for reset sync)."""
     global _dek

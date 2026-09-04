@@ -324,9 +324,15 @@
     // already kept is urgent, and a yellow pill here would say otherwise.
     let html =
       '<div class="pagecol">' +
-      '<button class="btn ghost back" onclick="home()">' +
-      svg("back") +
-      "Everything</button>" +
+      // A vaulted artifact is read "inside" the vault, so its back returns there
+      // (which keeps the vault unlocked); a normal artifact goes back to the wall.
+      (a.vaulted_at
+        ? '<button class="btn ghost back" onclick="openVault()">' +
+          svg("back") +
+          "Vault</button>"
+        : '<button class="btn ghost back" onclick="home()">' +
+          svg("back") +
+          "Everything</button>") +
       '<div class="kindrow"><span class="kindmark"></span>' +
       '<span class="kindword">' +
       esc(a.kind) +
@@ -361,6 +367,21 @@
       '<button class="title-action" id="drawerToggle" aria-label="Tags and summary" aria-expanded="false" title="Tags and summary" onclick="toggleDrawer()">' +
       svg("panelin") +
       "</button></span>" +
+      '<button class="title-action' +
+      (a.vaulted_at ? " lit" : "") +
+      '" aria-label="' +
+      (a.vaulted_at ? "Remove from vault" : "Move to vault") +
+      '" title="' +
+      (a.vaulted_at
+        ? "In the secret vault - click to remove"
+        : "Move to the secret vault") +
+      '" onclick="toggleVault(\'' +
+      a.id +
+      "'," +
+      (a.vaulted_at ? "true" : "false") +
+      ')">' +
+      svg("lock") +
+      "</button>" +
       '<button class="title-action danger" aria-label="Move to trash" title="Move to trash" onclick="binArtifact(\'' +
       a.id +
       "')\">" +
@@ -423,6 +444,7 @@
         titleExplicit: a.title_explicit,
         saved: a.body || "",
         html: md(a.body || ""),
+        vaulted: !!a.vaulted_at,
       };
     } else {
       if (a.kind === "pdf") {
@@ -431,8 +453,11 @@
         body +=
           fileFacts(d.file) + '<div class="md" id="plain">' + spinner("sm", "reading...") + "</div>";
       } else if (a.kind === "image") {
+        // A vaulted image's bytes are encrypted; serve them from the unlocked
+        // vault route instead of the (404-guarded) normal blob endpoint.
         body +=
-          '<div class="docpane"><img class="page" src="/artifacts/' +
+          '<div class="docpane"><img class="page" src="' +
+          (a.vaulted_at ? "/vault/" : "/artifacts/") +
           a.id +
           '/blob" alt="' +
           esc(a.title) +
@@ -454,6 +479,7 @@
         entryId: last ? last.id : null,
         saved: last ? last.text : "",
         html: md(last ? last.text : ""),
+        vaulted: !!a.vaulted_at,
       };
     }
 
@@ -1023,6 +1049,13 @@
   function mountEditor(focus) {
     const ed = document.getElementById("body");
     if (!ed || !ctx) return;
+    // A vaulted note is read-only: editing would re-write plaintext to disk.
+    // Remove it from the vault to edit.
+    if (ctx.vaulted) {
+      ed.contentEditable = "false";
+      ed.innerHTML = ctx.html || "";
+      return;
+    }
     const html = ctx.html || "";
     // An empty note must never mount a bare editable: the first keystroke would
     // land in a bare text node with no block, and each input would re-wrap it in
@@ -1338,7 +1371,7 @@
   }
 
   async function saveBody() {
-    if (!ctx) return;
+    if (!ctx || ctx.vaulted) return;
     const ed = document.getElementById("body"),
       state = document.getElementById("state");
     if (!ed || !state) return;

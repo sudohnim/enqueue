@@ -380,7 +380,7 @@ def _fuzzy_hits(query: str, limit: int) -> list[dict]:
         return []
     conn = db.get_conn()
     try:
-        rows = conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL").fetchall()
+        rows = conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL").fetchall()
         erows = conn.execute("SELECT artifact_id, entity FROM entities").fetchall()
         arows = conn.execute(
             "SELECT artifact_id, text FROM annotations a"
@@ -542,7 +542,7 @@ def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
         rows = conn.execute(
             "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
             " JOIN artifacts a ON a.id = c.artifact_id"
-            " WHERE c.id IN (SELECT value FROM json_each(?)) AND a.deleted_at IS NULL",
+            " WHERE c.id IN (SELECT value FROM json_each(?)) AND a.deleted_at IS NULL AND a.vaulted_at IS NULL",
             (json.dumps(list(chunk_scores)),),
         ).fetchall()
         # One row per artifact, carrying its best matching chunk as the snippet.
@@ -1116,7 +1116,7 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
         rows = conn.execute(
             "SELECT id, title, kind FROM artifacts"
             " WHERE id IN (SELECT value FROM json_each(?))"
-            " AND deleted_at IS NULL"
+            " AND deleted_at IS NULL AND vaulted_at IS NULL"
             " ORDER BY updated_at DESC LIMIT ?",
             (json.dumps(sorted(ids)), limit),
         ).fetchall()
@@ -1150,7 +1150,7 @@ def _all_results(limit: int = 20) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, title, kind FROM artifacts"
-            " WHERE deleted_at IS NULL"
+            " WHERE deleted_at IS NULL AND vaulted_at IS NULL"
             " ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()

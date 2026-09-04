@@ -176,6 +176,93 @@ Done when: bin/verify green; move documentation for cleanliness (move UI; nothin
 
 ---
 
+## Phase VAULT - PIN-encrypted secret vault (new feature, scoped not built)
+
+Hide chosen artifacts from every normal view and put them behind a PIN that actually encrypts them at rest.
+This is a real vault, not a filter with a lock screen: the PIN is load-bearing.
+
+### Decision record (settled with the user)
+
+- The PIN is the vault key, not a view gate.
+The PIN derives a KEK (argon2id) that unwraps a random per-library `vault_key`; vaulted content is encrypted at rest with `vault_key`, so nothing but the PIN decrypts it - not disk forensics, not another device, not the relay.
+This is the "protect" branch from the tradeoff, chosen over obscurity-only because for a privacy-first product a vault that leaves plaintext at rest is a false promise (robustness / smallest-blast-radius).
+- Reuse the existing recovery-phrase wrap verbatim: `crypto.derive_kek(pin, vault_salt)` + `crypto.wrap(vault_key, kek)` -> `vault_by_pin`, mirroring `keyring_file.unlock_with_recovery` and `dek_by_recovery`.
+This adds no new crypto paradigm; it is the same mechanism the DEK recovery already uses.
+- The wrapped `vault_by_pin` + `vault_salt` sync (like `dek_by_recovery`), so every device shares one vault unlocked by one PIN; the raw `vault_key` never touches the relay.
+- Vaulting de-indexes (removes from embeddings + FTS) and un-vaulting re-indexes.
+"Not in the index" is a hard guarantee; "filtered from every query" is a soft one that leaks the moment a site is missed.
+- Access is a mundane, non-inviting Settings row (candidates: "Diagnostics", "Storage details", "Cache & data") that opens a PIN entry, not the contents.
+- Mobile vault view is one infinite vertical scroll (virtualized, chronological); desktop vault view reuses the normal wall display filtered to vaulted-only.
+- The vault auto-locks (drops the derived key from memory) on app background/close and after inactivity; re-entry needs the PIN again.
+
+- [x] **VAULT.1 [AGENT] Data model: `vaulted_at` column + additive snapshot field.**
+Add `vaulted_at TEXT` to `artifacts` via a NEW Python migration (next revision after 0024) and the Rust `init_schema` + duplicate-safe `ALTER TABLE ... ADD COLUMN` in `desktop/src/sync.rs`.
+Carry it in `build_snapshot`/`read_artifact_snapshot` and `apply_snapshot` on both ends, copying the `purged_at` implementation line-for-line (snapshot.py:156-162, sync.rs:108-385).
+Done when: bin/verify green; a vaulted artifact round-trips desktop<->mobile with `vaulted_at` intact.
+
+- [x] **VAULT.2 [AGENT] Vault key: PIN-derived, wrapped, session-unlocked (local lifecycle).**
+On first vault setup generate a random 32-byte `vault_key`; store `vault_salt` + `vault_by_pin = crypto.wrap(vault_key, crypto.derive_kek(pin, vault_salt))` in `keyring.json` (never the raw key).
+`vault.unlock(pin)` (mirrors `keyring_file.unlock_with_recovery`) unwraps into process memory only; `vault.lock()` drops it.
+DONE: `src/enqueue/vault.py` + `keyring_file.vault_wrap_{get,set,clear}`; 6-digit enforced; zero-knowledge (no recovery slot). Tests in `tests/test_vault.py` (8) green - wrong PIN fails, right PIN unwraps, raw key never on disk, lock clears memory, no recovery path. The inactivity/background auto-lock is wired at the UI in VAULT.6.
+
+- [~] **VAULT.2b [AGENT] Sync the vault wrap cross-device (`lib/vault.enc`).**
+Split from VAULT.2 so every paired device unlocks the same vault with the same PIN.
+Push `{vault_salt, vault_by_pin}` as a DEK-encrypted relay object `lib/vault.enc`, mirroring `push_pivots`/`lib/pivots.enc`; on pull (desktop `client.pull`, mobile `desktop/src/sync.rs`), store it into the local keyring when absent/newer.
+The object is PIN-wrapped THEN DEK-encrypted, so the relay still sees only ciphertext and the PIN never leaves the device.
+Done when: setting up the vault on device A, then pulling on device B, lets B unlock with the same PIN; bin/verify green.
+
+- [x] **VAULT.3 [AGENT] Encrypt vaulted content at rest.**
+On vault: encrypt the artifact `body` (and, for image/pdf/file, the blob bytes) with `vault_key` and store the ciphertext in place; on unvault: decrypt back.
+Define the exact protected set in the task (body + blob + any derived text that could leak); leave `id`, timestamps, and `vaulted_at` in clear so sync/LWW still work.
+Requires the vault unlocked (VAULT.2); if locked, the toggle prompts for the PIN first.
+Done when: a vaulted note's plaintext is absent from `enqueue.db` and the relay object; unvault restores it byte-identical.
+
+- [x] **VAULT.4 [AGENT] Exclude vaulted from every live surface + de-index.**
+Add `AND vaulted_at IS NULL` to every live-artifact query - the same ~8-10 sites that carry `deleted_at IS NULL` today: the wall/`api/artifacts.py`, `retrieve/candidates.py`, `index/store_sqlite.py`, chat passages (`chats.py`), `pivot.py`, `export.py`, and the 5 Rust query sites in `desktop/src/sync.rs`.
+On vault, remove the artifact from the embeddings + FTS index; on unvault, re-index it.
+Done when: a vaulted artifact appears in NO wall, search, chat answer, pivot, or export, on either surface, verified by test; un-vaulting brings it back everywhere.
+
+- [~] **VAULT.5 [AGENT] Lock toggle + icon (both surfaces).**
+Desktop: a lock action in the artifact title-action group (`static/js/artifact.js`, beside pin/trash); mobile: a lock action in the reader actions (`static/mobile.html`).
+Wire an engine endpoint + a Tauri `mobile_set_vault` command that vaults/unvaults (calls VAULT.3 + VAULT.4), bumps `updated_at`, and pushes.
+The toggle is disabled/prompts when the vault is locked.
+Done when: clicking the lock removes the artifact from the current view and it reappears only in the vault; round-trips across devices.
+
+- [~] **VAULT.6 [AGENT] Vault view + decoy entry, with the layout/shape spec below.**
+A Settings row with a mundane label opens a PIN pad (not the contents); a correct PIN unlocks and routes to the vault view; a wrong PIN shows a quiet "incorrect" with no hint that a vault exists.
+Build the two layouts to the shape spec below.
+Done when: the decoy row reveals nothing without the PIN; the vault lists exactly the vaulted artifacts; leaving/backgrounding re-locks.
+
+### VAULT layout + shape (the design the user asked to run)
+
+Mobile - decoy is an "Events" section in Settings (same as desktop):
+
+- Settings gains an "Events" section that shows the emitted events when tapped, plus a separate "Diagnostics" button that prompts for the 6-digit PIN; a correct PIN opens the vault view, a wrong PIN reads as a normal failed diagnostics action.
+
+Mobile vault view - "infinite vertical scroll":
+
+- One continuous, virtualized vertical feed (a single `FlatList`), chronological by `updated_at` desc, NOT the shelved Saved/Everything-else grouping the library uses.
+- Reuse the existing card grammar (`renderNoteCard`/`renderImageCard`/etc.) so a vaulted card looks like a normal card, with the lock glyph swapped for an "un-vault" affordance and the kind dot tinted to read as vaulted.
+- A slim sticky header: the mundane label as the title, a lock-now button, and the count; no search and no mode chips (the vault is a flat list, not the wall).
+- Lazy-decrypt on scroll: decrypt each card's protected fields only as it enters the viewport (reuse the mobile blob-cache pattern), so unlocking the vault does not decrypt everything at once.
+- Empty state: a boring, plausible line consistent with the decoy ("Nothing stored.") so a shoulder-surfer sees nothing remarkable.
+
+Desktop - decoy is a real "Events" tab (settled with the user):
+
+- Add a new Settings tab labeled "Events" that ACTUALLY works: it lists the events the app emits (the sync/SSE/ingest event stream), so the tab is genuinely useful and reads as ordinary diagnostics, not a hidden door.
+- Inside the Events tab, a button labeled "Diagnostics" prompts for the 6-digit PIN; a correct PIN opens the vault view, a wrong PIN behaves like a normal failed diagnostics action (no hint a vault exists).
+- The vault view itself reuses the normal wall display component scoped to `vaulted_at IS NOT NULL`, its own route (e.g. `#vault`); same cards/shelves, a persistent "Locked vault" label + lock-now control replace the greeting/hero; body/title are decrypted client-visible only while unlocked.
+- No capture pill and no global search inside the vault route (nothing pushes a new artifact straight into the vault by accident).
+
+### VAULT decisions (settled with the user)
+
+- PIN is 6 digits.
+Add a lockout/backoff after repeated wrong entries (exact N TBD during VAULT.6, default to escalating delay rather than hard lockout so a real owner is never permanently locked out).
+- A forgotten PIN is UNRECOVERABLE by design.
+The vault is zero-knowledge: `vault_key` is wrapped ONLY by the PIN, never by the recovery phrase, so no path (recovery phrase, relay, another device) can decrypt vaulted content without the PIN.
+This is the honest guarantee; the UI must warn plainly at setup that losing the PIN loses the vaulted data.
+- Any artifact kind is vaultable in v1, PDFs included, so blob-at-rest encryption (VAULT.3) is in scope from the start, not deferred.
+
 ---
 
 ## What NOT to do (durable context)

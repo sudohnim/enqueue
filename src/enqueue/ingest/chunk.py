@@ -235,7 +235,7 @@ def chunk_all() -> dict:
         ids = [
             r["id"]
             for r in conn.execute(
-                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND (body IS NOT NULL"
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND (body IS NOT NULL"
                 " OR id IN (SELECT artifact_id FROM link_previews WHERE status = 'ok')"
                 " OR id IN (SELECT DISTINCT artifact_id FROM page_text)"
                 " OR id IN (SELECT DISTINCT artifact_id FROM annotations))"

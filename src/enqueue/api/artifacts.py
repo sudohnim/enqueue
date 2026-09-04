@@ -156,7 +156,7 @@ def list_artifacts(
     # `pinned` splits the wall into two shelves that are paged separately: the kept
     # few scroll sideways, everything else scrolls down. Without the filter the pinned
     # ones would appear in both.
-    where = "deleted_at IS NULL"
+    where = "deleted_at IS NULL AND vaulted_at IS NULL"
     if pinned:
         where += " AND pinned = 1"
     elif pinned is not None:
@@ -254,14 +254,36 @@ def get_artifact(artifact_id: str) -> dict:
     except KeyError:
         raise HTTPException(status_code=404, detail="no such artifact") from None
 
+    # A vaulted artifact reads through the same reader, but its content is decrypted
+    # here only while the vault is unlocked (else it stays hidden, like the wall).
+    art = detail["artifact"]
+    if art.get("vaulted_at"):
+        from .. import vault, vaultops
+
+        if not vault.is_unlocked():
+            raise HTTPException(status_code=404, detail="no such artifact") from None
+        key = vault.key()
+        art["title"] = vaultops._open(key, art["title"])
+        art["body"] = vaultops._open(key, art["body"])
+
     kind = detail["artifact"]["kind"]
     if kind in ("file", "image", "pdf"):
-        found = capture.blob_path(artifact_id)
-        detail["file"] = (
-            {"bytes": found[0].stat().st_size, "mime": found[1], "name": found[2]}
-            if found
-            else None
-        )
+        if art.get("vaulted_at"):
+            # The bytes live encrypted; the reader loads them from /vault/{id}/blob.
+            # Just tell it a file exists, with its mime/name.
+            detail["file"] = {
+                "bytes": 1,
+                "mime": art.get("mime") or "application/octet-stream",
+                "name": art.get("filename") or artifact_id,
+                "vaulted": True,
+            }
+        else:
+            found = capture.blob_path(artifact_id)
+            detail["file"] = (
+                {"bytes": found[0].stat().st_size, "mime": found[1], "name": found[2]}
+                if found
+                else None
+            )
     if kind == "pdf":
         # The reader needs to know how many pages to expect before it can render one.
         detail["pages"] = capture.page_count(artifact_id)
@@ -296,6 +318,17 @@ def get_version(artifact_id: str, version_id: str) -> dict:
 
 @router.get("/artifacts/{artifact_id}/blob")
 def get_blob(artifact_id: str):
+    # A vaulted artifact's blob is encrypted at rest and only served through the
+    # unlocked vault route; the normal path must not leak it (even as ciphertext).
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT vaulted_at FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None and row["vaulted_at"]:
+        raise HTTPException(status_code=404, detail="this artifact has no stored file") from None
     found = capture.blob_path(artifact_id)
     if found is None:
         raise HTTPException(status_code=404, detail="this artifact has no stored file") from None

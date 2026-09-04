@@ -105,7 +105,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     let artifact: Option<Value> = conn
         .query_row(
             "SELECT id,kind,title,body,source_url,content_hash,mime,filename,created_at,
-                    updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at
+                    updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at,vaulted_at
              FROM artifacts WHERE id = ?1",
             [artifact_id],
             |r| {
@@ -128,6 +128,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
                     "title_explicit": r.get::<_, i64>(15)?,
                     "_device_id": r.get::<_, Option<String>>(16)?,
                     "purged_at": r.get::<_, Option<String>>(17)?,
+                    "vaulted_at": r.get::<_, Option<String>>(18)?,
                 }))
             },
         )
@@ -310,7 +311,8 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           title_explicit INTEGER NOT NULL DEFAULT 0,
           _device_id     TEXT,
           tags_json      TEXT,
-          purged_at      TEXT
+          purged_at      TEXT,
+          vaulted_at     TEXT
         );
         CREATE TABLE IF NOT EXISTS annotations (
           id            TEXT PRIMARY KEY,
@@ -349,6 +351,29 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN tags_json TEXT", []);
     // Migration: purged_at (cross-device purge tombstone), same duplicate-safe pattern.
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN purged_at TEXT", []);
+    // Migration: vaulted_at (secret-vault membership marker), same duplicate-safe pattern.
+    let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN vaulted_at TEXT", []);
+    // One-time heal: builds before `vaulted_at` existed here applied vaulted
+    // snapshots without the column, dropping the flag and leaving vault-ciphertext
+    // visible in the wall. Force a single full re-pull (cursor -> 0); the strictly-
+    // greater apply gate above then re-reads the relay's correct snapshot and repairs
+    // the row. Guarded by a marker so it runs exactly once, not every launch.
+    let healed: Option<String> = conn
+        .query_row(
+            "SELECT value FROM sync_meta WHERE key = 'heal_vault_repull_v1'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if healed.is_none() {
+        let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES ('heal_vault_repull_v1', '1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -358,7 +383,12 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let id = artifact["id"].as_str().ok_or("snapshot: missing id")?;
 
     // LWW no-op check. A read-only device has no local edits, so this only makes a
-    // re-pull of the same snapshot idempotent.
+    // re-pull of the same snapshot idempotent. Note the gate is STRICTLY greater
+    // (`>`), not `>=`: on an equal LWW key the two snapshots are the same logical
+    // version, so re-applying is a harmless overwrite that ALSO repairs any field an
+    // older-schema apply silently dropped (e.g. a vaulted snapshot pulled before this
+    // device had the `vaulted_at` column, which left vault-ciphertext showing in the
+    // wall). A strictly-greater local key still wins and is never clobbered.
     let local: Option<(String, String, Option<String>)> = conn
         .query_row(
             "SELECT updated_at, COALESCE(_device_id,''), purged_at FROM artifacts WHERE id = ?1",
@@ -374,7 +404,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
         if local_purged.is_some() && !incoming_purged {
             return Ok(());
         }
-        if (local_updated, local_device) >= lww_key(snapshot) {
+        if (local_updated, local_device) > lww_key(snapshot) {
             return Ok(());
         }
     }
@@ -382,8 +412,8 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let g = |c: &str| artifact.get(c);
     conn.execute(
         "INSERT INTO artifacts (id,kind,title,body,source_url,content_hash,mime,filename,\
-         created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
+         created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at,vaulted_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
          ON CONFLICT(id) DO UPDATE SET
            kind=excluded.kind, title=excluded.title, body=excluded.body,
            source_url=excluded.source_url, content_hash=excluded.content_hash,
@@ -391,7 +421,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
            updated_at=excluded.updated_at, local_only=excluded.local_only,
            status=excluded.status, pinned=excluded.pinned, deleted_at=excluded.deleted_at,
            pages=excluded.pages, title_explicit=excluded.title_explicit,
-           _device_id=excluded._device_id, purged_at=excluded.purged_at",
+           _device_id=excluded._device_id, purged_at=excluded.purged_at, vaulted_at=excluded.vaulted_at",
         rusqlite::params![
             id,
             str_at(g("kind")),
@@ -411,6 +441,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             int_at(g("title_explicit")).unwrap_or(0),
             str_at(g("_device_id")),
             str_at(g("purged_at")),
+            str_at(g("vaulted_at")),
         ],
     )
     .map_err(|e| format!("insert artifact: {e}"))?;
@@ -682,6 +713,29 @@ pub fn sync_library(
             }
             continue;
         }
+        // The PIN-wrapped vault key (VAULT.2b): decrypt the DEK layer and cache the
+        // wrap in sync_meta so this device can unlock the same vault with the same
+        // PIN. The inner value is still PIN-wrapped, so the DEK alone cannot read it.
+        if name == "lib/vault.enc" {
+            if let Ok(r) = ureq::get(&format!("{base}/sync/object/{name}"))
+                .set("Authorization", &auth)
+                .call()
+            {
+                let mut bytes = Vec::new();
+                if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
+                    if let Ok(plain) = secretbox_decrypt(dek, &bytes) {
+                        if let Ok(s) = std::str::from_utf8(&plain) {
+                            let _ = conn.execute(
+                                "INSERT INTO sync_meta (key,value) VALUES ('vault_meta',?1)\
+                                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                                [s],
+                            );
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         // Desktop settings (MOB2.9): the desktop's effective LLM config - backend,
         // model, url, and the provider api_key - encrypted under the DEK. Each push
         // is a fresh timestamped object; keep the newest by `updated_at` so a later
@@ -766,7 +820,7 @@ pub fn sync_library(
 #[allow(dead_code)]
 pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare("SELECT id FROM artifacts WHERE deleted_at IS NULL ORDER BY updated_at DESC")
+        .prepare("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL ORDER BY updated_at DESC")
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| r.get::<_, String>(0))
@@ -788,7 +842,7 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
             // excerpt, so shipping full note bodies bloated this payload ~5x for nothing
             // (the reader fetches the full body via mobile_get). 280 chars covers 3 lines.
             "SELECT id,kind,title,substr(body,1,280),source_url,mime,filename,created_at,updated_at,pinned,status,tags_json
-             FROM artifacts WHERE deleted_at IS NULL ORDER BY updated_at DESC",
+             FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
@@ -909,7 +963,7 @@ pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, St
                     a.created_at,a.updated_at,a.pinned
              FROM artifacts a
              LEFT JOIN annotations an ON an.artifact_id = a.id
-             WHERE a.deleted_at IS NULL
+             WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL
                AND (a.title LIKE ?1 OR a.body LIKE ?1 OR an.text LIKE ?1)
              ORDER BY a.updated_at DESC",
         )
@@ -1270,7 +1324,7 @@ pub fn toggle_trash(conn: &Connection, artifact_id: &str) -> Result<Value, Strin
 pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned
+            "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned,vaulted_at
              FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL
              ORDER BY updated_at DESC",
         )
@@ -1288,6 +1342,7 @@ pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
                 "created_at": r.get::<_, String>(7)?,
                 "updated_at": r.get::<_, String>(8)?,
                 "pinned": r.get::<_, i64>(9)?,
+                "vaulted_at": r.get::<_, Option<String>>(10)?,
             }))
         })
         .map_err(|e| e.to_string())?;

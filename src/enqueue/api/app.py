@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .. import chats_worker, config, trash
-from . import admin, artifacts, chats, pivots, search, settings, static, write
+from . import admin, artifacts, chats, pivots, search, settings, static, vault, write
 
 
 def create_app() -> FastAPI:
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     app.include_router(chats.router)
     app.include_router(settings.router)
     app.include_router(pivots.router)
+    app.include_router(vault.router)
     return app
 
 
@@ -69,6 +70,10 @@ def serve() -> None:
     _bootstrap_index()
 
     _start_sync_worker()
+
+    from .. import events
+
+    events.emit("start", "engine ready")
 
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
 

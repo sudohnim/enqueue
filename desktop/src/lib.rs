@@ -424,7 +424,25 @@ mod mobile {
     #[tauri::command]
     fn mobile_get(app: AppHandle, id: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
-        let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+        let mut art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
+        // A vaulted artifact opens the same reader; decrypt its content here only
+        // while the vault is unlocked, and flag it so the reader lights the lock.
+        let vaulted: Option<String> = conn
+            .query_row("SELECT vaulted_at FROM artifacts WHERE id = ?1", [&id], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?
+            .flatten();
+        if vaulted.is_some() {
+            if let Some(key) = vault_key_get() {
+                if let Some(a) = art.get_mut("artifact") {
+                    let t = a.get("title").and_then(Value::as_str).map(String::from);
+                    let b = a.get("body").and_then(Value::as_str).map(String::from);
+                    a["title"] = serde_json::json!(open(&key, t)?);
+                    a["body"] = serde_json::json!(open(&key, b)?);
+                    a["vaulted_at"] = serde_json::json!(vaulted);
+                }
+            }
+        }
         Ok(art.to_string())
     }
 
@@ -540,6 +558,7 @@ mod mobile {
             }
         }
 
+        emit_event("capture", &format!("{kind} {}", &id[..8.min(id.len())]));
         let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
         Ok(art.to_string())
     }
@@ -555,6 +574,7 @@ mod mobile {
         // Check if id is a content hash (64 hex chars) or an artifact id (UUID)
         let is_content_hash = id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit());
         
+        let mut is_vaulted = false;
         let (content_hash, resolved_mime) = if is_content_hash {
             // Direct content hash - use provided mime or default
             (id, mime.unwrap_or_else(|| "image/png".to_string()))
@@ -569,6 +589,14 @@ mod mobile {
             if content_hash.is_empty() {
                 return Err("no blob".into());
             }
+            is_vaulted = conn
+                .query_row("SELECT vaulted_at FROM artifacts WHERE id = ?1", [&id], |r| {
+                    r.get::<_, Option<String>>(0)
+                })
+                .optional()
+                .map_err(|e| e.to_string())?
+                .flatten()
+                .is_some();
             (content_hash, artifact_mime)
         };
 
@@ -593,6 +621,15 @@ mod mobile {
             let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
             let bytes = crate::sync::fetch_blob(relay_url, secret, &dek, &content_hash)?;
             let _ = std::fs::write(&cache_path, &bytes);
+            bytes
+        };
+
+        // A vaulted blob is encrypted at rest; decrypt it with the (unlocked) vault
+        // key so the normal reader shows the real image, same as any other.
+        let bytes = if is_vaulted {
+            let key = vault_key_get().ok_or("vault is locked")?;
+            crate::sync::unwrap(&bytes, &key)?
+        } else {
             bytes
         };
 
@@ -1424,6 +1461,31 @@ mod mobile {
         let now = now_iso();
         let conn = open_lib(&app)?;
 
+        // A vaulted item leaves the vault by being deleted: decrypt it out first so the
+        // trash holds the readable original (restore then brings back a normal note),
+        // never opaque ciphertext. Needs the vault unlocked - which it is, since the
+        // delete is invoked from inside the open vault. When unlocked, also heal orphans.
+        {
+            let vaulted: Option<String> = conn
+                .query_row(
+                    "SELECT vaulted_at FROM artifacts WHERE id = ?1",
+                    [&artifact_id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .flatten();
+            match vault_key_get() {
+                Some(key) => {
+                    vault_decrypt_in_place(&app, &conn, &artifact_id, &key)?;
+                }
+                None if vaulted.is_some() => {
+                    return Err("Unlock the vault to delete a vaulted item.".into());
+                }
+                None => {}
+            }
+        }
+
         // Mark as deleted locally AND bump updated_at - the delete snapshot must be
         // newer than the desktop's copy or LWW rejects it and the deletion never lands
         // on the desktop (the bug: deleted on the phone, still present on the desktop).
@@ -1649,7 +1711,27 @@ mod mobile {
     #[tauri::command]
     fn mobile_list_trashed(app: AppHandle) -> Result<String, String> {
         let conn = open_lib(&app)?;
-        let arts = crate::sync::list_trashed(&conn).map_err(|e| e.to_string())?;
+        let mut arts = crate::sync::list_trashed(&conn).map_err(|e| e.to_string())?;
+        // Never show raw vault-ciphertext in the trash. Decrypt to the real title when
+        // the vault is open (the auth tag also catches orphans); otherwise, for a
+        // flagged-vaulted row, show a neutral label instead of the ciphertext.
+        let key = vault_key_get();
+        for a in arts.iter_mut() {
+            let title = a.get("title").and_then(|v| v.as_str()).map(String::from);
+            match key {
+                Some(k) => {
+                    if let Some(dec) = try_open(&k, &title) {
+                        a["title"] = serde_json::json!(dec);
+                    }
+                }
+                None => {
+                    let sealed = a.get("vaulted_at").map(|v| !v.is_null()).unwrap_or(false);
+                    if sealed {
+                        a["title"] = serde_json::json!("Locked note");
+                    }
+                }
+            }
+        }
         Ok(serde_json::json!(arts).to_string())
     }
 
@@ -1658,6 +1740,29 @@ mod mobile {
     fn mobile_restore_trashed(app: AppHandle, id: String) -> Result<String, String> {
         // Reuse toggle_trash - if it's trashed, this restores it (clears deleted_at).
         let conn = open_lib(&app)?;
+        // Restore returns the ORIGINAL: if the trashed content is still vault-ciphertext
+        // (deleted before decrypt-on-delete existed, or an orphan), decrypt it back to a
+        // normal note - which needs the vault unlocked.
+        {
+            let vaulted: Option<String> = conn
+                .query_row(
+                    "SELECT vaulted_at FROM artifacts WHERE id = ?1",
+                    [&id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .flatten();
+            match vault_key_get() {
+                Some(key) => {
+                    vault_decrypt_in_place(&app, &conn, &id, &key)?;
+                }
+                None if vaulted.is_some() => {
+                    return Err("Unlock the vault to restore this item.".into());
+                }
+                None => {}
+            }
+        }
         let art = crate::sync::toggle_trash(&conn, &id).map_err(|e| e.to_string())?;
         // Push the restore so the desktop un-trashes it too - build_snapshot carries
         // deleted_at, and queue_mutation_push bumps updated_at so LWW accepts it.
@@ -1707,6 +1812,479 @@ mod mobile {
         Ok(serde_json::json!({ "purged": ids.len() }).to_string())
     }
 
+    // ---- Secret vault (VAULT.5 mobile) --------------------------------------
+    // The vault key lives in memory only after unlock; the wrap (salt + PIN-wrapped
+    // key) is stored in secure config and synced (VAULT.2b). Content is encrypted at
+    // rest with this key, mirroring the desktop `vaultops`.
+    static VAULT_KEY: std::sync::Mutex<Option<[u8; 32]>> = std::sync::Mutex::new(None);
+    // A tiny in-memory event log for the mobile Events section (decoy + diagnostics).
+    static EVENTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+    fn emit_event(kind: &str, detail: &str) {
+        if let Ok(mut ev) = EVENTS.lock() {
+            let now = now_iso();
+            ev.push(format!("{now}\t{kind}\t{detail}"));
+            let len = ev.len();
+            if len > 200 {
+                ev.drain(0..len - 200);
+            }
+        }
+    }
+
+    fn vault_key_get() -> Option<[u8; 32]> {
+        *VAULT_KEY.lock().unwrap()
+    }
+
+    fn b64(data: &[u8]) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(data)
+    }
+    fn unb64(s: &str) -> Result<Vec<u8>, String> {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.decode(s).map_err(|e| e.to_string())
+    }
+    fn seal(key: &[u8; 32], pt: Option<String>) -> Result<Option<String>, String> {
+        match pt {
+            None => Ok(None),
+            Some(s) => Ok(Some(b64(&crate::sync::secretbox_encrypt(key, s.as_bytes())?))),
+        }
+    }
+    fn open(key: &[u8; 32], sealed: Option<String>) -> Result<Option<String>, String> {
+        match sealed {
+            None => Ok(None),
+            Some(s) => {
+                let ct = unb64(&s)?;
+                let pt = crate::sync::unwrap(&ct, key)?;
+                Ok(Some(String::from_utf8_lossy(&pt).to_string()))
+            }
+        }
+    }
+    // Decrypt `value` iff it is our vault-ciphertext, else None. The secretbox auth tag
+    // makes this a reliable test: plaintext never opens. Lets a surface detect a sealed
+    // field WITHOUT a vaulted_at flag - the orphan state a partial un-vault leaves.
+    fn try_open(key: &[u8; 32], value: &Option<String>) -> Option<String> {
+        let s = value.as_ref()?;
+        let ct = unb64(s).ok()?;
+        let pt = crate::sync::unwrap(&ct, key).ok()?;
+        Some(String::from_utf8_lossy(&pt).to_string())
+    }
+
+    // Decrypt every still-sealed field of an artifact and clear vaulted_at, in the
+    // caller's connection (no re-index, no push). Flag-agnostic (repairs orphans too).
+    // Used when a vaulted item leaves the vault by being deleted/restored on the phone,
+    // so the trash holds the readable original rather than opaque ciphertext.
+    fn vault_decrypt_in_place(app: &AppHandle, conn: &Connection, id: &str, key: &[u8; 32]) -> Result<bool, String> {
+        let mut touched = false;
+        let dec = |v: Option<String>, touched: &mut bool| -> Option<String> {
+            match try_open(key, &v) {
+                Some(p) => {
+                    *touched = true;
+                    Some(p)
+                }
+                None => v,
+            }
+        };
+        let row: Option<(Option<String>, Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT body, title, content_hash FROM artifacts WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let (body, title, content_hash) = match row {
+            Some(r) => r,
+            None => return Ok(false),
+        };
+        let body = dec(body, &mut touched);
+        let title = dec(title, &mut touched);
+        conn.execute(
+            "UPDATE artifacts SET body = ?1, title = ?2, vaulted_at = NULL WHERE id = ?3",
+            rusqlite::params![body, title, id],
+        )
+        .map_err(|e| e.to_string())?;
+        let anns: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, text FROM annotations WHERE artifact_id = ?1")
+            .and_then(|mut s| s.query_map([id], |r| Ok((r.get(0)?, r.get(1)?))).and_then(|m| m.collect()))
+            .map_err(|e| e.to_string())?;
+        for (aid, text) in anns {
+            let text = dec(text, &mut touched);
+            conn.execute("UPDATE annotations SET text = ?1 WHERE id = ?2", rusqlite::params![text, aid])
+                .map_err(|e| e.to_string())?;
+        }
+        let pages: Vec<(i64, Option<String>)> = conn
+            .prepare("SELECT page, text FROM page_text WHERE artifact_id = ?1")
+            .and_then(|mut s| s.query_map([id], |r| Ok((r.get(0)?, r.get(1)?))).and_then(|m| m.collect()))
+            .map_err(|e| e.to_string())?;
+        for (page, text) in pages {
+            let text = dec(text, &mut touched);
+            conn.execute(
+                "UPDATE page_text SET text = ?1 WHERE artifact_id = ?2 AND page = ?3",
+                rusqlite::params![text, id, page],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let vers: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, body FROM artifact_versions WHERE artifact_id = ?1")
+            .and_then(|mut s| s.query_map([id], |r| Ok((r.get(0)?, r.get(1)?))).and_then(|m| m.collect()))
+            .map_err(|e| e.to_string())?;
+        for (vid, vbody) in vers {
+            let vbody = dec(vbody, &mut touched);
+            conn.execute("UPDATE artifact_versions SET body = ?1 WHERE id = ?2", rusqlite::params![vbody, vid])
+                .map_err(|e| e.to_string())?;
+        }
+        // Blob: decrypt only if it actually opens with the vault key.
+        if let Some(ch) = content_hash.filter(|c| !c.is_empty()) {
+            if let Ok(dir) = app.path().app_data_dir() {
+                let path = dir.join("blobs").join(&ch);
+                if path.exists() {
+                    if let Ok(raw) = std::fs::read(&path) {
+                        if let Ok(plain) = crate::sync::unwrap(&raw, key) {
+                            std::fs::write(&path, plain).map_err(|e| e.to_string())?;
+                            touched = true;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(touched)
+    }
+
+    fn vault_meta_get(app: &AppHandle) -> Result<Option<(String, String)>, String> {
+        // Prefer this device's own secure store; fall back to the synced wrap that
+        // arrived via lib/vault.enc (cached in sync_meta), so a second device can
+        // unlock the vault the first device created (VAULT.2b).
+        let raw = match secure_store_get(app, "vault_meta")? {
+            Some(s) => Some(s),
+            None => {
+                let conn = open_lib(app)?;
+                conn.query_row("SELECT value FROM sync_meta WHERE key = 'vault_meta'", [], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(|e| e.to_string())?
+            }
+        };
+        match raw {
+            None => Ok(None),
+            Some(s) => {
+                let v: Value = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+                match (v.get("salt").and_then(Value::as_str), v.get("wrap").and_then(Value::as_str)) {
+                    (Some(salt), Some(wrap)) => Ok(Some((salt.to_string(), wrap.to_string()))),
+                    _ => Ok(None),
+                }
+            }
+        }
+    }
+
+    #[tauri::command]
+    fn mobile_vault_status(app: AppHandle) -> Result<String, String> {
+        let setup = vault_meta_get(&app)?.is_some();
+        let unlocked = vault_key_get().is_some();
+        Ok(serde_json::json!({ "setup": setup, "unlocked": unlocked }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_setup(app: AppHandle, pin: String) -> Result<String, String> {
+        if pin.len() != 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
+            return Err("PIN must be exactly 6 digits".into());
+        }
+        if vault_meta_get(&app)?.is_some() {
+            return Err("vault already set up".into());
+        }
+        let mut key = [0u8; 32];
+        getrandom::getrandom(&mut key).map_err(|e| e.to_string())?;
+        let mut salt = [0u8; 16];
+        getrandom::getrandom(&mut salt).map_err(|e| e.to_string())?;
+        let kek = crate::sync::derive_kek(&pin, &salt)?;
+        let wrapped = crate::sync::secretbox_encrypt(&kek, &key)?;
+        let meta = serde_json::json!({ "salt": hex::encode(salt), "wrap": hex::encode(wrapped) });
+        secure_store_set(&app, "vault_meta", &meta.to_string())?;
+        *VAULT_KEY.lock().unwrap() = Some(key);
+        // Sync the wrap so other devices unlock with the same PIN (VAULT.2b).
+        let _ = vault_push_meta(&app);
+        Ok(serde_json::json!({ "setup": true, "unlocked": true }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_unlock(app: AppHandle, pin: String) -> Result<String, String> {
+        let (salt_hex, wrap_hex) = vault_meta_get(&app)?.ok_or("vault is not set up")?;
+        let salt = hex::decode(&salt_hex).map_err(|e| e.to_string())?;
+        let wrapped = hex::decode(&wrap_hex).map_err(|e| e.to_string())?;
+        let kek = crate::sync::derive_kek(&pin, &salt)?;
+        let key = crate::sync::unwrap(&wrapped, &kek).map_err(|_| "incorrect".to_string())?;
+        if key.len() != 32 {
+            return Err("bad key".into());
+        }
+        let mut k = [0u8; 32];
+        k.copy_from_slice(&key);
+        *VAULT_KEY.lock().unwrap() = Some(k);
+        Ok(serde_json::json!({ "unlocked": true }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_lock() -> Result<String, String> {
+        *VAULT_KEY.lock().unwrap() = None;
+        Ok(serde_json::json!({ "unlocked": false }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_change_pin(app: AppHandle, old: String, new: String) -> Result<String, String> {
+        if new.len() != 6 || !new.chars().all(|c| c.is_ascii_digit()) {
+            return Err("PIN must be exactly 6 digits".into());
+        }
+        // Verify the old PIN unwraps the current key, then re-wrap that same key.
+        let (salt_hex, wrap_hex) = vault_meta_get(&app)?.ok_or("vault is not set up")?;
+        let salt = hex::decode(&salt_hex).map_err(|e| e.to_string())?;
+        let wrapped = hex::decode(&wrap_hex).map_err(|e| e.to_string())?;
+        let old_kek = crate::sync::derive_kek(&old, &salt)?;
+        let key = crate::sync::unwrap(&wrapped, &old_kek).map_err(|_| "incorrect".to_string())?;
+        let mut new_salt = [0u8; 16];
+        getrandom::getrandom(&mut new_salt).map_err(|e| e.to_string())?;
+        let new_kek = crate::sync::derive_kek(&new, &new_salt)?;
+        let new_wrap = crate::sync::secretbox_encrypt(&new_kek, &key)?;
+        let meta = serde_json::json!({ "salt": hex::encode(new_salt), "wrap": hex::encode(new_wrap) });
+        secure_store_set(&app, "vault_meta", &meta.to_string())?;
+        // Keep the session key (unwrapped) in memory.
+        if key.len() == 32 {
+            let mut k = [0u8; 32];
+            k.copy_from_slice(&key);
+            *VAULT_KEY.lock().unwrap() = Some(k);
+        }
+        let _ = vault_push_meta(&app);
+        Ok(serde_json::json!({ "changed": true }).to_string())
+    }
+
+    // Encrypt/decrypt one artifact's content at rest, mirroring the desktop vaultops.
+    fn vault_apply(app: &AppHandle, id: &str, into_vault: bool) -> Result<(), String> {
+        let key = vault_key_get().ok_or("vault is locked")?;
+        let conn = open_lib(app)?;
+        let now = now_iso();
+        let row = conn
+            .query_row(
+                "SELECT body, title, content_hash, vaulted_at FROM artifacts WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                        r.get::<_, Option<String>>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("no such artifact")?;
+        let (body, title, content_hash, vaulted_at) = row;
+        let xf = |s: Option<String>| if into_vault { seal(&key, s) } else { open(&key, s) };
+        if into_vault && vaulted_at.is_some() {
+            return Ok(());
+        }
+        if !into_vault && vaulted_at.is_none() {
+            return Ok(());
+        }
+        let new_vaulted: Option<String> = if into_vault { Some(now.clone()) } else { None };
+        conn.execute(
+            "UPDATE artifacts SET body = ?1, title = ?2, vaulted_at = ?3, updated_at = ?4 WHERE id = ?5",
+            rusqlite::params![xf(body)?, xf(title)?, new_vaulted, now, id],
+        )
+        .map_err(|e| e.to_string())?;
+        // Annotations, page_text, versions.
+        let anns: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, text FROM annotations WHERE artifact_id = ?1")
+            .and_then(|mut s| {
+                s.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .and_then(|m| m.collect())
+            })
+            .map_err(|e| e.to_string())?;
+        for (aid, text) in anns {
+            conn.execute(
+                "UPDATE annotations SET text = ?1 WHERE id = ?2",
+                rusqlite::params![xf(text)?, aid],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let pages: Vec<(i64, Option<String>)> = conn
+            .prepare("SELECT page, text FROM page_text WHERE artifact_id = ?1")
+            .and_then(|mut s| {
+                s.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .and_then(|m| m.collect())
+            })
+            .map_err(|e| e.to_string())?;
+        for (page, text) in pages {
+            conn.execute(
+                "UPDATE page_text SET text = ?1 WHERE artifact_id = ?2 AND page = ?3",
+                rusqlite::params![xf(text)?, id, page],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let vers: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, body FROM artifact_versions WHERE artifact_id = ?1")
+            .and_then(|mut s| {
+                s.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .and_then(|m| m.collect())
+            })
+            .map_err(|e| e.to_string())?;
+        for (vid, vbody) in vers {
+            conn.execute(
+                "UPDATE artifact_versions SET body = ?1 WHERE id = ?2",
+                rusqlite::params![xf(vbody)?, vid],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        // Blob file in place.
+        if let Some(ch) = content_hash.filter(|c| !c.is_empty()) {
+            if let Ok(dir) = app.path().app_data_dir() {
+                let path = dir.join("blobs").join(&ch);
+                if path.exists() {
+                    let raw = std::fs::read(&path).map_err(|e| e.to_string())?;
+                    let out = if into_vault {
+                        crate::sync::secretbox_encrypt(&key, &raw)?
+                    } else {
+                        crate::sync::unwrap(&raw, &key)?
+                    };
+                    std::fs::write(&path, out).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        emit_event(if into_vault { "vault" } else { "unvault" }, &id[..8.min(id.len())]);
+        queue_mutation_push(&conn, id, if into_vault { "vault" } else { "unvault" })?;
+        Ok(())
+    }
+
+    #[tauri::command]
+    fn mobile_set_vault(app: AppHandle, id: String, on: bool) -> Result<String, String> {
+        vault_apply(&app, &id, on)?;
+        Ok(serde_json::json!({ "id": id, "vaulted": on }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_list(app: AppHandle) -> Result<String, String> {
+        // Return the SAME shape as the library list (list_artifacts) so the mobile
+        // vault renders with the identical card component - just decrypted, and
+        // sourced from the vaulted set.
+        let key = vault_key_get().ok_or("vault is locked")?;
+        let conn = open_lib(&app)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id,kind,title,body,source_url,mime,filename,created_at,updated_at,pinned,status \
+                 FROM artifacts WHERE vaulted_at IS NOT NULL AND deleted_at IS NULL ORDER BY updated_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let raw: Vec<(String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, String, i64, String)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?,
+                    r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .collect();
+        let mut items = Vec::new();
+        for (id, kind, title, body, source_url, mime, filename, created, updated, pinned, status) in raw {
+            let body_plain = open(&key, body)?.unwrap_or_default();
+            let excerpt: String = body_plain.chars().take(280).collect();
+            items.push(serde_json::json!({
+                "id": id, "kind": kind,
+                "title": open(&key, title)?,
+                "body": excerpt,
+                "source_url": source_url, "mime": mime, "filename": filename,
+                "created_at": created, "updated_at": updated,
+                "pinned": pinned, "status": status, "tags": Value::Array(vec![]),
+                "vaulted_at": true,
+            }));
+        }
+        Ok(serde_json::json!({ "items": items }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_get(app: AppHandle, id: String) -> Result<String, String> {
+        let key = vault_key_get().ok_or("vault is locked")?;
+        let conn = open_lib(&app)?;
+        let (kind, title, body, ch) = conn
+            .query_row(
+                "SELECT kind, title, body, content_hash FROM artifacts WHERE id = ?1 AND vaulted_at IS NOT NULL",
+                [&id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("not in the vault")?;
+        Ok(serde_json::json!({ "artifact": {
+            "id": id, "kind": kind,
+            "title": open(&key, title)?, "body": open(&key, body)?, "content_hash": ch,
+        }})
+        .to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_vault_blob(app: AppHandle, id: String) -> Result<String, String> {
+        let key = vault_key_get().ok_or("vault is locked")?;
+        let conn = open_lib(&app)?;
+        let (ch, mime) = conn
+            .query_row(
+                "SELECT content_hash, mime FROM artifacts WHERE id = ?1 AND vaulted_at IS NOT NULL",
+                [&id],
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+            .ok_or("not in the vault")?;
+        let ch = ch.filter(|c| !c.is_empty()).ok_or("no blob")?;
+        let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("blobs").join(&ch);
+        let raw = std::fs::read(&path).map_err(|_| "no blob".to_string())?;
+        let plain = crate::sync::unwrap(&raw, &key)?;
+        Ok(serde_json::json!({ "mime": mime.unwrap_or_else(|| "application/octet-stream".into()), "base64": b64(&plain) }).to_string())
+    }
+
+    #[tauri::command]
+    fn mobile_events() -> Result<String, String> {
+        let ev = EVENTS.lock().unwrap();
+        let items: Vec<Value> = ev
+            .iter()
+            .rev()
+            .take(100)
+            .map(|line| {
+                let mut it = line.splitn(3, '\t');
+                serde_json::json!({
+                    "ts": it.next().unwrap_or(""),
+                    "kind": it.next().unwrap_or(""),
+                    "detail": it.next().unwrap_or(""),
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({ "events": items }).to_string())
+    }
+
+    // Push the PIN-wrapped vault meta as a DEK-encrypted relay object `lib/vault.enc`
+    // (VAULT.2b), so a second device unlocks the same vault with the same PIN. The
+    // wrap is already PIN-encrypted; the DEK layer just keeps the relay ciphertext-only.
+    fn vault_push_meta(app: &AppHandle) -> Result<(), String> {
+        let meta = match secure_store_get(app, "vault_meta")? {
+            Some(m) => m,
+            None => return Ok(()),
+        };
+        let cfg = match load_config(app)? {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+        let dek = match cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+        let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+        let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+        let ct = crate::sync::secretbox_encrypt(&dek, meta.as_bytes())?;
+        let url = format!("{}/sync/object/lib/vault.enc", relay_url.trim_end_matches('/'));
+        let _ = ureq::put(&url)
+            .set("Authorization", &format!("Bearer {secret}"))
+            .set("Content-Type", "application/octet-stream")
+            .send_bytes(&ct);
+        Ok(())
+    }
+
     /// The mobile shell: it builds and launches on the device (MOB.2). The synced
     /// library (MOB.3), setup surface (MOB.3b), and read surfaces (MOB.4-MOB.7) are what
     /// make it a real Enqueue.
@@ -1747,6 +2325,16 @@ mod mobile {
                 mobile_restore_trashed,
                 mobile_empty_trash,
                 mobile_delete,
+                mobile_vault_status,
+                mobile_vault_setup,
+                mobile_vault_unlock,
+                mobile_vault_lock,
+                mobile_vault_change_pin,
+                mobile_set_vault,
+                mobile_vault_list,
+                mobile_vault_get,
+                mobile_vault_blob,
+                mobile_events,
                 start_sync_foreground_service,
                 stop_sync_foreground_service,
             ])

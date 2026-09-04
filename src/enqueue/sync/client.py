@@ -125,6 +125,33 @@ def push_artifact(artifact_id: str) -> None:
         conn.execute("UPDATE artifacts SET _device_id = ? WHERE id = ?", (device_id(), artifact_id))
 
 
+def push_vault_meta() -> None:
+    """PUT the PIN-wrapped vault key as `lib/vault.enc` (VAULT.2b).
+
+    The wrap (`{salt, wrap}`) is already PIN-encrypted; the DEK layer here only
+    keeps the relay ciphertext-only. Other devices pull this and can unlock the
+    same vault with the same PIN. Best effort - a vault works locally without it.
+    """
+    import json
+
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+    dek = keyring_file.dek()
+    wrap = keyring_file.vault_wrap_get()
+    if dek is None or wrap is None:
+        return
+    meta = {"salt": wrap["vault_salt"], "wrap": wrap["vault_by_pin"]}
+    data = crypto.encrypt(json.dumps(meta).encode("utf-8"), dek)
+    headers = {"Authorization": f"Bearer {_secret()}", "Content-Type": "application/octet-stream"}
+    try:
+        with httpx.Client(timeout=30) as client:
+            client.put(f"{url.rstrip('/')}/sync/object/lib/vault.enc", content=data, headers=headers)
+    except httpx.HTTPError:
+        pass
+
+
 def fetch_blob_to_cache(content_hash: str) -> bool:
     """Download one file blob from the relay into BLOB_DIR by content hash (E5).
 
@@ -196,6 +223,21 @@ def pull() -> dict:
         for obj in listing.json()["objects"]:
             name = obj["name"]
             if name.startswith(mine):
+                continue
+            # The synced vault wrap (VAULT.2b): another device set up the vault; cache
+            # the wrap locally so this device can unlock with the same PIN. The inner
+            # value is still PIN-wrapped, so the DEK alone cannot read the vault.
+            if name == "lib/vault.enc":
+                import json as _json
+
+                try:
+                    resp = client.get(f"{base}/sync/object/{name}", headers=headers)
+                    if resp.status_code == 200:
+                        meta = _json.loads(crypto.decrypt(resp.content, dek).decode("utf-8"))
+                        if not keyring_file.vault_wrap_get():
+                            keyring_file.vault_wrap_set(meta["salt"], meta["wrap"])
+                except Exception:  # noqa: BLE001 - a bad vault object never wedges the pull
+                    pass
                 continue
             if not (name.startswith("dev/") and name.endswith(".enc")):
                 continue  # blobs are fetched on demand (SYNC.8/E5), not pulled here

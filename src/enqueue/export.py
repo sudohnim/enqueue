@@ -154,7 +154,7 @@ def export(directory: str | Path) -> dict:
     conn = db.get_conn()
     try:
         artifacts = conn.execute(
-            "SELECT * FROM artifacts WHERE deleted_at IS NULL ORDER BY created_at, id"
+            "SELECT * FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL ORDER BY created_at, id"
         ).fetchall()
         annotations = conn.execute(
             "SELECT id, artifact_id, supersedes_id, text, created_at FROM annotations"
@@ -239,7 +239,7 @@ def verify(directory: str | Path) -> dict:
     conn = db.get_conn()
     try:
         expected = [
-            r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL")
+            r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL")
         ]
     finally:
         conn.close()

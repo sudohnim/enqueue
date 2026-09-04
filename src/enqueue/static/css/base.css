@@ -375,9 +375,22 @@
   .item-body .kindrow {
     margin-bottom: var(--sp-1);
   }
+  /* A long unbroken title (a ciphertext token, a raw URL) has no wrap point, so it
+     overflows item-body and spills over the meta + actions to its right. Break such
+     runs so the title stays inside its column and the row keeps its shape. */
+  .item-body .title {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
   .item .meta {
     margin-top: 0;
     flex-shrink: 0;
+  }
+  .item .rowacts {
+    flex-shrink: 0;
+    display: flex;
+    gap: var(--sp-2);
+    align-items: center;
   }
 
 
@@ -482,3 +495,133 @@
       opacity: 0;
     }
   }
+
+/* Vault + Events (VAULT.6) ------------------------------------------------- */
+.event-log {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	/* Self-contained scroll panel: bounded height with its own border so a long
+	   session's events scroll inside the box instead of stretching the page. */
+	max-height: 360px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	border: 1px solid var(--line, #dedee5);
+	border-radius: var(--r-md, 10px);
+	padding: 8px;
+	background: var(--surface-1, #f6f7f9);
+	font-size: var(--type-caption, 13px);
+}
+.event-row {
+	display: grid;
+	grid-template-columns: 96px 1fr auto;
+	gap: var(--sp-3);
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--line-soft, #eceef2);
+	align-items: baseline;
+}
+.event-kind {
+	font-weight: 600;
+	color: var(--accent-text, #60079f);
+}
+.event-detail {
+	color: var(--ink, #101114);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.event-ts {
+	color: var(--ink-faint, #9497a9);
+	font-variant-numeric: tabular-nums;
+}
+.pin-card {
+	max-width: 340px;
+	text-align: center;
+}
+.pin-input {
+	width: 100%;
+	margin: var(--sp-3) 0;
+	padding: var(--sp-3);
+	font-size: 22px;
+	letter-spacing: 8px;
+	text-align: center;
+	border: 1px solid var(--line-strong, #c4c6d0);
+	border-radius: var(--r-md, 10px);
+}
+.pin-err {
+	color: var(--danger, #b3261e);
+	font-size: var(--type-caption, 13px);
+	margin-bottom: var(--sp-2);
+}
+.vault-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: var(--sp-4);
+}
+.vault-card {
+	border: 1px solid var(--line, #dedee5);
+	border-radius: var(--r-md, 10px);
+	padding: var(--sp-4);
+	background: var(--surface-1, #f6f7f9);
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+}
+.vault-card:hover {
+	background: var(--surface-2, #eef0f3);
+}
+.vault-card-kind {
+	font-size: var(--type-caption, 12px);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--ink-subtle, #686b82);
+}
+.vault-card-title {
+	font-weight: 600;
+	color: var(--ink, #101114);
+}
+.vault-unvault {
+	margin-top: var(--sp-2);
+	align-self: flex-start;
+}
+.vault-blob {
+	max-width: 100%;
+	border-radius: var(--r-md, 10px);
+}
+
+/* Centered modal backdrop for the vault PIN (dims the whole app, holds focus) */
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 1000;
+	background: var(--scrim, rgba(16, 17, 20, 0.45));
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+.modal-card {
+	background: var(--surface-1, #ffffff);
+	border: 1px solid var(--line, #dedee5);
+	border-radius: 16px;
+	padding: 24px;
+	box-shadow: 0 12px 48px rgba(16, 17, 20, 0.2);
+	width: 100%;
+	max-width: 360px;
+}
+
+/* Vault view header: mirror the wall's greeting emblem, but centered + "Vault" */
+.vaulthead {
+	text-align: center;
+}
+.vaulthead .greetline {
+	justify-content: center;
+}
+.vaultbar {
+	display: flex;
+	gap: var(--sp-3);
+	justify-content: center;
+	margin-top: var(--sp-3);
+	margin-bottom: var(--sp-2);
+}

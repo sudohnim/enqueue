@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timedelta, timezone
 
-from . import config, db
+from . import config, db, vault, vaultops
 from .sync.client import push_artifact
 
 
@@ -48,12 +48,22 @@ def delete(artifact_id: str) -> dict:
     now = _now().isoformat()
     with db.transaction() as conn:
         row = conn.execute(
-            "SELECT deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
+            "SELECT deleted_at, vaulted_at FROM artifacts WHERE id = ?", (artifact_id,)
         ).fetchone()
         if row is None:
             raise KeyError(artifact_id)
         if row["deleted_at"]:
             return {"id": artifact_id, "deleted_at": row["deleted_at"], "already": True}
+
+        # A vaulted item leaves the vault by being deleted: decrypt it out first so the
+        # trash holds the readable original (and restore brings back a normal note),
+        # never opaque ciphertext. It needs the vault unlocked - which it is, since the
+        # delete is invoked from inside the open vault. When unlocked we also heal any
+        # orphan (encrypted bytes whose flag was already cleared) in the same pass.
+        if row["vaulted_at"] and not vault.is_unlocked():
+            raise ValueError("Unlock the vault to delete a vaulted item.")
+        if vault.is_unlocked():
+            vaultops.decrypt_in_place(conn, artifact_id, vault.key())
 
         # Bump updated_at so the tombstone snapshot has a NEWER LWW key than the live
         # snapshot, ensuring the phone's apply_snapshot picks up the tombstone (MOBFIX.5).
@@ -77,10 +87,17 @@ def restore(artifact_id: str) -> dict:
     now = _now().isoformat()
     with db.transaction() as conn:
         row = conn.execute(
-            "SELECT deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
+            "SELECT deleted_at, vaulted_at FROM artifacts WHERE id = ?", (artifact_id,)
         ).fetchone()
         if row is None:
             raise KeyError(artifact_id)
+        # Restore returns the ORIGINAL. If the trashed content is still vault-ciphertext
+        # (a vaulted item deleted before this decrypt-on-delete existed, or an orphan),
+        # decrypt it back to a normal note - which needs the vault unlocked.
+        if row["vaulted_at"] and not vault.is_unlocked():
+            raise ValueError("Unlock the vault to restore this item.")
+        if vault.is_unlocked():
+            vaultops.decrypt_in_place(conn, artifact_id, vault.key())
         # Bump updated_at so the un-tombstone snapshot has a NEWER LWW key (MOBFIX.5).
         conn.execute(
             "UPDATE artifacts SET deleted_at = NULL, updated_at = ? WHERE id = ?",
@@ -98,16 +115,27 @@ def listing() -> dict:
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, kind, title, source_url, filename, created_at, deleted_at"
+            "SELECT id, kind, title, source_url, filename, created_at, deleted_at, vaulted_at"
             " FROM artifacts WHERE deleted_at IS NOT NULL AND purged_at IS NULL"
             " ORDER BY deleted_at DESC"
         ).fetchall()
     finally:
         conn.close()
 
+    unlocked = vault.is_unlocked()
+    key = vault.key() if unlocked else None
     out = []
     for row in rows:
         item = dict(row)
+        # Never show raw vault-ciphertext. Decrypt to the real title when the vault is
+        # open (also catches orphans via the auth tag); otherwise show a neutral label.
+        if unlocked:
+            opened = vaultops.try_open(key, row["title"])
+            if opened is not None:
+                item["title"] = opened
+        elif row["vaulted_at"]:
+            item["title"] = "Locked note"
+        item.pop("vaulted_at", None)
         try:
             gone = datetime.fromisoformat(row["deleted_at"]) + timedelta(days=days)
             item["purges_at"] = gone.isoformat()

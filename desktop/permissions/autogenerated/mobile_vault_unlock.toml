@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-vault-unlock"
+description = "Enables the mobile_vault_unlock command without any pre-configured scope."
+commands.allow = ["mobile_vault_unlock"]
+
+[[permission]]
+identifier = "deny-mobile-vault-unlock"
+description = "Denies the mobile_vault_unlock command without any pre-configured scope."
+commands.deny = ["mobile_vault_unlock"]

@@ -63,6 +63,14 @@ def _pull_handler(_item: object) -> object:
         log.info("sync pull recovered after %d failed attempt(s)", _fail_streak)
     _fail_streak = 0
     _backoff_until = 0.0
+    try:
+        pulled = (result or {}).get("pulled", 0)
+        if pulled:
+            from .. import events
+
+            events.emit("sync.pull", f"{pulled} applied")
+    except Exception:  # noqa: BLE001
+        pass
     return result
 
 

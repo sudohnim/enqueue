@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stop-sync-foreground-service"
+description = "Enables the stop_sync_foreground_service command without any pre-configured scope."
+commands.allow = ["stop_sync_foreground_service"]
+
+[[permission]]
+identifier = "deny-stop-sync-foreground-service"
+description = "Denies the stop_sync_foreground_service command without any pre-configured scope."
+commands.deny = ["stop_sync_foreground_service"]

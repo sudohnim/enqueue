@@ -51,7 +51,7 @@ def doctor() -> dict:
     try:
         images_without_body = conn.execute(
             "SELECT COUNT(*) AS n FROM artifacts"
-            " WHERE kind = 'image' AND deleted_at IS NULL AND (body IS NULL OR body = '')"
+            " WHERE kind = 'image' AND deleted_at IS NULL AND vaulted_at IS NULL AND (body IS NULL OR body = '')"
         ).fetchone()["n"]
     finally:
         conn.close()

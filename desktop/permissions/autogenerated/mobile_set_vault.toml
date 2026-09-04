@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-set-vault"
+description = "Enables the mobile_set_vault command without any pre-configured scope."
+commands.allow = ["mobile_set_vault"]
+
+[[permission]]
+identifier = "deny-mobile-set-vault"
+description = "Denies the mobile_set_vault command without any pre-configured scope."
+commands.deny = ["mobile_set_vault"]

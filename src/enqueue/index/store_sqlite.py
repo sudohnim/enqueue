@@ -106,7 +106,7 @@ _SQL = {
         "select_all": (
             "SELECT c.id, c.text, a.title"
             " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
-            " WHERE a.deleted_at IS NULL"
+            " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL"
         ),
         "clear_vec": "DELETE FROM vec_chunks",
         "clear_fts": "DELETE FROM fts_chunks",

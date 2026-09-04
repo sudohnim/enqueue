@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-vault-blob"
+description = "Enables the mobile_vault_blob command without any pre-configured scope."
+commands.allow = ["mobile_vault_blob"]
+
+[[permission]]
+identifier = "deny-mobile-vault-blob"
+description = "Denies the mobile_vault_blob command without any pre-configured scope."
+commands.deny = ["mobile_vault_blob"]

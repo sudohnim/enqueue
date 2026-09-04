@@ -123,6 +123,7 @@ const SETTINGS_TABS = [
 	{ id: "storage", label: "Storage", render: renderSettingsStorage },
 	{ id: "trash", label: "Trash", render: renderSettingsTrash },
 	{ id: "sync", label: "Sync", render: renderSettingsSync },
+	{ id: "events", label: "Events", render: renderSettingsEvents },
 ];
 
 // The tab on screen, so Save, Discard, and the key actions can re-render it
@@ -184,6 +185,8 @@ function switchSettingsTab(name) {
 }
 
 async function showSettings() {
+	// Entering settings from the vault locks it, so Diagnostics always re-prompts.
+	maybeLockVault();
 	teardown();
 	restorePill("inside");
 	view.innerHTML =
@@ -1063,3 +1066,313 @@ function back() {
 // holds the route, so a hidden-and-restored window lands back on the artifact
 // or grouping, not the wall. An empty hash is the wall.
 restoreRoute();
+
+// ---- Events tab + the vault behind it (VAULT.6) --------------------------
+// The Events tab is real diagnostics: it lists the events the engine emitted
+// this session. It is also the vault's front door - the "Diagnostics" button
+// prompts for the 6-digit PIN and, on success, opens the vault. A mundane,
+// genuinely-useful tab is the whole point: it invites no suspicion.
+async function renderSettingsEvents() {
+	let events = [];
+	try {
+		events = (await api("/events?limit=100")).events || [];
+	} catch (_) {
+		/* an empty log is fine */
+	}
+	const rows = events.length
+		? events
+				.map(
+					(e) =>
+						'<div class="event-row"><span class="event-kind">' +
+						esc(e.kind) +
+						'</span><span class="event-detail">' +
+						esc(e.detail || "") +
+						'</span><span class="event-ts">' +
+						esc(e.ts || "") +
+						"</span></div>",
+				)
+				.join("")
+		: '<p class="aside">No events yet this session.</p>';
+	return (
+		'<div class="settings-card">' +
+		'<div class="settings-card-label">Session events</div>' +
+		'<p class="aside" style="margin-bottom: var(--sp-3);">Recent sync, ingest, and capture activity. Cleared on restart.</p>' +
+		'<div class="event-log">' +
+		rows +
+		"</div>" +
+		'<div class="settings-actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn ghost" onclick="switchSettingsTab(&#39;events&#39;)">Refresh</button>' +
+		'<button class="btn" onclick="vaultDiagnostics()">Diagnostics</button>' +
+		"</div></div>"
+	);
+}
+
+// A promise-based 6-digit PIN entry. Resolves the digits, or null on cancel.
+function pinModal(title, sub) {
+	return new Promise((resolve) => {
+		const back = document.createElement("div");
+		back.className = "modal-backdrop";
+		back.innerHTML =
+			'<div class="modal-card pin-card" role="dialog" aria-modal="true">' +
+			'<div class="h2">' +
+			esc(title) +
+			"</div>" +
+			(sub ? '<p class="aside">' + esc(sub) + "</p>" : "") +
+			'<input id="pinInput" class="pin-input" type="password" inputmode="numeric" ' +
+			'autocomplete="off" maxlength="6" pattern="[0-9]*" aria-label="Diagnostics code" />' +
+			'<div id="pinErr" class="pin-err" hidden></div>' +
+			'<div class="mini-modal-buttons">' +
+			'<button class="btn ghost" id="pinCancel">Cancel</button>' +
+			'<button class="btn" id="pinOk">Enter</button>' +
+			"</div></div>";
+		document.body.appendChild(back);
+		const input = back.querySelector("#pinInput");
+		const done = (val) => {
+			back.remove();
+			resolve(val);
+		};
+		back.querySelector("#pinCancel").onclick = () => done(null);
+		back.querySelector("#pinOk").onclick = () => done(input.value.trim());
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") done(input.value.trim());
+			if (e.key === "Escape") done(null);
+		});
+		back.addEventListener("click", (e) => {
+			if (e.target === back) done(null);
+		});
+		input.focus();
+	});
+}
+
+// Set-a-code with confirmation: prompt twice and require a match, so a typo never
+// becomes an unrecoverable PIN. Returns the code, or null on cancel/mismatch.
+async function pinModalConfirm(title, sub) {
+	const a = await pinModal(title, sub);
+	if (a == null) return null;
+	if (!/^\d{6}$/.test(a)) {
+		toast("A 6-digit code is required.", true);
+		return null;
+	}
+	const b = await pinModal("Confirm code", "Enter the same 6-digit code again.");
+	if (b == null) return null;
+	if (a !== b) {
+		toast("The codes did not match - try again.", true);
+		return null;
+	}
+	return a;
+}
+
+// The vault door: on first use it sets a PIN; afterwards it unlocks. A wrong PIN
+// reads as a failed diagnostics run (no hint a vault exists).
+async function vaultDiagnostics() {
+	let status;
+	try {
+		status = await api("/vault/status");
+	} catch (_) {
+		return;
+	}
+	if (status.unlocked) return openVault();
+	const first = !status.setup;
+	const pin = first
+		? await pinModalConfirm(
+				"Set a diagnostics code",
+				"Choose a 6-digit code. There is no recovery - if you lose it, the data locked behind it is gone for good.",
+			)
+		: await pinModal("Diagnostics", "Enter your 6-digit code.");
+	if (pin == null) return;
+	if (!/^\d{6}$/.test(pin)) return toast("A 6-digit code is required.", true);
+	try {
+		await api(first ? "/vault/setup" : "/vault/unlock", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ pin }),
+		});
+	} catch (_) {
+		return toast("Diagnostics unavailable.", true);
+	}
+	openVault();
+}
+
+async function vaultLock() {
+	try {
+		await api("/vault/lock", { method: "POST" });
+	} catch (_) {
+		/* best effort */
+	}
+	home();
+}
+
+// Leaving the vault for any normal surface locks it, so re-entering always needs
+// the PIN again. Fire-and-forget + idempotent; called from home() and showSettings().
+// The vault reader (a vaulted artifact) is still "inside" the vault, so it does NOT
+// call this - its back button returns to openVault() instead.
+function maybeLockVault() {
+	try {
+		api("/vault/lock", { method: "POST" }).catch(() => {});
+	} catch (_) {
+		/* best effort */
+	}
+}
+
+async function unvaultArtifact(id) {
+	try {
+		await api("/artifacts/" + id + "/unvault", { method: "POST" });
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	openVault();
+}
+
+// The reader lock is a single toggle: lit means "in the vault, click to remove",
+// unlit means "click to move here". Removing returns to the vault view; adding
+// (from the main reader) goes home, since the artifact vanishes from the wall.
+async function toggleVault(id, isVaulted) {
+	if (isVaulted) {
+		try {
+			await api("/artifacts/" + id + "/unvault", { method: "POST" });
+		} catch (err) {
+			return toast(String((err && err.message) || err), true);
+		}
+		toast("Removed from the vault.");
+		openVault();
+	} else {
+		vaultThisArtifact(id);
+	}
+}
+
+// The vault view mirrors the main wall: the same living eye emblem (following the
+// cursor), "Vault" where the greeting sits, and the exact same artifact cards -
+// only the source is the vaulted set and the surface is entered while unlocked.
+async function openVault() {
+	teardown();
+	restorePill("inside");
+	setRoute("vault");
+	let items = [];
+	try {
+		items = (await api("/vault")).items || [];
+	} catch (_) {
+		return home(); // locked or gone
+	}
+	// Reuse the wall's card() so vaulted artifacts look identical to the main page.
+	const grid = items.length
+		? '<div class="wall">' + items.map((a, i) => card(a, i)).join("") + "</div>"
+		: '<p class="state">The vault is empty. Lock an artifact from its page to keep it here.</p>';
+	// Full-bleed like the wall (NOT wrapped in the narrow .pagecol used by the
+	// reader/settings) so the header spans and the card grid gets the wall's full
+	// width + column count. No "Lock" button: leaving the vault auto-locks it.
+	view.innerHTML =
+		'<div class="homehead vaulthead">' +
+		'<div class="greetline">' +
+		'<div class="greet-emblem eye" id="vaultEye" aria-hidden="true"></div>' +
+		'<h1 class="display greeting">Vault</h1>' +
+		"</div>" +
+		'<div class="vaultbar">' +
+		'<button class="btn ghost" onclick="changeVaultPin()">Change code</button>' +
+		"</div></div>" +
+		'<div class="wallbody">' +
+		grid +
+		"</div>";
+	makeEye(document.getElementById("vaultEye"));
+	window.scrollTo(0, 0);
+}
+
+async function openVaultReader(id) {
+	let d;
+	try {
+		d = await api("/vault/" + id);
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	const a = d.artifact;
+	const isImg = ["image", "pdf", "file"].includes(a.kind);
+	view.innerHTML =
+		'<div class="pagecol">' +
+		'<button class="btn ghost back" onclick="openVault()">' +
+		svg("back") +
+		"Vault</button>" +
+		'<div class="h1">' +
+		esc(a.title || "Untitled") +
+		"</div>" +
+		(isImg
+			? '<img class="vault-blob" alt="" src="/vault/' + a.id + '/blob" />'
+			: '<div class="reader-body">' +
+				(typeof md === "function" ? md(a.body || "") : esc(a.body || "")) +
+				"</div>") +
+		'<div class="settings-actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn ghost" onclick="unvaultArtifact(&#39;' +
+		a.id +
+		'&#39;)">Remove from vault</button></div></div>';
+	window.scrollTo(0, 0);
+}
+
+// Lock this artifact into the vault from its own page. Unlocks the vault first
+// (setup on first use) if needed, then vaults and returns home - the artifact
+// vanishes from the wall and lives only in the vault now.
+async function vaultThisArtifact(id) {
+	let status;
+	try {
+		status = await api("/vault/status");
+	} catch (_) {
+		return toast("Vault unavailable.", true);
+	}
+	if (!status.unlocked) {
+		const first = !status.setup;
+		const pin = first
+			? await pinModalConfirm(
+					"Set a vault code",
+					"Choose a 6-digit code. There is no recovery - lose it and the vaulted data is gone for good.",
+				)
+			: await pinModal("Unlock the vault", "Enter your 6-digit code to move this into the vault.");
+		if (pin == null) return;
+		if (!/^\d{6}$/.test(pin)) return toast("A 6-digit code is required.", true);
+		try {
+			await api(first ? "/vault/setup" : "/vault/unlock", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ pin }),
+			});
+		} catch (_) {
+			return toast("Incorrect code.", true);
+		}
+	}
+	try {
+		await api("/artifacts/" + id + "/vault", { method: "POST" });
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	toast("Moved to the vault.");
+	home();
+}
+
+// Auto-lock: drop the vault key when the app loses focus (backgrounded), so an
+// unlocked vault never sits open on an unattended screen. The button re-unlocks.
+window.addEventListener("blur", () => {
+	api("/vault/status")
+		.then((s) => {
+			if (s && s.unlocked) api("/vault/lock", { method: "POST" }).catch(() => {});
+		})
+		.catch(() => {});
+});
+
+// Change the vault PIN - reachable ONLY from the unlocked vault page. Verifies
+// the current code, then re-wraps the same vault key with the new one (no content
+// is re-encrypted). The vault stays unlocked.
+async function changeVaultPin() {
+	const oldPin = await pinModal("Current code", "Enter your current 6-digit code.");
+	if (oldPin == null) return;
+	const newPin = await pinModalConfirm(
+		"New code",
+		"Enter a new 6-digit code. There is still no recovery.",
+	);
+	if (newPin == null) return;
+	try {
+		await api("/vault/change-pin", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ old: oldPin, new: newPin }),
+		});
+	} catch (_) {
+		return toast("Could not change the code - is the current one right?", true);
+	}
+	toast("Vault code changed.");
+}

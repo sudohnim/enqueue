@@ -665,6 +665,8 @@ function bindTagbar(tagbar, hs) {
 }
 
 async function home(opts) {
+	// Leaving for the wall locks the vault (if open), so re-entry needs the PIN.
+	if (typeof maybeLockVault === "function") maybeLockVault();
 	const wasReading = chat;
 	const keepAt = opts && opts.keepScroll ? window.scrollY : null;
 	teardown();
