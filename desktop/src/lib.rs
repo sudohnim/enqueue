@@ -1985,7 +1985,7 @@ mod mobile {
     }
 
     #[tauri::command]
-    fn mobile_vault_setup(app: AppHandle, pin: String) -> Result<String, String> {
+    async fn mobile_vault_setup(app: AppHandle, pin: String) -> Result<String, String> {
         if pin.len() != 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
             return Err("PIN must be exactly 6 digits".into());
         }
@@ -1996,7 +1996,11 @@ mod mobile {
         getrandom::getrandom(&mut key).map_err(|e| e.to_string())?;
         let mut salt = [0u8; 16];
         getrandom::getrandom(&mut salt).map_err(|e| e.to_string())?;
-        let kek = crate::sync::derive_kek(&pin, &salt)?;
+        // Off the main thread (see mobile_vault_unlock) so the setup spinner animates.
+        let salt_owned = salt.to_vec();
+        let kek = tauri::async_runtime::spawn_blocking(move || crate::sync::derive_kek(&pin, &salt_owned))
+            .await
+            .map_err(|e| e.to_string())??;
         let wrapped = crate::sync::secretbox_encrypt(&kek, &key)?;
         let meta = serde_json::json!({ "salt": hex::encode(salt), "wrap": hex::encode(wrapped) });
         secure_store_set(&app, "vault_meta", &meta.to_string())?;
@@ -2006,12 +2010,18 @@ mod mobile {
         Ok(serde_json::json!({ "setup": true, "unlocked": true }).to_string())
     }
 
+    // Async so the argon2 derive (256 MiB, ~7s on a phone) runs on a blocking thread
+    // instead of the main/UI thread. A synchronous Tauri command runs on the main
+    // thread and froze the whole WebView for the whole derive - the unlock spinner
+    // could not animate (measured: 1 frame in 7.4s). spawn_blocking keeps the UI live.
     #[tauri::command]
-    fn mobile_vault_unlock(app: AppHandle, pin: String) -> Result<String, String> {
+    async fn mobile_vault_unlock(app: AppHandle, pin: String) -> Result<String, String> {
         let (salt_hex, wrap_hex) = vault_meta_get(&app)?.ok_or("vault is not set up")?;
         let salt = hex::decode(&salt_hex).map_err(|e| e.to_string())?;
         let wrapped = hex::decode(&wrap_hex).map_err(|e| e.to_string())?;
-        let kek = crate::sync::derive_kek(&pin, &salt)?;
+        let kek = tauri::async_runtime::spawn_blocking(move || crate::sync::derive_kek(&pin, &salt))
+            .await
+            .map_err(|e| e.to_string())??;
         let key = crate::sync::unwrap(&wrapped, &kek).map_err(|_| "incorrect".to_string())?;
         if key.len() != 32 {
             return Err("bad key".into());
@@ -2029,19 +2039,26 @@ mod mobile {
     }
 
     #[tauri::command]
-    fn mobile_vault_change_pin(app: AppHandle, old: String, new: String) -> Result<String, String> {
+    async fn mobile_vault_change_pin(app: AppHandle, old: String, new: String) -> Result<String, String> {
         if new.len() != 6 || !new.chars().all(|c| c.is_ascii_digit()) {
             return Err("PIN must be exactly 6 digits".into());
         }
-        // Verify the old PIN unwraps the current key, then re-wrap that same key.
+        // Verify the old PIN unwraps the current key, then re-wrap that same key. Both
+        // derives run off the main thread (see mobile_vault_unlock) so the UI stays live.
         let (salt_hex, wrap_hex) = vault_meta_get(&app)?.ok_or("vault is not set up")?;
         let salt = hex::decode(&salt_hex).map_err(|e| e.to_string())?;
         let wrapped = hex::decode(&wrap_hex).map_err(|e| e.to_string())?;
-        let old_kek = crate::sync::derive_kek(&old, &salt)?;
+        let salt_old = salt.clone();
+        let old_kek = tauri::async_runtime::spawn_blocking(move || crate::sync::derive_kek(&old, &salt_old))
+            .await
+            .map_err(|e| e.to_string())??;
         let key = crate::sync::unwrap(&wrapped, &old_kek).map_err(|_| "incorrect".to_string())?;
         let mut new_salt = [0u8; 16];
         getrandom::getrandom(&mut new_salt).map_err(|e| e.to_string())?;
-        let new_kek = crate::sync::derive_kek(&new, &new_salt)?;
+        let new_salt_owned = new_salt.to_vec();
+        let new_kek = tauri::async_runtime::spawn_blocking(move || crate::sync::derive_kek(&new, &new_salt_owned))
+            .await
+            .map_err(|e| e.to_string())??;
         let new_wrap = crate::sync::secretbox_encrypt(&new_kek, &key)?;
         let meta = serde_json::json!({ "salt": hex::encode(new_salt), "wrap": hex::encode(new_wrap) });
         secure_store_set(&app, "vault_meta", &meta.to_string())?;

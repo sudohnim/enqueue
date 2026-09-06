@@ -582,6 +582,7 @@ function restoreRoute() {
 			return home();
 		}
 	}
+	if (kind === "untagged" && !id) return showUntagged();
 	return home();
 }
 
@@ -605,15 +606,15 @@ if (!WALL_GROUPS.includes(wallGroup) || wallGroup === "custom")
 let wallKept = [];
 let wallFirst = [];
 
-// The tag bar's chips (L.1): the top eight tags plus an all-tags expander
-// that reveals the rest. Rendered only in Tags mode; setWallGroup builds or
-// toggles it in place so chips and expander state survive mode switches.
+// The tag bar's chips (L.1): every tag as a chip, centered on one line that
+// scrolls sideways when they overflow, and an "untagged" chip pinned at the end
+// for the complement - artifacts carrying no tag at all. Rendered only in Tags
+// mode; setWallGroup builds or toggles it in place so it survives mode switches.
 function tagBarHtml(tags) {
-	const top = tags.slice(0, 8);
-	const rest = tags.slice(8);
 	let html =
 		'<div class="tagbar"' + (wallGroup === "tags" ? "" : " hidden") + ">";
-	html += top
+	html += '<div class="tagbar-track">';
+	html += tags
 		.map(
 			(t) =>
 				'<button class="tagchip" data-tag="' +
@@ -623,26 +624,15 @@ function tagBarHtml(tags) {
 				"</button>",
 		)
 		.join("");
-	if (rest.length)
-		html +=
-			'<button class="tagchip all" type="button" aria-expanded="false">all tags</button>' +
-			rest
-				.map(
-					(t) =>
-						'<button class="tagchip more" data-tag="' +
-						esc(t.name) +
-						'" type="button" hidden>#' +
-						esc(t.name) +
-						"</button>",
-				)
-				.join("");
-	html += "</div>";
+	html +=
+		'<button class="tagchip untagged" data-untagged="1" type="button">untagged</button>';
+	html += "</div></div>";
 	return html;
 }
 
 // Bind the tag chips to the same search the searchbar runs: the input shows
-// the `#name` query and results come back filtered. The all-tags chip
-// reveals whatever the top eight did not cover.
+// the `#name` query and results come back filtered. The trailing "untagged"
+// chip is the complement - a listing of artifacts with no tag, not a search.
 function bindTagbar(tagbar, hs) {
 	if (!tagbar) return;
 	tagbar.querySelectorAll(".tagchip[data-tag]").forEach((chip) => {
@@ -652,21 +642,21 @@ function bindTagbar(tagbar, hs) {
 			doSearch(q);
 		});
 	});
-	const all = tagbar.querySelector(".tagchip.all");
-	if (all) {
-		all.addEventListener("click", () => {
-			const show = all.getAttribute("aria-expanded") !== "true";
-			all.setAttribute("aria-expanded", String(show));
-			tagbar
-				.querySelectorAll(".tagchip.more")
-				.forEach((c) => (c.hidden = !show));
+	const untagged = tagbar.querySelector(".tagchip[data-untagged]");
+	if (untagged) {
+		untagged.addEventListener("click", () => {
+			if (hs) hs.value = "";
+			showUntagged();
 		});
 	}
 }
 
 async function home(opts) {
 	// Leaving for the wall locks the vault (if open), so re-entry needs the PIN.
-	if (typeof maybeLockVault === "function") maybeLockVault();
+	// `keepVault` skips that: the optimistic "move to vault" flow lands on the wall
+	// while its background unlock+encrypt is still running, and locking here would
+	// race that and cancel it. The window-blur auto-lock still covers leaving the app.
+	if (!(opts && opts.keepVault) && typeof maybeLockVault === "function") maybeLockVault();
 	const wasReading = chat;
 	const keepAt = opts && opts.keepScroll ? window.scrollY : null;
 	teardown();

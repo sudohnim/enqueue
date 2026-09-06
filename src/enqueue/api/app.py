@@ -71,6 +71,15 @@ def serve() -> None:
 
     _start_sync_worker()
 
+    # Resume any summaries a previous run left owing (a model rate-limit / 500):
+    # the sweeper re-submits them on backoff until they generate.
+    try:
+        from ..ingest import queue as ingest_queue
+
+        ingest_queue.start_facet_retry_sweeper()
+    except Exception as exc:  # noqa: BLE001 - never block startup on this
+        print(f"[engine] could not start the summary-retry sweeper: {exc}")
+
     from .. import events
 
     events.emit("start", "engine ready")

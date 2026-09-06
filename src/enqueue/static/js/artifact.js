@@ -1,11 +1,17 @@
   // Structural markdown typed at the start of a line becomes the real thing, the way
   // it does in any editor that renders as you write.
+  // Anchored at the start, NOT the end: a marker turns the line into its block
+  // whether the line is empty ("- " then type) or already has text ("- hello", or
+  // a "- " prepended to an existing line). The marker itself is stripped afterward
+  // (see below), and the UL/OL/PRE/BLOCKQUOTE guard above stops a converted block
+  // from re-firing. The code fence stays end-anchored: its markers ARE the whole
+  // line, so a "```" with text after it is a fenced line of content, not an opener.
   const RULES = [
-    [/^(#{1,3})\s$/, (m) => "h" + m[1].length],
+    [/^(#{1,3})\s/, (m) => "h" + m[1].length],
     [/^```\s?$/, () => "pre"],
-    [/^[-*+]\s$/, () => "ul"],
-    [/^1\.\s$/, () => "ol"],
-    [/^>\s$/, () => "blockquote"],
+    [/^[-*+]\s/, () => "ul"],
+    [/^1\.\s/, () => "ol"],
+    [/^>\s/, () => "blockquote"],
   ];
 
   // Tab indents/un-indents a list item. These are DOM moves rather than
@@ -489,17 +495,24 @@
     // remotely when the backend is remote, so the old privacy claim was also inaccurate.
     // It lives in the drawer, under the tags.
     let summaryHtml = "";
-    if (d.facet_skip_reason)
+    if (d.facets.length)
+      summaryHtml =
+        '<div class="callout note"><div class="shelf">Summary</div>' +
+        d.facets.map((f) => "<p>" + esc(f.statement) + "</p>").join("") +
+        "</div>";
+    else if (d.summary_generating)
+      // A summary owed after a transient model failure; the background sweeper is
+      // retrying it. Say so rather than showing an empty Summary or a skip reason.
+      summaryHtml =
+        '<div class="callout note"><div class="shelf">Summary</div>' +
+        spinner("sm", "Generating the summary…") +
+        "</div>";
+    else if (d.facet_skip_reason)
       summaryHtml =
         '<div class="callout note"><div class="shelf">Summary</div>' +
         "<p>" +
         esc(whyNoFacets(d.facet_skip_reason)) +
         "</p></div>";
-    else if (d.facets.length)
-      summaryHtml =
-        '<div class="callout note"><div class="shelf">Summary</div>' +
-        d.facets.map((f) => "<p>" + esc(f.statement) + "</p>").join("") +
-        "</div>";
 
     html +=
       '<div class="bodygrid"><div class="bodycol">' +
@@ -1223,15 +1236,25 @@
         }
       }
     });
-    // Paste as plain text. Pasting styled HTML from a browser would smuggle in tags the
-    // serialiser cannot represent, and they would be silently lost on the next save.
+    // Paste. An image on the clipboard is embedded into the note (uploaded as a
+    // hidden image artifact, referenced as `![](/artifacts/{id}/blob)`); everything
+    // else pastes as plain text. Pasting styled HTML from a browser would smuggle in
+    // tags the serialiser cannot represent, and they would be silently lost on save.
     ed.addEventListener("paste", (e) => {
-      e.preventDefault();
-      document.execCommand(
-        "insertText",
-        false,
-        (e.clipboardData || window.clipboardData).getData("text"),
+      const cd = e.clipboardData || window.clipboardData;
+      const images = [...((cd && cd.items) || [])].filter(
+        (it) => it.kind === "file" && it.type.startsWith("image/"),
       );
+      if (images.length) {
+        e.preventDefault();
+        for (const it of images) {
+          const file = it.getAsFile();
+          if (file) insertPastedImage(file);
+        }
+        return;
+      }
+      e.preventDefault();
+      document.execCommand("insertText", false, (cd && cd.getData("text")) || "");
     });
 
     if (focus) {
@@ -1368,6 +1391,54 @@
         if (state.textContent === "kept") state.textContent = "";
       }, 2200);
     }
+  }
+
+  // Embed a pasted image: upload it as a hidden (embedded) image artifact, then drop
+  // an <img> at the caret referencing its blob. The upload is async, so the caret is
+  // captured up front - focus can drift while the bytes travel - and restored to place
+  // the image, then the note is saved so the reference persists like any other edit.
+  async function insertPastedImage(file) {
+    const ed = document.getElementById("body");
+    if (!ed || !ctx || ctx.vaulted) return;
+    const state = document.getElementById("state");
+    const sel = window.getSelection();
+    const range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    if (state) {
+      state.className = "meta";
+      state.textContent = "adding image...";
+    }
+    let id;
+    try {
+      const fd = new FormData();
+      fd.append("file", file, file.name || "pasted.png");
+      fd.append("embedded", "1");
+      const r = await fetch("/capture/upload", { method: "POST", body: fd });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+      id = (await r.json()).id;
+    } catch (err) {
+      if (state) {
+        state.className = "meta";
+        state.textContent = "image failed: " + String((err && err.message) || err);
+      }
+      return;
+    }
+    const img = document.createElement("img");
+    img.src = "/artifacts/" + id + "/blob";
+    img.alt = "";
+    img.loading = "lazy";
+    if (range) {
+      range.collapse(false);
+      range.insertNode(img);
+      range.setStartAfter(img);
+      range.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(range);
+    } else {
+      ed.appendChild(img);
+    }
+    ed.focus();
+    saveBody();
   }
 
   async function saveBody() {

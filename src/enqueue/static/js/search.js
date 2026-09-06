@@ -1,7 +1,8 @@
 
   // A pure `#tag` or `tag:name` query (the tag bar, or one typed by hand) gets
   // the Tagged header with a clear control; anything with free text keeps the
-  // ordinary results header.
+  // ordinary results header. Tags carry no whitespace, so a whitespace split is
+  // exact: every token is either a whole tag or free text.
   function tagFilterName(q) {
     const tokens = q.trim().split(/\s+/).filter(Boolean);
     if (!tokens.length) return null;
@@ -18,9 +19,50 @@
     return names.join(" ");
   }
 
+  // A filtered wall: the same square cards the home wall draws (card()), under a
+  // back link and a count header with a clear control. Used for a pure tag filter
+  // and for the untagged listing, so filtering by a tag looks like the wall it came
+  // from, not a thin search-result list.
+  function filteredWallView(titleHtml, items, emptyMsg) {
+    view.innerHTML =
+      '<div class="back" onclick="home()">&larr; everything</div>' +
+      '<div class="shelf center">' +
+      titleHtml +
+      " &middot; " +
+      items.length +
+      " item" +
+      (items.length === 1 ? "" : "s") +
+      ' <button class="tagclear" type="button" onclick="home()">clear filter</button></div>' +
+      (items.length
+        ? '<div class="wall">' + items.map((a, i) => card(a, i)).join("") + "</div>"
+        : '<div class="state">' + emptyMsg + "</div>");
+  }
+
+  // A pure tag query (a chip click, or a hand-typed `#name`) is a filter, not a
+  // ranked text search: it draws the square wall of everything carrying the tag
+  // rather than the search-result list. /artifacts?tags= is the wall-shaped,
+  // complete (unpaged here) source; AND semantics across multiple tags.
+  async function renderTagWall(q, tagName) {
+    view.innerHTML = spinner("lg", "gathering...");
+    const names = tagName.split(/\s+/).filter(Boolean);
+    let r;
+    try {
+      r = await api(
+        "/artifacts?tags=" + encodeURIComponent(names.join(",")) + "&order=touched&limit=200",
+      );
+    } catch (err) {
+      view.innerHTML = '<div class="state">' + esc(String((err && err.message) || err)) + "</div>";
+      return;
+    }
+    const title = "Tagged " + names.map((n) => "#" + esc(n)).join(" ");
+    filteredWallView(title, r.items || [], "Nothing here carries that tag.");
+  }
+
   async function doSearch(q) {
     teardown();
     setRoute("s/" + encodeURIComponent(q));
+    const tagName = tagFilterName(q);
+    if (tagName) return renderTagWall(q, tagName);
     view.innerHTML = spinner("lg", "searching...");
     let r;
     try {
@@ -45,24 +87,15 @@
       view.innerHTML = '<div class="state">' + esc(msg) + "</div>";
       return;
     }
-    const tagName = tagFilterName(q);
     view.innerHTML =
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="shelf center">' +
-      (tagName
-        ? "Tagged #" +
-          esc(tagName) +
-          " &middot; " +
-          r.hits.length +
-          " result" +
-          (r.hits.length === 1 ? "" : "s") +
-          ' <button class="tagclear" type="button" onclick="home()">clear filter</button>'
-        : r.hits.length +
-          " result" +
-          (r.hits.length === 1 ? "" : "s") +
-          " for &ldquo;" +
-          esc(q) +
-          "&rdquo;") +
+      r.hits.length +
+      " result" +
+      (r.hits.length === 1 ? "" : "s") +
+      " for &ldquo;" +
+      esc(q) +
+      "&rdquo;" +
       "</div>" +
       (r.hits.length
         ? r.hits
@@ -89,5 +122,27 @@
         : '<div class="state">Nothing matched those words.<br><br>Search finds things you can ' +
           "name. If you are chasing an idea rather than a phrase, ask instead and let the room " +
           "assemble itself.</div>");
+  }
+
+  // The tag bar's "untagged" chip: the complement of a tag filter - every artifact
+  // carrying no tag. A listing, not a ranked search, so it reads /artifacts?untagged=1
+  // and draws the same square wall of cards a tag filter does.
+  async function showUntagged() {
+    teardown();
+    setRoute("untagged");
+    view.innerHTML = spinner("lg", "gathering...");
+    let r;
+    try {
+      r = await api("/artifacts?untagged=1&order=touched&limit=200");
+    } catch (err) {
+      view.innerHTML =
+        '<div class="state">' + esc(String((err && err.message) || err)) + "</div>";
+      return;
+    }
+    filteredWallView(
+      "Untagged",
+      r.items || [],
+      "Everything here carries a tag. Nothing is untagged.",
+    );
   }
 

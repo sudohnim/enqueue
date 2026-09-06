@@ -536,6 +536,16 @@
   .editor li {
     margin: var(--sp-1) 0;
   }
+  /* A pasted-in image sits on its own line, scaled to the column and never wider
+     than it. Rounded to match the reader's other surfaces. */
+  .md img,
+  .editor img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: var(--sp-4) 0 0;
+    border-radius: var(--r-md);
+  }
   .md code,
   .editor code {
     font-family: var(--mono);

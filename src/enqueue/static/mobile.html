@@ -1193,6 +1193,36 @@
   #vault_busy[hidden] {
     display: none;
   }
+  /* Transient toast, centered above the pill. Sits below modals/spinner (z 80-90). */
+  .mtoast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(8px);
+    z-index: 70;
+    max-width: min(88%, 420px);
+    padding: 10px 16px;
+    border-radius: var(--r-full);
+    background: var(--text);
+    color: var(--bg);
+    font-size: 14px;
+    line-height: 1.35;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(16, 17, 20, 0.2);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity var(--dur-fast) var(--ease),
+      transform var(--dur-fast) var(--ease);
+  }
+  .mtoast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .mtoast.err {
+    background: var(--danger, #b4332b);
+    color: #fff;
+  }
   #vault_busy img {
     width: 56px;
     height: 56px;
@@ -2138,6 +2168,28 @@
 
   const invoke = window.__TAURI__ && window.__TAURI__.core.invoke;
 
+  // Transient status message. This was called in ~30 places but never defined, so
+  // every call silently threw a ReferenceError - harmless where it sat in a swallowed
+  // async catch, but fatal once a call lands on a critical path (it aborted the whole
+  // vault flow). Defined here so those messages actually surface and never throw.
+  let _toastTimer = null;
+  function toast(message, isError) {
+    let el = document.getElementById("mtoast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "mtoast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      document.body.appendChild(el);
+    }
+    el.textContent = message == null ? "" : String(message);
+    el.className = "mtoast" + (isError ? " err" : "") + " show";
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+      el.className = "mtoast" + (isError ? " err" : "");
+    }, 2600);
+  }
+
   const KIND_COLORS = {
     note: "var(--kind-note)",
     link: "var(--kind-link)",
@@ -2244,12 +2296,33 @@
       _vaultIdleTimer = null;
     }
   }
+  // Keep the library current the way the desktop worker does: a live SSE stream
+  // (native, spawn_sse_listener) pulls on every relay change while the app is open,
+  // and this is the timer fallback + resume trigger for the gaps SSE leaves - a
+  // stream that died while the phone was backgrounded, or changes that landed while
+  // it was asleep. mobile_sync returns immediately and is guarded against concurrent
+  // runs (SYNC_RUNNING), so an extra call is a cheap no-op when nothing changed or a
+  // sync is already in flight; when unconfigured it rejects fast and is swallowed.
+  const BG_SYNC_MS = 20000; // gentle foreground poll; SSE is the live path
+  function pullSyncSoon() {
+    if (document.hidden) return; // never poll a backgrounded app - save battery/data
+    invoke("mobile_sync", { config: "{}" }).catch(() => {});
+  }
+  // Only poll while foreground. setInterval keeps firing when hidden, so the guard
+  // above skips those ticks; the resume handler below covers coming back.
+  setInterval(pullSyncSoon, BG_SYNC_MS);
+
   document.addEventListener("visibilitychange", () => {
     // Backgrounded / screen off: lock immediately so a re-open needs the PIN.
     if (document.hidden) {
       cancelVaultIdleLock();
       invoke("mobile_vault_lock").catch(() => {});
+      return;
     }
+    // Resumed: pull now so returning to the app shows the latest without waiting for
+    // the next SSE event or timer tick (the case behind "it didn't sync until I
+    // reopened"). The SSE thread reconnects on its own; this covers the window.
+    pullSyncSoon();
   });
   ["pointerdown", "keydown"].forEach((ev) =>
     document.addEventListener(
@@ -4926,11 +4999,20 @@ return;
       document.body.appendChild(back);
       const input = back.querySelector("#mpin");
       const done = (v) => {
+        document.removeEventListener("keydown", onKey, true);
         back.remove();
         resolve(v);
       };
+      const onKey = (e) => {
+        if (e.key === "Escape") done(null); // dismiss (parity with the desktop modal)
+      };
+      document.addEventListener("keydown", onKey, true);
       back.querySelector("#mpinCancel").onclick = () => done(null);
       back.querySelector("#mpinOk").onclick = () => done(input.value.trim());
+      // Tapping the dim backdrop (outside the card) cancels, like every other sheet.
+      back.addEventListener("click", (e) => {
+        if (e.target === back) done(null);
+      });
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") done(input.value.trim());
       });
@@ -5113,7 +5195,7 @@ return;
     (async () => {
       try {
         await invoke(first ? "mobile_vault_setup" : "mobile_vault_unlock", { pin });
-      } catch (_) {
+      } catch (e) {
         return toast("Incorrect code - not vaulted.", true);
       }
       try {

@@ -1164,6 +1164,33 @@ async function pinModalConfirm(title, sub) {
 
 // The vault door: on first use it sets a PIN; afterwards it unlocks. A wrong PIN
 // reads as a failed diagnostics run (no hint a vault exists).
+// The unlock endpoint answers a wrong PIN with "incorrect" and a rate-limited one
+// (escalating backoff after repeated misses) with "try again shortly". Surface the
+// difference so a locked-out user is told to wait rather than that their code is wrong.
+function pinErrorMessage(err) {
+	const m = String((err && err.message) || "");
+	if (/try again|shortly|too many/i.test(m)) return "Too many tries - wait a moment.";
+	return "Incorrect code.";
+}
+
+// Full-screen dim + the spinning raven, shown while the vault unlock/open is in
+// flight (the argon2 derive is a deliberate ~1s here, plus the decrypt of the list).
+// Mirrors the mobile vault spinner so both surfaces read the same during the wait.
+function vaultBusy(on) {
+	let el = document.getElementById("vault-busy");
+	if (on) {
+		if (!el) {
+			el = document.createElement("div");
+			el.id = "vault-busy";
+			el.innerHTML = spinner("lg", "Unlocking…");
+			document.body.appendChild(el);
+		}
+		el.hidden = false;
+	} else if (el) {
+		el.hidden = true;
+	}
+}
+
 async function vaultDiagnostics() {
 	let status;
 	try {
@@ -1181,16 +1208,18 @@ async function vaultDiagnostics() {
 		: await pinModal("Diagnostics", "Enter your 6-digit code.");
 	if (pin == null) return;
 	if (!/^\d{6}$/.test(pin)) return toast("A 6-digit code is required.", true);
+	vaultBusy(true);
 	try {
 		await api(first ? "/vault/setup" : "/vault/unlock", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ pin }),
 		});
-	} catch (_) {
-		return toast("Diagnostics unavailable.", true);
+	} catch (err) {
+		vaultBusy(false);
+		return toast(pinErrorMessage(err), true);
 	}
-	openVault();
+	openVault(); // clears the spinner once the vault view is up
 }
 
 async function vaultLock() {
@@ -1247,16 +1276,18 @@ async function openVault() {
 	teardown();
 	restorePill("inside");
 	setRoute("vault");
+	vaultBusy(true); // covers the /vault fetch + decrypt of the listing
 	let items = [];
 	try {
 		items = (await api("/vault")).items || [];
 	} catch (_) {
+		vaultBusy(false);
 		return home(); // locked or gone
 	}
 	// Reuse the wall's card() so vaulted artifacts look identical to the main page.
 	const grid = items.length
 		? '<div class="wall">' + items.map((a, i) => card(a, i)).join("") + "</div>"
-		: '<p class="state">The vault is empty. Lock an artifact from its page to keep it here.</p>';
+		: '<p class="state state-center">The vault is empty. Lock an artifact from its page to keep it here.</p>';
 	// Full-bleed like the wall (NOT wrapped in the narrow .pagecol used by the
 	// reader/settings) so the header spans and the card grid gets the wall's full
 	// width + column count. No "Lock" button: leaving the vault auto-locks it.
@@ -1274,6 +1305,7 @@ async function openVault() {
 		"</div>";
 	makeEye(document.getElementById("vaultEye"));
 	window.scrollTo(0, 0);
+	vaultBusy(false);
 }
 
 async function openVaultReader(id) {
@@ -1315,33 +1347,55 @@ async function vaultThisArtifact(id) {
 	} catch (_) {
 		return toast("Vault unavailable.", true);
 	}
-	if (!status.unlocked) {
-		const first = !status.setup;
-		const pin = first
-			? await pinModalConfirm(
-					"Set a vault code",
-					"Choose a 6-digit code. There is no recovery - lose it and the vaulted data is gone for good.",
-				)
-			: await pinModal("Unlock the vault", "Enter your 6-digit code to move this into the vault.");
-		if (pin == null) return;
-		if (!/^\d{6}$/.test(pin)) return toast("A 6-digit code is required.", true);
+
+	// Fast path: already unlocked this session, so vaulting is a quick encrypt.
+	if (status.unlocked) {
+		try {
+			await api("/artifacts/" + id + "/vault", { method: "POST" });
+		} catch (err) {
+			return toast(String((err && err.message) || err), true);
+		}
+		toast("Moved to the vault.");
+		home();
+		return;
+	}
+
+	// Locked: take the PIN, hand the user straight back home, and run the unlock +
+	// encrypt as a BACKGROUND job (mirrors mobile) so the ~1s argon2 derive never
+	// blocks the click. The artifact leaves the wall when the job lands; a wrong code
+	// just toasts and leaves it in place.
+	const first = !status.setup;
+	const pin = first
+		? await pinModalConfirm(
+				"Set a vault code",
+				"Choose a 6-digit code. There is no recovery - lose it and the vaulted data is gone for good.",
+			)
+		: await pinModal("Unlock the vault", "Enter your 6-digit code to move this into the vault.");
+	if (pin == null) return;
+	if (!/^\d{6}$/.test(pin)) return toast("A 6-digit code is required.", true);
+
+	toast("Moving to the vault…");
+	home({ keepVault: true }); // return immediately, without locking the vault we are about to use
+	(async () => {
 		try {
 			await api(first ? "/vault/setup" : "/vault/unlock", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ pin }),
 			});
-		} catch (_) {
-			return toast("Incorrect code.", true);
+		} catch (err) {
+			return toast(pinErrorMessage(err) + " Not vaulted.", true);
 		}
-	}
-	try {
-		await api("/artifacts/" + id + "/vault", { method: "POST" });
-	} catch (err) {
-		return toast(String((err && err.message) || err), true);
-	}
-	toast("Moved to the vault.");
-	home();
+		try {
+			await api("/artifacts/" + id + "/vault", { method: "POST" });
+		} catch (err) {
+			return toast(String((err && err.message) || err), true);
+		}
+		toast("Moved to the vault.");
+		// If the user is still on the wall, re-render so the newly vaulted item
+		// vanishes (hash is empty on the wall; leave them alone if they navigated away).
+		if (location.hash === "" || location.hash === "#") home({ keepVault: true });
+	})();
 }
 
 // Auto-lock: drop the vault key when the app loses focus (backgrounded), so an

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from .. import capture, db, notes, pivots_saved, preview, trash
 from .. import tags as tags_mod
+from ..ingest import queue as ingest_queue
 from .wall import ORDERINGS, _link_images, _wall_item, _wall_tags
 
 router = APIRouter()
@@ -39,15 +40,24 @@ def set_flags(artifact_id: str, req: ArtifactFlags) -> dict:
         raise HTTPException(status_code=400, detail="nothing to change") from None
 
     sets = ", ".join(f"{k} = ?" for k in changes)
+    now = db.now()
     with db.transaction() as conn:
         # `changes` keys come from the ArtifactFlags model (pinned/local_only only),
         # so the SET list is assembled from allowlisted literals, never input.
+        # updated_at is bumped so the flag change wins LWW on other devices - without
+        # it a star set here ties the pre-star snapshot and never propagates.
         # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
         cur = conn.execute(
-            f"UPDATE artifacts SET {sets} WHERE id = ?", (*changes.values(), artifact_id)
+            f"UPDATE artifacts SET {sets}, updated_at = ? WHERE id = ?",
+            (*changes.values(), now, artifact_id),
         )
         if not cur.rowcount:
             raise HTTPException(status_code=404, detail="no such artifact") from None
+    # Push the flag change so a star/unstar reaches the other devices (push_artifact
+    # skips local_only artifacts, so marking one local_only never leaks it).
+    from ..sync.client import push_artifact
+
+    push_artifact(artifact_id)
     return notes.get(artifact_id)
 
 
@@ -130,6 +140,7 @@ def list_artifacts(
     order: str = "touched",
     pinned: bool | None = None,
     tags: str = "",
+    untagged: bool = False,
 ) -> dict:
     """Newest first, each with enough content to render rather than a blank.
 
@@ -156,7 +167,7 @@ def list_artifacts(
     # `pinned` splits the wall into two shelves that are paged separately: the kept
     # few scroll sideways, everything else scrolls down. Without the filter the pinned
     # ones would appear in both.
-    where = "deleted_at IS NULL AND vaulted_at IS NULL"
+    where = "deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
     if pinned:
         where += " AND pinned = 1"
     elif pinned is not None:
@@ -170,6 +181,12 @@ def list_artifacts(
     if tag_ids is not None:
         where += " AND id IN (SELECT value FROM json_each(:tag_ids))"
     tag_ids_param = json.dumps(sorted(tag_ids)) if tag_ids is not None else None
+
+    # `untagged` is the complement of a tag filter: artifacts carrying no tag at all.
+    # Like a tag filter it is artifact-only (conversations cannot be tagged, so a wall
+    # of every untagged chat would be noise) and drops the chats limb below.
+    if untagged:
+        where += " AND id NOT IN (SELECT artifact_id FROM artifact_tags)"
 
     # A conversation is the same kind of thing on the wall as a capture: something
     # you come back to, ordered by when you last touched it. So it lives in the same
@@ -187,7 +204,7 @@ def list_artifacts(
             " updated_at, 0, pinned, NULL, NULL FROM chats"
             " WHERE (:pinned IS NULL OR pinned = :pinned)"
         )
-        if tag_ids is None
+        if tag_ids is None and not untagged
         else ""
     )
 
@@ -229,7 +246,7 @@ def list_artifacts(
             f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}",
             {"tag_ids": tag_ids_param},
         ).fetchone()["n"]
-        if tag_ids is None:
+        if tag_ids is None and not untagged:
             total += conn.execute(
                 "SELECT COUNT(*) AS n FROM chats WHERE (:pinned IS NULL OR pinned = :pinned)",
                 {"pinned": pinned},
@@ -475,11 +492,19 @@ def capture_link(req: LinkCreate) -> dict:
 
 
 @router.post("/capture/upload", status_code=201)
-async def capture_upload(file: UploadFile = File(...), local_only: bool = Form(False)) -> dict:
+async def capture_upload(
+    file: UploadFile = File(...),
+    local_only: bool = Form(False),
+    embedded: bool = Form(False),
+) -> dict:
     data = await file.read()
     try:
         return capture.upload(
-            data, file.filename or "upload", mime=file.content_type, local_only=local_only
+            data,
+            file.filename or "upload",
+            mime=file.content_type,
+            local_only=local_only,
+            embedded=embedded,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
@@ -487,14 +512,26 @@ async def capture_upload(file: UploadFile = File(...), local_only: bool = Form(F
 
 @router.post("/artifacts/{artifact_id}/preview")
 def fetch_preview(artifact_id: str) -> dict:
-    """Make the one request this link never made at capture time.
+    """Ask the publisher what this link is, on the background ingest worker.
 
     Explicit by design. Saving a link touches nothing; this is the person deciding
-    that this particular link is worth telling its publisher about.
+    that this particular link is worth telling its publisher about. The fetch itself
+    runs on the worker (like sync), not on this request, so a slow or refusing
+    publisher never blocks the UI - the reader shows the result when it lands.
     """
+    conn = db.get_conn()
     try:
-        return preview.fetch(artifact_id) or {}
-    except KeyError:
+        row = conn.execute(
+            "SELECT kind, source_url, local_only FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
         raise HTTPException(status_code=404, detail="no such artifact") from None
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from None
+    if row["kind"] != "link" or not row["source_url"]:
+        raise HTTPException(status_code=409, detail="only a saved link has a page to preview")
+    if row["local_only"]:
+        raise HTTPException(status_code=409, detail="a local-only link is never fetched")
+    preview.force(artifact_id)
+    ingest_queue.submit(artifact_id)
+    return {"queued": True}

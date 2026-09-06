@@ -68,6 +68,9 @@
     font-size: 24px;
     line-height: 29px;
     letter-spacing: -0.5px;
+    /* A long unbroken title (a token, a URL, a pasted string) must wrap instead of
+       overflowing the reader/vault header. */
+    overflow-wrap: anywhere;
   }
   .h2 {
     /* Title: the scale's 20px step, at its own 500 weight rather than the shared 600. */
@@ -438,6 +441,22 @@
       animation: none;
       will-change: auto;
     }
+  }
+
+  /* Full-screen dim + the spinning raven, shown while the vault unlock/open is in
+     flight (the argon2 derive plus the decrypt of the listing). Mirrors the mobile
+     vault spinner so both surfaces read the same during the wait. */
+  #vault-busy {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    background: color-mix(in oklab, var(--bg) 55%, transparent);
+    backdrop-filter: blur(2px);
+  }
+  #vault-busy[hidden] {
+    display: none;
   }
 
   /* ---- capture-success flight (ANIM.4) ----------------------------------

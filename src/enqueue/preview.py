@@ -25,6 +25,7 @@ Two rules hold this together.
 from __future__ import annotations
 
 import contextlib
+import threading
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -461,6 +462,28 @@ def auto_enabled() -> bool:
     from . import settings
 
     return str(settings.get("auto_preview") or "on").lower() not in ("off", "0", "false")
+
+
+# An explicit "Try again" (or a bulk re-fetch) marks a link here, then submits it to
+# the ingest worker. The worker refetches on the background thread - non-blocking, one
+# request per saved link - bypassing the auto/needs_fetch gates the automatic path
+# uses (a failed link is deliberately NOT auto-retried, but the person asked for this).
+_forced_lock = threading.Lock()
+_forced: set[str] = set()
+
+
+def force(artifact_id: str) -> None:
+    with _forced_lock:
+        _forced.add(artifact_id)
+
+
+def take_forced(artifact_id: str) -> bool:
+    """Whether this artifact was explicitly forced, clearing the mark. One-shot."""
+    with _forced_lock:
+        if artifact_id in _forced:
+            _forced.discard(artifact_id)
+            return True
+        return False
 
 
 def text_for_index(artifact_id: str) -> str:

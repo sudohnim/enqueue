@@ -234,6 +234,12 @@ def get(artifact_id: str) -> dict:
         skip = conn.execute(
             "SELECT reason FROM facet_skips WHERE artifact_id = ?", (artifact_id,)
         ).fetchone()
+        # A summary still owed after a transient model failure sits in facet_retry
+        # until the sweeper regenerates it: surface that as "generating" so the
+        # reader can say so instead of showing an empty Summary.
+        owed = conn.execute(
+            "SELECT 1 FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
+        ).fetchone()
         hits = conn.execute(
             "SELECT kind, line, excerpt FROM secret_hits WHERE artifact_id = ?", (artifact_id,)
         ).fetchall()
@@ -244,6 +250,7 @@ def get(artifact_id: str) -> dict:
             "annotations": [dict(e) | {"current": e["id"] not in superseded} for e in entries],
             "facets": [dict(f) for f in facets],
             "facet_skip_reason": skip["reason"] if skip else None,
+            "summary_generating": bool(owed),
             "secrets": [dict(h) for h in hits],
         }
     finally:

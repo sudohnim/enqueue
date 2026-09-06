@@ -113,6 +113,71 @@ def test_orphan_is_healed_when_viewed_and_restored_unlocked():
     assert row["title"] == "Orphan title"
 
 
+def test_vaulted_image_survives_delete_and_restore():
+    import hashlib
+
+    from enqueue import config
+
+    raw = b"RIFF\x00\x00\x00\x00WEBP pretend pixels"
+    content_hash = hashlib.sha256(raw).hexdigest()  # blobs are addressed by plaintext sha256
+    _insert_image("img9", content_hash, raw)
+    vaultops.vault_artifact("img9")
+    assert (config.BLOB_DIR / content_hash).read_bytes() != raw  # encrypted at rest
+
+    trash.delete("img9")  # unlocked -> decrypts the blob out
+    assert (config.BLOB_DIR / content_hash).read_bytes() == raw  # plaintext image in trash
+
+    trash.restore("img9")
+    assert (config.BLOB_DIR / content_hash).read_bytes() == raw  # still the real image
+
+
+def _insert_image(aid: str, content_hash: str, blob: bytes):
+    from enqueue import config
+
+    config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
+    (config.BLOB_DIR / content_hash).write_bytes(blob)
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO artifacts"
+            " (id,kind,title,body,source_url,content_hash,mime,filename,created_at,updated_at,"
+            "  local_only,status,pinned,deleted_at,pages,title_explicit)"
+            " VALUES (?,'image','pic',NULL,NULL,?, 'image/webp','p.webp',"
+            "  '2099-01-01T00:00:00+00:00','2099-01-01T00:00:00+00:00',0,'ok',0,NULL,NULL,0)",
+            (aid, content_hash),
+        )
+
+
+def test_double_encrypted_blob_is_recovered_by_hash_verified_decrypt():
+    import hashlib
+
+    from enqueue import config, crypto
+
+    raw = b"RIFF\x00\x00\x00\x00WEBP the real pixels"
+    ch = hashlib.sha256(raw).hexdigest()
+    key = vault.key()
+    # A legacy double-encrypted blob (orphan re-vaulted over its own ciphertext).
+    _insert_image("imgD", ch, crypto.encrypt(crypto.encrypt(raw, key), key))
+    with db.transaction() as conn:
+        vaultops.decrypt_in_place(conn, "imgD", key)
+    assert (config.BLOB_DIR / ch).read_bytes() == raw  # peeled both layers, hash-verified
+
+
+def test_blob_sealed_with_a_lost_key_is_left_untouched():
+    import hashlib
+
+    from enqueue import config, crypto
+
+    raw = b"RIFF\x00\x00\x00\x00WEBP pixels"
+    ch = hashlib.sha256(raw).hexdigest()
+    lost_key = b"\x11" * 32  # not the vault key
+    sealed = crypto.encrypt(raw, lost_key)
+    _insert_image("imgL", ch, sealed)
+    with db.transaction() as conn:
+        vaultops.decrypt_in_place(conn, "imgL", vault.key())
+    # Cannot recover with the wrong key, but must NOT write garbage - blob unchanged.
+    assert (config.BLOB_DIR / ch).read_bytes() == sealed
+
+
 def test_restore_flagged_vaulted_item_requires_unlock():
     created = notes.create(body="needs the key")
     aid = created["artifact"]["id"]

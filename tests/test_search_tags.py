@@ -63,6 +63,13 @@ class TestParseTags:
         # With the space, "#" is one bare token and "Work" is free text.
         assert tags.parse_tags("#  Work") == ("# Work", [])
 
+    def test_names_have_no_whitespace(self):
+        # A tag is one token: a phrase folds to a single word, so `#mentalmodels`
+        # is always typeable and never splits into a tag plus a free-text word.
+        assert tags.normalize("Mental Models") == "mentalmodels"
+        assert tags.normalize("  spaced  out ") == "spacedout"
+        assert tags.parse_tags("#mentalmodels") == ("", ["mentalmodels"])
+
 
 class TestPureTagQuery:
     def test_returns_exactly_the_tagged_artifacts(self, store, quiet_queue):

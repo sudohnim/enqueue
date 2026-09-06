@@ -20,6 +20,15 @@
         "\x00",
     );
     t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    // Images come before links: `![alt](src)` contains a `[...](...)`, so the link
+    // rule would eat it otherwise. Only same-origin blob paths (/artifacts/{id}/blob,
+    // what the paste handler writes) and data: images are allowed as a src - never an
+    // arbitrary URL - so a note can never be made to fetch from or point a src at the
+    // network. The alt text is already escaped by esc() above.
+    t = t.replace(
+      /!\[([^\]]*)\]\((\/[^)\s]+|data:image\/[^)\s]+)\)/g,
+      '<img src="$2" alt="$1" loading="lazy" />',
+    );
     t = t.replace(
       /\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener">$1</a>',
@@ -118,6 +127,9 @@
     let t = src;
     t = t.replace(/```[\s\S]*?```/g, " ");
     t = t.replace(/`([^`\n]+)`/g, "$1");
+    // An embedded image reduces to its alt text (usually empty) in a text preview -
+    // stripped before the link rule so its leading "!" never leaks into the snippet.
+    t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
     t = t.replace(/\[([^\]]+)\]\((?:https?:[^)\s]+|[^)]*)\)/g, "$1");
     t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
     t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2");
@@ -156,6 +168,17 @@
           return "`" + kids + "`";
         case "A":
           return "[" + kids + "](" + (node.getAttribute("href") || "") + ")";
+        case "IMG":
+          // The other half of md()'s image rule: a pasted-in image serialises back
+          // to `![alt](src)`. An <img> is a void element, so it has no children to
+          // fold - the alt and src attributes carry everything.
+          return (
+            "![" +
+            (node.getAttribute("alt") || "") +
+            "](" +
+            (node.getAttribute("src") || "") +
+            ")"
+          );
         default:
           return kids;
       }

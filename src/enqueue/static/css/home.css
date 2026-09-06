@@ -719,6 +719,12 @@ main {
 	padding: var(--sp-5) 0;
 	max-width: 62ch;
 }
+/* Centered empty state (the vault, where there is no left-aligned wall to anchor to). */
+.state.state-center {
+	max-width: none;
+	text-align: center;
+	padding-top: var(--sp-7);
+}
 /* ---- the wall ----------------------------------------------------------
      Square cards on cream. Roughly 4-up at 1200px and 1-up at 480px, which falls out
      of auto-fill rather than out of a breakpoint list. */
@@ -1011,25 +1017,64 @@ main {
 /* The home tag bar: the same chips, secondary and smaller than the searchbar.
      The searchbar stays visually primary; these answer to the wall, not to it. */
 .tagbar {
+	margin-top: var(--sp-3);
+	/* One line that scrolls sideways when the chips outrun the width. The strip
+	   is centred while it fits and pans from the start once it overflows - see
+	   the track's width:max-content + auto margins below. */
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior-x: contain;
+	scrollbar-width: none; /* the chips are the affordance; the bar itself stays clean */
+}
+.tagbar::-webkit-scrollbar {
+	display: none;
+}
+/* width:max-content lets the row grow to its content; auto side margins then
+   centre it when it is narrower than the bar and collapse to zero (leaving the
+   first chip flush at the start) the moment it is wider and has to scroll. */
+.tagbar-track {
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	align-items: center;
 	gap: var(--sp-1);
-	margin-top: var(--sp-3);
+	width: max-content;
+	max-width: none;
+	margin-inline: auto;
+	padding-inline: var(--sp-1); /* breathing room at both scroll ends */
 }
 /* The tag bar belongs to the Tags wall mode (L.1): in every other mode it is
      rendered into the header hidden and toggled by setWallGroup, so the chips
-     and the all-tags expander survive mode switches without a refetch. */
+     survive mode switches without a refetch. */
 .tagbar[hidden] {
 	display: none;
 }
 .tagbar .tagchip {
+	flex: 0 0 auto;
 	cursor: pointer;
 	color: var(--text-mute);
+	white-space: nowrap;
 }
 .tagbar .tagchip:hover {
 	color: var(--text);
 	background: var(--line-soft);
+}
+/* The complement filter, pinned after every tag: still a pill, but set off with
+   a hairline divider and italic so it reads as a mode of its own, not one more
+   tag. The divider is a pseudo-element so the pill shape is left intact. */
+.tagbar .tagchip.untagged {
+	position: relative;
+	margin-left: calc(var(--sp-2) + 1px);
+	font-style: italic;
+}
+.tagbar .tagchip.untagged::before {
+	content: "";
+	position: absolute;
+	left: calc(var(--sp-1) * -1);
+	top: 50%;
+	transform: translateY(-50%);
+	height: 60%;
+	border-left: 1px solid var(--line);
 }
 
 /* The wall's grouping selector, under the search and above the tag filters:

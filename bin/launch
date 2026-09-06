@@ -97,6 +97,11 @@ launch_desktop() {
 
   echo "/Users/minhmai/enqueue" > "$HOME/.enqueue-poc/repo" 2>/dev/null || true
 
+  # Link-preview fetches identify as a real browser so publishers that refuse the
+  # default bot user-agent (ipostal1, Instagram, Medium...) return the page. Respect
+  # an existing override.
+  export ENQ_USER_AGENT="${ENQ_USER_AGENT:-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36}"
+
   ENQUEUE_REPO="$REPO" "$BIN" >"$LOG" 2>&1 &
 
   # The window is only useful once the engine behind it answers.

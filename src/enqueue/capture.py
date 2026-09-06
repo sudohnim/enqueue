@@ -120,8 +120,20 @@ def link(url: str, local_only: bool = False) -> dict:
     return out
 
 
-def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool = False) -> dict:
-    """Store a file whole. Deduped by content, so re-uploading changes nothing."""
+def upload(
+    data: bytes,
+    filename: str,
+    mime: str | None = None,
+    local_only: bool = False,
+    embedded: bool = False,
+) -> dict:
+    """Store a file whole. Deduped by content, so re-uploading changes nothing.
+
+    `embedded` marks an image pasted inside a note: it is a real artifact (so its
+    bytes ride the blob store and its sync), but `embedded_at` keeps it off the wall
+    and out of search, and it skips ingest - an inline picture is note content, not
+    a standalone thing to OCR, chunk, or summarize.
+    """
     if not data:
         raise ValueError("empty file")
 
@@ -162,8 +174,8 @@ def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool
             title = re.sub(r"[-_]+", " ", Path(filename).stem).strip() or filename
             conn.execute(
                 "INSERT INTO artifacts (id, kind, title, body, content_hash, mime, filename,"
-                " created_at, updated_at, local_only, status)"
-                " VALUES (?,?,?,NULL,?,?,?,?,?,?,'text_only')",
+                " created_at, updated_at, local_only, status, embedded_at)"
+                " VALUES (?,?,?,NULL,?,?,?,?,?,?,'text_only',?)",
                 (
                     artifact_id,
                     kind_for(mime, filename),
@@ -174,12 +186,17 @@ def upload(data: bytes, filename: str, mime: str | None = None, local_only: bool
                     now,
                     now,
                     1 if local_only else 0,
+                    now if embedded else None,
                 ),
             )
             restored = False
 
-    # Returns first, per hard rule 7. Extraction and indexing happen behind this.
-    ingest_queue.submit(artifact_id)
+    # Returns first, per hard rule 7. Extraction and indexing happen behind this -
+    # but an embedded image is note content, not a standalone artifact, so it skips
+    # ingest entirely (no OCR, chunking, or facets). It still pushes, so its row and
+    # blob reach the other devices.
+    if not embedded:
+        ingest_queue.submit(artifact_id)
     push_artifact(artifact_id)
     out = {"id": artifact_id, "created": not restored}
     if restored:

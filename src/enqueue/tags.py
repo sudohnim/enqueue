@@ -12,6 +12,7 @@ never fuzzy. Conversations cannot be tagged; only rows in `artifacts`.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 
 from . import db
@@ -19,8 +20,13 @@ from .sync.client import push_artifact
 
 
 def normalize(name: str) -> str:
-    """The canonical form of a tag name: lowercased and trimmed."""
-    out = name.strip().lower()
+    """The canonical form of a tag name: lowercased, with no whitespace.
+
+    A tag is a single token, never a phrase: `Mental Models` and `mental models`
+    both fold to `mentalmodels`. Dropping the space (rather than hyphenating) keeps
+    the query language a plain `#name` with no quoting - a tag can always be typed.
+    """
+    out = re.sub(r"\s+", "", name).lower()
     if not out:
         raise ValueError("a tag needs a name")
     return out
@@ -107,7 +113,8 @@ def parse_tags(q: str) -> tuple[str, list[str]]:
     A token shaped `#word` or `tag:word` is a tag: the prefix is stripped and the
     name normalized. Everything else rejoins into the free text, which is what the
     hybrid search sees. A bare `#` or `tag:` with nothing after it is not a tag and
-    stays in the free text.
+    stays in the free text. Tags carry no whitespace, so one whitespace-split token
+    is always one whole tag - no quoting is ever needed.
     """
     free: list[str] = []
     names: list[str] = []

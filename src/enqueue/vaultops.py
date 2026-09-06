@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
 
 from . import crypto, db, vault
 from .sync.client import push_artifact
@@ -190,13 +191,28 @@ def decrypt_in_place(conn, artifact_id: str, key: bytes) -> bool:
         conn.execute(
             "UPDATE artifact_versions SET body = ? WHERE id = ?", (dec(v["body"]), v["id"])
         )
-    # The blob: decrypt only if it actually opens with the vault key.
-    blob = _blob_file(row["content_hash"])
-    if blob is not None:
+    # The blob: recover the plaintext image, VERIFIED against the content hash
+    # (sha256 of the plaintext) so we never write garbage back. A blob is content-
+    # addressed, so the correct plaintext is exactly the bytes whose sha256 equals the
+    # stored content_hash. Peel up to two secretbox layers to also repair a legacy
+    # double-encrypted blob (an orphan that got re-vaulted over its own ciphertext).
+    # If nothing peels to the right hash (e.g. it was sealed with a key that no longer
+    # exists), the blob is left untouched rather than corrupted further.
+    content_hash = row["content_hash"]
+    blob = _blob_file(content_hash)
+    if blob is not None and content_hash:
         raw = blob.read_bytes()
-        with contextlib.suppress(Exception):  # noqa: BLE001 - not our ciphertext -> leave as is
-            plain = crypto.decrypt(raw, key)
-            blob.write_bytes(plain)
+        data = raw
+        for _ in range(2):
+            if hashlib.sha256(data).hexdigest() == content_hash:
+                break
+            try:
+                data = crypto.decrypt(data, key)
+            except Exception:  # noqa: BLE001 - not our ciphertext at this layer
+                data = None
+                break
+        if data is not None and data != raw and hashlib.sha256(data).hexdigest() == content_hash:
+            blob.write_bytes(data)
             touched = True
     return touched
 

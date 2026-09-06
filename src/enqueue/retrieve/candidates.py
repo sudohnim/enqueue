@@ -380,7 +380,9 @@ def _fuzzy_hits(query: str, limit: int) -> list[dict]:
         return []
     conn = db.get_conn()
     try:
-        rows = conn.execute("SELECT id, title FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL").fetchall()
+        rows = conn.execute(
+            "SELECT id, title FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+        ).fetchall()
         erows = conn.execute("SELECT artifact_id, entity FROM entities").fetchall()
         arows = conn.execute(
             "SELECT artifact_id, text FROM annotations a"
@@ -440,7 +442,8 @@ def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dic
                 r["id"]: r
                 for r in conn.execute(
                     "SELECT id, title, kind FROM artifacts"
-                    " WHERE id IN (SELECT value FROM json_each(?))",
+                    " WHERE id IN (SELECT value FROM json_each(?))"
+                    " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
                     (json.dumps(missing),),
                 ).fetchall()
             }
@@ -483,8 +486,7 @@ def _needs_fuzzy(hybrid: list[dict]) -> bool:
     hybrid (the shape a typo produces) is exactly when fuzzy earns its cost.
     """
     return not any(
-        h.get("had_lexical_hit") or h.get("dense_similarity", 0.0) >= KEEP_ABOVE
-        for h in hybrid
+        h.get("had_lexical_hit") or h.get("dense_similarity", 0.0) >= KEEP_ABOVE for h in hybrid
     )
 
 
@@ -542,7 +544,7 @@ def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
         rows = conn.execute(
             "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
             " JOIN artifacts a ON a.id = c.artifact_id"
-            " WHERE c.id IN (SELECT value FROM json_each(?)) AND a.deleted_at IS NULL AND a.vaulted_at IS NULL",
+            " WHERE c.id IN (SELECT value FROM json_each(?)) AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
             (json.dumps(list(chunk_scores)),),
         ).fetchall()
         # One row per artifact, carrying its best matching chunk as the snippet.
@@ -667,6 +669,7 @@ def _get_model(local_only: bool) -> str:
         pass
     # Fallback: read directly from settings
     from .. import config, settings
+
     return config.LLM_MODEL if local_only else (settings.get("llm_model") or config.LLM_MODEL)
 
 
@@ -798,7 +801,9 @@ def candidates(
         titles: dict[str, str] = {}
         if ranked:
             rows = conn.execute(
-                "SELECT id, title FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",
+                "SELECT id, title FROM artifacts"
+                " WHERE id IN (SELECT value FROM json_each(?))"
+                " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
                 (json.dumps([aid for aid, _ in ranked]),),
             ).fetchall()
             titles = {row["id"]: row["title"] for row in rows}
@@ -1040,7 +1045,8 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
             rows = conn.execute(
                 "SELECT c.id AS chunk_id, a.title, a.kind, c.text AS snippet"
                 " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
-                " WHERE c.id IN (SELECT value FROM json_each(?))",
+                " WHERE c.id IN (SELECT value FROM json_each(?))"
+                " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
                 (json.dumps(by_chunk),),
             ).fetchall()
             chunk_rows = {
@@ -1052,7 +1058,8 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
         if by_face:
             rows = conn.execute(
                 "SELECT id, title, kind FROM artifacts"
-                " WHERE id IN (SELECT value FROM json_each(?))",
+                " WHERE id IN (SELECT value FROM json_each(?))"
+                " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
                 (json.dumps(by_face),),
             ).fetchall()
             face_rows = {row["id"]: (row["title"], row["kind"]) for row in rows}
@@ -1116,7 +1123,7 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
         rows = conn.execute(
             "SELECT id, title, kind FROM artifacts"
             " WHERE id IN (SELECT value FROM json_each(?))"
-            " AND deleted_at IS NULL AND vaulted_at IS NULL"
+            " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
             " ORDER BY updated_at DESC LIMIT ?",
             (json.dumps(sorted(ids)), limit),
         ).fetchall()
@@ -1150,7 +1157,7 @@ def _all_results(limit: int = 20) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, title, kind FROM artifacts"
-            " WHERE deleted_at IS NULL AND vaulted_at IS NULL"
+            " WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
             " ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()

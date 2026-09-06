@@ -18,12 +18,83 @@ machine's copy of it.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
+import time
+from datetime import datetime, timedelta, timezone
 
 from ..worker import Worker
 
 log = logging.getLogger(__name__)
+
+# Facet (summary) retry backoff: exponential, doubling from 30s and capped at 24h. A
+# transient model failure (rate limit, 500) reschedules further out each time, so a
+# summary is never lost to a temporary limit - it just arrives late, and a persistent
+# outage settles at one attempt a day rather than hammering the model.
+_FACET_RETRY_BASE = 30  # seconds; delay before the first retry
+_FACET_RETRY_CAP = 24 * 60 * 60  # 24h ceiling
+_facet_sweeper_started = False
+_facet_sweeper_lock = threading.Lock()
+
+
+def _record_facet_retry(conn, artifact_id: str, error: str) -> None:
+    """Owe this artifact a summary, scheduling the next attempt with backoff."""
+    row = conn.execute(
+        "SELECT attempts FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
+    ).fetchone()
+    attempts = (row["attempts"] if row else 0) + 1
+    # Exponential: 30s, 60s, 120s, ... doubling, capped at 24h. The exponent is
+    # clamped so a long-owed summary computes a bounded power, not a giant one.
+    delay = min(_FACET_RETRY_BASE * (2 ** min(attempts - 1, 40)), _FACET_RETRY_CAP)
+    next_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+    conn.execute(
+        "INSERT INTO facet_retry (artifact_id, attempts, next_at, last_error) VALUES (?,?,?,?)"
+        " ON CONFLICT(artifact_id) DO UPDATE SET"
+        " attempts=excluded.attempts, next_at=excluded.next_at, last_error=excluded.last_error",
+        (artifact_id, attempts, next_at, (error or "")[:300]),
+    )
+
+
+def _clear_facet_retry(conn, artifact_id: str) -> None:
+    conn.execute("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,))
+
+
+def _facet_retry_sweep() -> None:
+    """Re-submit artifacts whose summary retry is due. Runs forever on a daemon
+    thread; each due artifact goes back through the ingest worker, which regenerates
+    the facets and clears (or reschedules) the retry row."""
+    from .. import db
+
+    while True:
+        time.sleep(30)
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            conn = db.get_conn()
+            try:
+                due = [
+                    r["artifact_id"]
+                    for r in conn.execute(
+                        "SELECT artifact_id FROM facet_retry WHERE next_at <= ? LIMIT 20", (now,)
+                    )
+                ]
+            finally:
+                conn.close()
+            for aid in due:
+                submit(aid)
+        except Exception:  # noqa: BLE001 - a sweep failure must never kill the thread
+            log.exception("facet retry sweep failed")
+
+
+def start_facet_retry_sweeper() -> None:
+    """Start the background summary-retry sweeper once (idempotent)."""
+    global _facet_sweeper_started
+    with _facet_sweeper_lock:
+        if _facet_sweeper_started:
+            return
+        _facet_sweeper_started = True
+    threading.Thread(target=_facet_retry_sweep, name="facet-retry", daemon=True).start()
+
 
 # How many pending queue items each artifact has (I5.1). A burst of saves to one
 # note enqueues that id several times; the worker processes them in order, and
@@ -79,12 +150,15 @@ def process(artifact_id: str) -> dict:
     finally:
         conn.close()
 
+    # An explicit "Try again" forces the refetch (bypassing the auto + needs_fetch
+    # gates); otherwise the automatic path only fetches a link that has never been
+    # asked, and never re-hammers one that already refused.
+    forced = preview.take_forced(artifact_id)
     if (
         row is not None
         and row["kind"] == "link"
         and not row["local_only"]
-        and preview.auto_enabled()
-        and preview.needs_fetch(artifact_id)
+        and (forced or (preview.auto_enabled() and preview.needs_fetch(artifact_id)))
     ):
         preview.fetch_quietly(artifact_id)
 
@@ -247,16 +321,30 @@ def _facet_artifact(artifact_id: str) -> int:
     from . import facets as facets_mod
 
     conn = db.get_conn()
+    error = None
+    count = 0
     try:
         gated = conn.execute(
             "SELECT 1 FROM facet_skips WHERE artifact_id = ?", (artifact_id,)
         ).fetchone()
         if gated:
+            _clear_facet_retry(conn, artifact_id)  # gate is permanent, stop retrying
+            conn.commit()
             return 0
         count, error = facets_mod.generate_for_artifact(conn, artifact_id)
+        if error and error != "no facet cleared the quality gate":
+            # A transient model failure (rate limit, 500, network): keep the summary
+            # owed and retry it in the background with escalating backoff.
+            _record_facet_retry(conn, artifact_id, error)
+        else:
+            # Success, or a content-skip that a retry would not change: stop owing.
+            _clear_facet_retry(conn, artifact_id)
         conn.commit()
     except Exception:  # noqa: BLE001 - facets are derived; a failure never blocks capture
         log.exception("facet generation failed for %s", artifact_id)
+        with contextlib.suppress(Exception):
+            _record_facet_retry(conn, artifact_id, "unexpected error")
+            conn.commit()
         return 0
     finally:
         conn.close()
@@ -331,7 +419,12 @@ def submit_all() -> int:
 
     conn = db.get_conn()
     try:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL")]
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+            )
+        ]
     finally:
         conn.close()
 
@@ -356,7 +449,7 @@ def submit_images() -> int:
         ids = [
             r["id"]
             for r in conn.execute(
-                "SELECT id FROM artifacts WHERE kind = 'image' AND deleted_at IS NULL AND vaulted_at IS NULL"
+                "SELECT id FROM artifacts WHERE kind = 'image' AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
                 " AND (body IS NULL OR TRIM(body) = '')"
             )
         ]

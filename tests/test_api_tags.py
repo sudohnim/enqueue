@@ -51,6 +51,27 @@ class TestAddAndRead:
         assert resp.json()["name"] == "work"
 
 
+class TestUntaggedFilter:
+    def test_untagged_returns_only_artifacts_with_no_tag(self, store, quiet_queue):
+        client = TestClient(app)
+        tagged = _tagged_artifact(client, name="Tagged one")
+        bare = notes.create(body="# Bare\n\nNo tags here.")["artifact"]["id"]
+
+        listed = client.get("/artifacts?untagged=1").json()
+        ids = [i["id"] for i in listed["items"]]
+        assert bare in ids
+        assert tagged not in ids
+        # The complement count is artifact-only and matches the returned items.
+        assert listed["total"] == len(listed["items"]) == 1
+
+    def test_default_listing_still_includes_tagged(self, store, quiet_queue):
+        client = TestClient(app)
+        tagged = _tagged_artifact(client, name="Tagged one")
+
+        listed = client.get("/artifacts").json()
+        assert tagged in [i["id"] for i in listed["items"]]
+
+
 class TestRemove:
     def test_delete_removes_it_everywhere(self, store, quiet_queue):
         client = TestClient(app)

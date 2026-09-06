@@ -122,7 +122,17 @@ def _apply_snapshot_children(
             "INSERT INTO artifact_versions (id, artifact_id, body, created_at)" " VALUES (?,?,?,?)",
             (v["id"], artifact_id, v["body"], v["created_at"]),
         )
-    for tag_name in snapshot.get("tags", []):
+    from ..tags import normalize as normalize_tag
+
+    for raw_name in snapshot.get("tags", []):
+        # Canonicalize on the way in: a peer still on the old rules may ship a tag
+        # with interior whitespace, but the local invariant is that tags.name never
+        # holds any. Fold it here so the split-free `#name` query language holds
+        # regardless of which device authored the snapshot.
+        try:
+            tag_name = normalize_tag(raw_name)
+        except ValueError:
+            continue  # a whitespace-only tag name folds to nothing; drop it
         # Upsert tag - generate UUID for the tag id
         tag_id = str(uuid.uuid4())
         conn.execute(

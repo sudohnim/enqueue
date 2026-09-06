@@ -337,6 +337,22 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           key   TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
+        -- Link preview cache (title/description/site/image for a saved link). The
+        -- reader's link path reads it; on a fresh phone nothing populates it yet, so
+        -- the table must exist for that read to return "no preview" instead of
+        -- crashing with "no such table". Columns mirror the engine's schema
+        -- (migrations 0002 + 0007) so a synced preview would land compatibly.
+        CREATE TABLE IF NOT EXISTS link_previews (
+          artifact_id TEXT PRIMARY KEY,
+          status      TEXT NOT NULL,
+          title       TEXT,
+          description TEXT,
+          site_name   TEXT,
+          error       TEXT,
+          fetched_at  TEXT,
+          image_hash  TEXT,
+          image_mime  TEXT
+        );
         -- Cover the hot library / list / search query (deleted_at filter + updated_at
         -- ordering) and the annotations join, so they use an index instead of a full
         -- table scan + sort.
@@ -370,6 +386,29 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
         conn.execute(
             "INSERT INTO sync_meta (key, value) VALUES ('heal_vault_repull_v1', '1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    // One-time heal v2: the pull advances the cursor to the relay's latest even when
+    // an individual snapshot failed to apply (e.g. an older build inserting a row
+    // before its column - purged_at, vaulted_at - existed on the phone). A snapshot
+    // skipped that way is never retried, so a live artifact can be missing on the
+    // phone while its snapshot sits intact on the relay. Force one more full re-pull
+    // (cursor -> 0) so every relay snapshot is re-applied against the current schema.
+    // Same run-once marker pattern as v1.
+    let healed_v2: Option<String> = conn
+        .query_row(
+            "SELECT value FROM sync_meta WHERE key = 'heal_repull_v2'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if healed_v2.is_none() {
+        let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES ('heal_repull_v2', '1')",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -795,13 +834,24 @@ pub fn sync_library(
     // still runs on each one - we just no longer pay hundreds of round trips in
     // series. (Why every object is decrypted at all: PERF.6 - the payload is
     // secretbox-encrypted, so the LWW key cannot be peeked before decrypt.)
+    let mut failed = 0usize;
     for snapshot in fetch_snapshots_parallel(base, &auth, dek, &dev_names) {
-        if apply_snapshot(conn, &snapshot).is_ok() {
-            pulled += 1;
+        match apply_snapshot(conn, &snapshot) {
+            Ok(()) => pulled += 1,
+            Err(e) => {
+                failed += 1;
+                eprintln!("[sync] apply skipped one snapshot: {e}");
+            }
         }
     }
 
-    if let Err(e) = write_cursor(conn, new_cursor) {
+    // Only advance the cursor when every snapshot in this window applied. If one
+    // failed (e.g. a schema the phone has not caught up to yet), keep the old cursor
+    // so the next sync re-pulls and retries it, instead of stepping past it and
+    // losing the artifact silently. Re-applied successes are LWW no-ops, so retrying
+    // the whole window is safe.
+    let cursor_to_write = if failed == 0 { new_cursor } else { cursor };
+    if let Err(e) = write_cursor(conn, cursor_to_write) {
         return SyncOutcome {
             status: "error".into(),
             pulled,
@@ -1137,6 +1187,29 @@ mod tests {
         .unwrap();
         apply_snapshot(&conn, &snap).unwrap();
         assert_eq!(list_artifact_ids(&conn).unwrap(), vec!["a1".to_string()]);
+    }
+
+    #[test]
+    fn get_link_artifact_without_a_preview_row_does_not_error() {
+        // Regression: opening a link on a fresh phone hit `link_previews` before the
+        // table existed and failed with "no such table". init_schema now creates it,
+        // so the read returns a null preview instead of crashing.
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let snap: Value = serde_json::from_str(
+            r#"{
+              "artifact": {"id":"l1","kind":"link","title":"t","body":null,
+                "source_url":"https://example.com","content_hash":null,"mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+                "local_only":0,"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                "title_explicit":0,"_device_id":"d1"},
+              "annotations": [], "page_text": [], "versions": []
+            }"#,
+        )
+        .unwrap();
+        apply_snapshot(&conn, &snap).unwrap();
+        let detail = get_artifact(&conn, "l1").unwrap();
+        assert!(detail["preview"].is_null());
     }
 
     #[test]
