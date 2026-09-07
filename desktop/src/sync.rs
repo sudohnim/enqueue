@@ -312,7 +312,8 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           _device_id     TEXT,
           tags_json      TEXT,
           purged_at      TEXT,
-          vaulted_at     TEXT
+          vaulted_at     TEXT,
+          embedded_at    TEXT
         );
         CREATE TABLE IF NOT EXISTS annotations (
           id            TEXT PRIMARY KEY,
@@ -369,6 +370,10 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN purged_at TEXT", []);
     // Migration: vaulted_at (secret-vault membership marker), same duplicate-safe pattern.
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN vaulted_at TEXT", []);
+    // Migration: embedded_at (an image pasted inside a note - note content, not a
+    // standalone card), same duplicate-safe pattern. The library/list queries filter
+    // `embedded_at IS NULL` so it never shows as its own artifact on the phone.
+    let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN embedded_at TEXT", []);
     // One-time heal: builds before `vaulted_at` existed here applied vaulted
     // snapshots without the column, dropping the flag and leaving vault-ciphertext
     // visible in the wall. Force a single full re-pull (cursor -> 0); the strictly-
@@ -451,8 +456,8 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let g = |c: &str| artifact.get(c);
     conn.execute(
         "INSERT INTO artifacts (id,kind,title,body,source_url,content_hash,mime,filename,\
-         created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at,vaulted_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+         created_at,updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at,vaulted_at,embedded_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)
          ON CONFLICT(id) DO UPDATE SET
            kind=excluded.kind, title=excluded.title, body=excluded.body,
            source_url=excluded.source_url, content_hash=excluded.content_hash,
@@ -460,7 +465,8 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
            updated_at=excluded.updated_at, local_only=excluded.local_only,
            status=excluded.status, pinned=excluded.pinned, deleted_at=excluded.deleted_at,
            pages=excluded.pages, title_explicit=excluded.title_explicit,
-           _device_id=excluded._device_id, purged_at=excluded.purged_at, vaulted_at=excluded.vaulted_at",
+           _device_id=excluded._device_id, purged_at=excluded.purged_at, vaulted_at=excluded.vaulted_at,
+           embedded_at=excluded.embedded_at",
         rusqlite::params![
             id,
             str_at(g("kind")),
@@ -481,6 +487,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             str_at(g("_device_id")),
             str_at(g("purged_at")),
             str_at(g("vaulted_at")),
+            str_at(g("embedded_at")),
         ],
     )
     .map_err(|e| format!("insert artifact: {e}"))?;
@@ -870,7 +877,7 @@ pub fn sync_library(
 #[allow(dead_code)]
 pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL ORDER BY updated_at DESC")
+        .prepare("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL ORDER BY updated_at DESC")
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| r.get::<_, String>(0))
@@ -892,7 +899,7 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
             // excerpt, so shipping full note bodies bloated this payload ~5x for nothing
             // (the reader fetches the full body via mobile_get). 280 chars covers 3 lines.
             "SELECT id,kind,title,substr(body,1,280),source_url,mime,filename,created_at,updated_at,pinned,status,tags_json
-             FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL ORDER BY updated_at DESC",
+             FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt

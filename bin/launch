@@ -166,6 +166,19 @@ launch_mobile() {
 
   js_gate "mobile"
 
+  # Sync the web assets the APK bundles. Tauri embeds frontendDist for desktop, but
+  # the Android build merges its webview assets from gen/android/app/src/main/assets,
+  # which is NOT refreshed from source by `cargo tauri android build`. Without this
+  # step a rebuild ships fresh Rust with a stale mobile.html/md.js/css, so web-only
+  # changes (markdown image rendering, pull-to-refresh, ...) silently never reach the
+  # phone. No --delete: the assets dir also holds build-generated files (tauri.conf.json)
+  # and legacy top-level copies not in the source tree, so mirror-copy over them rather
+  # than pruning.
+  local ASSETS="$REPO/desktop/gen/android/app/src/main/assets"
+  mkdir -p "$ASSETS"
+  echo "Syncing web assets -> android assets..."
+  rsync -a "$REPO/src/enqueue/static/" "$ASSETS/"
+
   # One-shot build + install + launch, then EXIT. Do NOT use `cargo tauri android dev`:
   # it starts a dev-server/watch loop that never returns and holds the Gradle lock, so
   # the next `cargo tauri android build` deadlocks waiting for it (the recurring lock
