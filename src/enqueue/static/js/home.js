@@ -606,14 +606,16 @@ if (!WALL_GROUPS.includes(wallGroup) || wallGroup === "custom")
 let wallKept = [];
 let wallFirst = [];
 
-// The tag bar's chips (L.1): every tag as a chip, centered on one line that
-// scrolls sideways when they overflow, and an "untagged" chip pinned at the end
-// for the complement - artifacts carrying no tag at all. Rendered only in Tags
-// mode; setWallGroup builds or toggles it in place so it survives mode switches.
+// The tag bar's chips (L.1): every tag as a chip on one line that scrolls sideways
+// when they overflow (centered while they fit), plus an "untagged" chip anchored at
+// the very end that stays put while the tags scroll under it - the complement,
+// artifacts carrying no tag at all. Rendered only in Tags mode; setWallGroup builds
+// or toggles it in place so it survives mode switches. The untagged chip lives
+// OUTSIDE the scroll track so it never scrolls away.
 function tagBarHtml(tags) {
 	let html =
 		'<div class="tagbar"' + (wallGroup === "tags" ? "" : " hidden") + ">";
-	html += '<div class="tagbar-track">';
+	html += '<div class="tagbar-scroll"><div class="tagbar-track">';
 	html += tags
 		.map(
 			(t) =>
@@ -624,9 +626,10 @@ function tagBarHtml(tags) {
 				"</button>",
 		)
 		.join("");
+	html += "</div></div>";
 	html +=
 		'<button class="tagchip untagged" data-untagged="1" type="button">untagged</button>';
-	html += "</div></div>";
+	html += "</div>";
 	return html;
 }
 

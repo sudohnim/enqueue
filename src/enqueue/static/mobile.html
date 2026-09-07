@@ -335,6 +335,58 @@
     border-color: var(--purple-bold);
     color: var(--on-purple-bold);
   }
+  /* Tag filter bar (Tags mode), copying the desktop: a flex row whose left part is
+     the scrolling chip strip and whose right part is the pinned "untagged" chip,
+     which sits OUTSIDE the scroll so it never scrolls away. */
+  .mtagbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: 0 calc(-1 * var(--sp-4)) var(--sp-3);
+    padding: 0 var(--sp-4);
+  }
+  .mtagbar[hidden] {
+    display: none;
+  }
+  .mtagbar-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .mtagbar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  /* width:max-content + auto side margins: centred while the chips fit, panning from
+     the start once they overflow (identical trick to the desktop tag bar). */
+  .mtagbar-track {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--sp-2);
+    width: max-content;
+    margin-inline: auto;
+  }
+  /* The pinned complement chip, set off with a hairline and italics like desktop. */
+  .mtag-untagged {
+    flex: 0 0 auto;
+    position: relative;
+    margin-left: var(--sp-1);
+    padding-left: calc(var(--sp-3) + 1px);
+    font-style: italic;
+  }
+  .mtag-untagged::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 55%;
+    border-left: 1px solid var(--line);
+  }
   .thumb-placeholder {
     width: 44px;
     height: 44px;
@@ -1822,6 +1874,13 @@
     <button class="chip" data-mode="tags" aria-pressed="false">Tags</button>
     <button class="chip" data-mode="custom" aria-pressed="false">Custom</button>
   </div>
+  <!-- Tag filter bar (Tags mode only), mirroring the desktop: every tag as a chip
+       on one horizontally scrolling line, with "untagged" anchored at the very end
+       so it stays put while the tags scroll under it. Built by renderMobileTagbar. -->
+  <div id="mtagbar" class="mtagbar" hidden>
+    <div class="mtagbar-scroll"><div class="mtagbar-track"></div></div>
+    <button class="chip mtag-untagged" data-untagged="1" type="button">untagged</button>
+  </div>
   <div id="loading" hidden>
     <img src="loading.png" alt="" />
     <span>Syncing&#8230;</span>
@@ -2851,6 +2910,10 @@
   let libraryArts = [];
   let libraryTags = {}; // artifact_id -> [tag]
   let libraryPivots = []; // [{ name, ids: [artifact_id] }]
+  // Tags-mode filter driven by the tag bar: null shows every tag's shelf; a tag name
+  // shows only that tag; UNTAGGED_KEY shows only the untagged artifacts.
+  let mobileTagFilter = null;
+  const UNTAGGED_KEY = " untagged";
 
   function _byTouchDesc(list) {
     return [...list].sort((a, b) =>
@@ -2889,6 +2952,18 @@
         const tags = a.tags || libraryTags[a.id] || [];
         if (!tags.length) untagged.push(a);
         for (const t of tags) (byTag[t] = byTag[t] || []).push(a);
+      }
+      // The tag bar filters: a chosen tag (or "untagged") collapses the view to that
+      // one group; with nothing chosen, every tag's shelf shows, untagged last.
+      if (mobileTagFilter === UNTAGGED_KEY) {
+        return untagged.length
+          ? [{ label: "Untagged", arts: _byTouchDesc(untagged) }]
+          : [];
+      }
+      if (mobileTagFilter) {
+        return byTag[mobileTagFilter]
+          ? [{ label: "#" + mobileTagFilter, arts: _byTouchDesc(byTag[mobileTagFilter]) }]
+          : [];
       }
       const groups = Object.keys(byTag)
         .sort((a, b) => a.localeCompare(b))
@@ -2952,10 +3027,60 @@
     renderRows(arts, ul);
   }
 
+  // Build the Tags-mode filter bar: one chip per tag (most-used first), plus the
+  // pinned "untagged" chip already in the DOM. The active filter is pressed. Tapping
+  // a chip toggles the filter and re-renders; tapping the active one clears it.
+  function renderMobileTagbar(arts) {
+    const bar = document.getElementById("mtagbar");
+    if (!bar) return;
+    const track = bar.querySelector(".mtagbar-track");
+    const counts = new Map();
+    for (const a of arts)
+      for (const t of a.tags || libraryTags[a.id] || [])
+        counts.set(t, (counts.get(t) || 0) + 1);
+    const names = [...counts.keys()].sort(
+      (x, y) => counts.get(y) - counts.get(x) || x.localeCompare(y),
+    );
+    track.replaceChildren();
+    for (const name of names) {
+      const b = document.createElement("button");
+      b.className = "chip";
+      b.type = "button";
+      b.textContent = "#" + name;
+      b.setAttribute("aria-pressed", String(mobileTagFilter === name));
+      b.addEventListener("click", () => {
+        mobileTagFilter = mobileTagFilter === name ? null : name;
+        renderSections();
+      });
+      track.appendChild(b);
+    }
+    const unt = bar.querySelector(".mtag-untagged");
+    if (unt) {
+      unt.setAttribute("aria-pressed", String(mobileTagFilter === UNTAGGED_KEY));
+      if (!unt.__bound) {
+        unt.__bound = true;
+        unt.addEventListener("click", () => {
+          mobileTagFilter = mobileTagFilter === UNTAGGED_KEY ? null : UNTAGGED_KEY;
+          renderSections();
+        });
+      }
+    }
+  }
+
   function renderSections(arts, emptyMsg) {
     if (arts) libraryArts = arts;
     const shelves = document.getElementById("shelves");
     const empty = document.getElementById("empty");
+    // The tag bar belongs to Tags mode only; build it from the current cards.
+    const mtagbar = document.getElementById("mtagbar");
+    if (mtagbar) {
+      if (libraryMode === "tags") {
+        mtagbar.hidden = false;
+        renderMobileTagbar(libraryArts);
+      } else {
+        mtagbar.hidden = true;
+      }
+    }
     // Drop the previous render's thumbnail observations; the fresh cards re-observe.
     if (_thumbObserver) _thumbObserver.disconnect();
     shelves.replaceChildren();
@@ -2986,6 +3111,8 @@
   }
 
   function setLibraryMode(mode) {
+    // Leaving Tags drops any tag filter, so returning to Tags starts on all tags.
+    if (mode !== "tags") mobileTagFilter = null;
     libraryMode = mode;
     for (const c of document.querySelectorAll("#viewchips .chip"))
       c.setAttribute("aria-pressed", String(c.dataset.mode === mode));

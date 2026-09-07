@@ -1018,21 +1018,29 @@ main {
      The searchbar stays visually primary; these answer to the wall, not to it. */
 .tagbar {
 	margin-top: var(--sp-3);
-	/* One line that scrolls sideways when the chips outrun the width. The strip
-	   is centred while it fits and pans from the start once it overflows - see
-	   the track's width:max-content + auto margins below. */
+	/* A flex row: the scrolling chip strip takes the space it can, and the untagged
+	   chip is pinned after it, outside the scroll, so it never scrolls away. */
+	display: flex;
+	align-items: center;
+	gap: var(--sp-1);
+}
+/* The scroll viewport: one line that scrolls sideways when the chips outrun the
+   width. min-width:0 lets it shrink so the pinned untagged chip always fits. */
+.tagbar-scroll {
+	flex: 1 1 auto;
+	min-width: 0;
 	overflow-x: auto;
 	overflow-y: hidden;
 	-webkit-overflow-scrolling: touch;
 	overscroll-behavior-x: contain;
 	scrollbar-width: none; /* the chips are the affordance; the bar itself stays clean */
 }
-.tagbar::-webkit-scrollbar {
+.tagbar-scroll::-webkit-scrollbar {
 	display: none;
 }
 /* width:max-content lets the row grow to its content; auto side margins then
-   centre it when it is narrower than the bar and collapse to zero (leaving the
-   first chip flush at the start) the moment it is wider and has to scroll. */
+   centre it when it is narrower than the viewport and collapse to zero (leaving
+   the first chip flush at the start) the moment it is wider and has to scroll. */
 .tagbar-track {
 	display: flex;
 	flex-wrap: nowrap;
