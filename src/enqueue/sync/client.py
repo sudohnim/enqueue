@@ -147,7 +147,9 @@ def push_vault_meta() -> None:
     headers = {"Authorization": f"Bearer {_secret()}", "Content-Type": "application/octet-stream"}
     try:
         with httpx.Client(timeout=30) as client:
-            client.put(f"{url.rstrip('/')}/sync/object/lib/vault.enc", content=data, headers=headers)
+            client.put(
+                f"{url.rstrip('/')}/sync/object/lib/vault.enc", content=data, headers=headers
+            )
     except httpx.HTTPError:
         pass
 
@@ -424,19 +426,37 @@ def push_pivots() -> None:
 
     views = []
     for saved in pivots_saved.all_specs():
+        name = saved.get("name") or "Untitled view"
         spec = saved.get("spec") or {}
-        # A view's membership is its resolved subset, adjusted by the manual
-        # include/exclude chips (mirrors pivot.run). resolve_subset is the cheap
-        # part of the pivot - no model call, unlike bucketize grouping.
-        try:
-            base, _ = pivot.resolve_subset(spec.get("subset") or {"kind": "everything"})
-        except Exception:  # noqa: BLE001 - a malformed subset must not break the sync
-            base = []
-        ids = sorted(
-            (set(base) | set(spec.get("included_ids") or [])) - set(spec.get("excluded_ids") or [])
-        )
-        if ids:
-            views.append({"name": saved.get("name") or "Untitled view", "ids": ids})
+        # A view is locked to its materialized result: push those exact groups (key +
+        # ids) so the phone shows the same frozen arrangement, with group headers, as
+        # the desktop. A view never opened has no materialization yet, so fall back to a
+        # single flat group of its resolved subset (cheap, no model call) so it still
+        # appears until it is opened and frozen.
+        full = pivots_saved.get(saved["id"])
+        result = full.get("result")
+        groups: list[dict] = []
+        if result and result.get("groups"):
+            for group in result["groups"]:
+                gids = sorted(group.get("artifact_ids") or [])
+                if gids:
+                    groups.append({"key": group.get("key") or "", "ids": gids})
+        else:
+            try:
+                base, _ = pivot.resolve_subset(spec.get("subset") or {"kind": "everything"})
+            except Exception:  # noqa: BLE001 - a malformed subset must not break the sync
+                base = []
+            ids = sorted(
+                (set(base) | set(spec.get("included_ids") or []))
+                - set(spec.get("excluded_ids") or [])
+            )
+            if ids:
+                groups.append({"key": "", "ids": ids})
+        if groups:
+            # `ids` (the flat union) rides along so an older phone build that reads the
+            # {name, ids} shape still renders the view; a newer one reads `groups`.
+            flat = sorted({i for group in groups for i in group["ids"]})
+            views.append({"name": name, "groups": groups, "ids": flat})
 
     data = crypto.encrypt(serialize({"views": views}), dek)
     headers = {

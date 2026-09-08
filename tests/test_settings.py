@@ -201,3 +201,16 @@ class TestSyncSettings:
         second = device_id()
         assert first == second
         uuid.UUID(first)  # a real UUID4, not a name-derived string
+
+
+def test_update_trims_whitespace_on_text_settings(store):
+    from enqueue import settings
+
+    settings.update({"llm_model": "  qwen2.5:7b  "})
+    assert settings.all_settings()["llm_model"]["value"] == "qwen2.5:7b"
+
+    # Whitespace-only trims to empty, which clears the field back to its default -
+    # never a whitespace-padded value the provider would choke on.
+    settings.update({"llm_model": "   "})
+    val = settings.all_settings()["llm_model"]["value"]
+    assert val is None or val == val.strip()

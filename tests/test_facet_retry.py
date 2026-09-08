@@ -87,3 +87,41 @@ def test_content_skip_is_not_retried(store, monkeypatch):
     q._facet_artifact(aid)
     assert _retry_row(aid) is None  # a content skip never schedules a retry
     assert notes.get(aid)["summary_generating"] is False
+
+
+def test_backfill_queues_only_untracked_missing(store, quiet_queue, monkeypatch):
+    from enqueue import notes
+    from enqueue.ingest import queue as q
+
+    a = notes.create(body="needs a summary, long enough to earn one from the model")["artifact"][
+        "id"
+    ]
+    b = notes.create(body="already owed a retry, also long enough to matter here")["artifact"]["id"]
+    # b is already in the retry queue -> left to the sweeper, not re-queued.
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO facet_retry (artifact_id, attempts, next_at) VALUES (?,1,?)",
+            (b, "2099-01-01T00:00:00+00:00"),
+        )
+
+    # Capture only the backfill's submits (each create already submitted itself).
+    submitted = []
+    monkeypatch.setattr(q, "submit", lambda aid: submitted.append(aid))
+
+    n = q.backfill_summaries()
+    assert a in submitted and b not in submitted
+    assert n == len(submitted)
+
+
+def test_generating_covers_the_backlog_not_only_retries(store, quiet_queue):
+    """summary_generating is true for any eligible artifact still awaiting the worker -
+    not only ones a failure left in facet_retry - so the whole backlog reads as
+    'generating in the background'. A too-short note is not eligible, so it is not."""
+    long = notes.create(body=("word " * 80).strip())[  # well over the eligibility threshold
+        "artifact"
+    ]["id"]
+    # No facets, no retry row yet (never attempted) -> still 'generating'.
+    assert notes.get(long)["summary_generating"] is True
+
+    short = notes.create(body="too short")["artifact"]["id"]
+    assert notes.get(short)["summary_generating"] is False

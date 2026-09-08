@@ -225,3 +225,70 @@ def test_artifact_detail_loads_all_specs_in_one_query(store, monkeypatch):
     assert detail["views"] == [{"id": keep_a, "name": "Keeps a"}], detail["views"]
     pivots_sql = [s for s in statements if "saved_pivots" in s and s.lstrip().startswith("SELECT")]
     assert len(pivots_sql) == 1, f"expected one saved_pivots SELECT, saw: {pivots_sql}"
+
+
+def test_result_cache_round_trips_and_clears_on_spec_edit(store):
+    """The materialized result cache: set_result stores the group structure, get reads
+    it back, and any spec edit (update_spec) drops it so the next open recomputes."""
+    from enqueue import db
+
+    pivot_id = pivots_saved.save("Cached view", _SPEC)
+    assert pivots_saved.get(pivot_id)["result"] is None  # nothing run yet
+
+    structure = {
+        "truncated": False,
+        "group_by": "author",
+        "groups": [{"key": "x", "artifact_ids": ["a"]}],
+    }
+    pivots_saved.set_result(pivot_id, structure)
+    got = pivots_saved.get(pivot_id)
+    assert got["result"] == structure
+    assert got["result_at"]  # a timestamp was stamped
+
+    # Editing the spec invalidates the cache - membership may have changed.
+    pivots_saved.update_spec(pivot_id, {**_SPEC, "excluded_ids": ["a"]})
+    assert pivots_saved.get(pivot_id)["result"] is None
+
+
+def test_set_result_on_missing_view_is_a_noop(store):
+    # A view deleted between a run and the cache write must not raise.
+    pivots_saved.set_result("ghost-id", {"groups": []})
+
+
+def test_locked_remove_and_add_edit_the_result_without_recompute(store):
+    """A locked view's membership is edited in the materialized result directly: remove
+    drops an id (pruning empty groups), add inserts under a group key. No spec re-run."""
+    pid = pivots_saved.save("Locked", _SPEC)
+    # Materialize a two-group result by hand (as an open would).
+    pivots_saved.set_result(
+        pid,
+        {
+            "group_by": {"attribute": "kind"},
+            "truncated": False,
+            "groups": [
+                {"key": "note", "artifact_ids": ["a", "b"]},
+                {"key": "link", "artifact_ids": ["c"]},
+            ],
+        },
+    )
+
+    # Remove one: it leaves its group, and a group emptied by removal is pruned.
+    res = pivots_saved.remove_from_result(pid, ["c"])
+    keys = {g["key"]: g["artifact_ids"] for g in res["groups"]}
+    assert "link" not in keys and keys["note"] == ["a", "b"]
+
+    # Add to an existing group by key; adding again is a no-op.
+    res = pivots_saved.add_to_result(pid, "d", "note")
+    assert res["groups"][0]["artifact_ids"] == ["a", "b", "d"]
+    res = pivots_saved.add_to_result(pid, "d", "note")
+    assert res["groups"][0]["artifact_ids"] == ["a", "b", "d"]
+
+    # Add under a new key creates the group.
+    res = pivots_saved.add_to_result(pid, "e", "pdf")
+    assert {"key": "pdf", "artifact_ids": ["e"]} in res["groups"]
+
+
+def test_locked_edit_on_unmaterialized_view_returns_none(store):
+    pid = pivots_saved.save("Never opened", _SPEC)
+    assert pivots_saved.remove_from_result(pid, ["x"]) is None
+    assert pivots_saved.add_to_result(pid, "x", "note") is None

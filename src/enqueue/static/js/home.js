@@ -583,6 +583,7 @@ function restoreRoute() {
 		}
 	}
 	if (kind === "untagged" && !id) return showUntagged();
+	if (kind === "settings" && !id) return showSettings();
 	return home();
 }
 

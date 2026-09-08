@@ -72,13 +72,18 @@ def serve() -> None:
     _start_sync_worker()
 
     # Resume any summaries a previous run left owing (a model rate-limit / 500):
-    # the sweeper re-submits them on backoff until they generate.
+    # the sweeper re-submits them on backoff until they generate. Then backfill the
+    # rest - artifacts that never got a summary, or whose in-memory queue item was lost
+    # to a restart - so every artifact converges to a summary. The backfill is
+    # DB-derived and respects the retry backoff, so it self-heals across restarts
+    # without hammering a failing model.
     try:
         from ..ingest import queue as ingest_queue
 
         ingest_queue.start_facet_retry_sweeper()
+        ingest_queue.start_summary_backfill()
     except Exception as exc:  # noqa: BLE001 - never block startup on this
-        print(f"[engine] could not start the summary-retry sweeper: {exc}")
+        print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 
     from .. import events
 

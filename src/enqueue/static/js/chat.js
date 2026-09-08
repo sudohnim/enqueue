@@ -463,23 +463,20 @@ async function runSavedGrouping(id, name) {
 	restorePill("inside");
 	setRoute("g/" + id);
 	view.innerHTML = spinner("lg", "Building the view...");
-	let saved;
+	// /open serves the cached grouping instantly when the view has been run before,
+	// and computes + caches it on the first open. The expensive model judgments are
+	// what the cache skips, so a re-open is immediate.
+	let opened;
 	try {
-		saved = await api("/pivots/" + id);
+		opened = await api("/pivots/" + id + "/open");
 	} catch (err) {
 		return pivotFailed(err);
 	}
-	let d;
-	try {
-		d = await api("/pivot/run", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ spec: saved.spec }),
-		});
-	} catch (err) {
-		return pivotFailed(err);
-	}
-	renderPivot(d, name || saved.name, saved.spec, saved.id);
+	// A saved view is LOCKED: once materialized it never auto-recomputes, so CRUD on the
+	// library (new captures, edits, deletes) never disturbs it and opening is always
+	// instant. New artifacts are pulled in only by an explicit Rebuild (the button in
+	// the header), which re-runs the spec and re-freezes the result.
+	renderPivot(opened.result, name || opened.name, opened.spec, opened.id);
 }
 
 async function forgetSavedGrouping(ev, id) {

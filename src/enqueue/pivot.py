@@ -84,7 +84,10 @@ def resolve_subset(subset: dict) -> tuple[list[str], bool]:
         try:
             ids = [
                 row["id"]
-                for row in conn.execute("SELECT id FROM artifacts WHERE kind != 'chat'").fetchall()
+                for row in conn.execute(
+                    "SELECT id FROM artifacts WHERE kind != 'chat'"
+                    " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+                ).fetchall()
             ]
         finally:
             conn.close()

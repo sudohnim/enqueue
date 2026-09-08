@@ -280,7 +280,8 @@
     const pick = await openCustomPicker();
     if (!pick) return;
     try {
-      await api("/pivots/" + pick.id + "/include", {
+      // Locked view: insert into the frozen result (no recompute).
+      await api("/pivots/" + pick.id + "/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifact_id: artifactId }),
@@ -296,10 +297,12 @@
 
   async function removeArtifactFromView(artifactId, pivotId) {
     try {
-      await api("/pivots/" + pivotId + "/exclude", {
+      // Locked view: drop the artifact from the frozen result (no recompute), the
+      // same edit the in-view remove uses.
+      await api("/pivots/" + pivotId + "/remove", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artifact_id: artifactId }),
+        body: JSON.stringify({ artifact_ids: [artifactId] }),
       });
     } catch (err) {
       return toast(String((err && err.message) || err), true);
@@ -501,11 +504,12 @@
         d.facets.map((f) => "<p>" + esc(f.statement) + "</p>").join("") +
         "</div>";
     else if (d.summary_generating)
-      // A summary owed after a transient model failure; the background sweeper is
-      // retrying it. Say so rather than showing an empty Summary or a skip reason.
+      // The summary is pending on the background worker (which grinds through the
+      // library one artifact at a time, slowly on a local model). Say so rather than
+      // showing an empty Summary - re-open later and it will have filled in.
       summaryHtml =
         '<div class="callout note"><div class="shelf">Summary</div>' +
-        spinner("sm", "Generating the summary…") +
+        spinner("sm", "Generating in the background…") +
         "</div>";
     else if (d.facet_skip_reason)
       summaryHtml =
@@ -578,6 +582,7 @@
       "Held out of every model call, because it looks like it contains a credential. " +
       "Still searchable.",
     kind: "Nothing here to read yet. Still searchable.",
+    gate: "The model read it but found nothing general worth keeping. Still searchable.",
   };
 
   function whyNoFacets(reason) {

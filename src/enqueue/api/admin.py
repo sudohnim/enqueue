@@ -22,6 +22,18 @@ def ingest_wait(timeout: float = 60.0) -> dict:
     return {"idle": ingest_queue.wait_idle(timeout)}
 
 
+@router.post("/summaries/backfill")
+def summaries_backfill() -> dict:
+    """Queue a summary for every artifact that still lacks one. Manual kick.
+
+    Same DB-derived, backoff-respecting backfill the engine runs at startup - exposed so
+    it can be re-run after the model comes back from an outage/quota without waiting for a
+    restart. Returns how many artifacts were queued (0 when everything is summarized or
+    already owed a retry).
+    """
+    return {"queued": ingest_queue.backfill_summaries()}
+
+
 @router.get("/index/counts")
 def index_counts() -> dict:
     return get_store().counts()

@@ -189,6 +189,10 @@ async function showSettings() {
 	maybeLockVault();
 	teardown();
 	restorePill("inside");
+	// Route to settings so a reload/reconnect restores THIS view - without it the hash
+	// stayed on whatever was open before (e.g. a saved view `g/<id>`), and every reinit
+	// re-ran that route, popping the custom view back over settings.
+	setRoute("settings");
 	view.innerHTML =
 		'<div class="pagecol">' +
 		'<div class="h1">Settings</div>' +

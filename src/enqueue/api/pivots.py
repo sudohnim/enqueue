@@ -39,6 +39,50 @@ class PivotRunRequest(BaseModel):
     spec: dict
 
 
+def _hydrate(result: dict) -> dict:
+    """Fill each group's `items` with the current wall cards for its artifact_ids.
+
+    Cards are always read fresh here (titles/state can have changed since a cached
+    grouping was computed), so only the expensive grouping is ever cached, never the
+    cards. Mutates and returns `result`.
+    """
+    conn = db.get_conn()
+    try:
+        ids = [aid for group in result["groups"] for aid in group["artifact_ids"]]
+        wall: dict[str, dict] = {}
+        if ids:
+            # Only live artifacts hydrate: a locked view keeps its frozen membership,
+            # but an artifact trashed/vaulted/embedded since it was built simply drops
+            # out of the display (and returns if restored) without recomputing groups.
+            rows = conn.execute(
+                f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts"
+                " WHERE id IN (SELECT value FROM json_each(?))"
+                " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
+                (json.dumps(ids),),
+            ).fetchall()
+            with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
+            with_tags = _wall_tags(conn, [row["id"] for row in rows])
+            for row in rows:
+                wall[row["id"]] = _wall_item(conn, row, with_image, with_tags)
+    finally:
+        conn.close()
+    for group in result["groups"]:
+        group["items"] = [wall[aid] for aid in group["artifact_ids"] if aid in wall]
+    return result
+
+
+def _strip_items(result: dict) -> dict:
+    """The cacheable shell of a run: the group structure without hydrated cards.
+
+    Cards are re-hydrated on every serve, so caching them would both bloat the row
+    and let a stale title linger. Only keys + artifact_ids + the run's flags persist.
+    """
+    return {
+        **{k: v for k, v in result.items() if k != "groups"},
+        "groups": [{k: v for k, v in group.items() if k != "items"} for group in result["groups"]],
+    }
+
+
 @router.post("/pivot/run")
 def run_pivot(req: PivotRunRequest) -> dict:
     """Run a pivot spec and return each group's cards, no second round trip.
@@ -50,28 +94,136 @@ def run_pivot(req: PivotRunRequest) -> dict:
     the assistant's knowledge rather than the notes' own text, and a truncated
     subset means the largest groups may not be the complete picture.
     """
-    result = pivot.run(req.spec)
+    return _hydrate(pivot.run(req.spec))
 
-    conn = db.get_conn()
+
+@router.get("/pivots/{pivot_id}/open")
+def open_pivot(pivot_id: str) -> dict:
+    """Open a saved view, fast: serve the cached grouping when there is one, else run.
+
+    A view with an `extract`/`enrich` step pays for model judgments on every full run;
+    caching the group structure makes a re-open instant. The first open (or one after a
+    spec edit) computes and fills the cache; later opens serve it. Either way the cards
+    are hydrated fresh, and `cached` tells the client whether to fire a background
+    /refresh to pick up new artifacts. `result_at` is when the cache was computed.
+    """
     try:
-        ids = [aid for group in result["groups"] for aid in group["artifact_ids"]]
-        wall: dict[str, dict] = {}
-        if ids:
-            rows = conn.execute(
-                f"SELECT {_ARTIFACT_COLUMNS} FROM artifacts"
-                " WHERE id IN (SELECT value FROM json_each(?))",
-                (json.dumps(ids),),
-            ).fetchall()
-            with_image = _link_images(conn, [row["id"] for row in rows if row["kind"] == "link"])
-            with_tags = _wall_tags(conn, [row["id"] for row in rows])
-            for row in rows:
-                wall[row["id"]] = _wall_item(conn, row, with_image, with_tags)
-    finally:
-        conn.close()
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such saved view") from None
+    cached = saved.get("result")
+    if cached is not None:
+        # `stale` gates the client's background refresh: only re-run (paying model
+        # calls again) when the library actually changed since the cache was built.
+        # Nothing new -> serve the cache and stop, so a re-open costs nothing.
+        conn = db.get_conn()
+        try:
+            latest = conn.execute("SELECT MAX(updated_at) FROM artifacts").fetchone()[0]
+        finally:
+            conn.close()
+        result_at = saved.get("result_at")
+        stale = not result_at or (latest is not None and latest > result_at)
+        return {
+            "id": saved["id"],
+            "name": saved["name"],
+            "spec": saved["spec"],
+            "result": _hydrate(cached),
+            "cached": True,
+            "stale": stale,
+            "result_at": result_at,
+        }
+    result = pivot.run(saved["spec"])
+    pivots_saved.set_result(pivot_id, _strip_items(result))
+    return {
+        "id": saved["id"],
+        "name": saved["name"],
+        "spec": saved["spec"],
+        "result": _hydrate(result),
+        "cached": False,
+        "result_at": None,
+    }
 
-    for group in result["groups"]:
-        group["items"] = [wall.get(aid, {}) for aid in group["artifact_ids"]]
-    return result
+
+@router.post("/pivots/{pivot_id}/refresh")
+def refresh_pivot(pivot_id: str) -> dict:
+    """Re-run a saved view's spec and replace its cached grouping, returning the fresh
+    result. The client fires this in the background after serving a cached open, so a
+    view stays live (new artifacts land in it) without making the open itself wait.
+    """
+    try:
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such saved view") from None
+    result = pivot.run(saved["spec"])
+    pivots_saved.set_result(pivot_id, _strip_items(result))
+    return {
+        "id": saved["id"],
+        "name": saved["name"],
+        "spec": saved["spec"],
+        "result": _hydrate(result),
+        "cached": False,
+        "result_at": None,
+    }
+
+
+class PivotRemoveRequest(BaseModel):
+    artifact_ids: list[str]
+
+
+@router.post("/pivots/{pivot_id}/remove")
+def remove_from_pivot(pivot_id: str, req: PivotRemoveRequest) -> dict:
+    """Remove artifacts from a locked view by editing its materialized result.
+
+    A saved view is a frozen arrangement: removing a card drops it from the stored
+    groups (no re-run, no model call, no "Removed" shelf), so a re-open shows exactly
+    what was left. The artifact itself is untouched - it still lives on the wall. 404
+    when the view is unknown; 409 when it has never been opened (nothing materialized
+    yet to edit).
+    """
+    try:
+        result = pivots_saved.remove_from_result(pivot_id, req.artifact_ids)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such saved view") from None
+    if result is None:
+        raise HTTPException(
+            status_code=409, detail="open the view once before editing it"
+        ) from None
+    return {"result": _hydrate(result)}
+
+
+class PivotAddRequest(BaseModel):
+    artifact_id: str
+
+
+@router.post("/pivots/{pivot_id}/add")
+def add_to_pivot(pivot_id: str, req: PivotAddRequest) -> dict:
+    """Add an artifact to a locked view without recomputing it.
+
+    A plain field grouping (e.g. by kind) places the artifact by reading its own row -
+    no model call. A model-based grouping cannot be placed without re-running, so the
+    artifact drops into the "not determined" group until the next Rebuild sorts it. 404
+    on an unknown view, 409 when it has never been opened (nothing to add into yet).
+    """
+    try:
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such saved view") from None
+    spec = saved["spec"]
+    group_by = spec.get("group_by")
+    attr = group_by.get("attribute") if isinstance(group_by, dict) else None
+    steps = spec.get("steps") or []
+    key = ""
+    if attr and (not steps or steps[0].get("op") == "field"):
+        try:
+            key = derive.field(req.artifact_id, attr)["value"]
+        except Exception:  # noqa: BLE001 - a bad field read just lands it in "" (undetermined)
+            key = ""
+    result = pivots_saved.add_to_result(pivot_id, req.artifact_id, key)
+    if result is None:
+        raise HTTPException(
+            status_code=409, detail="open the view once before editing it"
+        ) from None
+    return {"result": _hydrate(result)}
 
 
 class PivotAddableRequest(BaseModel):

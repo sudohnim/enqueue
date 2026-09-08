@@ -301,6 +301,20 @@
     flex: initial;
     width: auto;
   }
+  /* "Everything else" as a compact 3-row window that scrolls inside itself, so a big
+     flat clump does not stretch the whole page. Card is 168px tall + var(--sp-3) gaps;
+     three rows plus a sliver hints there is more below. */
+  .everything-grid {
+    max-height: calc(168px * 3 + var(--sp-3) * 2 + 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: var(--sp-3);
+  }
+  .everything-grid::-webkit-scrollbar {
+    display: none;
+  }
   /* View-mode chips (Last touch / Type / Tags / Custom), mirroring the desktop.
      They scroll horizontally if they overflow so no chip is ever cut off. */
   .viewchips {
@@ -2595,32 +2609,65 @@
     return p;
   }
 
+  // One card element for an artifact, kind-dispatched. Extracted so both the
+  // horizontal shelves (renderRows) and the vertical infinite grid can build cards.
+  function buildCard(a) {
+    const card = document.createElement("div");
+    card.className = "card" + (a.status === "pending" ? " card-unsynced" : "");
+    card.style.setProperty("--kind", "var(--kind-" + a.kind + ")");
+    if (a.kind === "note") renderNoteCard(card, a);
+    else if (a.kind === "link") renderLinkCard(card, a);
+    else if (a.kind === "image") renderImageCard(card, a);
+    else if (a.kind === "pdf") renderPdfCard(card, a);
+    else renderGenericCard(card, a);
+    return card;
+  }
+
   function renderRows(arts, container) {
     // Build every card into a fragment and attach once, so a big shelf costs a
     // single reflow instead of one per card (was the view-toggle / sync jank).
     const frag = document.createDocumentFragment();
-    for (const a of arts) {
-      const card = document.createElement("div");
-      card.className =
-        "card" + (a.status === "pending" ? " card-unsynced" : "");
-      // Set kind color for accent border
-      card.style.setProperty("--kind", "var(--kind-" + a.kind + ")");
-
-      if (a.kind === "note") {
-        renderNoteCard(card, a);
-      } else if (a.kind === "link") {
-        renderLinkCard(card, a);
-      } else if (a.kind === "image") {
-        renderImageCard(card, a);
-      } else if (a.kind === "pdf") {
-        renderPdfCard(card, a);
-      } else {
-        renderGenericCard(card, a);
-      }
-
-      frag.appendChild(card);
-    }
+    for (const a of arts) frag.appendChild(buildCard(a));
     container.replaceChildren(frag);
+  }
+
+  // A vertical grid that grows as you scroll instead of a single horizontal rail:
+  // renders the first batch, then appends the next when a sentinel nears the scroll
+  // boundary (IntersectionObserver). `scrollRoot` is the element that actually scrolls
+  // - the capped "Everything else" box scrolls inside itself, while the full shelf page
+  // scrolls with the viewport (root null). `ul` must be a `.rows.page-rows` list.
+  function renderInfiniteGrid(arts, ul, scrollRoot) {
+    const BATCH = 12; // a few rows on the 2-up phone grid; grows on scroll
+    ul.replaceChildren();
+    const sentinel = document.createElement("li");
+    sentinel.className = "grid-sentinel";
+    sentinel.setAttribute("aria-hidden", "true");
+    ul.appendChild(sentinel);
+    let shown = 0;
+    let obs = null;
+    function loadMore() {
+      const frag = document.createDocumentFragment();
+      for (const a of arts.slice(shown, shown + BATCH)) frag.appendChild(buildCard(a));
+      ul.insertBefore(frag, sentinel);
+      shown += Math.min(BATCH, arts.length - shown);
+      if (shown >= arts.length) {
+        if (obs) obs.disconnect();
+        sentinel.remove();
+      }
+    }
+    if (typeof IntersectionObserver !== "undefined") {
+      obs = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) if (e.isIntersecting) loadMore();
+        },
+        { root: scrollRoot || null, rootMargin: "400px" },
+      );
+      obs.observe(sentinel);
+      loadMore(); // seed the first batch (the sentinel is already near the viewport)
+    } else {
+      for (const a of arts) ul.insertBefore(buildCard(a), sentinel);
+      sentinel.remove();
+    }
   }
 
   function renderNoteCard(li, a) {
@@ -2975,13 +3022,22 @@
       return groups;
     }
     if (mode === "custom") {
+      // A custom view is a locked arrangement of groups (synced from the desktop). Show
+      // each group as its own shelf, headed "View · group key", so the grouping the
+      // desktop computed is visible here too - not one flat clump per view. A view with
+      // no groups yet (never opened on desktop) falls back to a single flat shelf.
       const byId = Object.fromEntries(arts.map((a) => [a.id, a]));
-      return libraryPivots
-        .map((p) => ({
-          label: p.name,
-          arts: (p.ids || []).map((id) => byId[id]).filter(Boolean),
-        }))
-        .filter((g) => g.arts.length);
+      const out = [];
+      for (const v of libraryPivots) {
+        const groups =
+          v.groups && v.groups.length ? v.groups : [{ key: "", ids: v.ids || [] }];
+        for (const g of groups) {
+          const cards = (g.ids || []).map((id) => byId[id]).filter(Boolean);
+          if (!cards.length) continue;
+          out.push({ label: g.key ? v.name + " · " + g.key : v.name, arts: cards });
+        }
+      }
+      return out;
     }
     // touched (default): the saved shelf, then everything else, newest first.
     const byTime = _byTouchDesc(arts);
@@ -2997,12 +3053,15 @@
   // arrow). Faster to scan a big group than swiping the horizontal rail.
   function openShelfPage(label, arts) {
     document.getElementById("shelf_page_title").textContent = label;
-    renderRows(arts, document.getElementById("shelf_page_rows"));
+    // The full page always reads as a vertical grid that grows on scroll.
+    renderInfiniteGrid(arts, document.getElementById("shelf_page_rows"));
     show("shelf_page");
     window.scrollTo(0, 0);
   }
 
-  function renderShelf(label, arts, container) {
+  // `grid` renders the shelf body as a vertical infinite-scroll grid (for a big flat
+  // group like "Everything else") instead of the default single horizontal rail.
+  function renderShelf(label, arts, container, grid) {
     const shelf = document.createElement("div");
     shelf.className = "shelf";
     const lbl = document.createElement("div");
@@ -3020,10 +3079,16 @@
     // Tap the header -> open this shelf as its own page.
     lbl.addEventListener("click", () => openShelfPage(label, arts));
     const ul = document.createElement("ul");
-    ul.className = "rows";
+    // The capped grid (everything-grid) scrolls inside itself, 3 rows tall, so the
+    // section is a compact window into a big clump rather than an endless page.
+    ul.className = grid ? "rows page-rows everything-grid" : "rows";
     shelf.appendChild(lbl);
     shelf.appendChild(ul);
     container.appendChild(shelf);
+    if (grid) {
+      renderInfiniteGrid(arts, ul, ul); // the ul is its own scroll root
+      return;
+    }
     renderRows(arts, ul);
   }
 
@@ -3104,9 +3169,14 @@
     // Once there is content on screen, the first-load "Syncing..." raven has done
     // its job - hide it even if a (possibly slow) sync is still in flight.
     document.getElementById("loading").hidden = true;
-    // Assemble all shelves off-DOM, then swap them in with one reflow.
+    // Assemble all shelves off-DOM, then swap them in with one reflow. "Everything
+    // else" (Last touch) is a big flat clump - render it as a vertical infinite-scroll
+    // grid instead of one endless horizontal rail.
     const frag = document.createDocumentFragment();
-    for (const g of groups) renderShelf(g.label, g.arts, frag);
+    for (const g of groups) {
+      const grid = libraryMode === "touched" && g.label === "Everything else";
+      renderShelf(g.label, g.arts, frag, grid);
+    }
     shelves.replaceChildren(frag);
   }
 

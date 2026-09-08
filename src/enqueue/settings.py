@@ -183,6 +183,12 @@ def update(changes: dict) -> dict:
 
     stored = _stored()
     for name, value in changes.items():
+        # Trim surrounding whitespace on text settings: a model name or endpoint URL
+        # pasted with a stray leading space (e.g. " qwen3.5:9b") is silently rejected by
+        # the provider ("no model named ' qwen3.5:9b'"), which looks like an outage. An
+        # empty-after-trim value clears the field, same as an explicit empty.
+        if isinstance(value, str):
+            value = value.strip()
         if value is None or value == "":
             stored.pop(name, None)
         else:

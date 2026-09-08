@@ -122,6 +122,15 @@
   // the grid button) rendered under `view`. `pivot_id` is the saved grouping
   // backing this view when there is one - the remove/restore actions need it;
   // a live run without a saved grouping has no remove actions, just moves.
+  // A pivot's group_by is a string for a model grouping ("about tech or not") but a
+  // `{attribute: "kind"}` object for a plain field grouping. Render either as a label
+  // rather than passing an object to esc() (which would throw on `.replace`).
+  function groupByLabel(gb) {
+    if (typeof gb === "string") return gb;
+    if (gb && typeof gb === "object") return gb.attribute || "";
+    return "";
+  }
+
   function renderPivot(d, request, spec, pivot_id) {
     pivotState = { d, request, spec, pivot_id: pivot_id || null };
 
@@ -135,8 +144,15 @@
       " group" +
       (d.groups.length === 1 ? "" : "s") +
       " &middot; grouped by " +
-      esc(d.group_by) +
+      esc(groupByLabel(d.group_by)) +
       (d.truncated ? " &middot; first 200 only" : "") +
+      // A locked view never recomputes on its own; Rebuild is the one deliberate way to
+      // re-run the spec and pull in artifacts captured since it was frozen.
+      (pivot_id
+        ? ' &middot; <button class="pivot-rebuild linklike" type="button" onclick="pivotRebuild(\'' +
+          esc(pivot_id) +
+          "')\">Rebuild</button>"
+        : "") +
       "</div>";
 
     html += pivotGroupsHtml(
@@ -150,6 +166,22 @@
     mountCollapsible(".pivotgroup", "enqueue.collapsedGroups." + specHash(spec));
     removedSection(spec, pivot_id);
     window.scrollTo(0, 0);
+  }
+
+  // Explicit rebuild: re-run the view's spec and re-freeze the result. This is the only
+  // path that recomputes (and the only one that pays for model judgments), so a view
+  // stays put through library CRUD until the person deliberately asks to refresh it.
+  async function pivotRebuild(pivotId) {
+    const name = pivotState && pivotState.request;
+    view.innerHTML = spinner("lg", "Rebuilding the view...");
+    let fresh;
+    try {
+      fresh = await api("/pivots/" + pivotId + "/refresh", { method: "POST" });
+    } catch (err) {
+      return pivotFailed(err);
+    }
+    renderPivot(fresh.result, name || fresh.name, fresh.spec, fresh.id);
+    if (typeof toast === "function") toast("View rebuilt.");
   }
 
   // The "Removed" shelf at the bottom of a saved grouping: the artifacts
@@ -234,36 +266,25 @@
   // synced BEFORE the run so the run actually filters them out. The artifact
   // itself is untouched - it still lives on the wall - it just stops matching
   // this grouping.
+  // Remove artifacts from a LOCKED view: edit the frozen materialized result in place
+  // (POST /remove) instead of excluding them from the spec and re-running. No recompute,
+  // no model call, no "Removed" shelf - the view just stops showing them, and a re-open
+  // shows exactly this. `undo` (restore) has no meaning for a locked view; re-adding is
+  // the add-to-view flow. `busy` flashes only for the brief server round trip.
   async function excludeAndRerun(pivotId, ids, undo, busy, done) {
-    let excluded = pivotState.spec.excluded_ids || [];
-    try {
-      const resp = await api("/pivots/" + pivotId + "/exclude-many", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          undo ? { artifact_ids: ids, undo: true } : { artifact_ids: ids },
-        ),
-      });
-      excluded = resp.excluded_ids;
-    } catch (err) {
-      return toast(String((err && err.message) || err), true);
-    }
-    pivotState.spec = Object.assign({}, pivotState.spec, {
-      excluded_ids: excluded,
-    });
-
+    if (undo) return; // locked views keep no Removed shelf to restore from
     view.innerHTML = busy;
     let next;
     try {
-      next = await api("/pivot/run", {
+      next = await api("/pivots/" + pivotId + "/remove", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spec: pivotState.spec }),
+        body: JSON.stringify({ artifact_ids: ids }),
       });
     } catch (err) {
       return pivotFailed(err);
     }
-    renderPivot(next, pivotState.request, pivotState.spec, pivotId);
+    renderPivot(next.result, pivotState.request, pivotState.spec, pivotId);
     done();
   }
 

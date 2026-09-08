@@ -33,6 +33,22 @@ usage() {
   exit 2
 }
 
+# Prune stale Android target dirs. The mobile/emulator paths only ever build
+# `--target aarch64`, but old builds for other arches (x86_64/i686/armv7) linger in
+# desktop/target and each holds its own ~400MB libenqueue_lib.a + deps - dead weight
+# that is never rebuilt by this script. Removing them reclaims ~7GB while leaving the
+# aarch64 dir intact, so incremental rebuilds of the arch we actually use stay fast.
+prune_stale_android_targets() {
+  local arch dir
+  for arch in x86_64-linux-android i686-linux-android armv7-linux-androideabi; do
+    dir="$REPO/desktop/target/$arch"
+    if [[ -d "$dir" ]]; then
+      echo "Pruning stale android target: $arch"
+      rm -rf "$dir"
+    fi
+  done
+}
+
 # JS parse gate. The interface is inline/served <script>. A single stray quote takes
 # out every function at once, and the page still serves 200 with no console error the
 # harness can see, so it looks like a behaviour bug rather than a parse failure. Cheap
@@ -203,6 +219,8 @@ launch_mobile() {
   echo ""
   echo "Installed + launched on $serial. This command has EXITED (nothing hangs)."
   echo "Device logs, if you want them:  $ADB -s $serial logcat"
+
+  prune_stale_android_targets
 }
 
 launch_emulator() {
@@ -296,6 +314,8 @@ launch_emulator() {
   echo "  $ADB -s $serial shell input tap <x> <y>"
   echo "  $ADB -s $serial forward tcp:9222 localabstract:webview_devtools_remote_\$($ADB -s $serial shell pidof com.sudohnim.enqueue)"
   echo "The emulator keeps running in the background (pid $EMU_PID). Stop it with: kill $EMU_PID"
+
+  prune_stale_android_targets
 }
 
 [[ $# -ge 1 ]] || usage

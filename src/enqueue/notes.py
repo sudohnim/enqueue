@@ -14,7 +14,7 @@ import hashlib
 import re
 import uuid
 
-from . import db
+from . import config, db
 from .ingest import queue as ingest_queue
 from .sync.client import push_artifact
 from .ingest import secrets
@@ -234,12 +234,21 @@ def get(artifact_id: str) -> dict:
         skip = conn.execute(
             "SELECT reason FROM facet_skips WHERE artifact_id = ?", (artifact_id,)
         ).fetchone()
-        # A summary still owed after a transient model failure sits in facet_retry
-        # until the sweeper regenerates it: surface that as "generating" so the
-        # reader can say so instead of showing an empty Summary.
+        # "Generating" means a summary is pending in the background - not only the ones
+        # a transient failure left owed in facet_retry, but every eligible artifact that
+        # simply has not reached the (serial, slow-on-a-local-model) worker yet. So it is
+        # true when the artifact has enough text to earn a summary, has none, and is not
+        # permanently skipped (facet_skips) - which also covers the whole startup backfill.
         owed = conn.execute(
             "SELECT 1 FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
         ).fetchone()
+        page_words = conn.execute(
+            "SELECT COALESCE(SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), 0) AS n"
+            " FROM page_text WHERE artifact_id = ?",
+            (artifact_id,),
+        ).fetchone()["n"]
+        words = len((row["body"] or "").split()) + page_words
+        eligible = words >= config.MIN_WORDS_FOR_FACETS
         hits = conn.execute(
             "SELECT kind, line, excerpt FROM secret_hits WHERE artifact_id = ?", (artifact_id,)
         ).fetchall()
@@ -250,7 +259,7 @@ def get(artifact_id: str) -> dict:
             "annotations": [dict(e) | {"current": e["id"] not in superseded} for e in entries],
             "facets": [dict(f) for f in facets],
             "facet_skip_reason": skip["reason"] if skip else None,
-            "summary_generating": bool(owed),
+            "summary_generating": (not facets) and (skip is None) and (bool(owed) or eligible),
             "secrets": [dict(h) for h in hits],
         }
     finally:

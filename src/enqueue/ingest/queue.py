@@ -339,6 +339,13 @@ def _facet_artifact(artifact_id: str) -> int:
         else:
             # Success, or a content-skip that a retry would not change: stop owing.
             _clear_facet_retry(conn, artifact_id)
+            if error == "no facet cleared the quality gate":
+                # The model ran and produced nothing worth keeping. Mark it skipped so it
+                # stops reading as "generating" forever - it is done, just summary-less.
+                conn.execute(
+                    "INSERT OR IGNORE INTO facet_skips (artifact_id, reason) VALUES (?, 'gate')",
+                    (artifact_id,),
+                )
         conn.commit()
     except Exception:  # noqa: BLE001 - facets are derived; a failure never blocks capture
         log.exception("facet generation failed for %s", artifact_id)
@@ -406,6 +413,67 @@ def submit(artifact_id: str) -> None:
     # before the worker could possibly dequeue the item.
     _queue(artifact_id)
     _ingest.submit(artifact_id)
+
+
+def backfill_summaries() -> int:
+    """Queue every artifact that still owes a summary and is not already being retried.
+
+    The durable backlog is DERIVED from the DB, not a persisted in-memory queue: an
+    artifact owes a summary when it is live, not permanently gated (`facet_skips`), and
+    has no `facets`. This is what makes summaries survive a restart - the in-memory queue
+    is lost when the engine dies, but the DB still knows exactly what is unsummarized, so
+    running this at every startup re-queues the lost work.
+
+    It cooperates with the retry backoff (the 30s->24h schedule in `facet_retry`) rather
+    than fighting it: artifacts already owed a retry are LEFT to the sweeper, so a failing
+    model is never hammered; only artifacts with no retry row (never attempted, or lost to
+    a restart before their first attempt) are queued here. On failure they enter
+    `facet_retry` and back off; on success they are faceted - so a second startup queues
+    almost nothing. A link with no body is force-previewed first, so the worker fetches
+    its page before summarizing it. Returns the number queued.
+    """
+    from .. import db, preview
+
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT a.id, a.kind, a.body FROM artifacts a"
+            " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+            "   AND a.kind != 'chat'"
+            "   AND NOT EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id)"
+            "   AND NOT EXISTS (SELECT 1 FROM facet_skips s WHERE s.artifact_id = a.id)"
+            "   AND NOT EXISTS (SELECT 1 FROM facet_retry r WHERE r.artifact_id = a.id)"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for row in rows:
+        # A link summarizes off its fetched article body; force a fetch when it has none
+        # so the worker downloads the page before it chunks and faceters it.
+        if row["kind"] == "link" and not (row["body"] or "").strip():
+            with contextlib.suppress(Exception):
+                preview.force(row["id"])
+        submit(row["id"])
+    return len(rows)
+
+
+def start_summary_backfill() -> None:
+    """Kick the summary backfill once, off the startup thread so boot never blocks.
+
+    Derives the unsummarized set from the DB and queues it (respecting the retry
+    backoff). Runs on a short-lived daemon so a large library does not delay the engine
+    coming up; the actual generation happens on the ingest worker as usual.
+    """
+
+    def _run() -> None:
+        try:
+            n = backfill_summaries()
+            if n:
+                log.info("summary backfill queued %d artifact(s)", n)
+        except Exception:  # noqa: BLE001 - a backfill hiccup must never break startup
+            log.exception("summary backfill failed")
+
+    threading.Thread(target=_run, name="summary-backfill", daemon=True).start()
 
 
 def submit_all() -> int:
