@@ -149,6 +149,31 @@ class TestPurge:
         trash.purge(made["id"])
         assert not blob.exists()
 
+    def test_purge_keeps_a_blob_a_live_note_embeds(self, store, quiet_queue):
+        """A pasted image is its own artifact AND embedded in a note as
+        /artifacts/<id>/blob. That reference does not share the image's
+        content_hash, so purging the image must not unlink bytes the note still
+        renders. The image is tombstoned; its blob and get_blob route survive."""
+        img = capture.upload(b"pretend png bytes", "pasted.png", mime="image/png")
+        conn = db.get_conn()
+        try:
+            digest = conn.execute(
+                "SELECT content_hash FROM artifacts WHERE id = ?", (img["id"],)
+            ).fetchone()["content_hash"]
+        finally:
+            conn.close()
+        blob = config.BLOB_DIR / digest
+        assert blob.exists()
+
+        notes.create(body=f"![](/artifacts/{img['id']}/blob)")
+
+        trash.delete(img["id"])
+        trash.purge(img["id"])
+        # The image artifact is gone from the wall, but its bytes stay so the note
+        # keeps rendering; blob_path still resolves from the tombstone's hash.
+        assert blob.exists()
+        assert capture.blob_path(img["id"]) is not None
+
 
 class TestRetentionWindow:
     def test_nothing_inside_the_window_is_purged(self, store, quiet_queue):

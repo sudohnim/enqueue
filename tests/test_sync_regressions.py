@@ -147,8 +147,16 @@ class TestPullResilience:
                 content_hash="hash-unique-good",
                 updated_at=newer,
             )
-            _put(base, "dev/device-FOREIGN/artifacts/poison-dup-hash.enc", crypto.encrypt(serialize(poison), dek))
-            _put(base, "dev/device-FOREIGN/artifacts/good-foreign.enc", crypto.encrypt(serialize(good), dek))
+            _put(
+                base,
+                "dev/device-FOREIGN/artifacts/poison-dup-hash.enc",
+                crypto.encrypt(serialize(poison), dek),
+            )
+            _put(
+                base,
+                "dev/device-FOREIGN/artifacts/good-foreign.enc",
+                crypto.encrypt(serialize(good), dek),
+            )
 
             # Pull must NOT raise, must apply the good one, and must advance the cursor.
             result = pull()
@@ -179,7 +187,11 @@ class TestPullResilience:
                 content_hash=local_hash,
                 updated_at="2099-01-01T00:00:00+00:00",
             )
-            _put(base, "dev/device-FOREIGN/artifacts/dup-of-local.enc", crypto.encrypt(serialize(dup), dek))
+            _put(
+                base,
+                "dev/device-FOREIGN/artifacts/dup-of-local.enc",
+                crypto.encrypt(serialize(dup), dek),
+            )
 
             pull()  # must not raise
 
@@ -247,3 +259,41 @@ class TestBlobFetchOnMiss:
         finally:
             server.should_exit = True
             thread.join(timeout=5)
+
+
+class TestPurgeTombstoneKeepsEmbeddedBlob:
+    def test_applying_a_purge_tombstone_never_unlinks_an_embedded_blob(self, store, quiet_queue):
+        """Cross-device invariant: a peer that receives a purge tombstone for a pasted
+        image must keep the bytes its synced note still embeds. apply_snapshot upserts
+        the row and never touches the blob store, so the embedding note keeps rendering
+        on that device. This is what makes the local purge() guard sufficient across
+        devices - no sync path independently unlinks a blob."""
+        from enqueue import config
+        from enqueue.sync.snapshot import apply_snapshot
+
+        img = capture.upload(b"peer png bytes", "pasted.png", mime="image/png")
+        conn = db.get_conn()
+        try:
+            digest = conn.execute(
+                "SELECT content_hash FROM artifacts WHERE id = ?", (img["id"],)
+            ).fetchone()["content_hash"]
+        finally:
+            conn.close()
+        blob = config.BLOB_DIR / digest
+        assert blob.exists()
+
+        notes.create(body=f"![](/artifacts/{img['id']}/blob)")
+
+        # The purge tombstone as it arrives from the other device: same row, purged_at
+        # stamped, body stripped, a newer key from a foreign device so it wins LWW.
+        tomb = read_artifact_snapshot(db.get_conn(), img["id"])
+        tomb["artifact"]["purged_at"] = "2099-01-01T00:00:00+00:00"
+        tomb["artifact"]["updated_at"] = "2099-01-01T00:00:00+00:00"
+        tomb["artifact"]["body"] = None
+        tomb["artifact"]["_device_id"] = "device-FOREIGN"
+        with db.transaction() as c:
+            apply_snapshot(c, tomb)
+
+        # The tombstone applied, but the bytes and the blob route survive.
+        assert blob.exists()
+        assert capture.blob_path(img["id"]) is not None

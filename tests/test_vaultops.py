@@ -29,7 +29,9 @@ def _vault(store, monkeypatch):
 def _db_row(aid):
     conn = db.get_conn()
     try:
-        return conn.execute("SELECT body, title, vaulted_at FROM artifacts WHERE id = ?", (aid,)).fetchone()
+        return conn.execute(
+            "SELECT body, title, vaulted_at FROM artifacts WHERE id = ?", (aid,)
+        ).fetchone()
     finally:
         conn.close()
 
@@ -125,3 +127,60 @@ def test_operations_require_an_unlocked_vault():
     vault.lock()
     with pytest.raises(vault.VaultError):
         vaultops.vault_artifact(aid)
+
+
+def test_editing_a_vaulted_note_reseals_and_stays_out_of_the_index(monkeypatch):
+    """Editing in the vault must re-encrypt on save: no plaintext body, title, or prior
+    version reaches disk, and the note is never re-submitted to the index."""
+    import enqueue.sync.client as sc
+
+    monkeypatch.setattr(sc, "push_artifact", lambda *_a, **_k: None)
+    import enqueue.ingest.queue as iq
+
+    submitted = []
+    monkeypatch.setattr(iq, "submit", lambda aid: submitted.append(aid))
+
+    aid = notes.create(body="original secret body")["artifact"]["id"]
+    vaultops.vault_artifact(aid)
+    submitted.clear()  # ignore the create's own submit; we only care about the edit
+
+    out = notes.edit(aid, body="updated secret body", title="My Secret")
+
+    # The caller gets plaintext back, so the editor renders the words, not base64.
+    assert out["artifact"]["body"] == "updated secret body"
+    assert out["artifact"]["title"] == "My Secret"
+
+    # On disk everything is ciphertext - new body, new title, and the prior version.
+    row = _db_row(aid)
+    assert row["vaulted_at"] is not None
+    assert "updated secret body" not in (row["body"] or "")
+    assert "My Secret" not in (row["title"] or "")
+    disk = config.DB_PATH.read_bytes()
+    assert b"updated secret body" not in disk
+    assert b"original secret body" not in disk
+
+    # The vault reader decrypts the new content back.
+    got = vaultops.get(aid)
+    assert got["artifact"]["body"] == "updated secret body"
+    assert got["artifact"]["title"] == "My Secret"
+
+    # A vaulted edit never re-enters the search index.
+    assert submitted == []
+
+
+def test_editing_a_vaulted_note_while_locked_is_refused(monkeypatch):
+    """No key, no write: a locked vault refuses the edit rather than leaking plaintext."""
+    import enqueue.sync.client as sc
+
+    monkeypatch.setattr(sc, "push_artifact", lambda *_a, **_k: None)
+
+    aid = notes.create(body="secret body")["artifact"]["id"]
+    vaultops.vault_artifact(aid)
+    vault.lock()
+
+    with pytest.raises(ValueError):
+        notes.edit(aid, body="attempted edit while locked")
+
+    # Nothing changed; the sealed body still decrypts to the original once unlocked.
+    vault.unlock("123456")
+    assert vaultops.get(aid)["artifact"]["body"] == "secret body"

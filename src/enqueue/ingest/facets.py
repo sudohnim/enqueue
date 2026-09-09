@@ -103,6 +103,8 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     from ..providers.base import get_provider
     from ..schemas import Facet
 
+    from .. import config
+
     row = conn.execute(
         "SELECT title, body, local_only,"
         " (SELECT MAX(created_at) FROM artifact_versions v"
@@ -110,7 +112,18 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
         " FROM artifacts WHERE id = ?",
         (artifact_id,),
     ).fetchone()
+    # A note carries its words in `body`; a link, PDF, or image carries its extracted
+    # text in page_text and leaves `body` empty. Feeding only `body` here is why those
+    # captures got facets paraphrased from the title alone (generic, ungrounded). Read
+    # both, capped, so the model sees the actual document.
     text = row["body"] or ""
+    if not text.strip():
+        pages = conn.execute(
+            "SELECT text FROM page_text WHERE artifact_id = ? ORDER BY page",
+            (artifact_id,),
+        ).fetchall()
+        text = "\n\n".join(p["text"] for p in pages if p["text"])
+    text = text[: config.FACET_INPUT_CHARS]
 
     provider = get_provider(local_only=bool(row["local_only"]))
     nouns = proper_nouns(text, row["title"])

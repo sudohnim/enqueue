@@ -9,6 +9,7 @@ ordering vocabulary, consumed by the same routers.
 from __future__ import annotations
 
 import json
+import re
 
 from .. import capture
 
@@ -110,7 +111,17 @@ def _wall_item(
     grouping; conversations cannot be tagged, so their slice is always empty.
     """
     item = dict(row)
-    item["excerpt"] = _excerpt(item.pop("body") or "", row["title"])
+    body = item.pop("body") or ""
+    item["excerpt"] = _excerpt(body, row["title"])
+    # A note whose body opens with a pasted image (whole body may BE the image) has an
+    # empty text excerpt, so its card would be blank. Surface the first embedded blob
+    # image as the card's face, mirroring how image/pdf/link cards get a picture. Only
+    # same-origin `/…` srcs (what the paste handler writes) - never a data: URI, which
+    # would bloat every wall payload with the inlined bytes.
+    if row["kind"] == "note":
+        m = re.search(r"!\[[^\]]*\]\((/[^)\s]+)\)", body)
+        if m:
+            item["face_image"] = m.group(1)
     item["has_blob"] = row["mime"] is not None and row["kind"] != "link"
     if row["kind"] != "pdf":
         item.pop("pages", None)

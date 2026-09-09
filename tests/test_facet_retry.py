@@ -125,3 +125,43 @@ def test_generating_covers_the_backlog_not_only_retries(store, quiet_queue):
 
     short = notes.create(body="too short")["artifact"]["id"]
     assert notes.get(short)["summary_generating"] is False
+
+
+def test_facets_are_generated_from_page_text_not_just_the_title(store, quiet_queue, monkeypatch):
+    """A link/PDF keeps its extracted text in page_text with an empty body. The facet
+    generator must feed that text to the model - feeding only the title is what made
+    link/PDF facets generic paraphrases of the title. Assert the page text reaches the
+    prompt."""
+    from enqueue.ingest import facets as fm
+    from enqueue.providers import base as provider_base
+
+    aid = notes.create(body="")["artifact"]["id"]
+    marker = "the harness runs the agent in a loop and feeds tool results back"
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,?,?,?)",
+            (aid, 0, marker + " " * 5 + ("padding words " * 60), "test"),
+        )
+
+    seen = {}
+
+    class _FakeProvider:
+        model = "test-model"
+
+        def complete(self, system, user, response_model, context=None, max_retries=None):
+            seen["user"] = user
+            return fm._RawFacetSet(
+                facets=[
+                    fm._RawFacet(
+                        level=1, statement="A loop that feeds tool output back to an agent."
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(provider_base, "get_provider", lambda **_: _FakeProvider())
+
+    with db.transaction() as conn:
+        count, err = fm.generate_for_artifact(conn, aid)
+
+    assert err is None and count >= 1
+    assert marker in seen["user"]  # the page text, not just "Title: ...", was fed

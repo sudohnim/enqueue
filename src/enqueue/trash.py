@@ -220,7 +220,19 @@ def purge(artifact_id: str) -> dict:
             (row["content_hash"], artifact_id),
         ).fetchone()
 
-    if row["content_hash"] and not still_used:
+        # A pasted-in image is captured as its own artifact AND embedded in a note's
+        # body as `/artifacts/<id>/blob`. That reference does not share the image's
+        # content_hash, so the check above misses it: purging the image would unlink
+        # bytes the note still renders, leaving a broken picture. Keep the blob while a
+        # live (non-purged) artifact embeds this id. The get_blob route serves it from
+        # the tombstone (content_hash is left intact), so the note keeps rendering.
+        embedded = conn.execute(
+            "SELECT 1 FROM artifacts WHERE purged_at IS NULL AND id != ?"
+            " AND body LIKE ? LIMIT 1",
+            (artifact_id, f"%/artifacts/{artifact_id}/blob%"),
+        ).fetchone()
+
+    if row["content_hash"] and not still_used and not embedded:
         blob = config.BLOB_DIR / row["content_hash"]
         with contextlib.suppress(OSError):
             blob.unlink(missing_ok=True)

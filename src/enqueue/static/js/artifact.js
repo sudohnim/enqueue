@@ -1067,13 +1067,10 @@
   function mountEditor(focus) {
     const ed = document.getElementById("body");
     if (!ed || !ctx) return;
-    // A vaulted note is read-only: editing would re-write plaintext to disk.
-    // Remove it from the vault to edit.
-    if (ctx.vaulted) {
-      ed.contentEditable = "false";
-      ed.innerHTML = ctx.html || "";
-      return;
-    }
+    // A vaulted note is editable while the vault is unlocked - and the reader only
+    // decrypted this content because it is unlocked, so reaching here means it is. The
+    // save re-seals server-side, so no plaintext is ever written. (A vault that locks
+    // mid-edit makes the save fail with a clear message, not a plaintext leak.)
     const html = ctx.html || "";
     // An empty note must never mount a bare editable: the first keystroke would
     // land in a bare text node with no block, and each input would re-wrap it in
@@ -1447,7 +1444,7 @@
   }
 
   async function saveBody() {
-    if (!ctx || ctx.vaulted) return;
+    if (!ctx) return;
     const ed = document.getElementById("body"),
       state = document.getElementById("state");
     if (!ed || !state) return;

@@ -112,12 +112,19 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
     The title follows NOTE.0's model: a non-empty title is explicit and survives
     later body-only edits; an empty title clears the flag and reverts to the live
     first-line derivation; no title at all keeps an explicit title or derives.
+
+    A vaulted note is edited in place while the vault is unlocked: the new body,
+    title, and version row are sealed with the vault key before they touch disk, and
+    the note is never re-indexed or secret-scanned. Editing therefore keeps the vault's
+    guarantee - no plaintext at rest, out of the search index - instead of forcing a
+    remove-edit-re-vault round trip. The returned dict carries the plaintext the caller
+    just wrote, matching how the reader decrypts for an unlocked viewer.
     """
     now = db.now()
 
     with db.transaction() as conn:
         row = conn.execute(
-            "SELECT kind, title, body, title_explicit FROM artifacts WHERE id = ?",
+            "SELECT kind, title, body, title_explicit, vaulted_at FROM artifacts WHERE id = ?",
             (artifact_id,),
         ).fetchone()
         if row is None:
@@ -128,6 +135,25 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
                 "Attach an annotation instead."
             )
 
+        vaulted = bool(row["vaulted_at"])
+        key = None
+        if vaulted:
+            from . import vault, vaultops
+
+            if not vault.is_unlocked():
+                # A locked vault has no key to re-seal with; refuse rather than write
+                # plaintext. The reader could only have shown this note while unlocked,
+                # so this is the auto-lock-mid-edit case.
+                raise ValueError("Unlock the vault to edit this note.")
+            key = vault.key()
+            # The stored body/title are ciphertext; compare and resolve against the
+            # plaintext, exactly as an unlocked reader sees it.
+            cur_body = vaultops._open(key, row["body"]) or ""
+            cur_title = vaultops._open(key, row["title"])
+        else:
+            cur_body = row["body"]
+            cur_title = row["title"]
+
         if title is not None and title.strip():
             resolved = title.strip()
             explicit = 1
@@ -135,30 +161,48 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
             resolved = title_from_body(body)
             explicit = 0
         elif row["title_explicit"]:
-            resolved = row["title"]
+            resolved = cur_title
             explicit = 1
         else:
             resolved = title_from_body(body)
             explicit = 0
 
-        body_changed = row["body"] != body
-        if not body_changed and row["title"] == resolved and row["title_explicit"] == explicit:
-            return get(artifact_id)  # no change, no version
+        body_changed = cur_body != body
+        if not body_changed and cur_title == resolved and row["title_explicit"] == explicit:
+            return _edit_result(artifact_id, vaulted, cur_body, cur_title)  # no change, no version
+
+        # Seal what lands on disk when vaulted; store plaintext otherwise.
+        stored_body = vaultops._seal(key, body) if vaulted else body
+        stored_title = vaultops._seal(key, resolved) if vaulted else resolved
 
         if body_changed:
-            _append_version(conn, artifact_id, body, now)
+            _append_version(conn, artifact_id, stored_body, now)
         conn.execute(
             "UPDATE artifacts SET body = ?, title = ?, title_explicit = ?, updated_at = ?"
             " WHERE id = ?",
-            (body, resolved, explicit, now, artifact_id),
+            (stored_body, stored_title, explicit, now, artifact_id),
         )
-        _record_secrets(conn, artifact_id, body)
+        # A vaulted note is deliberately out of the index and the secret log; only a
+        # normal note is scanned and re-faceted.
+        if not vaulted:
+            _record_secrets(conn, artifact_id, body)
 
-    ingest_queue.submit(artifact_id)
+    if not vaulted:
+        ingest_queue.submit(artifact_id)
     from .sync.client import push_artifact
 
     push_artifact(artifact_id)
-    return get(artifact_id)
+    return _edit_result(artifact_id, vaulted, body, resolved)
+
+
+def _edit_result(artifact_id: str, vaulted: bool, body: str, title: str | None) -> dict:
+    """`get()` returns the stored row, which is ciphertext for a vaulted note. Hand the
+    caller the plaintext it just wrote so the editor renders it, not the sealed base64."""
+    out = get(artifact_id)
+    if vaulted:
+        out["artifact"]["body"] = body
+        out["artifact"]["title"] = title
+    return out
 
 
 def annotate(artifact_id: str, text: str, supersedes_id: str | None = None) -> dict:

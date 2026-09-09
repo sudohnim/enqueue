@@ -26,6 +26,13 @@ function facePicture(a) {
 			drop +
 			">"
 		);
+	// A note that pasted in an image: the server hands us the first embedded blob src
+	// so the card shows the picture instead of a blank preview. `onerror` drops it if
+	// the referenced blob is gone, so the card falls back to plain type.
+	if (a.face_image)
+		return (
+			'<img src="' + a.face_image + '" alt="" loading="lazy"' + drop + ">"
+		);
 	return null;
 }
 

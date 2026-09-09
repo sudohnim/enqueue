@@ -163,6 +163,11 @@ API_URL = f"http://{API_HOST}:{API_PORT}"
 # Facet eligibility. See docs/CURATION.md.
 MIN_WORDS_FOR_FACETS = 40
 SKIP_FACETS_FOR_FOLDERS = {"snippets", "biz_"}
+# How much artifact text the facet generator feeds the model. A link or PDF keeps
+# its extracted text in page_text (the body is empty), which can run long; this caps
+# the prompt so it fits a modest local context window and the model reads the article's
+# opening - where the thesis lives - rather than being truncated to its footer.
+FACET_INPUT_CHARS = 12000
 
 # R.9 opt-in cross-encoder rerank stage over the fused free-text candidates.
 # The reranker is a ~1 GB local model plus one inference pass per query, so it
