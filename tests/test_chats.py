@@ -822,64 +822,38 @@ class TestDeletion:
         assert chats.listing()["items"] == []
 
 
-class TestConversationsShareTheWall:
-    """A conversation is the same kind of thing on the wall as a capture.
+class TestConversationsAreNotOnTheWall:
+    """Conversations no longer live on the /artifacts wall.
 
-    It sorts into the same /artifacts listing by last touch, so a fresh capture is
-    never behind a conversation nobody touched this week, and the saved shelf
-    treats a kept conversation exactly like a kept artifact.
+    They moved into the eye panel, which lists them from /chats; the wall is an
+    artifact wall again, so a chat never appears there, in either shelf, and never
+    counts toward the wall's total.
     """
 
     def _wall(self, **params):
         return TestClient(api.app).get("/artifacts", params=params).json()
 
-    def _rewrite_updated(self, artifact: str | None, chat: str | None, iso: str) -> None:
-        """Set updated_at by hand so ordering is deterministic, not clock-racy."""
-        conn = db.get_conn()
-        try:
-            if artifact:
-                conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (iso, artifact))
-            if chat:
-                conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (iso, chat))
-            conn.commit()
-        finally:
-            conn.close()
-
-    def test_conversations_sort_by_last_touch_not_ahead_of_captures(self, store):
-        old = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
-        chat = chats.create()
-        fresh = notes.create(body="# Rooftops\n\nA city can feed itself from its rooftops.")
-        old_id = old["artifact"]["id"]
-        chat_id = chat["chat"]["id"]
-        fresh_id = fresh["artifact"]["id"]
-
-        self._rewrite_updated(old_id, None, "2024-01-01T00:00:00+00:00")
-        self._rewrite_updated(None, chat_id, "2024-06-01T00:00:00+00:00")
-        self._rewrite_updated(fresh_id, None, "2024-07-01T00:00:00+00:00")
-
-        wall = self._wall(order="touched", pinned=False)
-        assert [i["id"] for i in wall["items"]] == [fresh_id, chat_id, old_id]
-
-        chat_row = next(i for i in wall["items"] if i["kind"] == "chat")
-        assert chat_row["id"] == chat_id
-        assert chat_row["excerpt"] == "conversation"
-        assert wall["total"] == 3
-
-    def test_a_kept_conversation_moves_to_the_saved_shelf(self, store):
+    def test_a_conversation_does_not_appear_on_the_wall(self, store):
         note = notes.create(body="# Joints\n\nA joint that moves outlasts one that does not.")
         chat = chats.create()
         note_id = note["artifact"]["id"]
         chat_id = chat["chat"]["id"]
-        self._rewrite_updated(note_id, None, "2024-01-01T00:00:00+00:00")
-        self._rewrite_updated(None, chat_id, "2024-02-01T00:00:00+00:00")
-        chats.pin(chat_id)
 
         wall = self._wall(order="touched", pinned=False)
-        assert [i["id"] for i in wall["items"]] == [note_id]
+        ids = [i["id"] for i in wall["items"]]
+        assert note_id in ids
+        assert chat_id not in ids
+        assert all(i["kind"] != "chat" for i in wall["items"])
+        assert wall["total"] == 1  # the note only; the chat is not counted
+
+    def test_a_kept_conversation_is_not_on_the_saved_shelf(self, store):
+        chat = chats.create()
+        chat_id = chat["chat"]["id"]
+        chats.pin(chat_id)
 
         kept = self._wall(order="touched", pinned=True)
-        assert [i["id"] for i in kept["items"]] == [chat_id]
-        assert kept["items"][0]["pinned"] == 1
+        assert [i["id"] for i in kept["items"]] == []
+        assert kept["total"] == 0
 
 
 class TestListingTopicsBatching:

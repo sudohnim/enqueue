@@ -193,20 +193,10 @@ def list_artifacts(
     # list, sorted by the same clock - never ahead of everything else, which is what
     # made a fresh capture land behind a conversation nobody touched this week.
     # `pinned` filters it the same way it filters artifacts: kept conversations sit
-    # on the saved shelf, the rest join the wall. The NULL-or-match test keeps the
-    # query parameterized whether or not the filter is applied; named parameters,
-    # because SQLite renumbers anonymous `?` placeholders across a UNION's limbs.
-    # A tag filter excludes the chats limb: conversations cannot be tagged.
-    chats_limb = (
-        (
-            " UNION ALL"
-            " SELECT id, 'chat', title, NULL, NULL, NULL, NULL, created_at,"
-            " updated_at, 0, pinned, NULL, NULL FROM chats"
-            " WHERE (:pinned IS NULL OR pinned = :pinned)"
-        )
-        if tag_ids is None and not untagged
-        else ""
-    )
+    # Conversations no longer live on the wall: they moved into the eye panel's own
+    # conversation list (its menu reads /chats), so the wall is an artifact wall and
+    # nothing merges the chats table into it. `pinned` still filters artifacts alone.
+    chats_limb = ""
 
     conn = db.get_conn()
     try:
@@ -246,11 +236,6 @@ def list_artifacts(
             f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}",
             {"tag_ids": tag_ids_param},
         ).fetchone()["n"]
-        if tag_ids is None and not untagged:
-            total += conn.execute(
-                "SELECT COUNT(*) AS n FROM chats WHERE (:pinned IS NULL OR pinned = :pinned)",
-                {"pinned": pinned},
-            ).fetchone()["n"]
         return {
             "total": total,
             "order": order,

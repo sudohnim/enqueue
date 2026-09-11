@@ -57,7 +57,7 @@ function restorePill(where) {
 			'<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
 			svg("find") +
 			"</button>" +
-			'<button class="round" aria-label="Chat with AI" onclick="openField(\'ask\')">' +
+			'<button class="round" aria-label="Chat with AI" onclick="openEye()">' +
 			'<span class="pill-eye eye" id="pillEye"></span>' +
 			"</button>" +
 			'<button class="round" aria-label="Settings" onclick="showSettings()">' +
@@ -73,12 +73,14 @@ function restorePill(where) {
 	makeEye(document.getElementById("pillEye"));
 }
 
-// Context-aware eye action inside a chat or the ask field.
+// Context-aware eye action. Inside an artifact the eye opens a conversation that can
+// read it; anywhere else it opens the assistant on a fresh or resumed thread. Both
+// routes are the docked panel now, never the old inline ask field.
 function chatOrAsk() {
 	if (scope.kind === "chat" && scope.id) {
-		showChat(scope.id);
+		openEye(scope.id);
 	} else {
-		openField("ask");
+		openEye();
 	}
 }
 

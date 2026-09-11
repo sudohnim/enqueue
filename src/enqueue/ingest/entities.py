@@ -103,7 +103,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
         return 0, "no such artifact"
     text = row["body"] or ""
 
-    provider = get_provider(local_only=bool(row["local_only"]))
+    provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
 
     try:
         raw = provider.complete(

@@ -36,7 +36,21 @@ function teardown() {
 
 async function startChat(text) {
 	const asked = { kind: scope.kind, id: scope.id };
-	view.innerHTML = spinner("lg", "Processing your message");
+	openPanel();
+	showTranscript();
+	// Optimistic: the question and a thinking bubble land immediately, so the panel
+	// never blinks empty between pressing send and the chat row existing.
+	const body = document.getElementById("eyeBody");
+	if (body) {
+		body.innerHTML =
+			'<div class="turn you"><div class="said">' +
+			esc(text) +
+			"</div></div>" +
+			'<div class="turn assistant"><div class="said">' +
+			'<span class="eye-loading">Loading&hellip;</span>' +
+			"</div></div>";
+		body.scrollTop = body.scrollHeight;
+	}
 	let made;
 	try {
 		made = await api("/chats", {
@@ -51,7 +65,7 @@ async function startChat(text) {
 	} catch (err) {
 		return chatFailed(err, text);
 	}
-	showChat(made.chat.id, made);
+	openEye(made.chat.id, made);
 }
 
 async function chatFailed(err, text) {
@@ -59,34 +73,233 @@ async function chatFailed(err, text) {
 		ready: true,
 		reason: null,
 	}));
-	view.innerHTML =
-		'<div class="back" onclick="home()">&larr; everything</div>' +
-		'<div class="state">' +
+	const body = document.getElementById("eyeBody");
+	if (!body) return;
+	body.innerHTML =
+		'<div class="eye-empty"><div class="line">' +
 		(why.ready
-			? 'The assistant could not answer.<br><br><span class="strongtext">' +
+			? "The assistant could not answer. " +
 				esc(String(err)) +
-				"</span><br><br>Nothing was lost. Your question was " +
-				esc(text) +
-				"."
+				" Nothing was lost - your question was: " +
+				esc(text)
 			: "There is nothing to answer from yet: " + esc(why.reason) + ".") +
-		"</div>";
+		"</div></div>";
 }
 
-async function showChat(id, preloaded) {
+// ---- the eye panel: open / close / list ----------------------------------
+// The assistant lives in a docked panel, not a full view. Opening it never leaves
+// the wall (the wall stays live behind, and beside, it); closing it returns focus
+// to where the eye was pressed. One conversation is open at a time, with the list
+// of the rest one button away.
+
+let eyeOpen = false;
+let eyeReturnFocus = null;
+
+function panelChromeReady() {
+	// Fill the header icon buttons once; svg() is only available after icons.js.
+	const set = (id, icon) => {
+		const el = document.getElementById(id);
+		if (el && !el.dataset.iced) {
+			el.innerHTML = svg(icon);
+			el.dataset.iced = "1";
+		}
+	};
+	// eyeMenuBtn is state-driven (back arrow in a transcript, list icon in the list),
+	// so it is set in showTranscript/showConversations, not once here.
+	set("eyeNewBtn", "plus");
+	set("eyeCloseBtn", "close");
+	set("eyeSend", "send");
+}
+
+function openPanel() {
+	panelChromeReady();
+	const panel = document.getElementById("eyePanel");
+	const scrim = document.getElementById("eyeScrim");
+	if (eyeOpen) return;
+	eyeReturnFocus = document.activeElement;
+	panel.hidden = false;
+	scrim.hidden = false;
+	// Two frames so the un-hidden element has a layout before the class that
+	// animates it lands - otherwise it snaps open with no slide.
+	requestAnimationFrame(() =>
+		requestAnimationFrame(() => {
+			panel.classList.add("open");
+			scrim.classList.add("open");
+		}),
+	);
+	eyeOpen = true;
+	document.addEventListener("keydown", eyeEscape);
+}
+
+function closeEye() {
+	const panel = document.getElementById("eyePanel");
+	const scrim = document.getElementById("eyeScrim");
+	if (!eyeOpen) return;
+	panel.classList.remove("open");
+	scrim.classList.remove("open");
+	stopPolling();
+	document.removeEventListener("keydown", eyeEscape);
+	// Hide only after the slide-out finishes, so it animates away rather than
+	// vanishing. Matches the 260ms transform in eyepanel.css.
+	setTimeout(() => {
+		panel.hidden = true;
+		scrim.hidden = true;
+	}, 280);
+	eyeOpen = false;
+	if (eyeReturnFocus && eyeReturnFocus.focus) eyeReturnFocus.focus();
+	eyeReturnFocus = null;
+}
+
+function eyeEscape(e) {
+	if (e.key !== "Escape") return;
+	// The conversations list is a step inside the panel; Escape backs out of it
+	// first, then out of the panel.
+	if (!document.getElementById("eyeList").hidden) return showTranscript();
+	closeEye();
+}
+
+// The canonical entry. `openEye()` with no id opens on a fresh conversation;
+// `openEye(id)` opens that thread. `showChat` stays as the name the router and the
+// morph animation already call.
+async function openEye(id, preloaded) {
+	openPanel();
+	if (!id) return newConversation();
 	if (readerWatch) {
 		readerWatch.disconnect();
 		readerWatch = null;
 	}
 	stopPolling();
-	const d = preloaded || (await api("/chats/" + id));
+	showTranscript();
+	const body = document.getElementById("eyeBody");
+	if (!preloaded) body.innerHTML = spinner("sm", "Opening the conversation");
+	let d;
+	try {
+		d = preloaded || (await api("/chats/" + id));
+	} catch (err) {
+		body.innerHTML =
+			'<div class="eye-empty"><div class="line">Could not open this conversation. ' +
+			esc(String(err.message || err)) +
+			"</div></div>";
+		return;
+	}
 	chat = d;
 	scope = { kind: "chat", id, label: "this conversation" };
 	setRoute("c/" + id);
 	renderChat(d);
-	composer();
+	setField("");
 	// A person who left during an answer and came back finds the turn still
 	// pending; the poller finishes it without them doing anything (H4.3).
 	if (hasPending(d)) startPolling(id);
+}
+
+async function showChat(id, preloaded) {
+	return openEye(id, preloaded);
+}
+
+// A fresh conversation: no chat row exists yet - the first message creates it
+// (startChat). Until then the panel shows the empty state and an armed composer.
+function newConversation() {
+	stopPolling();
+	chat = null;
+	// Only reset the scope to everything when we are not inside an artifact; an eye
+	// opened on an artifact keeps that artifact as what the new thread can read.
+	if (scope.kind === "chat") scope = { kind: "everything", label: "everything" };
+	setRoute("c");
+	const titleEl = document.getElementById("eyeTitle");
+	if (titleEl) titleEl.textContent = "New conversation";
+	const scopeEl = document.getElementById("eyeScope");
+	if (scopeEl) {
+		scopeEl.hidden = scope.kind !== "artifact";
+		scopeEl.innerHTML =
+			scope.kind === "artifact" ? "<span>reading only " + esc(scope.label) + "</span>" : "";
+	}
+	showTranscript();
+	document.getElementById("eyeBody").innerHTML =
+		'<div class="eye-empty">' +
+		'<div class="eye-mark" aria-hidden="true">' +
+		'<svg viewBox="0 0 24 24">' +
+		'<path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z" ' +
+		'style="fill:none;stroke:var(--text);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>' +
+		'<circle cx="12" cy="12" r="3.1" style="fill:var(--accent);stroke:none"/>' +
+		"</svg></div>" +
+		'<div class="line">Ask anything about the artifacts you saved.</div>' +
+		"</div>";
+	setField("");
+	focusField();
+}
+
+// The menu button toggles between the open transcript and the list of every
+// conversation - titled the way the wall titles them.
+function toggleConversations() {
+	if (document.getElementById("eyeList").hidden) showConversations();
+	else showTranscript();
+}
+
+function showTranscript() {
+	document.getElementById("eyeList").hidden = true;
+	document.getElementById("eyeBody").hidden = false;
+	document.getElementById("eyeFoot").hidden = false;
+	// In a transcript the left button is a back arrow to the conversations list -
+	// the reported gap: opening a thread left no visible way back to the menu.
+	const btn = document.getElementById("eyeMenuBtn");
+	if (btn) {
+		btn.innerHTML = svg("back");
+		btn.setAttribute("aria-label", "Back to conversations");
+		btn.setAttribute("aria-pressed", "false");
+	}
+}
+
+async function showConversations() {
+	const list = document.getElementById("eyeList");
+	document.getElementById("eyeBody").hidden = true;
+	document.getElementById("eyeFoot").hidden = true;
+	list.hidden = false;
+	// In the list the button is the list icon, and pressing it returns to the thread.
+	const btn = document.getElementById("eyeMenuBtn");
+	if (btn) {
+		btn.innerHTML = svg("list");
+		btn.setAttribute("aria-label", "Conversations");
+		btn.setAttribute("aria-pressed", "true");
+	}
+	list.innerHTML = spinner("sm", "Loading conversations");
+	let d;
+	try {
+		d = await api("/chats");
+	} catch (err) {
+		list.innerHTML =
+			'<div class="eye-list-empty">Could not load conversations.</div>';
+		return;
+	}
+	const items = d.items || [];
+	if (!items.length) {
+		list.innerHTML =
+			'<div class="eye-list-empty">No conversations yet. Ask something to start one.</div>';
+		return;
+	}
+	const current = chat && chat.chat ? chat.chat.id : null;
+	list.innerHTML =
+		'<div class="eye-list-head">Conversations</div>' +
+		items
+			.map(
+				(c) =>
+					'<button class="eye-thread" role="button" aria-current="' +
+					(c.id === current ? "true" : "false") +
+					'" onclick="openEye(\'' +
+					c.id +
+					"')\">" +
+					'<span class="t-title">' +
+					esc(c.title || "Conversation") +
+					"</span>" +
+					'<span class="t-forget" role="button" aria-label="Delete ' +
+					esc(c.title || "conversation") +
+					'" onclick="event.stopPropagation();dropChat(\'' +
+					c.id +
+					"')\">" +
+					svg("trash") +
+					"</span>" +
+					"</button>",
+			)
+			.join("");
 }
 
 function renderChat(d) {
@@ -122,24 +335,25 @@ function renderChat(d) {
 			nextTurns[m.id] = organizeTurns[m.id];
 	organizeTurns = nextTurns;
 
-	let html =
-		'<div class="transcript">' +
-		'<button class="btn ghost back" onclick="home()">' +
-		svg("back") +
-		"Everything</button>" +
-		'<div class="titlerow"><div class="h2">' +
-		esc(d.chat.title) +
-		"</div>" +
-		'<button class="btn ghost harm" onclick="dropChat(\'' +
-		d.chat.id +
-		"')\">Delete</button></div>" +
-		(scoped
-			? '<div class="from scopebar">' +
-				'<span class="meta">reading only</span>' +
-				chip("", d.chat.scope_id, d.chat.scope_label, "showArtifact") +
-				"</div>"
-			: '<div class="meta">reading everything</div>');
+	// The panel's own header carries the title and the controls now, so the
+	// transcript is only turns. Title and scope are set on the chrome, not drawn
+	// into the scroll region.
+	const titleEl = document.getElementById("eyeTitle");
+	if (titleEl) titleEl.textContent = d.chat.title || "Conversation";
+	const scopeEl = document.getElementById("eyeScope");
+	if (scopeEl) {
+		if (scoped) {
+			scopeEl.hidden = false;
+			scopeEl.innerHTML =
+				'<span>reading only</span>' +
+				chip("", d.chat.scope_id, d.chat.scope_label, "showArtifact");
+		} else {
+			scopeEl.hidden = true;
+			scopeEl.innerHTML = "";
+		}
+	}
 
+	let html = "";
 	for (const m of d.messages) {
 		// A typed turn (S4): `answer` (and any unknown kind, defensively) renders
 		// exactly as today; `organize` renders its label in the bubble and the
@@ -159,7 +373,7 @@ function renderChat(d) {
 			(m.role === "user"
 				? esc(m.text)
 				: pending
-					? spinner("sm", "Processing your message")
+					? '<span class="eye-loading">Loading&hellip;</span>'
 					: md(m.text));
 		const echoes =
 			d.chat.scope_kind === "artifact" &&
@@ -215,11 +429,15 @@ function renderChat(d) {
 		html += "</div>";
 	}
 
-	view.innerHTML = html + "</div>";
+	const body = document.getElementById("eyeBody");
+	body.innerHTML = html;
+	// Transcript is the live view; the conversations list is put away whenever a
+	// chat renders, so answering always returns you to the thread you asked in.
+	showTranscript();
 	for (const m of d.messages)
 		if (m.kind === "organize" && m.role === "assistant" && m.payload)
 			hydrateOrganize(m, d);
-	window.scrollTo(0, document.body.scrollHeight);
+	body.scrollTop = body.scrollHeight;
 }
 
 // ---- typed turns: the in-chat organize view -------------------------------
@@ -378,7 +596,7 @@ function answerInstead(mid) {
 // removes it outright rather than sending it to the trash: there is no original to
 // recover, and the artifacts it cited are untouched either way.
 async function dropChat(id) {
-	const row = document.querySelector('.thread[onclick*="' + id + '"]');
+	const row = document.querySelector('.eye-thread[onclick*="' + id + '"] .t-title');
 	const name = row ? row.textContent.trim() : "this conversation";
 	const yes = await ask(
 		"Delete this conversation?",
@@ -392,13 +610,15 @@ async function dropChat(id) {
 	} catch (err) {
 		return toast("Not deleted. " + String(err.message || err), true);
 	}
-	if (chat && chat.chat.id === id) {
-		chat = null;
-		home();
-	} else {
-		home();
-	}
 	toast("Conversation deleted.");
+	// Deleting the open thread drops back to a fresh conversation; deleting one from
+	// the list just refreshes the list in place. Either way the panel stays open.
+	const wasOpen = chat && chat.chat && chat.chat.id === id;
+	if (!document.getElementById("eyeList").hidden) {
+		if (wasOpen) chat = null;
+		return showConversations();
+	}
+	if (wasOpen) newConversation();
 }
 
 // ---- saved groupings: the grid button's home -----------------------------
@@ -497,27 +717,42 @@ async function forgetSavedGrouping(ev, id) {
 	showSavedGroupings();
 }
 
-function composer() {
-	closeMenu();
-	pill.classList.add("wide");
-	pill.innerHTML =
-		'<input id="field" placeholder="ask about ' +
-		esc(chat.chat.scope_label) +
-		'" autocomplete="off">' +
-		'<button aria-label="Leave" onclick="home()">' +
-		svg("close") +
-		"</button>";
+// ---- the panel composer --------------------------------------------------
+// The footer field is static markup in home.html; these drive it. The field grows
+// with its content up to a cap, the send action is dead until there is something to
+// send, and Enter sends while Shift+Enter makes a newline.
+function focusField() {
+	const f = document.getElementById("eyeField");
+	if (f) f.focus();
+}
 
-	const field = document.getElementById("field");
-	field.focus();
-	field.onkeydown = (e) => {
-		if (e.key === "Escape") return home();
-		if (e.key !== "Enter") return;
-		const v = field.value.trim();
-		if (!v) return;
-		field.value = "";
-		sendInChat(v);
-	};
+function setField(v) {
+	const f = document.getElementById("eyeField");
+	if (!f) return;
+	f.value = v || "";
+	autoGrowField();
+}
+
+function autoGrowField() {
+	const f = document.getElementById("eyeField");
+	if (!f) return;
+	f.style.height = "auto";
+	f.style.height = Math.min(f.scrollHeight, 140) + "px";
+	const send = document.getElementById("eyeSend");
+	if (send) send.disabled = !f.value.trim();
+}
+
+// The form's submit handler (Enter, or the send button).
+function eyeSend(e) {
+	if (e && e.preventDefault) e.preventDefault();
+	const f = document.getElementById("eyeField");
+	const v = (f.value || "").trim();
+	if (!v) return false;
+	setField("");
+	// No chat row yet means this is the first turn of a fresh conversation.
+	if (chat && chat.chat) sendInChat(v);
+	else startChat(v);
+	return false;
 }
 
 async function sendInChat(text, skill) {
@@ -536,15 +771,12 @@ async function sendInChat(text, skill) {
 	} catch (err) {
 		chat = await api("/chats/" + id);
 		renderChat(chat);
-		const note = document.createElement("div");
-		note.className = "callout warn";
-		note.textContent = String(err);
-		view.appendChild(note);
+		toast(String(err.message || err), true);
 		return;
 	}
 	chat = d;
 	renderChat(d);
-	composer();
+	focusField();
 	// The turn is pending; the poller watches it resolve and stops when done.
 	startPolling(id);
 }
@@ -638,3 +870,19 @@ function retryTurn(mid) {
 	if (prev.role !== "user") return;
 	sendInChat(prev.text);
 }
+
+// ---- boot the panel composer ---------------------------------------------
+// The footer field is static in home.html, so it exists as soon as this script
+// runs (scripts sit at the end of <body>). Grow-on-type, Enter to send, Shift+Enter
+// for a newline. The form's submit handler (eyeSend) covers the send button.
+(function bootEyeComposer() {
+	const f = document.getElementById("eyeField");
+	if (!f) return;
+	f.addEventListener("input", autoGrowField);
+	f.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			eyeSend(e);
+		}
+	});
+})();

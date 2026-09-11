@@ -60,6 +60,12 @@ def settings_path():
 FIELDS: dict[str, tuple[str, Any, bool]] = {
     "llm_backend": ("ENQ_LLM_BACKEND", config.LLM_BACKEND, True),
     "llm_model": ("ENQ_LLM_MODEL", config.LLM_MODEL, True),
+    # The model that writes summaries (facets/entities). Separate from llm_model on
+    # purpose: summarization is a background, quality-first job that can afford a slower,
+    # more capable model, while the interactive path (chat, the retrieval gray-zone
+    # judge) wants a faster one. Empty falls back to llm_model, so a single-model setup
+    # is unchanged. Same backend/key/headers as llm_model - only the model name differs.
+    "summarize_model": ("ENQ_SUMMARIZE_MODEL", "", True),
     # The vision model used to describe images at ingest (K.11). Separate from
     # the text model: most backends answer text and images with different models.
     "vision_model": ("ENQ_VISION_MODEL", config.VISION_MODEL, True),

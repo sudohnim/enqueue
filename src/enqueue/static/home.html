@@ -42,6 +42,7 @@
 <link rel="stylesheet" href="/static/css/chat.css" />
 <link rel="stylesheet" href="/static/css/settings.css" />
 <link rel="stylesheet" href="/static/css/pill.css" />
+<link rel="stylesheet" href="/static/css/eyepanel.css" />
 </head>
 <body>
 <!-- The window drag handle and the search bar live here; the pill (capture) is
@@ -50,6 +51,68 @@
 <div class="topbar" id="topbar"></div>
 <main id="view"><div class="state">opening...</div></main>
 <div class="pill" id="pill"></div>
+
+<!-- The assistant, docked. Hidden until the eye opens it; renders one conversation
+     with the transcript above and the composer at the foot, and swaps to the
+     conversations list when the menu button is pressed. Built and wired in chat.js. -->
+<div class="eye-scrim" id="eyeScrim" hidden onclick="closeEye()"></div>
+<aside
+  class="eyepanel"
+  id="eyePanel"
+  hidden
+  role="dialog"
+  aria-label="Assistant"
+>
+  <header class="eye-head">
+    <button
+      class="eye-icon"
+      id="eyeMenuBtn"
+      aria-label="Conversations"
+      title="Conversations"
+      onclick="toggleConversations()"
+    ></button>
+    <div class="eye-title" id="eyeTitle">New conversation</div>
+    <button
+      class="eye-icon"
+      id="eyeNewBtn"
+      aria-label="New conversation"
+      title="New conversation"
+      onclick="newConversation()"
+    ></button>
+    <button
+      class="eye-icon"
+      id="eyeCloseBtn"
+      aria-label="Close"
+      title="Close"
+      onclick="closeEye()"
+    ></button>
+  </header>
+  <div class="eye-scope" id="eyeScope" hidden></div>
+  <div class="eye-body" id="eyeBody"></div>
+  <div class="eye-list" id="eyeList" hidden></div>
+  <!-- onsubmit is hard-wired to false so the form can never navigate/reload the page,
+       even if a handler throws or loads late; send is driven only by the button's
+       click and the field's Enter key. -->
+  <form class="eye-foot" id="eyeFoot" onsubmit="return false">
+    <div class="eye-inputwrap">
+      <textarea
+        id="eyeField"
+        rows="1"
+        placeholder="Ask about everything"
+        autocomplete="off"
+        aria-label="Ask the assistant"
+      ></textarea>
+    </div>
+    <button
+      class="eye-send"
+      id="eyeSend"
+      type="button"
+      aria-label="Send"
+      onclick="eyeSend(event)"
+      disabled
+    ></button>
+  </form>
+</aside>
 
 <div class="dropover" id="dropover" hidden>
   <div class="dropcard">

@@ -406,6 +406,37 @@ def push_keyring() -> None:
         print(f"[sync] keyring push failed: {exc}", flush=True)
 
 
+def pull_keyring() -> bool:
+    """GET the library's encrypted keyring from the relay and write it locally.
+
+    A device joining an existing library has no keyring.json, so it has no wrapped
+    DEK to open with the recovery phrase. The relay holds the library's keyring
+    (push_keyring, MOB2.10); this fetches it so `unlock_with_recovery` has something
+    to unwrap. Refuses to overwrite an existing local keyring - that would orphan this
+    device's own DEK. Returns True when the keyring is now on disk. The secret must be
+    set before calling: the relay authenticates this GET like any other object.
+    """
+    url = _relay_url()
+    if not url:
+        return False
+    keyring_path = config.DATA_DIR / "keyring.json"
+    if keyring_path.exists():
+        return False
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"{url.rstrip('/')}/sync/object/lib/keyring.enc",
+                headers={"Authorization": f"Bearer {_secret()}"},
+            )
+    except httpx.HTTPError:
+        return False
+    if resp.status_code != 200:
+        return False
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    keyring_path.write_bytes(resp.content)
+    return True
+
+
 def push_pivots() -> None:
     """PUT the saved views (custom pivots) to the relay as `lib/pivots.enc`.
 

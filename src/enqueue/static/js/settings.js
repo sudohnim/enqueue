@@ -3,7 +3,8 @@
 // every value came from: a field you edit that is silently overridden by an
 // environment variable is worse than no field.
 const SETTING_LABELS = {
-	llm_model: "Model",
+	llm_model: "Model (chat, search judging)",
+	summarize_model: "Summary model (optional — writes facets; blank = same as Model)",
 	llm_url: "Endpoint",
 	vision_model: "Vision model (describes images)",
 	model_retries: "Retries after a failed answer",
@@ -285,8 +286,9 @@ async function renderSettingsAI() {
 			"</div>";
 	else if (picked)
 		html += '<div class="aside">Nothing leaves this machine.</div>';
-	for (const name of ["llm_model"]) {
+	for (const name of ["llm_model", "summarize_model"]) {
 		const f = d.settings[name];
+		if (!f) continue;
 		html += fieldRow(name, esc(SETTING_LABELS[name]), {
 			value: f.value,
 			locked: f.locked,
@@ -695,9 +697,12 @@ async function renderSettingsSync() {
 function renderSyncSetup(_d, sync) {
 	const step = window.syncSetupStep || 1;
 
-	let html = '<div class="shelf">Set up sync</div><div class="group">';
+	const shelf = step === "join" ? "Join a library" : "Set up sync";
+	let html = '<div class="shelf">' + shelf + '</div><div class="group">';
 	if (step === "recovery") {
 		html += renderSyncRecovery();
+	} else if (step === "join") {
+		html += renderSyncJoin(sync);
 	} else if (step === 3) {
 		html += renderSyncStepSecret(sync);
 	} else {
@@ -724,8 +729,89 @@ function renderSyncStepRelay(sync) {
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
 		'<button class="btn primary" onclick="advanceSyncSetupAndInit()">Continue</button>' +
+		"</div>" +
+		'<div class="aside" style="margin-top: var(--sp-4);">' +
+		"Already set up sync on another device? " +
+		'<a href="#" onclick="startSyncJoin(event)">Join that library instead</a> ' +
+		"with its recovery phrase, so this device shares the same encrypted data." +
 		"</div>"
 	);
+}
+
+// The second-device path: instead of minting a new keyring (a new DEK that could not
+// read the first device's data), point at the same relay, pull its encrypted keyring,
+// and import the shared DEK with the recovery phrase from the first device.
+function startSyncJoin(e) {
+	if (e) e.preventDefault();
+	window.syncSetupStep = "join";
+	renderSettingsTab(currentSettingsTab);
+}
+
+function renderSyncJoin(sync) {
+	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
+	return (
+		'<div class="aside">Join a library you already set up on another device. ' +
+		"Enter that device's relay, sync secret, and recovery phrase. Nothing here is " +
+		"created new - this device imports the existing encryption key so it reads the " +
+		"same data.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);">' +
+		'<label for="s_join_relay">Relay URL</label>' +
+		'<input id="s_join_relay" type="url" value="' +
+		relayValue +
+		'" placeholder="http://127.0.0.1:8788">' +
+		"</div>" +
+		'<div class="field">' +
+		'<label for="s_join_secret">Sync secret</label>' +
+		'<input id="s_join_secret" type="password" autocomplete="off" ' +
+		'placeholder="The secret from the other device">' +
+		"</div>" +
+		'<div class="field">' +
+		'<label for="s_join_recovery">Recovery phrase</label>' +
+		'<input id="s_join_recovery" type="text" autocomplete="off" spellcheck="false" ' +
+		'placeholder="The recovery phrase shown when the first device set up sync">' +
+		"</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn primary" onclick="joinExistingLibrary()">Join library</button>' +
+		'<button class="btn ghost" onclick="backSyncSetup(1)">Back</button>' +
+		"</div>"
+	);
+}
+
+async function joinExistingLibrary() {
+	const relay = (document.getElementById("s_join_relay") || {}).value || "";
+	const secret = (document.getElementById("s_join_secret") || {}).value || "";
+	const phrase = (document.getElementById("s_join_recovery") || {}).value || "";
+	if (!relay.trim() || !secret.trim() || !phrase.trim()) {
+		toast("Relay, secret, and recovery phrase are all required to join", true);
+		return;
+	}
+	const btn = event && event.target ? event.target : null;
+	if (btn) {
+		btn.disabled = true;
+		btn.textContent = "Joining...";
+	}
+	try {
+		await api("/settings/sync/join", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				relay_url: relay.trim(),
+				secret: secret.trim(),
+				recovery_phrase: phrase.trim(),
+			}),
+		});
+	} catch (err) {
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = "Join library";
+		}
+		toast(String((err && err.message) || err), true);
+		return;
+	}
+	window.syncSetupStep = null;
+	pendingSettings = null;
+	toast("Joined. Pulling the library down in the background...");
+	renderSettingsTab(currentSettingsTab);
 }
 
 async function advanceSyncSetupAndInit() {

@@ -30,14 +30,16 @@ class TestWallTagFilter:
         assert untagged not in [i["id"] for i in wall["items"]]
         assert chat not in [i["id"] for i in wall["items"]]
 
-    def test_no_filter_is_unchanged_and_still_includes_chats(self, store, quiet_queue):
+    def test_no_filter_returns_artifacts_only_not_chats(self, store, quiet_queue):
         note = notes.create(body="# Work\n\nBody.")["artifact"]["id"]
         chat = chats.create()["chat"]["id"]
         tags.add(note, "work")
 
+        # Conversations moved to the eye panel; the unfiltered wall is artifacts only.
         wall = _wall()
-        assert {i["id"] for i in wall["items"]} == {note, chat}
-        assert wall["total"] == 2
+        assert {i["id"] for i in wall["items"]} == {note}
+        assert chat not in {i["id"] for i in wall["items"]}
+        assert wall["total"] == 1
 
     def test_and_semantics_across_names(self, store, quiet_queue):
         both = notes.create(body="# Both\n\nBody.")["artifact"]["id"]

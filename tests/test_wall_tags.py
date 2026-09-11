@@ -37,12 +37,11 @@ def test_untagged_wall_items_have_an_empty_tag_list(store, quiet_queue):
     assert row["tags"] == []
 
 
-def test_chat_rows_carry_no_tags(store, quiet_queue):
+def test_chats_do_not_appear_on_the_wall(store, quiet_queue):
     from enqueue import chats
 
+    # Conversations live in the eye panel now, not the artifact wall.
     client = _client()
     chats.create(scope_kind="everything", scope_id=None)
     wall = client.get("/artifacts?limit=100").json()["items"]
-    chats_rows = [r for r in wall if r["kind"] == "chat"]
-    assert chats_rows, "expected at least one chat row on the wall"
-    assert all(r["tags"] == [] for r in chats_rows)
+    assert [r for r in wall if r["kind"] == "chat"] == []

@@ -82,10 +82,28 @@ class _RawFacet(BaseModel):
 
     level: int
     statement: str
+    # The model's own confidence that the text supports this facet (0..1). Optional so
+    # a model that omits it - or a stub in a test - degrades to the neutral 0.5 trust.
+    confidence: float | None = None
 
 
 class _RawFacetSet(BaseModel):
     facets: list[_RawFacet]
+
+
+def _trust_from_confidence(confidence: float | None) -> float:
+    """Map a model's self-reported confidence to a stored trust score (0..1).
+
+    A missing or out-of-range value falls back to the neutral 0.5 the column used
+    before facets carried a confidence, so nothing regresses when the model omits it.
+    """
+    try:
+        value = float(confidence)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.5
+    if value != value:  # NaN
+        return 0.5
+    return max(0.0, min(1.0, value))
 
 
 def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
@@ -125,7 +143,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
         text = "\n\n".join(p["text"] for p in pages if p["text"])
     text = text[: config.FACET_INPUT_CHARS]
 
-    provider = get_provider(local_only=bool(row["local_only"]))
+    provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
     nouns = proper_nouns(text, row["title"])
 
     try:
@@ -141,27 +159,26 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     # Keep each facet that passes the same per-facet quality bar the strict schema
     # enforces; drop the ones that do not. One long or subject-naming facet no
     # longer discards the good ones alongside it.
-    kept: list[Facet] = []
+    kept: list[tuple[Facet, float]] = []
     for rf in raw.facets:
         try:
-            kept.append(
-                Facet.model_validate(
-                    {"level": rf.level, "statement": rf.statement},
-                    context={"proper_nouns": nouns},
-                )
+            facet = Facet.model_validate(
+                {"level": rf.level, "statement": rf.statement},
+                context={"proper_nouns": nouns},
             )
         except Exception:  # noqa: BLE001 - a facet that fails the bar is simply not kept
             continue
+        kept.append((facet, _trust_from_confidence(rf.confidence)))
 
     if not kept:
         return 0, "no facet cleared the quality gate"
 
     conn.execute("DELETE FROM facets WHERE artifact_id = ?", (artifact_id,))
-    for facet in kept:
+    for facet, trust in kept:
         conn.execute(
             "INSERT INTO facets"
             " (id, artifact_id, level, statement, model_version, body_version, trust)"
-            " VALUES (?,?,?,?,?,?,0.5)",
+            " VALUES (?,?,?,?,?,?,?)",
             (
                 str(uuid.uuid4()),
                 artifact_id,
@@ -169,6 +186,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 facet.statement,
                 provider.model,
                 row["body_version"],
+                trust,
             ),
         )
     return len(kept), None
@@ -197,7 +215,8 @@ def _artifact_is_model_stale(conn, artifact_id: str, cache: dict) -> bool:
             from ..providers.base import get_provider
 
             cache[artifact_id] = (
-                row["model_version"] != get_provider(local_only=bool(row["local_only"])).model
+                row["model_version"]
+                != get_provider(local_only=bool(row["local_only"]), summarize=True).model
             )
     return cache[artifact_id]
 

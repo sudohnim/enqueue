@@ -229,13 +229,19 @@ def get_vision_provider(local_only: bool = False) -> Provider:
     )
 
 
-def get_provider(local_only: bool = False) -> Provider:
+def get_provider(local_only: bool = False, summarize: bool = False) -> Provider:
     """Return the configured provider.
 
     Local-only artifacts always route to the local backend, whatever the default is.
     That is the one rule here that is not a preference: marking something local-only
     is a promise that its text never leaves the machine, and a configuration change
     must not be able to quietly break it.
+
+    `summarize=True` selects the summary model (`summarize_model`) when one is set,
+    for the background facet/entity writers. It shares the backend, key, and headers
+    of the default provider - only the model name differs - and falls back to
+    `llm_model` when unset, so a single-model configuration behaves exactly as before.
+    A local-only artifact ignores it: its text is pinned to the local model regardless.
     """
     from .. import config, settings
     from .ollama import OpenAICompatibleProvider
@@ -257,7 +263,10 @@ def get_provider(local_only: bool = False) -> Provider:
         url = settings.get("llm_url") or backend["url"]
     else:
         url = backend["url"]
-    return OpenAICompatibleProvider(
-        model=settings.get("llm_model") if not local_only else config.LLM_MODEL,
-        base_url=url,
-    )
+    if local_only:
+        model = config.LLM_MODEL
+    elif summarize:
+        model = settings.get("summarize_model") or settings.get("llm_model")
+    else:
+        model = settings.get("llm_model")
+    return OpenAICompatibleProvider(model=model, base_url=url)

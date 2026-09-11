@@ -1,0 +1,473 @@
+/* The eye panel: the assistant, docked. On desktop it is a right-hand column that
+   slides in over the wall without covering it; on a phone it takes the whole screen.
+   It is a persistent surface, not a modal - the wall stays live behind it - so it is
+   dismissed, never "confirmed", and it holds one open conversation plus the way into
+   the rest. Built on the system ladder: white surface, one hairline seam, one lifted
+   shadow, the raven violet only on the send action and the focus ring. */
+
+.eyepanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  width: min(440px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-lifted);
+  /* Closed state is off to the right; opening slides it home. The wall never moves. */
+  transform: translateX(100%);
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+.eyepanel.open {
+  transform: translateX(0);
+}
+/* [hidden] wins the display battle; the panel is only in the layout while it matters. */
+.eyepanel[hidden] {
+  display: none;
+}
+
+/* The dim behind it is a phone affordance only - on desktop the wall stays fully
+   visible and interactive beside the column. */
+.eye-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(16, 17, 20, 0.28);
+  opacity: 0;
+  transition: opacity 220ms ease-out;
+}
+.eye-scrim.open {
+  opacity: 1;
+}
+.eye-scrim[hidden] {
+  display: none;
+}
+
+/* -- header -------------------------------------------------------------- */
+.eye-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  padding-top: calc(var(--sp-2) + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.eye-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 var(--sp-1);
+}
+
+/* One quiet icon button, three of them across the header. Ink is dimmed until you
+   reach for it, when it goes full and lifts onto the recessed fill. */
+.eye-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    background 140ms ease-out,
+    color 140ms ease-out;
+}
+.eye-icon:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.eye-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.eye-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The scope line: shown only when the conversation is pinned to one artifact, so a
+   person can see what it can read and step back out to everything. */
+.eye-scope {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--text-mute);
+  flex: 0 0 auto;
+}
+
+/* -- transcript ---------------------------------------------------------- */
+.eye-body {
+  flex: 1 1 auto;
+  /* min-height:0 lets this flex child shrink below its content so the scroll
+     region actually engages; without it a long transcript grows the panel and
+     scrolling up is impossible - the reported bug. */
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  scroll-behavior: smooth;
+}
+
+/* Turns reuse the chat bubble language, just re-measured for a narrow column: a
+   turn never crosses the whole width, the speaker is carried by the side it sits
+   on, and the assistant's answer reads as body prose, not a chat sticker. */
+.eye-body .turn {
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.eye-body .turn.you {
+  align-items: flex-end;
+}
+.eye-body .turn.you .said {
+  max-width: 85%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 14px 14px 4px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.eye-body .turn.assistant .said {
+  max-width: 100%;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.eye-body .turn.assistant .said > *:first-child {
+  margin-top: 0;
+}
+.eye-body .turn.assistant .said > *:last-child {
+  margin-bottom: 0;
+}
+
+/* The pending answer: "Loading…" as a violet-to-lavender sheen that sweeps left to
+   right, so a waiting turn reads as alive rather than stalled. Text-clipped gradient,
+   one looping keyframe. */
+.eye-loading {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0%,
+    var(--purple-bold-hover) 30%,
+    #c98be6 50%,
+    var(--purple-bold-hover) 70%,
+    var(--accent) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: eye-sheen 1.25s linear infinite;
+}
+@keyframes eye-sheen {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .eye-loading {
+    animation: none;
+    color: var(--accent-text);
+  }
+}
+
+/* Evidence chips under an answer: the sources it stood on, quiet and tappable. */
+.eye-body .from {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+.eye-body .src {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-dim);
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    border-color 140ms ease-out,
+    background 140ms ease-out;
+}
+.eye-body .src:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.eye-body .unsourced {
+  margin-top: var(--sp-2);
+  font-size: 12px;
+  color: var(--text-mute);
+  font-style: italic;
+}
+
+/* -- empty state --------------------------------------------------------- */
+/* First open, or a fresh conversation: the living eye, centered, and one line that
+   says what to do. No card, no illustration doing the work copy should do. */
+.eye-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--text-mute);
+}
+/* The empty-state mark is the raven eye, matching the pill/button branding: a
+   near-black almond socket with a filled violet pupil. Drawn static (not the living
+   eye) so it never overflows, but the same two-color identity. */
+.eye-empty .eye-mark {
+  display: inline-flex;
+}
+.eye-empty .eye-mark svg {
+  width: 60px;
+  height: 60px;
+}
+.eye-empty .eye-socket {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.eye-empty .eye-iris {
+  fill: var(--accent);
+  stroke: none;
+}
+.eye-empty .line {
+  font-size: 14px;
+  max-width: 30ch;
+  line-height: 1.5;
+}
+
+/* -- conversations list -------------------------------------------------- */
+/* The menu button swaps the transcript for the list of past conversations, titled
+   the way the wall titles them. A row opens; the trailing control forgets. */
+.eye-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.eye-list[hidden] {
+  display: none;
+}
+/* The list and the transcript are mutually exclusive; each sets `hidden` on the
+   other. A flex/display rule beats the UA [hidden] default, so restate it here or
+   both would stack. */
+.eye-body[hidden],
+.eye-foot[hidden] {
+  display: none !important;
+}
+.eye-list .eye-list-head {
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.eye-thread {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms ease-out;
+}
+.eye-thread:hover {
+  background: var(--surface-2);
+}
+.eye-thread[aria-current="true"] {
+  background: var(--lavender-subtle);
+}
+.eye-thread .t-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.eye-thread .t-forget {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--text-mute);
+  border-radius: var(--r-sm);
+  padding: 4px;
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 140ms ease-out,
+    color 140ms ease-out;
+}
+.eye-thread:hover .t-forget,
+.eye-thread:focus-within .t-forget {
+  opacity: 1;
+}
+.eye-thread .t-forget:hover {
+  color: var(--danger, #c0392b);
+}
+.eye-thread .t-forget svg {
+  width: 15px;
+  height: 15px;
+}
+.eye-list-empty {
+  margin: auto;
+  padding: var(--sp-6);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-mute);
+}
+
+/* -- composer ------------------------------------------------------------ */
+.eye-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.eye-foot .eye-inputwrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 2px 4px 2px 14px;
+  transition:
+    border-color 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+.eye-foot .eye-inputwrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--lavender-subtle);
+}
+#eyeField {
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  resize: none;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  padding: 8px 0;
+  max-height: 140px;
+  outline: none;
+}
+#eyeField::placeholder {
+  color: var(--text-mute);
+}
+/* The send action is the one violet moment in the panel. Disabled until there is
+   something to send, so an empty return is impossible, not just ignored. */
+.eye-send {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition:
+    background 140ms ease-out,
+    transform 120ms ease-out,
+    opacity 140ms ease-out;
+}
+.eye-send:hover {
+  background: var(--purple-bold-hover);
+}
+.eye-send:active {
+  transform: scale(0.94);
+}
+.eye-send:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.eye-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: var(--surface-3);
+  color: var(--text-mute);
+}
+.eye-send svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* -- phone: the panel is the screen ------------------------------------- */
+@media (max-width: 768px) {
+  .eyepanel {
+    width: 100vw;
+    border-left: 0;
+    box-shadow: none;
+  }
+  .eye-body .turn.you .said {
+    max-width: 88%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eyepanel {
+    transition: none;
+  }
+  .eye-scrim {
+    transition: none;
+  }
+}

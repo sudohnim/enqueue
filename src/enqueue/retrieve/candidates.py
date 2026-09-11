@@ -152,6 +152,11 @@ The query, then each saved item as:
 {index}. [id:{id}] [{kind}] {title}
 {snippet}
 
+Some items also list `facets` - one-line abstractions of what the item is about,
+written from its full text. They are the most reliable signal of subject: a book
+note whose facets are all about leadership and debt does not match a query about
+language models, however the snippet reads. Weigh the facets over the raw snippet.
+
 A genuine match has real topical overlap with the query - it actually bears on
 what was asked. An item about a different subject that only happens to sit
 nearby in vector space is NOT a match. When in doubt, prefer "not relevant": a
@@ -160,6 +165,32 @@ failure this gate exists to stop.
 
 Return one verdict per item, echoing the exact [id:...] shown above.
 """
+
+
+def _facets_for_judge(artifact_ids: list[str]) -> dict[str, list[str]]:
+    """The facet statements for each artifact, for the gray-zone judge prompt.
+
+    The judge otherwise sees only a title and one chunk snippet, which is why a
+    book-of-lessons note can read as an LLM note on the strength of one nearby
+    sentence. The facets state the item's real subjects in one line each, so
+    handing them over is the cheapest large gain in judge precision.
+    """
+    if not artifact_ids:
+        return {}
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT artifact_id, statement FROM facets"
+            " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+            " ORDER BY level",
+            (json.dumps(artifact_ids),),
+        ).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, list[str]] = {}
+    for row in rows:
+        out.setdefault(row["artifact_id"], []).append(row["statement"])
+    return out
 
 
 def _judge_cache_read(query: str, artifact_id: str, model_version: str) -> bool | None:
@@ -232,10 +263,17 @@ def judge_gray_zone(query: str, candidates: list[dict]) -> set[str]:
     if not unjudged:
         return kept
 
-    lines = [
-        f"{idx}. [id:{hit['artifact_id']}] [{hit.get('kind', 'artifact')}] {hit['title']}\n{hit['snippet']}"
-        for idx, hit in enumerate(unjudged, 1)
-    ]
+    facets_by_aid = _facets_for_judge([h["artifact_id"] for h in unjudged])
+    lines = []
+    for idx, hit in enumerate(unjudged, 1):
+        block = (
+            f"{idx}. [id:{hit['artifact_id']}] [{hit.get('kind', 'artifact')}] {hit['title']}\n"
+            f"{hit['snippet']}"
+        )
+        facets = facets_by_aid.get(hit["artifact_id"])
+        if facets:
+            block += "\nfacets: " + " | ".join(facets)
+        lines.append(block)
     user = f"Query: {query}\n\nSaved items to judge:\n\n" + "\n\n".join(lines)
 
     try:
@@ -643,7 +681,7 @@ def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
 
             cache[aid] = (
                 row["body_version"],
-                get_provider(local_only=bool(row["local_only"])).model,
+                get_provider(local_only=bool(row["local_only"]), summarize=True).model,
             )
     current = cache[aid]
     if current is None:
@@ -653,24 +691,29 @@ def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
 
 
 def _get_model(local_only: bool) -> str:
-    """Get the model string for staleness checks.
+    """Get the summary model string for facet/entity staleness checks.
 
-    Reads directly from settings/config - no provider construction.
+    A facet or entity is stale when the model that would write it now differs from
+    the one stamped on it, so this must read the SUMMARY model (`summarize_model`),
+    the same one `generate_for_artifact` writes with - not the interactive `llm_model`.
+    Keying staleness to the interactive model was the bug that let a chat/judge model
+    swap silently void every facet in search (and blocks the fast-judge/capable-summary
+    split). Reads directly from settings/config - no provider construction.
     Can be mocked by tests via enqueue.providers.base.get_provider mock.
     """
-    from .. import settings, config
+    from .. import config, settings
     from ..providers.base import get_provider
 
     # Try to get from provider first (allows test mocking)
     try:
-        provider = get_provider(local_only=local_only)
+        provider = get_provider(local_only=local_only, summarize=True)
         return provider.model
-    except Exception:
+    except Exception:  # noqa: BLE001 - fall back to the raw settings read below
         pass
-    # Fallback: read directly from settings
-    from .. import config, settings
-
-    return config.LLM_MODEL if local_only else (settings.get("llm_model") or config.LLM_MODEL)
+    # Fallback: read directly from settings.
+    if local_only:
+        return config.LLM_MODEL
+    return settings.get("summarize_model") or settings.get("llm_model") or config.LLM_MODEL
 
 
 def _prefetch_staleness(conn, cache, ids) -> None:

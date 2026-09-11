@@ -217,6 +217,62 @@ class TestPush:
             server.should_exit = True
             thread.join(timeout=5)
 
+    def test_join_imports_the_shared_key_on_a_fresh_device(self, store, quiet_queue, monkeypatch):
+        """A second device with no keyring joins an existing library: it pulls the
+        relay's keyring and imports the SAME DEK via the recovery phrase, so it decrypts
+        device A's data instead of minting an unusable new key."""
+        from enqueue.api.settings import SyncJoin, sync_join
+        from enqueue.sync import client as sync_client
+        from enqueue.sync.client import push_keyring
+
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+            monkeypatch.setattr(keyring, "sync_secret_set", lambda *_a, **_k: None)
+            # The post-join pull runs in a daemon thread; stub it so it cannot race the
+            # server shutdown in `finally`. The pull path itself is covered by
+            # test_pull_applies_a_remote_snapshot.
+            monkeypatch.setattr(sync_client, "pull", lambda: {"pulled": 0})
+
+            # Device A: set up sync and publish its keyring to the relay.
+            phrase = keyring_file.initialize()
+            dek_a = keyring_file.dek()
+            push_keyring()
+
+            # Device B: a truly fresh device - no keyring file, no key in memory.
+            keyring_file.clear_keyring()
+            keyring_file._dek = None
+            assert not keyring_file.is_initialized()
+
+            result = sync_join(
+                SyncJoin(relay_url=base, secret="test-secret", recovery_phrase=phrase)
+            )
+
+            # The keyring is local again and the imported DEK is byte-identical to device
+            # A's, so this device can decrypt the shared library.
+            assert keyring_file.is_initialized()
+            assert keyring_file.dek() == dek_a
+            assert result["relay_configured"] is True
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
+    def test_join_is_refused_when_a_keyring_already_exists(self, store, monkeypatch):
+        """Joining another library on a device that already has one would orphan its own
+        DEK and everything sealed under it - refuse it."""
+        from fastapi import HTTPException
+
+        from enqueue.api.settings import SyncJoin, sync_join
+
+        monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+        monkeypatch.setattr(keyring, "sync_secret_set", lambda *_a, **_k: None)
+        keyring_file.initialize()  # this device already has its own keyring
+
+        with pytest.raises(HTTPException) as excinfo:
+            sync_join(SyncJoin(relay_url="http://127.0.0.1:1", secret="x", recovery_phrase="y"))
+        assert excinfo.value.status_code == 409
+
 
 class TestAutoLoad:
     """QR.1: the DEK persists in the Keychain/file (no password), so an engine

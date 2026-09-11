@@ -44,9 +44,13 @@ PASSAGES = 8
 CHUNKS_PER_ARTIFACT = 2
 PASSAGE_WORDS = 220
 
-# Turns of history sent with a question. The whole transcript would crowd out the
-# passages, which are the part that makes the answer worth anything.
-HISTORY_TURNS = 6
+# Turns of history sent with a question. Enough that the model remembers the whole of
+# any normal conversation, so a follow-up ("and the second one?") lands - the old value
+# of 6 was tuned for a small local model whose context the passages had to win outright.
+# A capable model has room for both; the cap stays only so a pathologically long thread
+# cannot grow the prompt (and the cost) without bound or finally crowd out the passages,
+# which are still the part that makes the answer worth anything.
+HISTORY_TURNS = 40
 
 UNTITLED = "New chat"
 

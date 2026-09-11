@@ -38,6 +38,12 @@ const ICONS = {
 		'<path d="M13.5 6.5L8 12l5.5 5.5"/><path d="M19 6.5L13.5 12l5.5 5.5"/>',
 	panelout:
 		'<path d="M5.5 6.5L11 12l-5.5 5.5"/><path d="M11 6.5L16.5 12 11 17.5"/>',
+	// The conversations menu in the eye panel: a plain list, three rules, the last
+	// short so it reads as a list and not a hamburger nav.
+	list: '<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/>',
+	// Send a message: an upward arrow, the same stroke as the rest, so the composer's
+	// one violet control still speaks the icon system's language.
+	send: '<path d="M12 20V5"/><path d="M6 11l6-6 6 6"/>',
 };
 const svg = (k) => '<svg viewBox="0 0 24 24">' + ICONS[k] + "</svg>";
 

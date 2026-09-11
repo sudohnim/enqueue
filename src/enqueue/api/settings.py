@@ -35,6 +35,12 @@ class KeyringUnlock(BaseModel):
     recovery_phrase: str
 
 
+class SyncJoin(BaseModel):
+    relay_url: str
+    secret: str
+    recovery_phrase: str
+
+
 class SettingsUpdate(BaseModel):
     changes: dict
 
@@ -157,6 +163,75 @@ def keyring_init(req: KeyringInit) -> dict:
             "you lose access to this device. It will never be shown again."
         ),
     }
+
+
+@router.post("/settings/sync/join")
+def sync_join(req: SyncJoin) -> dict:
+    """Join an existing library on a NEW device using its recovery phrase (multi-device).
+
+    The setup walk mints a fresh keyring (a new DEK), which is right for a first device
+    but wrong for a second one - a new DEK cannot read the first device's data. This
+    joins instead: point at the same relay, authenticate with the same secret, pull the
+    library's encrypted keyring, and import the shared DEK with the recovery phrase.
+    After it succeeds the sync worker pulls the existing library down.
+
+    Refused when this device already has its own keyring - joining would orphan that
+    DEK and everything sealed under it. Reset sync first to replace deliberately.
+    """
+    from ..sync.client import pull, pull_keyring
+
+    if keyring_file.is_initialized():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This device already has a sync keyring. Joining another library would "
+                "orphan it and everything encrypted under its key. Reset sync on this "
+                "device first if you mean to replace it."
+            ),
+        )
+    relay = (req.relay_url or "").strip()
+    if not relay:
+        raise HTTPException(status_code=400, detail="A relay URL is required to join a library.")
+
+    # Relay + secret first: pulling the keyring is an authenticated GET against them.
+    settings.update({"sync_relay_url": relay})
+    try:
+        keyring.sync_secret_set(req.secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+    if not pull_keyring():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Could not fetch the library keyring from the relay. Check the relay URL "
+                "and secret, and that the other device has finished setting up sync."
+            ),
+        )
+    try:
+        keyring_file.unlock_with_recovery(req.recovery_phrase)
+    except keyring_file.UnlockError as exc:
+        # Leave the pulled keyring in place so a retry with the correct phrase works.
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "That recovery phrase did not unlock the library keyring. Check it and "
+                "try again."
+            ),
+        ) from exc
+
+    # A joined device already has the whole library upstream, so there is nothing to
+    # back-fill from here - mark it done and pull the existing data down instead.
+    settings.update({"sync_backfill_done": True})
+
+    def _bg():
+        result = pull()
+        print(f"[sync] join pull applied {result.get('pulled', 0)} snapshots", flush=True)
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return settings.sync_state()
 
 
 @router.post("/settings/keyring-unlock")
