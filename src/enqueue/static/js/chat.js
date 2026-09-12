@@ -34,6 +34,18 @@ function teardown() {
 	pendingSettings = null;
 }
 
+// The pending-answer mark: the app's spinning raven beside the violet "Loading…"
+// sheen, so a waiting turn has both the brand's motion and the theme's color. Reuses
+// the shared .loader/.loader-bird styles; only the caption is the gradient text.
+function eyeLoader() {
+	return (
+		'<div class="loader loader-sm" role="status">' +
+		'<img class="loader-bird" src="/static/loading.png" alt="" aria-hidden="true">' +
+		'<span class="eye-loading">Loading&hellip;</span>' +
+		"</div>"
+	);
+}
+
 async function startChat(text) {
 	const asked = { kind: scope.kind, id: scope.id };
 	openPanel();
@@ -47,7 +59,7 @@ async function startChat(text) {
 			esc(text) +
 			"</div></div>" +
 			'<div class="turn assistant"><div class="said">' +
-			'<span class="eye-loading">Loading&hellip;</span>' +
+			eyeLoader() +
 			"</div></div>";
 		body.scrollTop = body.scrollHeight;
 	}
@@ -373,7 +385,7 @@ function renderChat(d) {
 			(m.role === "user"
 				? esc(m.text)
 				: pending
-					? '<span class="eye-loading">Loading&hellip;</span>'
+					? eyeLoader()
 					: md(m.text));
 		const echoes =
 			d.chat.scope_kind === "artifact" &&

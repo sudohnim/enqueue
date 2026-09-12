@@ -217,6 +217,76 @@ class TestPush:
             server.should_exit = True
             thread.join(timeout=5)
 
+    def test_a_conversation_syncs_and_its_delete_is_a_tombstone(
+        self, store, quiet_queue, monkeypatch
+    ):
+        """A conversation rides the relay like an artifact: device A's chat + messages
+        reach device B on pull, and a delete propagates as a tombstone rather than
+        vanishing only locally."""
+        from enqueue import chats
+        from enqueue.sync.client import push_chat
+        from enqueue.sync.snapshot import read_chat_snapshot
+
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+            keyring_file.initialize()
+
+            # Device A: a conversation with a real exchange.
+            cid = chats.create()["chat"]["id"]
+            with db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO chat_messages (id, chat_id, ordinal, role, text, status, created_at)"
+                    " VALUES ('m1', ?, 0, 'user', 'what did I save about joints?', 'done', ?)",
+                    (cid, db.now()),
+                )
+                conn.execute(
+                    "INSERT INTO chat_messages"
+                    " (id, chat_id, ordinal, role, text, status, created_at)"
+                    " VALUES ('m2', ?, 1, 'assistant', 'A joint that moves outlasts one.', 'done', ?)",
+                    (cid, db.now()),
+                )
+            push_chat(cid)
+            original = read_chat_snapshot(db.get_conn(), cid)
+
+            # Simulate device B: no local copy, a foreign device id, a fresh cursor.
+            with db.transaction() as tx:
+                tx.execute("DELETE FROM chat_messages WHERE chat_id = ?", (cid,))
+                tx.execute("DELETE FROM chats WHERE id = ?", (cid,))
+            (store / "device_id").unlink(missing_ok=True)
+            (store / "sync_cursor").write_text("0")
+
+            assert pull()["pulled"] == 1
+            restored = read_chat_snapshot(db.get_conn(), cid)
+            # _device_id differs (B stamps nothing until it pushes), so compare the parts
+            # that must survive: the row minus its device stamp, and every message.
+            assert {k: v for k, v in restored["chat"].items() if k != "_device_id"} == {
+                k: v for k, v in original["chat"].items() if k != "_device_id"
+            }
+            assert [m["text"] for m in restored["messages"]] == [
+                m["text"] for m in original["messages"]
+            ]
+            assert chats.get(cid)["messages"]  # readable through the normal API
+
+            # Device A deletes it (tombstone) and pushes; B pulls the tombstone.
+            (store / "device_id").unlink(missing_ok=True)  # back to a stable local id
+            chats.delete(cid)
+            (store / "sync_cursor").write_text("0")
+            # Re-point to "device B" so the tombstone object is foreign again.
+            dev_a = read_chat_snapshot(db.get_conn(), cid)["chat"]["_device_id"]
+            monkeypatch.setattr("enqueue.sync.client.device_id", lambda: "device-B-" + dev_a)
+            pull()
+            # The tombstone applied: get() refuses it, and it is off the listing.
+            import pytest as _pytest
+
+            with _pytest.raises(KeyError):
+                chats.get(cid)
+            assert cid not in {c["id"] for c in chats.listing()["items"]}
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
     def test_join_imports_the_shared_key_on_a_fresh_device(self, store, quiet_queue, monkeypatch):
         """A second device with no keyring joins an existing library: it pulls the
         relay's keyring and imports the SAME DEK via the recovery phrase, so it decrypts

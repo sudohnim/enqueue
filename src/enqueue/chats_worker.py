@@ -80,6 +80,10 @@ def compute(job: Job) -> None:
             chats._retopic(job.chat_id)
         except Exception:  # noqa: BLE001 - naming is best effort; the answer already landed
             log.exception("naming or topic derivation failed for chat %s", job.chat_id)
+
+        # The answer (and its title/topics) has landed: push the whole conversation so
+        # the other device sees the completed turn, not just the pending one send() sent.
+        chats._push(job.chat_id)
     except Exception as exc:  # noqa: BLE001 - one bad job must not stop the worker
         log.exception("answer failed for message %s: %s", job.message_id, exc)
         # The cause is the actionable part (a rejected key, a dead endpoint), so it

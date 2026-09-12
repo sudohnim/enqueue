@@ -360,6 +360,46 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_artifacts_live ON artifacts(deleted_at, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_annotations_artifact ON annotations(artifact_id);
         CREATE INDEX IF NOT EXISTS idx_page_text_artifact ON page_text(artifact_id);
+        -- Conversations sync now (engine migration 0030). Columns mirror the engine's
+        -- chats/chat_messages/chat_citations/chat_topics so a chat snapshot lands
+        -- compatibly; a fresh phone starts empty and fills from the relay on pull.
+        CREATE TABLE IF NOT EXISTS chats (
+          id          TEXT PRIMARY KEY,
+          title       TEXT NOT NULL,
+          scope_kind  TEXT,
+          scope_id    TEXT,
+          created_at  TEXT NOT NULL,
+          updated_at  TEXT NOT NULL,
+          pinned      INTEGER NOT NULL DEFAULT 0,
+          deleted_at  TEXT,
+          _device_id  TEXT
+        );
+        CREATE TABLE IF NOT EXISTS chat_messages (
+          id         TEXT PRIMARY KEY,
+          chat_id    TEXT NOT NULL,
+          ordinal    INTEGER,
+          role       TEXT,
+          text       TEXT,
+          grounded   INTEGER,
+          created_at TEXT,
+          kind       TEXT,
+          payload    TEXT,
+          status     TEXT,
+          error      TEXT
+        );
+        CREATE TABLE IF NOT EXISTS chat_citations (
+          message_id  TEXT NOT NULL,
+          artifact_id TEXT NOT NULL,
+          rank        INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS chat_topics (
+          id         TEXT PRIMARY KEY,
+          chat_id    TEXT NOT NULL,
+          topic      TEXT,
+          created_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id);
+        CREATE INDEX IF NOT EXISTS idx_chats_live ON chats(deleted_at, pinned, updated_at DESC);
         "#,
     )
     .map_err(|e| e.to_string())?;
@@ -414,6 +454,25 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
         conn.execute(
             "INSERT INTO sync_meta (key, value) VALUES ('heal_repull_v2', '1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    // One-time heal v3: conversations started syncing after this install existed, so
+    // any chat snapshot already on the relay sits past the cursor and never arrives.
+    // Force one full re-pull so the chat limb applies every chat object. Same marker.
+    let healed_v3: Option<String> = conn
+        .query_row(
+            "SELECT value FROM sync_meta WHERE key = 'heal_repull_v3_chats'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if healed_v3.is_none() {
+        let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES ('heal_repull_v3_chats', '1')",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -558,6 +617,124 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Apply a conversation snapshot: the mirror of the engine's apply_chat_snapshot.
+/// Same (updated_at, _device_id) LWW and terminal-tombstone rules as apply_snapshot,
+/// then the chat row upserts and its messages/citations/topics are replaced wholesale.
+fn apply_chat_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
+    let chat = &snapshot["chat"];
+    let id = chat["id"].as_str().ok_or("chat snapshot: missing id")?;
+
+    let local: Option<(String, String, Option<String>)> = conn
+        .query_row(
+            "SELECT updated_at, COALESCE(_device_id,''), deleted_at FROM chats WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some((local_updated, local_device, local_deleted)) = local {
+        let incoming_deleted = chat.get("deleted_at").and_then(Value::as_str).is_some();
+        if local_deleted.is_some() && !incoming_deleted {
+            return Ok(()); // a delete is terminal and stays won
+        }
+        let inc_key = (
+            chat["updated_at"].as_str().unwrap_or("").to_string(),
+            chat.get("_device_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+        );
+        if (local_updated, local_device) > inc_key {
+            return Ok(());
+        }
+    }
+
+    let g = |c: &str| chat.get(c);
+    conn.execute(
+        "INSERT INTO chats (id,title,scope_kind,scope_id,created_at,updated_at,pinned,deleted_at,_device_id)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(id) DO UPDATE SET
+           title=excluded.title, scope_kind=excluded.scope_kind, scope_id=excluded.scope_id,
+           created_at=excluded.created_at, updated_at=excluded.updated_at, pinned=excluded.pinned,
+           deleted_at=excluded.deleted_at, _device_id=excluded._device_id",
+        rusqlite::params![
+            id,
+            str_at(g("title")),
+            str_at(g("scope_kind")),
+            str_at(g("scope_id")),
+            str_at(g("created_at")),
+            str_at(g("updated_at")),
+            int_at(g("pinned")).unwrap_or(0),
+            str_at(g("deleted_at")),
+            str_at(g("_device_id")),
+        ],
+    )
+    .map_err(|e| format!("insert chat: {e}"))?;
+
+    conn.execute(
+        "DELETE FROM chat_citations WHERE message_id IN \
+         (SELECT id FROM chat_messages WHERE chat_id = ?1)",
+        [id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM chat_messages WHERE chat_id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM chat_topics WHERE chat_id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+
+    if let Some(msgs) = snapshot["messages"].as_array() {
+        for m in msgs {
+            conn.execute(
+                "INSERT INTO chat_messages \
+                 (id,chat_id,ordinal,role,text,grounded,created_at,kind,payload,status,error) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                rusqlite::params![
+                    str_at(m.get("id")),
+                    id,
+                    int_at(m.get("ordinal")),
+                    str_at(m.get("role")),
+                    str_at(m.get("text")),
+                    int_at(m.get("grounded")),
+                    str_at(m.get("created_at")),
+                    str_at(m.get("kind")),
+                    str_at(m.get("payload")),
+                    str_at(m.get("status")),
+                    str_at(m.get("error")),
+                ],
+            )
+            .map_err(|e| format!("insert chat_message: {e}"))?;
+        }
+    }
+    if let Some(cites) = snapshot["citations"].as_array() {
+        for c in cites {
+            conn.execute(
+                "INSERT INTO chat_citations (message_id,artifact_id,rank) VALUES (?1,?2,?3)",
+                rusqlite::params![
+                    str_at(c.get("message_id")),
+                    str_at(c.get("artifact_id")),
+                    int_at(c.get("rank")),
+                ],
+            )
+            .map_err(|e| format!("insert chat_citation: {e}"))?;
+        }
+    }
+    if let Some(topics) = snapshot["topics"].as_array() {
+        for t in topics {
+            conn.execute(
+                "INSERT INTO chat_topics (id,chat_id,topic,created_at) VALUES (?1,?2,?3,?4)",
+                rusqlite::params![
+                    str_at(t.get("id")),
+                    id,
+                    str_at(t.get("topic")),
+                    str_at(t.get("created_at")),
+                ],
+            )
+            .map_err(|e| format!("insert chat_topic: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
 #[allow(dead_code)]
 fn read_cursor(conn: &Connection) -> Result<u64, String> {
     let v: Option<String> = conn
@@ -574,7 +751,7 @@ fn read_cursor(conn: &Connection) -> Result<u64, String> {
 #[allow(dead_code)]
 fn write_cursor(conn: &Connection, cursor: u64) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO sync_meta (key,value) VALUES ('cursor',?1)\
+        "INSERT INTO sync_meta (key,value) VALUES ('cursor',?1) \
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         [cursor.to_string()],
     )
@@ -843,7 +1020,14 @@ pub fn sync_library(
     // secretbox-encrypted, so the LWW key cannot be peeked before decrypt.)
     let mut failed = 0usize;
     for snapshot in fetch_snapshots_parallel(base, &auth, dek, &dev_names) {
-        match apply_snapshot(conn, &snapshot) {
+        // The snapshot names itself: a conversation carries a `chat` object, an
+        // artifact a `artifact` one. Route each to its own apply.
+        let applied = if snapshot.get("chat").is_some() {
+            apply_chat_snapshot(conn, &snapshot)
+        } else {
+            apply_snapshot(conn, &snapshot)
+        };
+        match applied {
             Ok(()) => pulled += 1,
             Err(e) => {
                 failed += 1;
@@ -887,6 +1071,239 @@ pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
         ids.push(row.map_err(|e| e.to_string())?);
     }
     Ok(ids)
+}
+
+/// Conversation rows for the eye panel's list: id, title, pinned, updated_at, and the
+/// topics it circles. Pinned first then newest; tombstones excluded.
+#[allow(dead_code)]
+pub fn list_chats(conn: &Connection) -> Result<Vec<Value>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, pinned, updated_at FROM chats \
+             WHERE deleted_at IS NULL ORDER BY pinned DESC, updated_at DESC LIMIT 100",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, title, pinned, updated_at) = row.map_err(|e| e.to_string())?;
+        let mut topics = Vec::new();
+        let mut tstmt = conn
+            .prepare("SELECT topic FROM chat_topics WHERE chat_id = ?1 ORDER BY created_at")
+            .map_err(|e| e.to_string())?;
+        let trows = tstmt
+            .query_map([&id], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        for t in trows {
+            topics.push(t.map_err(|e| e.to_string())?);
+        }
+        out.push(serde_json::json!({
+            "id": id, "title": title, "pinned": pinned,
+            "updated_at": updated_at, "topics": topics,
+        }));
+    }
+    Ok(out)
+}
+
+/// One conversation's transcript for the reader: the chat plus its messages in order,
+/// each with the artifact ids it cited (and their local titles when present).
+#[allow(dead_code)]
+pub fn get_chat(conn: &Connection, id: &str) -> Result<Value, String> {
+    let chat: Option<(String, String, Option<String>, Option<String>, i64)> = conn
+        .query_row(
+            "SELECT id, title, scope_kind, scope_id, pinned FROM chats \
+             WHERE id = ?1 AND deleted_at IS NULL",
+            [id],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let (cid, title, scope_kind, scope_id, pinned) = chat.ok_or("no such chat")?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, role, text, kind, status FROM chat_messages \
+             WHERE chat_id = ?1 ORDER BY ordinal",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([&cid], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut messages = Vec::new();
+    for row in rows {
+        let (mid, role, text, kind, status) = row.map_err(|e| e.to_string())?;
+        // Citations: the artifact ids this message stood on, with a local title if the
+        // artifact synced here too (it usually has).
+        let mut cstmt = conn
+            .prepare(
+                "SELECT c.artifact_id, a.title FROM chat_citations c \
+                 LEFT JOIN artifacts a ON a.id = c.artifact_id \
+                 WHERE c.message_id = ?1 ORDER BY c.rank",
+            )
+            .map_err(|e| e.to_string())?;
+        let crows = cstmt
+            .query_map([&mid], |r| {
+                Ok(serde_json::json!({
+                    "artifact_id": r.get::<_, String>(0)?,
+                    "title": r.get::<_, Option<String>>(1)?,
+                }))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut cited = Vec::new();
+        for c in crows {
+            cited.push(c.map_err(|e| e.to_string())?);
+        }
+        messages.push(serde_json::json!({
+            "id": mid, "role": role, "text": text,
+            "kind": kind, "status": status, "cited": cited,
+        }));
+    }
+    Ok(serde_json::json!({
+        "chat": {
+            "id": cid, "title": title, "scope_kind": scope_kind,
+            "scope_id": scope_id, "pinned": pinned,
+        },
+        "messages": messages,
+    }))
+}
+
+/// Serialize a conversation for the relay: the mirror of the engine's
+/// read_chat_snapshot. Children ordered so the canonical JSON is byte-stable.
+#[allow(dead_code)]
+pub fn build_chat_snapshot(conn: &Connection, id: &str) -> Result<Option<Value>, String> {
+    let chat: Option<Value> = conn
+        .query_row("SELECT * FROM chats WHERE id = ?1", [id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>("id")?,
+                "title": r.get::<_, String>("title")?,
+                "scope_kind": r.get::<_, Option<String>>("scope_kind")?,
+                "scope_id": r.get::<_, Option<String>>("scope_id")?,
+                "created_at": r.get::<_, String>("created_at")?,
+                "updated_at": r.get::<_, String>("updated_at")?,
+                "pinned": r.get::<_, i64>("pinned")?,
+                "deleted_at": r.get::<_, Option<String>>("deleted_at")?,
+                "_device_id": r.get::<_, Option<String>>("_device_id")?,
+            }))
+        })
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let chat = match chat {
+        Some(c) => c,
+        None => return Ok(None),
+    };
+
+    let mut mstmt = conn
+        .prepare(
+            "SELECT id,chat_id,ordinal,role,text,grounded,created_at,kind,payload,status,error \
+             FROM chat_messages WHERE chat_id = ?1 ORDER BY ordinal, id",
+        )
+        .map_err(|e| e.to_string())?;
+    let messages: Vec<Value> = mstmt
+        .query_map([id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>(0)?,
+                "chat_id": r.get::<_, String>(1)?,
+                "ordinal": r.get::<_, Option<i64>>(2)?,
+                "role": r.get::<_, Option<String>>(3)?,
+                "text": r.get::<_, Option<String>>(4)?,
+                "grounded": r.get::<_, Option<i64>>(5)?,
+                "created_at": r.get::<_, Option<String>>(6)?,
+                "kind": r.get::<_, Option<String>>(7)?,
+                "payload": r.get::<_, Option<String>>(8)?,
+                "status": r.get::<_, Option<String>>(9)?,
+                "error": r.get::<_, Option<String>>(10)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut cstmt = conn
+        .prepare(
+            "SELECT c.message_id, c.artifact_id, c.rank FROM chat_citations c \
+             JOIN chat_messages m ON m.id = c.message_id \
+             WHERE m.chat_id = ?1 ORDER BY c.message_id, c.rank",
+        )
+        .map_err(|e| e.to_string())?;
+    let citations: Vec<Value> = cstmt
+        .query_map([id], |r| {
+            Ok(serde_json::json!({
+                "message_id": r.get::<_, String>(0)?,
+                "artifact_id": r.get::<_, String>(1)?,
+                "rank": r.get::<_, Option<i64>>(2)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut tstmt = conn
+        .prepare(
+            "SELECT id, chat_id, topic, created_at FROM chat_topics \
+             WHERE chat_id = ?1 ORDER BY created_at, id",
+        )
+        .map_err(|e| e.to_string())?;
+    let topics: Vec<Value> = tstmt
+        .query_map([id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>(0)?,
+                "chat_id": r.get::<_, String>(1)?,
+                "topic": r.get::<_, Option<String>>(2)?,
+                "created_at": r.get::<_, Option<String>>(3)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(Some(serde_json::json!({
+        "chat": chat,
+        "messages": messages,
+        "citations": citations,
+        "topics": topics,
+    })))
+}
+
+/// Push a conversation snapshot to the relay under this device's chat namespace.
+#[allow(dead_code)]
+pub fn push_chat_snapshot(
+    base: &str,
+    secret: &str,
+    device: &str,
+    dek: &[u8; DEK_LEN],
+    snapshot: &Value,
+) -> Result<(), String> {
+    let id = snapshot["chat"]["id"].as_str().unwrap_or("");
+    let name = format!("dev/{device}/chats/{id}.enc");
+    let plaintext = serde_json::to_vec(snapshot).map_err(|e| e.to_string())?;
+    let body = secretbox_encrypt(dek, &plaintext)?;
+    let url = format!("{}/sync/object/{name}", base.trim_end_matches('/'));
+    put_object_with_retry(&url, secret, &body, "chat")
 }
 
 /// The library rows for the Library surface (MOB.4): id, kind, title, body (for the

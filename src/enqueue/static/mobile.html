@@ -2117,7 +2117,7 @@
 <section id="chat" hidden>
   <header>
     <button class="back" id="chat_cancel">&larr;</button>
-    <h1>Chat</h1>
+    <h1 id="chat_title">Conversations</h1>
   </header>
   <div
     id="chat_messages"
@@ -5247,50 +5247,162 @@ return;
     });
   })();
 
+  // The eye opens the conversations synced from the desktop (the homebase for AI):
+  // a list of titled threads, and tapping one shows its full transcript. Read-only
+  // on the phone for now; sending from mobile is the next step.
+  let mobileChatView = "list"; // "list" | "transcript"
+  let mobileChatId = null;
+
   function openChat() {
     show("chat");
-    renderChatHistory();
-    document.getElementById("chat_input").focus();
+    renderChatsList();
   }
 
-  function renderChatHistory() {
+  async function renderChatsList() {
+    mobileChatView = "list";
+    mobileChatId = null;
+    document.getElementById("chat_title").textContent = "Conversations";
+    document.getElementById("chat_form").style.display = "none";
     const container = document.getElementById("chat_messages");
     container.replaceChildren();
-    for (const msg of chatHistory) {
+    const loading = document.createElement("div");
+    loading.style.cssText =
+      "color: var(--text-mute); text-align: center; padding: 24px; font-size: 14px;";
+    loading.textContent = "Loading…";
+    container.appendChild(loading);
+
+    let items = [];
+    try {
+      items = JSON.parse(await invoke("mobile_chats_list")).items || [];
+    } catch (e) {
+      loading.textContent = "Could not load conversations.";
+      return;
+    }
+    container.replaceChildren();
+    // A New-conversation action sits at the top of the list, always available.
+    const newBtn = document.createElement("button");
+    newBtn.style.cssText =
+      "display: flex; align-items: center; gap: 8px; width: 100%; border: 0; " +
+      "background: transparent; text-align: left; padding: 15px 4px; " +
+      "border-bottom: 1px solid var(--line-soft); font-size: 15px; font-weight: 600; " +
+      "color: var(--purple-bold); cursor: pointer;";
+    newBtn.textContent = "+  New conversation";
+    newBtn.onclick = () => newMobileConversation();
+    container.appendChild(newBtn);
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.style.cssText =
+        "color: var(--text-mute); text-align: center; padding: 40px 20px; font-size: 14px; line-height: 1.5;";
+      empty.textContent =
+        "No conversations yet. Start one here or on desktop - it syncs both ways.";
+      container.appendChild(empty);
+      return;
+    }
+    for (const c of items) {
+      const row = document.createElement("button");
+      row.style.cssText =
+        "display: block; width: 100%; border: 0; background: transparent; text-align: left; " +
+        "padding: 15px 4px; border-bottom: 1px solid var(--line-soft); font-size: 15px; " +
+        "color: var(--text); cursor: pointer;";
+      row.textContent = c.title || "Conversation";
+      row.onclick = () => openConversation(c.id);
+      container.appendChild(row);
+    }
+  }
+
+  async function openConversation(id) {
+    mobileChatView = "transcript";
+    mobileChatId = id;
+    const container = document.getElementById("chat_messages");
+    container.replaceChildren();
+    let data;
+    try {
+      data = JSON.parse(await invoke("mobile_chat_get", { id }));
+    } catch (e) {
+      container.textContent = "Could not open this conversation.";
+      return;
+    }
+    document.getElementById("chat_title").textContent =
+      data.chat.title || "Conversation";
+    container.replaceChildren();
+    for (const m of data.messages || []) {
+      const isUser = m.role === "user";
       const div = document.createElement("div");
-      div.className =
-        "chat-message " + (msg.role === "user" ? "user" : "assistant");
       div.style.cssText =
-        "max-width: 85%; padding: 10px 14px; border-radius: var(--r-md); " +
-        (msg.role === "user"
+        "max-width: 85%; padding: 10px 14px; border-radius: var(--r-md); font-size: 15px; line-height: 1.5; " +
+        (isUser
           ? "background: var(--purple-bold); color: var(--on-purple-bold); align-self: flex-end;"
-          : "background: var(--surface); color: var(--text); align-self: flex-start; border: 1px solid var(--line);");
-      div.textContent = msg.content;
-      // Citations ride with their own message, so this must stay INSIDE the
-      // loop: msg and div only exist here (moving it out threw "msg is not
-      // defined" and broke openChat entirely).
-      if (msg.citations && msg.citations.length) {
-        const citeDiv = document.createElement("div");
-        citeDiv.className = "chat-citations";
-        citeDiv.style.cssText =
+          : "color: var(--text); align-self: flex-start;");
+      if (isUser) div.textContent = m.text || "";
+      else div.innerHTML = window.md ? md(m.text || "") : m.text || "";
+      if (m.cited && m.cited.length) {
+        const cd = document.createElement("div");
+        cd.style.cssText =
           "display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;";
-        for (const id of msg.citations) {
+        for (const c of m.cited) {
           const chip = document.createElement("button");
-          chip.className = "citation-chip";
-          chip.textContent = id.slice(0, 8);
           chip.style.cssText =
-            "padding: 2px 8px; font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--text-mute);";
+            "padding: 3px 10px; font-size: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; color: var(--text-dim);";
+          chip.textContent = c.title || (c.artifact_id || "").slice(0, 8);
           chip.onclick = () => {
             show("reader");
-            openArtifact(id);
+            openArtifact(c.artifact_id);
           };
-          citeDiv.appendChild(chip);
+          cd.appendChild(chip);
         }
-        div.appendChild(citeDiv);
+        div.appendChild(cd);
       }
       container.appendChild(div);
     }
-    container.scrollTop = container.scrollHeight;
+    container.scrollTop = container.scrollHeight; // land at the latest turn
+    // A synced conversation is continuable now (phase 3b): show the composer.
+    const form = document.getElementById("chat_form");
+    form.style.display = "flex";
+    document.getElementById("chat_input").focus();
+  }
+
+  // Start a fresh conversation on the phone: empty transcript, armed composer. The
+  // first send creates the chat (chat_id null) and it syncs to the desktop.
+  function newMobileConversation() {
+    mobileChatView = "transcript";
+    mobileChatId = null;
+    document.getElementById("chat_title").textContent = "New conversation";
+    const container = document.getElementById("chat_messages");
+    container.replaceChildren();
+    const hint = document.createElement("div");
+    hint.style.cssText =
+      "color: var(--text-mute); text-align: center; padding: 32px 20px; font-size: 14px; line-height: 1.5;";
+    hint.textContent = "Ask anything about the artifacts you saved.";
+    container.appendChild(hint);
+    document.getElementById("chat_form").style.display = "flex";
+    document.getElementById("chat_input").focus();
+  }
+
+  // Send a turn from the phone: persist + push via mobile_chat_send, then re-render the
+  // returned transcript. Creates the chat on the first send (mobileChatId null).
+  async function mobileSend() {
+    const input = document.getElementById("chat_input");
+    const text = input.value.trim();
+    if (!text || chatInProgress) return;
+    input.value = "";
+    chatInProgress = true;
+    document.getElementById("chat_loading").hidden = false;
+    try {
+      const raw = await invoke("mobile_chat_send", {
+        chatId: mobileChatId || null,
+        text,
+      });
+      const data = JSON.parse(raw);
+      mobileChatId = data.chat.id;
+      // Re-render from the returned transcript (reuses openConversation's renderer).
+      await openConversation(mobileChatId);
+      invoke("mobile_outbox_push").catch(() => {}); // nudge propagation to desktop
+    } catch (e) {
+      toast("Could not send. " + errString(e), true);
+    } finally {
+      chatInProgress = false;
+      document.getElementById("chat_loading").hidden = true;
+    }
   }
 
   function appendMessage(role, content, citations) {
@@ -5332,11 +5444,14 @@ return;
 
   document.getElementById("chat_form").addEventListener("submit", (e) => {
     e.preventDefault();
-    sendChat();
+    mobileSend();
   });
 
   document.getElementById("chat_cancel").addEventListener("click", () => {
-    show("library");
+    // Back steps out of a transcript to the conversations list first, then out to
+    // the library - the same two-level back the desktop panel has.
+    if (mobileChatView === "transcript") renderChatsList();
+    else show("library");
   });
 
   // Close menu on outside click

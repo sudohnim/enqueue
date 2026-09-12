@@ -209,3 +209,114 @@ def apply_pulled_snapshot(conn: Connection, snapshot: dict) -> None:
         merged = {**local_versions, **incoming_versions}
         snapshot["versions"] = sorted(merged.values(), key=lambda v: (v["created_at"], v["id"]))
     apply_snapshot(conn, snapshot)
+
+
+# --------------------------------------------------------------------------- chats
+# A conversation syncs as one snapshot - the `chats` row plus its ordered messages,
+# their citations, and its topics - resolved by the same (updated_at, _device_id)
+# last-writer-wins the artifact path uses. The message log is carried whole and
+# replaced whole on apply: whole-snapshot LWW, so a conversation actively extended on
+# two devices at once can lose the losing device's turns (the known edge, acceptable
+# while a thread lives on one device at a time).
+
+
+def read_chat_snapshot(conn: Connection, chat_id: str) -> dict | None:
+    """Build one conversation's snapshot, or None when it does not exist.
+
+    Children are ordered deterministically so the canonical JSON is byte-stable:
+    messages by `ordinal, id`, citations by `message_id, rank`, topics by
+    `created_at, id`.
+    """
+    row = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
+    if row is None:
+        return None
+    return {
+        "chat": dict(row),
+        "messages": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM chat_messages WHERE chat_id = ? ORDER BY ordinal, id",
+                (chat_id,),
+            )
+        ],
+        "citations": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT c.* FROM chat_citations c"
+                " JOIN chat_messages m ON m.id = c.message_id"
+                " WHERE m.chat_id = ? ORDER BY c.message_id, c.rank",
+                (chat_id,),
+            )
+        ],
+        "topics": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM chat_topics WHERE chat_id = ? ORDER BY created_at, id",
+                (chat_id,),
+            )
+        ],
+    }
+
+
+def chat_lww_key(snapshot: dict) -> tuple[str, str]:
+    """The LWW key for a chat snapshot: `(updated_at, _device_id)`. Higher wins."""
+    return (
+        snapshot["chat"]["updated_at"],
+        snapshot["chat"].get("_device_id") or "",
+    )
+
+
+def apply_chat_snapshot(conn: Connection, snapshot: dict) -> None:
+    """Upsert a conversation and replace its children, idempotently, under LWW.
+
+    No-op when the local chat's key is already >= the incoming one, so a stale
+    pull never clobbers a newer local turn. A tombstone is terminal: once a chat
+    is deleted locally, a non-delete snapshot cannot revive it.
+    """
+    chat = snapshot["chat"]
+    chat_id = chat["id"]
+
+    local = conn.execute(
+        "SELECT updated_at, _device_id, deleted_at FROM chats WHERE id = ?", (chat_id,)
+    ).fetchone()
+    if local is not None:
+        if local["deleted_at"] and not chat.get("deleted_at"):
+            return  # a delete always wins and stays won
+        local_key = (local["updated_at"], local["_device_id"] or device_id())
+        if local_key >= chat_lww_key(snapshot):
+            return
+
+    cols = list(chat.keys())
+    marks = ",".join("?" * len(cols))
+    sets = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "id")
+    conn.execute(
+        f"INSERT INTO chats ({','.join(cols)}) VALUES ({marks})"
+        f" ON CONFLICT(id) DO UPDATE SET {sets}",
+        [chat[c] for c in cols],
+    )
+
+    # Children are replaced wholesale (citations first: they reference messages).
+    conn.execute(
+        "DELETE FROM chat_citations WHERE message_id IN"
+        " (SELECT id FROM chat_messages WHERE chat_id = ?)",
+        (chat_id,),
+    )
+    conn.execute("DELETE FROM chat_messages WHERE chat_id = ?", (chat_id,))
+    conn.execute("DELETE FROM chat_topics WHERE chat_id = ?", (chat_id,))
+    for m in snapshot.get("messages", []):
+        mc = list(m.keys())
+        conn.execute(
+            f"INSERT INTO chat_messages ({','.join(mc)}) VALUES ({','.join('?' * len(mc))})",
+            [m[c] for c in mc],
+        )
+    for c in snapshot.get("citations", []):
+        conn.execute(
+            "INSERT INTO chat_citations (message_id, artifact_id, rank) VALUES (?,?,?)",
+            (c["message_id"], c["artifact_id"], c["rank"]),
+        )
+    for t in snapshot.get("topics", []):
+        tc = list(t.keys())
+        conn.execute(
+            f"INSERT INTO chat_topics ({','.join(tc)}) VALUES ({','.join('?' * len(tc))})",
+            [t[c] for c in tc],
+        )

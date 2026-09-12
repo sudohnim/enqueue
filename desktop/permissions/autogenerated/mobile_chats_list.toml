@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-chats-list"
+description = "Enables the mobile_chats_list command without any pre-configured scope."
+commands.allow = ["mobile_chats_list"]
+
+[[permission]]
+identifier = "deny-mobile-chats-list"
+description = "Denies the mobile_chats_list command without any pre-configured scope."
+commands.deny = ["mobile_chats_list"]

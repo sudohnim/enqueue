@@ -15,7 +15,14 @@ import httpx
 from .. import config, crypto, db, keyring, keyring_file, settings
 from . import device_id
 from .guard import assert_local_relay
-from .snapshot import apply_pulled_snapshot, deserialize, read_artifact_snapshot, serialize
+from .snapshot import (
+    apply_chat_snapshot,
+    apply_pulled_snapshot,
+    deserialize,
+    read_artifact_snapshot,
+    read_chat_snapshot,
+    serialize,
+)
 
 
 def _relay_url() -> str:
@@ -193,6 +200,50 @@ def fetch_blob_to_cache(content_hash: str) -> bool:
     return True
 
 
+def push_chat(chat_id: str) -> None:
+    """PUT one conversation's snapshot to the relay, when sync is configured.
+
+    The chat's own path (`dev/<device>/chats/<id>.enc`) is what the pull routes on.
+    A push failure never breaks the local turn: it is reported and retried on the
+    next push. Mirrors push_artifact, including the DEK-encrypt at the boundary.
+    """
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+
+    conn = db.get_conn()
+    try:
+        snapshot = read_chat_snapshot(conn, chat_id)
+    finally:
+        conn.close()
+    if snapshot is None:
+        return
+
+    dek = keyring_file.dek()
+    if dek is None:
+        return  # the keyring is locked; sync is paused, not failing
+
+    snapshot["chat"]["_device_id"] = device_id()
+    data = crypto.encrypt(serialize(snapshot), dek)
+
+    name = f"dev/{device_id()}/chats/{chat_id}.enc"
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
+            )
+    except httpx.HTTPError as exc:
+        print(f"[sync] chat push failed for {chat_id}: {exc}", flush=True)
+        return
+    if resp.status_code not in (201, 409):
+        print(f"[sync] chat push rejected for {chat_id}: {resp.status_code}", flush=True)
+
+
 def pull() -> dict:
     """List changed objects since the cursor, download and apply snapshots (SYNC.5).
 
@@ -253,7 +304,12 @@ def pull() -> dict:
             try:
                 snapshot = deserialize(crypto.decrypt(resp.content, dek))
                 with db.transaction() as conn:
-                    apply_pulled_snapshot(conn, snapshot)
+                    # The object's path says what it is: a conversation snapshot applies
+                    # through the chat limb, everything else is an artifact.
+                    if "/chats/" in name:
+                        apply_chat_snapshot(conn, snapshot)
+                    else:
+                        apply_pulled_snapshot(conn, snapshot)
                 pulled += 1
             except Exception as exc:  # noqa: BLE001
                 # A single poison snapshot must NEVER wedge the whole pull. This

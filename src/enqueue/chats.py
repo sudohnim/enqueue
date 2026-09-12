@@ -58,6 +58,21 @@ UNTITLED = "New chat"
 # --------------------------------------------------------------------------- shape
 
 
+def _push(chat_id: str) -> None:
+    """Best-effort push of a conversation to the relay, like push_artifact for a note.
+
+    Conversations sync now (0030): create, every turn, rename/pin, and delete each
+    push the whole snapshot. A sync failure never breaks the local write, so this
+    swallows everything and lets the next push retry.
+    """
+    try:
+        from .sync.client import push_chat
+
+        push_chat(chat_id)
+    except Exception:  # noqa: BLE001 - sync is best-effort, never fatal to the local op
+        pass
+
+
 def create(scope_kind: str = "everything", scope_id: str | None = None) -> dict:
     if scope_kind not in ("everything", "artifact"):
         raise ValueError(f"unknown scope {scope_kind!r}")
@@ -72,6 +87,7 @@ def create(scope_kind: str = "everything", scope_id: str | None = None) -> dict:
             " VALUES (?,?,?,?,?,?)",
             (chat_id, UNTITLED, scope_kind, scope_id, now, now),
         )
+    _push(chat_id)
     return get(chat_id)
 
 
@@ -79,7 +95,9 @@ def get(chat_id: str) -> dict:
     conn = db.get_conn()
     try:
         chat = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
-        if chat is None:
+        # A tombstone (deleted, kept only so the delete can sync) is gone to every
+        # reader, the same as a missing row.
+        if chat is None or chat["deleted_at"]:
             raise KeyError(chat_id)
 
         messages = conn.execute(
@@ -140,9 +158,15 @@ def pin(chat_id: str, pinned: bool = True) -> dict:
             pinned_int = int(pinned)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"pinned must be an integer: {exc}") from None
-        cur = conn.execute("UPDATE chats SET pinned = ? WHERE id = ?", (pinned_int, chat_id))
+        # updated_at is bumped so the pin change wins LWW and reaches other devices;
+        # without it the pushed snapshot ties the peer's and the pin never propagates.
+        cur = conn.execute(
+            "UPDATE chats SET pinned = ?, updated_at = ? WHERE id = ?",
+            (pinned_int, db.now(), chat_id),
+        )
         if not cur.rowcount:
             raise KeyError(chat_id)
+    _push(chat_id)
     return get(chat_id)
 
 
@@ -151,7 +175,9 @@ def listing(limit: int = 40) -> dict:
     conn = db.get_conn()
     try:
         chats = conn.execute(
-            "SELECT * FROM chats ORDER BY pinned DESC, updated_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM chats WHERE deleted_at IS NULL"
+            " ORDER BY pinned DESC, updated_at DESC LIMIT ?",
+            (limit,),
         ).fetchall()
         # P.2f: the topics table was loaded in full for every listing; filter
         # it to the chats that are actually on this page.
@@ -182,6 +208,7 @@ def rename(chat_id: str, title: str) -> dict:
         )
         if not cur.rowcount:
             raise KeyError(chat_id)
+    _push(chat_id)
     return get(chat_id)
 
 
@@ -193,10 +220,14 @@ def delete(chat_id: str) -> dict:
     forever would make the list useless, which is the failure mode the whole product
     is built against.
     """
+    now = db.now()
     with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if exists is None:
             raise KeyError(chat_id)
+        # A tombstone, not a hard delete: the children go, but the row is kept with
+        # deleted_at set and updated_at bumped so the deletion wins LWW and reaches the
+        # other devices. Every reader already treats a deleted_at row as gone.
         conn.execute(
             "DELETE FROM chat_citations WHERE message_id IN"
             " (SELECT id FROM chat_messages WHERE chat_id = ?)",
@@ -204,7 +235,11 @@ def delete(chat_id: str) -> dict:
         )
         conn.execute("DELETE FROM chat_messages WHERE chat_id = ?", (chat_id,))
         conn.execute("DELETE FROM chat_topics WHERE chat_id = ?", (chat_id,))
-        conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+        conn.execute(
+            "UPDATE chats SET deleted_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, chat_id),
+        )
+    _push(chat_id)
     return {"deleted": chat_id}
 
 
@@ -751,6 +786,9 @@ def send(chat_id: str, text: str, force_skill: str | None = None) -> dict:
         raise KeyError(chat_id)
 
     _submit(chat_id, text, force_skill)
+    # Push the question and the pending turn now; the worker pushes again with the
+    # answer once it lands, so the other device sees the thread advance in two steps.
+    _push(chat_id)
     return get(chat_id)
 
 

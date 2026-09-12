@@ -209,8 +209,13 @@ class TestPinning:
         assert order[0] == old["chat"]["id"]
         assert new["chat"]["id"] in order
 
+        # Unpinning drops it back among the unpinned. Toggling the pin bumps updated_at
+        # (the change has to win LWW to sync, mirroring how tagging touches an artifact),
+        # so the just-unpinned thread is now the most-recently-touched and sorts first.
         chats.pin(old["chat"]["id"], False)
-        assert chats.listing()["items"][0]["id"] == new["chat"]["id"]
+        top = chats.listing()["items"][0]
+        assert top["id"] == old["chat"]["id"]
+        assert top["pinned"] == 0
 
     def test_pinning_an_unknown_chat_is_a_key_error(self, store):
         with pytest.raises(KeyError):

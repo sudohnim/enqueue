@@ -409,6 +409,23 @@ mod mobile {
         Ok(serde_json::json!(arts).to_string())
     }
 
+    /// The synced conversations for the eye panel's list, as `{"items":[...]}` -
+    /// the same shape the desktop's GET /chats returns, so the panel renders either.
+    #[tauri::command]
+    fn mobile_chats_list(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let items = crate::sync::list_chats(&conn).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({ "items": items }).to_string())
+    }
+
+    /// One synced conversation's transcript for the eye panel, as `{chat, messages}`.
+    #[tauri::command]
+    fn mobile_chat_get(app: AppHandle, id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let chat = crate::sync::get_chat(&conn, &id).map_err(|e| e.to_string())?;
+        Ok(chat.to_string())
+    }
+
     /// The saved views (custom pivots) synced from the desktop, as
     /// `{"views":[{name, ids}]}`. Empty until the desktop has pushed lib/pivots.enc.
     #[tauri::command]
@@ -1200,7 +1217,182 @@ mod mobile {
             "error": null
         }).to_string())
     }
-    
+
+    /// The retrieval + LLM half of a mobile answer, factored out so the persistent
+    /// send command reuses exactly what the one-shot mobile_chat does: keyword search
+    /// over the local copy, then the desktop-synced provider. Returns (answer, cited
+    /// artifact ids). An empty library returns a plain "nothing found", not an error.
+    fn mobile_answer(
+        app: &AppHandle,
+        conn: &Connection,
+        query: &str,
+    ) -> Result<(String, Vec<String>), String> {
+        let arts = crate::sync::search_artifacts(conn, query).map_err(|e| e.to_string())?;
+        let mut passages = Vec::new();
+        let mut total = 0usize;
+        const MAX_CHARS: usize = 8000;
+        for art in arts {
+            let body = art["body"].as_str().unwrap_or("");
+            if body.is_empty() {
+                continue;
+            }
+            let p = format!("Source [{}]: {}", art["id"].as_str().unwrap_or(""), body);
+            if total + p.len() > MAX_CHARS {
+                break;
+            }
+            total += p.len();
+            passages.push(p);
+        }
+        if passages.is_empty() {
+            return Ok(("Nothing you have saved speaks to that yet.".to_string(), Vec::new()));
+        }
+        let cfg = load_config(app)?.ok_or("not configured")?;
+        cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex).ok_or("locked")?;
+        let synced = synced_settings(conn);
+        let pick = |field: &str, default: &str| -> String {
+            synced
+                .as_ref()
+                .and_then(|s| s.get(field))
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+                .or_else(|| cfg.get(field).and_then(Value::as_str))
+                .unwrap_or(default)
+                .to_string()
+        };
+        let backend = pick("llm_backend", "ollama");
+        let model = pick("llm_model", "llama3.1:8b");
+        let llm_url = pick("llm_url", "");
+        let api_key = pick("llm_api_key", "");
+        let custom_url = if backend == "custom" || backend == "ollama" {
+            llm_url.as_str()
+        } else {
+            ""
+        };
+        let context = passages.join("\n\n---\n\n");
+        let prompt = format!(
+            "Answer the question using ONLY the provided context. Cite sources by their [id] in square brackets.\n\nContext:\n{}\n\nQuestion: {}\n\nAnswer:",
+            context, query
+        );
+        let answer = call_llm_mobile(&backend, &model, custom_url, &api_key, &prompt)
+            .map_err(|e| e.to_string())?;
+        let cites = extract_citations(&answer);
+        Ok((answer, cites))
+    }
+
+    /// Push one conversation to the relay from the phone, best-effort (mirrors the
+    /// desktop's _push). Reads the synced relay/secret/DEK; a missing relay or a
+    /// network failure is not fatal - the turn is already stored locally.
+    fn push_chat_now(app: &AppHandle, conn: &Connection, cid: &str) -> Result<(), String> {
+        let cfg = load_config(app)?.ok_or("not configured")?;
+        let relay = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+        let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+        let dek = match cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+        if relay.is_empty() || secret.is_empty() {
+            return Ok(());
+        }
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let device = crate::sync::device_id(&dir);
+        if let Some(mut snap) = crate::sync::build_chat_snapshot(conn, cid)? {
+            snap["chat"]["_device_id"] = Value::String(device.clone());
+            crate::sync::push_chat_snapshot(relay, secret, &device, &dek, &snap)?;
+        }
+        Ok(())
+    }
+
+    /// Send a message in a conversation from the phone (phase 3b): create the chat if
+    /// this is the first turn, store the question, compute the answer with the synced
+    /// provider, store it with its citations, name a fresh chat from its first line,
+    /// and push the whole conversation to the relay so the desktop sees it. Returns the
+    /// updated transcript in the same shape mobile_chat_get uses.
+    #[tauri::command]
+    fn mobile_chat_send(
+        app: AppHandle,
+        chat_id: Option<String>,
+        text: String,
+    ) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return Err("say something".into());
+        }
+        let now = now_iso();
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let device = crate::sync::device_id(&dir);
+
+        let (cid, first) = match chat_id {
+            Some(id) if !id.is_empty() => (id, false),
+            _ => {
+                let id = uuid::Uuid::new_v4().to_string();
+                conn.execute(
+                    "INSERT INTO chats (id,title,scope_kind,scope_id,created_at,updated_at,pinned,_device_id) \
+                     VALUES (?1,'New chat','everything',NULL,?2,?2,0,?3)",
+                    rusqlite::params![id, now, device],
+                )
+                .map_err(|e| e.to_string())?;
+                (id, true)
+            }
+        };
+
+        let ord: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(ordinal),-1)+1 FROM chat_messages WHERE chat_id = ?1",
+                [&cid],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO chat_messages (id,chat_id,ordinal,role,text,status,created_at) \
+             VALUES (?1,?2,?3,'user',?4,'done',?5)",
+            rusqlite::params![uuid::Uuid::new_v4().to_string(), cid, ord, text, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // A model/network failure must not lose the turn: store an honest assistant
+        // message and let the conversation (and its push) proceed, rather than erroring
+        // the whole send and leaving a dangling question.
+        let (answer, cites) = match mobile_answer(&app, &conn, &text) {
+            Ok(r) => r,
+            Err(e) => (format!("Couldn't reach the model right now ({e})."), Vec::new()),
+        };
+        let amid = uuid::Uuid::new_v4().to_string();
+        let grounded: i64 = if cites.is_empty() { 0 } else { 1 };
+        conn.execute(
+            "INSERT INTO chat_messages (id,chat_id,ordinal,role,text,status,grounded,created_at) \
+             VALUES (?1,?2,?3,'assistant',?4,'done',?5,?6)",
+            rusqlite::params![amid, cid, ord + 1, answer, grounded, now],
+        )
+        .map_err(|e| e.to_string())?;
+        for (i, aid) in cites.iter().enumerate() {
+            let _ = conn.execute(
+                "INSERT INTO chat_citations (message_id,artifact_id,rank) VALUES (?1,?2,?3)",
+                rusqlite::params![amid, aid, i as i64],
+            );
+        }
+
+        // A fresh chat is named from the first line of its question; existing ones just
+        // bump updated_at so the change wins LWW.
+        if first {
+            let title: String = text.split_whitespace().take(7).collect::<Vec<_>>().join(" ");
+            let title: String = title.chars().take(60).collect();
+            let _ = conn.execute(
+                "UPDATE chats SET title = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![title, now, cid],
+            );
+        } else {
+            let _ = conn.execute(
+                "UPDATE chats SET updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, cid],
+            );
+        }
+
+        let _ = push_chat_now(&app, &conn, &cid);
+        let chat = crate::sync::get_chat(&conn, &cid).map_err(|e| e.to_string())?;
+        Ok(chat.to_string())
+    }
+
     fn call_llm_mobile(backend: &str, model: &str, custom_url: &str, api_key: &str, prompt: &str) -> Result<String, String> {
         // Use ureq to call the provider directly
         let body = serde_json::json!({
@@ -2316,6 +2508,9 @@ mod mobile {
                 mobile_link_qr,
                 mobile_status,
                 mobile_list,
+                mobile_chats_list,
+                mobile_chat_get,
+                mobile_chat_send,
                 mobile_pivots,
                 mobile_get,
                 mobile_search,
