@@ -217,6 +217,47 @@ class TestPush:
             server.should_exit = True
             thread.join(timeout=5)
 
+    def test_facets_ride_the_artifact_snapshot(self, store, quiet_queue, monkeypatch):
+        """Facets sync as a child of the artifact so the phone (which cannot generate
+        its own) receives the summary. A snapshot carries them; apply restores them."""
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+            keyring_file.initialize()
+
+            created = notes.create(body="# Debt\n\nBody about obligation.")
+            aid = created["artifact"]["id"]
+            with db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO facets (id, artifact_id, level, statement, model_version,"
+                    " body_version, trust, edited) VALUES ('f1', ?, 1, ?, 'm', 't', 0.9, 0)",
+                    (aid, "A financial obligation binding two parties over time."),
+                )
+            from enqueue.sync.client import push_artifact
+
+            push_artifact(aid)
+
+            # Device B: drop the local facets, fresh cursor, pull.
+            with db.transaction() as tx:
+                tx.execute("DELETE FROM facets WHERE artifact_id = ?", (aid,))
+            (store / "device_id").unlink(missing_ok=True)
+            (store / "sync_cursor").write_text("0")
+            assert pull()["pulled"] == 1
+
+            conn = db.get_conn()
+            try:
+                got = conn.execute(
+                    "SELECT statement, trust FROM facets WHERE artifact_id = ?", (aid,)
+                ).fetchall()
+            finally:
+                conn.close()
+            assert len(got) == 1
+            assert got[0]["statement"] == "A financial obligation binding two parties over time."
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
     def test_a_conversation_syncs_and_its_delete_is_a_tombstone(
         self, store, quiet_queue, monkeypatch
     ):

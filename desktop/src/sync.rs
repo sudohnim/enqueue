@@ -172,12 +172,41 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
         .filter(|v| v.is_array())
         .unwrap_or_else(|| Value::Array(vec![]));
+
+    // Facets stored locally (synced from desktop, or hand-edited here).
+    let mut facets = Vec::new();
+    let mut fstmt = conn
+        .prepare(
+            "SELECT id,level,statement,model_version,body_version,trust,edited \
+             FROM facets WHERE artifact_id = ?1 ORDER BY level, statement, id",
+        )
+        .map_err(|e| e.to_string())?;
+    let frows = fstmt
+        .query_map([artifact_id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>(0)?,
+                "level": r.get::<_, Option<i64>>(1)?,
+                "statement": r.get::<_, Option<String>>(2)?,
+                "model_version": r.get::<_, Option<String>>(3)?,
+                "body_version": r.get::<_, Option<String>>(4)?,
+                "trust": r.get::<_, Option<f64>>(5)?,
+                "edited": r.get::<_, i64>(6)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in frows {
+        facets.push(row.map_err(|e| e.to_string())?);
+    }
+
     Ok(Some(serde_json::json!({
         "artifact": artifact,
         "annotations": anns,
         "tags": tags,
         "page_text": [],
         "versions": [],
+        // Facets ride the snapshot so a facet edited on the phone reaches the desktop.
+        // Full columns, so the desktop stores them faithfully.
+        "facets": facets,
     })))
 }
 
@@ -400,6 +429,33 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id);
         CREATE INDEX IF NOT EXISTS idx_chats_live ON chats(deleted_at, pinned, updated_at DESC);
+        -- Facets (the summary) sync now as a child of the artifact, so the phone - which
+        -- cannot generate its own - can show and hand-edit them. Columns mirror the
+        -- engine's facets table.
+        CREATE TABLE IF NOT EXISTS facets (
+          id            TEXT PRIMARY KEY,
+          artifact_id   TEXT NOT NULL,
+          level         INTEGER,
+          statement     TEXT,
+          model_version TEXT,
+          body_version  TEXT,
+          trust         REAL,
+          edited        INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_facets_artifact ON facets(artifact_id);
+        -- The activity log (mirrors the engine's events table): the notable things the
+        -- phone did - a question asked and answered, a capture, a facet edit, a sync -
+        -- each with a one-line detail and an optional JSON `data` blob opened on demand.
+        -- Local diagnostics only, never synced; persisted so it survives a relaunch.
+        CREATE TABLE IF NOT EXISTS events (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts          TEXT NOT NULL,
+          kind        TEXT NOT NULL,
+          detail      TEXT NOT NULL DEFAULT '',
+          data        TEXT,
+          duration_ms INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_id_desc ON events(id DESC);
         "#,
     )
     .map_err(|e| e.to_string())?;
@@ -473,6 +529,25 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
         conn.execute(
             "INSERT INTO sync_meta (key, value) VALUES ('heal_repull_v3_chats', '1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    // One-time heal v4: facets started riding the artifact snapshot after this install
+    // existed, so artifacts already pulled carry no facets locally. Force one full
+    // re-pull so every artifact snapshot re-applies with its facets. Same marker.
+    let healed_v4: Option<String> = conn
+        .query_row(
+            "SELECT value FROM sync_meta WHERE key = 'heal_repull_v4_facets'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if healed_v4.is_none() {
+        let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
+        conn.execute(
+            "INSERT INTO sync_meta (key, value) VALUES ('heal_repull_v4_facets', '1')",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -612,6 +687,34 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
                 ],
             )
             .map_err(|e| format!("insert version: {e}"))?;
+        }
+    }
+
+    // Facets replace only when the snapshot actually carries them (mirrors the engine):
+    // a facet-less snapshot must not wipe facets already here, since the equal-key
+    // re-apply would otherwise delete them.
+    if let Some(facets) = snapshot.get("facets").and_then(|v| v.as_array()) {
+        if !facets.is_empty() {
+            conn.execute("DELETE FROM facets WHERE artifact_id = ?1", [id])
+                .map_err(|e| e.to_string())?;
+            for f in facets {
+                conn.execute(
+                    "INSERT INTO facets\
+                     (id,artifact_id,level,statement,model_version,body_version,trust,edited) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    rusqlite::params![
+                        str_at(f.get("id")),
+                        id,
+                        int_at(f.get("level")),
+                        str_at(f.get("statement")),
+                        str_at(f.get("model_version")),
+                        str_at(f.get("body_version")),
+                        f.get("trust").and_then(|v| v.as_f64()),
+                        int_at(f.get("edited")).unwrap_or(0),
+                    ],
+                )
+                .map_err(|e| format!("insert facet: {e}"))?;
+            }
         }
     }
     Ok(())
@@ -1420,7 +1523,121 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
     for row in rows {
         anns.push(row.map_err(|e| e.to_string())?);
     }
-    Ok(serde_json::json!({ "artifact": artifact, "annotations": anns, "preview": preview }))
+
+    // The summary (facets), synced from the desktop that generated it. Ordered by level
+    // so the reader shows them concrete-to-abstract, like the desktop drawer.
+    let mut facets = Vec::new();
+    let mut fstmt = conn
+        .prepare(
+            "SELECT id, level, statement, edited FROM facets WHERE artifact_id = ?1 \
+             ORDER BY level, statement, id",
+        )
+        .map_err(|e| e.to_string())?;
+    let frows = fstmt
+        .query_map([id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>(0)?,
+                "level": r.get::<_, Option<i64>>(1)?,
+                "statement": r.get::<_, Option<String>>(2)?,
+                "edited": r.get::<_, i64>(3)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+    for row in frows {
+        facets.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(serde_json::json!({
+        "artifact": artifact, "annotations": anns, "preview": preview, "facets": facets,
+    }))
+}
+
+/// Rewrite one facet from the phone: mark it edited + full-trust, and bump the artifact's
+/// updated_at so the edit wins LWW and reaches the desktop when the artifact is pushed.
+pub fn edit_facet_local(conn: &Connection, facet_id: &str, statement: &str) -> Result<String, String> {
+    let aid: Option<String> = conn
+        .query_row("SELECT artifact_id FROM facets WHERE id = ?1", [facet_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let aid = aid.ok_or("no such facet")?;
+    conn.execute(
+        "UPDATE facets SET statement = ?1, edited = 1, trust = 1.0 WHERE id = ?2",
+        rusqlite::params![statement, facet_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(aid)
+}
+
+/// Remove one facet from the phone. Returns its artifact id for the caller to push.
+pub fn delete_facet_local(conn: &Connection, facet_id: &str) -> Result<String, String> {
+    let aid: Option<String> = conn
+        .query_row("SELECT artifact_id FROM facets WHERE id = ?1", [facet_id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let aid = aid.ok_or("no such facet")?;
+    conn.execute("DELETE FROM facets WHERE id = ?1", [facet_id])
+        .map_err(|e| e.to_string())?;
+    Ok(aid)
+}
+
+/// Record one activity-log event (persisted, mirrors the engine's events table). The
+/// `data` blob is opened on demand in the Activity view; `duration_ms` is the action's
+/// wall time when known. Best effort: a logging failure never fails the real action.
+pub fn log_event(
+    conn: &Connection,
+    kind: &str,
+    detail: &str,
+    data: Option<&Value>,
+    duration_ms: Option<i64>,
+) {
+    let blob = data.map(|d| {
+        let s = d.to_string();
+        if s.len() > 20000 {
+            s[..20000].to_string()
+        } else {
+            s
+        }
+    });
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let _ = conn.execute(
+        "INSERT INTO events (ts, kind, detail, data, duration_ms) VALUES (?1,?2,?3,?4,?5)",
+        rusqlite::params![ts, kind, detail, blob, duration_ms],
+    );
+    // Keep the log bounded; trim occasionally rather than on every write.
+    let _ = conn.execute(
+        "DELETE FROM events WHERE id <= (SELECT MAX(id) FROM events) - 2000",
+        [],
+    );
+}
+
+/// The most recent events, newest first, each with its parsed `data`.
+pub fn read_events(conn: &Connection, limit: i64) -> Result<Vec<Value>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, ts, kind, detail, data, duration_ms FROM events \
+             ORDER BY id DESC LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([limit.clamp(1, 2000)], |r| {
+            let data_str: Option<String> = r.get(4)?;
+            let data = data_str
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                .unwrap_or(Value::Null);
+            Ok(serde_json::json!({
+                "id": r.get::<_, i64>(0)?,
+                "ts": r.get::<_, String>(1)?,
+                "kind": r.get::<_, String>(2)?,
+                "detail": r.get::<_, String>(3)?,
+                "data": data,
+                "duration_ms": r.get::<_, Option<i64>>(5)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
 }
 
 /// Keyword search over titles, bodies, and annotations (MOB.6). No embeddings, no
@@ -1428,22 +1645,83 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
 /// keyword leg. Returns library rows, newest first.
 #[allow(dead_code)]
 pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
-    let needle = format!("%{}%", query);
-    let mut stmt = conn
-        .prepare(
-            // Match on the full body (LIKE) but SELECT only a prefix - result cards show
-            // the same clamped excerpt as the library, so the full body is never needed.
-            "SELECT DISTINCT a.id,a.kind,a.title,substr(a.body,1,280),a.source_url,a.mime,a.filename,
-                    a.created_at,a.updated_at,a.pinned
-             FROM artifacts a
-             LEFT JOIN annotations an ON an.artifact_id = a.id
-             WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL
-               AND (a.title LIKE ?1 OR a.body LIKE ?1 OR an.text LIKE ?1)
-             ORDER BY a.updated_at DESC",
-        )
-        .map_err(|e| e.to_string())?;
+    // A question ("do I have any docker notes?") used to be matched as one literal
+    // substring, so it found nothing and the answer path returned canned "no match"
+    // without ever calling the model. Instead break the query into keywords, drop the
+    // stopwords, and match any of them - ranked by how many distinct terms an artifact
+    // hits, then recency. This is the phone's honest keyword leg: no embeddings, but it
+    // actually finds the docker note when you ask about docker.
+    let terms = query_terms(query);
+    if terms.is_empty() {
+        // No meaningful keywords (a very short or all-stopword query): fall back to the
+        // whole trimmed string as one substring, so "docker" still works.
+        return search_like(conn, &[query.trim().to_lowercase()]);
+    }
+    search_like(conn, &terms)
+}
+
+/// Keywords worth matching: lowercased, split on non-alphanumerics, stopwords and
+/// one-character tokens dropped, de-duplicated, capped so a rambling query stays cheap.
+fn query_terms(query: &str) -> Vec<String> {
+    const STOP: &[&str] = &[
+        "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "is", "are", "was", "do",
+        "did", "does", "i", "you", "my", "me", "any", "have", "has", "had", "what", "which",
+        "that", "this", "with", "about", "from", "it", "be", "can", "could", "would", "should",
+        "there", "here", "get", "got", "some", "all", "how", "when", "where", "who", "note",
+        "notes", "saved", "save",
+    ];
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for raw in query.split(|c: char| !c.is_alphanumeric()) {
+        let t = raw.trim().to_lowercase();
+        if t.len() < 2 || STOP.contains(&t.as_str()) {
+            continue;
+        }
+        if seen.insert(t.clone()) {
+            out.push(t);
+        }
+        if out.len() >= 12 {
+            break;
+        }
+    }
+    out
+}
+
+/// Run the keyword match: OR the terms across title, body, and annotations, rank each
+/// artifact by how many distinct terms it hits, then by recency. Returns library rows.
+fn search_like(conn: &Connection, terms: &[String]) -> Result<Vec<Value>, String> {
+    let terms: Vec<String> = terms.iter().filter(|t| !t.is_empty()).cloned().collect();
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Per term: 1 if any of the artifact's rows (incl. its annotations) matched it. The
+    // sum of those is the distinct-term hit count the ranking uses.
+    let mut score_parts = Vec::new();
+    let mut where_parts = Vec::new();
+    for i in 1..=terms.len() {
+        score_parts.push(format!(
+            "MAX(CASE WHEN a.title LIKE ?{i} OR a.body LIKE ?{i} OR an.text LIKE ?{i} THEN 1 ELSE 0 END)"
+        ));
+        where_parts.push(format!("a.title LIKE ?{i} OR a.body LIKE ?{i} OR an.text LIKE ?{i}"));
+    }
+    let sql = format!(
+        "SELECT a.id,a.kind,a.title,substr(a.body,1,280),a.source_url,a.mime,a.filename,
+                a.created_at,a.updated_at,a.pinned,
+                ({score}) AS hits
+         FROM artifacts a
+         LEFT JOIN annotations an ON an.artifact_id = a.id
+         WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND ({wh})
+         GROUP BY a.id
+         ORDER BY hits DESC, a.updated_at DESC
+         LIMIT 40",
+        score = score_parts.join(" + "),
+        wh = where_parts.join(" OR "),
+    );
+    let needles: Vec<String> = terms.iter().map(|t| format!("%{t}%")).collect();
+    let params: Vec<&dyn rusqlite::ToSql> = needles.iter().map(|n| n as &dyn rusqlite::ToSql).collect();
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([&needle], |r| {
+        .query_map(params.as_slice(), |r| {
             Ok(serde_json::json!({
                 "id": r.get::<_, String>(0)?,
                 "kind": r.get::<_, String>(1)?,

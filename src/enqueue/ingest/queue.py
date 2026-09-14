@@ -200,10 +200,48 @@ def process(artifact_id: str) -> dict:
     # by its own words regardless.
     entities_made = _entities_artifact(artifact_id) if chunks else 0
 
-    try:
-        from .. import events
+    # An ingest that produced nothing (an artifact with no extractable text re-applied
+    # by a sync) is not activity worth a row - logging every one buries the questions
+    # and captures a person actually cares about. Only record an ingest that did work.
+    if not (chunks or facets_made or entities_made):
+        return {
+            "artifact_id": artifact_id,
+            "pages": pages,
+            "described": described,
+            "chunks": chunks,
+            "indexed": indexed,
+            "facets": facets_made,
+            "entities": entities_made,
+        }
 
-        events.emit("ingest", f"{artifact_id[:8]}: {chunks} chunks, {facets_made} facets")
+    try:
+        from .. import db, events
+
+        # Name the artifact in the row (a bare hash means nothing to a person) and carry
+        # the useful counts + its id in the record, so the Activity view can open it.
+        conn = db.get_conn()
+        try:
+            row = conn.execute(
+                "SELECT title, kind FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        title = (row["title"] if row else "") or "(untitled)"
+        kind = row["kind"] if row else ""
+        events.emit(
+            "ingest",
+            f"{title[:60]}: {chunks} chunks, {facets_made} facets",
+            data={
+                "artifact_id": artifact_id,
+                "title": title,
+                "kind": kind,
+                "pages": pages,
+                "chunks": chunks,
+                "indexed": indexed,
+                "facets": facets_made,
+                "entities": entities_made,
+            },
+        )
     except Exception:  # noqa: BLE001
         pass
 
@@ -361,6 +399,10 @@ def _facet_artifact(artifact_id: str) -> int:
         return 0
     if count:
         get_store().index_facets_artifact(artifact_id)
+        # Facets ride the artifact snapshot to other devices (the phone cannot make its
+        # own). Push without bumping recency - a background summary is not a "touch"; the
+        # phone's pull re-applies the snapshot on an equal key and picks the facets up.
+        facets_mod.sync_facets(artifact_id, bump=False)
     return count
 
 

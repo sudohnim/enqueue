@@ -532,16 +532,41 @@
 	font-size: var(--type-caption, 13px);
 }
 .event-row {
+	border-bottom: 1px solid var(--line-soft, #eceef2);
+}
+.event-head {
 	display: grid;
-	grid-template-columns: 96px 1fr auto;
+	grid-template-columns: 116px 1fr auto auto auto;
 	gap: var(--sp-3);
 	padding: 6px 8px;
-	border-bottom: 1px solid var(--line-soft, #eceef2);
 	align-items: baseline;
+}
+.event-head[role="button"] {
+	cursor: pointer;
+	border-radius: var(--r-sm, 6px);
+}
+.event-head[role="button"]:hover {
+	background: var(--line-soft, #eceef2);
 }
 .event-kind {
 	font-weight: 600;
 	color: var(--accent-text, #60079f);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* Colour-key the kind by family so the log scans at a glance. */
+.event-kind[data-family="ask"] {
+	color: var(--accent-text, #60079f);
+}
+.event-kind[data-family="capture"] {
+	color: #0a7d4a;
+}
+.event-kind[data-family="facet"] {
+	color: #b25a00;
+}
+.event-kind[data-family="sync"] {
+	color: #6a6d7e;
 }
 .event-detail {
 	color: var(--ink, #101114);
@@ -549,9 +574,59 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+.event-dur {
+	color: var(--ink-faint, #9497a9);
+	font-variant-numeric: tabular-nums;
+}
 .event-ts {
 	color: var(--ink-faint, #9497a9);
 	font-variant-numeric: tabular-nums;
+}
+.event-caret {
+	color: var(--ink-faint, #9497a9);
+	transition: transform 0.12s ease;
+}
+.event-head.open .event-caret {
+	transform: rotate(90deg);
+}
+.event-body {
+	padding: 4px 12px 12px 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+/* `display:flex` above beats the `hidden` attribute's UA `display:none`, so without
+   this the body never collapses. Make hidden win. */
+.event-body[hidden] {
+	display: none !important;
+}
+.event-field b {
+	display: block;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--ink-faint, #9497a9);
+	margin-bottom: 2px;
+}
+.event-field > div {
+	color: var(--ink, #101114);
+	white-space: pre-wrap;
+	line-height: 1.5;
+}
+.event-json {
+	margin: 0;
+	padding: 8px;
+	background: var(--surface-2, #eef0f3);
+	border-radius: var(--r-sm, 6px);
+	font-size: 12px;
+	overflow-x: auto;
+	white-space: pre;
+}
+.event-link {
+	color: var(--accent-text, #60079f);
+	text-decoration: underline;
+	cursor: pointer;
 }
 .pin-card {
 	max-width: 340px;

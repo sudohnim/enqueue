@@ -78,6 +78,8 @@ fn main() {
                 "mobile_chats_list",
                 "mobile_chat_get",
                 "mobile_chat_send",
+                "mobile_facet_edit",
+                "mobile_facet_delete",
                 "mobile_link_qr",
                 "mobile_list",
                 "mobile_search",

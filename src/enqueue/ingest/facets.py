@@ -143,6 +143,22 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
         text = "\n\n".join(p["text"] for p in pages if p["text"])
     text = text[: config.FACET_INPUT_CHARS]
 
+    # Your own notes on a capture are original thought the source text does not carry -
+    # often the whole reason you saved it - so they must shape the summary, not just the
+    # search index. Append the current (non-superseded) annotations, marked as yours, so
+    # the model abstracts from what you wrote too. This is what makes a facet reflect the
+    # angle you saw, not only what the page says.
+    annotations = conn.execute(
+        "SELECT a.text FROM annotations a WHERE a.artifact_id = ?"
+        " AND NOT EXISTS (SELECT 1 FROM annotations b WHERE b.supersedes_id = a.id)"
+        " ORDER BY a.created_at",
+        (artifact_id,),
+    ).fetchall()
+    yours = "\n\n".join(f"(your note) {a['text']}" for a in annotations if a["text"])
+    if yours:
+        text = (text + "\n\n" if text.strip() else "") + yours
+        text = text[: config.FACET_INPUT_CHARS + len(yours)]
+
     provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
     nouns = proper_nouns(text, row["title"])
 
@@ -173,7 +189,9 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     if not kept:
         return 0, "no facet cleared the quality gate"
 
-    conn.execute("DELETE FROM facets WHERE artifact_id = ?", (artifact_id,))
+    # Replace only the machine-written facets; a hand-edited facet (edited=1) is the
+    # person's own and survives every regeneration.
+    conn.execute("DELETE FROM facets WHERE artifact_id = ? AND edited = 0", (artifact_id,))
     for facet, trust in kept:
         conn.execute(
             "INSERT INTO facets"
@@ -190,6 +208,164 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
             ),
         )
     return len(kept), None
+
+
+# --------------------------------------------------------------------------- on-demand
+# The summary panel's refresh + edit. Regenerate re-runs the machine facets for one
+# artifact (keeping any you edited); edit/add/delete let you rewrite the summary by hand.
+# Each reindexes the artifact's facets so search reflects the change immediately.
+
+
+def _reindex(artifact_id: str) -> None:
+    from ..index.store import get_store
+
+    try:
+        get_store().index_facets_artifact(artifact_id)
+    except Exception:  # noqa: BLE001 - the DB rows are the truth; a reindex hiccup is not fatal
+        pass
+
+
+def sync_facets(artifact_id: str, bump: bool = False) -> None:
+    """Push the artifact so its facets reach other devices (the phone can't make its own).
+
+    Facets ride the artifact snapshot as a child. `bump=True` bumps the artifact's
+    updated_at so the change wins last-writer-wins everywhere (used for a person's own
+    edits, which must also reach the desktop); `bump=False` re-pushes without touching
+    recency (background generation and regenerate), and the phone still applies it because
+    its pull re-applies a snapshot on an equal key. Best-effort, like every push.
+    """
+    from .. import db
+    from ..sync.client import push_artifact
+
+    try:
+        if bump:
+            with db.transaction() as conn:
+                conn.execute(
+                    "UPDATE artifacts SET updated_at = ? WHERE id = ?", (db.now(), artifact_id)
+                )
+        push_artifact(artifact_id)
+    except Exception:  # noqa: BLE001 - sync is best-effort, never fatal to the local change
+        pass
+
+
+def regenerate(artifact_id: str) -> dict:
+    """Regenerate one artifact's machine facets on demand (the refresh button).
+
+    Clears any skip/retry marker first so a manual press is never blocked by an earlier
+    gate decision, keeps hand-edited facets, and reindexes. Returns {count, error}.
+    """
+    from .. import db
+
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM facet_skips WHERE artifact_id = ?", (artifact_id,))
+        conn.execute("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,))
+        count, error = generate_for_artifact(conn, artifact_id)
+    _reindex(artifact_id)
+    sync_facets(artifact_id, bump=False)
+    from .. import db, events
+
+    # Name the artifact and the model that wrote the summary, so the record says what
+    # ran and against what, not just a bare count.
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT title FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+        model = conn.execute(
+            "SELECT model_version FROM facets WHERE artifact_id = ? LIMIT 1", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    title = (row["title"] if row else "") or "(untitled)"
+    model_name = (model["model_version"] if model else None) or ""
+    events.emit(
+        "facet.regenerated",
+        f"{title[:50]}: {count} facets" + (f" ({error})" if error else ""),
+        data={
+            "artifact_id": artifact_id,
+            "title": title,
+            "facets": count,
+            "model": model_name,
+            "source": "desktop regenerate",
+            "error": error,
+        },
+    )
+    return {"count": count, "error": error}
+
+
+def edit_facet(facet_id: str, statement: str) -> dict:
+    """Rewrite one facet by hand. Marks it edited (protected from regeneration) and
+    full-trust, then reindexes so search uses the new wording."""
+    from .. import db
+
+    statement = statement.strip()
+    if not statement:
+        raise ValueError("a facet needs some text")
+    with db.transaction() as conn:
+        row = conn.execute("SELECT artifact_id FROM facets WHERE id = ?", (facet_id,)).fetchone()
+        if row is None:
+            raise KeyError(facet_id)
+        conn.execute(
+            "UPDATE facets SET statement = ?, edited = 1, trust = 1.0 WHERE id = ?",
+            (statement[:400], facet_id),
+        )
+        artifact_id = row["artifact_id"]
+    _reindex(artifact_id)
+    sync_facets(artifact_id, bump=True)
+    from .. import events
+
+    events.emit(
+        "facet.edited",
+        f"{artifact_id[:8]}: {statement[:60]}",
+        data={"artifact_id": artifact_id, "facet_id": facet_id, "statement": statement[:400]},
+    )
+    return {"id": facet_id, "artifact_id": artifact_id, "statement": statement[:400]}
+
+
+def add_facet(artifact_id: str, statement: str, level: int = 2) -> dict:
+    """Add a hand-written facet to an artifact's summary (edited, full trust)."""
+    from .. import db
+
+    statement = statement.strip()
+    if not statement:
+        raise ValueError("a facet needs some text")
+    level = max(0, min(4, int(level)))
+    facet_id = str(uuid.uuid4())
+    with db.transaction() as conn:
+        exists = conn.execute("SELECT 1 FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+        if exists is None:
+            raise KeyError(artifact_id)
+        body_version = conn.execute(
+            "SELECT MAX(created_at) FROM artifact_versions WHERE artifact_id = ?",
+            (artifact_id,),
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO facets"
+            " (id, artifact_id, level, statement, model_version, body_version, trust, edited)"
+            " VALUES (?,?,?,?,?,?,1.0,1)",
+            (facet_id, artifact_id, level, statement[:400], "edited", body_version),
+        )
+    _reindex(artifact_id)
+    sync_facets(artifact_id, bump=True)
+    return {
+        "id": facet_id,
+        "artifact_id": artifact_id,
+        "level": level,
+        "statement": statement[:400],
+    }
+
+
+def delete_facet(facet_id: str) -> dict:
+    """Remove one facet from a summary."""
+    from .. import db
+
+    with db.transaction() as conn:
+        row = conn.execute("SELECT artifact_id FROM facets WHERE id = ?", (facet_id,)).fetchone()
+        if row is None:
+            raise KeyError(facet_id)
+        conn.execute("DELETE FROM facets WHERE id = ?", (facet_id,))
+        artifact_id = row["artifact_id"]
+    _reindex(artifact_id)
+    sync_facets(artifact_id, bump=True)
+    return {"id": facet_id, "artifact_id": artifact_id, "deleted": True}
 
 
 def _artifact_is_model_stale(conn, artifact_id: str, cache: dict) -> bool:

@@ -805,6 +805,13 @@ def _submit(chat_id: str, text: str, force_skill: str | None = None) -> None:
         _append(conn, chat_id, "user", text)
         message_id = _append(conn, chat_id, "assistant", "", kind="answer", status="pending")
         conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (db.now(), chat_id))
+    from . import events
+
+    events.emit(
+        "ask.submitted",
+        " ".join((text or "").split())[:80],
+        data={"question": text, "chat_id": chat_id},
+    )
     chats_worker.submit(chats_worker.Job(chat_id, message_id, text, force_skill))
 
 

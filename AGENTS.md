@@ -192,7 +192,10 @@ One line per file, describing its job.
 | `capture.py` | Captures: links, file uploads. Content-addressed dedupe. PDF text extraction and page rendering. |
 | `notes.py` | Notes: create, edit (versioned), annotate. Secret scanning before model calls. |
 | `preview.py` | Link previews: one opt-in fetch, parse og:meta, download image locally. |
-| `chats.py` | Conversations: scoped retrieval, grounded answers, topics, titles. |
+| `chats.py` | Conversations: submit (write pending turn + queue), scoped retrieval, grounded answers, topics, titles, chat sync push. |
+| `chats_worker.py` | The answer worker: a `Worker` thread that routes, answers, commits (retrying transient DB locks), logs `ask.answered`/`ask.failed`, and pushes. `sweep_orphaned_pending` at startup. |
+| `events.py` | The activity log: `emit()`/`recent()` over the persisted `events` table. Never raises. Backs the Settings Activity tab and the vault decoy. |
+| `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
 
 ### Ingest
@@ -201,7 +204,7 @@ One line per file, describing its job.
 | --- | --- |
 | `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. A vision describe failure marks the image `status='failed'` and surfaces in `/doctor` (`images_without_body`) instead of failing silently. |
 | `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
-| `ingest/facets.py` | Facet generation via provider. Eligibility gate. Proper noun extraction. |
+| `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve
@@ -291,8 +294,12 @@ One line per file, describing its job.
 ### Facet generation
 
 1. **Eligibility gate** (`ingest/facets.py`): `apply_eligibility_gate()` marks artifacts that should not get facets (too short, not a note, text_only status).
-2. **Generate** (`ingest/facets.py`): `generate_all()` iterates eligible artifacts, calls provider with `FACET_GENERATION` prompt, stores facets with trust=0.5.
-3. **Index** (`index/store_sqlite.py`): `upsert_facets()` embeds facet statements, upserts into `vec_facets` and `fts_facets`.
+2. **Generate** (`ingest/facets.py` `generate_for_artifact`): feeds the model the artifact's page_text (not just the body, capped at `FACET_INPUT_CHARS`) PLUS its annotations marked "(your note)", so a person's notes shape the summary. Calls `get_provider(summarize=True)` (the summary model), stores facets stamped with `provider.model` and a trust derived from the model's confidence. DELETE-before-insert only removes rows `WHERE edited=0`, preserving hand-edited lines.
+3. **Index** (`index/store_sqlite.py`): `index_facets_artifact()` embeds facet statements, upserts into `vec_facets` and `fts_facets`. Search drops a facet whose `model_version` no longer matches the active summary model, so switching models never surfaces stale summaries.
+
+**Editing the summary (facets are user-editable).** `ingest/facets.py` exposes `edit_facet(facet_id, statement)` (marks `edited=1`, full trust, reindexes), `add_facet(artifact_id, statement, level)`, `delete_facet(facet_id)`, and `regenerate(artifact_id)` (clears skip/retry, regenerates machine lines, keeps edited ones). Each is wired to an endpoint (`PATCH /facets/{id}`, `POST /artifacts/{id}/facets`, `DELETE /facets/{id}`, `POST /artifacts/{id}/facets/regenerate`) and to a mobile Tauri command (`mobile_facet_edit`, `mobile_facet_delete`). An edit bumps the artifact's `updated_at` and pushes so it wins LWW and reaches the other device; a background generation pushes without bumping (equal-key re-apply carries the new facets to the phone). The `facets.edited` column (migration `0031_facet_edited`) is what regeneration reads to decide which rows it may delete.
+
+**Facets ride the artifact snapshot to the phone.** The phone cannot generate its own, so facets are a child of the artifact snapshot (`sync/snapshot.py` `read_artifact_snapshot` includes them; apply is guarded to a non-empty facet list so a facet-less snapshot never wipes locally-generated facets on an equal-key re-apply). A summary edited on the phone syncs back, and `sync/client.py::pull()` reindexes any artifact whose pulled snapshot carried facets, so a phone edit becomes findable on the desktop.
 
 ### Curate and the lens view (removed)
 
@@ -305,11 +312,22 @@ organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
 
 ### Chat
 
-1. **Passages** (`chats.py`): retrieve chunks for the question. Scoped chats (artifact) do not search. Everything scope uses hybrid search on chunks + facet hits (dense + FTS5 keyword + the trigram recall net).
-2. **Answer** (`chats.py`): model answers from passages. `Answer` schema enforces grounded/cited consistency. The passage header MUST carry the artifact id (`[kind] (id: <id>) title`, `chats.py::_ask_model`): the `Answer` validator rejects any cited id it was not offered, so if the model only sees the title it cites the title and the turn fails validation as "cited artifacts that were not provided" (CHATBUG.1).
-3. **Title + topics** (`chats.py`): best-effort, non-blocking. Topics regenerated from whole transcript each turn.
+Asking is submitted, not computed inline. `chats.ask`/`chats._submit` writes the user turn plus a pending assistant turn in one transaction, logs `ask.submitted`, and hands the work to the answer worker (`chats_worker.py`, an in-memory `Worker` thread); the request returns immediately with a visible pending turn. On startup `sweep_orphaned_pending` resolves any turn left pending by a killed worker to `failed` (Rule 2: a pending turn always resolves).
+
+`chats_worker.compute(job)`:
+1. **Route** (`assistant.route`): pick the skill (an LLM call unless a skill is forced).
+2. **Answer** (`chats.py` via the skill): retrieve passages (scoped chats do not search; everything-scope uses hybrid search on chunks + facet hits) and have the model answer from them. `Answer` schema enforces grounded/cited consistency. The passage header MUST carry the artifact id (`[kind] (id: <id>) title`): the validator rejects any cited id it was not offered, so if the model only sees the title it cites the title and the turn fails validation as "cited artifacts that were not provided" (CHATBUG.1).
+3. **Commit** via `_commit_answer`, which retries a transient `database is locked` a few times so a busy moment (a sync applying a batch) does not throw away a real answer.
+4. **Title + topics** (`chats.py`): best-effort, non-blocking, after the answer commits. Topics regenerated from whole transcript each turn.
+5. **Log + push**: emit `ask.answered` (question, answer, cited artifacts, `model`, per-stage timing) or `ask.failed` (with the error), and push the conversation to the relay.
+
+**Conversations sync** over the same relay (`sync/snapshot.py` `read_chat_snapshot`/`apply_chat_snapshot`, LWW by `(updated_at, _device_id)`, terminal tombstone). A chat's messages/citations/topics are replaced wholesale on apply. The mobile side (`mobile_chat_send` in `desktop/src/lib.rs`) computes the answer inline with keyword retrieval + a direct LLM call, then pushes.
 
 Structured-output gotchas (CHATBUG.1, 2026-08-20): `config.MODEL_RETRIES` is instructor's `max_retries` = TOTAL attempts, not retries-after-first; it defaults to 3, because a thinking model (e.g. opencode-go `deepseek-v4-pro`) answers in prose on the first try and needs a reprompt to emit the schema, and reprompts only fire on a validation failure so the happy path costs nothing. Do NOT switch instructor mode to fix a schema failure: opencode-go rejects `Mode.TOOLS`/`TOOLS_STRICT`/`JSON_SCHEMA` ("Thinking mode does not support tool_choice", "response_format unavailable"); `Mode.JSON` (or `MD_JSON`) is the only mode it accepts, and it works once the retries and the passage-id are right.
+
+### Activity log (events)
+
+`events.py` is a persisted activity log (migration `0032_events_log`, the `events` table): `emit(kind, detail, data=None, duration_ms=None)` inserts a row (never raises; trims to a bounded size), `recent(limit)` reads newest-first with the JSON `data` parsed. Emit sites: `ask.submitted`/`ask.answered`/`ask.failed` (chats + chats_worker), `capture.note` (notes.py), `facet.regenerated`/`facet.edited` (facets.py, carrying model + source), `ingest` (queue.py, only when it produced chunks/facets/entities - an empty re-ingest is not logged), `sync.pull`, `start`. `GET /events?limit=N` serves it; the Settings "Events"/Activity tab (`static/js/settings.js` desktop, `mobile.html` mobile) renders each row expandable to its full record with clickable artifact links, folds runs of sync pulls, and polls to stay live while open. It is local diagnostics only (never synced) and is also the decoy front door to the vault (VAULT.6). Mobile has its own `events` table in `desktop/src/sync.rs` (`log_event`/`read_events`) written by the Rust ask/facet/capture/sync paths and read by `mobile_events`.
 
 ### Sync (relay, E2E, device linking)
 
@@ -317,7 +335,7 @@ The desktop engine and the Android app share one E2E model: per-artifact snapsho
 
 - **Engine side (Python):** `sync/client.py` (`push_artifact` on every write, `push_all()` for an initial full-library backfill), `sync/snapshot.py` (LWW serialize/apply), `sync/worker.py` (SSE + timer pull). Every desktop write path (`notes.py`, `capture.py`, `trash.py` delete/restore, `api/artifacts.py` pin/tag/annotate) calls `push_artifact(id)`. Purge is local-only and final (no row left to snapshot).
 - **Mutations propagate both ways (MOBFIX.5, was create-only).** The relay object is now an UPSERT: `relay/storage.py::put()` overwrites in place by name and assigns a FRESH cursor on overwrite (so a device already past the old cursor re-pulls the update), and `relay/app.py` always returns 201. The object name is still id-based (`dev/{device}/artifacts/{id}.enc`), so a later `push_artifact` for the same id rewrites the same object and the newer snapshot lands; the pull's LWW-by-`(updated_at, device_id)` then decides the winner. A mutation only propagates if it BUMPS `updated_at` - the whole current snapshot travels, so the mutation "type" is just a label. On the mobile side the same applies: every write helper must bump `updated_at` and enqueue to `mutation_outbox` (see `queue_mutation_push` in `desktop/src/lib.rs`); the invoke alone does not sync. NOTE: the hosted Railway relay must be running the upsert `storage.py` (redeploy with `bin/deploy-relay` if it still 409s).
-- **Mobile side (Rust):** `desktop/src/sync.rs` reimplements the same crypto (XSalsa20-Poly1305 secretbox: nonce(24)||ct||tag; Argon2id KEK) and the relay pull/apply, so it cross-compiles for Android. `desktop/src/lib.rs` `#[cfg(mobile)] mod mobile` holds the Tauri commands: `mobile_link_qr` (persists relay_url + secret + DEK-as-hex via `save_config` into the app-data `sync_config` file), `mobile_sync` (spawns `sync_library` on a background thread, emits `sync-started`/`sync-progress`/`sync-done`/`sync-error`; falls back to the saved config when called with `config:"{}"`), `mobile_status`, `mobile_list`, `mobile_capture`/`mobile_capture_image` (write locally + `push_snapshot`), `mobile_outbox_push` (drains `capture_outbox` + `mutation_outbox`), the write helpers `mobile_update_note`/`mobile_delete`/`mobile_restore`/`mobile_toggle_pin` (each bumps `updated_at` + enqueues a mutation via `queue_mutation_push`), and `mobile_chat` (keyword-grounded, calls the LLM directly).
+- **Mobile side (Rust):** `desktop/src/sync.rs` reimplements the same crypto (XSalsa20-Poly1305 secretbox: nonce(24)||ct||tag; Argon2id KEK) and the relay pull/apply, so it cross-compiles for Android. `desktop/src/lib.rs` `#[cfg(mobile)] mod mobile` holds the Tauri commands: `mobile_link_qr` (persists relay_url + secret + DEK-as-hex via `save_config` into the app-data `sync_config` file), `mobile_sync` (spawns `sync_library` on a background thread, emits `sync-started`/`sync-progress`/`sync-done`/`sync-error`; falls back to the saved config when called with `config:"{}"`), `mobile_status`, `mobile_list`, `mobile_capture`/`mobile_capture_image` (write locally + `push_snapshot`), `mobile_outbox_push` (drains `capture_outbox` + `mutation_outbox`), the write helpers `mobile_update_note`/`mobile_delete`/`mobile_restore`/`mobile_toggle_pin` (each bumps `updated_at` + enqueues a mutation via `queue_mutation_push`), the summary edits `mobile_facet_edit`/`mobile_facet_delete` (bump + push_artifact_now), the conversation commands `mobile_chats_list`/`mobile_chat_get`/`mobile_chat_send` (`mobile_chat_send` keyword-retrieves over the local copy and calls `call_llm_mobile` directly - which sends the synced `llm_headers`, e.g. `x-opencode-session`, and surfaces a non-2xx body instead of swallowing it), and `mobile_events` (the local activity log). New Tauri commands need registration in THREE places: `build.rs`'s `commands(&[...])`, the `tauri.conf.json` capability (`allow-<command-dashed>`), AND the `generate_handler!`; a missing ACL reads as "not allowed. Command not found", not a missing handler.
 - **Settings propagate desktop -> mobile, live (MOB2.9, was "as of linking" only).** The desktop pushes its effective LLM config - backend/model/url AND the provider `llm_api_key` from the Keychain - as a DEK-encrypted `lib/settings/{ts}-{device}.enc` object (`sync/client.py::push_settings`), triggered on every settings change (`settings._resync_to_relay`), on api-key store/forget (`api/settings.py`), and once at engine startup (`api/app.py`). The mobile pull (`desktop/src/sync.rs`) decrypts the newest by `updated_at` into `sync_meta['settings']`; `mobile_chat` and `mobile_settings_get` prefer it over the phone-local config, so the phone runs chat with the desktop's provider + key without re-entering anything. The Settings screen is read-only (`managed_by_desktop: true`) and reports only `llm_api_key_present`, never the value. The api_key leaving the Mac is intentional and E2E-encrypted - the phone needs it to call the provider directly. Tags/annotations are deliberately NOT mobile-writable (curation is desktop work); the phone reader is edit/delete/pin only.
 - **Camera / QR scanner:** `tauri-plugin-barcode-scanner` (ML Kit on Android), vendored under `desktop/plugins/`. It renders the CameraX preview BEHIND a transparent WebView, so the scan handler in `mobile.html` makes the page transparent while scanning. `getUserMedia` is a dead end here: the wry Android WebView does not composite a MediaStream to a `<video>` element - do NOT try to bring it back.
 - **Resilience + reachability:** an Android foreground service (not WorkManager) keeps a sync alive under screen-lock and backgrounding, started when a sync begins and stopped at caught-up cursor; sync re-triggers on app resume and network-regained. `desktop_link_code` REFUSES to render a QR for a loopback/127.0.0.1/localhost/LAN-private relay URL (a phone that leaves the house could never reach it) - set a hosted URL first. A transient sync failure must show a cached library + an offline banner, NEVER the setup screen (the phone stays linked; the config persists), and the `sync-error` handler must not `alert()`.
@@ -339,8 +357,10 @@ Migrations run automatically at startup via Alembic.
 | `artifact_versions` | every saved state of a note's body | append-only, before each update |
 | `annotations` | commentary on a captured artifact | append-only, superseding by id |
 | `chunks` | literal layer for search | text, ordinal, chunker name |
-| `facets` | conceptual layer for search | level 0-4, statement, model_version, trust (default 0.5) |
+| `facets` | conceptual layer for search | level 0-4, statement, model_version, trust (default 0.5), `edited` (1 = hand-written/edited, protected from regeneration; migration 0031) |
 | `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only |
+| `facet_retry` | facets owed after a transient model failure | attempts, next_at, last_error; retried with backoff |
+| `events` | the activity log (migration 0032) | ts, kind, detail, JSON `data`, duration_ms. Local-only, never synced. Bounded/trimmed. |
 | `secret_hits` | credential patterns found in artifact text | redacted excerpts only |
 | `page_text` | extracted text per PDF page | derived, rebuildable |
 | `link_previews` | what a saved link turns out to be | status, title, description, site_name, image_hash |
@@ -402,9 +422,11 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | Variable | Default | What it controls |
 | --- | --- | --- |
 | `ENQ_LLM_BACKEND` | `ollama` | Which backend to use: ollama, openrouter, opencode, custom |
-| `ENQ_LLM_MODEL` | `llama3.1:8b` | The model id (placeholder, known to be bad at structured output) |
+| `ENQ_LLM_MODEL` | `llama3.1:8b` | The interactive model id (chat, routing, gray-zone judge). Placeholder, known bad at structured output. |
+| `ENQ_SUMMARIZE_MODEL` | (empty) | Optional summary-only model. `get_provider(summarize=True)` uses it for facet generation; empty falls back to `llm_model`. See "Which stage runs where". |
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | LLM endpoint URL |
 | `ENQ_LLM_API_KEY` | `ollama` (ignored by Ollama) | API key for hosted backends |
+| `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
 | `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
 | `ENQ_MODEL_RETRIES` | `1` | Retries after first attempt (1 = two tries) |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (...)` | User agent for preview fetches |
@@ -427,11 +449,12 @@ The key is resolved per-call (not at import) so a key stored in Settings takes e
 | ollama | `http://127.0.0.1:11434/v1` | yes | no |
 | openrouter | `https://openrouter.ai/api/v1` | no | yes |
 | opencode | `https://opencode.ai/zen/v1` | no | yes |
-| opencode-go | `https://opencode.ai/zen/go/v1` | no | yes |
+| opencode-go | `https://opencode.ai/zen/go/v1` | no | yes + `x-opencode-session` header |
 | custom | (user-set) | no | yes |
 
 All backends speak the OpenAI-compatible protocol.
-One adapter (`OpenAICompatibleProvider`) covers all of them.
+One adapter (`OpenAICompatibleProvider`) covers all of them; it sends `ENQ_LLM_HEADERS` (the `llm_headers` setting) as extra headers.
+`opencode-go` returns `400 MissingSessionID` without an `x-opencode-session: <uuid>` header - set it via `llm_headers`. The header lives in the setting, the api_key in the Keychain; both sync to the phone (`sync/client.py::push_settings` includes `llm_headers`) so mobile chat can reach the same endpoint. Mobile parses and sends them in `call_llm_mobile` (`desktop/src/lib.rs`).
 
 ### Important: 127.0.0.1, never localhost
 
@@ -452,9 +475,11 @@ class Provider(Protocol):
     def complete(self, system, user, response_model, context=None, max_retries=None) -> T: ...
 ```
 
-`get_provider(local_only=False)` returns the configured provider.
+`get_provider(local_only=False, summarize=False)` returns the configured provider.
 Local-only artifacts always route to ollama, regardless of the configured backend.
 This is the one rule that is not a preference: marking something local-only is a promise that its text never leaves the machine.
+
+**Two models, split by job (the summary model).** `summarize=True` selects `summarize_model` when one is set, otherwise `llm_model`. So facet generation can run on a different model than chat: pass `get_provider(summarize=True)` for the background summary work (`ingest/facets.py`), plain `get_provider()` for interactive work (chat answers, `assistant.route`, the search gray-zone judge). This lets a fast/cheap model answer while a strong/slow one writes the summaries that power conceptual search, or the reverse. A facet is stamped with the model that wrote it, and retrieval drops facets whose `model_version` no longer matches the active summary model, so a model switch never surfaces stale summaries. `test_model_split.py` covers the routing.
 
 The adapter uses `instructor.Mode.JSON` for all endpoints.
 The old AGENTS.md specified different modes per adapter, but the code does not.
@@ -468,11 +493,11 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | Stage | Backend | Why |
 | --- | --- | --- |
 | Embeddings | always local (fastembed) | No network, strictly more private |
-| Facet generation | the configured backend | The moat. Bad facets are permanent pollution. |
+| Facet generation | the **summary** model (`summarize_model`, else `llm_model`) | The moat. Bad facets are permanent pollution. |
 | Rerank | the configured backend | Low volume, high value |
 | Synthesis | the configured backend | The room: through-line, tensions, view sections (internally grouped) |
-| Chat answer | the configured backend | |
-| Chat title/topics | the configured backend | Best-effort, non-blocking |
+| Chat answer / routing / gray-zone judge | the **interactive** model (`llm_model`) | |
+| Chat title/topics | the interactive model | Best-effort, non-blocking |
 
 ---
 
@@ -535,6 +560,7 @@ GET    /settings                    all settings + storage + backends
 GET    /secrets                     credential scan hits
 GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
+GET    /events?limit=N              the activity log, newest first, each with its full record
 GET    /fonts/{name}                font files (cached 1 year)
 ```
 
@@ -568,6 +594,10 @@ POST   /pivots/{id}/include           add an artifact to a view
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
 POST   /facets                       generate facets
+POST   /artifacts/{id}/facets/regenerate  regenerate an artifact's summary (keeps edited lines)
+POST   /artifacts/{id}/facets        add a hand-written summary line
+PATCH  /facets/{fid}                 edit one summary line (marks edited, reindexes)
+DELETE /facets/{fid}                 delete one summary line
 POST   /index                        rebuild the search index
 POST   /reprocess                    re-extract, re-chunk, re-index everything
 POST   /ingest/wait                  block until queue drains (for tests)
@@ -725,7 +755,11 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 | --- | --- |
 | `tests/conftest.py` | `store` fixture: real DB per test in tmp_path. `quiet_queue` fixture: runs ingest inline. |
 | `tests/test_chats.py` | Answer contract validators, naming, topics, pinning, turns, scope, deletion. |
+| `tests/test_chats_worker.py` | The answer worker: submit/compute, orphaned-pending sweep, failure path. |
 | `tests/test_ingest.py` | Secret scanning, proper noun extraction, facet/judgment validators. |
+| `tests/test_facet_retry.py` | Facet retry/backoff; a hand edit surviving regenerate; annotations feeding generation. |
+| `tests/test_model_split.py` | `get_provider(summarize=True)` routing to `summarize_model` vs `llm_model`. |
+| `tests/test_sync.py` / `test_snapshot.py` | E2E sync: artifact/chat snapshots, LWW, facets riding the snapshot, apply guards. |
 | `tests/test_providers.py` | Malformed HTTP responses, error translation, exception chain walking. |
 | `tests/test_settings.py` | API key never touches disk, keychain guards, extra headers parsing. |
 | `tests/test_migrations.py` | Fresh DB reaches head, pre-migration DB is adopted, capture can never hold a body. |

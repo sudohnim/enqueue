@@ -520,3 +520,59 @@ def fetch_preview(artifact_id: str) -> dict:
     preview.force(artifact_id)
     ingest_queue.submit(artifact_id)
     return {"queued": True}
+
+
+# ---- summary (facet) editing -------------------------------------------------
+# A summary is machine-written but yours to shape: refresh regenerates the machine
+# facets (keeping any you edited), and edit/add/delete let you rewrite it by hand.
+# Every change reindexes the artifact's facets so search reflects it at once.
+
+
+class FacetEdit(BaseModel):
+    statement: str
+
+
+class FacetAdd(BaseModel):
+    statement: str
+    level: int = 2
+
+
+@router.post("/artifacts/{artifact_id}/facets/regenerate")
+def regenerate_facets(artifact_id: str) -> dict:
+    from ..ingest import facets as facets_mod
+
+    return facets_mod.regenerate(artifact_id)
+
+
+@router.post("/artifacts/{artifact_id}/facets")
+def add_facet(artifact_id: str, req: FacetAdd) -> dict:
+    from ..ingest import facets as facets_mod
+
+    try:
+        return facets_mod.add_facet(artifact_id, req.statement, req.level)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such artifact") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.patch("/facets/{facet_id}")
+def edit_facet(facet_id: str, req: FacetEdit) -> dict:
+    from ..ingest import facets as facets_mod
+
+    try:
+        return facets_mod.edit_facet(facet_id, req.statement)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such facet") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.delete("/facets/{facet_id}")
+def delete_facet(facet_id: str) -> dict:
+    from ..ingest import facets as facets_mod
+
+    try:
+        return facets_mod.delete_facet(facet_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such facet") from None

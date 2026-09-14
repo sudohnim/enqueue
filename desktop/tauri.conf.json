@@ -67,6 +67,8 @@
             "allow-mobile-chats-list",
             "allow-mobile-chat-get",
             "allow-mobile-chat-send",
+            "allow-mobile-facet-edit",
+            "allow-mobile-facet-delete",
             "allow-mobile-pivots",
             "allow-mobile-get",
             "allow-mobile-status",

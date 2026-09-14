@@ -21,7 +21,9 @@ from PIL import Image
 
 HERE = Path(__file__).parent
 SOURCE = HERE / "icon.png"  # The composed icon (raven on purple), for the bg color
-RAVEN_MARK = HERE.parent.parent / "src" / "enqueue" / "static" / "raven-mark.png"  # transparent raven
+RAVEN_MARK = (
+    HERE.parent.parent / "src" / "enqueue" / "static" / "raven-mark.png"
+)  # transparent raven
 
 # Android adaptive icon sizes
 SIZES = {
@@ -31,6 +33,7 @@ SIZES = {
     "xxhdpi": 144,
     "xxxhdpi": 192,
 }
+
 
 def _bg_purple(src: Image.Image) -> tuple[int, int, int]:
     """The icon's own purple, sampled from the rounded square's upper-left field

@@ -689,3 +689,143 @@
     background: var(--tint-warn);
   }
 
+
+/* ---- editable summary panel -------------------------------------------------
+   The summary is the model's reading, made yours to shape: a regenerate control on
+   the shelf, a click-to-edit line for each facet, a remove on hover, and an add at
+   the foot. Hand-edited lines carry a quiet accent tick so you can see which are
+   yours. Built to sit inside the drawer's narrow column. */
+.summary .summary-shelf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.facet-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    background 140ms ease-out,
+    color 140ms ease-out;
+}
+.facet-refresh:hover {
+  background: var(--surface-2);
+  color: var(--accent-text);
+}
+.facet-refresh:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.facet-refresh svg {
+  width: 15px;
+  height: 15px;
+}
+
+.facet-list {
+  margin-top: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.facet {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  border-radius: var(--r-sm);
+  padding: 6px 6px 6px 8px;
+  transition: background 120ms ease-out;
+}
+.facet:hover {
+  background: var(--surface-2);
+}
+/* A line you rewrote wears a quiet accent tick on its left edge. */
+.facet[data-edited] {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.facet-text {
+  flex: 1 1 auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  cursor: text;
+}
+.facet:hover .facet-text {
+  color: var(--text);
+}
+.facet-del {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--text-mute);
+  border-radius: var(--r-sm);
+  padding: 2px;
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease-out,
+    color 120ms ease-out;
+}
+.facet:hover .facet-del,
+.facet:focus-within .facet-del {
+  opacity: 1;
+}
+.facet-del:hover {
+  color: var(--danger, #c0392b);
+}
+.facet-del svg {
+  width: 13px;
+  height: 13px;
+}
+.facet-empty {
+  font-size: 13px;
+  color: var(--text-mute);
+  margin: var(--sp-1) 0;
+}
+
+.facet-edit {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  padding: 6px 8px;
+  margin: 2px 0;
+  resize: vertical;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--lavender-subtle);
+}
+
+.facet-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-mute);
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color 140ms ease-out;
+}
+.facet-add:hover {
+  color: var(--accent-text);
+}
+.facet-add svg {
+  width: 13px;
+  height: 13px;
+}

@@ -1165,28 +1165,18 @@ restoreRoute();
 async function renderSettingsEvents() {
 	let events = [];
 	try {
-		events = (await api("/events?limit=100")).events || [];
+		events = (await api("/events?limit=200")).events || [];
 	} catch (_) {
 		/* an empty log is fine */
 	}
 	const rows = events.length
-		? events
-				.map(
-					(e) =>
-						'<div class="event-row"><span class="event-kind">' +
-						esc(e.kind) +
-						'</span><span class="event-detail">' +
-						esc(e.detail || "") +
-						'</span><span class="event-ts">' +
-						esc(e.ts || "") +
-						"</span></div>",
-				)
-				.join("")
-		: '<p class="aside">No events yet this session.</p>';
+		? coalesceSync(events).map(eventRow).join("")
+		: '<p class="aside">No events yet.</p>';
+	ensureEventsPoller();
 	return (
 		'<div class="settings-card">' +
-		'<div class="settings-card-label">Session events</div>' +
-		'<p class="aside" style="margin-bottom: var(--sp-3);">Recent sync, ingest, and capture activity. Cleared on restart.</p>' +
+		'<div class="settings-card-label">Activity</div>' +
+		'<p class="aside" style="margin-bottom: var(--sp-3);">Questions asked and answered, captures, facet edits, and syncs. Click a row to see the full record. Updates live; persisted across restarts.</p>' +
 		'<div class="event-log">' +
 		rows +
 		"</div>" +
@@ -1195,6 +1185,158 @@ async function renderSettingsEvents() {
 		'<button class="btn" onclick="vaultDiagnostics()">Diagnostics</button>' +
 		"</div></div>"
 	);
+}
+
+// Keep the Activity log live: a just-finished answer lands ~30s after it was asked,
+// into a pane that would otherwise never update. Poll while the tab is open, but skip
+// a refresh whenever a row is expanded so a record being read is never yanked shut.
+let _eventsPoller = null;
+function ensureEventsPoller() {
+	if (_eventsPoller) return;
+	_eventsPoller = setInterval(async () => {
+		if (currentSettingsTab !== "events") {
+			clearInterval(_eventsPoller);
+			_eventsPoller = null;
+			return;
+		}
+		const log = document.querySelector("#settingsTabPane .event-log");
+		if (!log || log.querySelector(".event-head.open")) return;
+		try {
+			const events = (await api("/events?limit=200")).events || [];
+			log.innerHTML = events.length
+				? coalesceSync(events).map(eventRow).join("")
+				: '<p class="aside">No events yet.</p>';
+		} catch (_) {
+			/* a failed refresh just leaves the last list in place */
+		}
+	}, 4000);
+}
+
+// Background sync pulls tick on their own and would otherwise bury the things a
+// person actually did. Fold a run of consecutive sync.* events into one row with
+// a count, so the log reads as activity, not heartbeat. Everything else passes
+// through untouched.
+function coalesceSync(events) {
+	const out = [];
+	for (const e of events) {
+		const prev = out[out.length - 1];
+		const isSync = String(e.kind || "").startsWith("sync.");
+		if (isSync && prev && prev.kind === e.kind) {
+			prev._count = (prev._count || 1) + 1;
+			prev.detail = prev._count + " syncs";
+			continue;
+		}
+		out.push({ ...e });
+	}
+	return out;
+}
+
+// One event as a summary line that expands to its full record when it carries
+// data. The kind is chipped and colour-keyed by family (ask/capture/facet/sync)
+// so the log scans; the timing, when known, rides the right edge.
+function eventRow(e) {
+	const family = String(e.kind || "").split(".")[0];
+	const dur =
+		e.duration_ms != null
+			? '<span class="event-dur">' + (e.duration_ms / 1000).toFixed(1) + "s</span>"
+			: "";
+	// The row shows the time only (the full timestamp is in the record); a narrow
+	// settings panel has no room for the date on every line.
+	const ts = esc((e.ts || "").slice(11, 19));
+	// Every row expands on click - a data-less event still opens to show its kind,
+	// full timestamp, and detail, so the interaction is consistent everywhere.
+	const head =
+		'<div class="event-head" role="button" tabindex="0" onclick="toggleEvent(this)">' +
+		'<span class="event-kind" data-family="' +
+		esc(family) +
+		'">' +
+		esc(e.kind) +
+		"</span>" +
+		'<span class="event-detail">' +
+		esc(e.detail || "") +
+		"</span>" +
+		dur +
+		'<span class="event-ts">' +
+		ts +
+		"</span>" +
+		'<span class="event-caret">›</span>' +
+		"</div>";
+	const body = '<div class="event-body" hidden>' + eventBody(e) + "</div>";
+	return '<div class="event-row">' + head + body + "</div>";
+}
+
+// A clickable artifact reference: opens the reader for that id. showArtifact switches
+// the main view, so it leaves the settings screen on its own.
+function eventArtifactLink(id, label) {
+	// Single-quote the id inside the double-quoted onclick attribute (artifact ids are
+	// UUIDs, no quotes to escape); JSON.stringify would inject double quotes and break it.
+	return (
+		"<a href=\"#\" class=\"event-link\" onclick=\"showArtifact('" +
+		esc(id) +
+		"');return false;\">" +
+		esc(label || id) +
+		"</a>"
+	);
+}
+
+// The opened detail. Q&A events get a readable layout (the question, the answer,
+// where the seconds went, what it cited); everything else shows its record as
+// pretty JSON so nothing is ever hidden from view.
+function eventBody(e) {
+	const d = e.data || {};
+	const field = (label, html) =>
+		'<div class="event-field"><b>' + esc(label) + "</b><div>" + html + "</div></div>";
+	// Always available: the full timestamp, so a data-less event still opens to something.
+	let meta = field("When", esc((e.ts || "").replace("T", " ")));
+
+	if (e.kind === "ask.answered" || e.kind === "ask.submitted" || e.kind === "ask.failed") {
+		let h = "";
+		if (d.question) h += field("Question", esc(d.question));
+		if (d.answer) h += field("Answer", esc(d.answer));
+		if (d.error) h += field("Error", esc((d.error_type ? d.error_type + ": " : "") + d.error));
+		if (d.timing_ms) {
+			const t = d.timing_ms;
+			const parts = [];
+			if (t.route != null) parts.push("route " + (t.route / 1000).toFixed(1) + "s");
+			if (t.answer != null) parts.push("answer " + (t.answer / 1000).toFixed(1) + "s");
+			if (t.total != null) parts.push("total " + (t.total / 1000).toFixed(1) + "s");
+			if (parts.length) h += field("Timing", esc(parts.join(" · ")));
+		}
+		if (d.grounded != null) h += field("Grounded", d.grounded ? "yes" : "no match");
+		if (d.model) h += field("Model", esc(d.model));
+		if (d.cited && d.cited.length)
+			h += field(
+				"Cited",
+				d.cited
+					.map((c) => (typeof c === "string" ? eventArtifactLink(c) : eventArtifactLink(c.id, c.title)))
+					.join("<br>"),
+			);
+		return h || meta;
+	}
+
+	// Anything that names an artifact (ingest, capture, facet, vault) gets a clickable
+	// link to open it, plus its readable fields.
+	let h = "";
+	if (d.title) h += field("Title", esc(d.title));
+	if (d.kind) h += field("Kind", esc(d.kind));
+	if (d.artifact_id) h += field("Artifact", eventArtifactLink(d.artifact_id, d.title || d.artifact_id));
+	if (d.statement) h += field("Statement", esc(d.statement));
+	// Human-labelled counts, not raw key names ("13 facets", not "count 13").
+	const counts = [];
+	const label = { pages: "pages", chunks: "chunks", indexed: "indexed", facets: "facets", entities: "entities" };
+	for (const k of Object.keys(label)) if (d[k] != null) counts.push(d[k] + " " + label[k]);
+	if (counts.length) h += field("Result", esc(counts.join(" · ")));
+	if (d.model) h += field("Model", esc(d.model));
+	if (d.source) h += field("Source", esc(d.source));
+	if (d.error) h += field("Error", esc(String(d.error)));
+	return h ? h + meta : meta;
+}
+
+function toggleEvent(head) {
+	const body = head.parentElement.querySelector(".event-body");
+	if (!body) return;
+	body.hidden = !body.hidden;
+	head.classList.toggle("open", !body.hidden);
 }
 
 // A promise-based 6-digit PIN entry. Resolves the digits, or null on cancel.

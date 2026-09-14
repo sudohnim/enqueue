@@ -75,6 +75,13 @@ def create(body: str = "", title: str | None = None, local_only: bool = False) -
     from .sync.client import push_artifact
 
     push_artifact(artifact_id)
+    from . import events
+
+    events.emit(
+        "capture.note",
+        f"{resolved[:60]}" + ("" if body else " (empty)"),
+        data={"artifact_id": artifact_id, "title": resolved, "chars": len(body or "")},
+    )
     return get(artifact_id)
 
 
@@ -271,7 +278,7 @@ def get(artifact_id: str) -> dict:
         superseded = {e["supersedes_id"] for e in entries if e["supersedes_id"]}
 
         facets = conn.execute(
-            "SELECT id, level, statement, trust FROM facets WHERE artifact_id = ?"
+            "SELECT id, level, statement, trust, edited FROM facets WHERE artifact_id = ?"
             " ORDER BY level, statement",
             (artifact_id,),
         ).fetchall()

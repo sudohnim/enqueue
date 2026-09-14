@@ -497,26 +497,7 @@
     // facets are the model's compressed reading of the artifact, and it may be generated
     // remotely when the backend is remote, so the old privacy claim was also inaccurate.
     // It lives in the drawer, under the tags.
-    let summaryHtml = "";
-    if (d.facets.length)
-      summaryHtml =
-        '<div class="callout note"><div class="shelf">Summary</div>' +
-        d.facets.map((f) => "<p>" + esc(f.statement) + "</p>").join("") +
-        "</div>";
-    else if (d.summary_generating)
-      // The summary is pending on the background worker (which grinds through the
-      // library one artifact at a time, slowly on a local model). Say so rather than
-      // showing an empty Summary - re-open later and it will have filled in.
-      summaryHtml =
-        '<div class="callout note"><div class="shelf">Summary</div>' +
-        spinner("sm", "Generating in the background…") +
-        "</div>";
-    else if (d.facet_skip_reason)
-      summaryHtml =
-        '<div class="callout note"><div class="shelf">Summary</div>' +
-        "<p>" +
-        esc(whyNoFacets(d.facet_skip_reason)) +
-        "</p></div>";
+    const summaryHtml = summaryPanel(d, id);
 
     html +=
       '<div class="bodygrid"><div class="bodycol">' +
@@ -590,6 +571,182 @@
       NO_FACETS[reason] ||
       "Not read yet. Still searchable."
     );
+  }
+
+  // ---- the summary panel: refresh + edit -----------------------------------
+  // The summary is the model's reading, but yours to shape. The shelf carries a
+  // regenerate button; each line is click-to-edit and can be removed; a trailing
+  // control adds one of your own. Every change reindexes on the server, so it lands
+  // in search too. An edited line is marked so you can see which are yours.
+  function summaryPanel(d, id) {
+    const refresh =
+      '<button class="facet-refresh" title="Regenerate the summary" ' +
+      'aria-label="Regenerate the summary" onclick="regenerateSummary(\'' +
+      id +
+      "')\">" +
+      svg("refresh") +
+      "</button>";
+    let inner;
+    if (d.facets && d.facets.length) inner = d.facets.map(facetRow).join("");
+    else if (d.summary_generating)
+      inner = spinner("sm", "Generating in the background…");
+    else if (d.facet_skip_reason)
+      inner = '<p class="facet-empty">' + esc(whyNoFacets(d.facet_skip_reason)) + "</p>";
+    else inner = '<p class="facet-empty">No summary yet.</p>';
+    return (
+      '<div class="callout note summary" data-aid="' +
+      esc(id) +
+      '"><div class="shelf summary-shelf">Summary' +
+      refresh +
+      '</div><div class="facet-list">' +
+      inner +
+      '</div><button class="facet-add" onclick="addFacet(\'' +
+      id +
+      "')\">" +
+      svg("plus") +
+      "Add a line</button></div>"
+    );
+  }
+
+  function facetRow(f) {
+    return (
+      '<div class="facet" data-fid="' +
+      esc(f.id) +
+      '"' +
+      (f.edited ? ' data-edited="1"' : "") +
+      '><span class="facet-text" title="Click to edit" onclick="editFacet(\'' +
+      esc(f.id) +
+      "')\">" +
+      esc(f.statement) +
+      '</span><button class="facet-del" title="Remove this line" ' +
+      'aria-label="Remove this line" onclick="deleteFacet(\'' +
+      esc(f.id) +
+      "')\">" +
+      svg("close") +
+      "</button></div>"
+    );
+  }
+
+  // Re-fetch one artifact and swap its summary panel in place, so every mutation
+  // (regenerate, edit, add, delete) shows the server's canonical result.
+  async function refreshSummaryPanel(id) {
+    let d;
+    try {
+      d = await api("/artifacts/" + id);
+    } catch (err) {
+      return;
+    }
+    const el = document.querySelector('.summary[data-aid="' + id + '"]');
+    if (el) el.outerHTML = summaryPanel(d, id);
+  }
+
+  async function regenerateSummary(id) {
+    const list = document.querySelector(
+      '.summary[data-aid="' + id + '"] .facet-list',
+    );
+    if (list) list.innerHTML = spinner("sm", "Regenerating the summary…");
+    try {
+      const r = await api("/artifacts/" + id + "/facets/regenerate", {
+        method: "POST",
+      });
+      if (r && r.error && !r.count)
+        toast("The model found nothing new to summarize.", false);
+    } catch (err) {
+      toast(String((err && err.message) || err), true);
+    }
+    refreshSummaryPanel(id);
+  }
+
+  function editFacet(fid) {
+    const row = document.querySelector('.facet[data-fid="' + fid + '"]');
+    if (!row || row.querySelector("textarea")) return;
+    const span = row.querySelector(".facet-text");
+    const current = span.textContent;
+    const ta = document.createElement("textarea");
+    ta.className = "facet-edit";
+    ta.value = current;
+    ta.rows = 2;
+    const aid = row.closest(".summary").dataset.aid;
+    span.replaceWith(ta);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    let settled = false;
+    const finish = async (save) => {
+      if (settled) return;
+      settled = true;
+      const v = ta.value.trim();
+      if (save && v && v !== current) {
+        try {
+          await api("/facets/" + fid, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ statement: v }),
+          });
+        } catch (err) {
+          toast(String((err && err.message) || err), true);
+        }
+      }
+      refreshSummaryPanel(aid);
+    };
+    ta.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === "Escape") {
+        finish(false);
+      }
+    };
+    ta.onblur = () => finish(true);
+  }
+
+  async function deleteFacet(fid) {
+    const row = document.querySelector('.facet[data-fid="' + fid + '"]');
+    const aid = row && row.closest(".summary").dataset.aid;
+    try {
+      await api("/facets/" + fid, { method: "DELETE" });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+    if (aid) refreshSummaryPanel(aid);
+  }
+
+  function addFacet(id) {
+    const panel = document.querySelector('.summary[data-aid="' + id + '"]');
+    const btn = panel && panel.querySelector(".facet-add");
+    if (!btn || panel.querySelector(".facet-add-edit")) return;
+    const ta = document.createElement("textarea");
+    ta.className = "facet-edit facet-add-edit";
+    ta.rows = 2;
+    ta.placeholder = "A line to add to this summary…";
+    btn.replaceWith(ta);
+    ta.focus();
+    let settled = false;
+    const finish = async (save) => {
+      if (settled) return;
+      settled = true;
+      const v = ta.value.trim();
+      if (save && v) {
+        try {
+          await api("/artifacts/" + id + "/facets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ statement: v }),
+          });
+        } catch (err) {
+          toast(String((err && err.message) || err), true);
+        }
+      }
+      refreshSummaryPanel(id);
+    };
+    ta.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === "Escape") {
+        finish(false);
+      }
+    };
+    ta.onblur = () => finish(true);
   }
 
   // ---- a link's face -------------------------------------------------------

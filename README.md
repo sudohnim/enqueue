@@ -138,8 +138,8 @@ To fill it, link it to a running desktop over a relay both can reach (a phone th
 1. On the desktop, open the sync panel; it renders a QR that encodes the relay URL, the sync secret, and the encryption key (DEK).
 2. In the phone app, scan that QR. The phone stores the credentials in its app-sandboxed config and pulls the library.
 
-After linking, the desktop's LLM settings - backend, model, and API key - propagate to the phone (encrypted end to end), so mobile chat uses the same provider without re-entering anything.
-Mobile writes (edit a note, delete, pin) sync back to the desktop; tagging and annotating are deliberately desktop-only (curation is a sit-down job).
+After linking, the desktop's LLM settings - backend, model, API key, and any extra headers (like OpenCode's `x-opencode-session`) - propagate to the phone (encrypted end to end), so mobile chat uses the same provider without re-entering anything.
+Mobile writes (edit a note, delete, pin, hand-edit or delete a summary line) sync back to the desktop; tagging, annotating, and summary regeneration are deliberately desktop-only (curation is a sit-down job).
 
 ---
 
@@ -302,7 +302,8 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | Variable | Default | Purpose |
 |---|---|
 | `ENQ_LLM_BACKEND` | `ollama` | Which model backend to use. One of: `ollama`, `openrouter`, `opencode-go`. |
-| `ENQ_LLM_MODEL` | `llama3.1:8b` | The model name to send to the backend. |
+| `ENQ_LLM_MODEL` | `llama3.1:8b` | The model for interactive work: chat answers, routing, the search gray-zone judge. |
+| `ENQ_SUMMARIZE_MODEL` | (empty) | Optional second model for background summary (facet) generation. When set, facets use it while chat still uses `ENQ_LLM_MODEL`; when empty, both use `ENQ_LLM_MODEL`. Lets a cheap model answer and a capable one summarize (or vice versa). |
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | URL for the Ollama backend. Also used as `llm_url` in settings. |
 | `ENQ_LLM_API_KEY` | `ollama` (placeholder) | API key for non-local backends. Falls back to the macOS Keychain if not set. |
 | `ENQ_MODEL_RETRIES` | `1` | Extra retry attempts after the first model call (1 = two tries total). |
@@ -310,7 +311,7 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (personal link preview; one request per saved link)` | User agent string sent when fetching link previews. |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey. |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link automatically fetches its preview. |
-| `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. |
+| `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. Required for `opencode-go`, which rejects a request without an `x-opencode-session: <uuid>` header (400 `MissingSessionID`). These headers sync to the phone so mobile chat can call the same endpoint. |
 | `ENQ_TRASH_DAYS` | `30` | Days before a trashed artifact is permanently destroyed. Minimum 1. |
 | `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/launch desktop`. |
 
@@ -333,6 +334,10 @@ The engine speaks the OpenAI-compatible protocol to all backends through a singl
 
 Anything other than `ollama` sends the text of your artifacts to somebody else's computer.
 Artifacts marked `local_only` never go to an outside service, even when one is configured.
+
+`opencode-go` additionally requires an `x-opencode-session: <uuid>` header (set it via `ENQ_LLM_HEADERS`); without it the endpoint returns `400 MissingSessionID`.
+
+**Two models, split by job.** The engine resolves a provider per call site through `get_provider()`: interactive work (chat answers, skill routing, the search gray-zone judge) uses `llm_model`, while background summary (facet) generation uses `summarize_model` when one is set (`get_provider(summarize=True)`), falling back to `llm_model` otherwise. This lets a fast, cheap model handle chat while a stronger, slower one writes the summaries that drive conceptual search - or the reverse. A facet is tagged with the model that wrote it, and search drops facets whose model no longer matches the active summary model, so switching models does not surface stale summaries.
 
 ---
 
@@ -395,6 +400,22 @@ The first five are lexical breadth - exact, partial, typo, phrase, and field-wei
 Search runs entirely on your Mac, over the one SQLite file. The dense search is exact (brute-force) nearest-neighbor, which is fast at this scale; only the optional gray-zone judge and the cross-encoder reranker ever call a model, and only for the searches that need them.
 
 ---
+
+## Summaries you can edit
+
+The facets (the model-written summary lines) are not frozen. Open an artifact and the summary is a shelf of editable lines: rewrite a line, add one of your own, delete one, or press refresh to regenerate the machine-written lines from scratch. A hand-edited or hand-added line is marked `edited` and is protected - a regenerate replaces only the machine-written lines and leaves yours in place. Any edit reindexes immediately, so the new wording is findable by search right away.
+
+Your own notes shape the summary too. When facets are generated, your annotations on an artifact are fed to the model alongside the body (marked as your note), so a summary reflects what you added, not just the original text - and because notes are also indexed as their own chunks, they are findable directly as well.
+
+Summaries sync to the phone. The phone cannot generate its own (no engine), but it receives facets as part of each artifact's synced snapshot, renders them the same way, and lets you hand-edit or delete a line on the go; the edit rides back to the desktop on the next sync. Regeneration stays desktop-only, where the capable model and full retrieval live.
+
+## Activity log
+
+Settings has an **Activity** tab (desktop and mobile) that records the notable things the app did - a question asked and answered, a capture, a facet edit or regenerate, a sync - each with a one-line summary and a full record you open by clicking the row. A question logs `ask.submitted` immediately and `ask.answered` (or `ask.failed`, with the reason) when it finishes, carrying the full question, answer, which artifacts it cited, the model used, and where the seconds went (routing vs answering). The log updates live while open and is persisted (it survives a restart); artifacts named in a record are clickable and open the reader. It is local diagnostics only - never synced - and doubles as the front door to the encrypted vault.
+
+## Conversations
+
+Asking the eye a question opens a conversation, not a one-shot. A conversation is titled from its first exchange, keeps up to the last several turns as context, and its concepts are re-derived from the whole transcript. Conversations sync between devices over the same encrypted relay as artifacts (last-writer-wins by `updated_at`), so a chat started on the desktop is readable and continuable on the phone. The phone answers by keyword-retrieving over its local copy and calling the synced LLM backend directly; the desktop uses the full hybrid retrieval. Deleting a conversation is a soft delete that propagates the tombstone to the other device.
 
 ## Where your data lives
 
@@ -459,20 +480,27 @@ enqueue/
     providers/
       base.py          # Provider protocol + error handling
       ollama.py        # Ollama adapter
+    chats_worker.py    # Background answer worker: routes, retrieves, answers, logs the exchange
+    events.py          # The activity log: persisted event records read by the Settings Activity tab
     migrations/
-      versions/        # 0001-0020 Alembic migrations
+      versions/        # 0001-0032 Alembic migrations (latest: facets.edited, chat sync, events table)
     static/
       home.html        # Main wall view
       capture.html     # Quick-capture overlay
       mobile.html      # The Android app UI (loaded by the mobile shell)
-      js/              # Desktop front-end modules (home, search, pivot, chat, ...)
+      js/              # Desktop front-end modules (home, search, pivot, chat, settings, artifact, ...)
+      css/             # Desktop styles (base.css holds the Activity-log styles)
       fonts/           # IBM Plex Sans
-  tests/
-    conftest.py
+  tests/               # ~45 test modules: chats, chats_worker, sync, snapshot, facets,
+    conftest.py        #   model split, search, index, providers, migrations, vault, trash, ...
     test_chats.py
+    test_chats_worker.py
+    test_sync.py       # E2E sync: artifact/chat snapshots, LWW, facets riding the snapshot
+    test_snapshot.py
+    test_facet_retry.py
+    test_model_split.py # llm_model vs summarize_model routing
     test_ingest.py
     test_migrations.py
-    test_preview.py
     test_providers.py
     test_settings.py
     test_trash.py
@@ -505,7 +533,14 @@ Key endpoints:
 - `POST /capture/upload` - Upload a file
 - `POST /artifacts/{id}/preview` - Fetch link preview
 - `GET /search?q=...` - Hybrid search
-- `POST /chats` - Start or continue a conversation
+- `POST /chats` - Start a conversation (with `text`) or create an empty one
+- `POST /chats/{id}/messages` - Continue a conversation
+- `DELETE /chats/{id}` - Soft-delete a conversation (tombstone syncs to other devices)
+- `POST /artifacts/{id}/facets/regenerate` - Regenerate the machine-written summary (keeps hand-edited lines)
+- `POST /artifacts/{id}/facets` - Add a hand-written summary line
+- `PATCH /facets/{id}` - Edit one summary line (marks it `edited`, reindexes)
+- `DELETE /facets/{id}` - Remove one summary line
+- `GET /events?limit=N` - The activity log, newest first, each with its full record
 - `GET /settings` - Read all settings + storage info
 - `PATCH /settings` - Update settings
 - `PUT /settings/api-key` - Store API key in Keychain

@@ -165,3 +165,55 @@ def test_facets_are_generated_from_page_text_not_just_the_title(store, quiet_que
 
     assert err is None and count >= 1
     assert marker in seen["user"]  # the page text, not just "Title: ...", was fed
+
+
+def test_edit_survives_regenerate_and_annotations_feed_generation(store, quiet_queue, monkeypatch):
+    """A hand-edited facet is protected from regeneration, and your annotations are fed
+    into facet generation so the summary reflects your notes, not just the source."""
+    from enqueue import db, notes
+    from enqueue.ingest import facets as fm
+    from enqueue.providers import base as provider_base
+
+    aid = notes.create(body="word " * 80)["artifact"]["id"]
+    # an annotation with a distinctive phrase the body does not contain
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO annotations (id, artifact_id, text, created_at) VALUES (?,?,?,?)",
+            ("an1", aid, "this is really about zugzwang in decision-making", db.now()),
+        )
+
+    seen = {}
+
+    class _Prov:
+        model = "m"
+
+        def complete(self, system, user, response_model, context=None, max_retries=None):
+            seen["user"] = user
+            return fm._RawFacetSet(
+                facets=[
+                    fm._RawFacet(
+                        level=1,
+                        statement="A machine facet the model wrote here about how systems persist over time.",
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(provider_base, "get_provider", lambda **_: _Prov())
+
+    # First generation: the annotation reaches the prompt.
+    fm.regenerate(aid)
+    assert "zugzwang" in seen["user"]  # your note shaped the input
+
+    # Add a hand-written facet, then edit the machine one.
+    mine = fm.add_facet(aid, "A facet I wrote by hand about being forced to move.")["id"]
+    machine = next(f["id"] for f in notes.get(aid)["facets"] if f["id"] != mine)
+    fm.edit_facet(machine, "I rewrote this machine facet myself.")
+
+    # Regenerate: both edited facets survive, machine ones are replaced.
+    fm.regenerate(aid)
+    facets = {f["id"]: f for f in notes.get(aid)["facets"]}
+    assert mine in facets and facets[mine]["edited"] == 1
+    assert (
+        machine in facets and facets[machine]["statement"] == "I rewrote this machine facet myself."
+    )
+    assert facets[machine]["edited"] == 1

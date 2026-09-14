@@ -10,9 +10,13 @@ fresh cursor (MOBFIX.5), which is how the mutation reaches other devices.
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from .. import config, crypto, db, keyring, keyring_file, settings
+
+log = logging.getLogger(__name__)
 from . import device_id
 from .guard import assert_local_relay
 from .snapshot import (
@@ -273,6 +277,12 @@ def pull() -> dict:
 
         pulled = 0
         skipped = 0
+        # Artifacts whose pulled snapshot carried facets (e.g. a phone-edited summary):
+        # apply_snapshot writes the facet rows, but the dense/sparse facet index is
+        # separate and stays stale until reindexed. Collect them and reindex once the
+        # pull's writes are done, so a summary edited on another device becomes findable
+        # here - the desktop edit path already reindexes; this closes the pulled path.
+        facet_dirty: set[str] = set()
         for obj in listing.json()["objects"]:
             name = obj["name"]
             if name.startswith(mine):
@@ -310,6 +320,10 @@ def pull() -> dict:
                         apply_chat_snapshot(conn, snapshot)
                     else:
                         apply_pulled_snapshot(conn, snapshot)
+                        if snapshot.get("facets"):
+                            aid = (snapshot.get("artifact") or {}).get("id")
+                            if aid:
+                                facet_dirty.add(aid)
                 pulled += 1
             except Exception as exc:  # noqa: BLE001
                 # A single poison snapshot must NEVER wedge the whole pull. This
@@ -324,6 +338,23 @@ def pull() -> dict:
                 print(f"[sync] pull skipped {name}: {type(exc).__name__}: {exc}", flush=True)
 
     _write_cursor(new_cursor)
+
+    # Reindex any facets a pull brought in, after the write transactions have closed.
+    # Best effort: a stale index is a search miss, never a data loss, so one failed
+    # reindex must not fail the pull.
+    if facet_dirty:
+        try:
+            from ..index.store import get_store
+
+            store = get_store()
+            for aid in facet_dirty:
+                try:
+                    store.index_facets_artifact(aid)
+                except Exception:  # noqa: BLE001
+                    log.warning("post-pull facet reindex failed for %s", aid)
+        except Exception:  # noqa: BLE001
+            pass
+
     return {"pulled": pulled, "skipped": skipped}
 
 
@@ -360,6 +391,10 @@ def push_settings() -> None:
         "llm_model": _val("llm_model", "llama3.1:8b"),
         "llm_url": _val("llm_url", ""),
         "llm_api_key": config.llm_api_key() or "",
+        # Extra provider headers (e.g. OpenCode's required `x-opencode-session`). The
+        # phone calls the same endpoint directly, so without these it gets a 400 and
+        # can never answer - they must ride the settings sync like the key does.
+        "llm_headers": _val("llm_headers", ""),
         "auto_preview": _val("auto_preview", True),
         "trash_days": _val("trash_days", "30"),
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -419,6 +454,7 @@ def pull_settings() -> None:
                             "llm_backend",
                             "llm_model",
                             "llm_url",
+                            "llm_headers",
                             "auto_preview",
                             "trash_days",
                         ):

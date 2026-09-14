@@ -68,7 +68,10 @@ def test_overwrite_resurfaces_the_object_past_an_old_cursor(tmp_path):
     cursor = listing["cursor"]  # the device has now pulled up to here
 
     # Nothing new at the head yet.
-    assert client.get("/sync/objects", params={"since": cursor}, headers=_auth()).json()["objects"] == []
+    assert (
+        client.get("/sync/objects", params={"since": cursor}, headers=_auth()).json()["objects"]
+        == []
+    )
 
     # Overwrite the same name; it must reappear after the device's old cursor.
     client.put("/sync/object/dev/d1/artifacts/a.enc", content=b"v2", headers=_auth())

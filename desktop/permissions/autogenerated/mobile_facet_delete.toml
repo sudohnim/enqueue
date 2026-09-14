@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-facet-delete"
+description = "Enables the mobile_facet_delete command without any pre-configured scope."
+commands.allow = ["mobile_facet_delete"]
+
+[[permission]]
+identifier = "deny-mobile-facet-delete"
+description = "Denies the mobile_facet_delete command without any pre-configured scope."
+commands.deny = ["mobile_facet_delete"]

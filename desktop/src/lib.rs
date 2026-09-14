@@ -245,6 +245,15 @@ mod mobile {
                     .and_then(|s| hex::decode(s).ok())
                     .and_then(|b| b.try_into().ok());
                 let outcome = crate::sync::sync_library(&relay_url, &secret, dek.as_ref(), &conn);
+                if outcome.pulled > 0 {
+                    crate::sync::log_event(
+                        &conn,
+                        "sync.pull",
+                        &format!("{} applied", outcome.pulled),
+                        None,
+                        None,
+                    );
+                }
                 let ids = crate::sync::list_artifact_ids(&conn).unwrap_or_default();
                 let err = outcome.error.as_deref().unwrap_or("");
                 let _ = app.emit(
@@ -360,6 +369,15 @@ mod mobile {
                 let outcome = crate::sync::sync_library(&relay_url_owned, &sync_secret_owned,
                     dek.as_ref(),
                     &conn_clone);
+                if outcome.pulled > 0 {
+                    crate::sync::log_event(
+                        &conn_clone,
+                        "sync.pull",
+                        &format!("{} applied", outcome.pulled),
+                        None,
+                        None,
+                    );
+                }
                 let ids = crate::sync::list_artifact_ids(&conn_clone).unwrap_or_default();
 
                 // Emit the result event
@@ -575,7 +593,13 @@ mod mobile {
             }
         }
 
-        emit_event("capture", &format!("{kind} {}", &id[..8.min(id.len())]));
+        crate::sync::log_event(
+            &conn,
+            "capture.note",
+            &format!("{kind}: {}", trimmed.chars().take(60).collect::<String>()),
+            Some(&serde_json::json!({ "artifact_id": id, "kind": kind, "title": title })),
+            None,
+        );
         let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
         Ok(art.to_string())
     }
@@ -1191,21 +1215,23 @@ mod mobile {
         let model = pick("llm_model", "llama3.1:8b");
         let llm_url = pick("llm_url", "");
         let api_key = pick("llm_api_key", "");
+        let llm_headers = pick("llm_headers", "");
         // call_llm_mobile reads a url only for the ollama/custom backends.
         let custom_url = if backend == "custom" || backend == "ollama" { llm_url.as_str() } else { "" };
         let backend = backend.as_str();
         let model = model.as_str();
         let api_key = api_key.as_str();
-        
+        let llm_headers = llm_headers.as_str();
+
         // 4. Build prompt
         let context = passages.join("\n\n---\n\n");
         let prompt = format!(
             "Answer the question using ONLY the provided context. Cite sources by their [id] in square brackets.\n\nContext:\n{}\n\nQuestion: {}\n\nAnswer:",
             context, query
         );
-        
+
         // 5. Call LLM - for mobile we need to call provider directly
-        let answer = call_llm_mobile(&backend, &model, &custom_url, &api_key, &prompt)
+        let answer = call_llm_mobile(&backend, &model, &custom_url, &api_key, llm_headers, &prompt)
             .map_err(|e| e.to_string())?;
         
         // 6. Extract citations from answer
@@ -1263,6 +1289,7 @@ mod mobile {
         let model = pick("llm_model", "llama3.1:8b");
         let llm_url = pick("llm_url", "");
         let api_key = pick("llm_api_key", "");
+        let llm_headers = pick("llm_headers", "");
         let custom_url = if backend == "custom" || backend == "ollama" {
             llm_url.as_str()
         } else {
@@ -1273,7 +1300,7 @@ mod mobile {
             "Answer the question using ONLY the provided context. Cite sources by their [id] in square brackets.\n\nContext:\n{}\n\nQuestion: {}\n\nAnswer:",
             context, query
         );
-        let answer = call_llm_mobile(&backend, &model, custom_url, &api_key, &prompt)
+        let answer = call_llm_mobile(&backend, &model, custom_url, &api_key, &llm_headers, &prompt)
             .map_err(|e| e.to_string())?;
         let cites = extract_citations(&answer);
         Ok((answer, cites))
@@ -1353,10 +1380,16 @@ mod mobile {
         // A model/network failure must not lose the turn: store an honest assistant
         // message and let the conversation (and its push) proceed, rather than erroring
         // the whole send and leaving a dangling question.
-        let (answer, cites) = match mobile_answer(&app, &conn, &text) {
-            Ok(r) => r,
-            Err(e) => (format!("Couldn't reach the model right now ({e})."), Vec::new()),
+        let ask_started = std::time::Instant::now();
+        let (answer, cites, ask_error) = match mobile_answer(&app, &conn, &text) {
+            Ok((a, c)) => (a, c, None),
+            Err(e) => (
+                format!("Couldn't reach the model right now ({e})."),
+                Vec::new(),
+                Some(e),
+            ),
         };
+        let ask_ms = ask_started.elapsed().as_millis() as i64;
         let amid = uuid::Uuid::new_v4().to_string();
         let grounded: i64 = if cites.is_empty() { 0 } else { 1 };
         conn.execute(
@@ -1389,18 +1422,128 @@ mod mobile {
         }
 
         let _ = push_chat_now(&app, &conn, &cid);
+
+        // Log the exchange so the Activity view can show the whole thing - the question,
+        // the answer, whether it found anything, and how long the model took.
+        let one_line: String = {
+            let s: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let s: String = s.chars().take(80).collect();
+            s
+        };
+        if let Some(err) = ask_error {
+            crate::sync::log_event(
+                &conn,
+                "ask.failed",
+                &one_line,
+                Some(&serde_json::json!({ "question": text, "error": err })),
+                Some(ask_ms),
+            );
+        } else {
+            crate::sync::log_event(
+                &conn,
+                "ask.answered",
+                &format!(
+                    "{}  →  {}, {:.1}s",
+                    one_line,
+                    if grounded == 1 { "grounded" } else { "no match" },
+                    ask_ms as f64 / 1000.0
+                ),
+                Some(&serde_json::json!({
+                    "question": text,
+                    "answer": answer,
+                    "grounded": grounded == 1,
+                    "cited": cites,
+                    "timing_ms": { "total": ask_ms },
+                })),
+                Some(ask_ms),
+            );
+        }
+
         let chat = crate::sync::get_chat(&conn, &cid).map_err(|e| e.to_string())?;
         Ok(chat.to_string())
     }
 
-    fn call_llm_mobile(backend: &str, model: &str, custom_url: &str, api_key: &str, prompt: &str) -> Result<String, String> {
+    /// Push one artifact snapshot from the phone, bumping updated_at so an edit wins LWW
+    /// on the desktop. Best-effort; the local change already landed. Used by the facet
+    /// edit/delete commands so a summary edited on the phone reaches the desktop.
+    fn push_artifact_now(app: &AppHandle, conn: &Connection, id: &str) -> Result<(), String> {
+        let now = now_iso();
+        let _ = conn.execute(
+            "UPDATE artifacts SET updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        );
+        if let Some(cfg) = load_config(app)? {
+            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
+                if let Some(mut snapshot) = crate::sync::build_snapshot(conn, id)? {
+                    let device = crate::sync::device_id(
+                        &app.path().app_data_dir().map_err(|e| e.to_string())?,
+                    );
+                    snapshot["artifact"]["_device_id"] = Value::String(device.clone());
+                    let relay = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+                    if !relay.is_empty() && !secret.is_empty() {
+                        let _ =
+                            crate::sync::push_snapshot(relay, secret, &dek, &device, &snapshot);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Rewrite one facet from the phone (phase A+): mark it edited, then push the artifact
+    /// so the edit reaches the desktop. Returns the updated reader payload for that
+    /// artifact ({artifact, annotations, preview, facets}).
+    #[tauri::command]
+    fn mobile_facet_edit(app: AppHandle, facet_id: String, statement: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let text = statement.trim().to_string();
+        if text.is_empty() {
+            return Err("a facet needs some text".into());
+        }
+        let aid = crate::sync::edit_facet_local(&conn, &facet_id, &text)?;
+        push_artifact_now(&app, &conn, &aid)?;
+        crate::sync::log_event(
+            &conn,
+            "facet.edited",
+            &format!("{}: {}", &aid[..8.min(aid.len())], text.chars().take(60).collect::<String>()),
+            Some(&serde_json::json!({ "artifact_id": aid, "facet_id": facet_id, "statement": text })),
+            None,
+        );
+        Ok(crate::sync::get_artifact(&conn, &aid)?.to_string())
+    }
+
+    /// Remove one facet from the phone, then push so the removal reaches the desktop.
+    #[tauri::command]
+    fn mobile_facet_delete(app: AppHandle, facet_id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let aid = crate::sync::delete_facet_local(&conn, &facet_id)?;
+        push_artifact_now(&app, &conn, &aid)?;
+        crate::sync::log_event(
+            &conn,
+            "facet.deleted",
+            &aid[..8.min(aid.len())],
+            Some(&serde_json::json!({ "artifact_id": aid, "facet_id": facet_id })),
+            None,
+        );
+        Ok(crate::sync::get_artifact(&conn, &aid)?.to_string())
+    }
+
+    fn call_llm_mobile(
+        backend: &str,
+        model: &str,
+        custom_url: &str,
+        api_key: &str,
+        extra_headers: &str,
+        prompt: &str,
+    ) -> Result<String, String> {
         // Use ureq to call the provider directly
         let body = serde_json::json!({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": false
         });
-        
+
         let (url, auth_header) = match backend {
             "ollama" => {
                 let url = if custom_url.is_empty() { "http://127.0.0.1:11434/api/chat" } else { custom_url };
@@ -1411,15 +1554,37 @@ mod mobile {
             "custom" => (custom_url.to_string(), if api_key.is_empty() { None } else { Some(format!("Bearer {}", api_key)) }),
             _ => return Err(format!("unknown backend: {}", backend))
         };
-        
+
         let mut req = ureq::post(&url)
             .set("Content-Type", "application/json");
         if let Some(auth) = auth_header {
             req = req.set("Authorization", &auth);
         }
-        
+        // Extra provider headers synced from the desktop, one per line as "Name: value"
+        // (e.g. OpenCode's required `x-opencode-session`). Without these the endpoint
+        // 400s and the phone can never answer, even after retrieval finds the passages.
+        for line in extra_headers.lines() {
+            if let Some((name, value)) = line.split_once(':') {
+                let name = name.trim();
+                let value = value.trim();
+                if !name.is_empty() && !value.is_empty() {
+                    req = req.set(name, value);
+                }
+            }
+        }
+
         let body_str = body.to_string();
-        let resp = req.send_string(&body_str).map_err(|e| format!("HTTP error: {}", e))?;
+        // ureq treats a non-2xx as Err and would drop the response body, so a 400's
+        // reason ("MissingSessionID", a bad model) never reaches the log. Unwrap the
+        // Status error here and surface the body instead of an opaque status line.
+        let resp = match req.send_string(&body_str) {
+            Ok(r) => r,
+            Err(ureq::Error::Status(code, r)) => {
+                let text = r.into_string().unwrap_or_default();
+                return Err(format!("LLM error {}: {}", code, text));
+            }
+            Err(e) => return Err(format!("HTTP error: {}", e)),
+        };
         
         let status = resp.status();
         if !(200..300).contains(&status) {
@@ -2009,19 +2174,10 @@ mod mobile {
     // key) is stored in secure config and synced (VAULT.2b). Content is encrypted at
     // rest with this key, mirroring the desktop `vaultops`.
     static VAULT_KEY: std::sync::Mutex<Option<[u8; 32]>> = std::sync::Mutex::new(None);
-    // A tiny in-memory event log for the mobile Events section (decoy + diagnostics).
-    static EVENTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-
-    fn emit_event(kind: &str, detail: &str) {
-        if let Ok(mut ev) = EVENTS.lock() {
-            let now = now_iso();
-            ev.push(format!("{now}\t{kind}\t{detail}"));
-            let len = ev.len();
-            if len > 200 {
-                ev.drain(0..len - 200);
-            }
-        }
-    }
+    // The activity log for the mobile Events section (decoy + diagnostics) is persisted
+    // to the local library.db via crate::sync::log_event, so it survives a relaunch and
+    // carries a full record opened on demand, mirroring the engine's events table. Call
+    // sites hold a `conn` and call log_event directly.
 
     fn vault_key_get() -> Option<[u8; 32]> {
         *VAULT_KEY.lock().unwrap()
@@ -2342,6 +2498,15 @@ mod mobile {
             )
             .map_err(|e| e.to_string())?;
         }
+        // The activity log holds this artifact's title/counts in plaintext (capture,
+        // facet events). Vaulting must reach it too, or a vaulted note's title lingers in
+        // the local `events` table. Drop its rows on vault (they are diagnostics).
+        if into_vault {
+            let _ = conn.execute(
+                "DELETE FROM events WHERE json_extract(data, '$.artifact_id') = ?1",
+                [id],
+            );
+        }
         // Blob file in place.
         if let Some(ch) = content_hash.filter(|c| !c.is_empty()) {
             if let Ok(dir) = app.path().app_data_dir() {
@@ -2357,7 +2522,13 @@ mod mobile {
                 }
             }
         }
-        emit_event(if into_vault { "vault" } else { "unvault" }, &id[..8.min(id.len())]);
+        crate::sync::log_event(
+            &conn,
+            if into_vault { "vault.add" } else { "vault.remove" },
+            &id[..8.min(id.len())],
+            Some(&serde_json::json!({ "artifact_id": id })),
+            None,
+        );
         queue_mutation_push(&conn, id, if into_vault { "vault" } else { "unvault" })?;
         Ok(())
     }
@@ -2449,21 +2620,9 @@ mod mobile {
     }
 
     #[tauri::command]
-    fn mobile_events() -> Result<String, String> {
-        let ev = EVENTS.lock().unwrap();
-        let items: Vec<Value> = ev
-            .iter()
-            .rev()
-            .take(100)
-            .map(|line| {
-                let mut it = line.splitn(3, '\t');
-                serde_json::json!({
-                    "ts": it.next().unwrap_or(""),
-                    "kind": it.next().unwrap_or(""),
-                    "detail": it.next().unwrap_or(""),
-                })
-            })
-            .collect();
+    fn mobile_events(app: AppHandle) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let items = crate::sync::read_events(&conn, 200)?;
         Ok(serde_json::json!({ "events": items }).to_string())
     }
 
@@ -2511,6 +2670,8 @@ mod mobile {
                 mobile_chats_list,
                 mobile_chat_get,
                 mobile_chat_send,
+                mobile_facet_edit,
+                mobile_facet_delete,
                 mobile_pivots,
                 mobile_get,
                 mobile_search,

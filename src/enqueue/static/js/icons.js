@@ -44,6 +44,10 @@ const ICONS = {
 	// Send a message: an upward arrow, the same stroke as the rest, so the composer's
 	// one violet control still speaks the icon system's language.
 	send: '<path d="M12 20V5"/><path d="M6 11l6-6 6 6"/>',
+	// Regenerate a summary: a circular arrow. Two arcs with a small arrowhead so it
+	// reads as "run this again", not a loading spinner.
+	refresh:
+		'<path d="M20 11a8 8 0 1 0-.9 4.5"/><path d="M20 5v6h-6"/>',
 };
 const svg = (k) => '<svg viewBox="0 0 24 24">' + ICONS[k] + "</svg>";
 

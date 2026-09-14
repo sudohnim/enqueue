@@ -562,6 +562,13 @@
     position: sticky;
     top: 0;
     z-index: 10;
+    /* A sticky header pins to top:0 = the viewport top, which is ABOVE the status-bar
+       safe area, so a scrolled header slid under the clock/battery. Pad the header down
+       by the safe-area inset (its opaque background then covers the status-bar strip)
+       and cancel that inset with a negative margin so the at-rest position is unchanged;
+       only the pinned state gains the clearance. */
+    padding-top: calc(12px + env(safe-area-inset-top));
+    margin-top: calc(-1 * env(safe-area-inset-top));
   }
   header h1 {
     flex: 1;
@@ -2267,9 +2274,12 @@
     </div>
     <!-- Events Section (VAULT.6): real session diagnostics + the vault door -->
     <div>
-      <h2 style="font-size: 14px; font-weight: 600; color: var(--text-mute); margin-bottom: 12px">
-        Events
+      <h2 style="font-size: 14px; font-weight: 600; color: var(--text-mute); margin-bottom: 4px">
+        Activity
       </h2>
+      <p style="font-size: 12px; color: var(--text-mute); margin: 0 0 12px">
+        Questions, captures, facet edits, and syncs. Tap a row for the full record.
+      </p>
       <div id="settings_events_list" style="font-size: 13px; color: var(--text); max-height: 280px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px; background: var(--surface-1, var(--surface))"></div>
       <div style="display: flex; gap: 10px; margin-top: 12px">
         <button id="settings_events_refresh" type="button" style="flex: 1; padding: 10px; font-size: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-md)">Refresh</button>
@@ -3882,19 +3892,107 @@
         renderTagChips(tagsEl, a.tags || (cached && cached.tags) || [], a.id);
       });
 
+    // The summary is the facets synced from desktop. Each line is tap-to-edit and can
+    // be removed here (it syncs back); regeneration stays on the desktop, where the
+    // capable model + full retrieval are. Your annotations follow as "Your notes".
     sumEl.replaceChildren();
-    const anns = (data && data.annotations) || [];
-    if (!anns.length) {
+    const facets = (data && data.facets) || [];
+    if (!facets.length) {
       const e = document.createElement("span");
       e.className = "details-empty";
-      e.textContent = "No summary yet. Summaries are generated on the desktop.";
+      e.textContent =
+        "No summary yet. Summaries are generated on the desktop and sync here.";
       sumEl.appendChild(e);
     } else {
-      sumEl.textContent = anns.map((an) => an.text).join("\n\n");
+      for (const f of facets) renderMobileFacet(sumEl, f, a);
+      const hint = document.createElement("div");
+      hint.style.cssText =
+        "margin-top:8px;font-size:12px;color:var(--text-mute);";
+      hint.textContent = "Regenerate the summary on desktop.";
+      sumEl.appendChild(hint);
+    }
+    const anns = (data && data.annotations) || [];
+    if (anns.length) {
+      const h = document.createElement("div");
+      h.style.cssText =
+        "margin-top:16px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-mute);";
+      h.textContent = "Your notes";
+      sumEl.appendChild(h);
+      const notes = document.createElement("div");
+      notes.style.cssText =
+        "font-size:14px;line-height:1.5;color:var(--text-dim);white-space:pre-wrap;margin-top:4px;";
+      notes.textContent = anns.map((an) => an.text).join("\n\n");
+      sumEl.appendChild(notes);
     }
 
     document.getElementById("details_backdrop").classList.add("open");
     document.getElementById("details_panel").classList.add("open");
+  }
+
+  // One facet line in the mobile summary: tap-to-edit, remove on the trailing ×. An
+  // edited line carries a violet tick, like the desktop drawer.
+  function renderMobileFacet(sumEl, f, a) {
+    const row = document.createElement("div");
+    row.style.cssText =
+      "display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft);";
+    const span = document.createElement("span");
+    span.style.cssText =
+      "flex:1;font-size:14px;line-height:1.5;color:var(--text);cursor:text;" +
+      (f.edited ? "box-shadow:inset 2px 0 0 var(--purple-bold);padding-left:8px;" : "");
+    span.textContent = f.statement || "";
+    span.onclick = () => editMobileFacet(sumEl, f, a, span, row);
+    const del = document.createElement("button");
+    del.setAttribute("aria-label", "Remove this line");
+    del.textContent = "×";
+    del.style.cssText =
+      "border:0;background:transparent;color:var(--text-mute);font-size:20px;line-height:1;padding:0 4px;cursor:pointer;";
+    del.onclick = async (ev) => {
+      ev.stopPropagation();
+      try {
+        const d = parse(await invoke("mobile_facet_delete", { facetId: f.id }));
+        openDetails(d.artifact || a, d);
+      } catch (e) {
+        toast("Could not remove: " + errString(e), true);
+      }
+    };
+    row.appendChild(span);
+    row.appendChild(del);
+    sumEl.appendChild(row);
+  }
+
+  function editMobileFacet(sumEl, f, a, span, row) {
+    if (row.querySelector("textarea")) return;
+    const ta = document.createElement("textarea");
+    ta.value = f.statement || "";
+    ta.rows = 3;
+    ta.style.cssText =
+      "flex:1;box-sizing:border-box;font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--text);background:var(--bg);border:1px solid var(--purple-bold);border-radius:var(--r-sm);padding:6px 8px;resize:vertical;";
+    span.replaceWith(ta);
+    ta.focus();
+    let settled = false;
+    const finish = async (save) => {
+      if (settled) return;
+      settled = true;
+      const v = ta.value.trim();
+      if (save && v && v !== (f.statement || "")) {
+        try {
+          const d = parse(
+            await invoke("mobile_facet_edit", { facetId: f.id, statement: v }),
+          );
+          return openDetails(d.artifact || a, d);
+        } catch (e) {
+          toast("Could not save: " + errString(e), true);
+        }
+      }
+      openDetails(a, { artifact: a, facets: [f], annotations: (a && a.annotations) || [] });
+    };
+    ta.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === "Escape") finish(false);
+    };
+    ta.onblur = () => finish(true);
   }
 
   function closeDetails() {
@@ -4581,6 +4679,7 @@ return;
     if (syncListenersWired) return;
     if (!window.__TAURI__ || !window.__TAURI__.event) return;
     __TAURI__.event.listen("sync-started", () => {
+      _mobileSyncing = true;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
         btn.disabled = true;
@@ -4597,6 +4696,12 @@ return;
       if (banner) banner.hidden = true;
     });
     __TAURI__.event.listen("sync-done", (e) => {
+      _mobileSyncing = false;
+      // Catch the Activity log up once, now that the sync's DB writes are done.
+      const sEl = document.getElementById("settings");
+      if (sEl && !sEl.hidden && document.getElementById("settings_events_list")) {
+        renderMobileEvents();
+      }
       document.getElementById("loading").hidden = true;
       // Record when we last caught up, so Settings shows a real time, not "Never
       // synced" (the engine does not persist a mobile last_synced timestamp).
@@ -4631,6 +4736,7 @@ return;
       invoke("mobile_outbox_push").catch(() => {});
     });
     __TAURI__.event.listen("sync-error", (e) => {
+      _mobileSyncing = false;
       document.getElementById("loading").hidden = true;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
@@ -5471,27 +5577,172 @@ return;
       /* empty is fine */
     }
     el.replaceChildren();
+    // Fold runs of background sync pulls into one row so real activity isn't buried.
+    events = coalesceMobileSync(events);
     if (!events.length) {
       const p = document.createElement("div");
       p.style.color = "var(--text-mute)";
-      p.textContent = "No events yet this session.";
+      p.textContent = "No activity yet.";
       el.appendChild(p);
-      return;
+    } else {
+      for (const e of events) el.appendChild(mobileEventRow(e));
     }
+    // Remember what we drew so the poller can skip a rebuild when nothing changed.
+    _lastEventsSig = events.length ? events[0].id + ":" + events.length : "empty";
+    ensureMobileEventsPoller();
+  }
+
+  // Keep the Activity log live while the settings view is open, so a just-finished
+  // answer appears without a manual refresh - but cheaply. It pauses while a sync is
+  // running (mobile_events reads the same DB the sync is writing, so polling through a
+  // sync was contending and stuttering the UI), skips when a row is expanded so a record
+  // being read is never collapsed, and only rebuilds the DOM when the newest event or
+  // the count actually changed.
+  let _mobileEventsPoller = null;
+  let _lastEventsSig = null;
+  let _mobileSyncing = false;
+  function ensureMobileEventsPoller() {
+    if (_mobileEventsPoller) return;
+    _mobileEventsPoller = setInterval(async () => {
+      const el = document.getElementById("settings_events_list");
+      const settings = document.getElementById("settings");
+      const visible = el && settings && !settings.hidden && settings.offsetParent !== null;
+      if (!visible) {
+        clearInterval(_mobileEventsPoller);
+        _mobileEventsPoller = null;
+        return;
+      }
+      // Don't poll through a sync (DB contention) or over an open row (would collapse it).
+      if (_mobileSyncing) return;
+      for (const b of el.querySelectorAll("div[style*='flex-direction']")) {
+        if (b.style.display === "flex") return;
+      }
+      // Cheap change check: fetch, compare the newest id + count, rebuild only if changed.
+      let events = [];
+      try {
+        events = (parse(await invoke("mobile_events")) || {}).events || [];
+      } catch (_) {
+        return;
+      }
+      const sig = events.length ? events[0].id + ":" + events.length : "empty";
+      if (sig === _lastEventsSig) return;
+      renderMobileEvents();
+    }, 5000);
+  }
+
+  // Consecutive sync.* events collapse into one "N syncs" row (mirrors desktop).
+  function coalesceMobileSync(events) {
+    const out = [];
     for (const e of events) {
-      const row = document.createElement("div");
-      row.style.cssText =
-        "display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--line-soft,#eceef2)";
-      row.innerHTML =
-        '<span style="font-weight:600;color:var(--purple-bold);min-width:70px">' +
-        escapeHtml(e.kind || "") +
-        '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-        escapeHtml(e.detail || "") +
-        '</span><span style="color:var(--text-mute);font-variant-numeric:tabular-nums">' +
-        escapeHtml((e.ts || "").slice(11, 19)) +
-        "</span>";
-      el.appendChild(row);
+      const prev = out[out.length - 1];
+      if (String(e.kind || "").startsWith("sync.") && prev && prev.kind === e.kind) {
+        prev._count = (prev._count || 1) + 1;
+        prev.detail = prev._count + " syncs";
+        continue;
+      }
+      out.push({ ...e });
     }
+    return out;
+  }
+
+  // One event: a summary line that expands on tap to its full record. Every row
+  // expands - a data-less event still opens to show its kind, time, and detail.
+  function mobileEventRow(e) {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "border-bottom:1px solid var(--line-soft,#eceef2)";
+    const head = document.createElement("div");
+    head.style.cssText =
+      "display:flex;gap:10px;align-items:baseline;padding:7px 0;cursor:pointer";
+    const dur =
+      e.duration_ms != null
+        ? '<span style="color:var(--text-mute);font-variant-numeric:tabular-nums">' +
+          (e.duration_ms / 1000).toFixed(1) +
+          "s</span>"
+        : "";
+    head.innerHTML =
+      '<span style="font-weight:600;color:' +
+      mobileKindColor(e.kind) +
+      ';min-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      escapeHtml(e.kind || "") +
+      '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      escapeHtml(e.detail || "") +
+      "</span>" +
+      dur +
+      '<span style="color:var(--text-mute);font-variant-numeric:tabular-nums">' +
+      escapeHtml((e.ts || "").slice(11, 19)) +
+      '</span><span style="color:var(--text-mute)">›</span>';
+    wrap.appendChild(head);
+    const body = document.createElement("div");
+    // Toggle display directly - an inline display:flex would override the [hidden]
+    // attribute (UA display:none), so the body would never collapse.
+    body.style.cssText =
+      "padding:2px 4px 12px;flex-direction:column;gap:10px;display:none";
+    body.innerHTML = mobileEventBody(e);
+    // An artifact link inside opens the reader; wire it after the HTML is in place.
+    const aid = e.data && e.data.artifact_id;
+    if (aid) {
+      const link = body.querySelector("[data-artifact]");
+      if (link)
+        link.onclick = (ev) => {
+          ev.stopPropagation();
+          openArtifact(aid);
+        };
+    }
+    head.onclick = () => {
+      body.style.display = body.style.display === "none" ? "flex" : "none";
+    };
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function mobileKindColor(kind) {
+    const f = String(kind || "").split(".")[0];
+    if (f === "capture") return "#0a7d4a";
+    if (f === "facet") return "#b25a00";
+    if (f === "sync") return "#6a6d7e";
+    return "var(--purple-bold)";
+  }
+
+  function mobileEventBody(e) {
+    const d = e.data || {};
+    // field(label, htmlValue) - value is pre-built HTML (already escaped by the caller).
+    const field = (label, html) =>
+      '<div><div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-mute);margin-bottom:2px">' +
+      escapeHtml(label) +
+      '</div><div style="white-space:pre-wrap;line-height:1.5">' +
+      html +
+      "</div></div>";
+    const meta = field("When", escapeHtml((e.ts || "").replace("T", " ")));
+    if (e.kind && e.kind.indexOf("ask") === 0) {
+      let h = "";
+      if (d.question) h += field("Question", escapeHtml(d.question));
+      if (d.answer) h += field("Answer", escapeHtml(d.answer));
+      if (d.error) h += field("Error", escapeHtml(String(d.error)));
+      if (d.timing_ms && d.timing_ms.total != null)
+        h += field("Timing", escapeHtml((d.timing_ms.total / 1000).toFixed(1) + "s"));
+      if (d.grounded != null) h += field("Grounded", d.grounded ? "yes" : "no match");
+      if (d.model) h += field("Model", escapeHtml(d.model));
+      return h || meta;
+    }
+    // Artifact-bearing events (capture, facet) get a tappable link into the reader.
+    let h = "";
+    if (d.title) h += field("Title", escapeHtml(d.title));
+    if (d.kind) h += field("Kind", escapeHtml(d.kind));
+    if (d.artifact_id)
+      h += field(
+        "Artifact",
+        '<a href="#" data-artifact style="color:var(--purple-bold);text-decoration:underline">' +
+          escapeHtml(d.title || d.artifact_id) +
+          "</a>",
+      );
+    if (d.statement) h += field("Statement", escapeHtml(d.statement));
+    const counts = [];
+    const clabel = { pages: "pages", chunks: "chunks", facets: "facets", entities: "entities" };
+    for (const k of Object.keys(clabel)) if (d[k] != null) counts.push(d[k] + " " + clabel[k]);
+    if (counts.length) h += field("Result", escapeHtml(counts.join(" · ")));
+    if (d.model) h += field("Model", escapeHtml(d.model));
+    if (d.source) h += field("Source", escapeHtml(d.source));
+    return h ? h + meta : meta;
   }
 
   function escapeHtml(s) {

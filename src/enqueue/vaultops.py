@@ -135,6 +135,15 @@ def vault_artifact(artifact_id: str) -> dict:
             blob.write_bytes(crypto.encrypt(blob.read_bytes(), key))
         # Drop the rebuildable chunks so retrieval can never cite a vaulted note.
         conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
+        # The activity log records an artifact's title/counts in plaintext (capture,
+        # ingest, facet events). Vaulting must reach it too, or the title - which for a
+        # short note is the whole body - lingers in `events` and on disk. These rows are
+        # diagnostics; drop the vaulted artifact's outright (the VACUUM below purges the
+        # freed plaintext pages), so a vaulted note leaves no trace in the log either.
+        conn.execute(
+            "DELETE FROM events WHERE json_extract(data, '$.artifact_id') = ?",
+            (artifact_id,),
+        )
 
     # VACUUM (outside the transaction) rewrites the DB file so the freed pages that
     # still hold the pre-encryption plaintext are purged from disk, not just

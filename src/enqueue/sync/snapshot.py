@@ -61,6 +61,17 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
                 (artifact_id,),
             )
         ],
+        # Facets ride the artifact snapshot as a child so the summary reaches other
+        # devices (the phone, which cannot generate its own). Ordered for byte-stable
+        # canonical JSON.
+        "facets": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, level, statement, model_version, body_version, trust, edited"
+                " FROM facets WHERE artifact_id = ? ORDER BY level, statement, id",
+                (artifact_id,),
+            )
+        ],
     }
 
 
@@ -122,6 +133,32 @@ def _apply_snapshot_children(
             "INSERT INTO artifact_versions (id, artifact_id, body, created_at)" " VALUES (?,?,?,?)",
             (v["id"], artifact_id, v["body"], v["created_at"]),
         )
+
+    # Facets replace only when the incoming snapshot actually carries them. A snapshot
+    # with none must NOT wipe facets this device generated locally - the equal-key
+    # children re-apply (schema repair) would otherwise delete them. This is why a
+    # device that generates its own summaries keeps them, while the phone (which cannot)
+    # receives them whenever a snapshot brings them along.
+    incoming_facets = snapshot.get("facets") or []
+    if incoming_facets:
+        conn.execute("DELETE FROM facets WHERE artifact_id = ?", (artifact_id,))
+        for f in incoming_facets:
+            conn.execute(
+                "INSERT INTO facets"
+                " (id, artifact_id, level, statement, model_version, body_version, trust, edited)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    f["id"],
+                    artifact_id,
+                    f["level"],
+                    f["statement"],
+                    f.get("model_version"),
+                    f.get("body_version"),
+                    f.get("trust", 0.5),
+                    f.get("edited", 0),
+                ),
+            )
+
     from ..tags import normalize as normalize_tag
 
     for raw_name in snapshot.get("tags", []):
