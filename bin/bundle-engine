@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Vendor a relocatable Python engine into desktop/engine so `cargo tauri build` ships it
+# INSIDE Enqueue.app (Contents/Resources/engine). A shipped app then starts the engine
+# from the bundle - no repo, no uv, no system Python. See bundled_engine_command() in
+# desktop/src/lib.rs, which runs `python -m enqueue serve` against this tree.
+#
+# The interpreter is python-build-standalone (the same relocatable CPython uv manages);
+# the deps (fastembed/ONNX, sqlite-vec, FastAPI, ...) are installed into a plain `site/`
+# directory the app puts on PYTHONPATH. Nothing here hardcodes a build-time path, so the
+# whole thing works once copied into /Applications.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+DEST="$REPO/desktop/engine"
+
+# The exact CPython the app launches (spawn_engine hardcodes python3.12). Find a
+# standalone build under uv's python dir; fetch one if none is present yet.
+find_standalone() {
+  ls -d "$HOME/.local/share/uv/python/"cpython-3.12*-"$(uname_arch)"-none 2>/dev/null \
+    | sort -V | tail -1
+}
+uname_arch() { case "$(uname -m)" in arm64) echo macos-aarch64;; x86_64) echo macos-x86_64;; *) echo "macos-$(uname -m)";; esac; }
+
+STDROOT="$(find_standalone || true)"
+if [ -z "${STDROOT:-}" ] || [ ! -x "$STDROOT/bin/python3.12" ]; then
+  echo "[bundle-engine] fetching a standalone CPython 3.12 via uv..."
+  uv python install 3.12
+  STDROOT="$(find_standalone)"
+fi
+[ -x "$STDROOT/bin/python3.12" ] || { echo "no standalone python3.12 found under uv"; exit 1; }
+echo "[bundle-engine] interpreter: $STDROOT"
+
+rm -rf "$DEST"
+mkdir -p "$DEST"
+cp -R "$STDROOT" "$DEST/python"
+
+echo "[bundle-engine] installing the engine + deps into site/ ..."
+uv pip install --python "$DEST/python/bin/python3.12" --target "$DEST/site" "$REPO"
+
+# Drop bytecode + caches: the app runs read-only and re-writing .pyc next to the source
+# would fail anyway (PYTHONDONTWRITEBYTECODE is set by the shell too).
+find "$DEST" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+
+# Smoke test the relocated bundle before we hand it to Tauri: a broken bundle should fail
+# here, loudly, not as a blank window on a user's Mac.
+echo "[bundle-engine] smoke test..."
+PYTHONPATH="$DEST/site" "$DEST/python/bin/python3.12" -c \
+  "import onnxruntime, sqlite_vec, fastembed, enqueue.cli; print('  imports OK')"
+
+echo "[bundle-engine] done: $DEST ($(du -sh "$DEST" | cut -f1))"

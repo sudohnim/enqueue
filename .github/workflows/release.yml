@@ -1,11 +1,14 @@
 # Publish downloadable builds on a version tag, so people can install Enqueue
 # without cloning the repo or setting up the Android/Rust toolchain.
 #
-# Today this ships the Android APK only. The macOS desktop app is NOT bundled here:
-# the shell spawns the Python engine with `uv run enq serve` from the repo, so a
-# .dmg would not run on a Mac that lacks the repo + uv + Python. Shipping a .dmg
-# needs the engine bundled as a Tauri sidecar binary first (see AGENTS.md); until
-# then a broken .dmg would be worse than none, so it is deliberately omitted.
+# Two artifacts, two jobs:
+#   - android-apk (ubuntu): the debug-signed Android .apk.
+#   - desktop-dmg (macOS): a self-contained macOS .dmg. `bin/release desktop` vendors the
+#     Python engine INSIDE Enqueue.app (Contents/Resources/engine), so it runs on a clean
+#     Mac with no repo, no uv, no system Python.
+#
+# The .dmg is SIGNED + NOTARIZED only when the Apple secrets are set (see desktop-dmg);
+# with none set it still builds and uploads, unsigned (users right-click -> Open).
 #
 # Trigger: on-demand only. Run it by hand from the Actions tab (Actions -> release ->
 # Run workflow) and give it the version tag to publish under. It never runs on a push
@@ -83,16 +86,79 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.apk.outputs.tag }}
+          tag_name: ${{ inputs.tag }}
           files: ${{ steps.apk.outputs.path }}
           fail_on_unmatched_files: true
           body: |
-            Android app for Enqueue.
+            Enqueue ${{ inputs.tag }}.
 
-            Install: download the `.apk`, enable "install unknown apps" for your browser
-            or file manager, open it, then link it to a running desktop by scanning the
-            QR from the desktop's sync panel.
+            - Android: the `.apk` (debug-signed; enable "install unknown apps", open it,
+              then link to a running desktop by scanning the sync-panel QR).
+            - macOS: the `.dmg` (self-contained - drag to Applications, open).
 
-            This is a debug-signed build (no Play Store signing key). The macOS desktop
-            app is not yet distributed as a download - it still runs from source (see the
-            README), because its Python engine is not yet bundled as a standalone binary.
+  desktop-dmg:
+    runs-on: macos-14 # arm64, so the .dmg matches Apple-silicon Macs
+    # Apple secrets are optional: with all of them set the .dmg is signed + notarized;
+    # with none set it still builds and uploads, unsigned. Kept at job level so a step
+    # `if` can read them via the env context (secrets are not usable directly in `if`).
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+
+      # If APPLE_CERTIFICATE (base64 .p12) is set, import it into a temporary keychain so
+      # bin/release can deep-sign the engine and Tauri can sign the app. Skipped (leaving
+      # an unsigned build) when no cert is configured.
+      - name: Import signing certificate
+        if: env.APPLE_CERTIFICATE != ''
+        run: |
+          KEYCHAIN=build.keychain
+          PASSWORD=$(openssl rand -hex 16)
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security import /tmp/cert.p12 -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$PASSWORD" "$KEYCHAIN"
+          rm -f /tmp/cert.p12
+
+      # bin/release reads APPLE_SIGNING_IDENTITY (sign) and APPLE_ID/APPLE_PASSWORD/
+      # APPLE_TEAM_ID (Tauri notarizes) from the job env above.
+      - name: Build the .dmg
+        run: bin/release desktop
+
+      - name: Name the artifact
+        id: dmg
+        run: |
+          SRC=$(ls desktop/target/release/bundle/dmg/*.dmg | head -1)
+          OUT="enqueue-${{ inputs.tag }}-macos-arm64.dmg"
+          cp "$SRC" "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: ${{ steps.dmg.outputs.path }}
+          fail_on_unmatched_files: true

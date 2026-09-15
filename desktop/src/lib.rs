@@ -2916,24 +2916,54 @@ mod desktop {
             .unwrap_or_else(|| ".".into())
     }
 
-    /// Start the Python engine as a child process. Development runs it through `uv` from
-    /// the repository; a bundled app will ship it as a sidecar binary later.
+    /// The engine bundled inside a shipped `.app`, if this is a packaged build.
+    ///
+    /// `bin/bundle-engine` vendors a relocatable Python (interpreter + site-packages,
+    /// native deps and all) into `Enqueue.app/Contents/Resources/engine`. Running it as
+    /// `python -m enqueue serve` (not the `enq` console script, whose shebang hardcodes a
+    /// build-time path) makes the whole thing relocatable: a user double-clicks the app
+    /// and the engine starts from inside the bundle, no repo, no `uv`, no system Python.
+    /// Returns None in a dev build, where there is no bundled engine and `uv` runs it.
+    fn bundled_engine_command() -> Option<Command> {
+        let exe = std::env::current_exe().ok()?;
+        // …/Enqueue.app/Contents/MacOS/Enqueue -> …/Contents/Resources/engine
+        let engine = exe.parent()?.parent()?.join("Resources").join("engine");
+        let python = engine.join("python").join("bin").join("python3.12");
+        if !python.exists() {
+            return None;
+        }
+        let mut cmd = Command::new(python);
+        cmd.args(["-m", "enqueue", "serve"])
+            .env("PYTHONPATH", engine.join("site"))
+            // The bundle ships no .pyc and the app dir may be read-only (a signed app in
+            // /Applications), so never try to write bytecode next to the source.
+            .env("PYTHONDONTWRITEBYTECODE", "1");
+        Some(cmd)
+    }
+
+    /// Start the Python engine as a child process. A shipped `.app` runs the engine
+    /// bundled in its Resources; a dev build runs it through `uv` from the repository.
     fn spawn_engine() -> Option<Child> {
-        let repo = engine_repo();
-        eprintln!("[shell] starting the engine from {repo}");
+        let mut command = if let Some(cmd) = bundled_engine_command() {
+            eprintln!("[shell] starting the bundled engine");
+            cmd
+        } else {
+            let repo = engine_repo();
+            eprintln!("[shell] starting the engine from {repo} via uv");
+            // A double-clicked dev app inherits the launch daemon's PATH, which has no
+            // /opt/homebrew/bin and therefore no `uv`. Finding it here rather than failing
+            // with a bare "No such file or directory" is the difference between a fixable
+            // problem and a window that never appears.
+            let uv = ["/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
+                .into_iter()
+                .find(|p| std::path::Path::new(p).exists())
+                .unwrap_or("uv");
+            let mut cmd = Command::new(uv);
+            cmd.args(["run", "enq", "serve"]).current_dir(&repo);
+            cmd
+        };
 
-        // A double-clicked app inherits the launch daemon's PATH, which has no
-        // /opt/homebrew/bin and therefore no `uv`. Finding it here rather than failing
-        // with a bare "No such file or directory" is the difference between a fixable
-        // problem and a window that never appears.
-        let uv = ["/opt/homebrew/bin/uv", "/usr/local/bin/uv"]
-            .into_iter()
-            .find(|p| std::path::Path::new(p).exists())
-            .unwrap_or("uv");
-
-        let mut child = Command::new(uv)
-            .args(["run", "enq", "serve"])
-            .current_dir(&repo)
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

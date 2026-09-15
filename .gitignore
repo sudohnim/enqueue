@@ -263,3 +263,4 @@ evals/search/blobs/
 
 # pi harness
 .pi-subagents/*
+desktop/engine/

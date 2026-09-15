@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Build Enqueue's distributable artifacts for a chosen platform.
+#
+#   bin/release desktop         self-contained macOS .app + .dmg (engine vendored inside)
+#   bin/release android         signed release .apk + .aab
+#
+# Sibling to bin/launch, not a mode of it: `launch` runs the app for development (restarts
+# processes, fronts a window, exits leaving nothing or a running app); `release` produces
+# shippable artifacts and exits. Different intent, different side effects - kept apart on
+# purpose.
+#
+# desktop: vendors a relocatable Python engine into the bundle (bin/bundle-engine), then
+# `cargo tauri build` with the release overlay so the engine ships inside Enqueue.app.
+# The result runs on a clean Mac with no repo, no uv, no system Python. UNSIGNED - fine
+# for dogfooding (right-click -> Open the first time); a public release also needs an
+# Apple Developer ID cert + notarization wired through Tauri's signing env vars.
+#
+# android: a RELEASE build (no --debug) - loads the embedded frontend and is signed with
+# desktop/gen/android/key.properties (+ release.keystore), or the matching RELEASE_* env
+# vars. See that file's header to create the keystore the first time.
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  echo "usage: bin/release <desktop|android>" >&2
+  exit 2
+}
+
+release_desktop() {
+  echo "==> Vendoring the engine into the app bundle"
+  "$REPO/bin/bundle-engine"
+
+  # Signing + notarization is opt-in: set APPLE_SIGNING_IDENTITY (a "Developer ID
+  # Application: ..." identity in the keychain) to sign, and APPLE_ID + APPLE_PASSWORD +
+  # APPLE_TEAM_ID (or APPLE_API_KEY/_ISSUER/_KEY_PATH) for Tauri to notarize during build.
+  # With none set, the build is unsigned - fine for dogfooding (right-click -> Open).
+  if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+    echo "==> Deep-signing the vendored engine ($APPLE_SIGNING_IDENTITY)"
+    # Notarization requires every nested Mach-O to be signed, inside-out, BEFORE the app
+    # is sealed. Sign the engine tree here; Tauri copies these signed binaries into the
+    # .app and then signs the outer bundle (a code signature travels inside the Mach-O,
+    # so the copy preserves it). Hardened runtime (--options runtime) + the engine's
+    # entitlements let the embedded Python load its bundled dylibs at runtime.
+    local ents="$REPO/desktop/Entitlements.plist"
+    while IFS= read -r -d '' f; do
+      if file "$f" | grep -q 'Mach-O'; then
+        codesign --force --timestamp --options runtime --entitlements "$ents" \
+          --sign "$APPLE_SIGNING_IDENTITY" "$f" >/dev/null 2>&1 \
+          || echo "  warn: could not sign $f"
+      fi
+    done < <(find "$REPO/desktop/engine" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) -print0)
+  else
+    echo "==> No APPLE_SIGNING_IDENTITY set - building UNSIGNED (right-click -> Open to run)"
+  fi
+
+  echo "==> Building the .app / .dmg"
+  cd "$REPO/desktop"
+  # The engine resource + macOS entitlements live in a release-only overlay so dev builds
+  # (bin/launch desktop) are not forced to have desktop/engine present. Tauri validates
+  # resources at build time, and signs + notarizes the bundle when the APPLE_* env is set.
+  cargo tauri build --config tauri.release.conf.json
+
+  echo
+  echo "Built:"
+  ls -1d "$REPO"/desktop/target/release/bundle/macos/*.app 2>/dev/null || true
+  ls -1 "$REPO"/desktop/target/release/bundle/dmg/*.dmg 2>/dev/null || true
+  echo
+  echo "The .app carries its own engine; first launch downloads the embedding model once"
+  echo "(needs network)."
+  [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || echo "Unsigned: on first open, right-click the app -> Open."
+}
+
+release_android() {
+  local target="${1:-aarch64}"
+  cd "$REPO/desktop"
+
+  # Gradle can package a stale .so if an intermediate lingers from an earlier build; clear
+  # the release native-lib intermediates so the apk always carries the freshly-built lib.
+  local abd="gen/android/app/build"
+  rm -rf \
+    "$abd/intermediates/merged_jni_libs/universalRelease" \
+    "$abd/intermediates/merged_native_libs/universalRelease" \
+    "$abd/intermediates/stripped_native_libs/universalRelease" \
+    "$abd/outputs/apk/universal/release" 2>/dev/null || true
+
+  echo "==> Building the signed release apk/aab (target: $target)"
+  # No --debug: a release build embeds the frontend and signs with gen/android/key.properties.
+  cargo tauri android build --target "$target"
+
+  echo
+  echo "Built:"
+  ls -1 "$abd/outputs/apk/universal/release/"*.apk 2>/dev/null || true
+  ls -1 "$abd/outputs/bundle/universalRelease/"*.aab 2>/dev/null || true
+}
+
+platform="${1:-}"
+shift || true
+case "$platform" in
+  desktop) release_desktop "$@" ;;
+  android) release_android "$@" ;;
+  *)       usage ;;
+esac

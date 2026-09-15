@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Entitlements for the notarized macOS build. The app ships a vendored Python engine
+     under Contents/Resources/engine and launches it as a subprocess, so the hardened
+     runtime needs a few allowances the default lacks:
+       - disable-library-validation: load the bundled .dylib/.so (onnxruntime, sqlite-vec,
+         and every wheel's native lib) which are not part of the app's own team seal.
+       - allow-dyld-environment-variables: the shell sets PYTHONPATH for the engine.
+       - allow-unsigned-executable-memory + allow-jit: Python / ONNX Runtime allocate
+         executable memory at runtime.
+     These are the standard set for an embedded-interpreter app; they do not open the app
+     to the network or the file system beyond what it already does. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "resources": {
+      "engine": "engine"
+    },
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}
