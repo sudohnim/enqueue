@@ -80,6 +80,34 @@
         s.addRange(r);
         return;
       }
+      // Lists are built directly, not through document.execCommand("insertUnorderedList").
+      // That command is inconsistent across engines - in the desktop WebView (WKWebView)
+      // it left the "- " marker in the text, rendered the bullet a beat late, and drifted
+      // the item's spacing. Replacing the block with a real <ul>/<ol><li> is deterministic:
+      // the marker is dropped (it was the instruction, never content) and the caret lands
+      // in the item, the same shape the pre rule and the serializer already expect.
+      if (tag === "ul" || tag === "ol") {
+        const rest = text.replace(re, "");
+        const list = document.createElement(tag);
+        const li = document.createElement("li");
+        list.appendChild(li);
+        const r = document.createRange();
+        if (rest) {
+          li.textContent = rest;
+          block.replaceWith(list);
+          r.setStart(li.firstChild, rest.length);
+          r.collapse(true);
+        } else {
+          li.innerHTML = "<br>";
+          block.replaceWith(list);
+          r.selectNodeContents(li);
+          r.collapse(true);
+        }
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        return;
+      }
       document.execCommand(
         tag === "ul"
           ? "insertUnorderedList"
@@ -1236,6 +1264,21 @@
     // real block to live in; the empty paragraph serialises back to nothing.
     ed.innerHTML = html || "<p><br></p>";
 
+    // A note that ends in an image (a pasted screenshot serialises to
+    // `![](/artifacts/{id}/blob)`, which md() renders as a trailing <img>) has no
+    // caret-landing block after the picture, so there is nowhere to click to add text
+    // below it - the editor looks uneditable. Seed a trailing empty paragraph whenever
+    // the last block is media (an <img>, or a block whose only real content is one), so
+    // there is always a place to type after it. It serialises back to nothing.
+    const tail = ed.lastElementChild;
+    const tailIsMedia =
+      tail &&
+      (tail.tagName === "IMG" ||
+        (tail.querySelector &&
+          tail.querySelector("img") &&
+          tail.textContent.trim() === ""));
+    if (tailIsMedia) ed.insertAdjacentHTML("beforeend", "<p><br></p>");
+
     const lead = ed.firstElementChild;
     if (
       lead &&
@@ -1256,6 +1299,24 @@
       refreshTitleHeaderSoon();
     });
     ed.addEventListener("blur", saveBody);
+    // A markdown link (`[text](https://...)`) renders as a styled <a target="_blank">,
+    // but a contenteditable swallows a plain click into caret placement, so the link
+    // never opens. Open external links on click - a note is read-mostly, and a new
+    // window keeps the note open behind it. Internal/relative links are left alone.
+    ed.addEventListener("click", (e) => {
+      const a = e.target.closest && e.target.closest("a[href]");
+      if (!a) return;
+      const href = a.getAttribute("href") || "";
+      if (!/^https?:/i.test(href)) return;
+      e.preventDefault();
+      // In the packaged app a webview's window.open does not reliably reach the system
+      // browser, so use Tauri's opener plugin when present (withGlobalTauri exposes it);
+      // fall back to window.open for a plain browser (dev).
+      const opener = window.__TAURI__ && window.__TAURI__.opener;
+      if (opener && opener.openUrl)
+        opener.openUrl(href).catch(() => window.open(href, "_blank", "noopener"));
+      else window.open(href, "_blank", "noopener");
+    });
     ed.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && "bi".includes(e.key)) {
         e.preventDefault();

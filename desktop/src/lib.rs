@@ -133,11 +133,30 @@ mod mobile {
     }
 
     /// Open (and initialize) the local SQLite read copy.
+    // Schema + migrations + one-time heals are a fixed cost that only needs to run once
+    // per process, not on every open. Running the whole 200-line init_schema (CREATE
+    // TABLEs, ALTERs, heal blocks) on each mobile_get / save was the lag: it re-did all
+    // that work and took write locks that fought the sync worker on every command.
+    static SCHEMA_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
     fn open_lib(app: &AppHandle) -> Result<Connection, String> {
+        use std::sync::atomic::Ordering;
         let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let conn = Connection::open(dir.join("library.db")).map_err(|e| e.to_string())?;
-        crate::sync::init_schema(&conn).map_err(|e| e.to_string())?;
+        // Per-connection pragmas (cheap): WAL lets a reader and the sync writer proceed
+        // without blocking each other, and a busy timeout waits out a lock instead of
+        // failing (or stalling the UI) the instant the sync worker holds one.
+        let _ = conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;",
+        );
+        // Run the schema/migration/heal pass once per process. CREATE ... IF NOT EXISTS and
+        // the marker-guarded heals are idempotent, so a rare double-run under a startup race
+        // is harmless; only the flag being set matters for the hot path.
+        if !SCHEMA_READY.load(Ordering::Acquire) {
+            crate::sync::init_schema(&conn).map_err(|e| e.to_string())?;
+            SCHEMA_READY.store(true, Ordering::Release);
+        }
         Ok(conn)
     }
 

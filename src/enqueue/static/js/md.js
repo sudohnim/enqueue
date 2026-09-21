@@ -239,7 +239,15 @@
         case "UL":
         case "OL": {
           lines.push(...listToMd(node, 0));
-          lines.push("");
+          // Two adjacent lists must serialise as ONE list - contiguous, no blank line
+          // between them. Editing a nested list can leave the DOM with sibling <ul>s
+          // where there was one; a blank separator here would split them in markdown,
+          // which then round-trips as a permanent, unfixable gap (the "unprovoked
+          // spacing" under a bullet). Only put a blank line before a following non-list
+          // block.
+          const after = node.nextElementSibling;
+          if (!after || (after.tagName !== "UL" && after.tagName !== "OL"))
+            lines.push("");
           break;
         }
         case "BLOCKQUOTE":

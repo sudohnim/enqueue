@@ -22,7 +22,7 @@ def _retry_row(aid):
         conn.close()
 
 
-def test_transient_failure_owes_a_retry_and_reads_as_generating(store, monkeypatch):
+def test_transient_failure_owes_a_retry_and_reads_as_generating(store, quiet_queue, monkeypatch):
     aid = notes.create(body="a body long enough to earn a summary from the model")["artifact"]["id"]
 
     monkeypatch.setattr(
@@ -38,7 +38,7 @@ def test_transient_failure_owes_a_retry_and_reads_as_generating(store, monkeypat
     assert _retry_row(aid)["attempts"] == 2
 
 
-def test_success_clears_the_retry(store, monkeypatch):
+def test_success_clears_the_retry(store, quiet_queue, monkeypatch):
     aid = notes.create(body="another body worth summarizing at some length here")["artifact"]["id"]
     monkeypatch.setattr(facets_mod, "generate_for_artifact", lambda conn, _id: (0, "APIError: 429"))
     q._facet_artifact(aid)
@@ -52,7 +52,7 @@ def test_success_clears_the_retry(store, monkeypatch):
     assert notes.get(aid)["summary_generating"] is False
 
 
-def test_backoff_is_exponential_and_capped_at_24h(store):
+def test_backoff_is_exponential_and_capped_at_24h(store, quiet_queue):
     aid = notes.create(body="body for the backoff cap check, long enough to matter")["artifact"][
         "id"
     ]
@@ -77,7 +77,7 @@ def test_backoff_is_exponential_and_capped_at_24h(store):
     assert 86_000 <= delay_seconds(50) <= 86_400 + 5
 
 
-def test_content_skip_is_not_retried(store, monkeypatch):
+def test_content_skip_is_not_retried(store, quiet_queue, monkeypatch):
     aid = notes.create(body="short")["artifact"]["id"]
     monkeypatch.setattr(
         facets_mod,
