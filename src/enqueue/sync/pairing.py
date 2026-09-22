@@ -164,6 +164,14 @@ def claim_offer(relay_url: str, pairing_id: str, phrase: str) -> dict:
 
     settings.update({"sync_backfill_done": True})
 
+    # Start the background sync worker now. It is normally started at engine boot, but this
+    # device had no relay configured then, so start() no-op'd; without this a freshly paired
+    # device would not auto-sync (pull deletes/edits) until the app was restarted. start() is
+    # idempotent, so calling it again after a later restart is harmless.
+    from . import worker
+
+    worker.start()
+
     import threading
 
     def _bg():

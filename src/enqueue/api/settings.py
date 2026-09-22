@@ -103,6 +103,15 @@ def store_sync_secret(req: SyncSecret) -> dict:
     # After sync secret is configured, push the encrypted keyring to the relay
     # so mobile devices can pull it during pairing (MOB2.10).
     push_keyring()
+    # The secret is the last step of first-time sync setup, done after boot, so the
+    # boot-time worker start no-op'd (no relay/secret yet). Start it now so this device
+    # begins auto-syncing without an app restart. Idempotent.
+    try:
+        from ..sync.worker import start as start_sync_worker
+
+        start_sync_worker()
+    except Exception as exc:  # noqa: BLE001 - sync is additive; never fail the request
+        print(f"[engine] could not start the sync worker after secret set: {exc}")
     # BACKFILL.2: Auto-backfill on first sync-enable (guarded by one-shot flag).
     # Only runs when DEK is loaded (keyring unlocked) and backfill hasn't run yet.
     if keyring_file.load_dek_from_keychain() is not None:
@@ -231,6 +240,12 @@ def sync_join(req: SyncJoin) -> dict:
     # A joined device already has the whole library upstream, so there is nothing to
     # back-fill from here - mark it done and pull the existing data down instead.
     settings.update({"sync_backfill_done": True})
+
+    # Sync was configured just now, after boot, so the boot-time worker start no-op'd.
+    # Start it here or the joined device would not auto-sync until an app restart.
+    from ..sync.worker import start as start_sync_worker
+
+    start_sync_worker()
 
     def _bg():
         result = pull()
