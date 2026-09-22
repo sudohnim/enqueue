@@ -74,10 +74,31 @@ fi
 
 if command -v rustc >/dev/null 2>&1; then
   RUST_VER="$(rustc --version | awk '{print $2}')"
+  RUSTC_PATH="$(command -v rustc)"
+  CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin"
   if ver_ge "$RUST_VER" "$RUST_MIN"; then
-    ok "rustc $RUST_VER"
+    ok "rustc $RUST_VER  ($RUSTC_PATH)"
   else
-    fail "rustc $RUST_VER is older than $RUST_MIN - run 'rustup update stable', or install rustup"
+    fail "rustc $RUST_VER is older than $RUST_MIN"
+    # `rustup update` can report stable is current while `rustc` still resolves to an
+    # OLDER, non-rustup binary (typically Homebrew's /opt/homebrew/bin/rustc) that sits
+    # ahead of ~/.cargo/bin on PATH. That same shadow hits `cargo`, so the build fails
+    # even though rustup has a new enough toolchain. Detect it and name the exact fix.
+    if command -v rustup >/dev/null 2>&1; then
+      RUSTUP_VER="$(rustup run stable rustc --version 2>/dev/null | awk '{print $2}')"
+      if [[ -n "$RUSTUP_VER" ]] && ver_ge "$RUSTUP_VER" "$RUST_MIN"; then
+        warn "rustup's stable is $RUSTUP_VER, but '$RUSTC_PATH' shadows it on PATH."
+        warn "A non-rustup Rust is taking priority. Do ONE of:"
+        warn "  - remove it:            brew uninstall rust      (if installed via Homebrew)"
+        warn "  - or put rustup first:  export PATH=\"$CARGO_BIN:\$PATH\"   (add to ~/.zshrc, open a new shell)"
+        warn "then re-run bin/setup. rustc candidates on PATH:"
+        type -a rustc 2>/dev/null | sed 's/^/         /' >&2 || true
+      else
+        warn "run 'rustup update stable', or install rustup: https://rustup.rs"
+      fi
+    else
+      warn "install rustup so the toolchain can be updated: https://rustup.rs"
+    fi
     FAILED=1
   fi
 else

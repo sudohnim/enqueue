@@ -697,19 +697,33 @@ async function renderSettingsSync() {
 function renderSyncSetup(_d, sync) {
 	const step = window.syncSetupStep || 1;
 
-	const shelf = step === "join" ? "Join a library" : "Set up sync";
-	let html = '<div class="shelf">' + shelf + '</div><div class="group">';
-	if (step === "recovery") {
-		html += renderSyncRecovery();
-	} else if (step === "join") {
-		html += renderSyncJoin(sync);
-	} else if (step === 3) {
-		html += renderSyncStepSecret(sync);
-	} else {
-		html += renderSyncStepRelay(sync);
+	// Mid-walk steps own the whole tab so the user is not distracted mid-flow.
+	if (step === "join") {
+		return '<div class="shelf">Join a library</div><div class="group">' + renderSyncJoin(sync) + "</div>";
 	}
-	html += "</div>";
-	return html;
+	if (step === "recovery") {
+		return '<div class="shelf">Set up sync</div><div class="group">' + renderSyncRecovery() + "</div>";
+	}
+	if (step === 3) {
+		return '<div class="shelf">Set up sync</div><div class="group">' + renderSyncStepSecret(sync) + "</div>";
+	}
+
+	// The landing (step 1) offers two first-class choices as separate sections: start a
+	// NEW library here, or JOIN one already set up on another device. Joining used to be a
+	// buried aside link under the relay field; a second device is a common path and earns
+	// its own section.
+	return (
+		'<div class="shelf">Set up sync</div><div class="group">' +
+		renderSyncStepRelay(sync) +
+		"</div>" +
+		'<div class="shelf">Join Existing Library</div>' +
+		'<div class="card" style="margin-top: var(--sp-4);"><div class="group">' +
+		'<div class="aside">Already set up sync on another device? Join that library so this ' +
+		"device shares the same encrypted data - no new key is created.</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn primary" onclick="startSyncJoin(event)">Join existing library</button>' +
+		"</div></div></div>"
+	);
 }
 
 function renderSyncStepRelay(sync) {
@@ -729,11 +743,6 @@ function renderSyncStepRelay(sync) {
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
 		'<button class="btn primary" onclick="advanceSyncSetupAndInit()">Continue</button>' +
-		"</div>" +
-		'<div class="aside" style="margin-top: var(--sp-4);">' +
-		"Already set up sync on another device? " +
-		'<a href="#" onclick="startSyncJoin(event)">Join that library instead</a> ' +
-		"with its recovery phrase, so this device shares the same encrypted data." +
 		"</div>"
 	);
 }
@@ -750,31 +759,86 @@ function startSyncJoin(e) {
 function renderSyncJoin(sync) {
 	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
 	return (
-		'<div class="aside">Join a library you already set up on another device. ' +
-		"Enter that device's relay, sync secret, and recovery phrase. Nothing here is " +
-		"created new - this device imports the existing encryption key so it reads the " +
-		"same data.</div>" +
+		'<div class="aside">Pair this computer with a library you already set up on another ' +
+		'device. On that device open <strong>Settings -&gt; Sync -&gt; "Pair a computer"</strong> ' +
+		"to get a one-time pairing code and phrase, then enter them here. No recovery phrase, " +
+		"no key handling.</div>" +
 		'<div class="field" style="margin-top: var(--sp-4);">' +
-		'<label for="s_join_relay">Relay URL</label>' +
-		'<input id="s_join_relay" type="url" value="' +
+		'<label for="s_pair_relay">Relay URL</label>' +
+		'<input id="s_pair_relay" type="url" value="' +
 		relayValue +
 		'" placeholder="http://127.0.0.1:8788">' +
 		"</div>" +
 		'<div class="field">' +
-		'<label for="s_join_secret">Sync secret</label>' +
-		'<input id="s_join_secret" type="password" autocomplete="off" ' +
-		'placeholder="The secret from the other device">' +
+		'<label for="s_pair_id">Pairing code</label>' +
+		'<input id="s_pair_id" type="text" autocomplete="off" spellcheck="false" ' +
+		'placeholder="The code shown on the other device">' +
 		"</div>" +
 		'<div class="field">' +
-		'<label for="s_join_recovery">Recovery phrase</label>' +
-		'<input id="s_join_recovery" type="text" autocomplete="off" spellcheck="false" ' +
-		'placeholder="The recovery phrase shown when the first device set up sync">' +
+		'<label for="s_pair_phrase">Pairing phrase</label>' +
+		'<input id="s_pair_phrase" type="text" autocomplete="off" spellcheck="false" ' +
+		'placeholder="The phrase shown on the other device">' +
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
-		'<button class="btn primary" onclick="joinExistingLibrary()">Join library</button>' +
+		'<button class="btn primary" onclick="claimPairing()">Pair this device</button>' +
 		'<button class="btn ghost" onclick="backSyncSetup(1)">Back</button>' +
-		"</div>"
+		"</div>" +
+		// Fallback: the original recovery-phrase join, for libraries set up before pairing
+		// existed whose owner still has the recovery phrase.
+		'<details class="disclosure" style="margin-top: var(--sp-5);">' +
+		"<summary>Join with a recovery phrase instead</summary><div class=\"disclosure-body\">" +
+		'<div class="aside">Enter the relay, sync secret, and the recovery phrase shown when ' +
+		"the first device set up sync.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);"><label for="s_join_relay">Relay URL</label>' +
+		'<input id="s_join_relay" type="url" value="' +
+		relayValue +
+		'" placeholder="http://127.0.0.1:8788"></div>' +
+		'<div class="field"><label for="s_join_secret">Sync secret</label>' +
+		'<input id="s_join_secret" type="password" autocomplete="off" placeholder="The secret from the other device"></div>' +
+		'<div class="field"><label for="s_join_recovery">Recovery phrase</label>' +
+		'<input id="s_join_recovery" type="text" autocomplete="off" spellcheck="false" placeholder="The recovery phrase from the first device"></div>' +
+		'<div class="actions" style="margin-top: var(--sp-4);"><button class="btn" onclick="joinExistingLibrary()">Join with recovery phrase</button></div>' +
+		"</div></details>"
 	);
+}
+
+// The joining device claims a one-time pairing offer: relay + pairing code + phrase. The
+// engine fetches the sealed envelope, opens it with the phrase, imports the key, and pulls.
+async function claimPairing() {
+	const relay = (document.getElementById("s_pair_relay") || {}).value || "";
+	const id = (document.getElementById("s_pair_id") || {}).value || "";
+	const phrase = (document.getElementById("s_pair_phrase") || {}).value || "";
+	if (!relay.trim() || !id.trim() || !phrase.trim()) {
+		toast("Relay, pairing code, and phrase are all required to pair", true);
+		return;
+	}
+	const btn = event && event.target ? event.target : null;
+	if (btn) {
+		btn.disabled = true;
+		btn.textContent = "Pairing...";
+	}
+	try {
+		await api("/settings/sync/pair/claim", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				relay_url: relay.trim(),
+				pairing_id: id.trim(),
+				phrase: phrase.trim(),
+			}),
+		});
+	} catch (err) {
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = "Pair this device";
+		}
+		toast(String((err && err.message) || err), true);
+		return;
+	}
+	window.syncSetupStep = null;
+	pendingSettings = null;
+	toast("Paired. Pulling the library down in the background...");
+	renderSettingsTab(currentSettingsTab);
 }
 
 async function joinExistingLibrary() {
@@ -1010,6 +1074,21 @@ function renderSyncConfigured(_sync) {
 		"</div>" +
 		"</div>";
 
+	// Pair another COMPUTER (the phone uses the QR above). This mints a one-time code +
+	// phrase; you type them into the new computer's "Join Existing Library" screen.
+	html +=
+		'<div class="shelf">Pair a computer</div><div class="card" style="margin-top: var(--sp-4);"><div class="group">';
+	html +=
+		'<div class="aside">Add another computer to this library. Generate a one-time pairing ' +
+		"code and phrase here, then on the new computer open Settings -&gt; Sync -&gt; " +
+		'"Join Existing Library" and enter them. The code expires in 10 minutes and works once.' +
+		"</div>" +
+		'<div class="actions" style="margin-top: var(--sp-4);">' +
+		'<button class="btn primary" id="pairOfferBtn" onclick="createPairingOffer()">Create pairing code</button>' +
+		"</div>" +
+		'<div id="pairOfferArea" hidden style="margin-top: var(--sp-4);"></div>' +
+		"</div></div>";
+
 	html +=
 		'<div class="shelf">Reset sync</div><div class="card" style="margin-top: var(--sp-4);"><div class="group">';
 	html +=
@@ -1025,6 +1104,53 @@ function renderSyncConfigured(_sync) {
 		"</div>";
 
 	return html;
+}
+
+// Main device: mint a one-time pairing offer and show the code + phrase to type into the
+// new computer. The DEK never appears here - the engine seals it to the relay under the
+// phrase; only the locator (code) and the phrase are shown.
+async function createPairingOffer() {
+	const btn = document.getElementById("pairOfferBtn");
+	const area = document.getElementById("pairOfferArea");
+	if (btn) {
+		btn.disabled = true;
+		btn.textContent = "Generating...";
+	}
+	let res;
+	try {
+		res = await api("/settings/sync/pair/offer", { method: "POST" });
+	} catch (err) {
+		if (btn) {
+			btn.disabled = false;
+			btn.textContent = "Create pairing code";
+		}
+		toast(String((err && err.message) || err), true);
+		return;
+	}
+	const mins = Math.round((res.expires_in || 600) / 60);
+	area.innerHTML =
+		'<div class="aside">On the new computer, open Settings -&gt; Sync -&gt; "Join Existing ' +
+		'Library" and enter the relay URL, this code, and this phrase. Both the code and phrase ' +
+		"are needed, they work once, and they expire in " +
+		mins +
+		" minutes. Do not share them.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);"><label>Relay URL</label>' +
+		'<input type="text" readonly value="' +
+		esc(res.relay_url || "") +
+		'" onclick="this.select()"></div>' +
+		'<div class="field"><label>Pairing code</label>' +
+		'<input type="text" readonly value="' +
+		esc(res.pairing_id || "") +
+		'" onclick="this.select()"></div>' +
+		'<div class="field"><label>Pairing phrase</label>' +
+		'<input type="text" readonly value="' +
+		esc(res.phrase || "") +
+		'" onclick="this.select()"></div>';
+	area.hidden = false;
+	if (btn) {
+		btn.disabled = false;
+		btn.textContent = "Create another code";
+	}
 }
 
 async function showLinkCode() {

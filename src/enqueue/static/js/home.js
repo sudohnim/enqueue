@@ -686,13 +686,22 @@ async function home(opts) {
 	const tagcloud = wallGroup === "tags" ? await api("/tags") : { tags: [] };
 
 	if (!kept.total && !first.total) {
-		// No illustration and no button. The capture pill is already on screen and it
-		// is the call to action; a second one here would be the same instruction twice.
+		// An empty library still gets the normal greeting (the living emblem + the
+		// time-of-day phrase), so a fresh install opens on the brand, not a wall of prose.
+		// One short line points at the capture pill already on screen; no second button.
+		const hour = new Date().getHours();
+		const fallback =
+			hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 		view.innerHTML =
-			'<div class="empty"><div class="display">Nothing here yet</div>' +
-			'<div class="state">Anything you drop on the pill below is kept exactly as it ' +
-			"arrived and read on this machine, in the order you found it. No folder, no tag, " +
-			"no reason required. Nothing here expires.</div></div>";
+			'<div class="homehead"><div class="greetline">' +
+			'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
+			'<h1 class="display greeting">' +
+			fallback +
+			'<span class="greet-mark">.</span></h1>' +
+			"</div>" +
+			'<div class="state">Nothing here yet. Just add your artifacts.</div>' +
+			"</div>";
+		makeEye(document.getElementById("greetEye"));
 		return;
 	}
 

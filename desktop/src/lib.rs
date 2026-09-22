@@ -2632,9 +2632,31 @@ mod mobile {
             .map_err(|e| e.to_string())?
             .ok_or("not in the vault")?;
         let ch = ch.filter(|c| !c.is_empty()).ok_or("no blob")?;
-        let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("blobs").join(&ch);
-        let raw = std::fs::read(&path).map_err(|_| "no blob".to_string())?;
-        let plain = crate::sync::unwrap(&raw, &key)?;
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("blobs");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(&ch);
+
+        // Pull this hash's current bytes from the relay and cache them. fetch_blob strips
+        // the DEK layer, leaving the vault-ciphertext the vault key unwraps below.
+        let refetch = || -> Result<Vec<u8>, String> {
+            let cfg = load_config(&app)?.ok_or("not configured")?;
+            let dek = cfg
+                .get("dek")
+                .and_then(Value::as_str)
+                .and_then(dek_from_hex)
+                .ok_or("locked")?;
+            let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
+            let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
+            let bytes = crate::sync::fetch_blob(relay_url, secret, &dek, &ch)?;
+            let _ = std::fs::write(&path, &bytes);
+            Ok(bytes)
+        };
+
+        // Prefer the local cache, fall back to the relay on a miss, and self-heal a cache
+        // that still holds the pre-vault plaintext. The policy lives in sync.rs so it stays
+        // under regression test (see resolve_vaulted_blob) - a local-only read here is what
+        // stopped desktop-vaulted blobs from reaching the phone.
+        let plain = crate::sync::resolve_vaulted_blob(&path, &key, refetch)?;
         Ok(serde_json::json!({ "mime": mime.unwrap_or_else(|| "application/octet-stream".into()), "base64": b64(&plain) }).to_string())
     }
 

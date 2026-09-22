@@ -41,6 +41,12 @@ class SyncJoin(BaseModel):
     recovery_phrase: str
 
 
+class PairClaim(BaseModel):
+    relay_url: str
+    pairing_id: str
+    phrase: str
+
+
 class SettingsUpdate(BaseModel):
     changes: dict
 
@@ -232,6 +238,33 @@ def sync_join(req: SyncJoin) -> dict:
 
     threading.Thread(target=_bg, daemon=True).start()
     return settings.sync_state()
+
+
+@router.post("/settings/sync/pair/offer")
+def sync_pair_offer() -> dict:
+    """MAIN device: stage a one-time pairing on the relay and return the id + phrase to
+    show the user. Requires sync fully set up here (PAIR.1)."""
+    from ..sync import pairing
+
+    try:
+        return pairing.create_offer()
+    except pairing.PairingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.post("/settings/sync/pair/claim")
+def sync_pair_claim(req: PairClaim) -> dict:
+    """NEW device: claim a pairing offer with the relay URL, pairing id, and phrase, then
+    import the key and pull the library (PAIR.1). Refused if this device already has a
+    keyring."""
+    from ..sync import pairing
+
+    try:
+        return pairing.claim_offer(req.relay_url, req.pairing_id, req.phrase)
+    except pairing.PairingError as exc:
+        # 409 for the "already initialized" refusal, 400 for everything else the user can fix.
+        code = 409 if "already has a sync keyring" in str(exc) else 400
+        raise HTTPException(status_code=code, detail=str(exc)) from None
 
 
 @router.post("/settings/keyring-unlock")

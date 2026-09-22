@@ -1826,9 +1826,97 @@ pub fn fetch_blob(
     secretbox_decrypt(dek, &bytes)
 }
 
+/// Resolve a vaulted blob to its plaintext bytes: prefer the local cache, fall back to
+/// the relay, and self-heal a cache that still holds the pre-vault plaintext.
+///
+/// `fetch` pulls this hash's CURRENT relay bytes (the DEK layer already stripped, so
+/// vault-ciphertext) and is what writes them to `cache_path`. Split out of the mobile
+/// `mobile_vault_blob` command so the two behaviours that were broken stay under test and
+/// cannot silently revert:
+///   1. cache MISS must fetch from the relay - the original bug read the cache only, so a
+///      blob vaulted on the desktop before the phone cached it returned "no blob";
+///   2. a cache holding the pre-vault PLAINTEXT (the image was opened on the phone before
+///      it was vaulted) does not unwrap, and must be refetched as vault-ciphertext.
+#[allow(dead_code)]
+pub fn resolve_vaulted_blob<F: Fn() -> Result<Vec<u8>, String>>(
+    cache_path: &std::path::Path,
+    vault_key: &[u8; DEK_LEN],
+    fetch: F,
+) -> Result<Vec<u8>, String> {
+    let raw = if cache_path.exists() {
+        std::fs::read(cache_path).map_err(|e| e.to_string())?
+    } else {
+        fetch()?
+    };
+    match unwrap(&raw, vault_key) {
+        Ok(plain) => Ok(plain),
+        Err(_) => unwrap(&fetch()?, vault_key),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A unique scratch dir under the system temp dir, since there is no tempfile dev-dep.
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "enqueue-test-{}-{}",
+            tag,
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn vaulted_blob_fetches_on_cache_miss() {
+        // The regression: mobile_vault_blob read the local cache only, so a blob vaulted
+        // on the desktop before the phone cached it returned "no blob" and the image never
+        // arrived. The resolver MUST fall back to the relay fetch on a cache miss.
+        let key = [7u8; DEK_LEN];
+        let plaintext = b"the vaulted image bytes".to_vec();
+        let vault_ct = secretbox_encrypt(&key, &plaintext).unwrap();
+        let cache = scratch("miss").join("deadbeef"); // does not exist
+        let calls = std::cell::Cell::new(0);
+        let got = resolve_vaulted_blob(&cache, &key, || {
+            calls.set(calls.get() + 1);
+            Ok(vault_ct.clone())
+        })
+        .unwrap();
+        assert_eq!(got, plaintext);
+        assert_eq!(calls.get(), 1, "must fetch from the relay on a cache miss");
+    }
+
+    #[test]
+    fn vaulted_blob_reads_cache_without_fetching() {
+        // A valid cached vault-ciphertext is served straight from disk; the relay is not
+        // touched (the fetch closure panics if called).
+        let key = [9u8; DEK_LEN];
+        let plaintext = b"cached vault bytes".to_vec();
+        let vault_ct = secretbox_encrypt(&key, &plaintext).unwrap();
+        let cache = scratch("hit").join("hash1");
+        std::fs::write(&cache, &vault_ct).unwrap();
+        let got = resolve_vaulted_blob(&cache, &key, || {
+            panic!("must not fetch when the cache is valid")
+        })
+        .unwrap();
+        assert_eq!(got, plaintext);
+    }
+
+    #[test]
+    fn vaulted_blob_heals_stale_pre_vault_plaintext_cache() {
+        // The image was viewed on the phone BEFORE it was vaulted, so the cache holds the
+        // plaintext (post-DEK), which the vault key cannot unwrap. The resolver must
+        // refetch the current vault-ciphertext and return the real bytes.
+        let key = [3u8; DEK_LEN];
+        let plaintext = b"real image".to_vec();
+        let cache = scratch("stale").join("h2");
+        std::fs::write(&cache, &plaintext).unwrap(); // stale plaintext, not vault-ciphertext
+        let vault_ct = secretbox_encrypt(&key, &plaintext).unwrap();
+        let got = resolve_vaulted_blob(&cache, &key, || Ok(vault_ct.clone())).unwrap();
+        assert_eq!(got, plaintext);
+    }
 
     #[test]
     fn argon2_matches_the_desktop_preset() {

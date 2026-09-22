@@ -23,6 +23,7 @@ rule).
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -252,6 +253,47 @@ def check_android_compile():
         print(f"{SRC}: Android compile FAILED", file=sys.stderr)
         return False
 
+def check_desktop_tests():
+    """Run the desktop crate's unit tests (`cargo test --lib`) on the HOST target when any
+    Rust source under desktop/ changed. The Android compile check builds for the android
+    target, which cannot RUN tests on this machine, so the crypto/sync regression tests
+    (e.g. resolve_vaulted_blob - vaulted blobs must fetch from the relay on a cache miss)
+    would never execute without this step. Gated on a Rust change so docs-only runs stay
+    fast; skipped cleanly when cargo is absent."""
+    desktop_dir = os.path.join(HERE, "desktop")
+    if shutil.which("cargo") is None:
+        print(f"{SRC}: desktop tests SKIPPED - cargo not found")
+        return True
+
+    changed = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=HERE, capture_output=True, text=True, timeout=10
+    ).stdout.splitlines()
+    rust_changed = False
+    for line in changed:
+        if not line.strip():
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if path.startswith("desktop/") and path.endswith(".rs"):
+            rust_changed = True
+            break
+    if not rust_changed:
+        print(f"{SRC}: desktop tests SKIPPED - no Rust changes")
+        return True
+
+    print(f"{SRC}: Rust changed, running cargo test --lib")
+    result = subprocess.run(
+        ["cargo", "test", "--lib"],
+        cwd=desktop_dir, capture_output=False, timeout=600
+    )
+    if result.returncode == 0:
+        print(f"{SRC}: desktop tests OK")
+        return True
+    print(f"{SRC}: desktop tests FAILED", file=sys.stderr)
+    return False
+
 def main():
     os.chdir(HERE)
     pass_flag = True
@@ -288,6 +330,11 @@ def main():
         print(f"{SRC}: contrast OK")
     else:
         print(f"{SRC}: contrast check FAILED", file=sys.stderr)
+        pass_flag = False
+
+    print("")
+    print(f"=== {SRC}: desktop tests ===")
+    if not check_desktop_tests():
         pass_flag = False
 
     print("")

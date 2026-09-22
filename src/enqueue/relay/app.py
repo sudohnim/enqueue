@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import threading
+import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -111,6 +113,55 @@ def create_relay(data_dir: Path | None = None, secret: str | None = None) -> Fas
         cursor, size = storage.put(name, data)
         hub.publish({"name": name, "cursor": cursor})
         return {"name": name, "size": size}
+
+    # --- device pairing (PAIR.1) --------------------------------------------------
+    # A brand-new device joining the library has no library secret yet - it is inside
+    # the payload being handed over - so it cannot authenticate the object routes. The
+    # main device seals a one-time envelope {relay, secret, dek} under an Argon2id KEK
+    # derived from a pairing PHRASE (the same primitive as the keyring) and PUTs it here
+    # (authenticated, since the main device HAS the secret). The joining device GETs it
+    # by the capability id WITHOUT the secret. Confidentiality rests on the phrase, which
+    # never touches the relay; the id only locates the ciphertext. Envelopes are kept in
+    # memory, fetched at most once, and expire - so nothing sensitive lands on disk and a
+    # stale or replayed id yields nothing.
+    PAIR_TTL = 600  # seconds; a pairing must be claimed within 10 minutes
+    PAIR_MAX = 64 * 1024
+    pairings: dict[str, tuple[float, bytes]] = {}
+    pair_lock = threading.Lock()
+    valid_pid = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+
+    def _prune_pairings(now: float) -> None:
+        for k in [k for k, (exp, _) in pairings.items() if exp < now]:
+            pairings.pop(k, None)
+
+    @app.put("/pair/{pid}", status_code=201)
+    async def put_pair(pid: str, request: Request, _: None = Depends(_require_header)):
+        if not valid_pid.match(pid):
+            raise HTTPException(status_code=400, detail="bad pairing id")
+        body = await request.body()
+        if len(body) > PAIR_MAX:
+            raise HTTPException(status_code=413, detail="pairing envelope too large")
+        now = time.time()
+        with pair_lock:
+            _prune_pairings(now)
+            pairings[pid] = (now + PAIR_TTL, body)
+        return {"ok": True, "expires_in": PAIR_TTL}
+
+    @app.get("/pair/{pid}")
+    def get_pair(pid: str):
+        # No library-secret auth: the id is the one-time capability. The bytes are
+        # Argon2-sealed with the pairing phrase, so neither the relay nor an id-guesser
+        # can open them. Consumed on the first successful fetch (pop), so a leaked id is
+        # useless once the real device has claimed it.
+        if not valid_pid.match(pid):
+            raise HTTPException(status_code=400, detail="bad pairing id")
+        now = time.time()
+        with pair_lock:
+            _prune_pairings(now)
+            item = pairings.pop(pid, None)
+        if item is None or item[0] < now:
+            raise HTTPException(status_code=404, detail="no such pairing")
+        return Response(content=item[1], media_type="application/octet-stream")
 
     @app.get("/sync/events")
     async def events(request: Request, token: str):
