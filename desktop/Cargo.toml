@@ -58,6 +58,14 @@ tauri-plugin-global-shortcut = "2"
 rqrr = "0.9"
 image = "0.25"
 
+[profile.dev]
+# Keep file:line in panics/backtraces but skip full DWARF: cuts target/ and the
+# debug .so that ships in the Android apk by more than half.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 opt-level = "s"
 lto = true

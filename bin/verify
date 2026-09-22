@@ -11,7 +11,7 @@ capture.html still carries its JS inline: every <script> block is wrapped in
 { } so const/let scoping cannot collide across blocks, then run through
 node --check.
 
-The Android compile check runs the full `cargo tauri android build --debug` when a
+The Android compile check runs the full `cargo tauri android build --debug --target aarch64` when a
 changed file (staged, unstaged, or untracked) could break the apk in a way `cargo
 check` never parses - Kotlin/gradle/manifest/resource files under desktop/gen/android,
 or the build config (desktop/tauri.conf.json, build.rs, Cargo.toml). Otherwise it runs
@@ -229,7 +229,7 @@ def check_android_compile():
     if android_files_staged:
         print(f"{SRC}: Android/build files changed, running full cargo tauri android build")
         result = subprocess.run(
-            ["cargo", "tauri", "android", "build", "--debug"],
+            ["cargo", "tauri", "android", "build", "--debug", "--target", "aarch64"],
             cwd=desktop_dir,
             env=env,
             capture_output=False,

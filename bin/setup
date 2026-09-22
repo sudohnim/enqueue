@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Make a fresh machine ready to run Enqueue, then prove the toolchains are new enough.
+#
+#   bin/setup             desktop toolchain: Rust (>= MSRV), uv (Python engine), Node
+#   bin/setup --android   also check the Android SDK / NDK / Java / tauri-cli for mobile
+#
+# The failure this exists to fix: `bin/launch desktop` on another Mac died with
+# "rustc 1.86.0 is not supported ... requires rustc 1.88.0" because that machine's Rust
+# was older than the dependency tree needs. This script updates Rust to current stable
+# and refuses to finish until every required tool meets its minimum, so the next
+# `bin/launch` builds instead of erroring three minutes in.
+#
+# It is safe to run repeatedly: every step checks first and only acts when something is
+# missing or too old. It never uses sudo - the installers it calls (rustup, uv) drop
+# into $HOME - and it changes nothing outside the standard per-user tool locations.
+
+set -euo pipefail
+
+# The Rust the dependency tree demands. Bump this when a dep raises its own floor (the
+# build error names the version, e.g. "requires rustc 1.88.0").
+RUST_MIN="1.88.0"
+# The engine is a Python 3.12 project (pyproject: requires-python >= 3.12); uv fetches
+# and pins this for us, so we do not require a system Python of any version.
+PY_MIN="3.12"
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+bold() { printf '\033[1m%s\033[0m\n' "$1"; }
+ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; }
+info() { printf '  \033[34m..\033[0m   %s\n' "$1"; }
+warn() { printf '  \033[33mwarn\033[0m %s\n' "$1"; }
+fail() { printf '  \033[31mfail\033[0m %s\n' "$1"; }
+
+# True when version $1 is >= version $2, comparing dotted numbers field by field. Used
+# to gate rustc against RUST_MIN without depending on sort -V being present.
+ver_ge() {
+  local IFS=.
+  local -a a=($1) b=($2)
+  local i
+  for ((i = 0; i < ${#b[@]}; i++)); do
+    local ai=${a[i]:-0} bi=${b[i]:-0}
+    ((10#$ai > 10#$bi)) && return 0
+    ((10#$ai < 10#$bi)) && return 1
+  done
+  return 0
+}
+
+ANDROID=0
+[[ "${1:-}" == "--android" ]] && ANDROID=1
+
+FAILED=0
+
+# --- Rust ------------------------------------------------------------------------
+# rustup owns the toolchain, so an old rustc is one `rustup update stable` away from
+# current. A Homebrew or system rust with no rustup cannot be updated in place, so we
+# tell the user to install rustup rather than fighting a package manager.
+bold "Rust (>= $RUST_MIN)"
+if command -v rustup >/dev/null 2>&1; then
+  info "updating stable toolchain"
+  # --no-self-update: update only the toolchain, never rustup's own binary. Replacing
+  # the rustup executable can fail on a Homebrew-managed or read-only install and would
+  # abort setup even though the toolchain updated fine.
+  rustup update stable --no-self-update >/dev/null
+  rustup default stable >/dev/null 2>&1 || true
+elif command -v rustc >/dev/null 2>&1; then
+  warn "rustc present but rustup is not - cannot self-update a non-rustup Rust"
+  warn "install rustup: https://rustup.rs  (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)"
+else
+  info "installing rustup"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y >/dev/null
+  # shellcheck disable=SC1091
+  source "$HOME/.cargo/env"
+fi
+
+if command -v rustc >/dev/null 2>&1; then
+  RUST_VER="$(rustc --version | awk '{print $2}')"
+  if ver_ge "$RUST_VER" "$RUST_MIN"; then
+    ok "rustc $RUST_VER"
+  else
+    fail "rustc $RUST_VER is older than $RUST_MIN - run 'rustup update stable', or install rustup"
+    FAILED=1
+  fi
+else
+  fail "rustc still not on PATH - open a new shell (or 'source \$HOME/.cargo/env') and re-run"
+  FAILED=1
+fi
+
+# --- uv (Python engine) ----------------------------------------------------------
+# uv runs the FastAPI engine (`uv run enq serve`) and manages the Python 3.12 the
+# engine needs, so a system Python is not required. `uv python install` is a no-op when
+# 3.12 is already present.
+bold "uv (Python $PY_MIN engine)"
+if command -v uv >/dev/null 2>&1; then
+  ok "uv $(uv --version | awk '{print $2}')"
+else
+  info "installing uv"
+  curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+  export PATH="$HOME/.local/bin:$PATH"
+  if command -v uv >/dev/null 2>&1; then
+    ok "uv $(uv --version | awk '{print $2}')"
+  else
+    fail "uv not on PATH - open a new shell (or add \$HOME/.local/bin to PATH) and re-run"
+    FAILED=1
+  fi
+fi
+if command -v uv >/dev/null 2>&1; then
+  info "ensuring Python $PY_MIN is available to uv"
+  uv python install "$PY_MIN" >/dev/null 2>&1 || warn "could not pre-install Python $PY_MIN (uv will fetch it on first run)"
+fi
+
+# --- Node (optional) -------------------------------------------------------------
+# Node is only the launch script's JS parse gate (bin/launch js_gate), which is skipped
+# when node is absent. Nice to have, never required - so a miss is a warning, not a fail.
+bold "Node (optional: JS parse gate)"
+if command -v node >/dev/null 2>&1; then
+  ok "node $(node --version)"
+else
+  warn "node not found - bin/launch skips its JS parse check without it (install: https://nodejs.org)"
+fi
+
+# --- Android (opt-in) ------------------------------------------------------------
+# Only needed for `bin/launch mobile|emulator` and `bin/release android`. Heavy and
+# GUI-installed (Android Studio), so this only checks and reports - it installs nothing.
+if [[ "$ANDROID" == 1 ]]; then
+  bold "Android (mobile builds)"
+  ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+  JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+
+  if [[ -d "$ANDROID_HOME" ]]; then ok "SDK at $ANDROID_HOME"
+  else fail "no Android SDK at $ANDROID_HOME - install Android Studio, then the SDK"; FAILED=1; fi
+
+  if [[ -x "$ANDROID_HOME/platform-tools/adb" ]]; then ok "platform-tools (adb)"
+  else warn "no platform-tools - install 'Android SDK Platform-Tools' in SDK Manager"; fi
+
+  local_ndk="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
+  if [[ -n "$local_ndk" ]]; then ok "NDK $(basename "$local_ndk")"
+  else fail "no NDK under $ANDROID_HOME/ndk - install with: sdkmanager 'ndk;27.1.12297006'"; FAILED=1; fi
+
+  if [[ -d "$JAVA_HOME" ]]; then ok "JDK at $JAVA_HOME"
+  else warn "no JDK at $JAVA_HOME - Android Studio ships one, or set JAVA_HOME to a JDK 21"; fi
+
+  # The Android + release builds drive Tauri through `cargo tauri`; desktop uses plain
+  # `cargo build` and does not need it. Install it here since we have Rust by now.
+  if cargo tauri --version >/dev/null 2>&1; then
+    ok "tauri-cli $(cargo tauri --version 2>/dev/null | awk '{print $2}')"
+  else
+    info "installing tauri-cli (cargo install)"
+    cargo install tauri-cli --locked --version "^2" >/dev/null && ok "tauri-cli installed" \
+      || { fail "tauri-cli install failed"; FAILED=1; }
+  fi
+
+  rustup target add aarch64-linux-android >/dev/null 2>&1 && ok "rust target aarch64-linux-android" || true
+fi
+
+echo
+if [[ "$FAILED" == 0 ]]; then
+  bold "Ready. Next: bin/launch desktop"
+  [[ "$ANDROID" == 1 ]] && echo "         or: bin/launch mobile   (phone on USB, debugging on)"
+  exit 0
+else
+  bold "Not ready - resolve the 'fail' lines above, then re-run bin/setup"
+  exit 1
+fi

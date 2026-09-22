@@ -261,6 +261,7 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
+| `bin/setup` | Make a fresh machine buildable: install/update Rust to a stable >= MSRV 1.88 (`rustup update stable --no-self-update`), install `uv` + pin Python 3.12, check Node. `--android` also checks SDK/NDK/JDK, installs tauri-cli, adds the aarch64-linux-android target. Idempotent, no sudo. Run it when `bin/launch` fails on toolchain (e.g. `rustc <ver> is not supported`). |
 | `bin/verify` | JS parse on the HTML pages, pytest, contrast check, and an Android build check (auto-detects the NDK; runs a full `cargo tauri android build` when Rust/Kotlin/`gen/android` changed, else `cargo check --lib`). Gated on every code commit by `.githooks/pre-commit`. |
 | `bin/check-contrast` | WCAG contrast check on home.html palette tokens. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
@@ -781,6 +782,11 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 ### Development
 
 ```bash
+# Fresh machine: install/verify the toolchain (Rust >= 1.88, uv + Python 3.12, Node).
+# Idempotent, no sudo. Add --android for the mobile toolchain. Fixes the
+# "rustc <ver> is not supported ... requires rustc 1.88.0" build error.
+bin/setup
+
 # Install dependencies (uv manages everything)
 uv sync
 

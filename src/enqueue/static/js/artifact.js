@@ -378,11 +378,13 @@
       esc(a.title || "Untitled") +
       "</div>" +
       (["pdf", "image", "file"].includes(a.kind)
-        ? '<a class="title-action" href="/artifacts/' +
+        ? '<button class="title-action" onclick="downloadBlob(\'' +
           a.id +
-          '/blob" download aria-label="Download a copy" title="Download a copy">' +
+          "'," +
+          (a.vaulted_at ? "true" : "false") +
+          ')" aria-label="Download a copy" title="Download a copy">' +
           svg("down") +
-          "</a>"
+          "</button>"
         : "") +
       // CR.3: pin and the drawer are both "work on this artifact", so they ride
       // together as one tight group; download (a copy) and trash (removal) stand
@@ -877,6 +879,53 @@
     );
   }
 
+  // Download a copy of the stored file. A bare `<a href=".../blob" download>` saves
+  // whatever the server returns, so a 404 body ("this artifact has no stored file")
+  // lands in Downloads as blob.json. Fetch first: on a real 200, save the bytes under
+  // the server's filename; on any error, toast instead of writing junk to disk.
+  async function downloadBlob(id, vaulted) {
+    // A vaulted blob is encrypted at rest; /artifacts/{id}/blob refuses it on purpose,
+    // so a vaulted download must go through the unlocked vault route that decrypts.
+    const path = vaulted ? "/vault/" + id + "/blob" : "/artifacts/" + id + "/blob";
+    let res;
+    try {
+      res = await fetch(path);
+    } catch (err) {
+      toast("Download failed.", true);
+      return;
+    }
+    if (!res.ok) {
+      toast(
+        res.status === 404
+          ? "This file is not on this device yet."
+          : "Download failed.",
+        true,
+      );
+      return;
+    }
+    const blob = await res.blob();
+    // FileResponse sets `Content-Disposition: inline; filename="..."`; use that so the
+    // saved file keeps its real name and extension instead of "blob".
+    let name = id;
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    if (m) {
+      try {
+        name = decodeURIComponent(m[1].replace(/"$/, ""));
+      } catch (e) {
+        name = m[1].replace(/"$/, "");
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function pinArtifact(id, pinned) {
     try {
       await api("/artifacts/" + id, {
@@ -1139,9 +1188,11 @@
     if (!pages)
       return (
         '<div class="state">This file will not open as a document. It is stored ' +
-        'exactly as it arrived: <a class="url" href="/artifacts/' +
+        'exactly as it arrived: <a class="url" href="#" onclick="downloadBlob(\'' +
         a.id +
-        '/blob" download>keep a copy</a>.</div>'
+        "'," +
+        (a.vaulted_at ? "true" : "false") +
+        ');return false;">keep a copy</a>.</div>'
       );
 
     let html = '<div class="reader" id="reader">';

@@ -3841,6 +3841,63 @@
       /* selection not supported */
     }
 
+    // List-aware keys for the plaintext markdown textarea. The rich contenteditable
+    // editor lives on desktop; Android's WebView raises the keyboard reliably only for
+    // a real <textarea>, so here we add the list smarts by hand instead of switching
+    // element. Two spaces = one level, markers -*+ and `N.`/`N)`, matching md.js so the
+    // note round-trips.
+    const LIST_RE = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/;
+    area.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
+      const v = area.value;
+      const s = area.selectionStart;
+      const en = area.selectionEnd;
+      const lineStart = v.lastIndexOf("\n", s - 1) + 1;
+
+      if (e.key === "Enter" && !e.shiftKey && s === en) {
+        const m = v.slice(lineStart, s).match(LIST_RE);
+        if (!m) return; // not on a list line -> normal newline
+        const indent = m[1];
+        const marker = m[2];
+        const content = m[4];
+        e.preventDefault();
+        if (!content.trim()) {
+          // Empty item: outdent one level, or drop the marker to leave the list.
+          const repl = indent.length >= 2 ? indent.slice(2) + marker + " " : "";
+          const before = v.slice(0, lineStart);
+          area.value = before + repl + v.slice(s);
+          const pos = before.length + repl.length;
+          area.setSelectionRange(pos, pos);
+          return;
+        }
+        const om = marker.match(/^(\d+)([.)])$/);
+        const next = om ? parseInt(om[1], 10) + 1 + om[2] : marker;
+        const insert = "\n" + indent + next + " ";
+        const before = v.slice(0, s);
+        area.value = before + insert + v.slice(s);
+        const pos = before.length + insert.length;
+        area.setSelectionRange(pos, pos);
+        return;
+      }
+
+      if (e.key === "Tab") {
+        // Nest / unnest the current line by one level. Keyboards without a Tab key
+        // fall back to typing the two leading spaces by hand, which md.js also nests.
+        e.preventDefault();
+        if (!e.shiftKey) {
+          area.value = v.slice(0, lineStart) + "  " + v.slice(lineStart);
+          area.setSelectionRange(s + 2, en + 2);
+        } else {
+          const rest = v.slice(lineStart);
+          const cut = rest.startsWith("  ") ? 2 : rest.startsWith(" ") ? 1 : 0;
+          if (cut) {
+            area.value = v.slice(0, lineStart) + v.slice(lineStart + cut);
+            area.setSelectionRange(Math.max(lineStart, s - cut), Math.max(lineStart, en - cut));
+          }
+        }
+      }
+    });
+
     const saveBar = document.createElement("div");
     saveBar.style.cssText =
       "position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:8px 16px;display:flex;gap:8px;justify-content:flex-end;";

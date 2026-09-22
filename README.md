@@ -22,10 +22,13 @@ The desktop app still runs from source (see below), because its Python engine is
 
 ## Prerequisites
 
+`bin/setup` installs and verifies everything below (Rust, uv, Node) on a fresh machine, so you normally do not install these by hand - see [Install](#install).
+The list is here so you know what it sets up and why.
+
 - **macOS.** The desktop shell uses Tauri with macOS-specific APIs, and the API key store uses the macOS Keychain.
-- **Python >= 3.12.** The engine is Python and targets 3.12 exactly (see `.python-version`).
+- **Python >= 3.12.** The engine is Python and targets 3.12 exactly (see `.python-version`). `uv` fetches and pins this for you, so no system Python is required.
 - **[uv](https://docs.astral.sh/uv/).** All commands in this repo and in the desktop shell go through `uv run`, so it must be on your PATH. The shell looks for it at `/opt/homebrew/bin/uv` or `/usr/local/bin/uv`.
-- **[Rust](https://www.rust-lang.org/) and the [Tauri v2](https://v2.tauri.app/) prerequisites**, to build the desktop window from source. `bin/launch desktop` runs `cargo build` and then launches the binary at `desktop/target/debug/Enqueue`.
+- **[Rust](https://www.rust-lang.org/) >= 1.88 and the [Tauri v2](https://v2.tauri.app/) prerequisites**, to build the desktop window from source. `bin/launch desktop` runs `cargo build` and then launches the binary at `desktop/target/debug/Enqueue`. The dependency tree has a minimum supported Rust of 1.88, so an older toolchain fails the build with `rustc <version> is not supported`; `bin/setup` runs `rustup update stable` to keep you current.
 - **[Node.js](https://nodejs.org/)**, only for the JS parse check that `bin/launch` and `bin/verify` run before launching. If `node` is not on the PATH, the check is skipped silently.
 - **[Ollama](https://ollama.com/)** running locally, if you want the default AI backend (model: `llama3.1:8b`). Not required for capture, search, or browsing; only for conversations and rooms.
 
@@ -43,6 +46,8 @@ The Android app is optional. You only need these to build and run it; the deskto
   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
   ```
 
+`bin/setup --android` checks the SDK / NDK / JDK, installs the Tauri CLI, and adds the `aarch64-linux-android` target for you (it does not install Android Studio itself).
+
 The generated Android project is committed at `desktop/gen/android`, so you do not need to run `cargo tauri android init` on a fresh clone.
 
 ---
@@ -52,6 +57,16 @@ The generated Android project is committed at `desktop/gen/android`, so you do n
 ```bash
 git clone <repo-url> enqueue
 cd enqueue
+bin/setup
+```
+
+`bin/setup` makes a fresh machine ready: it installs or updates Rust (to a stable >= the 1.88 the build needs), installs `uv` and pins Python 3.12, and checks for Node.
+It is safe to run repeatedly - every step checks first and only acts when something is missing or too old - and it uses no `sudo`.
+Add `--android` to also set up the mobile toolchain (`bin/setup --android`).
+
+Then install the Python dependencies:
+
+```bash
 uv sync
 ```
 
@@ -67,6 +82,7 @@ cd ..
 ```
 
 That produces `desktop/target/debug/Enqueue`, which `bin/launch desktop` expects.
+(`bin/launch desktop` also runs `cargo build` for you, so this manual build is optional.)
 
 ---
 
