@@ -131,6 +131,15 @@
     // stripped before the link rule so its leading "!" never leaks into the snippet.
     t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
     t = t.replace(/\[([^\]]+)\]\((?:https?:[^)\s]+|[^)]*)\)/g, "$1");
+    // A bare URL is plumbing, not content. Pasted links arrive carrying a path slug
+    // and a tracking query ("?stkn=OGM0YjY3..."), which say nothing about the note and
+    // crowd the words that do out of a three-line snippet. Reduce it to the host, the
+    // one part a person actually recognises. Only the PREVIEW is touched; md() still
+    // renders the full, real link in the note itself.
+    t = t.replace(/\bhttps?:\/\/([^\s)]+)/g, (whole, rest) => {
+      const host = rest.split(/[/?#]/)[0].replace(/^www\./, "");
+      return host || whole;
+    });
     t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
     t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2");
     t = t.replace(/^\s{0,3}#{1,6}\s+/gm, "");

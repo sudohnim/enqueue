@@ -175,7 +175,10 @@ function wallSectionsHtml(sections) {
 				String(!isCollapsed) +
 				'" title="' +
 				esc(isCollapsed ? groupPreview(list) : "") +
-				'"><span class="shelf center">' +
+				// Left, not centered: this label heads a left-aligned card grid, and a
+				// centered label over left-aligned content reads as a mismatch. The count
+				// and chevron keep the right edge, so the row still spans the wall.
+				'"><span class="shelf">' +
 				esc(label) +
 				'</span><span class="gmeta">' +
 				list.length +
@@ -443,11 +446,15 @@ function card(a, i) {
 			'<div class="title">' +
 			esc(a.title || "Untitled") +
 			"</div>" +
-			'<div class="preview">' +
+			// The clamp rides an inner span, not .preview itself: .preview is a flex item
+			// of the flex-column card, and a flex item's `display:-webkit-box` is
+			// blockified to flow-root, which silently kills -webkit-line-clamp. The span
+			// is an ordinary child, so the clamp (and the browser-painted ellipsis) holds.
+			'<div class="preview"><span>' +
 			(a.kind === "note"
 				? esc(mdText(a.excerpt || ""))
 				: esc(a.excerpt || (a.kind === "link" ? host(a.source_url) : ""))) +
-			"</div>" +
+			"</span></div>" +
 			'<div class="cardfoot"><span class="meta">' +
 			bits.map(esc).join(" ") +
 			"</span>" +

@@ -24,9 +24,13 @@
 	/* S.6: a bolder shadow than the default --shadow-lifted so the pill pops
        above the card grid - a tight contact shadow plus a wide elevation one
        at 50% stronger opacity than the old lifted shadow. */
+	/* The hairline carries the edge, so the elevation shadow does not also have to:
+       a 36px blur under a 1px border is the diffuse doubling that reads as generated
+       rather than drawn. Tightened to a contact shadow plus a contained lift, which
+       still floats the pill over the wall without the halo. */
 	box-shadow:
 		0 4px 12px rgba(16, 17, 20, 0.06),
-		0 12px 36px rgba(16, 17, 20, 0.12);
+		0 10px 24px rgba(16, 17, 20, 0.1);
 	transition:
 		width var(--dur-slow) ease,
 		box-shadow var(--dur-slow) ease,

@@ -31,6 +31,16 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Selection is part of the design too. Left alone it paints the OS blue, which is
+     the one colour in the app that belongs to no token and collides with the violet
+     every other accent is drawn from. A wash of the accent instead, light enough that
+     ink keeps its contrast on top of it - this surface is read and quoted constantly,
+     so the highlight is a surface the eye meets every day, not an edge case. */
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    color: var(--text);
+  }
+
   /* Every icon in the app is a stroke-drawn line glyph: the svg() helper emits
      bare paths with no inline styling, so the stroke contract lives here once
      and the per-context rules below only size and weight. The star flag and the

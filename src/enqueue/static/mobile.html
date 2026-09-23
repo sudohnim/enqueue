@@ -34,6 +34,12 @@
     -webkit-font-smoothing: antialiased;
     line-height: 1.5;
   }
+  /* Same accent wash the desktop uses for selection, so highlighting a passage to
+     quote it looks like this app on both devices instead of the OS default blue. */
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    color: var(--text);
+  }
   section {
     display: flex;
     flex-direction: column;
@@ -950,9 +956,11 @@
     /* Purple ring for a touch of brand color on the one persistent chrome. */
     border: 2px solid color-mix(in oklab, var(--purple-bold) 55%, transparent);
     border-radius: var(--r-full);
+    /* Matches the desktop pill: the ring already draws the edge, so the lift stays
+       contained instead of spreading a 36px halo under it. */
     box-shadow:
       0 4px 12px rgba(16, 17, 20, 0.06),
-      0 12px 36px rgba(16, 17, 20, 0.12);
+      0 10px 24px rgba(16, 17, 20, 0.1);
     transition:
       width var(--dur-slow) ease,
       box-shadow var(--dur-slow) ease,
@@ -1393,8 +1401,10 @@
     position: absolute;
     top: max(12px, env(safe-area-inset-top));
     right: 16px;
-    width: 40px;
-    height: 40px;
+    /* 44px, the touch floor in DESIGN.md section 9. At 40 it was the one control on
+       this screen under the bar, and it is the only way out of the lightbox. */
+    width: 44px;
+    height: 44px;
     border: none;
     border-radius: var(--r-full);
     background: rgba(0, 0, 0, 0.5);
@@ -4001,8 +4011,14 @@
     const del = document.createElement("button");
     del.setAttribute("aria-label", "Remove this line");
     del.textContent = "×";
+    // 44x44 hit area (DESIGN.md section 9) with the glyph still small: this destructive
+    // control sits directly beside tap-to-edit text, and at its old ~16x20px it invited
+    // a mis-tap that deletes a summary line. The mark stays 20px; only the target grows.
+    // The negative margin keeps the row's optical rhythm despite the bigger box.
     del.style.cssText =
-      "border:0;background:transparent;color:var(--text-mute);font-size:20px;line-height:1;padding:0 4px;cursor:pointer;";
+      "border:0;background:transparent;color:var(--text-mute);font-size:20px;line-height:1;" +
+      "cursor:pointer;flex:0 0 auto;width:44px;height:44px;margin:-10px -12px -10px 0;" +
+      "display:flex;align-items:center;justify-content:center;";
     del.onclick = async (ev) => {
       ev.stopPropagation();
       try {

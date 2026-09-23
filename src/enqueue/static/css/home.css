@@ -903,6 +903,18 @@ main {
 	font-size: 14px;
 	line-height: 21px;
 	color: var(--text-dim);
+	overflow: hidden;
+	/* Exactly three lines, whatever else shares the row. The card is a flex column,
+       so .preview is a flex item - and a flex item's `display: -webkit-box` is
+       blockified to `flow-root`, which silently disables -webkit-line-clamp. That
+       left the visible line count decided by the tallest card in the row (five
+       beside a square pictorial card, three elsewhere), so the wall's rhythm was
+       accidental. The clamp now rides the inner span, which is an ordinary child
+       and keeps its -webkit-box; this max-height is the belt to that braces, so
+       the row height cannot stretch the snippet even if the clamp is unsupported. */
+	max-height: calc(3 * 21px);
+}
+.card .preview > span {
 	display: -webkit-box;
 	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;

@@ -1,6 +1,15 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.enqueue" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+    <!--
+      Light, not DayNight. Enqueue is a light-only surface by decision (DESIGN.md
+      section 1, and the stylesheet pins `color-scheme: light`), so a DayNight parent only
+      creates ways for the shell to disagree with the page: on a phone set to dark mode it
+      painted the window background - now visible in the status and navigation bar strips
+      the activity pads for - dark above a white app.
+
+      windowBackground is pinned to the canvas token (#ffffff, DESIGN.md section 2) so those
+      strips match the page behind them, and the status bar icons stay dark against it.
+    -->
+    <style name="Theme.enqueue" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
     </style>
 </resources>

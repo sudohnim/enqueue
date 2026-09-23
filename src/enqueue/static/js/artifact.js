@@ -40,6 +40,57 @@
     return true;
   }
 
+  // Turn a list item into a plain paragraph, leaving the list. This is the way OUT of a
+  // list: backspacing a blank line into a bullet makes it a bullet with no obvious escape,
+  // so Enter at the very start of an item pops that item back to a normal line (matching
+  // the way most editors let an empty bullet + Enter exit the list, but here the item may
+  // still hold text). The item's inline text moves into the paragraph; a nested sub-list
+  // and any items below it follow as their own lists, so the split round-trips through the
+  // markdown serializer. Caret lands at the start of the new paragraph, where it was.
+  function liToParagraph(li) {
+    const list = li.parentElement;
+    if (!list || (list.tagName !== "UL" && list.tagName !== "OL")) return false;
+    const p = document.createElement("p");
+    const nested = [];
+    while (li.firstChild) {
+      const n = li.firstChild;
+      if (n.nodeType === 1 && (n.tagName === "UL" || n.tagName === "OL")) {
+        nested.push(n);
+        li.removeChild(n);
+      } else {
+        p.appendChild(n);
+      }
+    }
+    if (!p.firstChild) p.appendChild(document.createElement("br"));
+    // Items after this one split into a trailing list of the same kind.
+    const after = [];
+    for (let sib = li.nextElementSibling; sib; ) {
+      const next = sib.nextElementSibling;
+      after.push(sib);
+      sib = next;
+    }
+    list.removeChild(li);
+    list.after(p);
+    let anchor = p;
+    for (const sub of nested) {
+      anchor.after(sub);
+      anchor = sub;
+    }
+    if (after.length) {
+      const trailing = document.createElement(list.tagName);
+      for (const it of after) trailing.appendChild(it);
+      anchor.after(trailing);
+    }
+    if (!list.children.length) list.remove();
+    const r = document.createRange();
+    r.setStart(p, 0);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+    return true;
+  }
+
   function applyInputRules(ed) {
     const sel = window.getSelection();
     if (!sel.rangeCount) return;
@@ -1454,6 +1505,24 @@
             sel.addRange(r);
           }
           return;
+        }
+        // Enter at the very START of a list item leaves the list: the item becomes a
+        // plain paragraph. This is the escape hatch for a line that got pulled into a
+        // bullet (e.g. by backspacing a blank line up). Only when the caret is collapsed
+        // at the item's start; anywhere else Enter keeps its normal split-the-item job.
+        if (!e.shiftKey) {
+          const sel = window.getSelection();
+          const li = el && el.closest ? el.closest("li") : null;
+          if (li && sel.isCollapsed && sel.anchorNode) {
+            const probe = document.createRange();
+            probe.selectNodeContents(li);
+            probe.setEnd(sel.anchorNode, sel.anchorOffset);
+            if (probe.toString().replace(/​/g, "") === "") {
+              e.preventDefault();
+              liToParagraph(li);
+              return;
+            }
+          }
         }
       }
       // Tab indents: inside a list it nests the item one level deeper (Shift+Tab
