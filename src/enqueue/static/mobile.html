@@ -14,7 +14,9 @@
 <link rel="preload" href="fonts/IBM-Plex-Sans-500.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="preload" href="fonts/IBM-Plex-Sans-600.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/linkpop.css" />
 <script src="js/md.js"></script>
+<script src="js/linkpop.js"></script>
 
 <style>
   html,
@@ -532,6 +534,8 @@
   }
   #reader_body a {
     color: var(--link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .kind-hint {
     font-size: 12px;
@@ -2368,6 +2372,40 @@
     }, 2600);
   }
 
+  // Leave the app for a web address. The phone has no desktop engine to bridge through,
+  // so this is the opener plugin (an Android VIEW intent - the person's own browser).
+  // Only http(s) ever reaches it. One helper, so a note link and the link-preview card
+  // open the same way.
+  function openExternal(url) {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      return Promise.reject(new Error("That is not a web address."));
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return Promise.reject(new Error("Only web links can be opened."));
+    }
+    if (!invoke) {
+      window.open(parsed.href, "_blank", "noopener");
+      return Promise.resolve();
+    }
+    return invoke("plugin:opener|open_url", { url: parsed.href });
+  }
+
+  // Copy through the clipboard plugin: the WebView's async clipboard is not reliable on
+  // Android, and a copy that silently does nothing is worse than no copy button.
+  function copyText(text) {
+    if (!invoke) return navigator.clipboard.writeText(text);
+    return invoke("plugin:clipboard-manager|write_text", { text });
+  }
+
+  // Links inside a note or a chat answer open the copy / open-in-browser bar
+  // (LINKPOP.1, js/linkpop.js) - the same component the desktop uses.
+  if (window.LinkPop) {
+    LinkPop.attach({ open: openExternal, copy: copyText, notify: toast });
+  }
+
   const KIND_COLORS = {
     note: "var(--kind-note)",
     link: "var(--kind-link)",
@@ -3705,15 +3743,10 @@
         content.appendChild(site);
         card.appendChild(content);
         card.addEventListener("click", () => {
-          if (typeof url === "string" && /^https?:\/\//i.test(url)) {
-            try {
-              const parsed = new URL(url);
-              // Only allow http/https protocols to prevent open redirect
-              if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-                window.open(parsed.href, "_system", "noopener,noreferrer");
-              }
-            } catch (e) {}
-          }
+          if (typeof url !== "string") return;
+          // Same opener as note links: window.open(..., "_system") is a Cordova idiom
+          // the Tauri WebView does not honour. openExternal validates http(s) itself.
+          openExternal(url).catch((err) => toast(String((err && err.message) || err), true));
         });
         body.replaceChildren(card);
       } else {

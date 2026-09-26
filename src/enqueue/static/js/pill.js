@@ -285,6 +285,16 @@ document.addEventListener("click", (e) => {
 	);
 });
 
+// Links inside rendered content (notes, chat answers) open the copy / open-in-browser
+// bar instead of navigating (LINKPOP.1). LinkPop runs in the capture phase, so the
+// direct-open handler above only ever sees deliberate action links like "Open original".
+// Opening goes through the same open_external bridge; a plain browser opens a tab.
+LinkPop.attach({
+	open: (url) =>
+		bridge ? bridge("open_external", { url }) : window.open(url, "_blank", "noopener"),
+	notify: (message, bad) => toast(message, bad),
+});
+
 // Drag the window by the top strip. `-webkit-app-region` is inert in this WKWebView,
 // so the move is done by invoking the Rust `window_drag` on mousedown, the same path
 // the capture overlay uses. The search field opts out so a click there types rather

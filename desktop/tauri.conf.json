@@ -108,7 +108,9 @@
             "allow-stop-sync-foreground-service",
             "core:event:allow-listen",
             "core:event:allow-unlisten",
-            "barcode-scanner:default"
+            "barcode-scanner:default",
+            "opener:default",
+            "clipboard-manager:allow-write-text"
           ]
         }
       ]

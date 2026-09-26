@@ -593,6 +593,10 @@
     color: var(--link);
     text-decoration: underline;
     text-underline-offset: 2px;
+    /* A pasted URL is one unbroken run; let it wrap inside the column rather than
+       push the note sideways. */
+    overflow-wrap: anywhere;
+    cursor: pointer;
   }
   .md strong,
   .editor strong {

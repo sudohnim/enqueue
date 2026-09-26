@@ -60,9 +60,9 @@ js_gate() {
   for page in $1; do
     JS="$(mktemp -t enqueue-js).js"
     if [[ "$page" == "home" ]]; then
-      cat "$REPO"/src/enqueue/static/js/{util,icons,md,dialogs,pill,morph,home,artifact,search,pivot,chat,trash,settings}.js > "$JS"
+      cat "$REPO"/src/enqueue/static/js/{util,icons,md,linkpop,dialogs,pill,morph,home,artifact,search,pivot,chat,trash,settings}.js > "$JS"
     elif [[ "$page" == "mobile" ]]; then
-      cat "$REPO/src/enqueue/static/js/md.js" > "$JS"
+      cat "$REPO"/src/enqueue/static/js/{md,linkpop}.js > "$JS"
       python3 - "$REPO/src/enqueue/static/mobile.html" "$JS" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding="utf-8").read()

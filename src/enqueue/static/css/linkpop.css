@@ -1,0 +1,87 @@
+/* Link actions (LINKPOP.1): the small bar that opens on a link inside rendered
+   content, offering "copy" and "open outside the app". Shared by the desktop home and
+   the phone, so it is drawn from the tokens both already load. It follows the
+   floating-menu recipe in pill.css (AU.3): a surface lifted by shadow, no border -
+   a floating object, not a card. */
+.linkpop {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-1);
+  /* Canvas white, not --surface: links live inside surface-toned note cards, and a
+     same-tone bar would separate from them by shadow alone. */
+  background: var(--bg);
+  border: 0;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lifted);
+  animation: linkpop-in var(--dur-fast, 140ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.linkpop[hidden] {
+  display: none;
+}
+@keyframes linkpop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .linkpop {
+    animation: none;
+  }
+}
+.linkpop-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast, 140ms) ease,
+    color var(--dur-fast, 140ms) ease;
+}
+.linkpop-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.linkpop-btn:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+  outline-offset: 1px;
+}
+.linkpop-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* A copy that landed says so in place: the glyph turns to a check in the success
+   hue for a moment, so the confirmation sits where the eye already is. */
+.linkpop-btn.is-done {
+  color: var(--success);
+}
+/* On a touch screen the targets grow to the 44px floor (DESIGN.md section 9); the
+   glyphs stay the same size. */
+@media (pointer: coarse) {
+  .linkpop-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .linkpop-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+}

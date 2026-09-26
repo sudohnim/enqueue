@@ -1,3 +1,54 @@
+  // Bare URLs become links. The split on tags keeps this out of anything md() has
+  // already turned into markup: the body of an existing <a> (a markdown link), inline
+  // <code>, and every attribute value (an image src, an href). Input was escaped before
+  // any of this runs, so a URL cannot carry a raw quote or angle bracket out of the
+  // href, and only http(s) is matched - never javascript: or a relative path.
+  function autolink(html) {
+    const count = (s, ch) => s.split(ch).length - 1;
+    let inA = 0;
+    let inCode = 0;
+    return html
+      .split(/(<[^>]+>)/)
+      .map((part) => {
+        if (part.charAt(0) === "<") {
+          if (/^<a[\s>]/i.test(part)) inA++;
+          else if (/^<\/a>/i.test(part)) inA = Math.max(0, inA - 1);
+          else if (/^<code[\s>]/i.test(part)) inCode++;
+          else if (/^<\/code>/i.test(part)) inCode = Math.max(0, inCode - 1);
+          return part;
+        }
+        if (inA || inCode) return part;
+        return part.replace(/\bhttps?:\/\/[^\s<]+/g, (raw) => {
+          // Punctuation after a URL belongs to the sentence ("see https://x.com."),
+          // and so do escaped quotes/brackets. A closing paren stays only when the
+          // URL opened one itself, so a wiki link like .../Foo_(bar) keeps its ")".
+          let url = raw;
+          let tail = "";
+          for (;;) {
+            const m = url.match(/(?:[.,;:!?\]'"]|&(?:quot|#39|gt|lt);)$/);
+            const cut = m
+              ? m[0]
+              : url.endsWith(")") && count(url, "(") < count(url, ")")
+                ? ")"
+                : "";
+            if (!cut) break;
+            tail = cut + tail;
+            url = url.slice(0, -cut.length);
+          }
+          if (!/^https?:\/\/[^/?#\s]/.test(url)) return raw; // only a scheme was left
+          return (
+            '<a class="mdlink" href="' +
+            url +
+            '" target="_blank" rel="noopener">' +
+            url +
+            "</a>" +
+            tail
+          );
+        });
+      })
+      .join("");
+  }
+
   // Self-contained markdown. A CDN would make the app reach the network to render
   // something you wrote, which is the opposite of the promise. Escapes before parsing,
   // so no input path can render raw HTML.
@@ -31,10 +82,11 @@
     );
     t = t.replace(
       /\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener">$1</a>',
+      '<a class="mdlink" href="$2" target="_blank" rel="noopener">$1</a>',
     );
     t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+    t = autolink(t);
 
     const out = [];
     const items = [];
@@ -175,8 +227,14 @@
           return kids.trim() ? "*" + kids + "*" : "";
         case "CODE":
           return "`" + kids + "`";
-        case "A":
-          return "[" + kids + "](" + (node.getAttribute("href") || "") + ")";
+        case "A": {
+          const href = node.getAttribute("href") || "";
+          // A bare URL md() autolinked has text == href. Write it back bare, so
+          // opening and saving a note never rewrites `https://x` into
+          // `[https://x](https://x)` behind the person's back.
+          if (kids === href) return href;
+          return "[" + kids + "](" + href + ")";
+        }
         case "IMG":
           // The other half of md()'s image rule: a pasted-in image serialises back
           // to `![alt](src)`. An <img> is a void element, so it has no children to

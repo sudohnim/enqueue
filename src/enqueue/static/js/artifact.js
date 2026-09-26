@@ -1401,24 +1401,9 @@
       refreshTitleHeaderSoon();
     });
     ed.addEventListener("blur", saveBody);
-    // A markdown link (`[text](https://...)`) renders as a styled <a target="_blank">,
-    // but a contenteditable swallows a plain click into caret placement, so the link
-    // never opens. Open external links on click - a note is read-mostly, and a new
-    // window keeps the note open behind it. Internal/relative links are left alone.
-    ed.addEventListener("click", (e) => {
-      const a = e.target.closest && e.target.closest("a[href]");
-      if (!a) return;
-      const href = a.getAttribute("href") || "";
-      if (!/^https?:/i.test(href)) return;
-      e.preventDefault();
-      // In the packaged app a webview's window.open does not reliably reach the system
-      // browser, so use Tauri's opener plugin when present (withGlobalTauri exposes it);
-      // fall back to window.open for a plain browser (dev).
-      const opener = window.__TAURI__ && window.__TAURI__.opener;
-      if (opener && opener.openUrl)
-        opener.openUrl(href).catch(() => window.open(href, "_blank", "noopener"));
-      else window.open(href, "_blank", "noopener");
-    });
+    // Link clicks inside the note are owned by LinkPop (js/linkpop.js): it opens the
+    // copy / open-in-browser bar instead of navigating. An editor-level open handler
+    // used to live here and double-opened alongside pill.js's global bridge.
     ed.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && "bi".includes(e.key)) {
         e.preventDefault();
