@@ -717,6 +717,34 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             }
         }
     }
+
+    // A saved link's preview rides the snapshot (the phone never fetches pages
+    // itself). Upsert it when the snapshot carries one; a snapshot without one never
+    // wipes a preview already here. Its picture is fetched on demand by image_hash.
+    if let Some(p) = snapshot.get("link_preview").filter(|v| v.is_object()) {
+        conn.execute(
+            "INSERT INTO link_previews \
+             (artifact_id,status,title,description,site_name,error,image_hash,image_mime,fetched_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) \
+             ON CONFLICT(artifact_id) DO UPDATE SET status=excluded.status, \
+               title=excluded.title, description=excluded.description, \
+               site_name=excluded.site_name, error=excluded.error, \
+               image_hash=excluded.image_hash, image_mime=excluded.image_mime, \
+               fetched_at=excluded.fetched_at",
+            rusqlite::params![
+                id,
+                str_at(p.get("status")).unwrap_or_else(|| "ok".to_string()),
+                str_at(p.get("title")),
+                str_at(p.get("description")),
+                str_at(p.get("site_name")),
+                str_at(p.get("error")),
+                str_at(p.get("image_hash")),
+                str_at(p.get("image_mime")),
+                str_at(p.get("fetched_at")),
+            ],
+        )
+        .map_err(|e| format!("insert link preview: {e}"))?;
+    }
     Ok(())
 }
 
@@ -1418,8 +1446,12 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
             // body is trimmed to a prefix: the library card shows a 3-line clamped
             // excerpt, so shipping full note bodies bloated this payload ~5x for nothing
             // (the reader fetches the full body via mobile_get). 280 chars covers 3 lines.
-            "SELECT id,kind,title,substr(body,1,280),source_url,mime,filename,created_at,updated_at,pinned,status,tags_json
-             FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL ORDER BY updated_at DESC",
+            // A saved link's preview (picture hash, site, description) joins in so the
+            // library card can show it; the picture itself is fetched on demand by hash.
+            "SELECT a.id,a.kind,a.title,substr(a.body,1,280),a.source_url,a.mime,a.filename,a.created_at,a.updated_at,a.pinned,a.status,a.tags_json,
+                    p.image_hash,p.image_mime,p.site_name,substr(p.description,1,280)
+             FROM artifacts a LEFT JOIN link_previews p ON p.artifact_id = a.id AND p.status = 'ok'
+             WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY a.updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
@@ -1441,6 +1473,10 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
                 "pinned": r.get::<_, i64>(9)?,
                 "status": r.get::<_, String>(10)?,
                 "tags": tags,
+                "preview_image_hash": r.get::<_, Option<String>>(12)?,
+                "preview_image_mime": r.get::<_, Option<String>>(13)?,
+                "preview_site": r.get::<_, Option<String>>(14)?,
+                "preview_description": r.get::<_, Option<String>>(15)?,
             }))
         })
         .map_err(|e| e.to_string())?;
@@ -2000,6 +2036,39 @@ mod tests {
         apply_snapshot(&conn, &snap).unwrap();
         let detail = get_artifact(&conn, "l1").unwrap();
         assert!(detail["preview"].is_null());
+    }
+
+    #[test]
+    fn pulled_link_preview_lands_and_survives_a_preview_less_snapshot() {
+        // A link's preview rides the snapshot so the phone can show it (it never
+        // fetches pages itself). A later snapshot without one must not wipe it.
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let with_preview: Value = serde_json::from_str(
+            r#"{
+              "artifact": {"id":"l2","kind":"link","title":"t","body":null,
+                "source_url":"https://psyche.co/x","content_hash":null,"mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+                "local_only":0,"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                "title_explicit":0,"_device_id":"d1"},
+              "annotations": [], "page_text": [], "versions": [],
+              "link_preview": {"status":"ok","title":"How memory palaces work",
+                "description":"A guide","site_name":"Psyche","error":null,
+                "image_hash":"abc123","image_mime":"image/jpeg",
+                "fetched_at":"2026-01-01T00:00:01Z"}
+            }"#,
+        )
+        .unwrap();
+        apply_snapshot(&conn, &with_preview).unwrap();
+        let detail = get_artifact(&conn, "l2").unwrap();
+        assert_eq!(detail["preview"]["title"], "How memory palaces work");
+        assert_eq!(detail["preview"]["image_hash"], "abc123");
+
+        let mut without = with_preview.clone();
+        without.as_object_mut().unwrap().remove("link_preview");
+        apply_snapshot(&conn, &without).unwrap();
+        let detail = get_artifact(&conn, "l2").unwrap();
+        assert_eq!(detail["preview"]["site_name"], "Psyche");
     }
 
     #[test]

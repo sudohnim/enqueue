@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- The canvas token (the page ground bg, DESIGN.md section 2): the violet ground the status and
+         navigation bar strips must match. -->
+    <color name="canvas">#FFEEE8F6</color>
 </resources>

@@ -39,6 +39,8 @@ JS_DIR = os.path.join(HERE, "src", "enqueue", "static", "js")
 JS_ORDER = [
     "util.js",
     "icons.js",
+    "eyemood.js",
+    "ground.js",
     "md.js",
     "linkpop.js",
     "dialogs.js",
@@ -54,7 +56,7 @@ JS_ORDER = [
 ]
 # The mobile shell (MOB.2) loads md.js for markdown; MOB.4+ adds the mobile UI's
 # scripts here, checked the same way the home page's are.
-MOBILE_JS_ORDER = ["md.js", "linkpop.js"]
+MOBILE_JS_ORDER = ["md.js", "linkpop.js", "eyemood.js", "ground.js"]
 
 def extract_script_blocks(path):
     with open(path, encoding="utf-8") as f:

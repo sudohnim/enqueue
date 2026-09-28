@@ -189,8 +189,7 @@
     bottom: 0;
     width: min(320px, 88vw);
     z-index: var(--z-drawer);
-    background: var(--surface);
-    border-left: 1px solid var(--line);
+    background: var(--surface-doc);
     box-shadow: var(--shadow-lifted);
     overflow-y: auto;
     /* The same breathing room as main: clears the 32px drag strip above and the
@@ -337,8 +336,8 @@
     gap: var(--sp-1);
     padding: 4px 4px 4px 10px;
     border-radius: var(--r-full);
-    background: var(--surface);
-    border: 1px solid var(--line);
+    background: var(--surface-2);
+    box-shadow: var(--hairline);
     font-size: 13px;
     color: var(--text);
   }
@@ -406,8 +405,8 @@
      raised surface, so a full page of it does not glare against the white. */
   .docpane {
     background: var(--surface-doc);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    box-shadow: var(--hairline);
+    border-radius: var(--r-2xl);
     padding: var(--sp-6);
     margin-top: var(--sp-6);
     max-width: 720px;
@@ -622,17 +621,51 @@
     text-decoration: none;
   }
 
+  /* The saved address, under "Open original": one quiet line that truncates, so a
+     long tracking-laden URL never sprawls across the page in underlined violet.
+     The full address is still the link target and shows on hover. */
   .url {
-    font-size: 15px;
-    line-height: 22px;
-    color: var(--link);
-    word-break: break-all;
+    font-size: 13.5px;
+    line-height: 20px;
+    color: var(--text-mute);
     display: block;
     width: fit-content;
     max-width: 100%;
     margin-top: var(--sp-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color var(--dur-fast) var(--ease);
+  }
+  .url:hover {
+    color: var(--accent-text);
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+  /* A link whose preview failed or never came: a quiet tile with the reason in
+     plain ink and the one request left as a real button. */
+  .preview-fail {
+    margin-top: var(--sp-5);
+    padding: var(--sp-4) var(--sp-5);
+    border-radius: var(--r-xl);
+    background: var(--surface);
+    box-shadow: var(--hairline);
+  }
+  .preview-fail p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    max-width: 64ch;
+  }
+  .preview-fail-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+    font-size: 13px;
+    color: var(--text-mute);
   }
   .lede {
     font-size: 16px;

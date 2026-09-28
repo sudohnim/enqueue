@@ -348,3 +348,51 @@ def test_tags_round_trip_through_snapshot(store):
         assert set(tags) == {tag1, tag2}
     finally:
         conn.close()
+
+
+def test_link_preview_rides_the_snapshot(store):
+    """A saved link's preview travels with its snapshot, so the phone can show it.
+
+    The phone never fetches pages itself; without this its link cards and reader had
+    no preview at all. A later snapshot that carries none (one the phone pushed) must
+    not wipe the preview this device fetched.
+    """
+    conn = db.get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO artifacts (id, kind, title, source_url, content_hash, status,"
+            " created_at, updated_at) VALUES ('l1', 'link', 'psyche.co',"
+            " 'https://psyche.co/x', 'l1-hash', 'ok', '2024-01-01T00:00:00',"
+            " '2024-01-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO link_previews (artifact_id, status, title, description, site_name,"
+            " image_hash, image_mime, fetched_at) VALUES ('l1', 'ok', 'Memory palaces',"
+            " 'A guide', 'Psyche', 'img-hash', 'image/jpeg', '2024-01-01T00:00:01')"
+        )
+        conn.commit()
+
+        snap = read_artifact_snapshot(conn, "l1")
+        assert snap["link_preview"]["title"] == "Memory palaces"
+        assert snap["link_preview"]["image_hash"] == "img-hash"
+
+        # Arriving on a device that has neither the link nor its preview.
+        conn.execute("DELETE FROM link_previews WHERE artifact_id = 'l1'")
+        conn.execute("DELETE FROM artifacts WHERE id = 'l1'")
+        conn.commit()
+        apply_snapshot(conn, deserialize(serialize(snap)))
+        conn.commit()
+        row = conn.execute("SELECT * FROM link_previews WHERE artifact_id = 'l1'").fetchone()
+        assert row["site_name"] == "Psyche"
+        assert row["image_mime"] == "image/jpeg"
+
+        # A newer snapshot without a preview (the phone's) leaves it in place.
+        newer = deserialize(serialize(snap))
+        newer["artifact"]["updated_at"] = "2024-02-01T00:00:00"
+        del newer["link_preview"]
+        apply_snapshot(conn, newer)
+        conn.commit()
+        row = conn.execute("SELECT * FROM link_previews WHERE artifact_id = 'l1'").fetchone()
+        assert row["title"] == "Memory palaces"
+    finally:
+        conn.close()

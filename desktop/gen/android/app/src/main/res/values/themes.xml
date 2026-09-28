@@ -6,10 +6,10 @@
       painted the window background - now visible in the status and navigation bar strips
       the activity pads for - dark above a white app.
 
-      windowBackground is pinned to the canvas token (#ffffff, DESIGN.md section 2) so those
+      windowBackground is pinned to the canvas token (#eee8f6, DESIGN.md section 2) so those
       strips match the page behind them, and the status bar icons stay dark against it.
     -->
     <style name="Theme.enqueue" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@color/canvas</item>
     </style>
 </resources>

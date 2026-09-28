@@ -60,6 +60,8 @@
   .h2,
   .h3 {
     color: var(--text);
+    /* Headings speak in the display face; body copy stays Plex. */
+    font-family: var(--display);
     /* Display holds at 600, never 700; the ladder below steps down through 500 and
        400. The heading steps override this weight where their rung is lighter. */
     font-weight: 600;
@@ -69,15 +71,15 @@
     /* Display MD, the largest rung that fits a 1200px work surface: the marketing
        page's XL and LG are heroes the app does not have. The -1.0px tracking is the
        display signature - aggressive, scaling down with size, never zero. */
-    font-size: 30px;
-    line-height: 35px;
-    letter-spacing: -1px;
+    font-size: 34px;
+    line-height: 1.08;
+    letter-spacing: -0.04em;
   }
   .h1 {
     /* Headline: panel titles and section openers. */
-    font-size: 24px;
-    line-height: 29px;
-    letter-spacing: -0.5px;
+    font-size: 26px;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
     /* A long unbroken title (a token, a URL, a pasted string) must wrap instead of
        overflowing the reader/vault header. */
     overflow-wrap: anywhere;
@@ -85,9 +87,9 @@
   .h2 {
     /* Title: the scale's 20px step, at its own 500 weight rather than the shared 600. */
     font-size: 20px;
-    font-weight: 500;
-    line-height: 25px;
-    letter-spacing: -0.3px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.025em;
   }
   .h3 {
     /* Subhead: lead paragraphs, back at body weight. */
@@ -193,9 +195,9 @@
     gap: var(--sp-2);
     min-height: 40px;
     /* 8px 14px, per DESIGN.md section 7. */
-    padding: 8px 14px;
-    border-radius: var(--r-md);
-    border: 1px solid transparent;
+    padding: 8px 16px;
+    border-radius: var(--r-lg);
+    border: 0;
     background: transparent;
     font-family: var(--sans);
     /* Button: 14px / 500 / 1.20 with zero tracking - the scale's button step. */
@@ -222,6 +224,7 @@
   .btn.primary {
     background: var(--accent);
     color: var(--on-lavender);
+    box-shadow: 0 8px 20px -10px rgba(96, 7, 159, 0.8);
   }
   .btn.primary:hover {
     /* DESIGN.md names #828fff as the hover, but white on that is 2.73:1 and
@@ -232,13 +235,15 @@
   .btn.primary:active {
     background: var(--lavender-deep);
   }
+  /* Secondary: a white plate with a hairline - bounded without a drawn border. */
   .btn.secondary {
-    background: var(--surface);
-    border-color: var(--line-strong);
+    background: var(--surface-2);
+    box-shadow: var(--hairline), var(--shadow-micro);
     color: var(--text);
   }
   .btn.secondary:hover {
     background: var(--surface-2);
+    box-shadow: var(--hairline), var(--shadow-card);
   }
   .btn.secondary:active {
     background: var(--surface-3);
@@ -247,7 +252,7 @@
     color: var(--text);
   }
   .btn.tertiary:hover {
-    background: var(--surface);
+    background: var(--line-soft);
   }
   .btn.tertiary:active {
     background: var(--surface-2);
@@ -258,7 +263,7 @@
     color: var(--text);
   }
   .btn.ghost:hover {
-    background: var(--surface);
+    background: var(--line-soft);
   }
   .btn.ghost:active {
     background: var(--surface-2);
@@ -283,11 +288,9 @@
   }
   .btn.danger:hover {
     background: color-mix(in oklab, var(--danger) 82%, var(--text));
-    border-color: color-mix(in oklab, var(--danger) 82%, var(--text));
   }
   .btn.danger:active {
     background: color-mix(in oklab, var(--danger) 70%, var(--text));
-    border-color: color-mix(in oklab, var(--danger) 70%, var(--text));
   }
   /* Icon-only. The fill change is the boundary, so no line is required around it. */
   .btn.icon {
@@ -295,18 +298,19 @@
     height: 40px;
     min-height: 40px;
     padding: 0;
-    border-radius: var(--r-md);
-    background: var(--surface-2);
+    border-radius: var(--r-lg);
+    background: var(--line-soft);
     color: var(--text);
   }
   .btn.icon:hover {
-    background: var(--surface-3);
+    background: var(--surface-2);
+    box-shadow: var(--shadow-micro);
   }
   /* Disabled is never colour alone: fill, opacity, cursor and aria-disabled together. */
   .btn[disabled],
   .btn[aria-disabled="true"] {
-    background: var(--surface-2);
-    border-color: transparent;
+    background: var(--line-soft);
+    box-shadow: none;
     color: var(--text-mute);
     opacity: 0.55;
     cursor: not-allowed;
@@ -368,18 +372,17 @@
     padding: var(--sp-3) var(--sp-4);
     margin-bottom: var(--sp-2);
     background: var(--surface);
-    border: 1px solid var(--line);
-    /* Cards answer to the 12px rung, even the compact list rows. */
-    border-radius: var(--r-lg);
+    box-shadow: var(--hairline);
+    border-radius: var(--r-xl);
     transition:
       background var(--dur-fast) var(--ease),
-      border-color var(--dur-fast) var(--ease);
+      box-shadow var(--dur) var(--ease);
     cursor: pointer;
   }
   .item:hover {
-    /* Level 2 lift, same as the wall cards. */
+    /* The same lift as the wall tiles, minus the rise: rows are read in a column. */
     background: var(--surface-2);
-    border-color: var(--line-strong);
+    box-shadow: var(--shadow-card);
   }
   .item-body {
     flex: 1;
@@ -535,14 +538,14 @@
 	max-height: 360px;
 	overflow-y: auto;
 	overscroll-behavior: contain;
-	border: 1px solid var(--line, #dedee5);
-	border-radius: var(--r-md, 10px);
+	border-radius: var(--r-xl);
 	padding: 8px;
-	background: var(--surface-1, #f6f7f9);
+	background: var(--surface);
+	box-shadow: var(--hairline);
 	font-size: var(--type-caption, 13px);
 }
-.event-row {
-	border-bottom: 1px solid var(--line-soft, #eceef2);
+.event-row + .event-row {
+	box-shadow: inset 0 1px 0 var(--line-soft);
 }
 .event-head {
 	display: grid;
@@ -649,8 +652,16 @@
 	font-size: 22px;
 	letter-spacing: 8px;
 	text-align: center;
-	border: 1px solid var(--line-strong, #c4c6d0);
-	border-radius: var(--r-md, 10px);
+	border: 0;
+	border-radius: var(--r-lg);
+	background: var(--surface-2);
+	box-shadow: var(--hairline);
+}
+.pin-input:focus {
+	outline: none;
+	box-shadow:
+		0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+		var(--shadow-field);
 }
 .pin-err {
 	color: var(--danger, #b3261e);
@@ -663,10 +674,10 @@
 	gap: var(--sp-4);
 }
 .vault-card {
-	border: 1px solid var(--line, #dedee5);
-	border-radius: var(--r-md, 10px);
+	border-radius: 18px;
 	padding: var(--sp-4);
-	background: var(--surface-1, #f6f7f9);
+	background: var(--surface);
+	box-shadow: var(--hairline);
 	cursor: pointer;
 	display: flex;
 	flex-direction: column;
@@ -706,11 +717,10 @@
 	padding: 24px;
 }
 .modal-card {
-	background: var(--surface-1, #ffffff);
-	border: 1px solid var(--line, #dedee5);
-	border-radius: 16px;
+	background: var(--surface-doc);
+	border-radius: var(--r-2xl);
 	padding: 24px;
-	box-shadow: 0 12px 48px rgba(16, 17, 20, 0.2);
+	box-shadow: var(--shadow-lifted);
 	width: 100%;
 	max-width: 360px;
 }

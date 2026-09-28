@@ -88,6 +88,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "trash_days": ("ENQ_TRASH_DAYS", 30, True),
     # BACKFILL.2: one-shot flag so auto-backfill runs only once on sync-enable.
     "sync_backfill_done": ("ENQ_SYNC_BACKFILL_DONE", False, True),
+    # One-shot flag: saved links were re-pushed once so their previews reach the phone
+    # (previews started riding the snapshot after most links had synced).
+    "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
 }
 
 WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}

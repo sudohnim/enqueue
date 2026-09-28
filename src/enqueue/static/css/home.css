@@ -20,27 +20,21 @@
 	display: flex;
 	align-items: center;
 	gap: var(--sp-2);
-	height: 40px;
-	/* Inputs answer to the 8px rung, not the pill. */
-	padding: 0 var(--sp-3);
-	background: var(--surface);
-	border: 1px solid var(--line-strong);
-	border-radius: var(--r-md);
-	transition:
-		border-color var(--dur-fast) var(--ease),
-		box-shadow var(--dur-fast) var(--ease);
+	height: 48px;
+	/* The search floats on the violet ground as a white field with a violet
+	   under-glow: no border, the shadow is the edge. */
+	padding: 0 var(--sp-4);
+	background: var(--surface-2);
+	border-radius: var(--r-xl);
+	box-shadow: var(--shadow-field);
+	transition: box-shadow var(--dur-fast) var(--ease);
 }
 .searchbar:focus-within {
-	/* DL.4: the focus signal is the mandated 2px lavender-focus ring at 50%
-       opacity, not a drop shadow - a ring says "focus", a shadow says "depth". */
-	box-shadow: 0 0 0 2px
-		color-mix(in oklab, var(--lavender-focus) 50%, transparent);
-}
-/* P.7: on hover the searchbar's border warms to lavender - a hint that the
-     most-used input belongs to the brand. The 2px focus ring is untouched, so
-     hover and focus read as distinct states. */
-.searchbar:hover {
-	border-color: var(--lavender-focus);
+	/* DL.4: focus adds the accent ring on top of the float, so focus still reads
+	   as focus, not just more depth. */
+	box-shadow:
+		0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+		var(--shadow-field);
 }
 .searchbar svg {
 	width: 16px;
@@ -56,7 +50,7 @@
 	background: none;
 	outline: none;
 	font: inherit;
-	font-size: 14px;
+	font-size: 15px;
 	color: var(--text);
 }
 .searchbar input::placeholder {
@@ -75,30 +69,47 @@
        and the wall cards scroll up beneath it. */
 	top: 32px;
 	z-index: var(--z-sticky);
-	margin-bottom: var(--sp-7);
-	/* S.5: the frozen header. Two layers: the lavender wash on top, and an
-       opaque white ground beneath. The ground is opaque from the top through
-       85%, then fades to transparent at the bottom edge, so cards scrolling
-       under dissolve there and nowhere else - they never show through the
-       translucent wash at the top (the reappearing-artifacts bug). */
-	background:
-		linear-gradient(180deg, var(--purple-bold-wash-strong) 0%, transparent 85%),
-		linear-gradient(180deg, var(--bg) 0%, var(--bg) 92%, transparent 100%);
-	padding-top: var(--sp-3);
-	padding-bottom: var(--sp-6);
+	margin-bottom: var(--sp-5);
+	/* S.5: the frozen header sits on the same flat violet ground as the page, and
+	   only its bottom edge fades out, so cards scrolling under dissolve there and
+	   nowhere else. The ground is full-bleed (the ::before below), so the header
+	   has no left/right edge inside the centred column. */
+	padding-top: var(--sp-5);
+	/* The last 18px of the header is its fade; the tabs sit above it on solid ground. */
+	padding-bottom: 22px;
+	isolation: isolate;
+}
+.homehead::before {
+	content: "";
+	position: absolute;
+	inset: 0 calc(50% - 50vw);
+	z-index: -1;
+	background: linear-gradient(180deg, var(--bg) 0%, var(--bg) calc(100% - 18px), transparent 100%);
+	pointer-events: none;
+}
+.greet-date {
+	font-size: 13px;
+	line-height: 1.3;
+	color: var(--text-mute);
+	margin-bottom: 2px;
 }
 .homehead .display {
 	margin: 0;
 	color: var(--text);
-	/* LY.7: the greeting is the hero - Display LG (40/600/-1.4) rather than the
-       Display MD the generic .display carries. The phrase is the first thing the
-       eye lands on, so it earns the largest rung the canvas fits. */
-	font-size: 40px;
-	line-height: 45px;
-	letter-spacing: -1.4px;
+	/* LY.7: the greeting is the hero, in the display face at its largest rung.
+	   Tight tracking is what makes Instrument Sans read modern at this size. */
+	font-family: var(--display);
+	font-size: 54px;
+	font-weight: 600;
+	line-height: 1.02;
+	letter-spacing: -0.045em;
+}
+.greet-last {
+	color: var(--purple-bold);
 }
 .homehead .searchbar {
-	margin-top: var(--sp-4);
+	margin-top: var(--sp-5);
+	max-width: 720px;
 }
 /* The wall's composition is centered: the greeting above the search, and the
      section labels beneath. The cards keep their full-width grid - a card has no
@@ -122,13 +133,12 @@
 	/* Mono: the scale's 13px code step. A keycap keeps its own tight line-height
        as a badge, not a paragraph. DL.5: it fades out over 140ms when the field
        engages, instead of vanishing. */
-	font-size: 13px;
+	font-size: 12px;
 	line-height: 1;
-	padding: 3px 6px;
-	border: 1px solid var(--line-strong);
+	padding: 4px 7px;
 	border-radius: var(--r-sm);
 	color: var(--text-mute);
-	background: var(--surface-doc);
+	background: var(--line-soft);
 	opacity: 1;
 	transform: scale(1);
 	transition:
@@ -187,7 +197,7 @@
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
-	gap: var(--sp-2);
+	gap: 0;
 }
 .greet-emblem {
 	position: relative;
@@ -280,8 +290,13 @@
        whole image and the eye itself lands near 90px, still the boldest mark
        on the row but a companion to the greeting, not a second hero. A vw-aware
        clamp keeps it proportionate on smaller windows. */
-	width: clamp(84px, 11vw, 104px);
+	width: clamp(84px, 9vw, 100px);
 	height: auto;
+}
+/* The emblem art carries a crop margin on every side; pulled in so the bird sits
+   tight against the greeting and reads as part of the title, not beside it. */
+.homehead .greet-emblem {
+	margin: -8px -4px -14px -10px;
 }
 @keyframes emblem-in {
 	from {
@@ -323,21 +338,22 @@ main {
 	align-items: center;
 	gap: var(--sp-2);
 	width: 100%;
-	padding: 12px 0;
+	padding: 10px 4px;
 	border: 0;
 	background: none;
-	font-size: 20px;
-	font-weight: 500;
-	line-height: 1.26;
-	letter-spacing: -0.3px;
+	font-family: var(--display);
+	font-size: 26px;
+	font-weight: 600;
+	line-height: 1.15;
+	letter-spacing: -0.035em;
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
 	border-radius: var(--r-md);
-	transition: background var(--dur-fast) var(--ease);
+	transition: color var(--dur-fast) var(--ease);
 }
 .pivotgroup .grouptoggle:hover {
-	background: var(--surface);
+	color: var(--accent-text);
 }
 .pivotgroup .gchev {
 	display: inline-flex;
@@ -421,14 +437,15 @@ main {
 	align-items: center;
 	gap: var(--sp-2);
 	width: 100%;
-	/* Same Title-rung uplevel as the pivot groups (N.2a). */
-	padding: 12px 0;
+	/* Same Title-rung uplevel as the pivot groups (N.2a), in the display face. */
+	padding: 10px 4px;
 	border: 0;
 	background: none;
-	font-size: 20px;
-	font-weight: 500;
-	line-height: 1.26;
-	letter-spacing: -0.3px;
+	font-family: var(--display);
+	font-size: 26px;
+	font-weight: 600;
+	line-height: 1.15;
+	letter-spacing: -0.035em;
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
@@ -436,7 +453,8 @@ main {
 	transition: background var(--dur-fast) var(--ease);
 }
 .wallgroup .grouptoggle:hover {
-	background: var(--surface);
+	background: none;
+	color: var(--accent-text);
 }
 .wallgroup .grouptoggle .shelf {
 	flex: 1;
@@ -448,16 +466,17 @@ main {
 	line-height: inherit;
 	letter-spacing: inherit;
 	color: inherit;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	text-transform: none;
 }
 .wallgroup .gmeta {
-	/* Caption: the item count rides with the label, same faint ink. */
-	font-size: 12px;
-	font-weight: 500;
+	/* Caption: the item count rides with the label, in the body face. */
+	font-family: var(--sans);
+	font-size: 13px;
+	font-weight: 400;
 	line-height: 16px;
 	letter-spacing: 0;
-	color: var(--ink-faint);
+	color: var(--text-mute);
+	font-variant-numeric: tabular-nums;
 }
 .wallgroup .gchev {
 	display: inline-flex;
@@ -510,7 +529,8 @@ main {
 	padding: 0;
 	border: 0;
 	border-radius: var(--r-full);
-	background: var(--surface);
+	background: var(--surface-2);
+	box-shadow: var(--shadow-micro);
 	color: var(--text-mute);
 	display: grid;
 	place-items: center;
@@ -527,8 +547,7 @@ main {
 	stroke-width: 1.8;
 }
 .movebtn:hover {
-	background: var(--surface-2);
-	color: var(--text);
+	color: var(--accent-text);
 }
 .pivotcard:hover .movebtn,
 .movebtn:focus {
@@ -547,7 +566,8 @@ main {
 	padding: 0;
 	border: 0;
 	border-radius: var(--r-full);
-	background: var(--surface);
+	background: var(--surface-2);
+	box-shadow: var(--shadow-micro);
 	color: var(--text-mute);
 	display: grid;
 	place-items: center;
@@ -564,7 +584,6 @@ main {
 	stroke-width: 1.8;
 }
 .removebtn:hover {
-	background: var(--surface-2);
 	color: var(--danger);
 }
 .pivotcard:hover .removebtn,
@@ -581,8 +600,9 @@ main {
 	min-height: 0;
 	padding: 4px 12px;
 	border-radius: var(--r-full);
-	border: 1.5px solid var(--line-strong);
-	background: var(--surface);
+	border: 0;
+	background: var(--surface-2);
+	box-shadow: var(--shadow-micro);
 	color: var(--text);
 	font-family: var(--sans);
 	font-size: 14px;
@@ -596,7 +616,7 @@ main {
 		background var(--dur-fast) var(--ease);
 }
 .restorebtn:hover {
-	background: var(--surface-2);
+	color: var(--accent-text);
 }
 .pivotcard:hover .restorebtn,
 .restorebtn:focus {
@@ -630,9 +650,10 @@ main {
 	margin-top: var(--sp-3);
 	padding: 8px 12px;
 	/* N.11b: an input, not a pill - 8px corners per DESIGN.md section 7. */
-	border-radius: var(--r-md);
-	border: 1.5px solid var(--line-strong);
-	background: var(--surface);
+	border-radius: var(--r-lg);
+	border: 0;
+	background: var(--surface-2);
+	box-shadow: var(--hairline);
 	color: var(--text);
 	font-family: var(--sans);
 	font-size: 15px;
@@ -642,7 +663,6 @@ main {
 }
 .picksearch:focus {
 	outline: none;
-	border-color: var(--accent);
 	/* N.9c: the same 2px lavender-focus ring as the home searchbar - one focus
        signal for every input in the app. */
 	box-shadow: 0 0 0 2px
@@ -786,9 +806,9 @@ main {
        card recipe - surface 1, 1px line border, 12px radius - with 12px
        padding at the 5-up default (O.2b), back to 16px below 1280px. */
 	background: var(--surface);
-	border: 1px solid var(--line);
-	border-radius: var(--r-lg);
-	padding: var(--sp-3);
+	box-shadow: var(--hairline);
+	border-radius: 18px;
+	padding: 14px 16px;
 	/* The wall never sheds a card: scrolling appends, and a collection meant to grow
        forever means the grid keeps everything ever scrolled past. Measured at 2,000
        cards, one style change cost 152 ms of forced layout - nine dropped frames for a
@@ -801,16 +821,21 @@ main {
 	/* Elevation only. Scaling a card on hover moves everything the eye was using to
        compare one object with another. */
 	transition:
-		background var(--dur) ease,
-		border-color var(--dur) ease,
-		box-shadow var(--dur) ease;
+		background var(--dur) var(--ease),
+		box-shadow 260ms var(--ease),
+		transform 260ms var(--ease);
 }
 .card:hover {
-	/* Level 2 lift: the hovered card steps up a surface and its hairline tightens
-       to line-strong. The whisper card shadow helps it separate from the wall. */
+	/* Lift: the hovered tile turns white and rises 2px on a violet shadow. A 2px
+	   translate is a lift, not a scale, so neighbours never shift under the eye. */
 	background: var(--surface-2);
-	border-color: var(--line-strong);
 	box-shadow: var(--shadow-card);
+	transform: translateY(-2px);
+}
+@media (prefers-reduced-motion: reduce) {
+	.card:hover {
+		transform: none;
+	}
 }
 
 /* One hue per kind, resolved wherever the kind is declared and inherited by the dot
@@ -872,12 +897,13 @@ main {
 }
 
 .card .title {
-	margin-top: var(--sp-3);
-	/* Title: the scale's 20px / 500 card-title step, at the base class's values. */
-	font-size: 20px;
-	font-weight: 500;
-	line-height: 25px;
-	letter-spacing: -0.3px;
+	margin-top: var(--sp-2);
+	/* Title: the display face at the card step, tight and bold. */
+	font-family: var(--display);
+	font-size: 19px;
+	font-weight: 600;
+	line-height: 1.22;
+	letter-spacing: -0.025em;
 	display: -webkit-box;
 	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;
@@ -983,10 +1009,24 @@ main {
 	left: 0;
 	right: 0;
 	bottom: 0;
-	padding: var(--sp-3) 24px 24px;
-	background: rgb(255 255 255 / 0.92);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
+	padding: 36px 16px 14px;
+	/* The title band fades up out of the tile's own plate instead of cutting
+	   across the picture with a hard edge. */
+	background: linear-gradient(
+		180deg,
+		color-mix(in srgb, var(--surface) 0%, transparent) 0%,
+		color-mix(in srgb, var(--surface) 92%, transparent) 42%,
+		var(--surface) 72%
+	);
+	transition: background var(--dur) var(--ease);
+}
+.card.pictorial:hover .cardband {
+	background: linear-gradient(
+		180deg,
+		rgb(255 255 255 / 0) 0%,
+		rgb(255 255 255 / 0.94) 42%,
+		#fff 72%
+	);
 }
 .cardband .title {
 	margin-top: 0;
@@ -1092,7 +1132,7 @@ main {
 }
 .tagbar .tagchip:hover {
 	color: var(--text);
-	background: var(--line-soft);
+	background: var(--surface-2);
 }
 /* The complement filter, pinned after every tag: still a pill, but set off with
    a hairline divider and italic so it reads as a mode of its own, not one more
@@ -1109,7 +1149,8 @@ main {
 	top: 50%;
 	transform: translateY(-50%);
 	height: 60%;
-	border-left: 1px solid var(--line);
+	border-left: 1px solid var(--line-strong);
+	opacity: 0.4;
 }
 
 /* The wall's grouping selector, under the search and above the tag filters:
@@ -1118,54 +1159,40 @@ main {
 .groupbar {
 	display: inline-flex;
 	align-items: center;
-	gap: 2px;
+	gap: var(--sp-5);
 	margin-top: var(--sp-4);
-	padding: 3px;
-	border: 1px solid var(--line);
-	border-radius: var(--r-full);
-	background: var(--line-soft);
 }
 .groupbar button {
 	border: 0;
 	background: none;
-	padding: 4px 13px;
-	border-radius: var(--r-full);
+	position: relative;
+	padding: 4px 0 8px;
 	font: inherit;
-	font-size: 13px;
+	font-size: 14px;
 	line-height: 1.3;
 	color: var(--text-mute);
 	cursor: pointer;
-	transition:
-		color var(--dur-fast) var(--ease),
-		background var(--dur-fast) var(--ease),
-		box-shadow var(--dur-fast) var(--ease);
+	transition: color var(--dur-fast) var(--ease);
 }
 .groupbar button:hover:not([aria-pressed="true"]) {
 	color: var(--text);
-	/* Q.2: a quiet hover on inactive tabs so the cursor gets a clickable
-       signal. surface-2 (the app's hovered step, not lavender) keeps it
-       secondary to the active tab's accent; border-radius matches the pill
-       shape. */
-	background: var(--surface-2);
-	border-radius: var(--r-md);
 }
 .groupbar button[aria-pressed="true"] {
 	color: var(--text);
-	background: var(--surface);
-	box-shadow: var(--shadow-micro);
+	font-weight: 500;
 }
-/* P.7: the active tab gets a small lavender disc ahead of its label - the
-     brand colour reads in the tab bar without replacing the underline. A 6px
-     graphic: --accent on the canvas at 4.70:1 clears the 3:1 rule. */
-.groupbar button[aria-pressed="true"]::before {
+/* The chosen mode is marked by a short accent bar under its label - text tabs,
+   not a boxed segmented control, so the header stays open. */
+.groupbar button[aria-pressed="true"]::after {
 	content: "";
-	display: inline-block;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
+	position: absolute;
+	left: 50%;
+	bottom: 0;
+	width: 16px;
+	height: 2px;
+	border-radius: 2px;
 	background: var(--accent);
-	margin-right: var(--sp-1);
-	vertical-align: middle;
+	transform: translateX(-50%);
 }
 
 /* The clear control on a Tagged header: a quiet text button, not an action. */
@@ -1182,5 +1209,6 @@ main {
 }
 .tagclear:hover {
 	background: var(--surface-2);
+	box-shadow: var(--shadow-micro);
 	color: var(--text);
 }

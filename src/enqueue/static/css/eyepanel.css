@@ -15,7 +15,6 @@
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-left: 1px solid var(--line);
   box-shadow: var(--shadow-lifted);
   /* Closed state is off to the right; opening slides it home. The wall never moves. */
   transform: translateX(100%);
@@ -54,7 +53,7 @@
   gap: var(--sp-1);
   padding: var(--sp-2) var(--sp-3);
   padding-top: calc(var(--sp-2) + env(safe-area-inset-top));
-  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 var(--line-soft);
   flex: 0 0 auto;
 }
 .eye-title {
@@ -212,8 +211,9 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 0;
+  box-shadow: var(--hairline);
+  background: var(--surface-2);
   color: var(--text-dim);
   border-radius: var(--r-pill);
   padding: 4px 10px;
@@ -376,15 +376,15 @@
   gap: var(--sp-2);
   padding: var(--sp-3);
   padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
   background: var(--bg);
 }
 .eye-foot .eye-inputwrap {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-2);
+  border: 0;
+  box-shadow: var(--shadow-field);
   border-radius: 20px;
   padding: 2px 4px 2px 14px;
   transition:
@@ -392,8 +392,9 @@
     box-shadow 140ms ease-out;
 }
 .eye-foot .eye-inputwrap:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--lavender-subtle);
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+    var(--shadow-field);
 }
 #eyeField {
   flex: 1 1 auto;

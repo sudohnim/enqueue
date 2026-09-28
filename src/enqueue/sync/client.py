@@ -10,6 +10,8 @@ fresh cursor (MOBFIX.5), which is how the mutation reaches other devices.
 
 from __future__ import annotations
 
+import contextlib
+
 import logging
 
 import httpx
@@ -52,6 +54,55 @@ def _write_cursor(cursor: int) -> None:
     path = _cursor_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(str(cursor), encoding="utf-8")
+
+
+def _blob_hashes(snapshot: dict) -> list[str]:
+    """Content hashes of the blobs an artifact's snapshot refers to.
+
+    The capture's own file (image, PDF, other file), plus a saved link's preview
+    picture: the phone renders both by hash and fetches them from the relay on
+    demand, so both must be there.
+    """
+    hashes = []
+    art = snapshot["artifact"]
+    if art.get("kind") in ("image", "pdf", "file") and art.get("content_hash"):
+        hashes.append(art["content_hash"])
+    preview = snapshot.get("link_preview") or {}
+    if preview.get("image_hash"):
+        hashes.append(preview["image_hash"])
+    return hashes
+
+
+def backfill_link_previews() -> int:
+    """One-shot: re-push every saved link that has a preview, so the phone gets it.
+
+    Link previews only started riding the snapshot (and their pictures only started
+    going up as blobs) after most links were already synced, so a phone linked before
+    then holds every link with no preview. This re-pushes each of those once. The
+    re-push keeps updated_at, so it never wins LWW over a newer edit; the phone still
+    applies it because its pull re-applies a snapshot on an equal key. Guarded by the
+    `sync_link_previews_backfilled` setting so it runs once per library.
+    """
+    if not _relay_url() or settings.get("sync_link_previews_backfilled"):
+        return 0
+    if keyring_file.load_dek_from_keychain() is None:
+        return 0  # locked: try again on the next start
+    conn = db.get_conn()
+    try:
+        ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT a.id FROM artifacts a JOIN link_previews p ON p.artifact_id = a.id"
+                " WHERE a.kind = 'link' AND a.local_only = 0 AND a.deleted_at IS NULL"
+                " AND p.status = 'ok'"
+            )
+        ]
+    finally:
+        conn.close()
+    for artifact_id in ids:
+        push_artifact(artifact_id)
+    settings.update({"sync_link_previews_backfilled": True})
+    return len(ids)
 
 
 def push_artifact(artifact_id: str) -> None:
@@ -105,12 +156,10 @@ def push_artifact(artifact_id: str) -> None:
         print(f"[sync] push rejected for {artifact_id}: {resp.status_code}", flush=True)
         return
 
-    # Push the file blob for captures (E2E.md E5: blobs are fetched on demand by the
+    # Push the blobs the snapshot refers to (E2E.md E5: fetched on demand by the
     # reader/thumbnails). The blob name is HMAC(content_hash, DEK), so it reveals
     # nothing about the content; the bytes are encrypted like the snapshot.
-    kind = snapshot["artifact"].get("kind")
-    content_hash = snapshot["artifact"].get("content_hash")
-    if kind in ("image", "pdf", "file") and content_hash:
+    for content_hash in _blob_hashes(snapshot):
         blob_path = config.BLOB_DIR / content_hash
         if blob_path.exists():
             blob_name = crypto.blob_name(content_hash, dek)
@@ -663,24 +712,20 @@ def push_all() -> int:
         elif resp.status_code != 409:
             continue
 
-        # Push blob if present
-        kind = snapshot["artifact"].get("kind")
-        content_hash = snapshot["artifact"].get("content_hash")
-        if kind in ("image", "pdf", "file") and content_hash:
+        # Push the blobs the snapshot refers to (file and link-preview picture).
+        for content_hash in _blob_hashes(snapshot):
             blob_path = config.BLOB_DIR / content_hash
             if blob_path.exists():
                 blob_name = crypto.blob_name(content_hash, dek)
                 blob_data = crypto.encrypt(blob_path.read_bytes(), dek)
-                try:
-                    bresp = client.put(
+                # A blob push failure is non-fatal: the snapshot is already up, and
+                # the next push of this artifact retries the bytes.
+                with contextlib.suppress(httpx.HTTPError):
+                    client.put(
                         f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
                         content=blob_data,
                         headers=headers,
                     )
-                except httpx.HTTPError:
-                    pass  # blob push failure is non-fatal
-                if bresp.status_code not in (201, 409):
-                    pass  # blob push failure is non-fatal
 
     client.close()
     # Custom views ride alongside the artifacts so the phone's Custom mode has data.

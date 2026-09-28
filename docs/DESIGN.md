@@ -1,361 +1,300 @@
 # Enqueue Design System
 
-A light, trustworthy surface with a quiet lavender accent.
+A flat violet ground, white-lit tiles, and one bold violet accent: the app lives inside the raven's colour instead of sitting on white paper.
 
-The system takes Kraken's clean, professional, white-canvas calm and restrains it with Linear's muted-lavender discipline.
-Kraken's purple scale (`#7132f5`, `#5741d8`, `#5b1ecf`) is too loud for a tool meant to age well, so the brand accent is Linear's muted lavender (`#5e6ad2`) instead.
-The result is distinct from either source: a light canvas (Kraken) carrying a quiet lavender (Linear), rather than Kraken's shouty purple-on-white or Linear's lavender-on-near-black.
+This system replaced the earlier "light canvas, hairline borders, whisper shadows" look (Kraken restrained by Linear) in September 2026.
+The earlier look read as boxed and amateurish: every surface was outlined in a grey 1px line, so the page looked like a set of drawn rectangles.
+The replacement keeps the product's identity - the raven, the bold violet `#60079f`, IBM Plex for reading, the layout and every behaviour - and changes how depth and edges are made.
 
-Lavender is scarce here, the way it is in Linear.
-It is a fill and a focus ring and a link, never a section background or a card wash.
-Depth comes from a cool light surface ladder plus hairline borders plus whisper shadows, the way Kraken earns trust without drama.
-One lavender UI accent, plus one scoped brand-mark purple `#60079f` for the raven's own moments. No atmospheric gradients except the single brand-mark header wash. No spotlight cards.
+The rules in one breath:
+the canvas is a flat medium lavender, surfaces climb toward white from it, edges are violet hairlines or soft violet shadows (never grey borders), headings speak in Instrument Sans with tight tracking, and violet is the one accent.
 
 ## 1. Atmosphere
 
-- Light only. The canvas is white with the faintest cool tint.
-- The bold violet (`#60079f`), the raven eye's color, is the single chromatic accent - fills, focus rings, links, chips - used scarcely. The old muted lavender (`#5e6ad2`) is retired; the `--lavender*` tokens are kept only as aliases pointing at the violet.
-- Near-black text (`#101114`) on a cool-gray neutral scale.
-- Depth from a three-step light surface ladder, hairline borders, and whisper shadows.
-- Display type uses aggressive negative tracking. Body holds near zero.
-- One type family across display and body, so the voice is continuous.
+- Light, but not white. The canvas is a flat lavender (`#eee8f6`), with no gradient and no wash.
+- Tiles are lighter plates on that ground; anything hovered, raised, or typed into is white.
+- Edges come from a 1px violet hairline drawn as an inset shadow, or from a layered violet shadow. There are no grey borders.
+- The bold violet `#60079f` (the raven eye's pupil) is the only chromatic accent: primary fills, focus rings, links, the active-tab bar, the greeting's last word and period.
+- The raven sits tight against its heading everywhere it appears (home greeting, settings title, capture overlay, capture sheet), as part of the title rather than beside it.
+- Display type (Instrument Sans) is tight and bold; body type (IBM Plex Sans) is calm and holds zero tracking.
 
 ## 2. Color
 
-### Brand accent (lavender)
+### The violet ground (surface ladder)
 
-- **Lavender** `#5e6ad2`: primary CTA, brand mark, focus ring, link emphasis. Never a section fill.
-- **Lavender Hover** `#828fff`: hovered primary CTA.
-- **Lavender Focus** `#5e69d1`: focus-ring tint, pressed primary.
-- **Lavender Deep** `#4a51a8`: deepest lavender, for pressed/active fills.
-- **Lavender Subtle** `rgba(94, 106, 210, 0.12)`: subtle lavender fills (low-emphasis buttons, selected chips).
-- **On Lavender** `#ffffff`: text on a lavender fill.
+Surfaces climb toward white from the canvas, and recessed wells sink below it.
 
-### Brand-mark purple
+- **Canvas** `--bg` `#eee8f6`: the page, the frozen home header, the capture card, dialogs' page behind the scrim.
+- **Tile** `--surface` `#f8f5fb`: wall cards, settings groups, list rows, resting chips.
+- **Reading** `--surface-doc` `#fbf9fd`: the note/reading pane, menus, dialogs, drawers, toasts.
+- **Raised** `--surface-2` `#ffffff`: a hovered tile, search, inputs, the active settings section, secondary buttons.
+- **Recessed** `--surface-3` `#e3d9ef`: an OFF toggle track, pressed wells. The darkest ground any text sits on.
 
-The raven's eye purple `#60079f` is the single chromatic accent - the whole interface wears it (fills, focus rings, links, chips), not just the mark. It is dark, so filled controls carry white ink.
+### Accent
 
-- **Purple Bold** `#60079f`: the raven eye's pupil, the home header wash (a low-opacity gradient), the capture overlay's disc and Keep button, and the greeting's trailing period. Dark, so it wears white ink (dark ink fails on it).
-- **Purple Bold Hover** `#7a1fc0`: the lighter lift for the capture Keep button on hover.
-- **Purple Bold Wash** `rgba(96, 7, 159, 0.1)`: the home header's fading purple wash, and the capture focus glow.
-
-The `--lavender*` token names are retained as aliases (they now resolve to `#60079f`), so existing consumers keep working; there is no separate lavender accent anymore. Filled controls wear white ink (`--on-purple-bold`); the accent as text (`--accent-text` `#60079f`) clears 4.5:1 on every surface.
-
-### Surface (light ladder)
-
-- **Canvas** `#ffffff`: page background, faint cool tint acceptable (`#fbfbfd`).
-- **Surface 1** `#f6f7f9`: one step up. Cards, panels, inputs.
-- **Surface 2** `#eef0f3`: two steps up. Hovered cards, featured tiles, selected chips.
-- **Surface 3** `#e4e6eb`: three steps up. Pressed fills, recessed wells.
+- **Violet** `--accent` / `--purple-bold` `#60079f`: primary buttons, the capture disc and Keep, focus rings, links, the active tab bar, the greeting's last word and period. White ink on it (10.35:1).
+- **Violet hover** `--lavender-focus` / `--purple-bold-hover` `#7a1fc0`, **pressed** `--lavender-deep` `#4a0578`.
+- **Violet subtle** `--lavender-subtle` `rgba(96, 7, 159, 0.12)`: low-emphasis accent washes.
+- The `--lavender*` names are aliases kept for existing consumers; they all resolve to the violet family.
 
 ### Ink (text)
 
-- **Ink** `#101114`: headlines, emphasized body, primary text.
-- **Ink Muted** `#4d5061`: secondary text, meta on hero panels.
-- **Ink Subtle** `#686b82`: tertiary text, muted labels.
-- **Ink Faint** `#9497a9`: disabled, footnotes, placeholders.
+Inks are pulled toward the violet so grey text never reads cold on the lavender ground.
+
+- **Ink** `--text` `#120f19`: headings, primary text.
+- **Ink dim** `--text-dim` `#433e57`: secondary text, helper text.
+- **Ink mute** `--text-mute` / `--ink-faint` `#5a546e`: meta, counts, placeholders, inactive tabs. Clears 4.5:1 on every ground including `--surface-3`.
 
 ### Lines
 
-- **Line** `#dedee5`: 1px borders on cards, dividers.
-- **Line Strong** `#c4c6d0`: stronger borders, input borders.
-- **Line Soft** `#eceef2`: soft dividers inside panels.
+- **Hairline** `--line` `rgba(58, 13, 99, 0.12)`: the tile edge, drawn as `--hairline` (`inset 0 0 0 1px var(--line)`), so it adds no layout.
+- **Soft line** `--line-soft` `rgba(58, 13, 99, 0.07)`: dividers inside a tile, ghost-button hovers, keycap fills.
+- **Strong line** `--line-strong` `#7a7291`: the only line that may be a sole boundary (3.32:1 on `--surface-3`); used for the OFF toggle ring and the rare control that has no fill to bound it.
 
 ### Semantic
 
-- **Success** `#149e61`: positive states. Badge fill `rgba(20, 158, 97, 0.16)`, badge text `#026b3f`.
-- **Danger** `#b4332b`: destructive actions. Badge fill `rgba(180, 51, 43, 0.14)`, badge text `#7a241c`.
-- **Warning** `#c47d1f`: caution. Badge fill `rgba(196, 125, 31, 0.16)`, badge text `#8a5512`.
-- **Info** `#3b6bb5`: neutral informational. Badge fill `rgba(59, 107, 181, 0.14)`, badge text `#274a82`.
+Re-tuned for the lavender ground so each still clears its tier (`bin/check-contrast`).
 
-### Code
+- **Danger** `#a3291f` (text-safe on every ground), badge fill `rgba(180, 51, 43, 0.14)`, badge ink `#7a241c`.
+- **Success** `#0f8453` (fill and graphic only), badge fill `rgba(20, 158, 97, 0.16)`, badge ink `#026b3f`.
+- **Warning** `#a4650e` (fill and graphic only).
+- **Info** `#325f9f`.
 
-- **Code Ink** `#0a5270`: inline code text on light surfaces.
-- **Code Surface** `#eef0f3`: code block ground (surface 2).
+### Kind dots
+
+Note green `#30804b`, link blue `#376899`, PDF terracotta `#ad5a31`, image plum `#8f4273`, file olive `#755c12`, chat violet `#7f6ad4`.
+A kind hue only ever colours its 8px dot; kind is a fact, never an action.
 
 ## 3. Typography
 
 ### Families
 
-- **Display and Body**: `IBM Plex Sans`, fallbacks `system-ui, -apple-system, Segoe UI, Roboto`.
-  One family across display and body, so the voice stays continuous.
-  Vendored as woff2 in `static/fonts/` (weights 400/500/600/700); no CDN, no webfont substitute.
-- **Mono**: the system mono stack (`ui-monospace, SF Mono, Menlo, Consolas`), matching `--mono` in `css/tokens.css`.
-  Reserved for code and for status or ID tokens.
+- **Display**: Instrument Sans (`--display`), vendored as a variable woff2 (weights 400-700, widths 75-100%) in `static/fonts/` under the SIL OFL (`InstrumentSans-OFL.txt`).
+  It carries the greeting, page and section headings, card and tile titles, dialog, settings and capture headings.
+- **Body**: IBM Plex Sans (`--sans`), vendored woff2 400/500/600/700. Reading text, labels, buttons, meta.
+- **Mono**: the system mono stack (`--mono`), for keycaps, hotkeys, IDs, code.
+- No CDN, no webfont service: every face is a file beside the page.
 
 ### Scale
 
-| Role | Family | Size | Weight | Line height | Tracking | Use |
-| --- | --- | --- | --- | --- | --- | --- |
-| Display XL | IBM Plex Sans | 56px | 600 | 1.08 | -2.0px | Largest hero headline |
-| Display LG | IBM Plex Sans | 40px | 600 | 1.12 | -1.4px | Section opener headlines |
-| Display MD | IBM Plex Sans | 30px | 600 | 1.18 | -1.0px | Sub-section headlines |
-| Headline | IBM Plex Sans | 24px | 600 | 1.22 | -0.5px | Panel titles, CTA headings |
-| Title | IBM Plex Sans | 20px | 500 | 1.26 | -0.3px | Card titles |
-| Subhead | IBM Plex Sans | 18px | 400 | 1.40 | -0.2px | Lead paragraphs |
-| Body LG | IBM Plex Sans | 18px | 400 | 1.50 | -0.1px | Hero subhead |
-| Body | IBM Plex Sans | 16px | 400 | 1.50 | 0 | Default body |
-| Body SM | IBM Plex Sans | 14px | 400 | 1.50 | 0 | Card body, secondary |
-| Caption | IBM Plex Sans | 12px | 400 | 1.40 | 0 | Meta, captions |
-| Button | IBM Plex Sans | 14px | 500 | 1.20 | 0 | All button labels |
-| Eyebrow | IBM Plex Sans | 12px | 600 | 1.30 | +0.6px | Section eyebrow, uppercase |
-| Mono | system mono | 13px | 400 | 1.50 | 0 | Code, IDs |
+| Role | Face | Size | Weight | Tracking | Use |
+| --- | --- | --- | --- | --- | --- |
+| Greeting (desktop) | Instrument Sans | 54px | 600 | -0.045em | Home greeting |
+| Settings title | Instrument Sans | 44px | 600 | -0.045em | "Settings." |
+| Display | Instrument Sans | 34px | 600 | -0.04em | Generic `.display` |
+| Greeting (phone) | Instrument Sans | 29px | 600 | -0.04em | Library greeting |
+| Headline | Instrument Sans | 26px | 600 | -0.03 to -0.035em | Wall shelves, `.h1` |
+| Section | Instrument Sans | 18-22px | 600 | -0.02 to -0.03em | Settings sections, phone shelves |
+| Card title | Instrument Sans | 16.5-19px | 600 | -0.02 to -0.025em | Tiles |
+| Capture heading | Instrument Sans | 21px | 600 | -0.03em | "Keep something." |
+| Body | IBM Plex Sans | 16px | 400 | 0 | Reading, fields |
+| Body SM | IBM Plex Sans | 14px | 400 | 0 | Tile excerpts, tabs |
+| Caption | IBM Plex Sans | 12-13px | 400 | 0 | Meta, counts, the date line |
+| Button | IBM Plex Sans | 14-15px | 500-600 | 0 | Buttons |
+| Mono | system mono | 11-13px | 400-500 | 0 | Keycaps, hotkeys |
 
 ### Principles
 
-- Aggressive negative tracking on display, scaling with size. Body holds at zero.
-- Display at weight 600. Body at 400. Buttons at 500. Never 700 on display.
-- Eyebrow uses positive tracking and uppercase, to mark it as taxonomy against the negative-tracked display.
-- Mono only in code and ID contexts, never in marketing chrome.
+- Display tracking is tight and scales with size: about -0.045em at 44px and above, -0.02em at card size.
+- Headings are sentence case. No uppercase shelf labels, no eyebrows above headings.
+- The greeting's last word and its period are in the accent: "Think about winding **down.**"
+- A small date line sits above the greeting ("Sunday, September 27"), in caption mute ink.
 
 ## 4. Spacing
 
-Base unit 4px.
-
-- `xxs` 4px
-- `xs` 8px
-- `sm` 12px
-- `md` 16px
-- `lg` 24px
-- `xl` 32px
-- `xxl` 48px
-- `section` 96px
-
-Card interior padding is `lg` 24px on feature cards, `xl` 32px on testimonial or hero cards.
-Button padding is 8px vertical, 14px horizontal.
-Input padding is 8px vertical, 12px horizontal.
+Base unit 4px: `4, 8, 12, 16, 24, 32, 48, 96` (`--sp-1` to `--sp-7`, `--sp-section`).
+Tiles pad 14-16px; settings groups 24px; the capture card 14-16px; the phone gutter is 16px.
 
 ## 5. Radius
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `xs` | 4px | Small chips, status dots |
-| `sm` | 6px | Inline tags |
-| `md` | 8px | Buttons, form inputs |
-| `lg` | 12px | Cards, panels |
-| `xl` | 16px | Large product panels, modals |
-| `pill` | 9999px | Status pills, tab toggles only |
-
-Buttons use 8px corners.
-Never pill-round a button.
-Cards use 12px.
-Status badges use pill.
+| `--r-sm` | 6px | Keycaps, small thumbnails |
+| `--r-md` | 8px | Legacy small controls |
+| `--r-lg` | 12px | Buttons, inputs, Keep |
+| `--r-xl` | 16px | Search, list rows, the capture field, event log |
+| `--r-2xl` | 20px | Settings groups, dialogs, the reading pane |
+| tiles | 18px | Wall tiles (desktop and phone) |
+| sheets | 22-28px | The capture overlay card (22px), the phone capture sheet top (28px) |
+| `--r-full` | pill | The capture pill, tag chips, status badges |
 
 ## 6. Elevation
 
-Depth comes from the surface ladder plus hairline borders plus whisper shadows.
-Shadows are cool and low-opacity, never dramatic.
+Depth is the surface ladder plus violet-tinted, layered shadows.
+A shadow always has an offset and a soft fall-off; there are no grey halos and no zero-offset glows.
 
-| Level | Treatment | Use |
+| Token | Value | Use |
 | --- | --- | --- |
-| 0 flat | No shadow, no border | Body text, hero text |
-| 1 lift | Surface 1 on canvas, 1px line border | Default cards, panels, inputs |
-| 2 lift | Surface 2 on canvas, 1px line-strong border | Hovered cards, featured tiles |
-| 3 lift | Surface 3 on canvas, 1px line border | Pressed wells, recessed areas |
-| 4 focus | 2px lavender-focus outline at 50% opacity | Focused input, focused button |
+| `--hairline` | `inset 0 0 0 1px var(--line)` | A tile's resting edge |
+| `--shadow-micro` | `0 1px 2px rgba(43,11,74,.06)` | Small raised controls |
+| `--shadow-card` | contact + `0 12px 32px -14px rgba(43,11,74,.3)` | A hovered tile |
+| `--shadow-lifted` | contact + `0 28px 64px -20px rgba(43,11,74,.4)` | Menus, dialogs, drawers, the capture card |
+| `--shadow-field` | contact + `0 10px 30px -12px rgba(96,7,159,.3)` | A field floating on the ground (search, focused inputs) |
 
-### Shadows
-
-- **Micro**: `rgba(16, 17, 20, 0.04) 0 1px 3px`.
-- **Card**: `rgba(16, 17, 20, 0.06) 0 4px 16px`.
-- **Lifted**: `rgba(16, 17, 20, 0.08) 0 8px 28px`.
-
-Use shadows sparingly.
-The surface ladder and hairlines carry most of the hierarchy.
-A lifted modal or a floating menu earns a `Lifted` shadow.
-A resting card earns at most a hairline, or a `Card` shadow if it must separate from a busy ground.
+Hover on a desktop tile: it turns white, takes `--shadow-card`, and rises 2px (no scale, so neighbours never shift; no rise under reduced motion).
+Focus on any field: a 2px accent ring at 45% plus `--shadow-field`.
 
 ## 7. Components
 
+### Wall tiles
+
+- `--surface` plate, `--hairline` edge, 18px radius, 14-16px padding.
+- Kind dot + kind word, then the title in Instrument Sans, a three-line excerpt, the relative time.
+- Pictorial tiles (image, PDF page, link preview picture) fill the tile; the title band fades up out of the plate instead of cutting across the picture with a hard edge.
+- Desktop: a bounded grid (5-up at the widest, stepping down). Phone: each shelf is one sideways-scrolling rail of 168px square tiles that snaps to the content gutter, so Saved never scrolls away; the › expands a shelf into a grid.
+
+### Home header
+
+- Desktop: centred. Date line, then the raven tight against the greeting, then a 720px search, then the mode tabs.
+- Phone: left-aligned. The raven (86px) spans the date line and the greeting (29px).
+- The frozen desktop header sits on the flat canvas (full-bleed), and only its last 18px fade, below the tabs.
+
+### Search
+
+A white field floating on the ground: `--surface-2`, `--shadow-field`, 16px radius, 48px tall, a drawn magnifier, and the ⌘K keycap on desktop.
+
+### Mode tabs (Last touch / Type / Tags / Custom)
+
+Text tabs, not a segmented control: mute ink, the chosen one in ink at 500 with a 16x2px accent bar under it.
+
 ### Buttons
 
-**Primary (Lavender)**
-
-- Background `#5e6ad2`, text `#ffffff`.
-- Hover background `#828fff`. Pressed background `#5e69d1`.
-- Padding 8px 14px. Radius 8px. Weight 500.
-
-**Secondary (Surface)**
-
-- Background surface 1 `#f6f7f9`, text ink `#101114`. 1px line border.
-- Hover background surface 2.
-
-**Tertiary (Ghost)**
-
-- Background transparent, text ink.
-- Hover background surface 1.
-
-**Subtle (Lavender wash)**
-
-- Background lavender subtle `rgba(94, 106, 210, 0.12)`, text lavender `#5e6ad2`.
-- Hover deepens the wash.
-
-**Inverse (White)**
-
-- Background `#ffffff`, text ink, 1px line border.
-- For a white CTA on a lavender or surface-2 banner.
-
-**Danger**
-
-- Background `#b4332b`, text `#ffffff`.
-- Hover a shade darker.
-
-### Badges
-
-- **Success**: fill `rgba(20, 158, 97, 0.16)`, text `#026b3f`, radius pill, padding 2px 8px.
-- **Neutral**: fill `rgba(104, 107, 130, 0.12)`, text `#4d5061`, radius 8px.
-- **Lavender**: fill lavender subtle, text `#5e6ad2`, radius pill. For brand or status emphasis.
-- **Danger**: fill `rgba(180, 51, 43, 0.14)`, text `#7a241c`, radius pill.
-
-### Cards
-
-- Background surface 1, text ink, radius 12px, padding 24px, 1px line border.
-- Featured or hovered card lifts to surface 2 with a line-strong border.
-- Large product or screenshot panel uses radius 16px.
+- **Primary**: violet fill, white ink, 12px radius, a soft violet drop shadow. Hover `#7a1fc0`, pressed `#4a0578`.
+- **Secondary**: a white plate with `--hairline` + micro shadow.
+- **Tertiary / ghost**: transparent, `--line-soft` on hover.
+- **Danger**: `--danger` fill, white ink.
+- **Icon**: a `--line-soft` plate that turns white on hover.
 
 ### Inputs
 
-- Background surface 1, text ink, radius 8px, padding 8px 12px, 1px line-strong border.
-- Focused state keeps the surface. The focus ring is a 2px lavender-focus outline at 50% opacity.
-- Placeholder text uses ink faint.
+White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture fields); focus adds the 2px accent ring and `--shadow-field`. Placeholder in `--ink-faint`.
 
-### Status pills
+### Settings
 
-- Background surface 2, text ink muted, radius pill, padding 2px 8px, caption type.
+- Title lockup: the living raven eye tight against "Settings." (44px).
+- A 196px sidebar of sections (the active one a white plate with an accent dot), beside a pane of titled tiles; below 820px the sidebar folds into a scrolling row.
+- Section names are headings in the display face; the pane does not repeat the section title.
+- Toggles: an OFF recessed violet track ringed in `--line-strong`, an ON violet track, a white bead.
+- On the phone, settings are managed by the desktop and read-only.
 
-### Navigation
+### The capture pill
 
-- Top nav: canvas background, ink text, body-sm type, 56px height.
-- Footer: canvas background, ink subtle text, caption type, 64px 32px padding.
+- One icon system: three equal 46px circles. Capture is the one solid violet disc (24px plus, 2.25px stroke); ask and settings sit on soft lavender discs of the same size (the accent at 8%), as line icons in `--text-dim` (the eye 30px, the gear 26px, about a 1.5px line), so all three carry equal weight.
+- On desktop (capture, ask, settings; Home + ask inside an artifact; search lives in the header and on ⌘K) and phone (capture, ask, settings) alike, the ask eye is drawn in that same line (an almond and three lashes), with a violet iris in a clipped socket that still follows the cursor (desktop) or glances on its own (phone), constricts on tap and blinks. It is not the `eye-only.png` art, whose thick black outline outweighed everything around it.
+- Glass: the canvas tinted toward white (`color-mix(--bg 62%, white 70%)`), 20px backdrop blur, a white inner rim and a violet hairline ring, so the edge holds even over white tiles; a violet drop shadow.
+- Pressed: the lavender disc deepens to 14% and squashes to 0.94. No outlines anywhere.
+
+### Quick capture (desktop overlay)
+
+- A 640x320 transparent window holding a 22px-radius card on the canvas, so the card's `--shadow-lifted` falls inside the window instead of being clipped into a box.
+- Header (the drag handle): the raven tight against "Keep something." centred.
+- A white field plate (the one pure-white thing on the card); focus adds the accent ring and `--shadow-field`.
+- Footer: a tonal kind chip (dot + "link · psyche.co"), the key hints (↵ keep, ⇧↵ new line, esc close), and the violet Keep.
+- On a keep, the card leaves and the raven flies across the app you were in (CAP2.2).
+
+### Quick capture (phone sheet)
+
+- A bottom sheet over the blurred, dimmed library: grab handle, the raven + "Keep something.", a white field, Photo and Camera beside Keep.
+- It follows the visual viewport, so the keyboard never covers it.
+- Opened from the pill's "Note" and from the launcher shortcut (long-press the app icon, "Quick capture"). From the shortcut, a keep or a dismiss hands the phone back to the app the person was in.
+
+### Dialogs, menus, drawers, toasts
+
+`--surface-doc` with `--shadow-lifted`, 16-20px radius, no border. Scrims are violet-black (`rgba(33, 10, 56, 0.34-0.4)`), never grey.
+
+### Personality
+
+- **The ask eye has moods** (`js/eyemood.js`, shared by desktop and phone). It follows you anywhere (the cursor on desktop, your finger on the phone), blinks, and drifts into a lazy eye every 9 to 16 seconds. It approves a keep with one slow blink, squints and darts while search thinks then opens wide on results, startles when something new arrives, looks away and shuts while the vault is open, dozes after a minute of nothing and wakes with a start, and winces and looks away when poked three times. The iris is one flat violet disc, big enough to stare with white left around it. Reduced motion gets a still eye.
+- **The ground drifts with the day** (`js/ground.js`): night `#ddd1ec`, dawn `#f2e9f2`, day `#eee8f6`, dusk `#ebe0f0`, evening `#e4d9f0`, interpolated by the minute. Only the ground ladder moves (`--bg`, and `--surface`, `--surface-doc`, `--surface-3` derived from it); inks and the accent stay. `bin/check-contrast` re-checks every rule on the night ladder. On Android the status and navigation bar strips follow it through the `EnqueueAndroid.setGround` bridge.
+- **The greetings have a voice**: the raven that keeps your things, cheeky and a little too observant ("Up before the worms", "I've been counting your tabs", "It's just us now"). `greeting.py` is the source; the phone mirrors the lists. The phrase's own ending ("Still up?") or a period is the accent mark.
 
 ## 8. Do's and Don'ts
 
 ### Do
 
-- Reserve lavender for the primary CTA, focus ring, link emphasis, and chips.
-- Reserve the bold brand-mark purple `#60079f` for the mark's own moments only (the raven eye, the home header wash, the capture disc and Keep button, the greeting period).
-- Use the surface ladder for hierarchy. Avoid skipping levels.
-- Apply negative letter-spacing aggressively on display.
-- Pair display weight 600 with body weight 400.
-- Compose buttons at 8px corners and cards at 12px.
-- Let hairline borders and the surface ladder carry depth before reaching for a shadow.
+- Build depth from the ladder (canvas → tile → white) and violet shadows.
+- Draw a tile's edge with `--hairline`, a divider with `--line-soft`.
+- Put the raven tight against its heading.
+- Keep headings sentence case in Instrument Sans with tight tracking.
+- Let violet be the single accent, and keep it for instructions, focus, links, and the brand's own marks.
 
 ### Don't
 
-- Don't use lavender as a section background or a card fill.
-- Don't introduce a chromatic accent beyond the two sanctioned here: the lavender UI accent and the one scoped brand-mark purple `#60079f`. No third.
-- Don't spread the bold purple `#60079f` into ordinary controls (buttons, focus rings, links) - it is the mark's saturation, not a UI accent.
-- Don't pill-round buttons.
-- Don't use true black `#000000` for text. Use ink `#101114`.
-- Don't add atmospheric gradients or spotlight cards - with one sanctioned exception: the home header's single low-opacity brand-mark purple wash fading to the canvas. No other gradients.
-- Don't use the loud Kraken blue-purple `#7132f5` (distinct from the accent violet `#60079f`). The accent is `#60079f`.
-- Don't combine multiple bright accents in one view.
+- Don't draw grey 1px borders around surfaces. A border that is a solid line is the old system.
+- Don't use a gradient for the ground. The canvas is flat; the only fades are functional (the header's last 18px, a pictorial tile's title band).
+- Don't use grey shadows or zero-offset glows.
+- Don't uppercase headings or add eyebrows above them.
+- Don't introduce a second accent colour, and don't use the loud Kraken blue-purple `#7132f5`.
+- Don't use true black `#000000` for text.
 
 ## 9. Responsive
 
 ### Breakpoints
 
-| Name | Width | Key changes |
-| --- | --- | --- |
-| Desktop XL | 1440px | Default layout |
-| Desktop | 1280px | Card grid 3-up |
-| Tablet | 1024px | Card grid 3-up to 2-up |
-| Mobile LG | 768px | Nav collapses, grids 1-up |
-| Mobile | 480px | Single column, display scales down |
+| Width | Change |
+| --- | --- |
+| > 1280px | Wall 5-up |
+| ≤ 1280px | Wall 4-up, tiles back to 16px padding |
+| ≤ 1024px | Wall 3-up |
+| ≤ 820px | Settings sidebar folds into a scrolling row |
+| ≤ 768px | Wall 2-up, greeting steps down |
+| ≤ 480px | Wall 1-up |
 
 ### Touch
 
-- CTAs hold at least 40px tap height.
-- Inputs hold at least 44px tap target on touch.
-- Pills hold at least 36px tap height, grown to 44px on touch.
-
-### Collapse
-
-- Top nav links collapse to a menu below 768px.
-- Card grids go 3-up at 1024px, 2-up below that, 1-up below 768px.
-- Display XL 56px scales toward Display MD 30px on mobile.
+Every tap target is at least 40px (44px on the pill); inputs are 16px text so the WebView never zooms on focus.
 
 ### The Android app (`mobile.html`)
 
-The mobile app is the same light canvas and type, laid out for one thumb:
-
-- A single-column list, newest first, under `SAVED` / `EVERYTHING ELSE` shelf headers. No card grid - full-width rows (kind dot, title, snippet, timestamp), each opening a read-only Reader.
-- A floating bottom pill (safe-area padded) mirrors the desktop pill: the primary capture button in `--purple-bold`, search, the living raven eye (the ask surface, reuses `makeEye`), and a menu. This supersedes any "bottom bar."
-- The capture success plays the raven moment - the ANIM.4 left-to-centre flight, or a fade under `prefers-reduced-motion`.
-- Reader surfaces: note markdown, image (pinch-zoom), the stored link-preview card, and PDF (vendored pdf.js). Read-only, annotations below the content. AI-derived data that has not synced is absent quietly - never a placeholder.
+Shares `tokens.css` with the desktop, so the ground, inks, hairlines, shadows and faces are identical.
+The Android status bar and navigation bar are reserved by `MainActivity` (system-bar insets); the page adds `env(safe-area-inset-*)` on top only for a display cutout.
 
 ## 10. Token summary
 
 ```
---canvas:        #ffffff
---surface-1:     #f6f7f9
---surface-2:     #eef0f3
---surface-3:     #e4e6eb
+--bg:          #eee8f6    --surface:   #f8f5fb    --surface-doc: #fbf9fd
+--surface-2:   #ffffff    --surface-3: #e3d9ef
 
---lavender:      #60079f
---lavender-hover:#828fff
---lavender-focus:#5e69d1
---lavender-deep: #4a51a8
---lavender-subtle: rgba(94, 106, 210, 0.12)
---on-lavender:   #ffffff
+--text:        #120f19    --text-dim:  #433e57    --text-mute:   #5a546e
+--ink-faint:   #5a546e
 
---purple-bold:       #60079f
---purple-bold-hover: #7a1fc0
---purple-bold-wash:  rgba(96, 7, 159, 0.1)
---on-purple-bold:    #ffffff
+--accent / --purple-bold:   #60079f
+--lavender-focus / hover:   #7a1fc0
+--lavender-deep:            #4a0578
+--lavender-subtle:          rgba(96, 7, 159, 0.12)
 
---ink:           #101114
---ink-muted:     #4d5061
---ink-subtle:    #686b82
---ink-faint:     #9497a9
+--line:        rgba(58, 13, 99, 0.12)
+--line-soft:   rgba(58, 13, 99, 0.07)
+--line-strong: #7a7291
 
---line:          #dedee5
---line-strong:   #c4c6d0
---line-soft:     #eceef2
+--danger: #a3291f   --success: #0f8453   --warning: #a4650e   --info: #325f9f
 
---success:       #149e61
---danger:        #b4332b
---warning:       #c47d1f
---info:          #3b6bb5
---code-ink:      #0a5270
+--hairline:      inset 0 0 0 1px var(--line)
+--shadow-micro:  0 1px 2px rgba(43, 11, 74, 0.06)
+--shadow-card:   0 1px 2px rgba(43, 11, 74, 0.06), 0 12px 32px -14px rgba(43, 11, 74, 0.3)
+--shadow-lifted: 0 2px 6px rgba(43, 11, 74, 0.06), 0 28px 64px -20px rgba(43, 11, 74, 0.4)
+--shadow-field:  0 1px 2px rgba(43, 11, 74, 0.06), 0 10px 30px -12px rgba(96, 7, 159, 0.3)
 
---r-xs:  4px
---r-sm:  6px
---r-md:  8px
---r-lg:  12px
---r-xl:  16px
---r-pill: 9999px
+--r-sm 6  --r-md 8  --r-lg 12  --r-xl 16  --r-2xl 20  --r-full 9999
 
---sp-xxs: 4px
---sp-xs:  8px
---sp-sm:  12px
---sp-md:  16px
---sp-lg:  24px
---sp-xl:  32px
---sp-xxl: 48px
---sp-section: 96px
-
---shadow-micro:  0 1px 3px rgba(16, 17, 20, 0.04)
---shadow-card:   0 4px 16px rgba(16, 17, 20, 0.06)
---shadow-lifted: 0 8px 28px rgba(16, 17, 20, 0.08)
-
---font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif
---font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace
+--display: "Instrument Sans", "IBM Plex Sans", system-ui, -apple-system, sans-serif
+--sans:    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif
+--mono:    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace
 ```
+
+`static/css/tokens.css` is the source of truth; `capture.html` copies the subset it uses, and `bin/check-contrast` fails on any drift between the two and on any ink or boundary below its WCAG tier (washes are composited over the lavender canvas, not white).
 
 ## 11. Provenance
 
-This system descends from Kraken's marketing surface, restrained.
-The following table records what was carried over and what was deliberately toned down, so the lineage stays legible.
-
-| From Kraken | Decision | Result here |
+| Earlier system | Decision | Now |
 | --- | --- | --- |
-| Purple scale `#7132f5` / `#5741d8` / `#5b1ecf` | Restrained | Muted lavender `#5e6ad2`, used scarcely |
-| White canvas, professional calm | Kept | Light-only canvas, cool tint |
-| Near-black text `#101114` | Kept | Ink `#101114`, never true black |
-| Green success `#149e61`, badge text `#026b3f` | Kept | Success token and badge treatment |
-| Whisper shadows (`rgba(0,0,0,0.03) 0 4px 24px`) | Kept, cooled | Cool low-opacity Micro/Card/Lifted shadows |
-| 12px-max button radius, no pill | Kept as discipline | Buttons at 8px, never pilled |
-| Kraken-Brand / Kraken-Product dual font | Restrained | One family (IBM Plex Sans) across display and body |
-| Bold 700 display, negative tracking | Softened | Display at 600, aggressive negative tracking |
-| Ad-hoc spacing (13px, 15px, 25px) | Replaced | Clean 4px-base scale |
+| White canvas `#ffffff` | Replaced | Flat lavender ground `#eee8f6` |
+| Grey 1px borders on every surface | Removed | Violet inset hairline, violet layered shadows |
+| Home header purple gradient wash | Removed | Flat full-bleed ground, a short functional fade |
+| Uppercase shelf labels | Removed | Sentence-case display headings |
+| Segmented pill mode switcher | Replaced | Text tabs with an accent bar |
+| IBM Plex for everything | Split | Instrument Sans display, Plex body |
+| Bordered capture card with a tiny disc | Replaced | Raven + "Keep something." header, white field, key hints |
+| Full-screen phone capture page | Replaced | Bottom sheet, plus the launcher long-press shortcut |
+| Bold violet `#60079f` accent | Kept | Still the single accent |
+| The raven, the living eye, IBM Plex body, the layout | Kept | Unchanged in behaviour |

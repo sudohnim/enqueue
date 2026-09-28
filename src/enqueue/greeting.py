@@ -18,9 +18,9 @@ by the date and hour, so it is stable within the hour and changes on the turn of
 each one. For any given hour the pool is that hour's bucket plus the generic
 bucket, so a generic phrase can surface at any time of day.
 
-Fill the buckets in. Each starts with its plain "Good morning / afternoon /
-evening" leader so the wall reads right out of the box; add as many phrases as
-you like under each and they enter the rotation automatically.
+Add as many phrases as you like under each bucket and they enter the rotation
+automatically. Each bucket's first phrase is its leader, the fallback shown when
+nothing else has answered yet.
 """
 
 from __future__ import annotations
@@ -28,20 +28,63 @@ from __future__ import annotations
 import random
 from datetime import datetime
 
+# The voice is the raven that keeps your things: cheeky, a bit smug, and slightly
+# too observant. The wall renders the last word in the accent, so each phrase is
+# written to land its punchline there. The first phrase in each bucket is its
+# leader: the fallback shown before the rotation answers.
+
 # 6AM to noon
-MORNING = ["Good morning", "Top of the morning to ya, guv'nah", "Rise and grind"]
+MORNING = [
+    "Up before the worms",
+    "Top of the morning to ya, guv'nah",
+    "Rise and grind",
+    "Coffee first, then hoarding",
+    "I didn't sleep. Did you?",
+    "Early bird gets the link",
+    "Morning, shiny hunter",
+]
 
 # noon to 6PM
-AFTERNOON = ["Good afternoon", "Afternoon, guv'nah"]
-
+AFTERNOON = [
+    "Afternoon, guv'nah",
+    "Bring me something shiny",
+    "Post-lunch slump detected",
+    "Still hunting?",
+    "Another tab? Go on then",
+    "I've been counting your tabs",
+]
 
 # 6PM to midnight
-EVENING = ["Good evening", "Think about winding down", "Evening, guv'nah"]
+EVENING = [
+    "Think about winding down",
+    "Evening, guv'nah",
+    "Dusk. My favourite",
+    "One more link, then bed",
+    "Today's haul, all tucked in",
+    "The good hoarding hours",
+]
 
 # midnight to 6AM
-NIGHT = ["Still up?", "Quite the insomniac", "Night owl time"]
+NIGHT = [
+    "Still up?",
+    "Quite the insomniac",
+    "Night owl time",
+    "It's just us now",
+    "I see you",
+    "Ravens don't sleep either",
+    "Shouldn't you be in bed?",
+]
 
-GENERIC = ["Welcome back", "LFGGGGGGG"]
+# any hour
+GENERIC = [
+    "LFGGGGGGG",
+    "Back again?",
+    "I kept your seat warm",
+    "Nothing left behind",
+    "Caw",
+    "Missed you",
+    "I was watching",
+]
 
 _BUCKETS = {
     "morning": MORNING,

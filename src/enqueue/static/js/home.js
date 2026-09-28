@@ -96,8 +96,8 @@ function wallBodyHtml() {
 	// collapsible .wallgroup sections the Type/Tags modes use, so the header
 	// control (toggle + count + chevron) reads identically across modes.
 	const sections = [];
-	if (wallKept.length) sections.push(["SAVED", wallKept, true]);
-	sections.push(["EVERYTHING ELSE", wallFirst, false]);
+	if (wallKept.length) sections.push(["Saved", wallKept, true]);
+	sections.push(["Everything else", wallFirst, false]);
 	return wallSectionsHtml(sections);
 }
 
@@ -521,7 +521,12 @@ async function refreshIfStale() {
 		);
 		if (!peek) return;
 		const stamp = peek.total + ":" + ((peek.items[0] || {}).id || "");
-		if (stamp !== wallStamp) home({ keepScroll: true });
+		if (stamp !== wallStamp) {
+			// Something new arrived while you were away: the eye startles.
+			const before = wallStamp ? parseInt(wallStamp, 10) : null;
+			await home({ keepScroll: true });
+			if (window.eyeMood && before !== null && peek.total > before) eyeMood.play("startle");
+		}
 		return;
 	}
 	if (pivotState && pivotState.pivot_id) {
@@ -698,13 +703,15 @@ async function home(opts) {
 		// One short line points at the capture pill already on screen; no second button.
 		const hour = new Date().getHours();
 		const fallback =
-			hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+			greetingLeader(hour);
 		view.innerHTML =
-			'<div class="homehead"><div class="greetline">' +
+			'<div class="homehead">' +
+			greetDateHtml() +
+			'<div class="greetline">' +
 			'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
 			'<h1 class="display greeting">' +
-			fallback +
-			'<span class="greet-mark">.</span></h1>' +
+			greetingInner(fallback) +
+			"</h1>" +
 			"</div>" +
 			'<div class="state">Nothing here yet. Just add your artifacts.</div>' +
 			"</div>";
@@ -717,9 +724,10 @@ async function home(opts) {
 	// accessibility tree; the phrase says everything.
 	const hour = new Date().getHours();
 	const fallback =
-		hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+		greetingLeader(hour);
 	let html =
 		'<div class="homehead">' +
+		greetDateHtml() +
 		'<div class="greetline">' +
 		// O.3: the eyeball PNG is split into a frame (the socket: outline, lashes,
 		// ground) and a small pupil image (only the purple iris, transparent
@@ -731,8 +739,8 @@ async function home(opts) {
 		// accessibility tree; the greeting phrase carries the meaning.
 		'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
 		'<h1 class="display greeting">' +
-		fallback +
-		'<span class="greet-mark">.</span></h1>' +
+		greetingInner(fallback) +
+		"</h1>" +
 		"</div>" +
 		'<div class="searchbar">' +
 		'<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -802,6 +810,47 @@ async function home(opts) {
 	else if (wasReading) window.scrollTo(0, 0);
 }
 
+// The phrase on screen before /greeting answers: each daypart's leader, on the same
+// windows as greeting.py (morning 6-12, afternoon 12-18, evening 18-24, night 0-6).
+function greetingLeader(hour) {
+	if (hour >= 6 && hour < 12) return "Up before the worms";
+	if (hour >= 12 && hour < 18) return "Afternoon, guv'nah";
+	if (hour >= 18) return "Think about winding down";
+	return "Still up?";
+}
+
+// The greeting's inner markup: the phrase with its last word in the accent and
+// the accent mark after it, so the time-of-day line ends on the raven's colour. The
+// mark is the phrase's own ending ("Still up?") or a period when it has none. A
+// one-word phrase is all accent. The text is escaped by construction (esc).
+function greetingInner(text) {
+	const raw = String(text || "").trim();
+	const end = (raw.match(/[.?!]+$/) || ["."])[0];
+	const words = raw.slice(0, raw.length - (/[.?!]+$/.test(raw) ? end.length : 0)).split(/\s+/);
+	const last = words.pop() || "";
+	const lead = words.length ? esc(words.join(" ")) + " " : "";
+	return (
+		'<span class="greet-lead">' +
+		lead +
+		'</span><span class="greet-last">' +
+		esc(last) +
+		'</span><span class="greet-mark">' +
+		esc(end) +
+		"</span>"
+	);
+}
+
+// The small date line above the greeting ("Sunday, September 27"): it anchors the
+// time-of-day phrase to today, the way a journal page does.
+function greetDateHtml() {
+	const d = new Date().toLocaleDateString(undefined, {
+		weekday: "long",
+		month: "long",
+		day: "numeric",
+	});
+	return '<div class="greet-date">' + esc(d) + "</div>";
+}
+
 // The greeting is hardcoded and picked by the clock: the engine answers
 // without a model call and the time-based fallback is already on screen, so
 // this is a quiet swap, never a wait. Fetched once per home render.
@@ -811,11 +860,10 @@ async function refreshGreeting() {
 	try {
 		const r = await api("/greeting");
 		if (!r || !r.text) return;
-		// The phrase is the h1's first text node; the P.7 lavender period rides
-		// in a trailing span, so swapping only the text node keeps the mark.
-		const phrase = el.firstChild ? el.firstChild.nodeValue : el.textContent;
-		if (r.text !== phrase) {
-			el.firstChild.nodeValue = r.text;
+		// Compare without the trailing mark (the accent ending is added on render).
+		const bare = (t) => String(t).trim().replace(/[.?!]+$/, "");
+		if (bare(r.text) !== bare(el.textContent)) {
+			el.innerHTML = greetingInner(r.text);
 			el.classList.remove("swap");
 			void el.offsetWidth;
 			el.classList.add("swap");

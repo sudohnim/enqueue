@@ -19,7 +19,7 @@ function closeMenu(restoreFocus) {
 // The first slot changes with where you are. On the wall it captures, because that is
 // the only thing you can do to a wall. Inside an object there is nowhere to put a new
 // capture yet and the thing you actually want is out, so it becomes the way out.
-// Search and ask never move: they mean the same thing on every surface.
+// Ask never moves: it means the same thing on every surface.
 let place = "wall";
 
 function restorePill(where) {
@@ -28,9 +28,9 @@ function restorePill(where) {
 	pill.classList.remove("wide");
 	const inside = place === "inside";
 
-	// Wall: Plus + Search + Eye (chat) + Settings. Saved groupings moved into
-	// the wall's grouping selector (K.6), so the pill no longer carries a grid
-	// button.
+	// Wall: Plus + Eye (chat) + Settings. Search lives in the home header (and
+	// on Cmd+K), so the pill does not repeat it. Saved groupings moved into the
+	// wall's grouping selector (K.6), so the pill carries no grid button either.
 	// Inside: Back + Eye (context-aware).
 	let html = "";
 	if (inside) {
@@ -54,9 +54,6 @@ function restorePill(where) {
 			'<span class="disc">' +
 			svg("plus") +
 			"</span></button>" +
-			'<button class="round" aria-label="Search" onclick="openField(\'search\')">' +
-			svg("find") +
-			"</button>" +
 			'<button class="round" aria-label="Chat with AI" onclick="openEye()">' +
 			'<span class="pill-eye eye" id="pillEye"></span>' +
 			"</button>" +
@@ -199,6 +196,14 @@ function openField(mode) {
 document.addEventListener("keydown", (e) => {
 	if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
 	e.preventDefault();
+	// The home header's search (it wears the Cmd+K keycap) is the search; the pill
+	// field is only the fallback on screens without it.
+	const hs = document.getElementById("homesearch");
+	if (hs) {
+		hs.focus();
+		hs.select();
+		return;
+	}
 	openField("search");
 });
 

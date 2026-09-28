@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the launcher icon -> "Quick capture". Opens MainActivity with the
+     QUICK_CAPTURE action; the WebView reads it over the EnqueueAndroid bridge and
+     opens the capture sheet straight away. After a keep (or a dismiss) the task is
+     moved to the back, so the person lands where they were, not in the library. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quick_capture"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_quick_capture_short"
+        android:shortcutLongLabel="@string/shortcut_quick_capture_long">
+        <intent
+            android:action="com.sudohnim.enqueue.QUICK_CAPTURE"
+            android:targetPackage="com.sudohnim.enqueue"
+            android:targetClass="com.sudohnim.enqueue.MainActivity" />
+    </shortcut>
+</shortcuts>

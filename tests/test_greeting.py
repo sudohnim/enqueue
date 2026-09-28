@@ -25,9 +25,9 @@ def test_daypart_windows():
 
 
 def test_fallback_is_the_bucket_leader():
-    assert greeting.fallback(datetime(2025, 1, 1, 9)) == "Good morning"
-    assert greeting.fallback(datetime(2025, 1, 1, 14)) == "Good afternoon"
-    assert greeting.fallback(datetime(2025, 1, 1, 20)) == "Good evening"
+    assert greeting.fallback(datetime(2025, 1, 1, 9)) == "Up before the worms"
+    assert greeting.fallback(datetime(2025, 1, 1, 14)) == "Afternoon, guv'nah"
+    assert greeting.fallback(datetime(2025, 1, 1, 20)) == "Think about winding down"
     assert greeting.fallback(datetime(2025, 1, 1, 2)) == "Still up?"
 
 
@@ -56,5 +56,13 @@ def test_get_returns_the_right_part_and_never_blocks():
 
 def test_pool_mixes_in_generic():
     pool = greeting._pool("morning")
-    assert "Good morning" in pool
+    assert "Up before the worms" in pool
     assert set(greeting.GENERIC).issubset(set(pool))
+
+
+def test_the_plain_greetings_are_gone():
+    # The greetings have a voice now; the generic hellos were retired on purpose.
+    every = greeting.MORNING + greeting.AFTERNOON + greeting.EVENING + greeting.NIGHT
+    every += greeting.GENERIC
+    for plain in ("Good morning", "Good afternoon", "Good evening", "Welcome back"):
+        assert plain not in every
