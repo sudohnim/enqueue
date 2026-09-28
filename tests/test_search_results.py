@@ -298,7 +298,7 @@ class TestTrigramRecall:
         sqlite_store.upsert_chunks()
 
         assert _trigram_query("to") == ""
-        assert sqlite_store._search_trigram(sqlite_store.CHUNKS, "to", 20) == []
+        assert sqlite_store.search_trigram(sqlite_store.CHUNKS, "to", 20) == []
         hits = search_results("to", limit=20)
         assert [h["artifact_id"] for h in hits] == ["a1"]
 

@@ -56,14 +56,28 @@ class OpenAICompatibleProvider:
     def __init__(self, model: str | None = None, base_url: str | None = None) -> None:
         self.model = model or config.LLM_MODEL
         self.base_url = base_url or config.OLLAMA_URL
-        self._client = instructor.from_openai(
-            OpenAI(
-                base_url=self.base_url,
-                api_key=config.llm_api_key(),
-                default_headers=_extra_headers(),
-            ),
-            mode=instructor.Mode.JSON,
-        )
+        self._instructor = None
+
+    @property
+    def _client(self):
+        """The instructor-wrapped client, built on first use.
+
+        Building it costs ~50 ms (an OpenAI + httpx client, and on macOS a Keychain
+        subprocess for the key), and many callers construct a provider only to read
+        `.model` - the search staleness checks do it on every query. Deferring the
+        build makes that read free. The key is still resolved once per provider, so
+        a key stored in Settings takes effect on the next provider, as before.
+        """
+        if self._instructor is None:
+            self._instructor = instructor.from_openai(
+                OpenAI(
+                    base_url=self.base_url,
+                    api_key=config.llm_api_key(),
+                    default_headers=_extra_headers(),
+                ),
+                mode=instructor.Mode.JSON,
+            )
+        return self._instructor
 
     def complete(
         self,

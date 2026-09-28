@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -376,7 +376,7 @@ def _rerank(q: str, fused: list[dict]) -> list[dict]:
     return [f for f, _ in ordered]
 
 
-def _fuzzy_ratio(query: str, candidate: str) -> float:
+def _fuzzy_ratio(query: str, candidate: str, floor: float = 0.0) -> float:
     """Best of whole-string and best-word-window similarity (R.7).
 
     One-edit typos ("copper" vs "chopper") score high on the whole string;
@@ -384,15 +384,41 @@ def _fuzzy_ratio(query: str, candidate: str) -> float:
     window ("growing food" inside "the technique of growing food without
     soil"). Windows slide by word, so the shorter text never has to align to
     word boundaries it does not have.
+
+    `floor` is the score below which the caller does not care about the exact
+    value. Each comparison first checks two cheap upper bounds on
+    `SequenceMatcher.ratio` (the length bound and the shared-character bound,
+    the same ones `real_quick_ratio`/`quick_ratio` compute) and skips the
+    quadratic match when the bound cannot reach `floor` or beat the best so
+    far. The result is exact whenever it is at or above `floor`; below it, it
+    is only guaranteed to stay below. The default floor of 0 is always exact.
     """
     ql, cl = query.lower(), candidate.lower()
-    best = SequenceMatcher(None, ql, cl).ratio()
+    q_len = len(ql)
+    q_chars = Counter(ql)
+    best = 0.0
+
+    def consider(text: str) -> None:
+        nonlocal best
+        total = q_len + len(text)
+        if not total:
+            best = max(best, 1.0)
+            return
+        bar = max(best, floor)
+        if 2.0 * min(q_len, len(text)) / total < bar:
+            return
+        shared = sum((q_chars & Counter(text)).values())
+        if 2.0 * shared / total < bar:
+            return
+        best = max(best, SequenceMatcher(None, ql, text).ratio())
+
+    consider(cl)
     q_words = ql.split()
     c_words = cl.split()
     n = len(q_words)
     if n and len(c_words) > n:
         for i in range(len(c_words) - n + 1):
-            best = max(best, SequenceMatcher(None, ql, " ".join(c_words[i : i + n])).ratio())
+            consider(" ".join(c_words[i : i + n]))
     return best
 
 
@@ -451,7 +477,7 @@ def _fuzzy_hits(query: str, limit: int) -> list[dict]:
 
 def _fuzzy_update(best: dict[str, tuple[float, str]], aid: str, text: str, q: str) -> None:
     """Record aid's best (ratio, matched-text) pair for a candidate string."""
-    ratio = _fuzzy_ratio(q, text)
+    ratio = _fuzzy_ratio(q, text, floor=FUZZY_RATIO)
     if ratio >= FUZZY_RATIO and (aid not in best or ratio > best[aid][0]):
         best[aid] = (ratio, text)
 
@@ -969,9 +995,16 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     # from enough chunk, facet, and entity hits to rank fairly.
     per_query = limit * 3
     prefetch = max(100, limit * 5)
-    chunk_hits = store.search(store.CHUNKS, q, limit=per_query, prefetch=prefetch)
-    facet_hits = store.search(store.FACETS, q, limit=per_query, prefetch=prefetch)
-    entity_hits = store.search(store.ENTITIES, q, limit=per_query, prefetch=prefetch)
+    # One pass per collection returns both the fused ranking and the raw legs
+    # it was fused from, so the floor below reads the legs without running
+    # every dense knn and FTS query a second time.
+    legs = {
+        name: store.search_legs(name, q, limit=per_query, prefetch=prefetch)
+        for name in (store.CHUNKS, store.FACETS, store.ENTITIES)
+    }
+    chunk_hits = legs[store.CHUNKS]["fused"]
+    facet_hits = legs[store.FACETS]["fused"]
+    entity_hits = legs[store.ENTITIES]["fused"]
 
     # Q.2: per-leg signal at the fusion point. The relevance floor (Q.3) judges
     # raw legs, not the fused RRF score - a real query has at least one strong
@@ -985,9 +1018,9 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     # dict.
     #
     # `chunk_hits` etc. carry the FUSED RRF score, not raw cosine similarity;
-    # we ask the store directly for the dense leg so the floor can read the
-    # actual nearest-neighbor distance for each artifact. Same query budget
-    # as R.6's recall net - one extra sqlite-vec knn per call.
+    # the raw dense leg from `search_legs` gives the floor the actual
+    # nearest-neighbor similarity for each artifact. The legs span the wider
+    # `prefetch` window; the floor reads only their top `per_query` hits.
     #
     # Lexical legs are scored separately so a dense-only match (no keyword /
     # facet / entity hit) does not count as lexical. The fused
@@ -996,13 +1029,11 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     # make the Q.3 floor useless.
     dense_sims: dict[str, float] = {}
     lexical_aids: set[str] = set()
-    dense_chunk_hits = store.search_dense(store.CHUNKS, q, limit=per_query)
-    for hit in dense_chunk_hits:
+    for hit in legs[store.CHUNKS]["dense"][:per_query]:
         aid = hit["artifact_id"]
         if hit["score"] > dense_sims.get(aid, 0.0):
             dense_sims[aid] = hit["score"]
-    keyword_chunk_hits = store.search_keyword(store.CHUNKS, q, limit=per_query)
-    for hit in keyword_chunk_hits:
+    for hit in legs[store.CHUNKS]["keyword"][:per_query]:
         lexical_aids.add(hit["artifact_id"])
     # Q.7 (Minh's DECISION): the trigram leg stays a RECALL leg, not a
     # lexical bypass. Trigram matches 3-character substrings - "pie" finds
@@ -1026,16 +1057,12 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     # dense branch feeds `dense_sims` - a dense-only facet/entity hit
     # carries its own best cosine and faces the two-tier gate exactly like
     # a chunk dense hit.
-    for dense_hits in (
-        store.search_dense(store.FACETS, q, limit=per_query),
-        store.search_dense(store.ENTITIES, q, limit=per_query),
-    ):
-        for hit in dense_hits:
+    for name in (store.FACETS, store.ENTITIES):
+        for hit in legs[name]["dense"][:per_query]:
             aid = hit["artifact_id"]
             if hit["score"] > dense_sims.get(aid, 0.0):
                 dense_sims[aid] = hit["score"]
-    for name in (store.FACETS, store.ENTITIES):
-        for hit in store.search_keyword(name, q, limit=per_query):
+        for hit in legs[name]["keyword"][:per_query]:
             lexical_aids.add(hit["artifact_id"])
 
     conn = db.get_conn()

@@ -599,19 +599,9 @@ class SqliteVecStore(VectorStore):
         orthogonal vectors score 0.0, and two vectors more than a right angle
         apart (d > sqrt(2)) score 0.0 rather than a negative similarity.
         """
-        query = json.dumps(embed_one(text))
         conn = self._connect()
         try:
-            rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
-            ranked = [
-                (row["id"], max(0.0, min(1.0, 1.0 - (row["distance"] ** 2) / 2.0))) for row in rows
-            ]
-            return self._fetch_hits(conn, name, ranked)
-        except OperationalError:
-            # The vec0 table does not exist yet (an upgraded DB whose write
-            # path has not yet run, or a minimal test corpus). The dense leg
-            # is unavailable, so return no hits rather than failing the search.
-            return []
+            return self._dense(conn, name, text, limit)
         finally:
             conn.close()
 
@@ -623,7 +613,11 @@ class SqliteVecStore(VectorStore):
         Tolerates a missing keyword table (upgraded DB or minimal test
         corpus) by returning no hits rather than failing the search.
         """
-        return self._search_keyword(name, text, limit)
+        conn = self._connect()
+        try:
+            return self._keyword(conn, name, text, limit)
+        finally:
+            conn.close()
 
     def search_trigram(self, name: str, text: str, limit: int = 30) -> list[dict]:
         """FTS5 trigram only, public form. Same hit shape as `search`.
@@ -632,14 +626,37 @@ class SqliteVecStore(VectorStore):
         has not yet run, or a collection that does not build one) by
         returning no hits rather than failing the search.
         """
-        return self._search_trigram(name, text, limit)
+        conn = self._connect()
+        try:
+            return self._trigram(conn, name, text, limit)
+        finally:
+            conn.close()
 
-    def _search_keyword(self, name: str, text: str, limit: int) -> list[dict]:
+    # The three legs run on a caller-supplied connection, so one hybrid search
+    # opens one connection instead of one per leg. Opening a connection costs
+    # ~0.6 ms (schema load, WAL files, the sqlite-vec extension), which used to
+    # be a visible share of a search that opened a dozen of them.
+
+    def _dense(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
+        """The dense leg; see `search_dense` for the score scale."""
+        query = json.dumps(embed_one(text))
+        try:
+            rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
+            ranked = [
+                (row["id"], max(0.0, min(1.0, 1.0 - (row["distance"] ** 2) / 2.0))) for row in rows
+            ]
+            return self._fetch_hits(conn, name, ranked)
+        except OperationalError:
+            # The vec0 table does not exist yet (an upgraded DB whose write
+            # path has not yet run, or a minimal test corpus). The dense leg
+            # is unavailable, so return no hits rather than failing the search.
+            return []
+
+    def _keyword(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
         """FTS5 BM25 only, for the fusion inside `search`."""
         query = _fts_query(text)
         if not query:
             return []
-        conn = self._connect()
         try:
             rows = conn.execute(self._sql(name)["keyword"], (query, limit)).fetchall()
             # bm25() returns negative values, lower is better; flip so hits
@@ -651,33 +668,30 @@ class SqliteVecStore(VectorStore):
             # write path has not yet run, or a minimal test corpus). Treat
             # the leg as having no hits rather than failing the whole search.
             return []
-        finally:
-            conn.close()
 
-    def _search_trigram(self, name: str, text: str, limit: int) -> list[dict]:
+    def _trigram(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
         """Trigram FTS5 recall branch: substrings unicode61 cannot see.
 
         `_trigram_query` drops tokens shorter than three characters (they
         cannot form a trigram), so a two-character query produces no query
-        here and the caller skips the branch entirely.
+        here and the caller skips the branch entirely. Only chunks build a
+        trigram table; any other collection has no trigram leg.
 
         A database upgraded to this version without a rebuild has no
         `fts_chunks_tri` table yet (it is created by `ensure`, which only
         the write path runs); treat that as "no trigram hits" rather than
         failing the whole search.
         """
+        sql = self._sql(name).get("keyword_tri")
         query = _trigram_query(text)
-        if not query:
+        if not sql or not query:
             return []
-        conn = self._connect()
         try:
-            rows = conn.execute(self._sql(name)["keyword_tri"], (query, limit)).fetchall()
+            rows = conn.execute(sql, (query, limit)).fetchall()
             ranked = [(row["id"], -row["raw"]) for row in rows]
             return self._fetch_hits(conn, name, ranked)
         except OperationalError:
             return []
-        finally:
-            conn.close()
 
     def search(self, name: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:
         """Hybrid retrieval: dense and keyword, fused with reciprocal rank fusion.
@@ -686,17 +700,38 @@ class SqliteVecStore(VectorStore):
         the Qdrant backend used, then the two ranked id lists are fused and
         the top `limit` hits returned with their fused score.
         """
-        dense = self.search_dense(name, text, limit=prefetch)
-        keyword = self._search_keyword(name, text, limit=prefetch)
+        return self.search_legs(name, text, limit=limit, prefetch=prefetch)["fused"]
+
+    def search_legs(
+        self, name: str, text: str, limit: int = 30, prefetch: int = 100
+    ) -> dict[str, list[dict]]:
+        """The fused `search` result plus the raw legs it came from, on one connection."""
+        conn = self._connect()
+        try:
+            dense = self._dense(conn, name, text, prefetch)
+            keyword = self._keyword(conn, name, text, prefetch)
+            trigram = self._trigram(conn, name, text, prefetch) if name == self.CHUNKS else []
+        finally:
+            conn.close()
+        return {
+            "fused": self._fuse(name, dense, keyword, trigram, limit),
+            "dense": dense,
+            "keyword": keyword,
+            "trigram": trigram,
+        }
+
+    def _fuse(
+        self, name: str, dense: list[dict], keyword: list[dict], trigram: list[dict], limit: int
+    ) -> list[dict]:
+        """RRF over the dense and keyword legs, with the trigram leg as a recall net."""
         id_col = self._id_col(name)
         dense_ids = [hit[id_col] for hit in dense]
         keyword_ids = [hit[id_col] for hit in keyword]
         keyword_score = {hit[id_col]: hit["score"] for hit in keyword}
 
-        lists = [dense_ids, keyword_ids]
-
         fused = rrf_scored(
-            *lists,
+            dense_ids,
+            keyword_ids,
             # k=60 is the canonical RRF constant (Cormack et al., SIGIR 2009).
             # The old k=1 existed only to keep the fused score magnitude on the
             # lens threshold's scale; that surface is gone (Phase M), so there
@@ -748,16 +783,14 @@ class SqliteVecStore(VectorStore):
         # dense+keyword verdict, and only surfaces when the hybrid returned
         # fewer than the limit. Only chunks have a trigram table, and only
         # when the query has a token of at least three characters.
-        if name == self.CHUNKS:
-            trigram = self._search_trigram(name, text, limit=prefetch)
-            if trigram:
-                by_id.update({hit[id_col]: hit for hit in trigram})
-                known = {item_id for item_id, _ in ordered}
-                for hit in trigram:
-                    item_id = hit[id_col]
-                    if item_id not in known:
-                        ordered.append((item_id, 0.0))
-                        known.add(item_id)
+        if trigram:
+            by_id.update({hit[id_col]: hit for hit in trigram})
+            known = {item_id for item_id, _ in ordered}
+            for hit in trigram:
+                item_id = hit[id_col]
+                if item_id not in known:
+                    ordered.append((item_id, 0.0))
+                    known.add(item_id)
         return [
             {**by_id[item_id], "score": round(score, 6)}
             for item_id, score in ordered

@@ -99,6 +99,19 @@ class VectorStore(ABC):
         """
 
     @abstractmethod
+    def search_legs(
+        self, name: str, text: str, limit: int = 30, prefetch: int = 100
+    ) -> dict[str, list[dict]]:
+        """`search` plus the raw per-leg hits it was fused from, in one pass.
+
+        Returns `{"fused", "dense", "keyword", "trigram"}`. `fused` is exactly
+        what `search` returns; each leg list holds up to `prefetch` hits in that
+        leg's own rank order (`trigram` is empty outside the chunks collection).
+        Callers that need both the fused ranking and the raw legs (the
+        relevance floor) read them here instead of re-running every leg.
+        """
+
+    @abstractmethod
     def search_dense(self, name: str, text: str, limit: int = 30) -> list[dict]:
         """Dense-only retrieval, for ablations. Same hit shape as `search`."""
 

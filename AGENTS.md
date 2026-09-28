@@ -219,7 +219,7 @@ One line per file, describing its job.
 | --- | --- |
 | `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). |
 | `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
-| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. |
+| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. `search_legs()` returns the fused list plus the raw dense/keyword/trigram legs from one pass on one connection; callers that need both (the relevance floor in `/search` and `chats.passages`) must use it rather than re-running `search_dense`/`search_keyword`. |
 | `index/fusion.py` | Reciprocal rank fusion as a pure function. |
 | `index/bootstrap.py` | Startup index build (no manual step) + cutover cleanup. |
 
@@ -481,6 +481,8 @@ Local-only artifacts always route to ollama, regardless of the configured backen
 This is the one rule that is not a preference: marking something local-only is a promise that its text never leaves the machine.
 
 **Two models, split by job (the summary model).** `summarize=True` selects `summarize_model` when one is set, otherwise `llm_model`. So facet generation can run on a different model than chat: pass `get_provider(summarize=True)` for the background summary work (`ingest/facets.py`), plain `get_provider()` for interactive work (chat answers, `assistant.route`, the search gray-zone judge). This lets a fast/cheap model answer while a strong/slow one writes the summaries that power conceptual search, or the reverse. A facet is stamped with the model that wrote it, and retrieval drops facets whose `model_version` no longer matches the active summary model, so a model switch never surfaces stale summaries. `test_model_split.py` covers the routing.
+
+The adapter builds its OpenAI/instructor client lazily on the first model call, so `get_provider().model` is free (the search staleness checks read it on every query; building the client costs ~50 ms plus a Keychain subprocess on macOS).
 
 The adapter uses `instructor.Mode.JSON` for all endpoints.
 The old AGENTS.md specified different modes per adapter, but the code does not.

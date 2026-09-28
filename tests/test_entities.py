@@ -479,7 +479,7 @@ class TestIndex:
         aid = self._seed(store)
         sqlite_store.index_entities_artifact(aid)
 
-        hits = sqlite_store._search_keyword(sqlite_store.ENTITIES, "President", limit=5)
+        hits = sqlite_store.search_keyword(sqlite_store.ENTITIES, "President", limit=5)
 
         assert any(h["entity_id"] == "entity-1" for h in hits)
 

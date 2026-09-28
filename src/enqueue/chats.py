@@ -292,16 +292,19 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # it otherwise. `dense_similarity` here is the best cosine the dense
         # branch produced for this chunk; `had_lexical_hit` is set from the
         # keyword and trigram branches alone (a fused hit can be dense-only).
+        # `search_legs` hands back the fused ranking together with the raw legs
+        # it was fused from, so no leg runs twice.
+        window = PASSAGES * 4
+        chunk_legs = store.search_legs(store.CHUNKS, question, limit=window)
         dense_sims: dict[str, float] = {}
         lexical_chunks: set[str] = set()
-        for hit in store.search_dense(store.CHUNKS, question, limit=PASSAGES * 4):
+        for hit in chunk_legs["dense"][:window]:
             cid = hit["chunk_id"]
             if hit["score"] > dense_sims.get(cid, 0.0):
                 dense_sims[cid] = hit["score"]
-        for hit in store.search_keyword(store.CHUNKS, question, limit=PASSAGES * 4):
-            lexical_chunks.add(hit["chunk_id"])
-        for hit in store.search_trigram(store.CHUNKS, question, limit=PASSAGES * 4):
-            lexical_chunks.add(hit["chunk_id"])
+        for leg in ("keyword", "trigram"):
+            for hit in chunk_legs[leg][:window]:
+                lexical_chunks.add(hit["chunk_id"])
         # Roll chunk hits up to at most CHUNKS_PER_ARTIFACT per note, over a window
         # wider than the passage budget. Without the cap, six chunks of one long note
         # eat the whole budget and every other note is invisible to the answer - the
@@ -316,7 +319,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         gray_chunks: list[str] = []
         gray_scores: dict[str, float] = {}
         gray_artifacts: dict[str, str] = {}
-        for hit in store.search(store.CHUNKS, question, limit=PASSAGES * 4):
+        for hit in chunk_legs["fused"]:
             aid = hit["artifact_id"]
             # Q.5: the same floor /search applies. A chunk with no lexical leg
             # and a far dense neighbor is a far neighbor, not evidence an
@@ -387,12 +390,16 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # >= KEEP_ABOVE, drop < DROP_BELOW, gray zone -> judge.
         facet_entity_dense: dict[str, float] = {}
         facet_entity_lexical: set[str] = set()
-        for name in (store.FACETS, store.ENTITIES):
-            for hit in store.search_dense(name, question, limit=PASSAGES * 4):
+        fe_legs = {
+            name: store.search_legs(name, question, limit=4)
+            for name in (store.FACETS, store.ENTITIES)
+        }
+        for legs in fe_legs.values():
+            for hit in legs["dense"][:window]:
                 aid = hit["artifact_id"]
                 if hit["score"] > facet_entity_dense.get(aid, 0.0):
                     facet_entity_dense[aid] = hit["score"]
-            for hit in store.search_keyword(name, question, limit=PASSAGES * 4):
+            for hit in legs["keyword"][:window]:
                 facet_entity_lexical.add(hit["artifact_id"])
 
         def _pull_opening(aid: str, why: str, score: float) -> None:
@@ -410,7 +417,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # body or by an older model no longer describes the artifact and is skipped.
         cache: dict = {}
         gray_facet_entity: dict[str, tuple[str, float, str]] = {}
-        for hit in store.search(store.FACETS, question, limit=4):
+        for hit in fe_legs[store.FACETS]["fused"]:
             if hit_is_stale(conn, hit, cache):
                 continue
             aid = hit["artifact_id"]
@@ -438,7 +445,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # when the artifact never says it. Same handling as the facet branch: pull
         # the opening chunk so the answer has something literal to stand on, and skip
         # lines built from an older body or by an older model.
-        for hit in store.search(store.ENTITIES, question, limit=4):
+        for hit in fe_legs[store.ENTITIES]["fused"]:
             if hit_is_stale(conn, hit, cache):
                 continue
             aid = hit["artifact_id"]
