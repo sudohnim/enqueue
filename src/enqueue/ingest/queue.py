@@ -200,6 +200,13 @@ def process(artifact_id: str) -> dict:
     # by its own words regardless.
     entities_made = _entities_artifact(artifact_id) if chunks else 0
 
+    # Chunk context (ingest/context.py): for a multi-chunk document, the ingest model
+    # places each chunk in it, and the artifact is re-indexed with those lines. It
+    # runs after the first index so the capture is searchable without waiting on it.
+    contexts_made = _context_artifact(artifact_id) if chunks > 1 else 0
+    if contexts_made:
+        indexed = store.index_artifact(artifact_id)
+
     # An ingest that produced nothing (an artifact with no extractable text re-applied
     # by a sync) is not activity worth a row - logging every one buries the questions
     # and captures a person actually cares about. Only record an ingest that did work.
@@ -212,6 +219,7 @@ def process(artifact_id: str) -> dict:
             "indexed": indexed,
             "facets": facets_made,
             "entities": entities_made,
+            "contexts": contexts_made,
         }
 
     try:
@@ -240,6 +248,7 @@ def process(artifact_id: str) -> dict:
                 "indexed": indexed,
                 "facets": facets_made,
                 "entities": entities_made,
+                "contexts": contexts_made,
             },
         )
     except Exception:  # noqa: BLE001
@@ -253,6 +262,7 @@ def process(artifact_id: str) -> dict:
         "indexed": indexed,
         "facets": facets_made,
         "entities": entities_made,
+        "contexts": contexts_made,
     }
 
 
@@ -403,6 +413,27 @@ def _facet_artifact(artifact_id: str) -> int:
         # own). Push without bumping recency - a background summary is not a "touch"; the
         # phone's pull re-applies the snapshot on an equal key and picks the facets up.
         facets_mod.sync_facets(artifact_id, bump=False)
+    return count
+
+
+def _context_artifact(artifact_id: str) -> int:
+    """Write chunk contexts for one artifact. Best effort, never raises."""
+    if _pending(artifact_id) > 0:
+        return 0  # a newer edit is queued and will re-chunk; skip the model call
+    from .. import db
+    from . import context as context_mod
+
+    conn = db.get_conn()
+    try:
+        count, error = context_mod.generate_for_artifact(conn, artifact_id)
+        conn.commit()
+    except Exception:  # noqa: BLE001 - contexts are derived; a failure never blocks capture
+        log.exception("chunk context failed for %s", artifact_id)
+        return 0
+    finally:
+        conn.close()
+    if error:
+        log.warning("chunk context for %s: %s", artifact_id, error)
     return count
 
 

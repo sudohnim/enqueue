@@ -72,7 +72,7 @@ _COLLECTION_TABLES = {
 _SQL = {
     "chunks": {
         "select_all": (
-            "SELECT c.id, c.text, a.title"
+            "SELECT c.id, c.text, c.context, a.title"
             " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
             " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
         ),
@@ -137,28 +137,40 @@ _COUNT_SQL = {
     "fts_entities": "SELECT COUNT(*) FROM fts_entities",
 }
 
-# Title is prepended for embedding only; stored chunk text stays clean.
+# Title (and the chunk's model-written context, when it has one) are prepended for
+# embedding only; stored chunk text stays clean.
 CHUNK_INDEX_TEXT = "{title}\n\n{text}"
+CHUNK_INDEX_TEXT_WITH_CONTEXT = "{title}\n\n{context}\n\n{text}"
 
 # On an RRF tie, the keyword leg reorders only if its best beats the runner-up by 20%.
 KEYWORD_MARGIN = 0.2
 
 
-def _chunk_entries(row) -> tuple[str, tuple[str, str]]:
-    """(embed_text, (fts_title, fts_text)) for one chunk row.
+def _chunk_entries(row) -> tuple[str, tuple[str, str], str]:
+    """(embed_text, (fts_title, fts_text), trigram_text) for one chunk row.
 
     A leading "# {title}" heading is dropped from fts_text so the title term is
-    counted only in the weighted title column.
+    counted only in the weighted title column. A chunk's context (ingest/context.py)
+    is embedded with it and added to its keyword text, so words the context adds are
+    searchable; the trigram table keeps the chunk's own words only.
     """
     title = row["title"] or ""
     text = row["text"] or ""
+    context = (row["context"] if "context" in row.keys() else None) or ""
     fts_text = text
     heading = f"# {title}"
     if title and text.startswith(heading):
         fts_text = text[len(heading) :].lstrip("\n").strip()
+    if context:
+        return (
+            CHUNK_INDEX_TEXT_WITH_CONTEXT.format(title=title, context=context, text=text),
+            (title, context + "\n\n" + fts_text),
+            fts_text,
+        )
     return (
         CHUNK_INDEX_TEXT.format(title=title, text=text),
         (title, fts_text),
+        fts_text,
     )
 
 
@@ -276,7 +288,7 @@ class SqliteVecStore(VectorStore):
                 conn.executemany(sql["insert_fts"], [(entry[0], *entry[2]) for entry in batch])
                 if name == self.CHUNKS:
                     conn.executemany(
-                        sql["insert_fts_tri"], [(entry[0], entry[2][1]) for entry in batch]
+                        sql["insert_fts_tri"], [(entry[0], entry[3]) for entry in batch]
                     )
             total += len(batch)
             if self._on_progress and (total % 500 == 0 or total == len(entries)):
@@ -289,7 +301,7 @@ class SqliteVecStore(VectorStore):
         self.ensure()
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT c.id, c.text, a.title"
+                "SELECT c.id, c.text, c.context, a.title"
                 " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
                 " WHERE c.artifact_id = ? ORDER BY c.ordinal",
                 (artifact_id,),
@@ -328,7 +340,7 @@ class SqliteVecStore(VectorStore):
             )
             conn.executemany(
                 "INSERT INTO fts_chunks_tri (chunk_id, text) VALUES (?, ?)",
-                [(entry[0], entry[2][1]) for entry in entries],
+                [(entry[0], entry[3]) for entry in entries],
             )
         return len(entries)
 

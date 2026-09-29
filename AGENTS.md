@@ -207,6 +207,7 @@ One line per file, describing its job.
 | `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
 | `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), capped at `FACET_INPUT_CHARS`, plus current annotations marked "(your note)". Facets and entities both read through it. |
+| `ingest/context.py` | Contextual chunks: for an artifact with 2+ chunks, the ingest model writes one or two sentences per chunk placing it in the document (batches of 30). Stored in `chunks.context`, embedded and keyword-indexed with the chunk (not in the trigram table). Skips `text_only` artifacts. |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve
@@ -245,6 +246,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop
@@ -294,6 +296,7 @@ One line per file, describing its job.
 3. **Worker thread**: for links, optionally fetch preview; for PDFs, extract text via pymupdf; chunk the text; index into the sqlite-vec store. An image whose vision describe fails is marked `status='failed'` and surfaced in `/doctor` rather than failing silently.
 4. **Chunk** (`ingest/chunk.py`): markdown-aware splitting. Headings, lists, code fences are coherent units. Loose prose merged to a floor of 120 words. Long chunks split at 380 words with 60-word overlap. The chunk source includes the artifact's current annotation text (superseded annotations excluded), and a bodyless capture falls back to its title + filename so every artifact has at least one chunk.
 5. **Index** (`index/store_sqlite.py`): embed chunks (dense), upsert into `vec_chunks`, `fts_chunks`, and the trigram `fts_chunks_tri`. Title prepended for indexing only. Writing an annotation re-queues the artifact so its new text is searchable.
+6. **Facets, entities, chunk context** run after the first index, behind the capture: facets and entities from `ingest/source.py` text, then (multi-chunk artifacts only) chunk contexts, after which the artifact is re-indexed so the contexts are embedded. A quoted exact-phrase search only matches a chunk's own words, never its context.
 
 ### Facet generation
 
@@ -362,7 +365,7 @@ Migrations run automatically at startup via Alembic.
 | `artifacts` | the primary model | `kind` is note/link/pdf/image/file. `content_hash` UNIQUE for dedupe. Captures have `body IS NULL` (CHECK constraint). Notes have editable body. |
 | `artifact_versions` | every saved state of a note's body | append-only, before each update |
 | `annotations` | commentary on a captured artifact | append-only, superseding by id |
-| `chunks` | literal layer for search | text, ordinal, chunker name |
+| `chunks` | literal layer for search | text, ordinal, chunker name; `context` + `context_model` (model-written placement line, multi-chunk artifacts only) |
 | `facets` | conceptual layer for search | level 0-4, statement, model_version, trust (default 0.5), `edited` (1 = hand-written/edited, protected from regeneration; migration 0031) |
 | `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only |
 | `facet_retry` | facets owed after a transient model failure | attempts, next_at, last_error; retried with backoff |

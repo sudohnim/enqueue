@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -399,6 +400,12 @@ def _quoted_phrase(free_text: str) -> str | None:
     return None
 
 
+def _word_form(text: str) -> str:
+    """Lowercase words joined by single spaces: punctuation and spacing drop out,
+    as they do for the FTS tokenizers."""
+    return " ".join(re.findall(r"\w+", text.lower()))
+
+
 def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
     """R.10: artifacts containing `phrase` verbatim, via both FTS chunk tables."""
     query = f'"{phrase.replace(chr(34), chr(34) * 2)}"'
@@ -427,6 +434,10 @@ def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
             " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
             (json.dumps(list(chunk_scores)),),
         ).fetchall()
+        # The keyword table also indexes each chunk's model-written context; an exact
+        # match must be in the chunk's own words, or it is not the verbatim needle.
+        needle = _word_form(phrase)
+        rows = [r for r in rows if needle in _word_form(r["text"])]
         by_artifact: dict[str, dict] = {}
         for row in rows:
             prev = by_artifact.get(row["artifact_id"])
