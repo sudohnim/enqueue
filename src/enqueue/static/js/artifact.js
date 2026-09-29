@@ -308,6 +308,49 @@
     );
   }
 
+  // Passage connections (retrieve/passage_links.py): per passage of this note, the
+  // other notes that say something close. Fetched after the drawer renders, since it
+  // runs a nearest-neighbour query per passage.
+  async function mountConnections(id) {
+    const slot = view.querySelector("#connections");
+    if (!slot) return;
+    let r;
+    try {
+      r = await api("/artifacts/" + id + "/connections");
+    } catch (_) {
+      return;
+    }
+    if (!r.passages.length || !document.body.contains(slot)) return;
+    slot.innerHTML =
+      '<div class="shelf">Passages that connect</div>' +
+      r.passages
+        .map(
+          (p) =>
+            '<div class="connection">' +
+            '<div class="connection-excerpt">' +
+            esc(p.excerpt) +
+            "</div>" +
+            '<div class="viewsrow">' +
+            p.links
+              .map(
+                (l) =>
+                  '<button class="viewchip relatedchip" type="button" data-id="' +
+                  esc(l.id) +
+                  '" title="' +
+                  esc(l.kind) +
+                  '"><span class="viewlabel">' +
+                  esc(l.title || "(untitled)") +
+                  "</span></button>",
+              )
+              .join("") +
+            "</div></div>",
+        )
+        .join("");
+    slot.querySelectorAll(".relatedchip").forEach((chip) => {
+      chip.addEventListener("click", () => openArtifact(chip.dataset.id, "related"));
+    });
+  }
+
   function mountRelatedRow() {
     view.querySelectorAll(".relatedchip").forEach((chip) => {
       chip.addEventListener("click", () => openArtifact(chip.dataset.id, "related"));
@@ -627,12 +670,14 @@
       viewsRowHtml(d.views, id) +
       summaryHtml +
       relatedRowHtml(d.related) +
+      '<div class="connections" id="connections"></div>' +
       "</aside>";
 
     view.innerHTML = html;
     mountTagRow(id);
     mountViewsRow(id);
     mountRelatedRow();
+    mountConnections(id);
     mountEditor(focus);
     mountTitleEdit(id);
     if (a.kind === "pdf") mountReader(a.id, d.pages);

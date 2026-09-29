@@ -361,6 +361,25 @@
   .relatedchip:hover {
     color: var(--accent);
   }
+  /* Passage connections: each passage's opening words, then the notes it echoes. */
+  .drawer > .connections > .shelf {
+    margin-top: var(--sp-5);
+  }
+  .connection + .connection {
+    margin-top: var(--sp-3);
+  }
+  .connection-excerpt {
+    margin-bottom: var(--sp-1);
+    padding-left: var(--sp-2);
+    border-left: 2px solid var(--line);
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--text-dim);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
   /* A mention link names what the two notes share on a quieter second line, so the
      chip becomes a small card rather than a pill that wraps mid-phrase. */
   .relatedchip.hasvia {

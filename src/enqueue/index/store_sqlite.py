@@ -477,6 +477,36 @@ class SqliteVecStore(VectorStore):
                 (config.EMBED_VERSION,),
             )
 
+    def similar_chunks(self, chunk_id: str, limit: int = 10) -> list[dict]:
+        """Chunks nearest one indexed chunk, by its stored vector: `chunk_id`,
+        `artifact_id`, `score` (cosine). The chunk itself is left out."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT embedding FROM vec_chunks WHERE chunk_id = ?", (chunk_id,)
+            ).fetchone()
+            if row is None:
+                return []
+            rows = conn.execute(
+                "SELECT v.chunk_id, v.distance, c.artifact_id FROM vec_chunks v"
+                " JOIN chunks c ON c.id = v.chunk_id"
+                " WHERE v.embedding MATCH ? AND k = ? ORDER BY v.distance",
+                (row["embedding"], limit + 1),
+            ).fetchall()
+        except OperationalError:
+            return []
+        finally:
+            conn.close()
+        return [
+            {
+                "chunk_id": r["chunk_id"],
+                "artifact_id": r["artifact_id"],
+                "score": max(0.0, min(1.0, 1.0 - (r["distance"] ** 2) / 2.0)),
+            }
+            for r in rows
+            if r["chunk_id"] != chunk_id
+        ][:limit]
+
     def search_dense(
         self, name: str, text: str, limit: int = 30, as_query: bool = True
     ) -> list[dict]:

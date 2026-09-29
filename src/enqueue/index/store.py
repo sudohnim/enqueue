@@ -75,6 +75,10 @@ class VectorStore(ABC):
         """
 
     @abstractmethod
+    def similar_chunks(self, chunk_id: str, limit: int = 10) -> list[dict]:
+        """Chunks nearest one indexed chunk: `chunk_id`, `artifact_id`, `score`."""
+
+    @abstractmethod
     def search_dense(
         self, name: str, text: str, limit: int = 30, as_query: bool = True
     ) -> list[dict]:

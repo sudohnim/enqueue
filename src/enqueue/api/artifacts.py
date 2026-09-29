@@ -24,6 +24,14 @@ router = APIRouter()
 # --------------------------------------------------------------------------- read
 
 
+@router.get("/artifacts/{artifact_id}/connections")
+def connections(artifact_id: str) -> dict:
+    """Per passage, the other notes that say something close (retrieve/passage_links.py)."""
+    from ..retrieve import passage_links
+
+    return {"passages": passage_links.for_artifact(artifact_id)}
+
+
 @router.get("/resurface")
 def resurface() -> dict:
     """Today's older note for the wall (resurface.py), as a wall item, or null."""
