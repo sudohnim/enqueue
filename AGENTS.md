@@ -213,7 +213,7 @@ One line per file, describing its job.
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
 | `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), plus current annotations marked "(your note)". A document over `FACET_INPUT_CHARS` is map-reduced: split into sections of up to 10k characters on paragraph boundaries (at most 24), each summarized by the ingest model (cached in `derived_values`, scope `section_summary`, per section hash and model), and read as ordered summaries. The summaries are also written to `sections` (stamped with ingest model and body version; left untouched when unchanged, since facets, entities and contexts each read through here) and indexed as their own search layer by the ingest queue. Any failed section falls back to the capped opening; `text_only` text is never mapped. Facets, entities and chunk contexts all read through it. |
 | `ingest/context.py` | Contextual chunks: for an artifact with 2+ chunks, the ingest model writes one or two sentences per chunk placing it in the document (batches of 30). Stored in `chunks.context`, embedded and keyword-indexed with the chunk (not in the trigram table). Skips `text_only` artifacts. |
-| `ingest/related.py` | Related artifacts: each facet statement searches the facet index; another artifact's closeness is its best similarity to any of them. The top 5 at or above 0.7 are stored in `related` in both directions. Stale facets never count. Recomputed after ingest writes facets and after any facet edit/regenerate (`facets._reindex`); no model call. `GET /artifacts/{id}` returns `related`, shown as a Related section in the artifact drawer. |
+| `ingest/related.py` | Related artifacts: each facet statement searches the facet index; another artifact's closeness is its best similarity to any of them. Mention links join them: another artifact whose current entities name the same person, place or thing (case-insensitive) scores 0.7 and stores that name in `related.via`; a name more than 8 artifacts share is too common to link. The top 5 at or above 0.7 are stored in `related` in both directions. Stale facets and entities never count. Recomputed after ingest writes facets or entities and after any facet edit/regenerate (`facets._reindex`); no model call. `GET /artifacts/{id}` returns `related` (each with `via`), shown as a Related section in the artifact drawer; a mention link's chip adds "both mention <name>" on a second line. |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve
@@ -255,6 +255,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0037_related_via.py` | `related.via`: the shared name behind a "both mention" link (NULL for an idea link). |
 | `migrations/versions/0036_sections.py` | `sections` (artifact_id, ordinal, summary, model_version, body_version): section summaries of long documents, a search layer. Purge deletes an artifact's rows. |
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
@@ -389,7 +390,7 @@ Migrations run automatically at startup via Alembic.
 | `chat_messages` | one turn | append-only. grounded flag. |
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
-| `related` | links between artifacts whose facets make the same point | derived at ingest, both directions, filtered to live artifacts on read |
+| `related` | links between artifacts whose facets make the same point, or that name the same thing (`via`) | derived at ingest, both directions, filtered to live artifacts on read |
 | `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
 | `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
 

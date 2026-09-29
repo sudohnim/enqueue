@@ -202,8 +202,9 @@ def process(artifact_id: str) -> dict:
     entities_made = _entities_artifact(artifact_id) if chunks else 0
 
     # Related artifacts (ingest/related.py): links to notes whose facets say the same
-    # thing. Local and cheap, so it runs whenever facets were just written.
-    if facets_made:
+    # thing or that name the same things. Local and cheap, so it runs whenever facets
+    # or entities were just written.
+    if facets_made or entities_made:
         try:
             from . import related
 

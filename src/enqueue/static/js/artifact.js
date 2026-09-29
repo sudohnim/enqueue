@@ -291,13 +291,17 @@
       related
         .map(
           (r) =>
-            '<button class="viewchip relatedchip" type="button" data-id="' +
+            '<button class="viewchip relatedchip' +
+            (r.via ? " hasvia" : "") +
+            '" type="button" data-id="' +
             esc(r.id) +
             '" title="' +
-            esc(r.kind) +
+            esc(r.via ? "Both mention " + r.via : r.kind) +
             '"><span class="viewlabel">' +
             esc(r.title || "(untitled)") +
-            "</span></button>",
+            "</span>" +
+            (r.via ? '<span class="relatedvia">both mention ' + esc(r.via) + "</span>" : "") +
+            "</button>",
         )
         .join("") +
       "</div>"

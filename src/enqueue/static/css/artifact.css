@@ -361,6 +361,18 @@
   .relatedchip:hover {
     color: var(--accent);
   }
+  /* A mention link names what the two notes share on a quieter second line, so the
+     chip becomes a small card rather than a pill that wraps mid-phrase. */
+  .relatedchip.hasvia {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    border-radius: var(--r-lg);
+  }
+  .relatedvia {
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
   .viewadd {
     /* A quiet ghost chip - same height as a view chip, no fill, lavender
        ink on hover. The + signals "add" without competing with the

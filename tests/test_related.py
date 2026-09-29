@@ -116,4 +116,51 @@ def test_artifact_detail_carries_related(sqlite_store):
     body = TestClient(create_app()).get("/artifacts/a").json()
 
     assert [r["id"] for r in body["related"]] == ["b"]
-    assert set(body["related"][0]) == {"id", "title", "kind", "score"}
+    assert set(body["related"][0]) == {"id", "title", "kind", "score", "via"}
+
+
+def _entity(aid: str, name: str, model: str | None = None) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
+            " VALUES (?, ?, ?, 'a fact', ?, 0.5)",
+            (f"e-{aid}-{name}", aid, name, model or cand._get_model(False)),
+        )
+
+
+def test_notes_that_name_the_same_thing_are_linked_with_the_name(sqlite_store):
+    _note("a", "Kilns reward patience.")
+    _note("b", "Markets punish haste.")
+    _entity("a", "Nassim Taleb")
+    _entity("b", "nassim taleb ")
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    conn = db.get_conn()
+    try:
+        links = related.for_artifact(conn, "b")
+    finally:
+        conn.close()
+    assert [(r["id"], r["via"]) for r in links] == [("a", "Nassim Taleb")]
+
+
+def test_common_names_and_stale_entities_link_nothing(sqlite_store):
+    _note("a", "One.")
+    _entity("a", "Google")
+    _entity("a", "Old Name", model="a-retired-model")
+    for i in range(related.MENTION_MAX_SHARED):
+        _note(f"o{i}", f"Other {i}.")
+        _entity(f"o{i}", "Google")
+    _note("z", "Two.")
+    _entity("z", "Old Name")
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    conn = db.get_conn()
+    try:
+        links = related.for_artifact(conn, "a")
+    finally:
+        conn.close()
+    assert [r["via"] for r in links if r["via"]] == []
