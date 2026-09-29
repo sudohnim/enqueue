@@ -1713,6 +1713,40 @@ pub fn chat_sources(conn: &Connection, query: &str) -> Result<Vec<Value>, String
     Ok(out)
 }
 
+/// A prompt with every credential blanked, the phone's twin of the desktop's
+/// `ingest/secrets.py::redact`: the same shapes, replaced by `***` before the text
+/// goes to the model, so a key in a note never leaves the phone.
+pub fn redact_secrets(text: &str) -> String {
+    use std::sync::OnceLock;
+    static PATTERNS: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+    static PEM: OnceLock<regex::Regex> = OnceLock::new();
+    let pem = PEM.get_or_init(|| {
+        regex::Regex::new(
+            r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\z)",
+        )
+        .expect("valid pem pattern")
+    });
+    let patterns = PATTERNS.get_or_init(|| {
+        [
+            r#"(?i)\b(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key)\b\s*[:=]\s*(?P<value>"[^"]{3,}"|'[^']{3,}'|\S{3,})"#,
+            r"\b(?P<value>(?:AKIA|ASIA)[0-9A-Z]{16})\b",
+            r"(?i)\bbearer\s+(?P<value>[A-Za-z0-9._\-]{20,})",
+            r"\b(?P<value>xox[baprs]-[A-Za-z0-9-]{10,})\b",
+            r"\b(?P<value>gh[pousr]_[A-Za-z0-9]{20,})\b",
+        ]
+        .iter()
+        .map(|p| regex::Regex::new(p).expect("valid secret pattern"))
+        .collect()
+    });
+    let mut out = pem.replace_all(text, "***").into_owned();
+    for re in patterns {
+        out = re
+            .replace_all(&out, |c: &regex::Captures| c[0].replace(&c["value"], "***"))
+            .into_owned();
+    }
+    out
+}
+
 /// Keywords worth matching: lowercased, split on non-alphanumerics, stopwords and
 /// one-character tokens dropped, de-duplicated, capped so a rambling query stays cheap.
 fn query_terms(query: &str) -> Vec<String> {
@@ -2057,6 +2091,21 @@ mod tests {
         // Search still finds both; only what goes to the model leaves it out.
         assert_eq!(found(search_artifacts(&conn, "kiln").unwrap()), vec!["open1", "secret1"]);
         assert_eq!(found(chat_sources(&conn, "kiln").unwrap()), vec!["open1"]);
+    }
+
+    #[test]
+    fn a_prompt_goes_out_with_its_credentials_blanked() {
+        let text = "Deploy notes.\naws AKIAIOSFODNN7EXAMPLE\nsftp password = hunter2hunter2\n\
+                    -----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXkt\n\
+                    -----END OPENSSH PRIVATE KEY-----\nThe kiln runs cone six.";
+        let out = redact_secrets(text);
+        for secret in ["AKIAIOSFODNN7EXAMPLE", "hunter2hunter2", "b3BlbnNzaC1rZXkt"] {
+            assert!(!out.contains(secret), "{secret} leaked: {out}");
+        }
+        assert!(out.contains("Deploy notes.") && out.contains("The kiln runs cone six."));
+        assert!(out.contains("password = ***"));
+        let prose = "A token of thanks for the potter.";
+        assert_eq!(redact_secrets(prose), prose);
     }
 
     #[test]

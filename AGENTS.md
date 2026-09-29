@@ -848,10 +848,11 @@ Re-saving an existing artifact moves it to the front of the wall (updates `updat
 
 ### Secret scanning
 
-`ingest/secrets.py` scans all text before it reaches a model.
-Detects: password assignments, AWS access keys, private keys, bearer tokens, Slack tokens, GitHub tokens.
-Excerpts are redacted (value replaced with `***`).
-Artifacts with hits get `status = 'text_only'`, which excludes them from facet generation.
+`ingest/secrets.py` knows the credential shapes: password assignments, AWS access keys, private keys (the whole PEM block), bearer tokens, Slack tokens, GitHub tokens.
+`scan` records a note's or a link page's hits for the Settings list (excerpts with the value replaced by `***`) and marks the artifact `status = 'text_only'`.
+`redact` blanks the same shapes out of every prompt sent to a remote model, in `OpenAICompatibleProvider.complete`, the one place every structured call passes, so a credential in a note, a PDF or a page never leaves the machine while the rest of the text still gets its facets and entities.
+The phone does the same in `call_llm_mobile` (`sync::redact_secrets`); keep the two pattern lists in step.
+A local model is sent the text as written.
 
 ### Untrusted content
 

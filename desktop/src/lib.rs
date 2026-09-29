@@ -1557,6 +1557,9 @@ mod mobile {
         extra_headers: &str,
         prompt: &str,
     ) -> Result<String, String> {
+        // A credential in a note never goes to the model (sync::redact_secrets).
+        let prompt = crate::sync::redact_secrets(prompt);
+        let prompt = prompt.as_str();
         // Use ureq to call the provider directly
         let body = serde_json::json!({
             "model": model,

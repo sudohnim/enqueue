@@ -73,6 +73,14 @@ class OpenAICompatibleProvider:
         context: dict | None = None,
         max_retries: int | None = None,
     ) -> T:
+        # A credential in the text (a note, a PDF, a page) never goes to a remote model:
+        # blank it here, where every structured call passes (ingest/secrets.py).
+        from .. import privacy
+        from ..ingest.secrets import redact
+
+        if privacy.is_remote(self):
+            system, user = redact(system), redact(user)
+
         # Some backends (Gemini) reject an empty user turn, so fold system into user.
         if user.strip():
             messages: list[ChatCompletionMessageParam] = [
