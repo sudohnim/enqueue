@@ -94,6 +94,12 @@ def sqlite_store(store, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_background_ingest(quiet_queue):
+    """notes.create queues real ingest, whose worker thread would generate entities with
+    the scripted provider too and take the replies a test expects for itself."""
+
+
+@pytest.fixture(autouse=True)
 def _no_real_judge(monkeypatch):
     """Retrieval tests here assert the entity/facet ladder, not the gray-zone
     judge. Stub it fail-open (keep everything) exactly as test_chats.py and
