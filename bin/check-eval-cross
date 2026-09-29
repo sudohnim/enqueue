@@ -3,8 +3,8 @@
 
 Runs `enq eval-cross` and compares it with the committed baseline
 (evals/results/cross-domain.json). Fails when:
-  - a layer makes results worse than the one below it (facets vs chunks alone,
-    lifting vs facets): each must never hurt, or
+  - a layer makes results worse than the one below it (enriched - facets and
+    entities - vs chunks alone, lifted vs enriched): each must never hurt, or
   - a query that passed in the baseline fails now, in any mode the baseline has.
 With no baseline yet it prints the report and passes, so the first CI run can
 produce one. `--update-baseline` writes the current run as the new baseline.
@@ -52,7 +52,7 @@ def main() -> int:
 
     failures: list[str] = []
     modes = now["modes"]
-    for lower, upper in (("chunks", "facets"), ("facets", "lifted")):
+    for lower, upper in (("chunks", "enriched"), ("enriched", "lifted")):
         if upper in modes and modes[upper]["pass"] < modes[lower]["pass"]:
             failures.append(
                 f"{upper} made search worse: {modes[upper]['pass']} pass vs "

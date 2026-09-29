@@ -2,9 +2,10 @@
 
 Loads evals/cross_domain.yaml plus the main eval corpus (as background) into an
 isolated test database, then runs every query through the real /search rollup three
-times: chunks only, with facets, and with facets plus query lifting. Facets and lifts
-come from evals/cross_domain_facets.json (a committed fixture, so CI needs no model),
-or are written fresh with the live models by `enq eval-cross --generate-facets`.
+times: chunks only, enriched (with facets and entities), and lifted (enriched plus query
+lifting). Facets, entities and lifts come from evals/cross_domain_facets.json (a
+committed fixture, so CI needs no model), or are written fresh with the live models by
+`enq eval-cross --generate-facets`.
 See AGENTS.md "Cross-domain eval".
 """
 
@@ -137,6 +138,50 @@ def load_facets(fixture: dict) -> int:
     return n
 
 
+def load_entities(fixture: dict) -> int:
+    """Insert fixture entity lines, stamped with the current ingest model."""
+    from . import db
+    from .index.store import get_store
+    from .providers.base import model_for
+
+    model = model_for("ingest")
+    n = 0
+    with db.transaction() as conn:
+        for aid, lines in fixture.items():
+            for e in lines:
+                conn.execute(
+                    "INSERT INTO entities (id, artifact_id, entity, fact, model_version,"
+                    " body_version, trust) VALUES (?,?,?,?,?,NULL,0.5)",
+                    (str(uuid.uuid4()), aid, e["entity"], e["fact"], model),
+                )
+                n += 1
+    get_store().upsert_entities()
+    return n
+
+
+def generate_entities(suite: dict) -> dict:
+    """Extract and enrich entities for the suite's notes and decoys with the ingest model."""
+    from . import db
+    from .ingest import entities as entities_mod
+
+    out: dict[str, list[dict]] = {}
+    for n in suite["notes"] + suite["decoys"]:
+        with db.transaction() as conn:
+            _, error = entities_mod.generate_for_artifact(conn, n["id"])
+        if error and "quality gate" not in error:
+            raise RuntimeError(f"{n['id']}: {error}")
+        conn = db.get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT entity, fact FROM entities WHERE artifact_id = ? ORDER BY entity",
+                (n["id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+        out[n["id"]] = [dict(r) for r in rows]
+    return out
+
+
 def generate_lifts(suite: dict) -> dict[str, list[str]]:
     """Lift every query with the live search model (retrieve/lift.py)."""
     from .retrieve import lift
@@ -152,8 +197,8 @@ def generate_facets(suite: dict) -> dict:
     out: dict[str, list[dict]] = {}
     for n in suite["notes"] + suite["decoys"]:
         with db.transaction() as conn:
-            count, error = facets_mod.generate_for_artifact(conn, n["id"])
-        if error:
+            _, error = facets_mod.generate_for_artifact(conn, n["id"])
+        if error and "quality gate" not in error:  # a note with no facet worth keeping is fine
             raise RuntimeError(f"{n['id']}: {error}")
         conn = db.get_conn()
         try:
@@ -218,31 +263,37 @@ class pointed_at_test_dir:
 def run(generate: bool = False) -> dict:
     """Build the library, run all three modes, return the report.
 
-    `generate=True` writes fresh facets (ingest model) and lifts (search model) and
-    saves them as the fixture; otherwise the committed fixture is used (absent means
-    no facets and no lifts). Outside `generate`, lifting reads only the fixture, so
-    the eval never calls a model.
+    `generate=True` writes fresh facets and entities (ingest model) and lifts (search
+    model) and saves them as the fixture; otherwise the committed fixture is used
+    (absent or missing a section means none of it). Outside `generate`, lifting reads
+    only the fixture, so the eval never calls a model.
     """
     from . import settings
     from .index.store import get_store
     from .retrieve import lift
 
     suite = load_suite()
-    fixture = {"facets": {}, "lifts": {}}
+    fixture: dict = {}
     if not generate and FACETS_PATH.exists():
         fixture = json.loads(FACETS_PATH.read_text(encoding="utf-8"))
+    fixture = {k: fixture.get(k, {}) for k in ("facets", "entities", "lifts")}
     real_lift = lift.lift
     with pointed_at_test_dir():
         build(suite)
         chunks_only = run_queries(suite)
         if generate:
-            fixture = {"facets": generate_facets(suite), "lifts": generate_lifts(suite)}
+            fixture = {
+                "facets": generate_facets(suite),
+                "entities": generate_entities(suite),
+                "lifts": generate_lifts(suite),
+            }
             FACETS_PATH.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
             get_store().upsert_facets()
-            n_facets = sum(len(v) for v in fixture["facets"].values())
+            get_store().upsert_entities()
         else:
-            n_facets = load_facets(fixture["facets"])
-        with_facets = run_queries(suite)
+            load_facets(fixture["facets"])
+            load_entities(fixture["entities"])
+        enriched = run_queries(suite)
 
         by_query = {q["query"]: fixture["lifts"].get(q["id"], []) for q in suite["queries"]}
         settings.update({"search_lift": "on"})
@@ -253,11 +304,12 @@ def run(generate: bool = False) -> dict:
             lift.lift = real_lift
     return {
         "pass_rank": PASS_RANK,
-        "facets_loaded": n_facets,
+        "facets_loaded": sum(len(v) for v in fixture["facets"].values()),
+        "entities_loaded": sum(len(v) for v in fixture["entities"].values()),
         "lifts_loaded": sum(len(v) for v in fixture["lifts"].values()),
         "modes": {
             "chunks": {**score(chunks_only), "results": chunks_only},
-            "facets": {**score(with_facets), "results": with_facets},
+            "enriched": {**score(enriched), "results": enriched},
             "lifted": {**score(lifted), "results": lifted},
         },
     }

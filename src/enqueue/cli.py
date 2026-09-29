@@ -889,23 +889,25 @@ def eval(
 
 @app.command("eval-cross")
 def eval_cross(json_path: str = "", generate_facets: bool = False) -> None:
-    """Cross-domain search eval (evals/cross_domain.yaml): chunks, facets, lifted.
+    """Cross-domain search eval (evals/cross_domain.yaml): chunks, enriched, lifted.
 
     Runs locally against an isolated test library; the engine need not be running.
-    `--generate-facets` writes fresh facets (ingestion model) and query lifts (search
-    model), which need an API key, and saves them as evals/cross_domain_facets.json.
+    `--generate-facets` writes fresh facets and entities (ingestion model) and query
+    lifts (search model), which need an API key, and saves them as
+    evals/cross_domain_facets.json.
     """
     from . import eval_cross as xd
 
     report = xd.run(generate=generate_facets)
     typer.echo(
-        f"facets loaded: {report['facets_loaded']}  lifts loaded: {report['lifts_loaded']}"
+        f"facets loaded: {report['facets_loaded']}  entities loaded: "
+        f"{report['entities_loaded']}  lifts loaded: {report['lifts_loaded']}"
         f"  (pass = target in top {xd.PASS_RANK})"
     )
     modes = report["modes"]
-    typer.secho(f"{'query':<24}" + "".join(f"{m:>8}" for m in modes), bold=True)
+    typer.secho(f"{'query':<24}" + "".join(f"{m:>10}" for m in modes), bold=True)
     for i, r in enumerate(modes["chunks"]["results"]):
-        ranks = "".join(f"{modes[m]['results'][i]['rank'] or '-':>8}" for m in modes)
+        ranks = "".join(f"{modes[m]['results'][i]['rank'] or '-':>10}" for m in modes)
         typer.echo(f"{r['id']:<24}{ranks}")
     for label, mode in modes.items():
         typer.echo(f"{label:<8} pass {mode['pass']}/{mode['total']}  MRR {mode['MRR']:.3f}")

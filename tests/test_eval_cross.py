@@ -60,7 +60,8 @@ def test_rank_and_score():
 
 
 def test_fixture_facets_reach_search(tmp_path, monkeypatch):
-    """A fixture facet must survive the staleness check and lift its note.
+    """A fixture facet must survive the staleness check and lift its note; fixture
+    entities and lifts load too.
 
     The facet repeats one query word for word, so with facets loaded the target has a
     keyword hit on the facet layer and must pass; this fails if load_facets stamps a
@@ -84,6 +85,9 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
                 "facets": {
                     q["expect"][0]: [{"level": 3, "statement": q["query"] + ".", "trust": 1.0}]
                 },
+                "entities": {
+                    q["expect"][0]: [{"entity": "Q", "fact": "Q - a stand-in entity line."}]
+                },
                 "lifts": {q["id"]: [q["query"] + " again."]},
             }
         )
@@ -91,12 +95,13 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
     report = xd.run()
 
     assert report["facets_loaded"] == 1
-    by_id = {r["id"]: r for r in report["modes"]["facets"]["results"]}
+    by_id = {r["id"]: r for r in report["modes"]["enriched"]["results"]}
     assert by_id[q["id"]]["pass"], by_id[q["id"]]
-    assert set(report["modes"]) == {"chunks", "facets", "lifted"}
+    assert set(report["modes"]) == {"chunks", "enriched", "lifted"}
+    assert report["entities_loaded"] == 1
     assert report["lifts_loaded"] == 1
     assert {r["id"]: r for r in report["modes"]["lifted"]["results"]}[q["id"]]["pass"]
-    assert report["modes"]["facets"]["total"] == len(suite["queries"])
+    assert report["modes"]["enriched"]["total"] == len(suite["queries"])
 
 
 def test_ingest_prompts_do_not_leak_the_eval(suite):
