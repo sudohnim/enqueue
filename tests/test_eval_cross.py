@@ -77,8 +77,19 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
         cand, "judge_gray_zone", lambda query, hits: {h["artifact_id"] for h in hits}
     )
 
-    suite = xd.load_suite()
-    q = suite["queries"][0]
+    # A slice of the suite, so the test checks the plumbing without embedding the whole
+    # corpus (the CI eval job runs the full suite): the first query, its target, one
+    # decoy, and three background notes.
+    full = xd.load_suite()
+    q = full["queries"][0]
+    suite = {
+        "notes": [n for n in full["notes"] if n["id"] in q["expect"]],
+        "decoys": full["decoys"][:1],
+        "queries": [q],
+    }
+    background = xd._main_corpus()[:3]
+    monkeypatch.setattr(xd, "load_suite", lambda: suite)
+    monkeypatch.setattr(xd, "_main_corpus", lambda: background)
     (tmp_path / "facets.json").write_text(
         json.dumps(
             {
