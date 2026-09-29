@@ -280,6 +280,36 @@
     );
   }
 
+  // The drawer's Related section: notes whose summaries make the same point
+  // (ingest/related.py), closest first. Each chip opens that artifact. Hidden when
+  // there are none, so a new or summary-less note shows no empty shelf.
+  function relatedRowHtml(related) {
+    if (!related || !related.length) return "";
+    return (
+      '<div class="shelf">Related</div>' +
+      '<div class="viewsrow">' +
+      related
+        .map(
+          (r) =>
+            '<button class="viewchip relatedchip" type="button" data-id="' +
+            esc(r.id) +
+            '" title="' +
+            esc(r.kind) +
+            '"><span class="viewlabel">' +
+            esc(r.title || "(untitled)") +
+            "</span></button>",
+        )
+        .join("") +
+      "</div>"
+    );
+  }
+
+  function mountRelatedRow() {
+    view.querySelectorAll(".relatedchip").forEach((chip) => {
+      chip.addEventListener("click", () => openArtifact(chip.dataset.id));
+    });
+  }
+
   // The chip names and the input are bound here, not in inline onclick: a tag name
   // is user text, so it travels in a data attribute and is read at click time.
   function mountTagRow(id) {
@@ -592,11 +622,13 @@
       tagRowHtml(d.tags) +
       viewsRowHtml(d.views, id) +
       summaryHtml +
+      relatedRowHtml(d.related) +
       "</aside>";
 
     view.innerHTML = html;
     mountTagRow(id);
     mountViewsRow(id);
+    mountRelatedRow();
     mountEditor(focus);
     mountTitleEdit(id);
     if (a.kind === "pdf") mountReader(a.id, d.pages);

@@ -209,6 +209,11 @@
   .drawer .shelf {
     margin-top: 0;
   }
+  /* Sections stacked straight in the drawer (Views, Related) need air above them;
+     the Tags header and the Summary panel carry their own. */
+  .drawer > .shelf {
+    margin-top: var(--sp-5);
+  }
   /* The drawer's own dismiss control. The header toggle is the primary affordance,
      but at narrow widths the open drawer covers the header, so the drawer carries a
      `>>` of its own in its top corner - Escape and this both close it. */
@@ -343,6 +348,18 @@
   }
   .viewchip:hover {
     border-color: var(--line-strong);
+  }
+  .relatedchip {
+    /* A related note: the view chip's shape, without the X, and a button. */
+    padding: 4px 10px;
+    border: 0;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .relatedchip:hover {
+    color: var(--accent);
   }
   .viewadd {
     /* A quiet ghost chip - same height as a view chip, no fill, lavender

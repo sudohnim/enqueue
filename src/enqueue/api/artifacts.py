@@ -307,6 +307,15 @@ def get_artifact(artifact_id: str) -> dict:
         if artifact_id in included and artifact_id not in excluded:
             views.append({"id": saved["id"], "name": saved["name"]})
     detail["views"] = sorted(views, key=lambda v: v["name"])
+
+    from .. import db
+    from ..ingest import related
+
+    conn = db.get_conn()
+    try:
+        detail["related"] = related.for_artifact(conn, artifact_id)
+    finally:
+        conn.close()
     return detail
 
 

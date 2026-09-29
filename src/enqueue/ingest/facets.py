@@ -193,6 +193,9 @@ def _reindex(artifact_id: str) -> None:
 
     try:
         get_store().index_facets_artifact(artifact_id)
+        from . import related
+
+        related.compute(artifact_id)  # the links follow the facets they come from
     except Exception:  # noqa: BLE001 - the DB rows are the truth; a reindex hiccup is not fatal
         pass
 

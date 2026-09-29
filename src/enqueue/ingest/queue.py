@@ -200,6 +200,16 @@ def process(artifact_id: str) -> dict:
     # by its own words regardless.
     entities_made = _entities_artifact(artifact_id) if chunks else 0
 
+    # Related artifacts (ingest/related.py): links to notes whose facets say the same
+    # thing. Local and cheap, so it runs whenever facets were just written.
+    if facets_made:
+        try:
+            from . import related
+
+            related.compute(artifact_id)
+        except Exception:  # noqa: BLE001 - derived; never blocks capture
+            log.exception("related artifacts failed for %s", artifact_id)
+
     # Chunk context (ingest/context.py): for a multi-chunk document, the ingest model
     # places each chunk in it, and the artifact is re-indexed with those lines. It
     # runs after the first index so the capture is searchable without waiting on it.
