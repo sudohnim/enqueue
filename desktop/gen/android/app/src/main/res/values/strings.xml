@@ -3,4 +3,9 @@
     <string name="main_activity_title">"Enqueue"</string>
     <string name="shortcut_quick_capture_short">"Quick capture"</string>
     <string name="shortcut_quick_capture_long">"Capture your thoughts"</string>
+    <string name="quick_capture_title">"Capture your thoughts"</string>
+    <string name="quick_capture_hint">"A thought, a link, or markdown"</string>
+    <string name="quick_capture_save">"Save"</string>
+    <string name="quick_capture_saved">"Saved to Enqueue"</string>
+    <string name="quick_capture_failed">"Couldn't save. Try again."</string>
 </resources>

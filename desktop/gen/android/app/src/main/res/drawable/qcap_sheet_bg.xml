@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The quick capture sheet: the page's bottom sheet (.qcap-sheet in mobile.html),
+     the canvas mixed 70/30 with white, rounded on top. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/qcap_sheet" />
+    <corners android:topLeftRadius="28dp" android:topRightRadius="28dp" />
+</shape>

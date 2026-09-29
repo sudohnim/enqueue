@@ -10,4 +10,13 @@
     <!-- The canvas token (the page ground bg, DESIGN.md section 2): the violet ground the status and
          navigation bar strips must match. -->
     <color name="canvas">#FFEEE8F6</color>
+    <!-- Quick capture popup (QuickCaptureActivity), the page's tokens: purple-bold,
+         text, text-dim, line, danger, the scrim and the sheet mix. -->
+    <color name="purple_bold">#FF60079F</color>
+    <color name="qcap_text">#FF120F19</color>
+    <color name="qcap_text_dim">#FF433E57</color>
+    <color name="qcap_line">#1F3A0D63</color>
+    <color name="qcap_danger">#FF96241B</color>
+    <color name="qcap_scrim">#57210A38</color>
+    <color name="qcap_sheet">#FFF3EFF9</color>
 </resources>
