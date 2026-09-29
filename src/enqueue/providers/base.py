@@ -42,6 +42,27 @@ def _chain(exc: BaseException) -> list[BaseException]:
     return chain
 
 
+def is_transient(exc: BaseException) -> bool:
+    """Whether a failed model call is worth retrying later as-is: a rate limit or usage
+    cap, a timeout, an unreachable host, or a server error. A bad key, a missing model
+    or output that failed validation will fail the same way again."""
+    import openai
+
+    for link in _chain(exc):
+        if isinstance(
+            link,
+            openai.RateLimitError
+            | openai.APITimeoutError
+            | openai.APIConnectionError
+            | openai.InternalServerError,
+        ):
+            return True
+        if isinstance(link, openai.APIStatusError):
+            code = link.response.status_code
+            return code in (408, 409, 429) or code >= 500
+    return False
+
+
 def why(exc: BaseException, base_url: str, model: str) -> str:
     """Turn a failed model call into something a person can act on.
 

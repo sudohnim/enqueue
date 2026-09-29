@@ -25,6 +25,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from ..worker import Worker
+from .source import Owed
 
 log = logging.getLogger(__name__)
 
@@ -36,10 +37,15 @@ _FACET_RETRY_BASE = 30  # seconds; delay before the first retry
 _FACET_RETRY_CAP = 24 * 60 * 60  # 24h ceiling
 _facet_sweeper_started = False
 _facet_sweeper_lock = threading.Lock()
+# Artifacts a step owed a retry during the current `process` run. The facet_retry row
+# is cleared at the end of a run only when no step did, so an artifact stays owed
+# until every model step (sections, facets, entities, contexts) has gone through.
+_owed_in_run: set[str] = set()
 
 
 def _record_facet_retry(conn, artifact_id: str, error: str) -> None:
-    """Owe this artifact a summary, scheduling the next attempt with backoff."""
+    """Owe this artifact a retry, scheduling the next attempt with backoff."""
+    _owed_in_run.add(artifact_id)
     row = conn.execute(
         "SELECT attempts FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
     ).fetchone()
@@ -130,7 +136,27 @@ def _pending(artifact_id: str) -> int:
 
 
 def process(artifact_id: str) -> dict:
-    """Resolve, extract, chunk, and index one artifact. Synchronous."""
+    """Resolve, extract, chunk, and index one artifact. Synchronous.
+
+    Each model step skips work that is already current, and any step that fails for
+    a reason that will pass (rate limit, outage) owes the artifact a retry; the
+    retry sweeper re-runs the whole artifact, which then costs only the owed steps.
+    """
+    from .. import db
+
+    _owed_in_run.discard(artifact_id)
+    result = _process(artifact_id)
+    if artifact_id not in _owed_in_run and _pending(artifact_id) == 0:
+        conn = db.get_conn()
+        try:
+            _clear_facet_retry(conn, artifact_id)
+            conn.commit()
+        finally:
+            conn.close()
+    return result
+
+
+def _process(artifact_id: str) -> dict:
     from .. import capture, db, preview
     from ..index.store import get_store
     from . import chunk as chunk_mod
@@ -191,6 +217,11 @@ def process(artifact_id: str) -> dict:
     # response, is what keeps them from being a batch nobody remembers to run
     # (an unfaceted library answers only literal matches). Best effort: a facet
     # failure never fails the capture, and the artifact is still findable by text.
+    # Section summaries (ingest/source.py) for a document too long to read in one
+    # pass: made first, so every later step reads them, and owed on a rate limit
+    # rather than silently replaced by the document's opening.
+    if chunks:
+        _sections_artifact(artifact_id)
     facets_made = _facet_artifact(artifact_id) if chunks else 0
 
     # Entities are the named things in the body, each enriched with a one-line
@@ -399,6 +430,8 @@ def _facet_artifact(artifact_id: str) -> int:
             _clear_facet_retry(conn, artifact_id)  # gate is permanent, stop retrying
             conn.commit()
             return 0
+        if facets_mod.is_current(conn, artifact_id):
+            return 0  # written by this model from this body already: no call to spend
         count, error = facets_mod.generate_for_artifact(conn, artifact_id)
         if error and error != "no facet cleared the quality gate":
             # A transient model failure (rate limit, 500, network): keep the summary
@@ -436,6 +469,32 @@ def _facet_artifact(artifact_id: str) -> int:
     return count
 
 
+def _sections_artifact(artifact_id: str) -> None:
+    """Make a long document's section summaries now (cached per section), or owe them.
+
+    Best effort, never raises. A short document, or one whose text must never reach a
+    model, has nothing to do here.
+    """
+    if _pending(artifact_id) > 0:
+        return
+    from .. import config, db
+    from . import source
+
+    conn = db.get_conn()
+    try:
+        if len(source.document_text(conn, artifact_id)) <= config.FACET_INPUT_CHARS:
+            return
+        try:
+            source.ingest_text(conn, artifact_id)
+        except source.SummariesOwed as exc:
+            _record_facet_retry(conn, artifact_id, str(exc))
+        conn.commit()
+    except Exception:  # noqa: BLE001 - derived; a failure never blocks capture
+        log.exception("section summaries failed for %s", artifact_id)
+    finally:
+        conn.close()
+
+
 def _context_artifact(artifact_id: str) -> int:
     """Write chunk contexts for one artifact. Best effort, never raises."""
     if _pending(artifact_id) > 0:
@@ -446,6 +505,8 @@ def _context_artifact(artifact_id: str) -> int:
     conn = db.get_conn()
     try:
         count, error = context_mod.generate_for_artifact(conn, artifact_id)
+        if isinstance(error, Owed):
+            _record_facet_retry(conn, artifact_id, error)
         conn.commit()
     except Exception:  # noqa: BLE001 - contexts are derived; a failure never blocks capture
         log.exception("chunk context failed for %s", artifact_id)
@@ -481,7 +542,11 @@ def _entities_artifact(artifact_id: str) -> int:
         ).fetchone()
         if gated:
             return 0
+        if entities_mod.is_current(conn, artifact_id):
+            return 0  # written by this model from this body already
         count, error = entities_mod.generate_for_artifact(conn, artifact_id)
+        if isinstance(error, Owed):
+            _record_facet_retry(conn, artifact_id, error)
         conn.commit()
     except Exception:  # noqa: BLE001 - entities are derived; a failure never blocks capture
         log.exception("entity generation failed for %s", artifact_id)

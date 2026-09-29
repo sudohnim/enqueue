@@ -46,7 +46,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     """
     from ..prompts import CHUNK_CONTEXT
     from ..providers.base import get_provider
-    from .source import ingest_text
+    from .source import SummariesOwed, ingest_text, owed_or_plain
 
     row = conn.execute(
         "SELECT title, status, local_only FROM artifacts WHERE id = ?", (artifact_id,)
@@ -54,13 +54,24 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     if row is None or row["status"] == "text_only":
         return 0, None
     chunks = conn.execute(
-        "SELECT id, text FROM chunks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
+        "SELECT id, text, context, context_model FROM chunks WHERE artifact_id = ?"
+        " ORDER BY ordinal",
+        (artifact_id,),
     ).fetchall()
     if len(chunks) < 2:
         return 0, None
 
     provider = get_provider(local_only=bool(row["local_only"]), role="ingest")
-    document = ingest_text(conn, artifact_id)
+    # Only chunks without a context from this model: a retry after a partial run, or a
+    # re-chunk that kept most chunks (ingest/chunk.py carries contexts over), costs
+    # only what is missing.
+    chunks = [c for c in chunks if not c["context"] or c["context_model"] != provider.model]
+    if not chunks:
+        return 0, None
+    try:
+        document = ingest_text(conn, artifact_id)
+    except SummariesOwed as exc:
+        return 0, owed_or_plain(exc)
     written = 0
     for start in range(0, len(chunks), BATCH):
         batch = chunks[start : start + BATCH]
@@ -75,7 +86,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 response_model=_RawChunkContextSet,
             )
         except Exception as exc:  # noqa: BLE001 - the caller logs; chunks stay plain
-            return written, f"{type(exc).__name__}: {exc}"[:300]
+            return written, owed_or_plain(exc)
         by_index = {c.index: _clean(c.context) for c in raw.contexts}
         for i, c in enumerate(batch, start=1):
             context = by_index.get(i)

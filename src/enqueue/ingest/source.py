@@ -46,8 +46,9 @@ def ingest_text(conn, artifact_id: str) -> str:
     A document that fits in FACET_INPUT_CHARS is read whole. A longer one is
     map-reduced: each section is summarized by the ingest model and the model reads
     the summaries in order, so an idea on page 40 shapes the facets as much as one on
-    page 1. If any section cannot be summarized, it falls back to the opening
-    FACET_INPUT_CHARS, as before.
+    page 1. If a section cannot be summarized it falls back to the opening
+    FACET_INPUT_CHARS, except when the failure is transient: then SummariesOwed is
+    raised, so the caller retries later rather than writing from the opening.
     """
     text = document_text(conn, artifact_id)
     if len(text) > config.FACET_INPUT_CHARS:
@@ -70,6 +71,25 @@ SUMMARY_MAX_WORDS = 120
 
 class _RawSectionSummary(BaseModel):
     summary: str
+
+
+class SummariesOwed(RuntimeError):
+    """A section summary failed for a reason that will pass (rate limit, outage). The
+    document must not be read as its capped opening instead: the ingest step fails
+    and the artifact stays owed (ingest/queue.py) until the summaries can be made."""
+
+
+class Owed(str):
+    """An ingest step's error that is worth retrying later (rate limit, outage), as
+    opposed to one that would fail the same way again. Still a plain str to callers."""
+
+
+def owed_or_plain(exc: BaseException) -> str:
+    """A step's error sentence, as Owed when the failure is transient."""
+    from ..providers.base import is_transient
+
+    text = f"{type(exc).__name__}: {exc}"[:300]
+    return Owed(text) if isinstance(exc, SummariesOwed) or is_transient(exc) else text
 
 
 def sections(text: str) -> list[str]:
@@ -125,8 +145,12 @@ def _map_reduce(conn, artifact_id: str, text: str) -> str | None:
                     user=f"Document: {row['title']}\nSection {i} of {len(parts)}\n\n{part}",
                     response_model=_RawSectionSummary,
                 )
-            except Exception:  # noqa: BLE001 - one failed section: use the capped opening
-                return None
+            except Exception as exc:  # noqa: BLE001 - classified just below
+                from ..providers.base import is_transient
+
+                if is_transient(exc):
+                    raise SummariesOwed(f"section {i} of {len(parts)}: {exc}") from exc
+                return None  # the model cannot summarize it: read the capped opening
             summary = " ".join(raw.summary.split()[:SUMMARY_MAX_WORDS])
             if not summary:
                 return None

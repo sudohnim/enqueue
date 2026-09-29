@@ -106,6 +106,29 @@ def _trust_from_confidence(confidence: float | None) -> float:
     return max(0.0, min(1.0, value))
 
 
+def is_current(conn, artifact_id: str) -> bool:
+    """Whether the artifact's machine facets were written by the current ingest model
+    from its current body, so regenerating would only spend a model call."""
+    from ..providers.base import get_provider
+
+    row = conn.execute(
+        "SELECT local_only, (SELECT MAX(created_at) FROM artifact_versions v"
+        "  WHERE v.artifact_id = artifacts.id) AS body_version FROM artifacts WHERE id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    model = get_provider(local_only=bool(row["local_only"]), summarize=True).model
+    return (
+        conn.execute(
+            "SELECT 1 FROM facets WHERE artifact_id = ? AND edited = 0 AND model_version = ?"
+            " AND body_version IS ?",
+            (artifact_id, model, row["body_version"]),
+        ).fetchone()
+        is not None
+    )
+
+
 def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     """Generate and store facets for one artifact. Returns (count, error).
 
@@ -120,7 +143,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     from ..prompts import FACET_GENERATION
     from ..providers.base import get_provider
     from ..schemas import Facet
-    from .source import ingest_text
+    from .source import SummariesOwed, ingest_text, owed_or_plain
 
     row = conn.execute(
         "SELECT title, body, local_only,"
@@ -129,7 +152,10 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
         " FROM artifacts WHERE id = ?",
         (artifact_id,),
     ).fetchone()
-    text = ingest_text(conn, artifact_id)
+    try:
+        text = ingest_text(conn, artifact_id)
+    except SummariesOwed as exc:
+        return 0, owed_or_plain(exc)
 
     provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
     nouns = proper_nouns(text, row["title"])
@@ -142,7 +168,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
             context={"proper_nouns": nouns},
         )
     except Exception as exc:  # noqa: BLE001 - the caller reports and continues
-        return 0, f"{type(exc).__name__}: {exc}"[:300]
+        return 0, owed_or_plain(exc)
 
     # Keep each facet that passes the same per-facet quality bar the strict schema
     # enforces; drop the ones that do not. One long or subject-naming facet no

@@ -222,6 +222,16 @@ def chunk_artifact(conn, artifact_id: str) -> int:
     if row is None:
         return 0
 
+    # A chunk whose text survives the re-chunk keeps its model-written context
+    # (ingest/context.py), so a reprocess or retry pays only for chunks that changed.
+    kept_context = {
+        r["text"]: (r["context"], r["context_model"])
+        for r in conn.execute(
+            "SELECT text, context, context_model FROM chunks"
+            " WHERE artifact_id = ? AND context IS NOT NULL",
+            (artifact_id,),
+        )
+    }
     conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
 
     # Notes carry their own text. A link carries whatever its preview found out, which
@@ -293,9 +303,11 @@ def chunk_artifact(conn, artifact_id: str) -> int:
 
     made = chunk_markdown(body)
     for ordinal, (text, chunker) in enumerate(made):
+        context, context_model = kept_context.get(text, (None, None))
         conn.execute(
-            "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker) VALUES (?,?,?,?,?)",
-            (str(uuid.uuid4()), artifact_id, ordinal, text, chunker),
+            "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker, context,"
+            " context_model) VALUES (?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), artifact_id, ordinal, text, chunker, context, context_model),
         )
     return len(made)
 
