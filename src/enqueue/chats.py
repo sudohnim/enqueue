@@ -212,15 +212,44 @@ def _scoped_passages(conn, artifact_ids: list[str]) -> list[dict]:
 def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]:
     """The passages an answer may read. A scoped chat reads its artifact, no search.
 
-    Everything-scope applies the same relevance floor as /search (Q.5, Q.10).
+    Everything-scope applies the same relevance floor as /search (Q.5, Q.10). A
+    two-sided question ("compare X and Y", retrieve/decompose.py) searches each side
+    on its own and interleaves them, so both sides reach the answer; slots left over
+    are filled from the whole question.
     """
+    if scope_kind == "artifact":
+        if scope_id is None:
+            return []
+        conn = db.get_conn()
+        try:
+            return _scoped_passages(conn, [scope_id])
+        finally:
+            conn.close()
+
+    from .retrieve.decompose import parts
+
+    sides = parts(question)
+    if not sides:
+        return _library_passages(question)
+    lists = [_library_passages(side) for side in sides] + [_library_passages(question)]
+    out: list[dict] = []
+    seen: set[str] = set()
+    for rank in range(PASSAGES):
+        for found in lists[:-1]:
+            if rank < len(found) and found[rank]["id"] not in seen:
+                out.append(found[rank])
+                seen.add(found[rank]["id"])
+    for p in lists[-1]:
+        if p["id"] not in seen:
+            out.append(p)
+            seen.add(p["id"])
+    return out[:PASSAGES]
+
+
+def _library_passages(question: str) -> list[dict]:
+    """Everything-scope retrieval for one question, best first."""
     conn = db.get_conn()
     try:
-        if scope_kind == "artifact":
-            if scope_id is None:
-                return []
-            return _scoped_passages(conn, [scope_id])
-
         from .index.store import get_store
         from .retrieve.candidates import _floor_verdict, judge_gray_zone
 

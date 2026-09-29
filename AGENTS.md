@@ -221,6 +221,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `retrieve/lift.py` | Query lifting: the search model restates a search as 2-4 facet-style claims, each also searched against facets (dense similarity counts for the floor; never lexical). Cached in `derived_values` (scope `query_lift`). Chat always lifts; `/search` only with the `search_lift` setting (Settings > Features > Search, default off). Tests stub it via an autouse conftest fixture. |
+| `retrieve/decompose.py` | Two-sided questions: "compare X and/with Y", "the difference between X and Y", "how does X compare to Y", "X vs Y" split into their sides (each 1-12 words; plain rules, no model call). `chats.passages` searches each side on its own (`_library_passages`), interleaves them rank by rank so both sides reach the answer, then fills leftover slots from the whole question. |
 | `retrieve/passage_links.py` | Passage connections: for each of an artifact's first 40 chunks, its stored vector finds the nearest chunks in other live artifacts (`store.similar_chunks`); those at or above `PASSAGE_MIN` (0.78 cosine, about a quarter of eval-corpus passages link) become up to 3 connections per passage. On demand, nothing stored, no model call. `GET /artifacts/{id}/connections`; the drawer's "Passages that connect" section (`mountConnections` in `static/js/artifact.js`) shows each passage's opening words and its linked notes. |
 | `retrieve/filters.py` | Filters in the words of a search: an unambiguous kind word (pdf, link/article, image/photo/screenshot; never "note") and a time phrase (today, yesterday, this/last week/month/year, the last N days/weeks/months, in March [2025], in 2024) become exact filters on kind and `created_at`, and the rest is searched. Plain rules, no model call. `search_results` intersects them with `#tag` filters into one `allowed` set (empty means no results, never the whole library); a filter with no other words lists what it allows. `/search` returns the understood filters as `filters` ("PDFs · saved last month") for the results header. A quoted phrase is never parsed. |
 | `retrieve/model_rank.py` | Model re-ranking: the search model reads the top `WINDOW` (20) floor survivors (title, snippet, facets) and returns them best first; missing ids keep their fused order, a failure keeps the whole fused order. Cached in `derived_values` (scope `model_rank`) per query, candidate set and model. Opt-in via the `search_model_rank` setting (Settings > Features > Search, default off); runs after the R.9 cross-encoder when both are on. |
@@ -771,6 +772,7 @@ A facet or entity hit counts only while its `body_version` matches the artifact'
 At most `CHUNKS_PER_ARTIFACT` chunks per note so one long note cannot take the whole `PASSAGES` budget (the "do I have notes on a president" case).
 A facet or entity hit pulls its artifact's opening chunk in, so the answer has literal text to stand on.
 A scoped chat does no retrieval: the artifact is the candidate set.
+A two-sided question is searched per side and interleaved (`retrieve/decompose.py`), because one embedding of "X vs Y" lands on whichever side dominates.
 
 ### Cross-domain eval
 
