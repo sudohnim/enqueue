@@ -36,7 +36,7 @@ def test_no_target_shares_its_query_vocabulary(suite):
     for q in suite["queries"]:
         assert q["forbidden"], q["id"]
         for aid in q["expect"]:
-            text = notes[aid]["title"] + "\n" + notes[aid]["body"]
+            text = notes[aid]["title"] + "\n" + xd.note_body(notes[aid])
             assert xd.forbidden_hits(text, q["forbidden"]) == [], (q["id"], aid)
 
 
@@ -107,7 +107,27 @@ def test_ingest_prompts_do_not_leak_the_eval(suite):
     subjects = [
         "willow", "oak", "reed", "baton", "relay", "mise", "burn", "fire", "forest",
         "hive", "bee", "chess", "opening", "crop", "soil", "bulkhead", "hull",
-        "jazz", "chorus", "sourdough", "starter",
+        "jazz", "chorus", "sourdough", "starter", "postal", "postage", "tide",
+        "pigment", "migratory",
     ]  # fmt: skip
-    for name in ("FACET_GENERATION", "ENTITY_EXTRACT", "ENTITY_ENRICH_BATCH"):
+    for name in (
+        "FACET_GENERATION",
+        "ENTITY_EXTRACT",
+        "ENTITY_ENRICH_BATCH",
+        "CHUNK_CONTEXT",
+        "QUERY_LIFT",
+        "SECTION_SUMMARY",
+    ):
         assert xd.forbidden_hits(getattr(prompts, name), subjects) == [], name
+
+
+def test_long_targets_put_their_idea_past_the_read_limit(suite):
+    """The padded targets exist to test map-reduce: their own paragraph must start
+    beyond what a truncating reader would see."""
+    from enqueue import config
+
+    long_notes = [n for n in suite["notes"] if n.get("pad_with")]
+    assert len(long_notes) >= 2
+    for n in long_notes:
+        full = xd.note_body(n)
+        assert full.index(n["body"].strip()[:40]) > config.FACET_INPUT_CHARS * 2

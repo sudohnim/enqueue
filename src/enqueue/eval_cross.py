@@ -62,15 +62,33 @@ def rank_of(expected: list[str], hit_ids: list[str]) -> int | None:
     return None
 
 
-def _notes(suite: dict) -> list[dict]:
-    """Suite notes and decoys, then the main corpus as background."""
-    out = [dict(n, id=n["id"]) for n in suite["notes"] + suite["decoys"]]
+def _main_corpus() -> list[dict]:
     manifest = json.loads((MAIN_CORPUS / "MANIFEST.json").read_text(encoding="utf-8"))
+    out = []
     for entry in manifest["artifacts"]:
         content = (MAIN_CORPUS / entry["filename"]).read_text(encoding="utf-8")
         title, _, body = content.partition("\n\n")
         out.append({"id": entry["id"], "title": title.lstrip("# ").strip(), "body": body})
     return out
+
+
+def note_body(note: dict, main: dict[str, dict] | None = None) -> str:
+    """A suite note's full body: any `pad_with` main-corpus documents, then its own."""
+    if not note.get("pad_with"):
+        return note["body"]
+    main = main or {n["id"]: n for n in _main_corpus()}
+    return "\n\n".join([*(main[m]["body"] for m in note["pad_with"]), note["body"]])
+
+
+def _notes(suite: dict) -> list[dict]:
+    """Suite notes and decoys (padded where asked), then the main corpus as background."""
+    background = _main_corpus()
+    main = {n["id"]: n for n in background}
+    suite_notes = [
+        {"id": n["id"], "title": n["title"], "body": note_body(n, main)}
+        for n in suite["notes"] + suite["decoys"]
+    ]
+    return suite_notes + background
 
 
 def build(suite: dict) -> None:

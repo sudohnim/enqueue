@@ -127,6 +127,31 @@ notes:
       jar at the same time each morning, that it no longer depends on remembering or on
       feeling like it.
 
+  # Long targets: `pad_with` prepends those main-corpus documents' text, so the idea
+  # below sits ~56,000 characters in, far past the 12,000-character read limit.
+  # Only map-reduced ingestion (ingest/source.py) can put it in the facets.
+  - id: xd_long_wedging
+    title: Notes from a year of pottery classes
+    pad_with: [long_0002, long_0004]
+    body: |
+      The last lesson of the year was about wedging. Before a lump of clay goes on the
+      wheel, you knead it on a canvas board for several minutes, folding and pressing
+      until the pockets of trapped air are pushed out. Skip it and the pot looks perfect
+      on the wheel, dries without complaint, and then bursts in the kiln when a hidden
+      bubble expands in the heat. The teacher's point was that the kiln only reveals
+      what was already wrong at the start, when fixing it cost nothing.
+
+  - id: xd_long_tuning
+    title: A season of volunteering with the town orchestra
+    pad_with: [long_0001, long_0005]
+    body: |
+      What surprised me most was the minute before each rehearsal. The oboe plays a
+      single A and every other instrument tunes to it, one section at a time, before a
+      note of music is played. Nobody tunes to their own idea of the pitch, and nobody
+      starts until the room agrees. The conductor told me that a hall full of players
+      each slightly sharp or flat sounds worse than any single wrong note, and that the
+      minute spent on one reference saves the whole evening.
+
 decoys:
   - id: xd_decoy_k8s_limits
     title: Kubernetes resource limits cheat sheet
@@ -222,6 +247,16 @@ queries:
     query: running meetings so quieter colleagues get equal airtime
     expect: [xd_trading_fours]
     forbidden: [meeting, colleague, airtime]
+
+  - id: xd_q_catch_early
+    query: catching defects before they blow up in production
+    expect: [xd_long_wedging]
+    forbidden: [defect, production, bug]
+
+  - id: xd_q_shared_baseline
+    query: calibrating a group to one shared baseline before work begins
+    expect: [xd_long_tuning]
+    forbidden: [calibrate, calibrating, calibration, baseline, group]
 
   - id: xd_q_habit
     query: making a daily habit stick with tiny consistent effort
