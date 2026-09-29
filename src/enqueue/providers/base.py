@@ -48,7 +48,11 @@ def is_transient(exc: BaseException) -> bool:
     or output that failed validation will fail the same way again."""
     import openai
 
+    from .pause import ModelPaused
+
     for link in _chain(exc):
+        if isinstance(link, ModelPaused):
+            return True  # the usage limit resets on its own; the work is owed, not failed
         if isinstance(
             link,
             openai.RateLimitError
