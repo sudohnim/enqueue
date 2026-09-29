@@ -88,3 +88,17 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
     assert by_id[q["id"]]["pass"], by_id[q["id"]]
     assert set(report["modes"]) == {"chunks", "facets"}
     assert report["modes"]["facets"]["total"] == len(suite["queries"])
+
+
+def test_ingest_prompts_do_not_leak_the_eval(suite):
+    """Prompt examples must not mention an eval target's subject, or the eval would
+    measure the prompt's examples instead of the model's ability to abstract."""
+    from enqueue import prompts
+
+    subjects = [
+        "willow", "oak", "reed", "baton", "relay", "mise", "burn", "fire", "forest",
+        "hive", "bee", "chess", "opening", "crop", "soil", "bulkhead", "hull",
+        "jazz", "chorus", "sourdough", "starter",
+    ]  # fmt: skip
+    for name in ("FACET_GENERATION", "ENTITY_EXTRACT", "ENTITY_ENRICH_BATCH"):
+        assert xd.forbidden_hits(getattr(prompts, name), subjects) == [], name

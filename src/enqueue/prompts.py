@@ -35,6 +35,15 @@ of making the claim. State the claim on its own, as if it were simply true.
 Each facet is one complete sentence of 8 to 30 words, ending in a period, and each
 should be arguable. A facet nobody could disagree with cannot match anything either.
 
+Bridges: at least two facets at level 2 or 3 must restate the mechanism in the terms of
+a different field where it genuinely applies - a team, a codebase, a body, a budget, a
+habit, a negotiation, a household - so a person searching in that field's words finds
+it. Use the field's general terms, never the artifact's own subject.
+
+  artifact about ants reinforcing the trails other ants already walk
+  good  Tools a whole team keeps using become the default long after better ones exist.
+  good  Spending habits deepen with repetition until the alternatives stop being noticed.
+
 Give each facet a `confidence` from 0.0 to 1.0: how strongly the artifact's own text
 actually supports the claim. A restatement the text makes outright is near 1.0; a
 plausible reach the text only gestures at is near 0.3. This is not how abstract the
