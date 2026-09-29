@@ -29,10 +29,10 @@ FUZZY_BASE_SCORE = 0.02
 RECENCY_WEIGHT = 0.5
 RECENCY_TAU_DAYS = 30
 
-# Q.3 relevance floor bars, on the true-cosine scale of a prefixed query
-# (config.EMBED_QUERY_PREFIX). Between them is the gray zone.
-KEEP_ABOVE = 0.68
-DROP_BELOW = 0.40
+# Q.3 relevance floor bars, on the true-cosine scale of the embedding model's prefixed
+# query (per model in config.EMBED_MODELS). Between them is the gray zone.
+KEEP_ABOVE = config.EMBED_KEEP_ABOVE
+DROP_BELOW = config.EMBED_DROP_BELOW
 
 
 def _floor_verdict(hit: dict) -> str:

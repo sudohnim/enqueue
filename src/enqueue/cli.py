@@ -916,6 +916,32 @@ def eval_cross(json_path: str = "", generate_facets: bool = False) -> None:
         typer.echo(f"wrote {json_path}")
 
 
+@app.command("eval-embedders")
+def eval_embedders(models: str = "") -> None:
+    """Compare embedding models on the main and cross-domain evals, each with a relevance
+    floor fitted to its own scale. `--models a,b` limits the run; the default is every
+    candidate in eval_embedders.CANDIDATES. Candidates download on first use.
+    """
+    from . import eval_embedders as ee
+
+    chosen = [m.strip() for m in models.split(",") if m.strip()] or None
+    unknown = [m for m in chosen or [] if m not in ee.CANDIDATES]
+    if unknown:
+        raise typer.BadParameter(f"not a candidate: {', '.join(unknown)}")
+    rows = ee.run(chosen)
+    typer.secho(
+        f"{'model':<42}{'recall@10':>10}{'MRR':>7}{'nothing':>9}{'cross':>7}{'+facets':>9}"
+        f"{'keep':>7}{'drop':>7}",
+        bold=True,
+    )
+    for r in rows:
+        typer.echo(
+            f"{r['model']:<42}{r['recall@10']:>10}{r['MRR']:>7}{r['nothing_ok']:>9}"
+            f"{r['cross_chunks']:>4}/{r['cross_total']:<2}{r['cross_enriched']:>6}/{r['cross_total']:<2}"
+            f"{r['bars']['keep_above']:>7}{r['bars']['drop_below']:>7}"
+        )
+
+
 @app.command("eval-real")
 def eval_real(update_baseline: bool = False) -> None:
     """Score the searches you actually ran (a search, then opening a result) against

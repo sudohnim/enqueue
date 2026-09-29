@@ -17,7 +17,7 @@ from typing import Any
 import sqlite_vec
 
 from .. import config, db
-from .embed import embed, embed_one, embed_query
+from .embed import embed, embed_passage, embed_query
 from .fusion import rrf_scored
 from .store import VectorStore
 
@@ -502,7 +502,7 @@ class SqliteVecStore(VectorStore):
     def _dense(
         self, conn: sqlite3.Connection, name: str, text: str, limit: int, as_query: bool = True
     ) -> list[dict]:
-        query = json.dumps(embed_query(text) if as_query else embed_one(text))
+        query = json.dumps(embed_query(text) if as_query else embed_passage(text))
         try:
             rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
             # Unit-norm vectors, L2 distance d: cosine = 1 - d^2/2 (Q.2b).

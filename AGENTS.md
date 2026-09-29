@@ -199,6 +199,7 @@ One line per file, describing its job.
 | `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
 | `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
 
 ### Ingest
@@ -554,6 +555,7 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq chats [--limit N]` | List conversations |
 | `enq chunk` | Rebuild chunks from note bodies |
 | `enq facet-gate` | Decide which artifacts never get facets |
+| `enq eval-embedders [--models a,b]` | Compare embedding models on both evals and suggest each one's floor bars |
 | `enq eval-real [--update-baseline]` | Score your real searches against your library; fails when a baseline query now fails |
 
 The CLI never touches the database directly.
@@ -702,7 +704,7 @@ These used to live as long comments in `retrieve/candidates.py`, `index/store_sq
 One dense threshold cannot work: the eval showed the weakest real matches (cosine ~0.518) sit below the strongest gibberish neighbors (~0.668).
 So the floor has two bars on the true-cosine scale, `KEEP_ABOVE = 0.68` and `DROP_BELOW = 0.40`, and a gray zone between them decided by one batched model call.
 The bars are on the scale of a PREFIXED query (see "Query prefix"): the prefix lowers every query-to-passage cosine by about 0.07 (real matches: weakest 0.516 -> 0.427, median 0.624 -> 0.564; strongest gibberish 0.665 -> 0.597), so the old unprefixed bars (0.75/0.45) moved down by the same margin.
-Recalibrate them whenever the embedding model or its prefix changes: `evals/queries.yaml` real-match minimum must stay above `DROP_BELOW`, and every "nothing" query's best hit below `KEEP_ABOVE`.
+The bars live per model in `config.EMBED_MODELS` (`keep_above`, `drop_below`) and are read into `KEEP_ABOVE`/`DROP_BELOW`; recalibrate them whenever the model or its prefix changes: `evals/queries.yaml` real-match minimum must stay above `DROP_BELOW`, and every "nothing" query's best hit below `KEEP_ABOVE` (`enq eval-embedders` prints fitted values).
 The bars are start values for the Phase Q.4 eval (all 42 real-match queries passing, Nothing-OK toward 8/8), not final answers.
 Lexical legs that bypass the floor: chunk FTS5 keyword (with prefix recall), fuzzy, exact phrase, and the FTS5 keyword branch of a facet or entity.
 The trigram leg is recall only, not lexical (Minh's decision): a 3-character overlap like "pie" in "pieces" is noise, and partial words are already covered by the keyword prefix query.
@@ -715,6 +717,12 @@ bge v1.5 is trained to read a search with `config.EMBED_QUERY_PREFIX` ("Represen
 Every search embeds through `embed.embed_query` (the dense leg of `/search`, chat passages, lifted claims); indexing uses `embed()` with no prefix.
 Passage-to-passage similarity (related notes, `ingest/related.py`) passes `as_query=False` to `search_dense` so it stays on the unprefixed scale `RELATED_MIN` was set on.
 Measured on adding it: cross-domain 3/12 -> 7/12 (with the recalibrated floor), main eval MRR 0.928 -> 0.945 at unchanged recall.
+
+**Embedding models.**
+`config.EMBED_MODELS` is the registry the engine can run on, selected by `ENQ_EMBED_MODEL` (default bge-base-en-v1.5): per model its index `version` (a change triggers the automatic index rebuild in `index/bootstrap.py`), `query_prefix`, `doc_prefix` (prepended to every indexed passage and to passage-to-passage comparisons, e.g. nomic's "search_document: "), and its floor bars.
+Only 768-dimensional models fit, because the vec0 tables are built at that width; another width is a migration.
+To evaluate a switch, run `enq eval-embedders` on a machine that can reach Hugging Face (each candidate downloads once): it lists the 768-d fastembed candidates in `eval_embedders.CANDIDATES` (bge-base, nomic-embed-text-v1.5, arctic-embed-m and m-long, gte-base, jina-v2-base-en) with main recall@10/MRR/Nothing-OK, cross-domain passes, and fitted bars, with the gray-zone judge held fail-open so it compares embedders only.
+A winner joins `EMBED_MODELS` with its fitted bars; then set `ENQ_EMBED_MODEL`, let the index rebuild, rerun both eval gates and `enq eval-real`, and refresh the committed baselines.
 
 **Dense score scale (Q.2b).**
 vec0 stores L2 distance over unit-norm embeddings, so cosine is `1 - d^2/2`, clamped to [0, 1].
@@ -1033,7 +1041,7 @@ See the Resolved decisions section above for the status of each of these.
 | Pydantic | schemas + validation | Validators are the quality floor. Instructor re-prompts on failure. |
 | instructor | structured LLM output | Mode.JSON for all adapters. Wraps the OpenAI client. |
 | openai | LLM client | Used for all OpenAI-compatible endpoints. |
-| fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d). |
+| fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d) by default; any 768-d model in `config.EMBED_MODELS`. |
 | sqlite-vec | search index | vec0 + FTS5 tables inside the SQLite file; hybrid fused with RRF. |
 | pymupdf (fitz) | PDF parsing | Text extraction, page rendering, page counting, phrase search. |
 | beautifulsoup4 + lxml | HTML parsing | For link preview metadata extraction. |
