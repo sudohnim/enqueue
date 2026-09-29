@@ -115,6 +115,22 @@ def _start_sync_worker() -> None:
     except Exception as exc:  # noqa: BLE001 - additive; never block startup
         print(f"[engine] could not publish settings at startup: {exc}")
 
+    # One-shot: re-push saved links so their previews reach a phone that synced them
+    # before previews rode the snapshot. On a daemon thread: it is network work.
+    import threading
+
+    def _backfill_previews() -> None:
+        try:
+            from ..sync.client import backfill_link_previews
+
+            n = backfill_link_previews()
+            if n:
+                print(f"[engine] pushed {n} link previews to the relay")
+        except Exception as exc:  # noqa: BLE001 - additive; never block startup
+            print(f"[engine] could not backfill link previews: {exc}")
+
+    threading.Thread(target=_backfill_previews, name="preview-backfill", daemon=True).start()
+
 
 def _warm_embeddings() -> None:
     """Load the embedding model in the background so the first search is not cold.

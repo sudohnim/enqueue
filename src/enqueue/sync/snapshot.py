@@ -72,7 +72,32 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
                 (artifact_id,),
             )
         ],
+        # A saved link's preview (title, description, site, picture hash) rides the
+        # snapshot too: the phone cannot fetch pages itself, so without this its
+        # link cards and reader had no preview at all. The picture's bytes travel as
+        # a blob (sync/client.py), fetched on demand by hash.
+        "link_preview": _link_preview(conn, artifact_id),
     }
+
+
+_PREVIEW_COLUMNS = (
+    "status",
+    "title",
+    "description",
+    "site_name",
+    "error",
+    "image_hash",
+    "image_mime",
+    "fetched_at",
+)
+
+
+def _link_preview(conn: Connection, artifact_id: str) -> dict | None:
+    row = conn.execute(
+        f"SELECT {', '.join(_PREVIEW_COLUMNS)} FROM link_previews WHERE artifact_id = ?",
+        (artifact_id,),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def serialize(snapshot: dict) -> bytes:
@@ -158,6 +183,32 @@ def _apply_snapshot_children(
                     f.get("edited", 0),
                 ),
             )
+
+    # The link preview replaces only when the snapshot carries one, like facets: a
+    # snapshot from the phone (which never has a preview of its own) must not wipe
+    # the preview this desktop fetched.
+    incoming_preview = snapshot.get("link_preview")
+    if incoming_preview:
+        conn.execute(
+            "INSERT INTO link_previews (artifact_id, status, title, description, site_name,"
+            " error, image_hash, image_mime, fetched_at) VALUES (?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(artifact_id) DO UPDATE SET status=excluded.status,"
+            " title=excluded.title, description=excluded.description,"
+            " site_name=excluded.site_name, error=excluded.error,"
+            " image_hash=excluded.image_hash, image_mime=excluded.image_mime,"
+            " fetched_at=excluded.fetched_at",
+            (
+                artifact_id,
+                incoming_preview.get("status") or "ok",
+                incoming_preview.get("title"),
+                incoming_preview.get("description"),
+                incoming_preview.get("site_name"),
+                incoming_preview.get("error"),
+                incoming_preview.get("image_hash"),
+                incoming_preview.get("image_mime"),
+                incoming_preview.get("fetched_at") or artifact["updated_at"],
+            ),
+        )
 
     from ..tags import normalize as normalize_tag
 

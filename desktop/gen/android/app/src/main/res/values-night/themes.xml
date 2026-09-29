@@ -4,9 +4,9 @@
       section 1; the stylesheet pins `color-scheme: light`), so the phone being in dark
       mode must not repaint the shell. Without this, a dark-mode phone gave the status
       and navigation bar strips - which the activity now pads for - a dark window
-      background above a white page.
+      background above a light page.
     -->
     <style name="Theme.enqueue" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@color/canvas</item>
     </style>
 </resources>

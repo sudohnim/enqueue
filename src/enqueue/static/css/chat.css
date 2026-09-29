@@ -20,8 +20,8 @@
   .said {
     max-width: 88%;
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r) var(--r) var(--r) var(--r-sm);
+    box-shadow: var(--hairline);
+    border-radius: 18px 18px 18px 6px;
     padding: var(--sp-4);
     color: var(--text-dim);
     text-wrap: pretty;
@@ -55,7 +55,8 @@
     letter-spacing: -0.42px;
     color: var(--text);
     background: var(--surface-2);
-    border: 1px solid var(--line);
+    border: 0;
+    box-shadow: var(--hairline);
     border-radius: var(--r-full);
     padding: var(--sp-2) var(--sp-3);
     cursor: pointer;

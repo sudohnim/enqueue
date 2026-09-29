@@ -4,7 +4,7 @@
 // environment variable is worse than no field.
 const SETTING_LABELS = {
 	llm_model: "Model (chat, search judging)",
-	summarize_model: "Summary model (optional — writes facets; blank = same as Model)",
+	summarize_model: "Summary model (optional - writes facets; blank = same as Model)",
 	llm_url: "Endpoint",
 	vision_model: "Vision model (describes images)",
 	model_retries: "Retries after a failed answer",
@@ -195,16 +195,24 @@ async function showSettings() {
 	// re-ran that route, popping the custom view back over settings.
 	setRoute("settings");
 	view.innerHTML =
-		'<div class="pagecol">' +
-		'<div class="h1">Settings</div>' +
+		'<div class="pagecol settings-page">' +
+		// The raven sits tight against the heading, the same title lockup as the
+		// home greeting, so settings reads as part of the same place.
+		'<div class="settings-title">' +
+		'<div class="settings-eye eye" id="settingsEye" aria-hidden="true"></div>' +
+		'<h1 class="display">Settings<span class="greet-mark">.</span></h1>' +
+		"</div>" +
 		// Q.6: a one-line human orientation - names what settings does in
 		// product terms and when changes land, warming the bare heading.
-		'<p class="aside" style="margin-top: var(--sp-2); margin-bottom: var(--sp-4); max-width: 64ch;">' +
+		'<p class="aside settings-lede">' +
 		"Tune how Enqueue captures, thinks, and remembers. Changes save when you press Save." +
 		"</p>" +
+		'<div class="settings-layout">' +
 		settingsTabBar() +
 		'<div id="settingsTabPane"></div>' +
+		"</div>" +
 		"</div>";
+	makeEye(document.getElementById("settingsEye"));
 	window.scrollTo(0, 0);
 	await renderSettingsTab(currentSettingsTab);
 }
@@ -1594,6 +1602,8 @@ async function vaultLock() {
 // The vault reader (a vaulted artifact) is still "inside" the vault, so it does NOT
 // call this - its back button returns to openVault() instead.
 function maybeLockVault() {
+	// Out of the vault: the eye looks back.
+	if (window.eyeMood) eyeMood.drop("avert");
 	try {
 		api("/vault/lock", { method: "POST" }).catch(() => {});
 	} catch (_) {
@@ -1662,6 +1672,8 @@ async function openVault() {
 		grid +
 		"</div>";
 	makeEye(document.getElementById("vaultEye"));
+	// Private things go unwatched: the pill eye looks away and shuts.
+	if (window.eyeMood) eyeMood.hold("avert");
 	window.scrollTo(0, 0);
 	vaultBusy(false);
 }

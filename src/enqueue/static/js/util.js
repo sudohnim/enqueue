@@ -169,6 +169,8 @@ function spinner(size, caption) {
 // Returns a promise that resolves when the flight ends, so the capture overlay
 // can hold its dismiss until the bird has been seen.
 function captureFlight() {
+	// The eye approves: one slow, satisfied blink as the raven flies off with it.
+	if (window.eyeMood) eyeMood.play("approve");
 	const old = document.getElementById("captureFlight");
 	if (old) old.remove();
 

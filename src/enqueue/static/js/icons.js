@@ -184,7 +184,8 @@ function eyeSaccade(el) {
 		eyeClearTimers(el);
 		return;
 	}
-	if (!eyeMotionOK() || el.matches(":hover")) {
+	// A mood (eyemood.js) owns the iris while it plays; wait it out.
+	if (!eyeMotionOK() || el.matches(":hover") || el.dataset.mood) {
 		// Motion turned off since scheduling, or the cursor is resting on the
 		// eye itself, where a glance would fight the hover: re-arm and wait.
 		eyeArmIdle(el);
@@ -253,6 +254,8 @@ function eyeRest(el) {
 function eyeStep(el, e) {
 	const st = eyeState.get(el);
 	if (!st) return;
+	// A mood (eyemood.js) owns the iris while it plays; the follow resumes after.
+	if (el.dataset.mood) return;
 	const layer = st.layer;
 	if (st.track === undefined) st.track = "";
 	// A real move wins over a saccade immediately: drop the glance's easing
@@ -357,17 +360,37 @@ function eyeLeaveDoc() {
 // wires the cursor-follow by registering the element with the one shared
 // document listener pair. The element itself is the caller's - its classes,
 // id, and a11y attributes stay in the calling view's markup.
+// The pill's ask eye is DRAWN, in the same thin line as the pill's other icons:
+// an almond and three lashes in currentColor over a clipped socket, with a violet
+// iris (a styled div, not the pupil PNG) that the shared follow code leans toward
+// the cursor. The old pill eye was the eye-only.png art, a thick black outline
+// that outweighed every other control in the pill. The emblem keeps the raven.
+const PILL_EYE_MARKUP = (() => {
+	const wrap = document.createElement("div");
+	wrap.className = "eye-blinkwrap";
+	const socket = document.createElement("div");
+	socket.className = "eye-socket";
+	const pupil = document.createElement("div");
+	pupil.className = "eye-pupil";
+	socket.appendChild(pupil);
+	wrap.appendChild(socket);
+	wrap.insertAdjacentHTML(
+		"beforeend",
+		'<svg class="eye-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+			'<path d="M2.6 12.8C5.2 8.6 8.4 6.6 12 6.6s6.8 2 9.4 6.2c-2.6 4.2-5.8 6.2-9.4 6.2s-6.8-2-9.4-6.2z"/>' +
+			'<path d="M8 7.3 7 5.2M12 6.6V4.3M16 7.3l1-2.1"/></svg>',
+	);
+	return wrap;
+})();
+
 function makeEye(el) {
 	if (!el) return;
-	el.replaceChildren(EYE_MARKUP.cloneNode(true));
-	// The ribbon button (EYE.6) wears the eye alone, not the whole raven: the
-	// home emblem's frame is the full bird, so a small button reusing it reads
-	// as the bird. `eye-only.png` is that same eye cropped out onto transparency;
-	// its socket geometry is overridden in pill.css. The emblem keeps the raven.
-	if (el.classList.contains("pill-eye")) {
-		const f = el.querySelector(".eye-frame");
-		if (f) f.src = "/static/eye-only.png" + EYE_ASSET_V;
-	}
+	el.replaceChildren(
+		(el.classList.contains("pill-eye") ? PILL_EYE_MARKUP : EYE_MARKUP).cloneNode(true),
+	);
+	// The pill re-renders on every navigation; a held mood (the vault's averted gaze,
+	// a search in progress) carries over to the fresh eye.
+	if (el.classList.contains("pill-eye") && window.eyeMood) queueMicrotask(eyeMood.refresh);
 	eyeState.set(el, {
 		raf: 0,
 		rafQueued: 0,

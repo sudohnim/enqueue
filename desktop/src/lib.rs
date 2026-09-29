@@ -3376,9 +3376,11 @@ mod desktop {
                     ),
                 )
                 .title("")
-                // A contained capture card: a prominent input box with a Keep button
-                // under it (the dequeue capture format).
-                .inner_size(600.0, 264.0)
+                // A contained capture card: the raven + heading, a prominent input box,
+                // and a Keep row under it. The window is ~36px wider and ~40px taller
+                // than the card (capture.html body padding) so the card's soft shadow
+                // falls inside the transparent window instead of being clipped.
+                .inner_size(640.0, 320.0)
                 .resizable(false)
                 .decorations(false)
                 .transparent(true)

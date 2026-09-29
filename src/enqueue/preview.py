@@ -444,6 +444,13 @@ def fetch(artifact_id: str) -> dict | None:
         )
 
     ingest_queue.submit(artifact_id)
+    # The phone cannot fetch pages itself, so a fresh preview must travel: re-push the
+    # artifact (the preview and its picture ride the snapshot). Best-effort, and it
+    # keeps updated_at unless the title changed above, which already bumped it.
+    with contextlib.suppress(Exception):
+        from .sync.client import push_artifact
+
+        push_artifact(artifact_id)
     return get(artifact_id)
 
 

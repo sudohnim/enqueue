@@ -53,14 +53,19 @@ def contrast_ratio(l1, l2):
     darker = min(l1, l2)
     return (lighter + 0.05) / (darker + 0.05)
 
+# rgba() washes and fills are composited over the canvas they actually sit on.
+# The canvas is the violet ground (--bg), not white, so compositing over white
+# would overstate every wash's contrast. main() sets this from the palette.
+CANVAS = (255, 255, 255)
+
 def composite_rgba_over_white(rgba):
-    """rgba(r, g, b, a) composited over #ffffff -> hex."""
+    """rgba(r, g, b, a) composited over the canvas (CANVAS) -> hex."""
     m = re.match(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)", rgba)
     if not m:
         raise ValueError("unparseable rgba: " + rgba)
     r, g, b, a = (int(m.group(1)), int(m.group(2)), int(m.group(3)), float(m.group(4)))
-    ch = lambda c: int(round(a * c + (1 - a) * 255))
-    return "#%02x%02x%02x" % (ch(r), ch(g), ch(b))
+    base = CANVAS
+    return "#%02x%02x%02x" % tuple(int(round(a * c + (1 - a) * bc)) for c, bc in zip((r, g, b), base))
 
 def parse_root_palette(text):
     """Return a dict of token -> (value, kind) from the first :root block.
@@ -164,6 +169,19 @@ GRAPHIC_PAIRS = [
 WASHES = ["--tint-info", "--tint-ok", "--tint-warn", "--tint-note"]
 WASH_TEXT = "--text-dim"
 
+GROUND_JS = os.path.join(HERE, "src", "enqueue", "static", "js", "ground.js")
+
+
+def _darkest_ground():
+    """The darkest keyframe colour in js/ground.js's KEYS, or None if absent."""
+    try:
+        with open(GROUND_JS) as f:
+            hexes = re.findall(r'\[\s*\d+\s*,\s*"(#[0-9a-fA-F]{6})"\s*\]', f.read())
+    except OSError:
+        return None
+    return min(hexes, key=luminance) if hexes else None
+
+
 def main():
     os.chdir(HERE)
     with open(TOKENS_CSS) as f:
@@ -174,6 +192,9 @@ def main():
         print(f"{SRC}: ERROR: could not parse any tokens from :root in {TOKENS_CSS}", file=sys.stderr)
         sys.exit(2)
 
+    global CANVAS
+    bg_hex = palette["--bg"][0].lstrip("#")
+    CANVAS = tuple(int(bg_hex[i : i + 2], 16) for i in (0, 2, 4))
     grounds = {g: ground_lum(palette, g) for g in GROUNDS}
     failures = []
     checks = 0
@@ -255,6 +276,49 @@ def main():
         print(f"  {WASH_TEXT:<10} on {wash:<14} {cr:5.2f}:1" + ("" if ok else "  FAIL"))
         if not ok:
             failures.append((WASH_TEXT + " on " + wash, "wash text", cr))
+
+    # --- The night ground ---
+    # js/ground.js drifts the ground ladder through the day; its darkest keyframe
+    # (night) is the binding case, so every text and boundary rule is re-checked on
+    # the ladder derived from it, the same way ground.js derives it.
+    night_hex = _darkest_ground()
+    if night_hex:
+        nb = tuple(int(night_hex[i : i + 2], 16) for i in (1, 3, 5))
+        mixc = lambda c, to, t: "#%02x%02x%02x" % tuple(  # noqa: E731
+            int(round(x + (d - x) * t)) for x, d in zip(c, to)
+        )
+        night = {
+            "--bg": luminance(night_hex),
+            "--surface": luminance(mixc(nb, (255, 255, 255), 0.6)),
+            "--surface-2": grounds["--surface-2"],
+            "--surface-3": luminance(mixc(nb, (58, 13, 99), 0.06)),
+        }
+        print(f"\nNight ground ({night_hex}, from js/ground.js)")
+        for token, permitted in TEXT_RULES:
+            fl = fg_lum(palette, token)
+            worst = min(permitted, key=lambda g: contrast_ratio(fl, night[g]))
+            cr = contrast_ratio(fl, night[worst])
+            checks += 1
+            ok = cr >= 4.5
+            print(f"  {token:<14} {cr:5.2f}:1  (worst: {worst})" + ("" if ok else "  FAIL"))
+            if not ok:
+                failures.append((token + " at night", "text", cr))
+        for token, permitted in BOUNDARY_RULES:
+            fl = fg_lum(palette, token)
+            worst = min(permitted, key=lambda g: contrast_ratio(fl, night[g]))
+            cr = contrast_ratio(fl, night[worst])
+            checks += 1
+            ok = cr >= 3.0
+            print(f"  {token:<14} {cr:5.2f}:1  (worst: {worst})" + ("" if ok else "  FAIL"))
+            if not ok:
+                failures.append((token + " at night", "boundary", cr))
+        for token in KIND_DOTS + FILL_ONLY:
+            cr = contrast_ratio(fg_lum(palette, token), night["--bg"])
+            checks += 1
+            ok = cr >= 3.0
+            print(f"  {token:<14} {cr:5.2f}:1  (graphic on night)" + ("" if ok else "  FAIL"))
+            if not ok:
+                failures.append((token + " at night", "graphic", cr))
 
     if failures:
         print(f"\n{SRC}: FAILED ({len(failures)} of {checks} checks):")

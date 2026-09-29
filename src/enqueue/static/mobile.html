@@ -17,6 +17,8 @@
 <link rel="stylesheet" href="css/linkpop.css" />
 <script src="js/md.js"></script>
 <script src="js/linkpop.js"></script>
+<script src="js/eyemood.js"></script>
+<script src="js/ground.js"></script>
 
 <style>
   html,
@@ -93,9 +95,11 @@
     font-family: var(--sans);
     font-size: 15px;
     color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
+    /* A white field with a violet hairline on the violet ground. */
+    background: var(--surface-2);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: var(--r-lg);
     outline: none;
   }
   textarea {
@@ -104,8 +108,9 @@
   }
   input:focus,
   textarea:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--lavender-subtle);
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+      var(--shadow-field);
   }
   button {
     font-family: var(--sans);
@@ -113,7 +118,7 @@
     font-weight: 500;
     padding: 12px 18px;
     border: 0;
-    border-radius: var(--r-md);
+    border-radius: var(--r-lg);
     cursor: pointer;
   }
   #sync_btn {
@@ -140,8 +145,19 @@
     gap: 10px;
     margin-bottom: 16px;
   }
+  /* Search floats on the ground as a white field with a violet under-glow, the
+     same object as the desktop search. The magnifier is drawn into the field. */
   #search {
-    margin: 0 0 14px;
+    margin: 0 0 12px;
+    height: 48px;
+    padding: 0 16px 0 44px;
+    font-size: 16px;
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-field);
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a546e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m20 20-4.2-4.2'/%3E%3C/svg%3E")
+        16px center / 18px 18px no-repeat,
+      var(--surface-2);
   }
   header h1 {
     font-size: 20px;
@@ -156,12 +172,28 @@
   /* Library hero: the raven mark over a soft purple wash, then the centered
      greeting - the app's one atmospheric purple moment (DESIGN.md keeps violet
      scarce, so this is the single wash), mirroring the desktop home header. */
+  /* The library's front door: a date line, then the raven tight against a
+     left-aligned greeting whose last word is in the accent - the same title
+     lockup as the desktop, laid out for a phone (bigger bird, smaller type). */
   .lib-hero {
-    display: block;
+    display: grid;
+    /* The date spans the top; the raven and the greeting sit side by side under it,
+       and the whole lockup is centred - the same composition as the desktop hero. */
+    grid-template-columns: auto auto;
+    justify-content: center;
+    align-items: center;
+    column-gap: 0;
     position: relative;
-    text-align: center;
-    margin-bottom: 14px;
-    padding-top: 4px;
+    text-align: left;
+    margin: -8px 0 14px;
+    padding: 0;
+    /* Not a toolbar: drop the sticky frosted bar the reader's generic header rule
+       would otherwise paint behind the greeting. */
+    background: none;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    z-index: auto;
   }
   /* Pull-to-refresh indicator: a small raven that slides down from the top edge as
      the library is dragged down, and spins while the forced sync runs. Driven by
@@ -202,34 +234,35 @@
       animation: none;
     }
   }
-  .lib-hero::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: -28px;
-    transform: translateX(-50%);
-    width: 340px;
-    max-width: 108%;
-    height: 230px;
-    background: radial-gradient(
-      ellipse at center,
-      var(--purple-bold-wash),
-      transparent 68%
-    );
-    z-index: -1;
-    pointer-events: none;
-  }
   .lib-raven {
     display: block;
-    width: 78px;
+    grid-column: 1;
+    grid-row: 2;
+    width: 86px;
     height: auto;
-    margin: 0 auto 6px;
+    /* The art carries a crop margin; pulled in so the bird sits on the words. */
+    margin: -4px 4px -8px -6px;
+  }
+  .lib-date {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    font-size: 12.5px;
+    color: var(--text-mute);
+  }
+  .lib-hero h1 {
+    grid-column: 2;
+    grid-row: 2;
   }
   #lib_greeting {
-    font-size: 30px;
-    line-height: 1.15;
-    letter-spacing: -0.03em;
-    text-align: center;
+    font-family: var(--display);
+    font-size: 29px;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+  }
+  #lib_greeting .greet-last {
+    color: var(--purple-bold);
   }
   /* The greeting's trailing period is the one violet character - the same brand
      ink the desktop hero uses (home.css P.7), tying the phone's front door to
@@ -238,8 +271,10 @@
     color: var(--purple-bold);
   }
   .back {
-    background: transparent;
-    border: 1px solid var(--line);
+    background: var(--surface-2);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: var(--r-full);
     padding: 8px 12px;
     font-size: 14px;
     color: var(--text-dim);
@@ -257,6 +292,9 @@
     overflow-x: auto;
     overflow-y: hidden;
     scroll-snap-type: x proximity;
+    /* Snap to the content gutter, not the screen edge, so the first card rests
+       aligned with the headings instead of flush against the glass. */
+    scroll-padding-inline: var(--sp-4);
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
@@ -270,11 +308,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 16px;
+    font-family: var(--display);
+    font-size: 22px;
     font-weight: 600;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.03em;
     color: var(--text);
-    padding: 6px 2px;
+    padding: 10px 2px 8px;
     cursor: pointer;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
@@ -284,9 +323,12 @@
     margin-bottom: var(--sp-4);
   }
   .shelf-label .shelf-count {
-    color: var(--text-dim);
-    font-weight: 500;
-    font-size: 14px;
+    font-family: var(--sans);
+    color: var(--text-mute);
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
   }
   .shelf-label .shelf-chevron {
     margin-left: auto;
@@ -338,7 +380,8 @@
   }
   .chip {
     flex: 0 0 auto;
-    border: 1px solid var(--line);
+    border: 0;
+    box-shadow: var(--hairline);
     background: var(--surface);
     color: var(--text-mute);
     font-family: var(--sans);
@@ -356,6 +399,41 @@
     background: var(--purple-bold);
     border-color: var(--purple-bold);
     color: var(--on-purple-bold);
+  }
+  /* The view modes read as text tabs, not filled pills: the chosen one in ink with
+     a short accent bar under it, the same header grammar as the desktop. */
+  .viewchips {
+    gap: var(--sp-5);
+    /* Centred under the centred hero; auto margins fall back to scrolling from the
+       start if the tabs ever outgrow the width. */
+    justify-content: safe center;
+  }
+  .viewchips .chip {
+    position: relative;
+    border: 0;
+    box-shadow: none;
+    background: none;
+    padding: 6px 0 10px;
+    border-radius: 0;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-mute);
+  }
+  .viewchips .chip[aria-pressed="true"] {
+    background: none;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .viewchips .chip[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 2px;
+    width: 16px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
   }
   /* Tag filter bar (Tags mode), copying the desktop: a flex row whose left part is
      the scrolling chip strip and whose right part is the pinned "untagged" chip,
@@ -425,22 +503,9 @@
     scroll-snap-align: start;
     overflow: hidden;
     cursor: pointer;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: var(--sp-3);
-    box-shadow: var(--shadow-micro);
-    transition:
-      background var(--dur) ease,
-      border-color var(--dur) ease,
-      transform var(--dur-fast) var(--ease),
-      box-shadow var(--dur) ease;
     position: relative;
   }
   .card:hover {
-    background: var(--surface-2);
-    border-color: var(--line-strong);
-    box-shadow: var(--shadow-card);
     transform: translateY(-1px);
   }
   .card:active {
@@ -567,8 +632,11 @@
     align-items: center;
     gap: 8px;
     padding: 12px 16px;
-    border-bottom: 1px solid var(--line);
-    background: var(--surface);
+    /* The toolbar floats on the ground: frosted, with only a soft rule under it. */
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 1px 0 var(--line-soft);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -582,8 +650,10 @@
   }
   header h1 {
     flex: 1;
-    font-size: 18px;
+    font-family: var(--display);
+    font-size: 19px;
     font-weight: 600;
+    letter-spacing: -0.025em;
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -615,7 +685,7 @@
   }
   .reader-actions button:hover,
   .reader-actions button:focus {
-    background: var(--surface-2);
+    background: var(--line-soft);
   }
   .reader-actions button.lit {
     color: var(--accent);
@@ -638,7 +708,8 @@
     gap: 6px;
     padding: 4px 10px;
     background: var(--surface-2);
-    border: 1px solid var(--line);
+    border: 0;
+    box-shadow: var(--hairline);
     border-radius: var(--r-full);
     font-size: 13px;
     color: var(--text);
@@ -685,25 +756,28 @@
   }
 
   /* Annotation input */
+  /* The note field sits on the page, not in a tinted slab: the white field and its
+     hairline are enough of an edge. */
   .annotation-input {
-    padding: 16px;
-    border-top: 1px solid var(--line-soft);
-    background: var(--surface);
+    padding: 16px 0;
   }
   .annotation-input textarea {
     width: 100%;
     min-height: 80px;
     padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--bg);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: var(--r-lg);
+    background: var(--surface-2);
     color: var(--text);
     font: inherit;
     resize: vertical;
   }
   .annotation-input textarea:focus {
-    border-color: var(--accent);
     outline: none;
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+      var(--shadow-field);
   }
   .annotation-actions {
     display: flex;
@@ -725,7 +799,8 @@
   .annotation-actions button:not(.keep) {
     background: var(--surface-2);
     color: var(--text);
-    border: 1px solid var(--line);
+    border: 0;
+    box-shadow: var(--hairline);
   }
 
   /* Editable note body: a real textarea (Android raises the keyboard for it, unlike a
@@ -737,9 +812,10 @@
     min-height: 240px;
     resize: vertical;
     padding: 16px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: var(--r-xl);
+    background: var(--surface-2);
     color: var(--text);
     font-family: inherit;
     font-size: 16px; /* >=16px so mobile Safari/WebView never zooms on focus */
@@ -747,7 +823,9 @@
     outline: none;
   }
   .reader-edit-area:focus {
-    border-color: var(--purple-bold);
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+      var(--shadow-field);
   }
   /* The note body is tappable to edit; hint it with a text caret. */
   #reader_body.note-tappable {
@@ -772,15 +850,15 @@
     justify-content: center;
     padding: 24px;
     box-sizing: border-box;
-    background: rgba(16, 17, 20, 0.45);
+    background: rgba(33, 10, 56, 0.4);
   }
   .mconfirm-card {
     width: min(100%, 340px);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-lifted, 0 12px 36px rgba(16, 17, 20, 0.24));
-    padding: 20px;
+    background: var(--surface-doc);
+    border: 0;
+    border-radius: var(--r-2xl);
+    box-shadow: var(--shadow-lifted);
+    padding: 22px;
   }
   .mconfirm-msg {
     margin: 0 0 18px;
@@ -796,8 +874,9 @@
   .mconfirm-row button {
     padding: 10px 16px;
     font-size: 15px;
-    border-radius: var(--r-md);
-    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    border: 0;
+    box-shadow: var(--hairline);
     background: var(--surface-2);
     color: var(--text);
     cursor: pointer;
@@ -812,13 +891,111 @@
     color: #fff;
   }
 
+  /* Settings (read-only on the phone): a column of titled tiles, the same
+     plate-plus-hairline groups as the desktop settings pane. */
+  .mset-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .mset-managed {
+    align-self: flex-start;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 5px 11px;
+    border-radius: var(--r-full);
+    background: var(--lavender-subtle);
+    color: var(--accent-text);
+  }
+  .mset-group {
+    background: var(--surface);
+    box-shadow: var(--hairline);
+    border-radius: var(--r-2xl);
+    padding: 18px 16px;
+  }
+  .mset-title {
+    margin: 0 0 6px;
+    font-family: var(--display);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .mset-sub {
+    margin: 0 0 12px;
+    font-size: 13.5px;
+    color: var(--text-mute);
+  }
+  .mset-note {
+    margin: 12px 0 0;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  .mset-rows {
+    margin: 8px 0 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    font-size: 14px;
+  }
+  .mset-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .mset-row2 {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .mset-row2 > button {
+    flex: 1;
+  }
+  .mset-primary {
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    box-shadow: 0 8px 20px -10px rgba(96, 7, 159, 0.8);
+  }
+  .mset-secondary {
+    background: var(--surface-2);
+    color: var(--text);
+    box-shadow: var(--hairline);
+    padding: 11px 16px;
+    font-size: 14px;
+  }
+  .mset-danger {
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 45%, transparent);
+  }
+  .mset-events {
+    font-size: 13px;
+    color: var(--text);
+    max-height: 280px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: var(--r-xl);
+    padding: 8px;
+    background: var(--surface-2);
+    box-shadow: var(--hairline);
+  }
+
   /* Details side panel (tags + AI summary), slides in from the right over a backdrop. */
   /* Toggled by an `.open` class, not [hidden]: display:none would kill the slide. */
   .details-backdrop {
     position: fixed;
     inset: 0;
     z-index: 60;
-    background: rgba(16, 17, 20, 0.4);
+    background: rgba(33, 10, 56, 0.36);
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur) ease;
@@ -834,9 +1011,8 @@
     bottom: 0;
     z-index: 61;
     width: min(86%, 380px);
-    background: var(--surface);
-    border-left: 1px solid var(--line);
-    box-shadow: -12px 0 36px rgba(16, 17, 20, 0.16);
+    background: var(--surface-doc);
+    box-shadow: var(--shadow-lifted);
     transform: translateX(100%);
     pointer-events: none;
     transition: transform var(--dur-slow) cubic-bezier(0.22, 1, 0.36, 1);
@@ -847,6 +1023,11 @@
     padding-bottom: env(safe-area-inset-bottom);
     overflow-y: auto;
   }
+  /* Closed, the drawer sits just off the right edge, and its soft shadow would
+     still fall onto the screen as a grey band; it only casts one while open. */
+  .details-panel:not(.open) {
+    box-shadow: none;
+  }
   .details-panel.open {
     transform: translateX(0);
     pointer-events: auto;
@@ -856,12 +1037,14 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px;
-    border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 0 var(--line-soft);
   }
   .details-head h2 {
     margin: 0;
-    font-size: 18px;
+    font-family: var(--display);
+    font-size: 20px;
     font-weight: 600;
+    letter-spacing: -0.025em;
   }
   .details-body {
     padding: 16px;
@@ -871,11 +1054,11 @@
   }
   .details-block h3 {
     margin: 0 0 10px;
-    font-size: 13px;
+    font-family: var(--display);
+    font-size: 16px;
     font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--text-mute);
+    letter-spacing: -0.015em;
+    color: var(--text);
   }
   #details_summary {
     font-size: 15px;
@@ -892,8 +1075,9 @@
   #settings_trash_list {
     max-height: 320px;
     overflow-y: auto;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
+    background: var(--surface-2);
+    box-shadow: var(--hairline);
+    border-radius: var(--r-xl);
     padding: 0 14px;
   }
   #settings_trash_list:empty {
@@ -909,14 +1093,17 @@
     box-sizing: border-box;
     padding: 10px 12px;
     font-size: 16px; /* >=16px so the WebView never zooms on focus */
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    background: var(--surface);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: var(--r-lg);
+    background: var(--surface-2);
     color: var(--text);
     outline: none;
   }
   .details-tag-input:focus {
-    border-color: var(--purple-bold);
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+      var(--shadow-field);
   }
   /* Editable tag chip: label + a small remove control. */
   #details_tags .tag-chip {
@@ -942,7 +1129,12 @@
     color: var(--text);
   }
 
-  /* Mobile Pill (MOB2.3) - mirrors desktop pill.css */
+  /* Mobile Pill (MOB2.3): three equal 46px circles on tinted glass. Capture is
+     the one solid violet disc; ask (the living eye) and settings sit on soft
+     lavender discs of the same size, as line icons in violet-grey ink, so all
+     three carry equal weight - one icon system. The
+     glass is lavender-tinted with a violet hairline so its edge still holds where
+     it floats over the white tiles. */
   .pill {
     position: fixed;
     left: 50%;
@@ -950,25 +1142,21 @@
     transform: translateX(-50%);
     display: flex;
     align-items: center;
-    /* Three controls, centered group. */
     justify-content: center;
-    gap: 8px;
-    height: 52px;
-    padding: 0 var(--sp-3);
+    gap: 6px;
+    padding: 5px;
     z-index: var(--z-pill);
-    background: var(--surface-2);
-    /* Purple ring for a touch of brand color on the one persistent chrome. */
-    border: 2px solid color-mix(in oklab, var(--purple-bold) 55%, transparent);
+    background: color-mix(in srgb, var(--bg) 62%, rgb(255 255 255 / 0.7));
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+    border: 0;
     border-radius: var(--r-full);
-    /* Matches the desktop pill: the ring already draws the edge, so the lift stays
-       contained instead of spreading a 36px halo under it. */
     box-shadow:
-      0 4px 12px rgba(16, 17, 20, 0.06),
-      0 10px 24px rgba(16, 17, 20, 0.1);
-    transition:
-      width var(--dur-slow) ease,
-      box-shadow var(--dur-slow) ease,
-      transform var(--dur-fast) var(--ease);
+      inset 0 0 0 1px rgb(255 255 255 / 0.7),
+      0 0 0 1px var(--line),
+      0 1px 2px rgba(43, 11, 74, 0.08),
+      0 16px 36px -14px rgba(43, 11, 74, 0.42);
+    transition: transform var(--dur-fast) var(--ease);
   }
   /* `display:flex` above outranks the UA `[hidden]` rule, so hiding the pill needs
      this explicit rule. Hidden on full-screen forms (crop confirm, settings) where
@@ -976,114 +1164,112 @@
   .pill[hidden] {
     display: none;
   }
-  .pill:hover {
-    transform: translateX(-50%) translateY(-2px);
-  }
   .pill:focus-within {
     box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 50%, transparent),
-      var(--shadow-lifted);
+      inset 0 0 0 1px rgb(255 255 255 / 0.7),
+      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+      0 16px 36px -14px rgba(43, 11, 74, 0.42);
   }
-  .pill .keep {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--sp-2);
-    width: 40px;
-    height: 40px;
+  .pill .keep,
+  .pill .round {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
     padding: 0;
     border: 0;
     background: transparent;
     border-radius: var(--r-full);
-    font-family: var(--sans);
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 17px;
-    letter-spacing: 0;
-    color: var(--text);
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pill .round {
+    color: var(--text-dim);
+    background: color-mix(in srgb, var(--purple-bold) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--purple-bold) 6%, transparent);
+    transition:
+      background var(--dur-fast) var(--ease),
+      transform var(--dur-fast) var(--ease);
+  }
+  .pill .round:active {
+    background: color-mix(in srgb, var(--purple-bold) 14%, transparent);
+    transform: scale(0.94);
+  }
+  .pill .round svg {
+    width: 26px;
+    height: 26px;
+    stroke-width: 1.6;
   }
   .pill .keep .disc {
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
-    flex-shrink: 0;
+    width: 46px;
+    height: 46px;
     border-radius: var(--r-full);
     background: var(--purple-bold);
     color: var(--on-purple-bold);
+    box-shadow:
+      0 6px 14px -6px rgba(96, 7, 159, 0.75),
+      inset 0 1px 0 rgb(255 255 255 / 0.18);
     transition:
       background var(--dur-fast) var(--ease),
       transform var(--dur-fast) cubic-bezier(0.22, 1, 0.36, 1);
   }
-  .pill .keep:hover .disc {
-    background: var(--purple-bold-hover);
-    box-shadow: 0 0 0 6px var(--purple-bold-wash);
+  .pill .keep .disc svg {
+    width: 24px;
+    height: 24px;
+    stroke-width: 2.25;
+    stroke-linecap: round;
   }
   .pill .keep:active .disc {
     transform: scale(0.92);
   }
-  .pill .round {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    flex-shrink: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    border-radius: var(--r-full);
-    color: var(--text);
-    cursor: pointer;
-    transition: background var(--dur-fast) var(--ease);
-  }
-  .pill .round:hover {
-    background: var(--surface);
-  }
-  .pill .round:active {
-    background: var(--surface-2);
-  }
-  .pill .round svg {
-    width: 34px;
-    height: 34px;
-  }
+  /* The living eye, drawn: the line art is 30px; the socket is the almond's
+     interior (an ellipse clip) and the iris a violet disc with a dark pupil and a
+     catch-light, which glances, constricts and blinks (makeEyeAlive). */
   .pill .pill-eye {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     position: relative;
   }
-  /* Mirror the desktop ribbon eye EXACTLY (pill.css EYE.6): the blinkwrap sizes to
-     the frame, and the socket/pupil percentages resolve against it, so the oversized
-     iris (96% x 125%) is clipped by the socket into a bold purple eye with room to
-     move. The life below (blink, idle glance, tap-constrict) is what a phone can run
-     without a cursor - the same living raven eye as the desktop, not a frozen stare. */
   .pill .pill-eye .eye-blinkwrap {
     position: relative;
+    width: 30px;
+    height: 30px;
+    transform-origin: 50% 53%;
   }
-  .pill .pill-eye .eye-frame {
-    width: 34px;
-    height: auto;
-    display: block;
+  .pill .pill-eye .eye-line {
+    position: absolute;
+    inset: 0;
+    width: 30px;
+    height: 30px;
+    /* The line holds ~1.5px at this size (the viewBox is 24). */
+    stroke-width: 1.45;
   }
   .pill .pill-eye .eye-socket {
     position: absolute;
-    left: 52.6%;
-    top: 51.5%;
-    width: 80%;
-    height: 69.3%;
+    left: 50%;
+    top: 53.3%;
+    width: 60%;
+    height: 42%;
     transform: translate(-50%, -50%);
     overflow: hidden;
     border-radius: 50%;
   }
+  /* One flat violet disc: no pupil ring, no catch-light, so it reads as a mark
+     that is watching you. Big enough to stare, small enough to leave white. */
   .pill .pill-eye .eye-pupil {
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 96%;
-    height: 125%;
+    width: 64%;
+    height: 91%;
+    border-radius: 50%;
     transform: translate(-50%, -50%);
+    background: var(--purple-bold);
     will-change: transform;
   }
   /* The eye's life is motion; a reduced-motion request gets a still, open eye. */
@@ -1097,7 +1283,6 @@
     }
     .pill .pill-eye .eye-blinkwrap {
       transition: transform 90ms var(--ease);
-      transform-origin: center;
     }
     .pill .pill-eye.eye-blinking .eye-blinkwrap {
       transform: scaleY(0.12);
@@ -1115,9 +1300,9 @@
     flex-direction: column;
     gap: var(--sp-1);
     padding: var(--sp-2);
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    background: var(--surface-doc);
+    border: 0;
+    border-radius: var(--r-xl);
     box-shadow: var(--shadow-lifted);
     z-index: calc(var(--z-pill) - 1);
     min-width: 176px;
@@ -1170,7 +1355,7 @@
     cursor: pointer;
   }
   .pill-menu button:hover {
-    background: var(--surface);
+    background: var(--line-soft);
   }
   .pill-menu button svg {
     width: 20px;
@@ -1186,23 +1371,160 @@
     }
   }
 
-  /* #capture_field {
-    margin-bottom: 14px;
-  }
+  /* The link form's actions and status line. (These rules sat inside an
+     unterminated comment for a long time, so the form rendered unstyled.) */
   #capture_actions {
     display: flex;
     gap: 12px;
     margin-top: 14px;
   }
-  #capture_keep {
+  #link_save {
     flex: 1;
     background: var(--purple-bold);
     color: var(--on-purple-bold);
+    box-shadow: 0 8px 20px -10px rgba(96, 7, 159, 0.8);
   }
   #capture_status {
     margin-top: 12px;
     font-size: 14px;
     color: var(--danger);
+  }
+
+  /* Quick capture: a bottom sheet over the dimmed library, the phone's version
+     of the desktop overlay (raven + "Keep something.", a white field, Photo and
+     Camera beside Keep). It rides the visual viewport so the on-screen keyboard
+     never covers it. Also the target of the launcher long-press shortcut. */
+  .qcap {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+  }
+  .qcap[hidden] {
+    display: none;
+  }
+  .qcap-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(33, 10, 56, 0.34);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    animation: qcap-fade var(--dur) var(--ease) both;
+  }
+  .qcap-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--qcap-kb, 0px);
+    padding: 10px 18px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 28px 28px 0 0;
+    background: color-mix(in srgb, var(--bg) 70%, #ffffff);
+    box-shadow: 0 -20px 50px -20px rgba(20, 6, 40, 0.5);
+    animation: qcap-rise 260ms var(--ease) both;
+  }
+  .qcap-grab {
+    width: 40px;
+    height: 5px;
+    margin: 0 auto 10px;
+    border-radius: 3px;
+    background: var(--line);
+  }
+  .qcap-head {
+    display: flex;
+    align-items: center;
+  }
+  .qcap-raven {
+    width: 46px;
+    height: auto;
+    margin: -4px -2px -6px -6px;
+  }
+  .qcap-head h2 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+  .qcap-head h2 .greet-mark {
+    color: var(--purple-bold);
+  }
+  #qcap_field {
+    margin-top: 12px;
+    min-height: 104px;
+    max-height: 38vh;
+    font-size: 16px;
+    line-height: 1.5;
+    border-radius: var(--r-xl);
+    padding: 14px 16px;
+    resize: none;
+  }
+  .qcap-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .qcap-act {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-radius: var(--r-lg);
+    background: var(--line-soft);
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .qcap-act svg {
+    width: 18px;
+    height: 18px;
+  }
+  .qcap-keep {
+    margin-left: auto;
+    padding: 10px 22px;
+    border-radius: var(--r-lg);
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    font-weight: 600;
+    box-shadow: 0 8px 20px -8px rgba(96, 7, 159, 0.8);
+  }
+  .qcap-keep:disabled {
+    opacity: 0.55;
+  }
+  .qcap-status {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--danger);
+  }
+  .qcap-status:empty {
+    display: none;
+  }
+  .qcap.leaving .qcap-sheet {
+    transform: translateY(105%);
+    transition: transform 200ms var(--ease);
+  }
+  .qcap.leaving .qcap-scrim {
+    opacity: 0;
+    transition: opacity 200ms var(--ease);
+  }
+  @keyframes qcap-rise {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes qcap-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .qcap-sheet,
+    .qcap-scrim {
+      animation: none;
+    }
+    .qcap.leaving .qcap-sheet {
+      transform: none;
+      opacity: 0;
+    }
   }
 
   /* Unsynced state indicator (MOB.7) */
@@ -1454,9 +1776,10 @@
     display: flex;
     gap: 12px;
     padding: 14px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
+    background: var(--surface-2);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: var(--r-xl);
     text-decoration: none;
     color: var(--text);
   }
@@ -1503,21 +1826,28 @@
   }
 
   /* Rich Cards (MOB2.5) */
+  /* A tile: a lighter plate on the violet ground with a violet hairline. Pressed,
+     it turns white and lifts - the same tile as the desktop wall. */
   .card {
     display: flex;
     gap: 12px;
     padding: 14px;
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
+    border: 0;
+    box-shadow: var(--hairline);
+    border-radius: 18px;
     cursor: pointer;
-    transition: background var(--dur-fast) var(--ease);
+    transition:
+      background var(--dur-fast) var(--ease),
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur-fast) var(--ease);
   }
   .card:hover {
     background: var(--surface-2);
   }
   .card:active {
     background: var(--surface-2);
+    box-shadow: var(--shadow-card);
   }
   .card-unsynced {
     position: relative;
@@ -1549,8 +1879,11 @@
     gap: 6px;
   }
   .card-title {
-    font-size: 15px;
-    font-weight: 500;
+    font-family: var(--display);
+    font-size: 16.5px;
+    font-weight: 600;
+    line-height: 1.22;
+    letter-spacing: -0.02em;
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1579,7 +1912,6 @@
     color: var(--ink-faint);
     margin-top: auto;
     padding-top: 4px;
-    border-top: 1px solid var(--line-soft);
   }
   .card-time {
     flex: 1;
@@ -1623,6 +1955,25 @@
     object-fit: cover;
     flex-shrink: 0;
     background: var(--surface-2);
+  }
+  .card-site {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-mute);
+  }
+  .card-site + .card-time::before {
+    content: "·";
+    margin-right: 6px;
+  }
+  /* A link tile with its preview picture is an image tile: the picture carries
+     the description, so the text is the title on one line plus the site. */
+  .card-link.card-image .card-title {
+    -webkit-line-clamp: 1;
+  }
+  .card-link.card-image .card-snippet {
+    display: none;
   }
   .card-link .card-snippet {
     -webkit-line-clamp: 2;
@@ -1900,9 +2251,10 @@
   <header class="lib-hero">
     <button class="back" id="to_setup" hidden>&larr; Setup</button>
     <img class="lib-raven" src="raven-mark.png" alt="" aria-hidden="true" />
+    <div class="lib-date" id="lib_date"></div>
     <h1 id="lib_greeting">Library</h1>
   </header>
-  <input id="search" type="search" placeholder="Search" autocomplete="off" />
+  <input id="search" type="search" placeholder="Find anything you kept" autocomplete="off" />
   <div class="viewchips" id="viewchips" role="tablist">
     <button class="chip" data-mode="touched" aria-pressed="true">Last touch</button>
     <button class="chip" data-mode="type" aria-pressed="false">Type</button>
@@ -2011,22 +2363,34 @@
   </div>
 </aside>
 
-<section id="capture" hidden>
-  <header>
-    <button class="back" id="capture_cancel">&larr;</button>
-    <h1 id="capture_title">Capture</h1>
-  </header>
-  <textarea
-    id="capture_field"
-    rows="3"
-    placeholder="Toss it here - text or a link"
-    autocomplete="off"
-  ></textarea>
-  <div id="capture_actions">
-    <button id="capture_keep">Save</button>
+<div id="qcap" class="qcap" hidden>
+  <div class="qcap-scrim" id="qcap_scrim"></div>
+  <div class="qcap-sheet" role="dialog" aria-modal="true" aria-labelledby="qcap_title">
+    <div class="qcap-grab" aria-hidden="true"></div>
+    <div class="qcap-head">
+      <img class="qcap-raven" src="raven-mark.png" alt="" aria-hidden="true" />
+      <h2 id="qcap_title">Keep something<span class="greet-mark">.</span></h2>
+    </div>
+    <textarea
+      id="qcap_field"
+      rows="3"
+      placeholder="A thought, a link, or markdown"
+      autocomplete="off"
+    ></textarea>
+    <div class="qcap-row">
+      <button class="qcap-act" id="qcap_photo" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="m20.5 16-5-5-8 8" /></svg>
+        Photo
+      </button>
+      <button class="qcap-act" id="qcap_camera" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z" /><circle cx="12" cy="13" r="3.2" /></svg>
+        Camera
+      </button>
+      <button class="qcap-keep" id="qcap_keep" type="button">Keep</button>
+    </div>
+    <div class="qcap-status" id="qcap_status" role="status"></div>
   </div>
-  <div id="capture_status"></div>
-</section>
+</div>
 
 <!-- Link capture (MOBFIX.4) -->
 <section id="link_capture" hidden>
@@ -2202,102 +2566,40 @@
     <button class="back" id="settings_cancel">&larr;</button>
     <h1>Settings</h1>
   </header>
-  <div style="padding: 16px; display: flex; flex-direction: column; gap: 24px">
+  <div class="mset-body">
+    <span class="mset-managed">Managed by your desktop</span>
     <!-- Sync Section -->
-    <div>
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        Sync
-      </h2>
-      <div style="display: flex; flex-direction: column; gap: 12px">
-        <div
-          id="settings_sync_status"
-          style="font-size: 14px; color: var(--text-mute)"
-        ></div>
-        <button
-          id="settings_sync_now"
-          type="button"
-          class="round"
-          style="background: var(--purple-bold); color: var(--on-purple-bold)"
-        >
-          Sync Now
-        </button>
-        <button
-          id="settings_pair"
-          type="button"
-          style="
-            background: var(--surface);
-            color: var(--text);
-            border: 1px solid var(--line);
-            padding: 12px 18px;
-            border-radius: var(--r-md);
-          "
-        >
-          Re-link with QR
-        </button>
+    <div class="mset-group">
+      <h2 class="mset-title">Sync</h2>
+      <div id="settings_sync_status" class="mset-sub"></div>
+      <div class="mset-stack">
+        <button id="settings_sync_now" type="button" class="mset-primary">Sync Now</button>
+        <button id="settings_pair" type="button" class="mset-secondary">Re-link with QR</button>
       </div>
     </div>
 
     <!-- AI Section (read-only; the desktop is the source of truth) -->
-    <div id="settings_ai">
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        AI
-      </h2>
-      <dl id="settings_ai_rows" style="margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px"></dl>
-      <p style="margin: 12px 0 0; font-size: 13px; color: var(--text-mute)">
-        Managed on the desktop. Change the model or key there and it syncs here.
-      </p>
+    <div id="settings_ai" class="mset-group">
+      <h2 class="mset-title">AI</h2>
+      <dl id="settings_ai_rows" class="mset-rows"></dl>
+      <p class="mset-note">Managed on the desktop. Change the model or key there and it syncs here.</p>
     </div>
 
     <!-- Trash: deleted artifacts, restorable. Delete moves here; Restore brings it back. -->
-    <div id="settings_trash">
-      <h2
-        style="
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-mute);
-          margin-bottom: 12px;
-        "
-      >
-        Trash
-      </h2>
-      <div id="settings_trash_empty" style="display: none; font-size: 13px; color: var(--text-mute)">
-        Trash is empty.
-      </div>
+    <div id="settings_trash" class="mset-group">
+      <h2 class="mset-title">Trash</h2>
+      <div id="settings_trash_empty" class="mset-sub" style="display: none">Trash is empty.</div>
       <div id="settings_trash_list"></div>
-      <button
-        id="settings_empty_trash"
-        type="button"
-        style="display: none; margin-top: 12px; width: 100%; padding: 12px; font-size: 14px; font-weight: 600; color: var(--danger, #b4332b); background: transparent; border: 1px solid var(--danger, #b4332b); border-radius: var(--r-md); cursor: pointer"
-      >
-        Empty trash
-      </button>
+      <button id="settings_empty_trash" type="button" class="mset-danger" style="display: none">Empty trash</button>
     </div>
     <!-- Events Section (VAULT.6): real session diagnostics + the vault door -->
-    <div>
-      <h2 style="font-size: 14px; font-weight: 600; color: var(--text-mute); margin-bottom: 4px">
-        Activity
-      </h2>
-      <p style="font-size: 12px; color: var(--text-mute); margin: 0 0 12px">
-        Questions, captures, facet edits, and syncs. Tap a row for the full record.
-      </p>
-      <div id="settings_events_list" style="font-size: 13px; color: var(--text); max-height: 280px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px; background: var(--surface-1, var(--surface))"></div>
-      <div style="display: flex; gap: 10px; margin-top: 12px">
-        <button id="settings_events_refresh" type="button" style="flex: 1; padding: 10px; font-size: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-md)">Refresh</button>
-        <button id="settings_diagnostics" type="button" style="flex: 1; padding: 10px; font-size: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-md)">Diagnostics</button>
+    <div class="mset-group">
+      <h2 class="mset-title">Activity</h2>
+      <p class="mset-sub">Questions, captures, facet edits, and syncs. Tap a row for the full record.</p>
+      <div id="settings_events_list" class="mset-events"></div>
+      <div class="mset-row2">
+        <button id="settings_events_refresh" type="button" class="mset-secondary">Refresh</button>
+        <button id="settings_diagnostics" type="button" class="mset-secondary">Diagnostics</button>
       </div>
     </div>
   </div>
@@ -2310,7 +2612,7 @@
     <h1>Vault</h1>
   </header>
   <div style="display: flex; gap: 10px; justify-content: center; padding: 0 16px 12px">
-    <button id="vault_change_pin" type="button" style="background: var(--surface); color: var(--text); border: 1px solid var(--line); padding: 8px 14px; border-radius: var(--r-md)">Change code</button>
+    <button id="vault_change_pin" type="button" class="mset-secondary">Change code</button>
   </div>
   <div id="shelves_vault"></div>
   <div id="vault_scroll" style="padding: 0 16px 24px"></div>
@@ -2433,7 +2735,6 @@
       "setup",
       "library",
       "reader",
-      "capture",
       "crop",
       "link_capture",
       "chat",
@@ -2783,19 +3084,23 @@
     const content = document.createElement("div");
     content.className = "card-content";
 
-    // Preview image if available
-    if (a.mime && a.mime.startsWith("image/")) {
+    // The link's preview picture (synced from the desktop, which fetched the page)
+    // fills the top of the tile, the way an image capture does; a link without one
+    // stays a text tile. The picture is fetched on demand by its content hash.
+    if (a.preview_image_hash) {
+      li.classList.add("card-image");
       const thumb = document.createElement("img");
-      thumb.className = "card-preview-image";
+      thumb.className = "card-full-image";
       thumb.alt = "";
-      li.appendChild(kindDot);
-      li.insertBefore(thumb, kindDot);
-      fetchBlob(a.id, a.vaulted_at)
-        .then((b) => {
-          thumb.src = "data:" + (b.mime || "image/png") + ";base64," + b.base64;
+      content.appendChild(thumb);
+      invoke("mobile_blob", { id: a.preview_image_hash, mime: a.preview_image_mime || "image/jpeg" })
+        .then((raw) => {
+          const b = parse(raw);
+          thumb.src = "data:" + (b.mime || "image/jpeg") + ";base64," + b.base64;
         })
         .catch(() => {
           thumb.remove();
+          li.classList.remove("card-image");
         });
     }
 
@@ -2803,15 +3108,23 @@
     title.className = "card-title";
     title.textContent = a.title || "Untitled";
 
+    // What the page is about: the note on the link if there is one, else the
+    // preview's description.
     const snippet = document.createElement("div");
     snippet.className = "card-snippet";
-    snippet.textContent = mdText(a.body || "");
+    snippet.textContent = mdText(a.body || "") || a.preview_description || "";
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
     const time = document.createElement("span");
     time.className = "card-time";
     time.textContent = relativeTime(a.updated_at || a.created_at);
+    if (a.preview_site) {
+      const site = document.createElement("span");
+      site.className = "card-site";
+      site.textContent = a.preview_site;
+      meta.appendChild(site);
+    }
     meta.appendChild(time);
 
     if (a.pinned) {
@@ -3268,18 +3581,58 @@
 
   // The phone's front door mirrors the desktop hero: a time-of-day greeting with
   // a single violet period, the same phrase set the desktop picks by the clock.
+  // The greeting phrases, mirrored from the engine's greeting.py (the source of
+  // truth: edit there, then here). Same buckets and windows; the phone cannot ask the
+  // engine, so it rolls its own pick, held for the hour like the desktop's.
+  const GREETINGS = {
+    morning: ["Up before the worms", "Top of the morning to ya, guv'nah", "Rise and grind",
+      "Coffee first, then hoarding", "I didn't sleep. Did you?", "Early bird gets the link",
+      "Morning, shiny hunter"],
+    afternoon: ["Afternoon, guv'nah", "Bring me something shiny", "Post-lunch slump detected",
+      "Still hunting?", "Another tab? Go on then", "I've been counting your tabs"],
+    evening: ["Think about winding down", "Evening, guv'nah", "Dusk. My favourite",
+      "One more link, then bed", "Today's haul, all tucked in", "The good hoarding hours"],
+    night: ["Still up?", "Quite the insomniac", "Night owl time", "It's just us now",
+      "I see you", "Ravens don't sleep either", "Shouldn't you be in bed?"],
+    generic: ["LFGGGGGGG", "Back again?", "I kept your seat warm", "Nothing left behind",
+      "Caw", "Missed you", "I was watching"],
+  };
+  function greetingFor(now) {
+    const h = now.getHours();
+    const part = h >= 6 && h < 12 ? "morning" : h >= 12 && h < 18 ? "afternoon" : h >= 18 ? "evening" : "night";
+    const pool = GREETINGS[part].concat(GREETINGS.generic);
+    // Seeded by date + hour (a small string hash), so the pick holds for the hour.
+    const seed = now.toDateString() + ":" + h;
+    let x = 0;
+    for (let i = 0; i < seed.length; i++) x = (x * 31 + seed.charCodeAt(i)) >>> 0;
+    return pool[x % pool.length];
+  }
   function setLibraryGreeting() {
     const el = document.getElementById("lib_greeting");
     if (!el) return;
-    const hour = new Date().getHours();
-    const phrase =
-      hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-    el.replaceChildren();
-    el.appendChild(document.createTextNode(phrase));
+    const now = new Date();
+    const full = greetingFor(now);
+    const ending = (full.match(/[.?!]+$/) || ["."])[0];
+    const phrase = full.replace(/[.?!]+$/, "");
+    // Last word in the accent, then the accent period (the desktop lockup).
+    const words = phrase.split(" ");
+    const last = words.pop();
+    const lead = document.createElement("span");
+    lead.textContent = words.length ? words.join(" ") + " " : "";
+    const tail = document.createElement("span");
+    tail.className = "greet-last";
+    tail.textContent = last;
     const mark = document.createElement("span");
     mark.className = "greet-mark";
-    mark.textContent = ".";
-    el.appendChild(mark);
+    mark.textContent = ending;
+    el.replaceChildren(lead, tail, mark);
+    const date = document.getElementById("lib_date");
+    if (date)
+      date.textContent = now.toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      });
   }
 
   // Custom-view pivots change rarely (only on a desktop edit that syncs down), so
@@ -4371,6 +4724,10 @@
   // The Android system Back gesture pops the webview history; a pop while the reader
   // or capture sheet is open returns to the library (never traps the user).
   window.addEventListener("popstate", () => {
+    if (quickCaptureOpen()) {
+      closeQuickCapture();
+      return;
+    }
     if (!document.getElementById("library").hidden) return;
     show("library");
     renderLibrary();
@@ -4387,16 +4744,22 @@
         renderLibrary();
         return;
       }
+      // The eye squints while it looks, and opens wide when something turns up.
+      if (window.eyeMood) eyeMood.hold("search");
       invoke("mobile_search", { query: q })
-        .then((raw) => renderSections(parse(raw), "Nothing matches."))
-        .catch(() => renderSections([], "Nothing matches."));
+        .then((raw) => {
+          const hits = parse(raw);
+          renderSections(hits, "Nothing matches.");
+          if (window.eyeMood)
+            eyeMood.drop("search", Array.isArray(hits) && hits.length ? "found" : null);
+        })
+        .catch(() => {
+          renderSections([], "Nothing matches.");
+          if (window.eyeMood) eyeMood.drop("search");
+        });
     }, 140);
   });
 
-  document.getElementById("capture_cancel").addEventListener("click", () => {
-    show("library");
-    renderLibrary();
-  });
   // Settings back arrow returns to the library (the gear-wiring fix made Settings
   // reachable; this makes it exitable).
   document.getElementById("settings_cancel").addEventListener("click", () => {
@@ -4405,6 +4768,8 @@
   });
   // Raven flight animation (ANIM.4, MOB.7)
   function captureFlight() {
+    // The eye approves: one slow, satisfied blink as the raven flies off with it.
+    if (window.eyeMood) eyeMood.play("approve");
     const existing = document.getElementById("captureFlight");
     if (existing) existing.remove();
     const img = document.createElement("img");
@@ -4419,23 +4784,119 @@
     setTimeout(() => img.remove(), reduced ? 1600 : 1900);
   }
 
-  document
-    .getElementById("capture_keep")
-    .addEventListener("click", async () => {
-      const text = document.getElementById("capture_field").value.trim();
-      if (!text) return;
-      const status = document.getElementById("capture_status");
-      status.textContent = "";
-      try {
-        await invoke("mobile_capture", { text });
-        document.getElementById("capture_field").value = "";
-        captureFlight();
-        show("library");
-        renderLibrary();
-      } catch (e) {
-        status.textContent = errString(e);
-      }
-    });
+  // ---- Quick capture sheet ---------------------------------------------------
+  // One capture surface for the pill's "Note" and for the launcher shortcut
+  // (long-press the app icon -> "Quick capture"). In quick mode the app was opened
+  // just to capture, so keeping or dismissing hands the phone back to wherever the
+  // person was (MainActivity.finishQuickCapture moves the task to the back), the
+  // way the desktop overlay disappears after a keep.
+  let qcapQuick = false;
+  let qcapBusy = false;
+  function quickCaptureOpen() {
+    const el = document.getElementById("qcap");
+    return !!el && !el.hidden;
+  }
+  // Keep the sheet above the on-screen keyboard: the visual viewport shrinks when
+  // the keyboard opens, and the gap below it is how far the sheet must rise.
+  function qcapFitKeyboard() {
+    const vv = window.visualViewport;
+    const el = document.getElementById("qcap");
+    if (!vv || !el) return;
+    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    el.style.setProperty("--qcap-kb", kb + "px");
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", qcapFitKeyboard);
+    window.visualViewport.addEventListener("scroll", qcapFitKeyboard);
+  }
+  function openQuickCapture(opts) {
+    const el = document.getElementById("qcap");
+    const field = document.getElementById("qcap_field");
+    if (!el || !field) return;
+    qcapQuick = !!(opts && opts.quick);
+    el.classList.remove("leaving");
+    document.getElementById("qcap_status").textContent = "";
+    if (!quickCaptureOpen()) history.pushState({ v: "qcap" }, "");
+    el.hidden = false;
+    qcapFitKeyboard();
+    field.focus();
+  }
+  // Close the sheet. `handBack` is set when the capture came from the launcher
+  // shortcut and should return the person to the app they were in.
+  function closeQuickCapture(handBack) {
+    const el = document.getElementById("qcap");
+    if (!el || el.hidden) return;
+    const quick = qcapQuick;
+    qcapQuick = false;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.classList.add("leaving");
+    setTimeout(
+      () => {
+        el.hidden = true;
+        el.classList.remove("leaving");
+      },
+      reduced ? 0 : 200,
+    );
+    document.getElementById("qcap_field").blur();
+    if (history.state && history.state.v === "qcap") history.back();
+    if (quick && handBack !== false) finishQuickCaptureTask(0);
+  }
+  function finishQuickCaptureTask(delay) {
+    const bridge = window.EnqueueAndroid;
+    if (!bridge || typeof bridge.finishQuickCapture !== "function") return;
+    setTimeout(() => bridge.finishQuickCapture(), delay);
+  }
+  async function keepQuickCapture() {
+    const field = document.getElementById("qcap_field");
+    const text = field.value.trim();
+    if (!text || qcapBusy) {
+      field.focus();
+      return;
+    }
+    const status = document.getElementById("qcap_status");
+    const keep = document.getElementById("qcap_keep");
+    status.textContent = "";
+    qcapBusy = true;
+    keep.disabled = true;
+    try {
+      await invoke("mobile_capture", { text });
+      field.value = "";
+      const quick = qcapQuick;
+      closeQuickCapture(false);
+      captureFlight();
+      show("library");
+      renderLibrary();
+      // From the launcher shortcut: let the raven land, then hand the phone back.
+      if (quick) finishQuickCaptureTask(1700);
+    } catch (e) {
+      status.textContent = errString(e);
+    } finally {
+      qcapBusy = false;
+      keep.disabled = false;
+    }
+  }
+  document.getElementById("qcap_keep").addEventListener("click", keepQuickCapture);
+  document.getElementById("qcap_scrim").addEventListener("click", () => closeQuickCapture());
+  document.getElementById("qcap_photo").addEventListener("click", () => {
+    closeQuickCapture(false);
+    doCaptureImage();
+  });
+  document.getElementById("qcap_camera").addEventListener("click", () => {
+    closeQuickCapture(false);
+    doCaptureCamera();
+  });
+  // The launcher shortcut. MainActivity records the launch action and exposes it
+  // over the EnqueueAndroid bridge; a cold start asks once at boot, and a warm start
+  // (app already running) is pushed in through window.__enqLaunchAction.
+  window.__enqLaunchAction = (action) => {
+    if (action === "quick-capture") openQuickCapture({ quick: true });
+  };
+  (() => {
+    const bridge = window.EnqueueAndroid;
+    if (!bridge || typeof bridge.takeLaunchAction !== "function") return;
+    const action = bridge.takeLaunchAction();
+    if (action) window.__enqLaunchAction(action);
+  })();
 
   // Link capture handlers (MOBFIX.4)
   document.getElementById("link_cancel").addEventListener("click", () => {
@@ -4829,6 +5290,8 @@ return;
       // so re-rendering the whole library on every no-op sync was pure jank.
       const pulled = (e && e.payload && e.payload.pulled) || 0;
       if (pulled > 0 && !document.getElementById("library").hidden) renderLibrary();
+      // Something new arrived: the eye startles.
+      if (pulled > 0 && window.eyeMood) eyeMood.play("startle");
       // If the vault is open and unlocked, a pull may have brought in an item
       // vaulted on another device - refresh the list in place (no spinner/flip).
       const vaultSection = document.getElementById("vault");
@@ -4881,7 +5344,7 @@ return;
   waitForEventApi();
 
   // Mobile makeEye: populate the pill-eye with the living eye markup (simplified from icons.js)
-  const EYE_ASSET_V = "?v=1";
+  const EYE_ASSET_V = "?v=2";
   // Minimal svg function for mobile (mirrors icons.js gear icon)
     const MOBILE_ICONS = {
     gear: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 0 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
@@ -4939,8 +5402,33 @@ return;
     }
     return svgEl;
   }
+  // The pill's eye is DRAWN, in the same 1.7px line as the other pill icons: an
+  // almond and three lashes in currentColor. Only the iris is a separate element,
+  // inside a clipped socket, so it can still glance, constrict and blink. (The old
+  // pill eye was the eye-only.png art, a thick black outline twice the weight of
+  // everything around it.)
+  const PILL_EYE_LINE =
+    '<svg class="eye-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M2.6 12.8C5.2 8.6 8.4 6.6 12 6.6s6.8 2 9.4 6.2c-2.6 4.2-5.8 6.2-9.4 6.2s-6.8-2-9.4-6.2z"/>' +
+    '<path d="M8 7.3 7 5.2M12 6.6V4.3M16 7.3l1-2.1"/></svg>';
+  function makePillEye(el) {
+    const wrap = document.createElement("div");
+    wrap.className = "eye-blinkwrap";
+    wrap.innerHTML = PILL_EYE_LINE;
+    const socket = document.createElement("div");
+    socket.className = "eye-socket";
+    const pupil = document.createElement("div");
+    pupil.className = "eye-pupil";
+    socket.appendChild(pupil);
+    wrap.appendChild(socket);
+    el.replaceChildren(wrap);
+    makeEyeAlive(el, pupil, socket);
+    // A held mood carries over to a freshly rendered pill eye.
+    if (window.eyeMood) eyeMood.refresh();
+  }
   function makeEye(el) {
     if (!el) return;
+    if (el.classList.contains("pill-eye")) return makePillEye(el);
     const wrap = document.createElement("div");
     wrap.className = "eye-blinkwrap";
     const socket = document.createElement("div");
@@ -4953,22 +5441,12 @@ return;
     socket.appendChild(pupil);
     const frame = document.createElement("img");
     frame.className = "eye-frame";
-    // Pill eye uses eye-only.png (cropped eye), not the full raven frame
-    if (el.classList.contains("pill-eye")) {
-      frame.src = "/eye-only.png" + EYE_ASSET_V;
-    } else {
-      frame.src = "/eye-frame.png" + EYE_ASSET_V;
-    }
+    frame.src = "/eye-frame.png" + EYE_ASSET_V;
     frame.alt = "";
     frame.draggable = false;
     wrap.appendChild(socket);
     wrap.appendChild(frame);
     el.replaceChildren(wrap);
-    // Bring the pill eye to life. The desktop eye follows the cursor; a phone has
-    // none, so its life is autonomous: it blinks, glances around when idle, and
-    // constricts when tapped. That is what makes it read as the brand's living
-    // raven eye instead of a flat "view" icon sitting in the pill.
-    if (el.classList.contains("pill-eye")) makeEyeAlive(el, pupil, socket);
   }
 
   // Autonomous eye motion (touch-native version of icons.js EYE.4). No cursor
@@ -5025,7 +5503,8 @@ return;
     }
     function saccade() {
       if (!el.isConnected) return clearAll();
-      if (!eyeLifeOK()) return armIdle();
+      // A mood (eyemood.js) or a finger being followed owns the iris; wait.
+      if (!eyeLifeOK() || el.dataset.mood || st.following) return armIdle();
       const sock = socket.getBoundingClientRect();
       // A small glance, scaled from the rendered socket (184px is the source width
       // the desktop reach is tuned against). The oversized pupil + socket clip keep
@@ -5048,7 +5527,7 @@ return;
     el.addEventListener(
       "pointerdown",
       () => {
-        if (!eyeLifeOK()) return;
+        if (!eyeLifeOK() || el.dataset.mood) return;
         // Clear any glance offset so the constrict scale reads from center, then
         // pinch the iris - a tiny tactile response to the tap.
         pupil.style.transform = "";
@@ -5058,6 +5537,37 @@ return;
       },
       { passive: true },
     );
+    // Follows you: a phone has no cursor, so the eye watches your finger while you
+    // touch, drag or scroll anywhere on screen, then settles back a beat after you
+    // lift it. The lean saturates with distance so a far touch still reads as
+    // "over there" without pinning the iris to the lid.
+    let settleTimer = 0;
+    function followFinger(ev) {
+      if (!el.isConnected) return;
+      if (!eyeLifeOK() || el.dataset.mood || ev.pointerType === "mouse") return;
+      st.following = true;
+      clearTimeout(settleTimer);
+      const r = el.getBoundingClientRect();
+      const sock = socket.getBoundingClientRect();
+      const dx = ev.clientX - (r.left + r.width / 2);
+      const dy = ev.clientY - (r.top + r.height * 0.53);
+      const d = Math.hypot(dx, dy) || 1;
+      const k = Math.min(1, d / 220);
+      pupil.style.transform =
+        "translate(calc(-50% + " + ((dx / d) * k * sock.width * 0.22).toFixed(2) +
+        "px), calc(-50% + " + ((dy / d) * k * sock.height * 0.2).toFixed(2) + "px))";
+    }
+    function settle() {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        st.following = false;
+        if (!el.dataset.mood) pupil.style.transform = "";
+      }, 700);
+    }
+    document.addEventListener("pointerdown", followFinger, { passive: true });
+    document.addEventListener("pointermove", followFinger, { passive: true });
+    document.addEventListener("pointerup", settle, { passive: true });
+    document.addEventListener("pointercancel", settle, { passive: true });
     armBlink();
     armIdle();
   }
@@ -5159,13 +5669,7 @@ return;
     if (noteBtn)
       noteBtn.addEventListener("click", () => {
         pillCloseMenu(true);
-        // Note: plain text note
-        document.getElementById("capture_field").value = "";
-        document.getElementById("capture_status").textContent = "";
-        document.getElementById("capture_title").textContent = "New note";
-        history.pushState({ v: "capture" }, "");
-        show("capture");
-        document.getElementById("capture_field").focus();
+        openQuickCapture();
       });
 
     // Upload

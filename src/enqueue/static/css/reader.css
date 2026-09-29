@@ -3,9 +3,9 @@
     position: relative;
     width: 100%;
     aspect-ratio: 1 / 1.414;
-    background: var(--surface-doc);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
+    background: #ffffff;
+    box-shadow: var(--shadow-card);
+    border-radius: var(--r-lg);
     margin-top: var(--sp-3);
     overflow: hidden;
     /* Pages load as they are reached and are then held forever. Each is rasterised at
@@ -71,10 +71,10 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--text-mute);
-    background: var(--surface);
-    /* AU.3: the folio is a contained badge, not a floating surface - it keeps the
-       border and drops the shadow, the other side of the ghost-card rule. */
-    border: 1px solid var(--line);
+    background: var(--surface-2);
+    /* AU.3: the folio is a contained badge: a white plate with a hairline. */
+    border: 0;
+    box-shadow: var(--hairline);
     border-radius: var(--r-full);
     padding: var(--sp-2) var(--sp-3);
     pointer-events: none;

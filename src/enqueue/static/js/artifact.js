@@ -881,29 +881,36 @@
       // Past the limit, saying "asking" would be a lie: nothing is in flight. Offer
       // the one request that is left to decide on.
       return (
-        '<div class="aside caution">Nothing has come back from ' +
+        '<div class="preview-fail">' +
+        "<p>Nothing has come back from " +
         esc(h) +
-        ". Automatic previews may be off in settings.</div>" +
-        '<button class="btn tertiary" id="btnPreview" onclick="fetchPreview(\'' +
+        ". Automatic previews may be off in settings.</p>" +
+        '<div class="preview-fail-row">' +
+        '<button class="btn secondary sm" id="btnPreview" onclick="fetchPreview(\'' +
         a.id +
         "')\">Ask " +
         esc(h) +
-        "</button>"
+        "</button></div></div>"
       );
     }
 
     // Only a refusal gets a button, because only a refusal is a decision left to
     // make: the publisher said no, and another request is either worth it or not.
+    // A preview that failed sits in its own quiet tile: the reason in plain ink,
+    // then the one decision left (another request) as a real button, with what it
+    // costs said beside it.
     return (
-      '<div class="aside caution">' +
-      esc(p.error || "that did not resolve") +
-      "</div>" +
-      '<button class="btn tertiary" id="btnPreview" onclick="fetchPreview(\'' +
+      '<div class="preview-fail">' +
+      "<p>" +
+      esc(p.error || "That page did not resolve.") +
+      "</p>" +
+      '<div class="preview-fail-row">' +
+      '<button class="btn secondary sm" id="btnPreview" onclick="fetchPreview(\'' +
       a.id +
       "')\">Try again</button>" +
-      '<div class="aside">one more request to ' +
+      "<span>one more request to " +
       esc(h) +
-      "</div>"
+      "</span></div></div>"
     );
   }
 

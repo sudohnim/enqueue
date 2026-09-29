@@ -64,10 +64,13 @@
     const tagName = tagFilterName(q);
     if (tagName) return renderTagWall(q, tagName);
     view.innerHTML = spinner("lg", "searching...");
+    // The eye squints and darts while the search thinks, and opens wide on results.
+    if (window.eyeMood) eyeMood.hold("search");
     let r;
     try {
       r = await api("/search?limit=20&q=" + encodeURIComponent(q));
     } catch (err) {
+      if (window.eyeMood) eyeMood.drop("search");
       const msg = String((err && err.message) || err);
       if (msg.includes("Updating your search index")) {
         // The index is being rebuilt (version mismatch or first run). Show the
@@ -87,6 +90,7 @@
       view.innerHTML = '<div class="state">' + esc(msg) + "</div>";
       return;
     }
+    if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
     view.innerHTML =
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="shelf center">' +
