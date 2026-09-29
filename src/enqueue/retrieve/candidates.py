@@ -657,6 +657,8 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     """
     from .. import tags
 
+    from . import lift
+
     free_text, tag_names = tags.parse_tags(q)
     tag_ids = tags.ids_with_all(tag_names) if tag_names else set()
 
@@ -671,15 +673,19 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     if not free_text and tag_ids:
         return _results_for_ids(tag_ids, limit)
 
+    lifts = lift.lift(query_text) if phrase is None and lift.enabled_for_search() else []
+
     if tag_ids:
         # Filter a wider window so a tagged hit just past `limit` is not lost. No rerank here.
-        tagged = [h for h in _hybrid_results(query_text, limit * 5) if h["artifact_id"] in tag_ids]
+        tagged = [
+            h for h in _hybrid_results(query_text, limit * 5, lifts) if h["artifact_id"] in tag_ids
+        ]
         tagged = _apply_floor(query_text, tagged)
         ranked = tagged[:limit]
 
     elif config.SEARCH_RERANK:
         window = max(limit, _RERANK_WINDOW)
-        hybrid = _hybrid_results(query_text, window)
+        hybrid = _hybrid_results(query_text, window, lifts)
         fuzzy = _fuzzy_hits(query_text, window) if _needs_fuzzy(hybrid) else []
         fused = _merge_fuzzy(hybrid, fuzzy, window)
         # Floor before rerank so gibberish never spends the reranker.
@@ -687,7 +693,7 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         ranked = _rerank(query_text, fused)[:limit]
 
     else:
-        hybrid = _hybrid_results(query_text, limit)
+        hybrid = _hybrid_results(query_text, limit, lifts)
         fuzzy = _fuzzy_hits(query_text, limit) if _needs_fuzzy(hybrid) else []
         fused = _merge_fuzzy(hybrid, fuzzy, limit)
         ranked = _apply_floor(query_text, fused)
@@ -697,8 +703,13 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     return ranked
 
 
-def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
-    """Chunk + facet + entity rollup for a free-text query, with per-leg floor signals."""
+def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> list[dict]:
+    """Chunk + facet + entity rollup for a free-text query, with per-leg floor signals.
+
+    `lifts` (retrieve/lift.py) are facet-style restatements of the query; each also
+    searches the facet index. Their dense similarity feeds the floor; they are never a
+    lexical leg, because they are model-written text, not the person's words.
+    """
     store = get_store()
     per_query = limit * 3
     prefetch = max(100, limit * 5)
@@ -709,6 +720,12 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
     chunk_hits = legs[store.CHUNKS]["fused"]
     facet_hits = legs[store.FACETS]["fused"]
     entity_hits = legs[store.ENTITIES]["fused"]
+    lift_legs = [
+        store.search_legs(store.FACETS, claim, limit=per_query, prefetch=prefetch)
+        for claim in lifts or []
+    ]
+    for ll in lift_legs:
+        facet_hits = facet_hits + ll["fused"]
 
     # Floor signals (Q.2/Q.7): best raw cosine per artifact from the dense legs, and
     # lexical = a chunk/facet/entity KEYWORD hit. Trigram is recall only, not lexical.
@@ -727,6 +744,11 @@ def _hybrid_results(q: str, limit: int = 20) -> list[dict]:
                 dense_sims[aid] = hit["score"]
         for hit in legs[name]["keyword"][:per_query]:
             lexical_aids.add(hit["artifact_id"])
+    for ll in lift_legs:
+        for hit in ll["dense"][:per_query]:
+            aid = hit["artifact_id"]
+            if hit["score"] > dense_sims.get(aid, 0.0):
+                dense_sims[aid] = hit["score"]
 
     conn = db.get_conn()
     cache: dict = {}

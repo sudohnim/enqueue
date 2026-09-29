@@ -13,6 +13,7 @@ const SETTING_LABELS = {
 	hotkey: "Capture hotkey",
 	llm_headers: "Extra headers",
 	auto_preview: "Resolve links when you save them",
+	search_lift: "Rewrite searches as ideas",
 	trash_days: "Days a deleted thing waits before it goes",
 };
 
@@ -457,6 +458,12 @@ function stagePreviewToggle(button) {
 	stageSetting("auto_preview", on ? "on" : "off");
 }
 
+function stageLiftToggle(button) {
+	const on = button.getAttribute("aria-checked") !== "true";
+	button.setAttribute("aria-checked", String(on));
+	stageSetting("search_lift", on ? "on" : "off");
+}
+
 // Switching backend moves the model name with it when one is known. The
 // endpoint is implied by the backend itself (SET.1), so nothing stages a URL
 // here - only `custom` has a user-typed endpoint, edited in its own field.
@@ -610,6 +617,34 @@ async function renderSettingsFeatures() {
 		'"' +
 		(ap.locked ? ' disabled aria-disabled="true"' : "") +
 		' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
+		"</div></div></div>";
+
+	// Query lifting (retrieve/lift.py): one search-model call per new search, cached.
+	const sl = d.settings.search_lift;
+	const slOn = ["on", "true", "1"].includes(String(sl.value).toLowerCase());
+	html +=
+		'<div class="shelf">Search</div><div class="group">' +
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">' +
+		esc(SETTING_LABELS.search_lift) +
+		"</span>" +
+		(sl.locked
+			? '<div class="pinned">pinned by ' + esc(sl.env_var) + "</div>"
+			: '<div class="aside">' +
+				(slOn
+					? "The search model restates each new search as general ideas, so notes " +
+						"from other fields can match. Adds a moment to a search the first time."
+					: "Searches match your words and meaning directly. Chat always " +
+						"rewrites questions as ideas.") +
+				"</div>") +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(slOn) +
+		'" aria-label="' +
+		esc(SETTING_LABELS.search_lift) +
+		'"' +
+		(sl.locked ? ' disabled aria-disabled="true"' : "") +
+		' onclick="stageLiftToggle(this)"><span class="knob"></span></button>' +
 		"</div></div></div>";
 
 	html += settingsActionsBar();

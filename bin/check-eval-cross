@@ -3,9 +3,9 @@
 
 Runs `enq eval-cross` and compares it with the committed baseline
 (evals/results/cross-domain.json). Fails when:
-  - adding facets makes results worse than chunks alone (the concept layer must
-    never hurt), or
-  - a query that passed in the baseline fails now, in either mode.
+  - a layer makes results worse than the one below it (facets vs chunks alone,
+    lifting vs facets): each must never hurt, or
+  - a query that passed in the baseline fails now, in any mode the baseline has.
 With no baseline yet it prints the report and passes, so the first CI run can
 produce one. `--update-baseline` writes the current run as the new baseline.
 
@@ -51,12 +51,13 @@ def main() -> int:
         return 0
 
     failures: list[str] = []
-    chunks, facets = now["modes"]["chunks"], now["modes"]["facets"]
-    if facets["pass"] < chunks["pass"]:
-        failures.append(
-            f"facets made search worse: {facets['pass']} pass with facets vs "
-            f"{chunks['pass']} with chunks only"
-        )
+    modes = now["modes"]
+    for lower, upper in (("chunks", "facets"), ("facets", "lifted")):
+        if upper in modes and modes[upper]["pass"] < modes[lower]["pass"]:
+            failures.append(
+                f"{upper} made search worse: {modes[upper]['pass']} pass vs "
+                f"{modes[lower]['pass']} with {lower}"
+            )
 
     if not os.path.exists(BASELINE):
         print(f"{SRC}: no baseline at {BASELINE}; current run:")
@@ -65,7 +66,10 @@ def main() -> int:
     else:
         with open(BASELINE, encoding="utf-8") as f:
             base = json.load(f)
-        for label in ("chunks", "facets"):
+        for label in base["modes"]:
+            if label not in now["modes"]:
+                failures.append(f"mode {label} is missing from the current run")
+                continue
             lost = _passing(base["modes"][label]) - _passing(now["modes"][label])
             if lost:
                 failures.append(f"{label}: no longer passing: {', '.join(sorted(lost))}")

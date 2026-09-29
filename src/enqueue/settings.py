@@ -65,6 +65,10 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # search relevance. Empty ingest/search falls back to llm_model.
     "summarize_model": ("ENQ_SUMMARIZE_MODEL", "", True),
     "search_model": ("ENQ_SEARCH_MODEL", "", True),
+    # Whether /search rewrites a query into facet-style claims (retrieve/lift.py) with
+    # the search model. Off by default: it adds a model call to an otherwise instant
+    # search. Chat always lifts, since an answer already waits on a model.
+    "search_lift": ("ENQ_SEARCH_LIFT", "off", True),
     # The vision model used to describe images at ingest (K.11). Separate from
     # the text model: most backends answer text and images with different models.
     "vision_model": ("ENQ_VISION_MODEL", config.VISION_MODEL, True),

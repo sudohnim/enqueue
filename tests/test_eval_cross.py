@@ -79,14 +79,23 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
     suite = xd.load_suite()
     q = suite["queries"][0]
     (tmp_path / "facets.json").write_text(
-        json.dumps({q["expect"][0]: [{"level": 3, "statement": q["query"] + ".", "trust": 1.0}]})
+        json.dumps(
+            {
+                "facets": {
+                    q["expect"][0]: [{"level": 3, "statement": q["query"] + ".", "trust": 1.0}]
+                },
+                "lifts": {q["id"]: [q["query"] + " again."]},
+            }
+        )
     )
     report = xd.run()
 
     assert report["facets_loaded"] == 1
     by_id = {r["id"]: r for r in report["modes"]["facets"]["results"]}
     assert by_id[q["id"]]["pass"], by_id[q["id"]]
-    assert set(report["modes"]) == {"chunks", "facets"}
+    assert set(report["modes"]) == {"chunks", "facets", "lifted"}
+    assert report["lifts_loaded"] == 1
+    assert {r["id"]: r for r in report["modes"]["lifted"]["results"]}[q["id"]]["pass"]
     assert report["modes"]["facets"]["total"] == len(suite["queries"])
 
 

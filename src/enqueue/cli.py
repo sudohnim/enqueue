@@ -889,22 +889,26 @@ def eval(
 
 @app.command("eval-cross")
 def eval_cross(json_path: str = "", generate_facets: bool = False) -> None:
-    """Cross-domain search eval (evals/cross_domain.yaml), chunks only vs with facets.
+    """Cross-domain search eval (evals/cross_domain.yaml): chunks, facets, lifted.
 
     Runs locally against an isolated test library; the engine need not be running.
-    `--generate-facets` writes fresh facets with the ingestion model (needs its API
-    key) and saves them as evals/cross_domain_facets.json.
+    `--generate-facets` writes fresh facets (ingestion model) and query lifts (search
+    model), which need an API key, and saves them as evals/cross_domain_facets.json.
     """
     from . import eval_cross as xd
 
     report = xd.run(generate=generate_facets)
-    typer.echo(f"facets loaded: {report['facets_loaded']}  (pass = target in top {xd.PASS_RANK})")
-    chunks, facets = report["modes"]["chunks"], report["modes"]["facets"]
-    typer.secho(f"{'query':<24}{'chunks':>8}{'facets':>8}", bold=True)
-    for c, f in zip(chunks["results"], facets["results"], strict=True):
-        typer.echo(f"{c['id']:<24}{c['rank'] or '-':>8}{f['rank'] or '-':>8}")
-    for label, mode in (("chunks only", chunks), ("with facets", facets)):
-        typer.echo(f"{label:<12} pass {mode['pass']}/{mode['total']}  MRR {mode['MRR']:.3f}")
+    typer.echo(
+        f"facets loaded: {report['facets_loaded']}  lifts loaded: {report['lifts_loaded']}"
+        f"  (pass = target in top {xd.PASS_RANK})"
+    )
+    modes = report["modes"]
+    typer.secho(f"{'query':<24}" + "".join(f"{m:>8}" for m in modes), bold=True)
+    for i, r in enumerate(modes["chunks"]["results"]):
+        ranks = "".join(f"{modes[m]['results'][i]['rank'] or '-':>8}" for m in modes)
+        typer.echo(f"{r['id']:<24}{ranks}")
+    for label, mode in modes.items():
+        typer.echo(f"{label:<8} pass {mode['pass']}/{mode['total']}  MRR {mode['MRR']:.3f}")
     if json_path:
         Path(json_path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         typer.echo(f"wrote {json_path}")

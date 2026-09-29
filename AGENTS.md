@@ -214,6 +214,7 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
+| `retrieve/lift.py` | Query lifting: the search model restates a search as 2-4 facet-style claims, each also searched against facets (dense similarity counts for the floor; never lexical). Cached in `derived_values` (scope `query_lift`). Chat always lifts; `/search` only with the `search_lift` setting (Settings > Features > Search, default off). Tests stub it via an autouse conftest fixture. |
 | `retrieve/candidates.py` | `/search` rollup: dense + FTS5 keyword fused with RRF, plus trigram substring recall, a fuzzy short-field branch (titles, entities, annotations), and exact quoted-phrase pinning. One row per artifact. |
 
 ### Index
@@ -272,7 +273,7 @@ One line per file, describing its job.
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
-| `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if facets make results worse than chunks alone or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
+| `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (facets vs chunks, lifted vs facets) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
 | `bin/deploy-relay` | Deploy the sync relay to Railway (dev/prod), gated on the relay tests, polls `/health`. |
 
 ### Static
@@ -730,8 +731,8 @@ A scoped chat does no retrieval: the artifact is the candidate set.
 
 `evals/cross_domain.yaml` holds 10 queries phrased in one field (software, teams, habits) whose target note is from another (a willow in a storm, a relay baton, mise en place), plus 5 lexical decoys that share the queries' words but not their idea.
 Each target must not contain its query's key words; `tests/test_eval_cross.py` enforces that, so the suite can only be passed on meaning.
-`enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` twice: chunks only, then with facets. A query passes when its target ranks in the top 3.
-Facets come from the committed fixture `evals/cross_domain_facets.json` (stamped with the current ingest model on load, so the staleness check keeps them). `enq eval-cross --generate-facets` rewrites the fixture with the live ingestion model; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
+`enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` three times: chunks only, with facets, and with facets plus query lifting. A query passes when its target ranks in the top 3.
+Facets and lifts come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "lifts": {query_id: [...]}}`; facets are stamped with the current ingest model on load so the staleness check keeps them; lifts are served from the fixture, so the eval never calls a model). `enq eval-cross --generate-facets` rewrites the fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
 This suite is separate from the main 50-note eval on purpose: adding its notes there would shift the main baseline.
 
 ### Scope dial for chat

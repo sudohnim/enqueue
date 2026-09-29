@@ -303,6 +303,17 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             name: store.search_legs(name, question, limit=4)
             for name in (store.FACETS, store.ENTITIES)
         }
+        # Query lifting (retrieve/lift.py): facet-style restatements of the question
+        # search the facet index too. Their dense similarity counts; never lexical.
+        from .retrieve.lift import lift
+
+        lift_legs = [store.search_legs(store.FACETS, claim, limit=4) for claim in lift(question)]
+        facet_hits = fe_legs[store.FACETS]["fused"] + [h for ll in lift_legs for h in ll["fused"]]
+        for ll in lift_legs:
+            for hit in ll["dense"][:window]:
+                aid = hit["artifact_id"]
+                if hit["score"] > facet_entity_dense.get(aid, 0.0):
+                    facet_entity_dense[aid] = hit["score"]
         for legs in fe_legs.values():
             for hit in legs["dense"][:window]:
                 aid = hit["artifact_id"]
@@ -322,7 +333,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         # A facet or entity hit pulls in its artifact's opening chunk. Stale hits are skipped.
         cache: dict = {}
         gray_facet_entity: dict[str, tuple[str, float, str]] = {}
-        for hit in fe_legs[store.FACETS]["fused"]:
+        for hit in facet_hits:
             if hit_is_stale(conn, hit, cache):
                 continue
             aid = hit["artifact_id"]
