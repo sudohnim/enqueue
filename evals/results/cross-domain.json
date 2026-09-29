@@ -1,0 +1,142 @@
+{
+  "pass_rank": 3,
+  "facets_loaded": 0,
+  "modes": {
+    "chunks": {
+      "total": 10,
+      "pass": 2,
+      "pass_rate": 0.2,
+      "MRR": 0.2026,
+      "results": [
+        {
+          "id": "xd_q_graceful",
+          "rank": null,
+          "pass": false,
+          "top_hit": "paraphrase_0006"
+        },
+        {
+          "id": "xd_q_oncall_handoff",
+          "rank": 7,
+          "pass": false,
+          "top_hit": "xd_decoy_oncall_sheet"
+        },
+        {
+          "id": "xd_q_launch_prep",
+          "rank": 4,
+          "pass": false,
+          "top_hit": "xd_decoy_launch_party"
+        },
+        {
+          "id": "xd_q_small_releases",
+          "rank": null,
+          "pass": false,
+          "top_hit": "xd_decoy_k8s_limits"
+        },
+        {
+          "id": "xd_q_split_team",
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_hive_split"
+        },
+        {
+          "id": "xd_q_sales_playbook",
+          "rank": 5,
+          "pass": false,
+          "top_hit": "xd_decoy_oncall_sheet"
+        },
+        {
+          "id": "xd_q_burnout_rotation",
+          "rank": null,
+          "pass": false,
+          "top_hit": "paraphrase_0001"
+        },
+        {
+          "id": "xd_q_blast_radius",
+          "rank": null,
+          "pass": false,
+          "top_hit": "xd_decoy_k8s_limits"
+        },
+        {
+          "id": "xd_q_meeting_turns",
+          "rank": 10,
+          "pass": false,
+          "top_hit": "xd_decoy_meeting_rooms"
+        },
+        {
+          "id": "xd_q_habit",
+          "rank": 3,
+          "pass": true,
+          "top_hit": "paraphrase_0001"
+        }
+      ]
+    },
+    "facets": {
+      "total": 10,
+      "pass": 2,
+      "pass_rate": 0.2,
+      "MRR": 0.2026,
+      "results": [
+        {
+          "id": "xd_q_graceful",
+          "rank": null,
+          "pass": false,
+          "top_hit": "paraphrase_0006"
+        },
+        {
+          "id": "xd_q_oncall_handoff",
+          "rank": 7,
+          "pass": false,
+          "top_hit": "xd_decoy_oncall_sheet"
+        },
+        {
+          "id": "xd_q_launch_prep",
+          "rank": 4,
+          "pass": false,
+          "top_hit": "xd_decoy_launch_party"
+        },
+        {
+          "id": "xd_q_small_releases",
+          "rank": null,
+          "pass": false,
+          "top_hit": "xd_decoy_k8s_limits"
+        },
+        {
+          "id": "xd_q_split_team",
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_hive_split"
+        },
+        {
+          "id": "xd_q_sales_playbook",
+          "rank": 5,
+          "pass": false,
+          "top_hit": "xd_decoy_oncall_sheet"
+        },
+        {
+          "id": "xd_q_burnout_rotation",
+          "rank": null,
+          "pass": false,
+          "top_hit": "paraphrase_0001"
+        },
+        {
+          "id": "xd_q_blast_radius",
+          "rank": null,
+          "pass": false,
+          "top_hit": "xd_decoy_k8s_limits"
+        },
+        {
+          "id": "xd_q_meeting_turns",
+          "rank": 10,
+          "pass": false,
+          "top_hit": "xd_decoy_meeting_rooms"
+        },
+        {
+          "id": "xd_q_habit",
+          "rank": 3,
+          "pass": true,
+          "top_hit": "paraphrase_0001"
+        }
+      ]
+    }
+  }
+}
