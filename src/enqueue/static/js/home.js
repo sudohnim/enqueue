@@ -766,10 +766,12 @@ async function home(opts) {
 
 	// The wall body renders in the chosen grouping mode (K.6). Custom fetches
 	// /pivots after the shell is in place, so its slot starts empty.
+	html += '<div class="resurface" id="resurface" hidden></div>';
 	html += '<div class="wallbody" id="wallbody"></div>';
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
+	refreshResurface();
 
 	const bodySlot = view.querySelector(".wallbody");
 	// Custom is never a boot or persistent mode (L.5): it opens a modal on
@@ -871,6 +873,71 @@ async function refreshGreeting() {
 	} catch (err) {
 		// The wall keeps its fallback; a failed greeting is not worth an error state.
 	}
+}
+
+// Resurfacing (resurface.py): one older note back on the wall each day, above the
+// cards. "Not today" hides it until tomorrow in this browser only.
+const RESURFACE_DISMISSED = "enqueue.resurface.dismissed";
+
+function todayStamp() {
+	return new Date().toISOString().slice(0, 10);
+}
+
+async function refreshResurface() {
+	const slot = document.getElementById("resurface");
+	if (!slot) return;
+	try {
+		if (localStorage.getItem(RESURFACE_DISMISSED) === todayStamp()) return;
+	} catch (_) {
+		// No storage (private window): the strip simply always shows.
+	}
+	let r;
+	try {
+		r = await api("/resurface");
+	} catch (_) {
+		return;
+	}
+	if (!r || !r.item || !document.body.contains(slot)) return;
+	const a = r.item;
+	const why =
+		r.reason.kind === "related"
+			? "Connects to " + esc(r.reason.via_title || "something you just saved")
+			: "Saved " + esc(since(r.reason.created_at));
+	slot.innerHTML =
+		'<div class="resurface-card" tabindex="0" role="button" aria-label="' +
+		esc("From your library: " + (a.title || "Untitled")) +
+		'">' +
+		'<div class="resurface-text">' +
+		'<div class="resurface-why">From your library &middot; ' +
+		why +
+		"</div>" +
+		'<div class="resurface-title">' +
+		esc(a.title || "Untitled") +
+		"</div>" +
+		(a.excerpt ? '<div class="resurface-excerpt">' + esc(mdText(a.excerpt)) + "</div>" : "") +
+		"</div>" +
+		'<button class="resurface-dismiss" type="button">Not today</button>' +
+		"</div>";
+	slot.hidden = false;
+	const card = slot.querySelector(".resurface-card");
+	const open = () => openArtifact(a.id, "resurface");
+	card.addEventListener("click", (e) => {
+		if (!e.target.closest(".resurface-dismiss")) open();
+	});
+	card.addEventListener("keydown", (e) => {
+		if (e.target === card && (e.key === "Enter" || e.key === " ")) {
+			e.preventDefault();
+			open();
+		}
+	});
+	slot.querySelector(".resurface-dismiss").addEventListener("click", () => {
+		try {
+			localStorage.setItem(RESURFACE_DISMISSED, todayStamp());
+		} catch (_) {
+			// Hidden for this visit only.
+		}
+		slot.hidden = true;
+	});
 }
 
 /// Drag-and-drop ingestion.

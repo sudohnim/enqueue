@@ -1212,3 +1212,68 @@ main {
 	box-shadow: var(--shadow-micro);
 	color: var(--text);
 }
+
+/* Resurfacing: one older note between the header and the wall. The card recipe,
+   one row wide, so it reads as part of the wall rather than a banner over it. */
+.resurface {
+	max-width: 720px;
+	margin: 0 auto var(--sp-5);
+}
+.resurface-card {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-4);
+	padding: 14px 16px;
+	background: var(--surface);
+	box-shadow: var(--hairline);
+	border-radius: 18px;
+	cursor: pointer;
+	text-align: left;
+	transition:
+		background var(--dur) var(--ease),
+		box-shadow 260ms var(--ease);
+}
+.resurface-card:hover {
+	background: var(--surface-2);
+	box-shadow: var(--shadow-card);
+}
+.resurface-text {
+	flex: 1;
+	min-width: 0;
+}
+.resurface-why {
+	font-size: 12px;
+	line-height: 16px;
+	color: var(--ink-faint);
+}
+.resurface-title {
+	margin-top: 2px;
+	font-weight: 600;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.resurface-excerpt {
+	margin-top: 2px;
+	font-size: 13px;
+	color: var(--text-dim);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.resurface-dismiss {
+	flex-shrink: 0;
+	padding: 4px 10px;
+	border: 0;
+	border-radius: var(--r-full);
+	background: none;
+	font: inherit;
+	font-size: 13px;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+.resurface-dismiss:hover {
+	background: var(--surface-3);
+	color: var(--text);
+}

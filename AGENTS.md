@@ -200,6 +200,7 @@ One line per file, describing its job.
 | `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
 | `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
 | `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
 
@@ -577,6 +578,7 @@ All endpoints on `127.0.0.1:8787`.
 GET    /                            home HTML
 GET    /capture                     capture overlay HTML
 GET    /health                      status + row counts
+GET    /resurface                   today's older note for the wall (wall item + reason), or null
 GET    /greeting                    the wall's greeting for the current four-hour bucket (cached or fallback)
 GET    /artifacts                   list, newest first. ?limit&offset&order&pinned
 GET    /artifacts/{id}              detail, body, annotations, facets, versions

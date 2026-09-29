@@ -24,6 +24,28 @@ router = APIRouter()
 # --------------------------------------------------------------------------- read
 
 
+@router.get("/resurface")
+def resurface() -> dict:
+    """Today's older note for the wall (resurface.py), as a wall item, or null."""
+    from .. import resurface as resurface_mod
+
+    chosen = resurface_mod.pick()
+    if chosen is None:
+        return {"item": None, "reason": None}
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
+            " updated_at, local_only, pinned, status, pages FROM artifacts WHERE id = ?",
+            (chosen["id"],),
+        ).fetchone()
+        with_image = _link_images(conn, [row["id"]] if row["kind"] == "link" else [])
+        item = _wall_item(conn, row, with_image, _wall_tags(conn, [row["id"]]))
+    finally:
+        conn.close()
+    return {"item": item, "reason": chosen["reason"]}
+
+
 class Opened(BaseModel):
     source: str = "other"
     query: str | None = None

@@ -15,7 +15,7 @@ from . import db
 
 log = logging.getLogger(__name__)
 
-SOURCES = ("search", "wall", "related", "chat", "other")
+SOURCES = ("search", "wall", "related", "resurface", "chat", "other")
 
 
 def record(artifact_id: str, source: str, query: str | None = None, rank: int | None = None):
