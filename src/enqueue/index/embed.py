@@ -53,6 +53,12 @@ def token_count(text: str) -> int:
     return max(0, _model().token_count(text) - 2)
 
 
+def embed_query(text: str) -> list[float]:
+    """A search, as the model expects one: EMBED_QUERY_PREFIX, then the text. Use
+    embed_one instead when comparing two passages (related notes)."""
+    return embed_one(config.EMBED_QUERY_PREFIX + text)
+
+
 @lru_cache(maxsize=512)
 def embed_one(text: str) -> list[float]:
     """Embed a single string, memoized.

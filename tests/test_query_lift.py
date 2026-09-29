@@ -127,5 +127,5 @@ def test_lifted_claims_reach_facets_in_search(store, monkeypatch):
     before = next(h for h in without if h["artifact_id"] == "w")
     hit = next(h for h in with_lift if h["artifact_id"] == "w")
     assert hit["why"].startswith("facet") and hit["had_lexical_hit"] is False
-    assert hit["dense_similarity"] > 0.99 > before["dense_similarity"]
+    assert hit["dense_similarity"] >= cand.KEEP_ABOVE > before["dense_similarity"]
     get_store.cache_clear()

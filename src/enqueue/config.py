@@ -15,6 +15,8 @@ EMBED_MODEL = "BAAI/bge-base-en-v1.5"
 EMBED_DIM = 768
 EMBED_VERSION = "bge-base-en-v1.5"
 EMBED_MAX_TOKENS = 512  # the model reads this many tokens and drops the rest
+# bge v1.5 is trained to read a search with this instruction in front; passages go bare.
+EMBED_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 # 127.0.0.1, never localhost. This machine runs a second Ollama in Docker bound to
 # the IPv6 wildcard, and localhost resolves to IPv6 first. See docs/PROGRESS.md.

@@ -224,7 +224,7 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
-| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). |
+| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). `embed()` for passages, `embed_query()` for searches (adds `EMBED_QUERY_PREFIX`), `token_count()` for the chunker. |
 | `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
 | `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. `search_legs()` returns the fused list plus the raw dense/keyword/trigram legs from one pass on one connection; callers that need both (the relevance floor in `/search` and `chats.passages`) must use it rather than re-running `search_dense`/`search_keyword`. |
 | `index/fusion.py` | Reciprocal rank fusion as a pure function. |
@@ -700,13 +700,21 @@ These used to live as long comments in `retrieve/candidates.py`, `index/store_sq
 
 **Relevance floor (Q.3 / Q.3b / Q.7).**
 One dense threshold cannot work: the eval showed the weakest real matches (cosine ~0.518) sit below the strongest gibberish neighbors (~0.668).
-So the floor has two bars on the true-cosine scale, `KEEP_ABOVE = 0.75` and `DROP_BELOW = 0.45`, and a gray zone between them decided by one batched model call.
+So the floor has two bars on the true-cosine scale, `KEEP_ABOVE = 0.68` and `DROP_BELOW = 0.40`, and a gray zone between them decided by one batched model call.
+The bars are on the scale of a PREFIXED query (see "Query prefix"): the prefix lowers every query-to-passage cosine by about 0.07 (real matches: weakest 0.516 -> 0.427, median 0.624 -> 0.564; strongest gibberish 0.665 -> 0.597), so the old unprefixed bars (0.75/0.45) moved down by the same margin.
+Recalibrate them whenever the embedding model or its prefix changes: `evals/queries.yaml` real-match minimum must stay above `DROP_BELOW`, and every "nothing" query's best hit below `KEEP_ABOVE`.
 The bars are start values for the Phase Q.4 eval (all 42 real-match queries passing, Nothing-OK toward 8/8), not final answers.
 Lexical legs that bypass the floor: chunk FTS5 keyword (with prefix recall), fuzzy, exact phrase, and the FTS5 keyword branch of a facet or entity.
 The trigram leg is recall only, not lexical (Minh's decision): a 3-character overlap like "pie" in "pieces" is noise, and partial words are already covered by the keyword prefix query.
 A dense-only facet/entity hit is a semantic neighbor and faces the gate like a chunk (Q.7 fixed a leak where "pecan pie recipes" surfaced an unrelated note through an entity vector at 0.409).
 The gray-zone judge (`judge_gray_zone`) is fail-open (a raising or malformed call keeps what it did not clearly judge), is cached in `derived_values` (scope `gray_judge`) per (query, artifact_id, model_version), and is shown each item's facets because they state its subject better than one snippet.
 Floor survivors keep their order: the floor removes, it never reorders.
+
+**Query prefix.**
+bge v1.5 is trained to read a search with `config.EMBED_QUERY_PREFIX` ("Represent this sentence for searching relevant passages: ") in front, and passages bare.
+Every search embeds through `embed.embed_query` (the dense leg of `/search`, chat passages, lifted claims); indexing uses `embed()` with no prefix.
+Passage-to-passage similarity (related notes, `ingest/related.py`) passes `as_query=False` to `search_dense` so it stays on the unprefixed scale `RELATED_MIN` was set on.
+Measured on adding it: cross-domain 3/12 -> 7/12 (with the recalibrated floor), main eval MRR 0.928 -> 0.945 at unchanged recall.
 
 **Dense score scale (Q.2b).**
 vec0 stores L2 distance over unit-norm embeddings, so cosine is `1 - d^2/2`, clamped to [0, 1].

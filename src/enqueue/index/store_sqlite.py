@@ -17,7 +17,7 @@ from typing import Any
 import sqlite_vec
 
 from .. import config, db
-from .embed import embed, embed_one
+from .embed import embed, embed_one, embed_query
 from .fusion import rrf_scored
 from .store import VectorStore
 
@@ -469,11 +469,14 @@ class SqliteVecStore(VectorStore):
                 (config.EMBED_VERSION,),
             )
 
-    def search_dense(self, name: str, text: str, limit: int = 30) -> list[dict]:
-        """Vector leg only. `score` is cosine similarity in [0, 1]."""
+    def search_dense(
+        self, name: str, text: str, limit: int = 30, as_query: bool = True
+    ) -> list[dict]:
+        """Vector leg only. `score` is cosine similarity in [0, 1]. `as_query=False`
+        embeds `text` as a passage, for passage-to-passage similarity."""
         conn = self._connect()
         try:
-            return self._dense(conn, name, text, limit)
+            return self._dense(conn, name, text, limit, as_query)
         finally:
             conn.close()
 
@@ -496,8 +499,10 @@ class SqliteVecStore(VectorStore):
     # Legs take a caller's connection: one search opens one connection (~0.6 ms each).
     # A missing table (upgraded DB before its first write, minimal test corpus) yields no hits.
 
-    def _dense(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
-        query = json.dumps(embed_one(text))
+    def _dense(
+        self, conn: sqlite3.Connection, name: str, text: str, limit: int, as_query: bool = True
+    ) -> list[dict]:
+        query = json.dumps(embed_query(text) if as_query else embed_one(text))
         try:
             rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
             # Unit-norm vectors, L2 distance d: cosine = 1 - d^2/2 (Q.2b).

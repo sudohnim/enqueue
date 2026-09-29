@@ -66,8 +66,11 @@ class VectorStore(ABC):
         """
 
     @abstractmethod
-    def search_dense(self, name: str, text: str, limit: int = 30) -> list[dict]:
-        """Dense leg only. Same hit shape as `search`."""
+    def search_dense(
+        self, name: str, text: str, limit: int = 30, as_query: bool = True
+    ) -> list[dict]:
+        """Dense leg only. Same hit shape as `search`. `as_query=False` embeds `text` as
+        a passage rather than a search."""
 
     @abstractmethod
     def search_keyword(self, name: str, text: str, limit: int = 30) -> list[dict]:

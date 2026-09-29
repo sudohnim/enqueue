@@ -34,7 +34,9 @@ def compute(artifact_id: str) -> int:
         best: dict[str, float] = {}
         cache: dict = {}
         for statement in statements:
-            for hit in store.search_dense(store.FACETS, statement, limit=_PER_STATEMENT):
+            for hit in store.search_dense(
+                store.FACETS, statement, limit=_PER_STATEMENT, as_query=False
+            ):
                 other = hit["artifact_id"]
                 if other == artifact_id or hit["score"] < RELATED_MIN:
                     continue
