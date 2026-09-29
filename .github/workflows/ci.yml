@@ -40,3 +40,6 @@ jobs:
 
       - name: Eval regression gate
         run: bin/check-eval
+
+      - name: Cross-domain eval regression gate
+        run: bin/check-eval-cross

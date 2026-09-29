@@ -269,6 +269,7 @@ One line per file, describing its job.
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
+| `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if facets make results worse than chunks alone or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
 | `bin/deploy-relay` | Deploy the sync relay to Railway (dev/prod), gated on the relay tests, polls `/health`. |
 
 ### Static
@@ -720,6 +721,14 @@ A facet or entity hit counts only while its `body_version` matches the artifact'
 At most `CHUNKS_PER_ARTIFACT` chunks per note so one long note cannot take the whole `PASSAGES` budget (the "do I have notes on a president" case).
 A facet or entity hit pulls its artifact's opening chunk in, so the answer has literal text to stand on.
 A scoped chat does no retrieval: the artifact is the candidate set.
+
+### Cross-domain eval
+
+`evals/cross_domain.yaml` holds 10 queries phrased in one field (software, teams, habits) whose target note is from another (a willow in a storm, a relay baton, mise en place), plus 5 lexical decoys that share the queries' words but not their idea.
+Each target must not contain its query's key words; `tests/test_eval_cross.py` enforces that, so the suite can only be passed on meaning.
+`enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` twice: chunks only, then with facets. A query passes when its target ranks in the top 3.
+Facets come from the committed fixture `evals/cross_domain_facets.json` (stamped with the current ingest model on load, so the staleness check keeps them). `enq eval-cross --generate-facets` rewrites the fixture with the live ingestion model; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
+This suite is separate from the main 50-note eval on purpose: adding its notes there would shift the main baseline.
 
 ### Scope dial for chat
 
