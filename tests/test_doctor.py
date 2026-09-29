@@ -145,3 +145,25 @@ def test_doctor_reports_images_without_body(doctor_store, quiet_queue, monkeypat
     with TestClient(app) as client:
         report = _doctor(client)
     assert report["images_without_body"] >= 1
+
+
+def test_doctor_does_not_count_chunks_the_index_leaves_out(doctor_store, quiet_queue):
+    """An embedded (or vaulted) artifact keeps its chunks but is never indexed: not drift."""
+    _seed_and_build()
+    note = notes.create("A picture tucked inside another note, never searched on its own.")
+    aid = note["artifact"]["id"]
+    conn = db.get_conn()
+    try:
+        chunk_mod.chunk_artifact(conn, aid)
+        conn.execute("UPDATE artifacts SET embedded_at = ? WHERE id = ?", (db.now(), aid))
+        conn.commit()
+    finally:
+        conn.close()
+    bootstrap.rebuild_now()
+
+    with TestClient(app) as client:
+        report = _doctor(client)
+    assert report["chunk_count"] > report["index_counts"]["chunks"]
+    assert report["indexable_chunk_count"] == report["index_counts"]["chunks"]
+    assert report["index_in_sync"]
+    assert report["healthy"]

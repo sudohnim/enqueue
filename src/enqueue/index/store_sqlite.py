@@ -749,6 +749,20 @@ class SqliteVecStore(VectorStore):
             out.append(hit)
         return out
 
+    def expected_chunks(self) -> int:
+        """How many chunk rows the index should hold: chunks of live, searchable artifacts.
+
+        Trashed, vaulted and embedded artifacts keep their chunks but stay out of the
+        index, so the raw chunks count is the wrong yardstick.
+        """
+        conn = self._connect()
+        try:
+            return conn.execute(
+                f"SELECT COUNT(*) FROM ({_SQL[self.CHUNKS]['select_all']})"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
     def counts(self) -> dict:
         """Row counts per index table; a missing table counts as None."""
         conn = self._connect()
