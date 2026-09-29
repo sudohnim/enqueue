@@ -427,7 +427,8 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | --- | --- | --- |
 | `ENQ_LLM_BACKEND` | `ollama` | Which backend to use: ollama, openrouter, opencode, custom |
 | `ENQ_LLM_MODEL` | `llama3.1:8b` | The interactive model id (chat, routing, gray-zone judge). Placeholder, known bad at structured output. |
-| `ENQ_SUMMARIZE_MODEL` | (empty) | Optional summary-only model. `get_provider(summarize=True)` uses it for facet generation; empty falls back to `llm_model`. See "Which stage runs where". |
+| `ENQ_SUMMARIZE_MODEL` | (empty) | The ingestion model (facets, entities), `role="ingest"`. Empty falls back to `llm_model`. See "Model roles". |
+| `ENQ_SEARCH_MODEL` | (empty) | The search model (gray-zone relevance judge), `role="search"`. Empty falls back to `llm_model`. |
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | LLM endpoint URL |
 | `ENQ_LLM_API_KEY` | `ollama` (ignored by Ollama) | API key for hosted backends |
 | `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
@@ -483,7 +484,11 @@ class Provider(Protocol):
 Local-only artifacts always route to ollama, regardless of the configured backend.
 This is the one rule that is not a preference: marking something local-only is a promise that its text never leaves the machine.
 
-**Two models, split by job (the summary model).** `summarize=True` selects `summarize_model` when one is set, otherwise `llm_model`. So facet generation can run on a different model than chat: pass `get_provider(summarize=True)` for the background summary work (`ingest/facets.py`), plain `get_provider()` for interactive work (chat answers, `assistant.route`, the search gray-zone judge). This lets a fast/cheap model answer while a strong/slow one writes the summaries that power conceptual search, or the reverse. A facet is stamped with the model that wrote it, and retrieval drops facets whose `model_version` no longer matches the active summary model, so a model switch never surfaces stale summaries. `test_model_split.py` covers the routing.
+**Model roles.** `get_provider(role=...)` picks one of three models, all on the same backend, key and headers (`providers/base.py` `ROLE_SETTINGS`, `model_for`):
+- `chat` (`llm_model`): chat answers, titles/topics, `assistant.route`, pivot planning and `derive`.
+- `ingest` (`summarize_model`, UI label "Ingestion"): facets and entities. `summarize=True` is the older spelling of `role="ingest"`. The storage name stays `summarize_model` because it syncs and lives in existing settings files.
+- `search` (`search_model`): the gray-zone relevance judge.
+Blank `ingest`/`search` fall back to `llm_model`, so a single-model setup is unchanged. Local-only artifacts ignore every role and use the local model. A facet is stamped with the ingest model that wrote it, and retrieval drops facets whose `model_version` no longer matches the current ingest model, so changing it marks concepts stale until "Rebuild concepts". The Settings AI tab has a "Models" group (Chat, Ingestion, Search, Images) with a picker of the backend's known models. `test_model_split.py` covers the routing.
 
 The adapter builds its OpenAI/instructor client lazily on the first model call, so `get_provider().model` is free (the search staleness checks read it on every query; building the client costs ~50 ms plus a Keychain subprocess on macOS).
 
@@ -505,10 +510,11 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | Stage | Backend | Why |
 | --- | --- | --- |
 | Embeddings | always local (fastembed) | No network, strictly more private |
-| Facet generation | the **summary** model (`summarize_model`, else `llm_model`) | The moat. Bad facets are permanent pollution. |
+| Facet + entity generation | the **ingest** model (`summarize_model`, else `llm_model`) | The moat. Bad facets are permanent pollution. |
 | Rerank | the configured backend | Low volume, high value |
 | Synthesis | the configured backend | The room: through-line, tensions, view sections (internally grouped) |
-| Chat answer / routing / gray-zone judge | the **interactive** model (`llm_model`) | |
+| Chat answer / routing | the **chat** model (`llm_model`) | |
+| Gray-zone search judge | the **search** model (`search_model`, else `llm_model`) | Runs per query; fast beats clever. |
 | Chat title/topics | the interactive model | Best-effort, non-blocking |
 
 ---

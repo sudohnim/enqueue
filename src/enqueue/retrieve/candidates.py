@@ -152,7 +152,7 @@ def judge_gray_zone(query: str, candidates: list[dict]) -> set[str]:
     if not candidates:
         return set()
     try:
-        provider = get_provider()
+        provider = get_provider(role="search")
         model_version = provider.model
     except Exception:  # noqa: BLE001 - fail-open is the contract
         return {h["artifact_id"] for h in candidates}
