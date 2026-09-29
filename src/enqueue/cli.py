@@ -86,10 +86,11 @@ def migrate() -> None:
 
 @app.command()
 def facets(limit: int = 0, redo: bool = False, stale_only: bool = False) -> None:
-    """Generate facets for every eligible artifact. Slow, resumable.
+    """Queue the summary refresh on the engine's ingest worker; returns at once.
 
-    --redo recomputes everything; --stale-only regenerates only facets written
-    by an older model (the cheap catch-up after a model upgrade).
+    By default every item whose summary is not current for the active summary model
+    is re-summarized (the catch-up after a model switch); --redo re-summarizes
+    everything. Progress shows in the Activity log and in `enq doctor`.
     """
     _echo(
         _call(

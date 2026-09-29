@@ -304,3 +304,72 @@ class TestBackendUrlDerivation:
 
         provider = get_vision_provider()
         assert provider.base_url == config.BACKENDS["openrouter"]["url"]
+
+
+class TestJsonModeRefusal:
+    """Some upstreams refuse `response_format: json_object` for particular inputs with a
+    bare 400 (OpenCode Go's kimi-k3 answers "Invalid request parameters" for some notes,
+    every time). The same request without it succeeds, so the call is asked once more in
+    MD_JSON mode instead of failing the summary forever."""
+
+    @staticmethod
+    @contextmanager
+    def _refuses_json_mode():
+        import json as _json
+
+        seen: list[bool] = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - the name is BaseHTTPRequestHandler's
+                body = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                json_mode = "response_format" in body
+                seen.append(json_mode)
+                if json_mode:
+                    status, payload = 400, {
+                        "error": {
+                            "type": "server_error",
+                            "message": "Upstream request failed: Invalid request parameters.",
+                        }
+                    }
+                else:
+                    status, payload = 200, {
+                        "id": "x",
+                        "object": "chat.completion",
+                        "created": 0,
+                        "model": "m",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "finish_reason": "stop",
+                                "message": {
+                                    "role": "assistant",
+                                    "content": '```json\n{"answer": "ok"}\n```',
+                                },
+                            }
+                        ],
+                    }
+                raw = _json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def log_message(self, format, *args):  # noqa: ARG002 - silence the test server
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}/v1", seen
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_a_refused_json_mode_falls_back_to_md_json(self):
+        with self._refuses_json_mode() as (base_url, seen):
+            provider = OpenAICompatibleProvider(model="some-model", base_url=base_url)
+            out = provider.complete("s", "u", Answer, max_retries=1)
+        assert out.answer == "ok"
+        # First in JSON mode (refused), then once without response_format.
+        assert seen == [True, False]

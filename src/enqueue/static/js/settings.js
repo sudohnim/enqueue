@@ -378,11 +378,10 @@ async function renderSettingsAI() {
 	return html;
 }
 
-// Rebuild the whole concept layer with the current model (POST /facets redo).
-// The run is long - one model call per item - so the button does not block on
-// it: it fires, reports that it is running, and updates when the run reports
-// back. Leaving the page does not stop it; generate_all commits per item, so a
-// closed tab just leaves a resumable, half-rebuilt layer, never a corrupt one.
+// Rebuild the whole concept layer with the current model (POST /facets redo). The
+// engine queues every item on the ingest worker and answers at once; each item is
+// re-analyzed, indexed and synced in the background, a rate limit is retried, and a
+// restart resumes the rest. Progress shows in the Activity tab as it goes.
 async function rebuildFacets() {
 	const yes = await ask(
 		"Rebuild concepts?",
@@ -395,20 +394,20 @@ async function rebuildFacets() {
 	if (btn) btn.disabled = true;
 	if (btn) btn.textContent = "Rebuilding...";
 	if (el) el.textContent = "Rebuilding in the background...";
-	toast("Rebuilding concepts in the background.");
 	api("/facets", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ redo: true }),
 	})
 		.then((r) => {
+			const n = r.queued || 0;
+			toast("Rebuilding " + n + " item" + (n === 1 ? "" : "s") + " in the background.");
 			if (el)
 				el.textContent =
-					"Done. " +
-					(r.generated || 0) +
-					" items re-analyzed, " +
-					(r.facets || 0) +
-					" concepts.";
+					n +
+					" item" +
+					(n === 1 ? " is" : "s are") +
+					" being re-analyzed in the background. Follow along in Activity.";
 			if (btn) {
 				btn.disabled = false;
 				btn.textContent = "Rebuild concepts";

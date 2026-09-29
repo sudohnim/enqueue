@@ -106,6 +106,22 @@ def _trust_from_confidence(confidence: float | None) -> float:
     return max(0.0, min(1.0, value))
 
 
+# Artifacts whose next ingest must regenerate facets even if they look current: the
+# "rebuild everything" path (`redo`). Taken once, by the run that regenerates them.
+_forced: set[str] = set()
+
+
+def force(artifact_id: str) -> None:
+    _forced.add(artifact_id)
+
+
+def take_forced(artifact_id: str) -> bool:
+    if artifact_id in _forced:
+        _forced.discard(artifact_id)
+        return True
+    return False
+
+
 def is_current(conn, artifact_id: str) -> bool:
     """Whether the artifact's machine facets were written by the current ingest model
     from its current body, so regenerating would only spend a model call."""
@@ -421,10 +437,13 @@ def generate_all(
 
     conn = db.get_conn()
     try:
+        # Only artifacts in search: a trashed, vaulted or embedded one must never be
+        # re-summarized (a vaulted note's text would go to the model in plaintext).
         rows = conn.execute(
             "SELECT a.id, a.title FROM artifacts a"
             " LEFT JOIN facet_skips s ON s.artifact_id = a.id"
-            " WHERE s.artifact_id IS NULL ORDER BY a.created_at"
+            " WHERE s.artifact_id IS NULL AND a.deleted_at IS NULL"
+            " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY a.created_at"
         ).fetchall()
         if limit:
             rows = rows[:limit]

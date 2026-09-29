@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from ..providers import pause as model_pause
 from .. import config, db
 from ..index import bootstrap
 from ..index.store import get_store
@@ -47,6 +48,38 @@ def index_counts() -> dict:
     return get_store().counts()
 
 
+def _summary_progress(conn) -> dict:
+    """How far the library's summaries are from the active summary model.
+
+    `current`: live, summarizable items whose machine facets were written by the active
+    summary model from their current body. `stale`: the rest - never summarized, or
+    written by another model or an older body - which the startup backfill (and
+    "Rebuild concepts") queue. `retrying`: owed a retry after a transient failure.
+    Search only uses a facet from the active model, so `stale` is how much of the
+    conceptual layer is missing from search right now.
+    """
+    from ..ingest import facets as facets_mod
+    from ..providers.base import get_provider
+
+    ids = [
+        r["id"]
+        for r in conn.execute(
+            "SELECT a.id FROM artifacts a"
+            " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+            "   AND a.kind != 'chat'"
+            "   AND NOT EXISTS (SELECT 1 FROM facet_skips s WHERE s.artifact_id = a.id)"
+        )
+    ]
+    current = sum(1 for aid in ids if facets_mod.is_current(conn, aid))
+    retrying = conn.execute("SELECT COUNT(*) n FROM facet_retry").fetchone()["n"]
+    return {
+        "model": get_provider(summarize=True).model,
+        "current": current,
+        "stale": len(ids) - current,
+        "retrying": retrying,
+    }
+
+
 @router.get("/doctor")
 def doctor() -> dict:
     """Index health: counts, embedding version, and chunks-table sync.
@@ -75,6 +108,7 @@ def doctor() -> dict:
             "SELECT COUNT(*) AS n FROM artifacts"
             " WHERE kind = 'image' AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL AND (body IS NULL OR body = '')"
         ).fetchone()["n"]
+        summaries = _summary_progress(conn)
     finally:
         conn.close()
     return {
@@ -83,6 +117,8 @@ def doctor() -> dict:
         "indexable_chunk_count": indexable,
         "images_without_body": images_without_body,
         "facet_count": db.count("facets"),
+        "summaries": summaries,
+        "model_pause": model_pause.status(),
         "index_counts": index_counts,
         "embed_version": embed_version,
         "embed_version_current": version_current,

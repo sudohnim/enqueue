@@ -42,6 +42,15 @@ Do not rename it without an explicit migration of user data.
 All providers pass `mode=instructor.Mode.JSON` unconditionally.
 This is correct for now, not a bug to fix.
 Ollama's adapter calls it out in a comment because the default is `TOOLS`, which needs function-calling support that local servers often lack.
+One amendment (2026-09-29): when a structured call comes back 400, `OpenAICompatibleProvider.complete` asks once more in `Mode.MD_JSON` (no `response_format` on the request). OpenCode Go's `kimi-k3` refuses `response_format: json_object` for some inputs with a deterministic 400 "Upstream request failed: Invalid request parameters" (THC, income snowball), while the same request without it succeeds; a 400 is not transient, so without the fallback those summaries failed forever.
+
+**Usage limits pause every model call (`providers/pause.py`, 2026-09-29).**
+A 429 (OpenCode Go answers `GoUsageLimitError`, `limitName: "5 hour"`, with a `retry-after` header in seconds) trips ONE engine-wide pause until the retry-after (at least 30s; 15 min when the header is missing), and logs one `model.paused` activity row.
+While paused, `complete`/`describe_image` raise `ModelPaused` without touching the network; it is a `ProviderError` and `is_transient` counts it, so owed work stays owed.
+`_record_facet_retry` reschedules an owed summary to the pause end (plus up to 60s jitter) WITHOUT counting an attempt, and `_sweep_due` idles until the pause ends.
+The first call after the pause goes out normally; a still-limited provider just trips it again.
+`enq doctor` shows it as `model_pause` (null when not paused).
+The pause is in-memory: a restart forgets it and the first call re-trips it.
 
 3. **Facet trust is a fixed multiplier, not a learning loop.**
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
@@ -318,6 +327,8 @@ One line per file, describing its job.
 1. **Eligibility gate** (`ingest/facets.py`): `apply_eligibility_gate()` marks artifacts that should not get facets (too short, not a note, text_only status).
 2. **Generate** (`ingest/facets.py` `generate_for_artifact`): feeds the model the artifact's page_text (not just the body, capped at `FACET_INPUT_CHARS`) PLUS its annotations marked "(your note)", so a person's notes shape the summary. Calls `get_provider(summarize=True)` (the summary model), stores facets stamped with `provider.model` and a trust derived from the model's confidence. DELETE-before-insert only removes rows `WHERE edited=0`, preserving hand-edited lines.
 3. **Index** (`index/store_sqlite.py`): `index_facets_artifact()` embeds facet statements, upserts into `vec_facets` and `fts_facets`. Search drops a facet whose `model_version` no longer matches the active summary model, so switching models never surfaces stale summaries.
+
+**Re-summarizing after a summary-model switch runs on the ingest worker.** Search only uses facets from the active summary model, so a switch empties the conceptual layer until the library is re-summarized. `backfill_summaries()` (every startup) queues every live item whose facets are not `facets.is_current` - none, another model, or an older body - so a switch finishes on its own across restarts. "Rebuild concepts" / `POST /facets` / `enq facets` call `queue_summary_refresh(redo)`, which queues the same set (or, with `redo`, every item, forced via `facets.force`) and returns at once; it used to run `generate_all` inside the request for hours, which a restart killed. `enq doctor` reports `summaries: {model, current, stale, retrying}`. The retry sweeper (`_sweep_due`) never re-queues an artifact already waiting in the queue: a due row only moves once the worker processes it, and re-queuing it every 30s while the worker was busy produced bursts of back-to-back re-ingests ("33 chunks, 0 facets" every ~13s).
 
 **Editing the summary (facets are user-editable).** `ingest/facets.py` exposes `edit_facet(facet_id, statement)` (marks `edited=1`, full trust, reindexes), `add_facet(artifact_id, statement, level)`, `delete_facet(facet_id)`, and `regenerate(artifact_id)` (clears skip/retry, regenerates machine lines, keeps edited ones). Each is wired to an endpoint (`PATCH /facets/{id}`, `POST /artifacts/{id}/facets`, `DELETE /facets/{id}`, `POST /artifacts/{id}/facets/regenerate`) and to a mobile Tauri command (`mobile_facet_edit`, `mobile_facet_delete`). An edit bumps the artifact's `updated_at` and pushes so it wins LWW and reaches the other device; a background generation pushes without bumping (equal-key re-apply carries the new facets to the phone). The `facets.edited` column (migration `0031_facet_edited`) is what regeneration reads to decide which rows it may delete.
 

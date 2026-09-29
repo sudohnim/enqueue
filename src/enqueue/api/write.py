@@ -38,7 +38,15 @@ class FacetRequest(BaseModel):
 
 @router.post("/facets")
 def generate_facets(req: FacetRequest) -> dict:
-    return facets_mod.generate_all(limit=req.limit, redo=req.redo, stale_only=req.stale_only)
+    """Queue the summary refresh on the ingest worker and return at once.
+
+    It used to run the whole library inside this request: hours of model calls that a
+    restart killed (and `redo` then started over), off the worker, unindexed and unsynced.
+    Queued, each artifact is regenerated only if stale (or forced with `redo`), indexed,
+    synced, retried on a transient failure, and resumed at the next startup.
+    `limit` and `stale_only` are accepted for older callers; stale is now the default.
+    """
+    return {"queued": ingest_queue.queue_summary_refresh(redo=req.redo)}
 
 
 @router.post("/index")

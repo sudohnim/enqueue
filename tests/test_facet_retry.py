@@ -234,3 +234,26 @@ def test_a_refused_request_is_not_retried(store, quiet_queue, monkeypatch):
     )
     assert q._facet_artifact(aid) == 0
     assert _retry_row(aid) is None
+
+
+def test_the_sweeper_leaves_an_artifact_already_waiting_in_the_queue(store, quiet_queue):
+    # A due retry row only moves once the worker processes the artifact. While the worker
+    # is busy, every 30s sweep used to queue it again, and the copies later ran back to
+    # back (the ~13s "33 chunks, 0 facets" bursts). A copy already queued is enough.
+    aid = notes.create(body="a body long enough to earn a summary from the model")["artifact"]["id"]
+    quiet_queue.clear()
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO facet_retry (artifact_id, attempts, next_at, last_error)"
+            " VALUES (?, 1, '2000-01-01T00:00:00+00:00', 'APIError: 429')",
+            (aid,),
+        )
+    q._queue(aid)  # one copy is already waiting
+    try:
+        assert q._sweep_due() == []
+        assert quiet_queue == []
+    finally:
+        q._dequeue(aid)
+    # Once it has been picked up, a still-due row is swept again as before.
+    assert q._sweep_due() == [aid]
+    assert quiet_queue == [aid]

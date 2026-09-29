@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import random
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -44,16 +45,29 @@ _owed_in_run: set[str] = set()
 
 
 def _record_facet_retry(conn, artifact_id: str, error: str) -> None:
-    """Owe this artifact a retry, scheduling the next attempt with backoff."""
+    """Owe this artifact a retry, scheduling the next attempt with backoff.
+
+    While model calls are paused for a usage limit (providers/pause.py) the failure
+    says nothing about this artifact, so it is not counted as an attempt: the retry is
+    simply due when the pause ends, spread over a minute so the whole backlog does not
+    fire in one instant.
+    """
+    from ..providers import pause
+
     _owed_in_run.add(artifact_id)
     row = conn.execute(
         "SELECT attempts FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
     ).fetchone()
-    attempts = (row["attempts"] if row else 0) + 1
-    # Exponential: 30s, 60s, 120s, ... doubling, capped at 24h. The exponent is
-    # clamped so a long-owed summary computes a bounded power, not a giant one.
-    delay = min(_FACET_RETRY_BASE * (2 ** min(attempts - 1, 40)), _FACET_RETRY_CAP)
-    next_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+    paused_until = pause.until()
+    if paused_until is not None:
+        attempts = row["attempts"] if row else 0
+        next_at = (paused_until + timedelta(seconds=random.uniform(0, 60))).isoformat()
+    else:
+        attempts = (row["attempts"] if row else 0) + 1
+        # Exponential: 30s, 60s, 120s, ... doubling, capped at 24h. The exponent is
+        # clamped so a long-owed summary computes a bounded power, not a giant one.
+        delay = min(_FACET_RETRY_BASE * (2 ** min(attempts - 1, 40)), _FACET_RETRY_CAP)
+        next_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
     conn.execute(
         "INSERT INTO facet_retry (artifact_id, attempts, next_at, last_error) VALUES (?,?,?,?)"
         " ON CONFLICT(artifact_id) DO UPDATE SET"
@@ -66,28 +80,46 @@ def _clear_facet_retry(conn, artifact_id: str) -> None:
     conn.execute("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,))
 
 
+def _sweep_due() -> list[str]:
+    """Submit the artifacts whose retry is due and are not already waiting in the queue.
+
+    A due row's next_at only moves once the worker processes the artifact, so while the
+    worker is busy (a startup backfill, a full re-summarize) the row stays due. Without
+    the pending check every 30s sweep queued it again, and a half-hour busy spell left
+    dozens of copies that then ran back to back - each re-chunking and re-embedding the
+    whole artifact, and each skipping the summary because a newer copy was still queued.
+    Returns the ids submitted.
+    """
+    from .. import db
+    from ..providers import pause
+
+    if pause.active():
+        return []  # a usage limit is in effect; owed work is due when it ends
+    now = datetime.now(timezone.utc).isoformat()
+    conn = db.get_conn()
+    try:
+        due = [
+            r["artifact_id"]
+            for r in conn.execute(
+                "SELECT artifact_id FROM facet_retry WHERE next_at <= ? LIMIT 20", (now,)
+            )
+        ]
+    finally:
+        conn.close()
+    submitted = [aid for aid in due if _pending(aid) == 0]
+    for aid in submitted:
+        submit(aid)
+    return submitted
+
+
 def _facet_retry_sweep() -> None:
     """Re-submit artifacts whose summary retry is due. Runs forever on a daemon
     thread; each due artifact goes back through the ingest worker, which regenerates
     the facets and clears (or reschedules) the retry row."""
-    from .. import db
-
     while True:
         time.sleep(30)
         try:
-            now = datetime.now(timezone.utc).isoformat()
-            conn = db.get_conn()
-            try:
-                due = [
-                    r["artifact_id"]
-                    for r in conn.execute(
-                        "SELECT artifact_id FROM facet_retry WHERE next_at <= ? LIMIT 20", (now,)
-                    )
-                ]
-            finally:
-                conn.close()
-            for aid in due:
-                submit(aid)
+            _sweep_due()
         except Exception:  # noqa: BLE001 - a sweep failure must never kill the thread
             log.exception("facet retry sweep failed")
 
@@ -444,7 +476,7 @@ def _facet_artifact(artifact_id: str) -> int:
             _clear_facet_retry(conn, artifact_id)  # gate is permanent, stop retrying
             conn.commit()
             return 0
-        if facets_mod.is_current(conn, artifact_id):
+        if not facets_mod.take_forced(artifact_id) and facets_mod.is_current(conn, artifact_id):
             return 0  # written by this model from this body already: no call to spend
         count, error = facets_mod.generate_for_artifact(conn, artifact_id)
         if isinstance(error, Owed):
@@ -630,9 +662,11 @@ def backfill_summaries() -> int:
 
     The durable backlog is DERIVED from the DB, not a persisted in-memory queue: an
     artifact owes a summary when it is live, not permanently gated (`facet_skips`), and
-    has no `facets`. This is what makes summaries survive a restart - the in-memory queue
-    is lost when the engine dies, but the DB still knows exactly what is unsummarized, so
-    running this at every startup re-queues the lost work.
+    its machine facets are not current - none at all, or written by another summary
+    model or from an older body (`facets.is_current`). This is what makes summaries
+    survive a restart, and what makes a summary-model switch finish on its own: the
+    in-memory queue is lost when the engine dies, but the DB still knows exactly what is
+    unsummarized or stale, so running this at every startup re-queues the lost work.
 
     It cooperates with the retry backoff (the 30s->24h schedule in `facet_retry`) rather
     than fighting it: artifacts already owed a retry are LEFT to the sweeper, so a failing
@@ -643,17 +677,22 @@ def backfill_summaries() -> int:
     its page before summarizing it. Returns the number queued.
     """
     from .. import db, preview
+    from . import facets as facets_mod
 
     conn = db.get_conn()
     try:
-        rows = conn.execute(
+        candidates = conn.execute(
             "SELECT a.id, a.kind, a.body FROM artifacts a"
             " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
             "   AND a.kind != 'chat'"
-            "   AND NOT EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id)"
             "   AND NOT EXISTS (SELECT 1 FROM facet_skips s WHERE s.artifact_id = a.id)"
             "   AND NOT EXISTS (SELECT 1 FROM facet_retry r WHERE r.artifact_id = a.id)"
         ).fetchall()
+        rows = [
+            r
+            for r in candidates
+            if _pending(r["id"]) == 0 and not facets_mod.is_current(conn, r["id"])
+        ]
     finally:
         conn.close()
 
@@ -665,6 +704,41 @@ def backfill_summaries() -> int:
                 preview.force(row["id"])
         submit(row["id"])
     return len(rows)
+
+
+def queue_summary_refresh(redo: bool = False) -> int:
+    """Re-summarize the library on the ingest worker, not in a request.
+
+    Queues every live artifact whose summary is not current for the active summary
+    model (`backfill_summaries`); with `redo`, every live eligible artifact, forced to
+    regenerate even when current. Each one then goes through the normal ingest path:
+    regenerated only if needed, indexed, synced to the phone, and retried with backoff
+    on a transient failure - and a restart resumes the rest at the next startup instead
+    of losing a multi-hour request. Returns the number queued.
+    """
+    if not redo:
+        return backfill_summaries()
+    from .. import db
+    from . import facets as facets_mod
+
+    conn = db.get_conn()
+    try:
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT a.id FROM artifacts a"
+                " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+                "   AND a.kind != 'chat'"
+                "   AND NOT EXISTS (SELECT 1 FROM facet_skips s WHERE s.artifact_id = a.id)"
+            )
+        ]
+    finally:
+        conn.close()
+    for aid in ids:
+        facets_mod.force(aid)
+        if _pending(aid) == 0:
+            submit(aid)
+    return len(ids)
 
 
 def start_summary_backfill() -> None:
