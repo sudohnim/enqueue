@@ -59,7 +59,7 @@ class TestExtract:
     def test_second_call_makes_no_model_call(self, store, quiet_queue, monkeypatch):
         artifact_id = _note("A field note: the signal was loud and clear at the estuary.")
         provider = _FakeProvider({"value": "the estuary"})
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         first = derive.extract(artifact_id, "setting", "the place the note describes")
         second = derive.extract(artifact_id, "setting", "the place the note describes")
@@ -69,7 +69,9 @@ class TestExtract:
 
     def test_result_is_grounded(self, store, quiet_queue, monkeypatch):
         artifact_id = _note("A field note: the signal was loud and clear at the estuary.")
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider({"value": "the estuary"}))
+        monkeypatch.setattr(
+            derive, "get_provider", lambda **kw: _FakeProvider({"value": "the estuary"})
+        )
 
         result = derive.extract(artifact_id, "setting", "the place the note describes")
 
@@ -87,7 +89,7 @@ class TestEnrich:
         provider = _FakeProvider(
             [{"value": "Patagonia"}, {"value": "Patagonia"}, {"value": "the Andes"}]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         first = derive.extract(first_note, "place", "the place the note describes")
         second = derive.extract(second_note, "place", "the place the note describes")
@@ -100,7 +102,7 @@ class TestEnrich:
         assert provider.calls == 3  # two extracts + one enrich, never two
 
     def test_empty_input_returns_ungrounded_without_a_model_call(self, store, monkeypatch):
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider({"value": "never"}))
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: _FakeProvider({"value": "never"}))
 
         result = derive.enrich("", "region", "the region this place belongs to")
 
@@ -111,7 +113,7 @@ class TestOverride:
     def test_user_correction_wins_over_a_model_row(self, store, quiet_queue, monkeypatch):
         artifact_id = _note("A field note: the signal was loud and clear at the estuary.")
         provider = _FakeProvider({"value": "the estuary"})
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         derive.extract(artifact_id, "setting", "the place the note describes")
         stored = derive.override("artifact", artifact_id, "setting", "the river mouth")
@@ -135,7 +137,9 @@ class TestModelFailure:
         self, store, quiet_queue, monkeypatch
     ):
         artifact_id = _note("A field note: the signal was loud and clear at the estuary.")
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider(RuntimeError("down")))
+        monkeypatch.setattr(
+            derive, "get_provider", lambda **kw: _FakeProvider(RuntimeError("down"))
+        )
 
         result = derive.extract(artifact_id, "setting", "the place the note describes")
 
@@ -146,7 +150,9 @@ class TestModelFailure:
         assert _cached("artifact", artifact_id, "setting") is None
 
     def test_enrich_failure_returns_empty_and_caches_nothing(self, store, monkeypatch):
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider(RuntimeError("down")))
+        monkeypatch.setattr(
+            derive, "get_provider", lambda **kw: _FakeProvider(RuntimeError("down"))
+        )
 
         result = derive.enrich("Patagonia", "region", "the region this place belongs to")
 
@@ -167,7 +173,7 @@ class TestBucketize:
                 }
             }
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         mapping = derive.bucketize(
             ["France", "Colombia", "Argentina"],

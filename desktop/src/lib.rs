@@ -1181,8 +1181,9 @@ mod mobile {
     fn mobile_chat(app: AppHandle, query: String, _history: String) -> Result<String, String> {
         let conn = open_lib(&app)?;
 
-        // 1. Keyword search over local copy (MOB.6)
-        let arts = crate::sync::search_artifacts(&conn, &query).map_err(|e| e.to_string())?;
+        // 1. Keyword search over local copy (MOB.6), minus local-only notes: their text
+        //    never goes to a model.
+        let arts = crate::sync::chat_sources(&conn, &query)?;
         if arts.is_empty() {
             return Ok(serde_json::json!({
                 "answer": "I couldn't find anything relevant in your notes.",
@@ -1272,7 +1273,7 @@ mod mobile {
         conn: &Connection,
         query: &str,
     ) -> Result<(String, Vec<String>), String> {
-        let arts = crate::sync::search_artifacts(conn, query).map_err(|e| e.to_string())?;
+        let arts = crate::sync::chat_sources(conn, query)?;
         let mut passages = Vec::new();
         let mut total = 0usize;
         const MAX_CHARS: usize = 8000;

@@ -169,6 +169,13 @@ def judge_gray_zone(query: str, candidates: list[dict]) -> set[str]:
             kept.add(aid)
         elif cached is None:
             unjudged.append(hit)
+    # A remote judge never sees a local-only artifact (privacy.py): keep it unjudged,
+    # the same as any item the judge does not cover.
+    from .. import privacy
+
+    shareable = privacy.shareable(unjudged, provider)
+    kept.update(h["artifact_id"] for h in unjudged if h not in shareable)
+    unjudged = shareable
     if not unjudged:
         return kept
 

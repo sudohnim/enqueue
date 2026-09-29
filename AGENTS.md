@@ -198,6 +198,8 @@ One line per file, describing its job.
 | `cli.py` | Thin Typer CLI over the engine API. Every command calls `httpx` against localhost. |
 | `api/` | FastAPI app split into one router per domain (M.9): `static.py` (shell, capture, health), `artifacts.py` (wall, artifact, tags, capture writes), `wall.py` (shared wall-shaping helpers), `write.py` (re-chunk, facets, index rebuild), `admin.py` (doctor, index counts, ingest wait), `search.py`, `chats.py`, `settings.py`, `pivots.py`. `app.py` has `create_app()` + `serve()` and binds 127.0.0.1:8787. |
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
+| `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421) and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403), so no other website can reach the engine, even through DNS rebinding. Requests with no Origin (CLI, the shell's health check) pass. Tests add `testserver` via conftest. |
+| `privacy.py` | What may go to which model. `is_remote(provider)` (endpoint not loopback), `shareable(items, provider)` drops local-only artifacts from anything shown to a remote model: chat passages, the gray-zone judge, model re-ranking. A chat scoped to a local-only artifact, and attribute extraction from one, use the local model. The phone's chat does the same through `sync::chat_sources`. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
 | `greeting.py` | The wall's greeting: one model phrase per four-hour bucket, generated in the background. |

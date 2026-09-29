@@ -111,7 +111,7 @@ class TestPlanThenRun:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: plan_provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: plan_provider)
 
         # The run path: one extract per artifact, in subset order.
         run_provider = _FakeProvider(
@@ -121,7 +121,7 @@ class TestPlanThenRun:
                 {"value": "Albert Camus"},  # extract: third
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: run_provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: run_provider)
 
         client = TestClient(app)
 
@@ -192,7 +192,7 @@ class TestOverrideWins:
                 {"value": "South America"},  # enrich: Gabriel Garcia Marquez
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         client = TestClient(app)
 
@@ -232,7 +232,7 @@ class TestOverrideWins:
                 {"value": "Albert Camus"},  # extract: second
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         client = TestClient(app)
 

@@ -126,7 +126,10 @@ def extract(artifact_id: str, attribute: str, instruction: str) -> dict:
         conn.close()
 
     try:
-        provider = get_provider()
+        # A local-only artifact's text goes only to the local model (privacy.py).
+        from . import privacy
+
+        provider = get_provider(local_only=privacy.is_local_only(artifact_id))
         result = provider.complete(
             system=EXTRACT_ATTRIBUTE.format(
                 attribute=attribute, instruction=instruction, text=text
