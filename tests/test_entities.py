@@ -48,6 +48,11 @@ class _FakeProvider:
         return response_model(**reply)
 
 
+def _batch(*pairs):
+    """One batched enrichment reply: (name, fact) per entity."""
+    return {"facts": [{"name": n, "fact": f} for n, f in pairs]}
+
+
 def _patch_provider(monkeypatch, script):
     import enqueue.providers.base as base_mod
 
@@ -112,8 +117,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
-                {"fact": ROOSEVELT},
-                {"fact": CURIE},
+                _batch(("Theodore Roosevelt", ROOSEVELT), ("Marie Curie", CURIE)),
             ],
         )
 
@@ -121,7 +125,7 @@ class TestExtraction:
 
         assert error is None
         assert count == 2
-        assert provider.calls == 3  # one extraction, one enrich per entity
+        assert provider.calls == 2  # one extraction, one batched enrichment
         conn = db.get_conn()
         rows = _entities(conn, aid)
         conn.close()
@@ -140,7 +144,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Marie Curie"}]},
-                {"fact": CURIE},
+                _batch(("Marie Curie", CURIE)),
             ],
         )
 
@@ -157,8 +161,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
-                RuntimeError("model down"),
-                {"fact": CURIE},
+                _batch(("Theodore Roosevelt", ""), ("Marie Curie", CURIE)),
             ],
         )
 
@@ -183,11 +186,16 @@ class TestExtraction:
                         {"name": "World War II"},
                     ]
                 },
-                # Fact that never names the entity: cannot bridge the gap.
-                {"fact": "A famous president who led reforms in the early 1900s."},
-                # Too short, and no period.
-                {"fact": "Curie!"},
-                {"fact": WAR},
+                _batch(
+                    # Fact that never names the entity: cannot bridge the gap.
+                    (
+                        "Theodore Roosevelt",
+                        "A famous president who led reforms in the early 1900s.",
+                    ),
+                    # Too short, and no period.
+                    ("Marie Curie", "Curie!"),
+                    ("World War II", WAR),
+                ),
             ],
         )
 
@@ -206,7 +214,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}]},
-                {"fact": ""},  # the model does not know the entity
+                _batch(("Theodore Roosevelt", "")),  # the model does not know the entity
             ],
         )
 
@@ -234,8 +242,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
-                {"fact": ROOSEVELT},
-                {"fact": CURIE},
+                _batch(("Theodore Roosevelt", ROOSEVELT), ("Marie Curie", CURIE)),
             ],
         )
         _generate(aid)
@@ -244,7 +251,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Marie Curie"}]},
-                {"fact": CURIE},
+                _batch(("Marie Curie", CURIE)),
             ],
         )
         count, error = _generate(aid)
@@ -259,13 +266,57 @@ class TestExtraction:
     def test_entity_count_is_capped(self, store, monkeypatch):
         aid = notes.create(body="Many names in this text.")["artifact"]["id"]
         names = [{"name": f"Person {i}"} for i in range(12)]
-        facts = [{"fact": f"Person {i} - a notable figure from history books."} for i in range(12)]
-        _patch_provider(monkeypatch, [{"entities": names}, *facts])
+        facts = _batch(
+            *(
+                (f"Person {i}", f"Person {i} - a notable figure from history books.")
+                for i in range(12)
+            )
+        )
+        provider = _patch_provider(monkeypatch, [{"entities": names}, facts])
 
         count, error = _generate(aid)
 
         assert error is None
         assert count == entities_mod.MAX_ENTITIES
+        assert provider.calls == 2
+
+    def test_batch_failure_falls_back_to_one_call_per_name(self, store, monkeypatch):
+        aid = notes.create(body="Roosevelt and Curie both left a mark.")["artifact"]["id"]
+        _patch_provider(
+            monkeypatch,
+            [
+                {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
+                RuntimeError("batch call down"),
+                RuntimeError("model down"),  # Roosevelt, per name
+                {"fact": CURIE},  # Curie, per name
+            ],
+        )
+
+        count, error = _generate(aid)
+
+        assert (count, error) == (1, None)
+        conn = db.get_conn()
+        rows = _entities(conn, aid)
+        conn.close()
+        assert [r["entity"] for r in rows] == ["Marie Curie"]
+
+    def test_a_name_the_reply_leaves_out_is_dropped(self, store, monkeypatch):
+        aid = notes.create(body="Roosevelt and Curie.")["artifact"]["id"]
+        _patch_provider(
+            monkeypatch,
+            [
+                {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
+                _batch(("marie curie", CURIE), ("Someone Else", "Someone Else - not asked for.")),
+            ],
+        )
+
+        count, error = _generate(aid)
+
+        assert (count, error) == (1, None)
+        conn = db.get_conn()
+        rows = _entities(conn, aid)
+        conn.close()
+        assert [r["entity"] for r in rows] == ["Marie Curie"]
 
 
 class TestQueueHook:
@@ -287,7 +338,7 @@ class TestQueueHook:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}]},
-                {"fact": ROOSEVELT},
+                _batch(("Theodore Roosevelt", ROOSEVELT)),
             ],
         )
 
@@ -340,7 +391,7 @@ class TestQueueHook:
             [
                 RuntimeError("facet generation down"),
                 {"entities": [{"name": "Theodore Roosevelt"}]},
-                {"fact": ROOSEVELT},
+                _batch(("Theodore Roosevelt", ROOSEVELT)),
             ],
         )
 
@@ -526,7 +577,11 @@ class TestCapturesGetEntities:
     def test_a_pdf_capture_is_read_from_its_pages(self, store, monkeypatch):
         seen = []
         provider = _patch_provider(
-            monkeypatch, [{"entities": [{"name": "Theodore Roosevelt"}]}, {"fact": ROOSEVELT}]
+            monkeypatch,
+            [
+                {"entities": [{"name": "Theodore Roosevelt"}]},
+                _batch(("Theodore Roosevelt", ROOSEVELT)),
+            ],
         )
         real = provider.complete
 
