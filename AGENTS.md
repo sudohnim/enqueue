@@ -1040,10 +1040,12 @@ via `get_store.cache_clear()`.
 ### Index rows are found through their source rows
 
 An index row (vec0 or FTS5) carries only its chunk/facet/entity/section id, so the only way to find a row's index entries is through the row.
-Anything that replaces rows under new ids must drop the old entries while the old rows still exist: `ingest/queue.py` drops an artifact's chunk entries before re-chunking it.
-Before that fix every reprocess, edit and retry left a full set of orphans behind (one library reached 52,891 orphaned chunk rows for 1,071 chunks), and orphans still take slots in a search's shortlist.
-Regenerated facets, entities and sections replace their rows too; `store.prune_orphans()` (via `queue.prune_index`) removes any entry whose row is gone, each time the ingest queue drains (the `Worker` `on_idle` hook) and once at engine startup.
-`enq index` rebuilds every layer from the tables and also restores entries that are missing.
+Anything that replaces or deletes rows must drop their entries while the rows still exist: `ingest/queue.py` drops an artifact's chunk entries before re-chunking it, and trash delete/purge and vaulting drop an artifact's entries before deleting its chunks.
+Before that fix every reprocess, edit and retry left a full set of orphans behind (one library reached 52,891 orphaned chunk rows for 1,071 chunks), and orphans still take slots in a search's shortlist; a vaulted note's text also stayed in `fts_chunks`.
+Ingest skips a trashed, vaulted or embedded artifact instead of chunking it back.
+`queue.prune_index` runs each time the ingest queue drains (the `Worker` `on_idle` hook) and once at engine startup: it deletes chunks of trashed or vaulted artifacts, removes any entry whose row is gone (`store.prune_orphans()`; regenerated facets, entities and sections take new ids), and indexes any row with no entry (`store.index_missing()`, e.g. after an interrupted rebuild).
+`enq index` rebuilds every layer from the tables.
+`enq doctor` compares the chunk index with `indexable_chunk_count` (chunks of live artifacts), not every chunk.
 A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
 
 ### The title is prepended for indexing only

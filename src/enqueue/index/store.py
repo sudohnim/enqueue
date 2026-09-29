@@ -98,6 +98,10 @@ class VectorStore(ABC):
         """Vectors per collection, keyed by collection name."""
 
     @abstractmethod
+    def index_missing(self) -> dict[str, int]:
+        """Index every row that has no index entry; per collection, artifacts re-indexed."""
+
+    @abstractmethod
     def expected_chunks(self) -> int:
         """Chunk rows the index should hold (chunks of live, searchable artifacts)."""
 

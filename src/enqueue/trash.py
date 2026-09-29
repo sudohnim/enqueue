@@ -46,6 +46,8 @@ def retention_days() -> int:
 def delete(artifact_id: str) -> dict:
     """Mark an artifact deleted and take it out of retrieval immediately."""
     now = _now().isoformat()
+    # Index rows are found only through their chunk/facet ids, so they go before the rows do.
+    _drop_from_index(artifact_id)
     with db.transaction() as conn:
         row = conn.execute(
             "SELECT deleted_at, vaulted_at FROM artifacts WHERE id = ?", (artifact_id,)
@@ -75,7 +77,6 @@ def delete(artifact_id: str) -> dict:
         # deleted artifact must not be able to come back as a citation.
         conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
 
-    _drop_from_index(artifact_id)
     push_artifact(artifact_id)
     return {"id": artifact_id, "deleted_at": now, "already": False}
 
@@ -148,7 +149,8 @@ def listing() -> dict:
 
 
 def _drop_from_index(artifact_id: str) -> None:
-    # The row is already gone from SQLite; a failure here changes nothing.
+    # Called before the rows go, since an index row is found only through its row. A
+    # failure here leaves derived rows that the ingest queue's prune removes later.
     with contextlib.suppress(Exception):  # noqa: BLE001 - derived data, safe to leave
         from .index.store import get_store
 
@@ -169,6 +171,8 @@ def purge(artifact_id: str) -> dict:
     `deleted_at IS NULL` query already treats it as gone; only the trash views add
     `purged_at IS NULL` to hide the tombstone itself.
     """
+    # Index rows are found only through their chunk/facet ids, so they go before the rows do.
+    _drop_from_index(artifact_id)
     with db.transaction() as conn:
         row = conn.execute(
             "SELECT content_hash, deleted_at FROM artifacts WHERE id = ?", (artifact_id,)
@@ -242,7 +246,6 @@ def purge(artifact_id: str) -> dict:
         with contextlib.suppress(OSError):
             blob.unlink(missing_ok=True)
 
-    _drop_from_index(artifact_id)
     # Propagate the tombstone so other devices drop their copy too.
     try:
         from .sync.client import push_artifact

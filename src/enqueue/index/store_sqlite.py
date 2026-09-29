@@ -475,6 +475,44 @@ class SqliteVecStore(VectorStore):
                 conn.execute(sql["drop_vec"], (artifact_id,))
                 conn.execute(sql["drop_fts"], (artifact_id,))
 
+    def index_missing(self) -> dict[str, int]:
+        """Index every chunk, facet, entity or section that has no index entry.
+
+        The counterpart of `prune_orphans`. Each artifact with a missing row is
+        re-indexed whole, through the same path ingest uses. Returns how many
+        artifacts were re-indexed per collection.
+        """
+        self.ensure()
+        live = (
+            "SELECT id FROM artifacts"
+            " WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+        )
+        conn = self._connect()
+        try:
+            missing: dict[str, list[str]] = {}
+            for name, (table, index_tables, col) in _ORPHANS.items():
+                # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
+                # Table and column names come only from the _ORPHANS literal above.
+                absent = " OR ".join(
+                    f"t.id NOT IN (SELECT {col} FROM {index_table})" for index_table in index_tables
+                )
+                missing[name] = [
+                    r[0]
+                    for r in conn.execute(
+                        f"SELECT DISTINCT t.artifact_id FROM {table} t"
+                        f" WHERE ({absent}) AND t.artifact_id IN ({live})"
+                    )
+                ]
+        finally:
+            conn.close()
+
+        for aid in missing[self.CHUNKS]:
+            self.index_artifact(aid)
+        for name in (self.FACETS, self.ENTITIES, self.SECTIONS):
+            for aid in missing[name]:
+                self._index_layer_artifact(name, aid)
+        return {name: len(ids) for name, ids in missing.items()}
+
     def prune_orphans(self) -> dict[str, int]:
         """Remove index rows whose chunk, facet, entity or section no longer exists.
 

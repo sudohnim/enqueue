@@ -171,10 +171,21 @@ def _process(artifact_id: str) -> dict:
     conn = db.get_conn()
     try:
         row = conn.execute(
-            "SELECT kind, local_only FROM artifacts WHERE id = ?", (artifact_id,)
+            "SELECT kind, local_only, deleted_at, vaulted_at, embedded_at"
+            " FROM artifacts WHERE id = ?",
+            (artifact_id,),
         ).fetchone()
     finally:
         conn.close()
+
+    # Trashed, vaulted and embedded artifacts are out of search, and trashing or vaulting
+    # already dropped their chunks. A queue item that reaches one (a retry, a sync, a
+    # backfill racing the delete) must not chunk it back: that text would sit in the
+    # database, un-indexed, and a vaulted note's would be plaintext.
+    if row is None or row["deleted_at"] or row["vaulted_at"] or row["embedded_at"]:
+        with db.transaction() as conn:
+            _clear_facet_retry(conn, artifact_id)
+        return {"artifact_id": artifact_id, "skipped": "not live", "chunks": 0}
 
     # An explicit "Try again" forces the refetch (bypassing the auto + needs_fetch
     # gates); otherwise the automatic path only fetches a link that has never been
@@ -566,14 +577,33 @@ def _entities_artifact(artifact_id: str) -> int:
 
 
 def prune_index() -> None:
-    """Drop index rows whose chunk, facet, entity or section is gone. Regenerated facets,
-    entities and sections take new ids, so their old index rows are left behind until
-    this runs: whenever the queue drains, and once at engine startup."""
+    """Bring the index back in line with the tables: whenever the queue drains, and once
+    at engine startup.
+
+    - Chunks of trashed or vaulted artifacts are dropped (earlier builds could re-chunk
+      one after it left search).
+    - Index rows whose chunk, facet, entity or section is gone are removed: regenerated
+      rows take new ids, so their old index rows are left behind.
+    - Rows with no index entry (an interrupted rebuild, an ingest that died between
+      chunking and indexing) are indexed.
+    """
+    from .. import db
     from ..index.store import get_store
 
-    removed = get_store().prune_orphans()
+    with db.transaction() as conn:
+        hidden = conn.execute(
+            "DELETE FROM chunks WHERE artifact_id IN (SELECT id FROM artifacts"
+            " WHERE deleted_at IS NOT NULL OR vaulted_at IS NOT NULL OR embedded_at IS NOT NULL)"
+        ).rowcount
+    if hidden:
+        log.info("dropped %d chunks of trashed or vaulted artifacts", hidden)
+    store = get_store()
+    removed = store.prune_orphans()
     if any(removed.values()):
         log.info("pruned orphaned index rows: %s", removed)
+    restored = store.index_missing()
+    if any(restored.values()):
+        log.info("indexed rows missing from the index: %s", restored)
 
 
 _ingest = Worker("ingest", process, pre=_dequeue, on_idle=prune_index)
