@@ -30,7 +30,6 @@ import pytest
 
 from enqueue import capture, crypto, db, keyring, keyring_file, notes, settings
 from enqueue.relay.app import create_relay
-from enqueue.sync import device_id
 from enqueue.sync.client import fetch_blob_to_cache, pull
 from enqueue.sync.snapshot import read_artifact_snapshot, serialize
 

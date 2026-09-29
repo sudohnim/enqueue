@@ -17,7 +17,7 @@ import pytest
 import sqlite_vec
 import typer
 
-from enqueue import cli, config, db
+from enqueue import cli, config
 from enqueue.index.store import get_store
 
 
