@@ -15,6 +15,7 @@ class VectorStore(ABC):
     CHUNKS = "chunks"
     FACETS = "facets"
     ENTITIES = "entities"
+    SECTIONS = "sections"
 
     @abstractmethod
     def ensure(self) -> None:
@@ -37,6 +38,10 @@ class VectorStore(ABC):
         """Rebuild the whole entities index. Returns {"indexed": n, "collection": name}."""
 
     @abstractmethod
+    def upsert_sections(self, batch_size: int = 64) -> dict:
+        """Rebuild the whole section-summary index. Returns {"indexed": n, "collection": name}."""
+
+    @abstractmethod
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove every vector belonging to one artifact."""
 
@@ -51,6 +56,10 @@ class VectorStore(ABC):
     @abstractmethod
     def index_entities_artifact(self, artifact_id: str) -> int:
         """Re-embed one artifact's entity lines in place; returns how many were indexed."""
+
+    @abstractmethod
+    def index_sections_artifact(self, artifact_id: str) -> int:
+        """Re-embed one artifact's section summaries in place; returns how many were indexed."""
 
     @abstractmethod
     def search(self, name: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:

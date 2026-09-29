@@ -59,12 +59,23 @@ _DDL = {
         "DROP TABLE IF EXISTS fts_entities",
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts_entities USING fts5(" " entity_id UNINDEXED, text)",
     ),
+    "vec_sections": (
+        "DROP TABLE IF EXISTS vec_sections",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS vec_sections USING vec0("
+        " section_id TEXT PRIMARY KEY, embedding float[768])",
+    ),
+    "fts_sections": (
+        "DROP TABLE IF EXISTS fts_sections",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_sections USING fts5("
+        " section_id UNINDEXED, text)",
+    ),
 }
 
 _COLLECTION_TABLES = {
     "chunks": ("vec_chunks", "fts_chunks", "fts_chunks_tri"),
     "facets": ("vec_facets", "fts_facets"),
     "entities": ("vec_entities", "fts_entities"),
+    "sections": ("vec_sections", "fts_sections"),
 }
 
 # Literal SQL per collection; values always bound, never interpolated.
@@ -97,6 +108,17 @@ _SQL = {
     },
     "facets": {
         "select_all": "SELECT id, statement FROM facets",
+        "select_artifact": (
+            "SELECT id, statement AS text FROM facets WHERE artifact_id = ? ORDER BY level"
+        ),
+        "drop_vec": (
+            "DELETE FROM vec_facets"
+            " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)"
+        ),
+        "drop_fts": (
+            "DELETE FROM fts_facets"
+            " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)"
+        ),
         "clear_vec": "DELETE FROM vec_facets",
         "clear_fts": "DELETE FROM fts_facets",
         "insert_vec": "INSERT INTO vec_facets (facet_id, embedding) VALUES (?, ?)",
@@ -112,6 +134,17 @@ _SQL = {
     },
     "entities": {
         "select_all": "SELECT id, fact FROM entities",
+        "select_artifact": (
+            "SELECT id, fact AS text FROM entities WHERE artifact_id = ? ORDER BY entity"
+        ),
+        "drop_vec": (
+            "DELETE FROM vec_entities"
+            " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)"
+        ),
+        "drop_fts": (
+            "DELETE FROM fts_entities"
+            " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)"
+        ),
         "clear_vec": "DELETE FROM vec_entities",
         "clear_fts": "DELETE FROM fts_entities",
         "insert_vec": "INSERT INTO vec_entities (entity_id, embedding) VALUES (?, ?)",
@@ -125,6 +158,32 @@ _SQL = {
             " WHERE fts_entities MATCH ? ORDER BY bm25(fts_entities) LIMIT ?"
         ),
     },
+    "sections": {
+        "select_all": "SELECT id, summary FROM sections",
+        "select_artifact": (
+            "SELECT id, summary AS text FROM sections WHERE artifact_id = ? ORDER BY ordinal"
+        ),
+        "drop_vec": (
+            "DELETE FROM vec_sections"
+            " WHERE section_id IN (SELECT id FROM sections WHERE artifact_id = ?)"
+        ),
+        "drop_fts": (
+            "DELETE FROM fts_sections"
+            " WHERE section_id IN (SELECT id FROM sections WHERE artifact_id = ?)"
+        ),
+        "clear_vec": "DELETE FROM vec_sections",
+        "clear_fts": "DELETE FROM fts_sections",
+        "insert_vec": "INSERT INTO vec_sections (section_id, embedding) VALUES (?, ?)",
+        "insert_fts": "INSERT INTO fts_sections (section_id, text) VALUES (?, ?)",
+        "dense": (
+            "SELECT section_id AS id, distance FROM vec_sections"
+            " WHERE embedding MATCH ? ORDER BY distance LIMIT ?"
+        ),
+        "keyword": (
+            "SELECT section_id AS id, bm25(fts_sections) AS raw FROM fts_sections"
+            " WHERE fts_sections MATCH ? ORDER BY bm25(fts_sections) LIMIT ?"
+        ),
+    },
 }
 
 _COUNT_SQL = {
@@ -135,6 +194,8 @@ _COUNT_SQL = {
     "fts_chunks_tri": "SELECT COUNT(*) FROM fts_chunks_tri",
     "fts_facets": "SELECT COUNT(*) FROM fts_facets",
     "fts_entities": "SELECT COUNT(*) FROM fts_entities",
+    "vec_sections": "SELECT COUNT(*) FROM vec_sections",
+    "fts_sections": "SELECT COUNT(*) FROM fts_sections",
 }
 
 # Title (and the chunk's model-written context, when it has one) are prepended for
@@ -214,6 +275,8 @@ class SqliteVecStore(VectorStore):
             return "facet_id"
         if name == self.ENTITIES:
             return "entity_id"
+        if name == self.SECTIONS:
+            return "section_id"
         raise ValueError(f"unknown collection {name!r}")
 
     def ensure(self) -> None:
@@ -251,6 +314,11 @@ class SqliteVecStore(VectorStore):
 
     def upsert_entities(self, batch_size: int = 64) -> dict:
         return self._rebuild(self.ENTITIES, lambda row: (row["fact"], (row["fact"],)), batch_size)
+
+    def upsert_sections(self, batch_size: int = 64) -> dict:
+        return self._rebuild(
+            self.SECTIONS, lambda row: (row["summary"], (row["summary"],)), batch_size
+        )
 
     def _rebuild(self, name: str, entries_of, batch_size: int) -> dict:
         """Clear one collection, then embed and insert in batches, vec + fts per transaction.
@@ -346,73 +414,33 @@ class SqliteVecStore(VectorStore):
 
     def index_facets_artifact(self, artifact_id: str) -> int:
         """Re-embed one artifact's facets in place. The caller generates them first."""
-        self.ensure()
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, statement FROM facets WHERE artifact_id = ? ORDER BY level",
-                (artifact_id,),
-            ).fetchall()
-            conn.execute(
-                "DELETE FROM vec_facets"
-                " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
-                (artifact_id,),
-            )
-            conn.execute(
-                "DELETE FROM fts_facets"
-                " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
-                (artifact_id,),
-            )
-            if not rows:
-                return 0
-            entries = [(row["id"], row["statement"]) for row in rows]
-            vectors = embed([text for _, text in entries])
-            conn.executemany(
-                "INSERT INTO vec_facets (facet_id, embedding) VALUES (?, ?)",
-                [
-                    (item_id, json.dumps(vector))
-                    for (item_id, _), vector in zip(entries, vectors, strict=True)
-                ],
-            )
-            conn.executemany(
-                "INSERT INTO fts_facets (facet_id, text) VALUES (?, ?)",
-                [(item_id, text) for item_id, text in entries],
-            )
-        return len(entries)
+        return self._index_layer_artifact(self.FACETS, artifact_id)
 
     def index_entities_artifact(self, artifact_id: str) -> int:
         """Re-embed one artifact's entity lines in place. The caller generates them first."""
+        return self._index_layer_artifact(self.ENTITIES, artifact_id)
+
+    def index_sections_artifact(self, artifact_id: str) -> int:
+        """Re-embed one artifact's section summaries in place (ingest/source.py writes them)."""
+        return self._index_layer_artifact(self.SECTIONS, artifact_id)
+
+    def _index_layer_artifact(self, name: str, artifact_id: str) -> int:
+        """Replace one artifact's rows in a facet-like layer's vec and fts tables."""
         self.ensure()
+        sql = self._sql(name)
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, fact FROM entities WHERE artifact_id = ? ORDER BY entity",
-                (artifact_id,),
-            ).fetchall()
-            conn.execute(
-                "DELETE FROM vec_entities"
-                " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
-                (artifact_id,),
-            )
-            conn.execute(
-                "DELETE FROM fts_entities"
-                " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
-                (artifact_id,),
-            )
+            rows = conn.execute(sql["select_artifact"], (artifact_id,)).fetchall()
+            conn.execute(sql["drop_vec"], (artifact_id,))
+            conn.execute(sql["drop_fts"], (artifact_id,))
             if not rows:
                 return 0
-            entries = [(row["id"], row["fact"]) for row in rows]
-            vectors = embed([text for _, text in entries])
+            vectors = embed([row["text"] for row in rows])
             conn.executemany(
-                "INSERT INTO vec_entities (entity_id, embedding) VALUES (?, ?)",
-                [
-                    (item_id, json.dumps(vector))
-                    for (item_id, _), vector in zip(entries, vectors, strict=True)
-                ],
+                sql["insert_vec"],
+                [(row["id"], json.dumps(v)) for row, v in zip(rows, vectors, strict=True)],
             )
-            conn.executemany(
-                "INSERT INTO fts_entities (entity_id, text) VALUES (?, ?)",
-                [(item_id, text) for item_id, text in entries],
-            )
-        return len(entries)
+            conn.executemany(sql["insert_fts"], [(row["id"], row["text"]) for row in rows])
+        return len(rows)
 
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove one artifact's rows from a collection's vec and fts tables."""
@@ -434,30 +462,10 @@ class SqliteVecStore(VectorStore):
                     " WHERE chunk_id IN (SELECT id FROM chunks WHERE artifact_id = ?)",
                     (artifact_id,),
                 )
-            elif name == self.FACETS:
-                conn.execute(
-                    "DELETE FROM vec_facets"
-                    " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
-                    (artifact_id,),
-                )
-                conn.execute(
-                    "DELETE FROM fts_facets"
-                    " WHERE facet_id IN (SELECT id FROM facets WHERE artifact_id = ?)",
-                    (artifact_id,),
-                )
-            elif name == self.ENTITIES:
-                conn.execute(
-                    "DELETE FROM vec_entities"
-                    " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
-                    (artifact_id,),
-                )
-                conn.execute(
-                    "DELETE FROM fts_entities"
-                    " WHERE entity_id IN (SELECT id FROM entities WHERE artifact_id = ?)",
-                    (artifact_id,),
-                )
             else:
-                raise ValueError(f"unknown collection {name!r}")
+                sql = self._sql(name)
+                conn.execute(sql["drop_vec"], (artifact_id,))
+                conn.execute(sql["drop_fts"], (artifact_id,))
 
     def write_embed_version(self) -> None:
         """Record the embedding version. Call only after every collection is rebuilt."""
@@ -628,6 +636,12 @@ class SqliteVecStore(VectorStore):
                 " WHERE id IN (SELECT value FROM json_each(?))",
                 (ids,),
             ).fetchall()
+        elif name == self.SECTIONS:
+            rows = conn.execute(
+                "SELECT id, artifact_id, ordinal, model_version, body_version FROM sections"
+                " WHERE id IN (SELECT value FROM json_each(?))",
+                (ids,),
+            ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id, artifact_id, level, trust, model_version, body_version"
@@ -650,6 +664,11 @@ class SqliteVecStore(VectorStore):
                 hit["entity"] = row["entity"]
                 hit["fact"] = row["fact"]
                 hit["trust"] = row["trust"]
+                hit["model_version"] = row["model_version"]
+                hit["body_version"] = row["body_version"]
+            elif name == self.SECTIONS:
+                hit["section_id"] = item_id
+                hit["ordinal"] = row["ordinal"]
                 hit["model_version"] = row["model_version"]
                 hit["body_version"] = row["body_version"]
             else:
@@ -680,6 +699,8 @@ class SqliteVecStore(VectorStore):
                 "fts_chunks_tri": _n("fts_chunks_tri"),
                 "fts_facets": _n("fts_facets"),
                 "fts_entities": _n("fts_entities"),
+                "sections": _n("vec_sections"),
+                "fts_sections": _n("fts_sections"),
             }
         finally:
             conn.close()

@@ -594,10 +594,11 @@ def candidates(
             chunk_hits = store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch)
             facet_hits = store.search(store.FACETS, query, limit=per_query, prefetch=prefetch)
             entity_hits = store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch)
+            section_hits = store.search(store.SECTIONS, query, limit=per_query, prefetch=prefetch)
             _prefetch_staleness(
                 conn,
                 cache,
-                [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits],
+                [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits + section_hits],
             )
             for hit in chunk_hits:
                 aid = hit["artifact_id"]
@@ -619,6 +620,12 @@ def candidates(
                 if score > best[aid]:
                     best[aid] = score
                     why[aid] = "entity"
+
+            for hit, score in _weighted_hits(conn, section_hits, cache):
+                aid = hit["artifact_id"]
+                if score > best[aid]:
+                    best[aid] = score
+                    why[aid] = "section"
 
         ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
 
@@ -721,11 +728,12 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
     prefetch = max(100, limit * 5)
     legs = {
         name: store.search_legs(name, q, limit=per_query, prefetch=prefetch)
-        for name in (store.CHUNKS, store.FACETS, store.ENTITIES)
+        for name in (store.CHUNKS, store.FACETS, store.ENTITIES, store.SECTIONS)
     }
     chunk_hits = legs[store.CHUNKS]["fused"]
     facet_hits = legs[store.FACETS]["fused"]
     entity_hits = legs[store.ENTITIES]["fused"]
+    section_hits = legs[store.SECTIONS]["fused"]
     lift_legs = [
         store.search_legs(store.FACETS, claim, limit=per_query, prefetch=prefetch)
         for claim in lifts or []
@@ -743,7 +751,7 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
             dense_sims[aid] = hit["score"]
     for hit in legs[store.CHUNKS]["keyword"][:per_query]:
         lexical_aids.add(hit["artifact_id"])
-    for name in (store.FACETS, store.ENTITIES):
+    for name in (store.FACETS, store.ENTITIES, store.SECTIONS):
         for hit in legs[name]["dense"][:per_query]:
             aid = hit["artifact_id"]
             if hit["score"] > dense_sims.get(aid, 0.0):
@@ -761,7 +769,7 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
     _prefetch_staleness(
         conn,
         cache,
-        [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits],
+        [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits + section_hits],
     )
     best: dict[str, dict] = {}
     for hit in chunk_hits:
@@ -781,6 +789,10 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
                 "entity": (hit.get("entity"), hit.get("fact")),
                 "why": "entity",
             }
+    for hit, score in _weighted_hits(conn, section_hits, cache):
+        aid = hit["artifact_id"]
+        if aid not in best or score > best[aid]["score"]:
+            best[aid] = {"score": score, "chunk_id": None, "why": f"section {hit.get('ordinal')}"}
 
     rows = conn.execute(
         "SELECT id, updated_at FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",

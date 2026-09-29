@@ -211,7 +211,7 @@ One line per file, describing its job.
 | `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. A vision describe failure marks the image `status='failed'` and surfaces in `/doctor` (`images_without_body`) instead of failing silently. |
 | `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Anything over `CHUNK_MAX_TOKENS` (counted with the embedder's own tokenizer) is split at line, then sentence, then word boundaries. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
-| `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), plus current annotations marked "(your note)". A document over `FACET_INPUT_CHARS` is map-reduced: split into sections of up to 10k characters on paragraph boundaries (at most 24), each summarized by the ingest model (cached in `derived_values`, scope `section_summary`, per section hash and model), and read as ordered summaries. Any failed section falls back to the capped opening; `text_only` text is never mapped. Facets, entities and chunk contexts all read through it. |
+| `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), plus current annotations marked "(your note)". A document over `FACET_INPUT_CHARS` is map-reduced: split into sections of up to 10k characters on paragraph boundaries (at most 24), each summarized by the ingest model (cached in `derived_values`, scope `section_summary`, per section hash and model), and read as ordered summaries. The summaries are also written to `sections` (stamped with ingest model and body version; left untouched when unchanged, since facets, entities and contexts each read through here) and indexed as their own search layer by the ingest queue. Any failed section falls back to the capped opening; `text_only` text is never mapped. Facets, entities and chunk contexts all read through it. |
 | `ingest/context.py` | Contextual chunks: for an artifact with 2+ chunks, the ingest model writes one or two sentences per chunk placing it in the document (batches of 30). Stored in `chunks.context`, embedded and keyword-indexed with the chunk (not in the trigram table). Skips `text_only` artifacts. |
 | `ingest/related.py` | Related artifacts: each facet statement searches the facet index; another artifact's closeness is its best similarity to any of them. The top 5 at or above 0.7 are stored in `related` in both directions. Stale facets never count. Recomputed after ingest writes facets and after any facet edit/regenerate (`facets._reindex`); no model call. `GET /artifacts/{id}` returns `related`, shown as a Related section in the artifact drawer. |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
@@ -254,6 +254,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0036_sections.py` | `sections` (artifact_id, ordinal, summary, model_version, body_version): section summaries of long documents, a search layer. Purge deletes an artifact's rows. |
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
 | `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
@@ -388,6 +389,7 @@ Migrations run automatically at startup via Alembic.
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
 | `related` | links between artifacts whose facets make the same point | derived at ingest, both directions, filtered to live artifacts on read |
+| `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
 | `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
 
 ### Invariants
@@ -410,8 +412,8 @@ after retrieval.
 
 | Table | What it holds |
 | --- | --- |
-| `vec_chunks` / `vec_facets` | sqlite-vec (vec0) tables: id + 768-dim embedding |
-| `fts_chunks` / `fts_facets` | FTS5 tables: the indexed text, with the id as an unindexed reference |
+| `vec_chunks` / `vec_facets` / `vec_entities` / `vec_sections` | sqlite-vec (vec0) tables: id + 768-dim embedding |
+| `fts_chunks` / `fts_facets` / `fts_entities` / `fts_sections` | FTS5 tables: the indexed text, with the id as an unindexed reference |
 | `fts_chunks_tri` | FTS5 trigram table over chunk text: substring matches unicode61 cannot see ("hopper" inside "chopper") |
 | `index_meta` | key/value: the embedding version the index was built at |
 
@@ -673,11 +675,12 @@ Per artifact, once, re-runnable, all behind the capture response (`ingest/queue.
 1. **Chunks** (the literal layer). Chunk the text with the markdown chunker and embed each chunk locally (bge-base, 768-dim). Chunk text is fed from the note body, PDF page text, link preview text, image annotations (R.2), and a vision model's image description (K.11). The title is prepended for indexing only (see gotchas).
 2. **Facets** (the conceptual layer). 5-15 model-written statements of what the artifact could be an example of, climbing levels 0-4, each embedded. Per-facet quality gate; best effort. Bridges the semantic-to-conceptual gap.
 3. **Entities** (the named-thing layer). Named things in the body, each enriched with a one-line world-knowledge fact and embedded. Bridges a query in the world's vocabulary to a note that never uses it ("presidents" reaching a Roosevelt biography).
+4. **Section summaries** (the long-document layer). For a document too long to read in one pass, the ingest model's summary of each ~10k-character section, embedded and keyword-indexed. A long PDF becomes findable by what each part is about, not only by its sentences; in chat a section hit pulls the chunk from that part of the document (section i of n sits about i/n of the way through).
 
-Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`); see the index-tables section.
+Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`, `sections`); facets, entities and sections share one per-artifact indexing path (`_index_layer_artifact`). See the index-tables section.
 
 **Query lowers concepts toward artifacts.**
-`retrieve/candidates.py::search_results` runs seven legs, each a ranked list, and fuses them:
+`retrieve/candidates.py::search_results` runs eight legs, each a ranked list, and fuses them:
 
 1. **Dense** - query embedding against chunk vectors.
 2. **Keyword** - FTS5 BM25 over chunk text, title column weighted 10x (`bm25(fts_chunks, 1.0, 10.0, 1.0)`).
@@ -686,6 +689,7 @@ Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`); see 
 5. **Exact phrase** - quoted phrases pinned (R.10).
 6. **Facets** - the conceptual channel, hits weighted by trust (`score * trust * 2.0`).
 7. **Entities** - the named-thing channel.
+8. **Sections** - long-document section summaries, weighted like an untrusted facet and staled the same way.
 
 Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optionally rerank the top window with the bge-reranker cross-encoder (R.9, off by default), then roll up to one row per artifact.
 
@@ -696,6 +700,7 @@ Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optional
 | Literal | chunk | Search, citation to passage |
 | Conceptual | facet | Search's conceptual channel, weighted by trust |
 | Named-thing | entity | Search's world-vocabulary channel |
+| Section | section summary | Long documents found by what each part is about |
 
 ### The relevance floor (Q.3, in progress)
 
@@ -768,7 +773,7 @@ A scoped chat does no retrieval: the artifact is the candidate set.
 `evals/cross_domain.yaml` holds 10 queries phrased in one field (software, teams, habits) whose target note is from another (a willow in a storm, a relay baton, mise en place), plus 5 lexical decoys that share the queries' words but not their idea.
 Each target must not contain its query's key words; `tests/test_eval_cross.py` enforces that, so the suite can only be passed on meaning.
 `enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` four times: `chunks` (chunks only), `enriched` (plus facets and entities), `lifted` (plus query lifting) and `ranked` (plus model re-ranking). A query passes when its target ranks in the top 3.
-Facets, entities, lifts and ranking orders come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "entities": {artifact_id: [...]}, "lifts": {query_id: [...]}, "ranks": {query_id: [artifact ids, best first]}}`; facets and entities are stamped with the current ingest model on load so the staleness check keeps them; lifts and ranking orders are served from the fixture, so the eval never calls a model; `bin/check-eval-cross` fails if any layer scores below the one before it). `enq eval-cross --generate-facets` rewrites the whole fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
+Facets, entities, section summaries, lifts and ranking orders come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "entities": {artifact_id: [...]}, "sections": {artifact_id: [summaries in order]}, "lifts": {query_id: [...]}, "ranks": {query_id: [artifact ids, best first]}}`; facets and entities are stamped with the current ingest model on load so the staleness check keeps them; lifts and ranking orders are served from the fixture, so the eval never calls a model; `bin/check-eval-cross` fails if any layer scores below the one before it). `enq eval-cross --generate-facets` rewrites the whole fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
 Two targets are long: `pad_with` prepends main-corpus documents so the idea sits ~56,000 characters in, past the read limit, which only map-reduced ingestion can reach (`test_long_targets_put_their_idea_past_the_read_limit`).
 This suite is separate from the main 50-note eval on purpose: adding its notes there would shift the main baseline.
 

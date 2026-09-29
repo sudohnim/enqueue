@@ -156,6 +156,7 @@ def _drop_from_index(artifact_id: str) -> None:
         store.drop_artifact(store.CHUNKS, artifact_id)
         store.drop_artifact(store.FACETS, artifact_id)
         store.drop_artifact(store.ENTITIES, artifact_id)
+        store.drop_artifact(store.SECTIONS, artifact_id)
 
 
 def purge(artifact_id: str) -> dict:
@@ -191,6 +192,7 @@ def purge(artifact_id: str) -> dict:
             "artifact_versions",
             "related",
             "opens",
+            "sections",
         ):
             column = "artifact_id"
             # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query

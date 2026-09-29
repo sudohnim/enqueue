@@ -183,6 +183,7 @@ def process(artifact_id: str) -> dict:
         # failed. Its stale points have to go, or search keeps returning it.
         store.drop_artifact(store.CHUNKS, artifact_id)
         store.drop_artifact(store.FACETS, artifact_id)
+        store.drop_artifact(store.SECTIONS, artifact_id)
 
     # Facets are the conceptual layer that lets a question reach an artifact whose
     # own words never mention it - "notes on a president" reaching a Roosevelt
@@ -216,6 +217,14 @@ def process(artifact_id: str) -> dict:
     contexts_made = _context_artifact(artifact_id) if chunks > 1 else 0
     if contexts_made:
         indexed = store.index_artifact(artifact_id)
+
+    # Section summaries (ingest/source.py) were written by whichever step above read a
+    # long document through map-reduce; index them as their own layer.
+    if chunks:
+        try:
+            store.index_sections_artifact(artifact_id)
+        except Exception:  # noqa: BLE001 - derived; never blocks capture
+            log.exception("section index failed for %s", artifact_id)
 
     # An ingest that produced nothing (an artifact with no extractable text re-applied
     # by a sync) is not activity worth a row - logging every one buries the questions

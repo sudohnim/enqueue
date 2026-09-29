@@ -301,7 +301,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
         facet_entity_lexical: set[str] = set()
         fe_legs = {
             name: store.search_legs(name, question, limit=4)
-            for name in (store.FACETS, store.ENTITIES)
+            for name in (store.FACETS, store.ENTITIES, store.SECTIONS)
         }
         # Query lifting (retrieve/lift.py): facet-style restatements of the question
         # search the facet index too. Their dense similarity counts; never lexical.
@@ -326,6 +326,23 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             row = conn.execute(
                 "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
                 (aid,),
+            ).fetchone()
+            if row and row["id"] not in found:
+                found[row["id"]] = {"score": score, "why": why}
+
+        def _pull_section(aid: str, ordinal: int, why: str, score: float) -> None:
+            n_sections = conn.execute(
+                "SELECT COUNT(*) AS n FROM sections WHERE artifact_id = ?", (aid,)
+            ).fetchone()["n"]
+            n_chunks = conn.execute(
+                "SELECT COUNT(*) AS n FROM chunks WHERE artifact_id = ?", (aid,)
+            ).fetchone()["n"]
+            if not n_chunks:
+                return
+            at = min(n_chunks - 1, int((ordinal - 0.5) / max(n_sections, 1) * n_chunks))
+            row = conn.execute(
+                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1 OFFSET ?",
+                (aid, at),
             ).fetchone()
             if row and row["id"] not in found:
                 found[row["id"]] = {"score": score, "why": why}
@@ -373,6 +390,32 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
                 continue
             _pull_opening(aid, "entity", hit["score"])
 
+        # A section hit pulls the chunk from that part of the document (section i of n
+        # sits around i/n of the way through), so the answer reads the page the summary
+        # described rather than the opening.
+        for hit in fe_legs[store.SECTIONS]["fused"]:
+            if hit_is_stale(conn, hit, cache):
+                continue
+            aid = hit["artifact_id"]
+            verdict = _floor_verdict(
+                {
+                    "dense_similarity": facet_entity_dense.get(aid, 0.0),
+                    "had_lexical_hit": aid in facet_entity_lexical,
+                }
+            )
+            if verdict == "drop":
+                continue
+            why = f"section {hit.get('ordinal')}"
+            if verdict == "gray":
+                row = conn.execute(
+                    "SELECT summary FROM sections WHERE id = ?", (hit["section_id"],)
+                ).fetchone()
+                gray_facet_entity.setdefault(
+                    aid, (why, hit["score"], row["summary"] if row else "")
+                )
+                continue
+            _pull_section(aid, hit.get("ordinal") or 1, why, hit["score"])
+
         # The judge reads the matched facet statement / entity fact, not the opening chunk.
         if gray_facet_entity:
             faces = {
@@ -398,7 +441,10 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             for aid, (why, score, _snippet) in gray_facet_entity.items():
                 if aid not in kept:
                     continue
-                _pull_opening(aid, why, score)
+                if why.startswith("section "):
+                    _pull_section(aid, int(why.split()[1]), why, score)
+                else:
+                    _pull_opening(aid, why, score)
 
         if not found:
             return []

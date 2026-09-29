@@ -159,6 +159,47 @@ def load_entities(fixture: dict) -> int:
     return n
 
 
+def load_sections(fixture: dict) -> int:
+    """Insert fixture section summaries, stamped with the current ingest model."""
+    from . import db
+    from .index.store import get_store
+    from .providers.base import model_for
+
+    model = model_for("ingest")
+    n = 0
+    with db.transaction() as conn:
+        for aid, summaries in fixture.items():
+            for i, summary in enumerate(summaries, start=1):
+                conn.execute(
+                    "INSERT INTO sections (id, artifact_id, ordinal, summary, model_version,"
+                    " body_version, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                    (str(uuid.uuid4()), aid, i, summary, model, db.now()),
+                )
+                n += 1
+    get_store().upsert_sections()
+    return n
+
+
+def written_sections(suite: dict) -> dict[str, list[str]]:
+    """The section summaries map-reduce wrote while generating (long notes only)."""
+    from . import db
+
+    ids = [n["id"] for n in suite["notes"] + suite["decoys"]]
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT artifact_id, summary FROM sections"
+            " WHERE artifact_id IN (SELECT value FROM json_each(?)) ORDER BY artifact_id, ordinal",
+            (json.dumps(ids),),
+        ).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, list[str]] = {}
+    for r in rows:
+        out.setdefault(r["artifact_id"], []).append(r["summary"])
+    return out
+
+
 def generate_entities(suite: dict) -> dict:
     """Extract and enrich entities for the suite's notes and decoys with the ingest model."""
     from . import db
@@ -277,7 +318,7 @@ def run(generate: bool = False) -> dict:
     fixture: dict = {}
     if not generate and FACETS_PATH.exists():
         fixture = json.loads(FACETS_PATH.read_text(encoding="utf-8"))
-    fixture = {k: fixture.get(k, {}) for k in ("facets", "entities", "lifts", "ranks")}
+    fixture = {k: fixture.get(k, {}) for k in ("facets", "entities", "sections", "lifts", "ranks")}
     real_lift = lift.lift
     real_order = model_rank.order
     with pointed_at_test_dir():
@@ -290,12 +331,15 @@ def run(generate: bool = False) -> dict:
                 "lifts": generate_lifts(suite),
                 "ranks": {},
             }
+            fixture["sections"] = written_sections(suite)
             FACETS_PATH.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
             get_store().upsert_facets()
             get_store().upsert_entities()
+            get_store().upsert_sections()
         else:
             load_facets(fixture["facets"])
             load_entities(fixture["entities"])
+            load_sections(fixture["sections"])
         enriched = run_queries(suite)
 
         by_query = {q["query"]: fixture["lifts"].get(q["id"], []) for q in suite["queries"]}
@@ -330,6 +374,7 @@ def run(generate: bool = False) -> dict:
         "entities_loaded": sum(len(v) for v in fixture["entities"].values()),
         "lifts_loaded": sum(len(v) for v in fixture["lifts"].values()),
         "ranks_loaded": len(fixture["ranks"]),
+        "sections_loaded": sum(len(v) for v in fixture["sections"].values()),
         "modes": {
             "chunks": {**score(chunks_only), "results": chunks_only},
             "enriched": {**score(enriched), "results": enriched},

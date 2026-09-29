@@ -136,9 +136,40 @@ def _map_reduce(conn, artifact_id: str, text: str) -> str | None:
                 " VALUES ('section_summary', ?, ?, ?, 1, 'model', ?, ?)",
                 (artifact_id, key, summary, provider.model, _now()),
             )
-        summaries.append(f"Section {i} of {len(parts)}: {summary}")
+        summaries.append(summary)
+    _store_sections(conn, artifact_id, summaries, provider.model)
     return "(A long document, read as summaries of its sections in order.)\n\n" + "\n\n".join(
-        summaries
+        f"Section {i} of {len(summaries)}: {s}" for i, s in enumerate(summaries, start=1)
+    )
+
+
+def _store_sections(conn, artifact_id: str, summaries: list[str], model: str) -> None:
+    """Replace the artifact's searchable section summaries (the `sections` layer).
+
+    Stamped like facets, with the ingest model and the body version they were read
+    from, so search drops them once either moves on. The ingest queue indexes them.
+    """
+    import uuid
+
+    body_version = conn.execute(
+        "SELECT MAX(created_at) AS v FROM artifact_versions WHERE artifact_id = ?",
+        (artifact_id,),
+    ).fetchone()["v"]
+    existing = conn.execute(
+        "SELECT summary, model_version, body_version FROM sections WHERE artifact_id = ?"
+        " ORDER BY ordinal",
+        (artifact_id,),
+    ).fetchall()
+    if [tuple(r) for r in existing] == [(s, model, body_version) for s in summaries]:
+        return  # map-reduce runs once per ingest writer; unchanged rows keep their index
+    conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
+    conn.executemany(
+        "INSERT INTO sections (id, artifact_id, ordinal, summary, model_version,"
+        " body_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (str(uuid.uuid4()), artifact_id, i, s, model, body_version, _now())
+            for i, s in enumerate(summaries, start=1)
+        ],
     )
 
 

@@ -84,6 +84,7 @@ def _drop_from_index(artifact_id: str) -> None:
         store.drop_artifact(store.CHUNKS, artifact_id)
         store.drop_artifact(store.FACETS, artifact_id)
         store.drop_artifact(store.ENTITIES, artifact_id)
+        store.drop_artifact(store.SECTIONS, artifact_id)
 
 
 def vault_artifact(artifact_id: str) -> dict:
