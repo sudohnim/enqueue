@@ -52,18 +52,20 @@ def doctor() -> dict:
     """Index health: counts, embedding version, and chunks-table sync.
 
     A diagnostic for the cutover. `index_in_sync` is true when the search
-    index holds exactly as many chunk rows as the chunks table (the trash
-    path deletes a chunk row and drops its index point together, so a synced
-    index stays synced across deletes). `embed_version_current` is true when
+    index holds exactly one row per chunk of a live, searchable artifact
+    (`indexable_chunk_count`): vaulted and embedded artifacts keep their chunks
+    but are never indexed, so `chunk_count` alone would read as drift. `embed_version_current` is true when
     the recorded version matches the running embedding model. `healthy` is
     both. The raw `index_counts` cover all six index tables, so an FTS,
     facets, or entities drift is visible even when the chunks count matches.
     """
-    index_counts = get_store().counts()
+    store = get_store()
+    index_counts = store.counts()
     chunk_count = db.count("chunks")
+    indexable = store.expected_chunks()
     embed_version = bootstrap.read_embed_version()
     index_chunks = index_counts.get("chunks")
-    in_sync = index_chunks is not None and index_chunks == chunk_count
+    in_sync = index_chunks is not None and index_chunks == indexable
     version_current = embed_version == config.EMBED_VERSION
     index_state = bootstrap.index_state()
     state_ready = index_state["state"] == "ready"
@@ -78,6 +80,7 @@ def doctor() -> dict:
     return {
         "artifact_count": db.count("artifacts"),
         "chunk_count": chunk_count,
+        "indexable_chunk_count": indexable,
         "images_without_body": images_without_body,
         "facet_count": db.count("facets"),
         "index_counts": index_counts,

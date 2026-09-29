@@ -70,6 +70,10 @@ def _vacuum() -> None:
     conn = db.get_conn()
     try:
         conn.execute("VACUUM")
+        # In WAL mode the rewritten pages sit in the WAL until a checkpoint, and closing
+        # this connection only checkpoints when no other connection is open. Checkpoint
+        # now, so the old plaintext pages leave the database file whatever else is open.
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     finally:
         conn.close()
 
@@ -91,6 +95,8 @@ def vault_artifact(artifact_id: str) -> dict:
     """Encrypt the artifact's content at rest and take it out of every live view."""
     key = vault.key()  # raises VaultError if locked
     now = db.now()
+    # Index rows are found only through their chunk/facet ids, so they go before the rows do.
+    _drop_from_index(artifact_id)
     with db.transaction() as conn:
         row = conn.execute(
             "SELECT body, title, content_hash, vaulted_at FROM artifacts WHERE id = ?",
@@ -150,7 +156,6 @@ def vault_artifact(artifact_id: str) -> dict:
     # still hold the pre-encryption plaintext are purged from disk, not just
     # unlinked - without this the old body lingers in the file's freelist.
     _vacuum()
-    _drop_from_index(artifact_id)
     push_artifact(artifact_id)
     return {"id": artifact_id, "vaulted_at": now, "already": False}
 
