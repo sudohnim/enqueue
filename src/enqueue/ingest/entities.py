@@ -1,4 +1,4 @@
-"""Entities: the proper names in a body, enriched with one line of world knowledge.
+"""Entities: the proper names in an artifact's text, enriched with one line of world knowledge.
 
 Pure embeddings, and even facets, miss a whole class of question. "Notes on
 presidents" never reaches a Roosevelt biography that never says "president":
@@ -91,6 +91,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     """
     from ..prompts import ENTITY_EXTRACT
     from ..providers.base import get_provider
+    from .source import ingest_text
 
     row = conn.execute(
         "SELECT title, body, local_only,"
@@ -101,7 +102,8 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     ).fetchone()
     if row is None:
         return 0, "no such artifact"
-    text = row["body"] or ""
+    # Body for a note, extracted pages for a link/PDF/image, plus the person's notes.
+    text = ingest_text(conn, artifact_id)
 
     provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
 

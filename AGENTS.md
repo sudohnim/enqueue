@@ -206,6 +206,7 @@ One line per file, describing its job.
 | `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. A vision describe failure marks the image `status='failed'` and surfaces in `/doctor` (`images_without_body`) instead of failing silently. |
 | `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
+| `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), capped at `FACET_INPUT_CHARS`, plus current annotations marked "(your note)". Facets and entities both read through it. |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve

@@ -500,3 +500,66 @@ class TestIndex:
 
         assert result["indexed"] == 1
         assert result["collection"] == sqlite_store.ENTITIES
+
+
+class TestCapturesGetEntities:
+    """A link/PDF/image has no body; its words live in page_text. Entities used to read
+    only `body`, so every capture got none."""
+
+    def _capture_with_pages(self, pages):
+        import uuid
+
+        aid = str(uuid.uuid4())
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, content_hash, status,"
+                " created_at, updated_at) VALUES (?, 'pdf', 'A biography', NULL, ?, 'ok', ?, ?)",
+                (aid, aid, db.now(), db.now()),
+            )
+            for i, text in enumerate(pages):
+                conn.execute(
+                    "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,?,?,?)",
+                    (aid, i + 1, text, "pymupdf"),
+                )
+        return aid
+
+    def test_a_pdf_capture_is_read_from_its_pages(self, store, monkeypatch):
+        seen = []
+        provider = _patch_provider(
+            monkeypatch, [{"entities": [{"name": "Theodore Roosevelt"}]}, {"fact": ROOSEVELT}]
+        )
+        real = provider.complete
+
+        def spy(system, user, response_model, context=None, max_retries=None):
+            seen.append(user)
+            return real(system, user, response_model, context, max_retries)
+
+        provider.complete = spy
+        aid = self._capture_with_pages(["He charged up San Juan Hill.", "Later, trust-busting."])
+
+        count, error = _generate(aid)
+
+        assert (count, error) == (1, None)
+        assert "San Juan Hill" in seen[0] and "trust-busting" in seen[0]
+        conn = db.get_conn()
+        try:
+            assert [r["entity"] for r in _entities(conn, aid)] == ["Theodore Roosevelt"]
+        finally:
+            conn.close()
+
+    def test_annotations_reach_the_extractor(self, store, quiet_queue, monkeypatch):
+        seen = []
+        provider = _patch_provider(monkeypatch, [{"entities": []}])
+        real = provider.complete
+
+        def spy(system, user, response_model, context=None, max_retries=None):
+            seen.append(user)
+            return real(system, user, response_model, context, max_retries)
+
+        provider.complete = spy
+        aid = self._capture_with_pages(["Some page text."])
+        notes.annotate(aid, "Reminds me of Marie Curie.")
+
+        _generate(aid)
+
+        assert "(your note) Reminds me of Marie Curie." in seen[0]
