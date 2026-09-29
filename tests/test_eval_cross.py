@@ -100,6 +100,7 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
                     q["expect"][0]: [{"entity": "Q", "fact": "Q - a stand-in entity line."}]
                 },
                 "lifts": {q["id"]: [q["query"] + " again."]},
+                "ranks": {q["id"]: [q["expect"][0]]},
             }
         )
     )
@@ -108,10 +109,12 @@ def test_fixture_facets_reach_search(tmp_path, monkeypatch):
     assert report["facets_loaded"] == 1
     by_id = {r["id"]: r for r in report["modes"]["enriched"]["results"]}
     assert by_id[q["id"]]["pass"], by_id[q["id"]]
-    assert set(report["modes"]) == {"chunks", "enriched", "lifted"}
+    assert set(report["modes"]) == {"chunks", "enriched", "lifted", "ranked"}
     assert report["entities_loaded"] == 1
     assert report["lifts_loaded"] == 1
     assert {r["id"]: r for r in report["modes"]["lifted"]["results"]}[q["id"]]["pass"]
+    assert report["ranks_loaded"] == 1
+    assert {r["id"]: r for r in report["modes"]["ranked"]["results"]}[q["id"]]["rank"] == 1
     assert report["modes"]["enriched"]["total"] == len(suite["queries"])
 
 
@@ -133,6 +136,7 @@ def test_ingest_prompts_do_not_leak_the_eval(suite):
         "CHUNK_CONTEXT",
         "QUERY_LIFT",
         "SECTION_SUMMARY",
+        "MODEL_RANK",
     ):
         assert xd.forbidden_hits(getattr(prompts, name), subjects) == [], name
 

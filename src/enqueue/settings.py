@@ -69,6 +69,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # the search model. Off by default: it adds a model call to an otherwise instant
     # search. Chat always lifts, since an answer already waits on a model.
     "search_lift": ("ENQ_SEARCH_LIFT", "off", True),
+    # Whether /search has the search model re-order its top results
+    # (retrieve/model_rank.py). Off by default for the same reason as search_lift.
+    "search_model_rank": ("ENQ_SEARCH_MODEL_RANK", "off", True),
     # The vision model used to describe images at ingest (K.11). Separate from
     # the text model: most backends answer text and images with different models.
     "vision_model": ("ENQ_VISION_MODEL", config.VISION_MODEL, True),

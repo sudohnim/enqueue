@@ -219,6 +219,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `retrieve/lift.py` | Query lifting: the search model restates a search as 2-4 facet-style claims, each also searched against facets (dense similarity counts for the floor; never lexical). Cached in `derived_values` (scope `query_lift`). Chat always lifts; `/search` only with the `search_lift` setting (Settings > Features > Search, default off). Tests stub it via an autouse conftest fixture. |
+| `retrieve/model_rank.py` | Model re-ranking: the search model reads the top `WINDOW` (20) floor survivors (title, snippet, facets) and returns them best first; missing ids keep their fused order, a failure keeps the whole fused order. Cached in `derived_values` (scope `model_rank`) per query, candidate set and model. Opt-in via the `search_model_rank` setting (Settings > Features > Search, default off); runs after the R.9 cross-encoder when both are on. |
 | `retrieve/candidates.py` | `/search` rollup: dense + FTS5 keyword fused with RRF, plus trigram substring recall, a fuzzy short-field branch (titles, entities, annotations), and exact quoted-phrase pinning. One row per artifact. |
 
 ### Index
@@ -452,6 +453,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
+| `ENQ_SEARCH_MODEL_RANK` | `off` | The `search_model_rank` setting: the search model re-orders the top 20 results of `/search` (`retrieve/model_rank.py`). |
 | `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
 
 ### Where secrets live
@@ -757,8 +759,8 @@ A scoped chat does no retrieval: the artifact is the candidate set.
 
 `evals/cross_domain.yaml` holds 10 queries phrased in one field (software, teams, habits) whose target note is from another (a willow in a storm, a relay baton, mise en place), plus 5 lexical decoys that share the queries' words but not their idea.
 Each target must not contain its query's key words; `tests/test_eval_cross.py` enforces that, so the suite can only be passed on meaning.
-`enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` three times: `chunks` (chunks only), `enriched` (plus facets and entities) and `lifted` (plus query lifting). A query passes when its target ranks in the top 3.
-Facets, entities and lifts come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "entities": {artifact_id: [...]}, "lifts": {query_id: [...]}}`; facets and entities are stamped with the current ingest model on load so the staleness check keeps them; lifts are served from the fixture, so the eval never calls a model). `enq eval-cross --generate-facets` rewrites the whole fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
+`enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` four times: `chunks` (chunks only), `enriched` (plus facets and entities), `lifted` (plus query lifting) and `ranked` (plus model re-ranking). A query passes when its target ranks in the top 3.
+Facets, entities, lifts and ranking orders come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "entities": {artifact_id: [...]}, "lifts": {query_id: [...]}, "ranks": {query_id: [artifact ids, best first]}}`; facets and entities are stamped with the current ingest model on load so the staleness check keeps them; lifts and ranking orders are served from the fixture, so the eval never calls a model; `bin/check-eval-cross` fails if any layer scores below the one before it). `enq eval-cross --generate-facets` rewrites the whole fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
 Two targets are long: `pad_with` prepends main-corpus documents so the idea sits ~56,000 characters in, past the read limit, which only map-reduced ingestion can reach (`test_long_targets_put_their_idea_past_the_read_limit`).
 This suite is separate from the main 50-note eval on purpose: adding its notes there would shift the main baseline.
 

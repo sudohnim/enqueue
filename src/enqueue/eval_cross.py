@@ -261,23 +261,25 @@ class pointed_at_test_dir:
 
 
 def run(generate: bool = False) -> dict:
-    """Build the library, run all three modes, return the report.
+    """Build the library, run all four modes, return the report.
 
-    `generate=True` writes fresh facets and entities (ingest model) and lifts (search
-    model) and saves them as the fixture; otherwise the committed fixture is used
-    (absent or missing a section means none of it). Outside `generate`, lifting reads
-    only the fixture, so the eval never calls a model.
+    `generate=True` writes fresh facets and entities (ingest model), lifts and ranking
+    orders (search model) and saves them as the fixture; otherwise the committed
+    fixture is used (absent or missing a section means none of it). Outside
+    `generate`, lifting and ranking read only the fixture, so the eval never calls a
+    model.
     """
     from . import settings
     from .index.store import get_store
-    from .retrieve import lift
+    from .retrieve import lift, model_rank
 
     suite = load_suite()
     fixture: dict = {}
     if not generate and FACETS_PATH.exists():
         fixture = json.loads(FACETS_PATH.read_text(encoding="utf-8"))
-    fixture = {k: fixture.get(k, {}) for k in ("facets", "entities", "lifts")}
+    fixture = {k: fixture.get(k, {}) for k in ("facets", "entities", "lifts", "ranks")}
     real_lift = lift.lift
+    real_order = model_rank.order
     with pointed_at_test_dir():
         build(suite)
         chunks_only = run_queries(suite)
@@ -286,6 +288,7 @@ def run(generate: bool = False) -> dict:
                 "facets": generate_facets(suite),
                 "entities": generate_entities(suite),
                 "lifts": generate_lifts(suite),
+                "ranks": {},
             }
             FACETS_PATH.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
             get_store().upsert_facets()
@@ -296,20 +299,41 @@ def run(generate: bool = False) -> dict:
         enriched = run_queries(suite)
 
         by_query = {q["query"]: fixture["lifts"].get(q["id"], []) for q in suite["queries"]}
+        qid = {q["query"]: q["id"] for q in suite["queries"]}
         settings.update({"search_lift": "on"})
         lift.lift = lambda query: by_query.get(query, [])
         try:
             lifted = run_queries(suite)
+
+            # Model ranking: live with `generate` (recorded into the fixture), otherwise
+            # the fixture's order for that query, so the eval never calls a model.
+            def order(query: str, hits: list[dict]) -> list[dict]:
+                if generate:
+                    ranked = real_order(query, hits)
+                    fixture["ranks"][qid[query]] = [
+                        h["artifact_id"] for h in ranked[: model_rank.WINDOW]
+                    ]
+                    return ranked
+                return model_rank.apply_order(hits, fixture["ranks"].get(qid[query], []))
+
+            settings.update({"search_model_rank": "on"})
+            model_rank.order = order
+            ranked = run_queries(suite)
         finally:
             lift.lift = real_lift
+            model_rank.order = real_order
+        if generate:
+            FACETS_PATH.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
     return {
         "pass_rank": PASS_RANK,
         "facets_loaded": sum(len(v) for v in fixture["facets"].values()),
         "entities_loaded": sum(len(v) for v in fixture["entities"].values()),
         "lifts_loaded": sum(len(v) for v in fixture["lifts"].values()),
+        "ranks_loaded": len(fixture["ranks"]),
         "modes": {
             "chunks": {**score(chunks_only), "results": chunks_only},
             "enriched": {**score(enriched), "results": enriched},
             "lifted": {**score(lifted), "results": lifted},
+            "ranked": {**score(ranked), "results": ranked},
         },
     }

@@ -14,6 +14,7 @@ const SETTING_LABELS = {
 	llm_headers: "Extra headers",
 	auto_preview: "Resolve links when you save them",
 	search_lift: "Rewrite searches as ideas",
+	search_model_rank: "Let the model order results",
 	trash_days: "Days a deleted thing waits before it goes",
 };
 
@@ -458,10 +459,36 @@ function stagePreviewToggle(button) {
 	stageSetting("auto_preview", on ? "on" : "off");
 }
 
-function stageLiftToggle(button) {
+function stageSwitch(button, name) {
 	const on = button.getAttribute("aria-checked") !== "true";
 	button.setAttribute("aria-checked", String(on));
-	stageSetting("search_lift", on ? "on" : "off");
+	stageSetting(name, on ? "on" : "off");
+}
+
+// One on/off setting row under Features > Search: label, what the current state
+// means (or which env var pins it), and the switch.
+function searchSwitchRow(s, name, onText, offText) {
+	const on = ["on", "true", "1"].includes(String(s.value).toLowerCase());
+	return (
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">' +
+		esc(SETTING_LABELS[name]) +
+		"</span>" +
+		(s.locked
+			? '<div class="pinned">pinned by ' + esc(s.env_var) + "</div>"
+			: '<div class="aside">' + (on ? onText : offText) + "</div>") +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(on) +
+		'" aria-label="' +
+		esc(SETTING_LABELS[name]) +
+		'"' +
+		(s.locked ? ' disabled aria-disabled="true"' : "") +
+		" onclick=\"stageSwitch(this, '" +
+		name +
+		"')\"><span class=\"knob\"></span></button>" +
+		"</div></div>"
+	);
 }
 
 // Switching backend moves the model name with it when one is known. The
@@ -619,33 +646,26 @@ async function renderSettingsFeatures() {
 		' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
 		"</div></div></div>";
 
-	// Query lifting (retrieve/lift.py): one search-model call per new search, cached.
-	const sl = d.settings.search_lift;
-	const slOn = ["on", "true", "1"].includes(String(sl.value).toLowerCase());
+	// Both search-model stages are opt-in: each adds a model call to a new search
+	// (cached after), and chat already does both on its own.
 	html +=
 		'<div class="shelf">Search</div><div class="group">' +
-		'<div class="field"><div class="togglerow"><div>' +
-		'<span class="rowlabel">' +
-		esc(SETTING_LABELS.search_lift) +
-		"</span>" +
-		(sl.locked
-			? '<div class="pinned">pinned by ' + esc(sl.env_var) + "</div>"
-			: '<div class="aside">' +
-				(slOn
-					? "The search model restates each new search as general ideas, so notes " +
-						"from other fields can match. Adds a moment to a search the first time."
-					: "Searches match your words and meaning directly. Chat always " +
-						"rewrites questions as ideas.") +
-				"</div>") +
-		"</div>" +
-		'<button class="toggle" role="switch" aria-checked="' +
-		String(slOn) +
-		'" aria-label="' +
-		esc(SETTING_LABELS.search_lift) +
-		'"' +
-		(sl.locked ? ' disabled aria-disabled="true"' : "") +
-		' onclick="stageLiftToggle(this)"><span class="knob"></span></button>' +
-		"</div></div></div>";
+		searchSwitchRow(
+			d.settings.search_lift,
+			"search_lift",
+			"The search model restates each new search as general ideas, so notes " +
+				"from other fields can match. Adds a moment to a search the first time.",
+			"Searches match your words and meaning directly. Chat always " +
+				"rewrites questions as ideas.",
+		) +
+		searchSwitchRow(
+			d.settings.search_model_rank,
+			"search_model_rank",
+			"The search model reads the top results and puts the best answer first. " +
+				"Adds a moment to a search the first time.",
+			"Results are ordered by how closely they match your words and meaning.",
+		) +
+		"</div>";
 
 	html += settingsActionsBar();
 	return html;

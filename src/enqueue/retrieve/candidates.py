@@ -658,7 +658,7 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     """
     from .. import tags
 
-    from . import lift
+    from . import lift, model_rank
 
     free_text, tag_names = tags.parse_tags(q)
     tag_ids = tags.ids_with_all(tag_names) if tag_names else set()
@@ -684,14 +684,18 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         tagged = _apply_floor(query_text, tagged)
         ranked = tagged[:limit]
 
-    elif config.SEARCH_RERANK:
-        window = max(limit, _RERANK_WINDOW)
+    elif config.SEARCH_RERANK or model_rank.enabled():
+        window = max(limit, _RERANK_WINDOW, model_rank.WINDOW)
         hybrid = _hybrid_results(query_text, window, lifts)
         fuzzy = _fuzzy_hits(query_text, window) if _needs_fuzzy(hybrid) else []
         fused = _merge_fuzzy(hybrid, fuzzy, window)
-        # Floor before rerank so gibberish never spends the reranker.
+        # Floor before either reranker so gibberish never spends one.
         fused = _apply_floor(query_text, fused)
-        ranked = _rerank(query_text, fused)[:limit]
+        if config.SEARCH_RERANK:
+            fused = _rerank(query_text, fused)
+        if model_rank.enabled():
+            fused = model_rank.order(query_text, fused)
+        ranked = fused[:limit]
 
     else:
         hybrid = _hybrid_results(query_text, limit, lifts)
