@@ -58,6 +58,14 @@
     filteredWallView(title, r.items || [], "Nothing here carries that tag.");
   }
 
+  // A note's text usually opens with its own "# Title" heading, which the row already
+  // shows as its title.
+  function snippetWithoutTitle(h) {
+    const s = h.snippet || "";
+    const heading = "# " + (h.title || "");
+    return h.title && s.startsWith(heading) ? s.slice(heading.length).trim() : s;
+  }
+
   // The query whose results are on screen, so opening one can report which search
   // found it and at what rank.
   let lastQuery = "";
@@ -110,6 +118,7 @@
       " for &ldquo;" +
       esc(q) +
       "&rdquo;" +
+      (r.filters ? '<span class="filterlabel">&middot; ' + esc(r.filters) + "</span>" : "") +
       "</div>" +
       (r.hits.length
         ? r.hits
@@ -130,7 +139,7 @@
                 esc(h.title) +
                 "</div>" +
                 '<div class="excerpt">' +
-                esc(h.snippet) +
+                esc(snippetWithoutTitle(h)) +
                 "</div>" +
                 '<div class="meta">' +
                 h.score.toFixed(3) +

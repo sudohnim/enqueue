@@ -1277,3 +1277,8 @@ main {
 	background: var(--surface-3);
 	color: var(--text);
 }
+
+/* What a search understood as filters ("PDFs · saved last month"), after its count. */
+.filterlabel {
+	color: inherit;
+}

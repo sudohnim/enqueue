@@ -471,11 +471,11 @@ def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
 
 
 def _pin_exact(
-    exact: list[dict], results: list[dict], limit: int, tag_ids: set[str] | None = None
+    exact: list[dict], results: list[dict], limit: int, allowed: set[str] | None = None
 ) -> list[dict]:
-    """Put exact-phrase hits on top, deduped, honoring the tag filter."""
-    if tag_ids:
-        exact = [h for h in exact if h["artifact_id"] in tag_ids]
+    """Put exact-phrase hits on top, deduped, honoring the filter (None is no filter)."""
+    if allowed is not None:
+        exact = [h for h in exact if h["artifact_id"] in allowed]
     pinned = list(exact)
     seen = {h["artifact_id"] for h in pinned}
     for h in results:
@@ -666,28 +666,41 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     """
     from .. import tags
 
-    from . import lift, model_rank
+    from . import filters, lift, model_rank
 
     free_text, tag_names = tags.parse_tags(q)
-    tag_ids = tags.ids_with_all(tag_names) if tag_names else set()
-
     phrase = _quoted_phrase(free_text)
+    # Kind and time words ("pdf", "last month") become filters, never search text; a
+    # quoted phrase is taken literally.
+    found = filters.Filters(kinds=set())
+    if phrase is None:
+        free_text, found = filters.parse(free_text)
+
+    # The ids every filter allows, or None when there is no filter. An empty set means
+    # nothing qualifies, which is an empty result, never the whole library.
+    allowed: set[str] | None = None
+    if tag_names:
+        allowed = tags.ids_with_all(tag_names)
+    if found:
+        ids = filters.matching_ids(found)
+        allowed = ids if allowed is None else allowed & ids
+
     query_text = phrase if phrase is not None else free_text
     exact = _exact_phrase_hits(query_text, limit) if phrase is not None else []
 
-    # No text, no tags: the whole library, newest first (the vector store rejects empty queries).
-    if not free_text and not tag_ids:
+    # No text, no filter: the whole library, newest first (the vector store rejects empty queries).
+    if not free_text and allowed is None:
         return _all_results(limit)
 
-    if not free_text and tag_ids:
-        return _results_for_ids(tag_ids, limit)
+    if not free_text:
+        return _results_for_ids(allowed, limit)
 
     lifts = lift.lift(query_text) if phrase is None and lift.enabled_for_search() else []
 
-    if tag_ids:
-        # Filter a wider window so a tagged hit just past `limit` is not lost. No rerank here.
+    if allowed is not None:
+        # Filter a wider window so an allowed hit just past `limit` is not lost. No rerank here.
         tagged = [
-            h for h in _hybrid_results(query_text, limit * 5, lifts) if h["artifact_id"] in tag_ids
+            h for h in _hybrid_results(query_text, limit * 5, lifts) if h["artifact_id"] in allowed
         ]
         tagged = _apply_floor(query_text, tagged)
         ranked = tagged[:limit]
@@ -712,7 +725,7 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         ranked = _apply_floor(query_text, fused)
 
     if exact:
-        ranked = _pin_exact(exact, ranked, limit, tag_ids)
+        ranked = _pin_exact(exact, ranked, limit, allowed)
     return ranked
 
 
