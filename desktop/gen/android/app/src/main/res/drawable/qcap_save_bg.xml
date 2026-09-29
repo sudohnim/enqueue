@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Save: the violet primary button (purple-bold, r-lg). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/purple_bold" />
+    <corners android:radius="12dp" />
+</shape>

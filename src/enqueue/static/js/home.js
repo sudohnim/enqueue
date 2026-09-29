@@ -85,7 +85,7 @@ function wallBodyHtml() {
 	if (!wallKept.length && !wallFirst.length) {
 		return (
 			'<div class="state" style="padding: var(--sp-7) var(--sp-4); text-align: center;">' +
-			'<div class="shelf" style="margin-bottom: var(--sp-3)">Nothing kept yet</div>' +
+			'<div class="shelf" style="margin-bottom: var(--sp-3)">Nothing captured yet</div>' +
 			'<div class="aside">Press the + below to capture a note, a link, or a file.</div>' +
 			"</div>"
 		);
@@ -372,7 +372,7 @@ function renderPickerRows(box, list, onRun) {
 function openCustomPicker() {
 	const box = modalShell(
 		'<h2 id="pickTitle">Saved views</h2>' +
-			'<p class="aside">Re-runs live as your library grows. Ask the eye to organize, then keep any arrangement here.</p>' +
+			'<p class="aside">Re-runs live as your library grows. Ask the eye to organize, then save any arrangement here.</p>' +
 			'<div class="pickgroups" id="customPickerList"></div>' +
 			'<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>',
 		{ labelledBy: "pickTitle", backdrop: true },
@@ -479,7 +479,7 @@ function card(a, i) {
 				", " +
 				bits.join(", ") +
 				(unread ? ", not read yet" : "") +
-				(a.pinned ? ", kept" : ""),
+				(a.pinned ? ", pinned" : ""),
 		) +
 		'"' +
 		(i < 18 ? ' style="animation-delay:' + i * 22 + 'ms"' : "") +

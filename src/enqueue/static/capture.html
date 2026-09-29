@@ -169,7 +169,7 @@
 
   /* ------------------------------------------------------------------ title bar */
 
-  /* The header is the grab handle: the raven and "Keep something." centred as one
+  /* The header is the grab handle: the raven and "Capture your thoughts." centred as one
      group - the whole strip drags the window. Nothing in it may swallow a mousedown. */
   #bar {
     display: flex;
@@ -499,7 +499,7 @@
 <div id="card">
   <div id="bar">
     <img class="disc" src="/static/eye-frame.png" alt="" aria-hidden="true" draggable="false" />
-    <h1>Keep something<i>.</i></h1>
+    <h1>Capture your thoughts<i>.</i></h1>
   </div>
   <div id="fieldbox">
     <div
@@ -516,9 +516,9 @@
       <span class="label problem" id="status"></span>
     </span>
     <span class="hints" aria-hidden="true">
-      <span><kbd>↵</kbd>keep</span><span><kbd>⇧↵</kbd>new line</span><span><kbd>esc</kbd>close</span>
+      <span><kbd>↵</kbd>save</span><span><kbd>⇧↵</kbd>new line</span><span><kbd>esc</kbd>close</span>
     </span>
-    <button id="keep" type="button">Keep</button>
+    <button id="keep" type="button">Save</button>
   </div>
 </div>
 
@@ -745,12 +745,12 @@
   }
 
   /// The "kept" beat (C.3c/K.5): a brief confirmation before the overlay goes
-  /// away. The status reads "Kept.", the card border goes lavender, and the
+  /// away. The status reads "Saved.", the card border goes lavender, and the
   /// brand disc settles once - one calm pulse - for
   /// 260ms, then everything resets so the next summon starts clean. Reduced
   /// motion skips the flash and the pulse and dismisses at once.
   async function keptBeat() {
-    say("Kept.");
+    say("Saved.");
     card.style.borderColor = "var(--purple-bold)";
     disc.classList.add("settle");
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -861,7 +861,7 @@
     if (!text) return;
 
     busy(true);
-    say("Keeping");
+    say("Saving");
     try {
       const split = splitLink(text);
       if (split) {
@@ -904,7 +904,7 @@
     } catch (err) {
       // The text stays. Losing what someone just typed because a background
       // process is down is the one failure this whole surface exists to avoid.
-      say("Not kept: " + err.message, true);
+      say("Couldn't save: " + err.message, true);
     } finally {
       busy(false);
     }
@@ -953,7 +953,7 @@
 
     event.preventDefault();
     busy(true);
-    say("Keeping");
+    say("Saving");
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
       await keepFiles(
@@ -977,7 +977,7 @@
       if (invoke) invoke("capture_dismiss").catch(() => {});
       card.classList.remove("flying");
     } catch (err) {
-      say("Not kept: " + err.message, true);
+      say("Couldn't save: " + err.message, true);
     } finally {
       busy(false);
     }
@@ -1025,7 +1025,7 @@
     if (!files.length) return;
 
     busy(true);
-    say("Keeping");
+    say("Saving");
     try {
       await keepFiles(files);
       busy(false);
@@ -1036,7 +1036,7 @@
       if (invoke) invoke("capture_dismiss").catch(() => {});
       card.classList.remove("flying");
     } catch (err) {
-      say("Not kept: " + err.message, true);
+      say("Couldn't save: " + err.message, true);
     } finally {
       busy(false);
     }

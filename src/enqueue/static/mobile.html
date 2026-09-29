@@ -1391,9 +1391,10 @@
   }
 
   /* Quick capture: a bottom sheet over the dimmed library, the phone's version
-     of the desktop overlay (raven + "Keep something.", a white field, Photo and
-     Camera beside Keep). It rides the visual viewport so the on-screen keyboard
-     never covers it. Also the target of the launcher long-press shortcut. */
+     of the desktop overlay (raven + "Capture your thoughts.", a white field, Photo and
+     Camera beside Save). It rides the visual viewport so the on-screen keyboard
+     never covers it. The launcher long-press has a native twin
+     (QuickCaptureActivity, res/layout/activity_quick_capture.xml); keep them alike. */
   .qcap {
     position: fixed;
     inset: 0;
@@ -1428,14 +1429,17 @@
     border-radius: 3px;
     background: var(--line);
   }
+  /* The raven above the heading, both centred, the same as the launcher popup. */
   .qcap-head {
     display: flex;
+    flex-direction: column;
     align-items: center;
+    text-align: center;
   }
   .qcap-raven {
-    width: 46px;
+    width: 56px;
     height: auto;
-    margin: -4px -2px -6px -6px;
+    margin: -6px 0 -4px;
   }
   .qcap-head h2 {
     margin: 0;
@@ -2254,7 +2258,7 @@
     <div class="lib-date" id="lib_date"></div>
     <h1 id="lib_greeting">Library</h1>
   </header>
-  <input id="search" type="search" placeholder="Find anything you kept" autocomplete="off" />
+  <input id="search" type="search" placeholder="Find anything you saved" autocomplete="off" />
   <div class="viewchips" id="viewchips" role="tablist">
     <button class="chip" data-mode="touched" aria-pressed="true">Last touch</button>
     <button class="chip" data-mode="type" aria-pressed="false">Type</button>
@@ -2369,7 +2373,7 @@
     <div class="qcap-grab" aria-hidden="true"></div>
     <div class="qcap-head">
       <img class="qcap-raven" src="raven-mark.png" alt="" aria-hidden="true" />
-      <h2 id="qcap_title">Keep something<span class="greet-mark">.</span></h2>
+      <h2 id="qcap_title">Capture your thoughts<span class="greet-mark">.</span></h2>
     </div>
     <textarea
       id="qcap_field"
@@ -2386,7 +2390,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z" /><circle cx="12" cy="13" r="3.2" /></svg>
         Camera
       </button>
-      <button class="qcap-keep" id="qcap_keep" type="button">Keep</button>
+      <button class="qcap-keep" id="qcap_keep" type="button">Save</button>
     </div>
     <div class="qcap-status" id="qcap_status" role="status"></div>
   </div>
@@ -4785,12 +4789,9 @@
   }
 
   // ---- Quick capture sheet ---------------------------------------------------
-  // One capture surface for the pill's "Note" and for the launcher shortcut
-  // (long-press the app icon -> "Quick capture"). In quick mode the app was opened
-  // just to capture, so keeping or dismissing hands the phone back to wherever the
-  // person was (MainActivity.finishQuickCapture moves the task to the back), the
-  // way the desktop overlay disappears after a keep.
-  let qcapQuick = false;
+  // The pill's "Note". The launcher long-press has its own native popup
+  // (QuickCaptureActivity), whose captures reach the library through
+  // drainQuickInbox below.
   let qcapBusy = false;
   function quickCaptureOpen() {
     const el = document.getElementById("qcap");
@@ -4809,11 +4810,10 @@
     window.visualViewport.addEventListener("resize", qcapFitKeyboard);
     window.visualViewport.addEventListener("scroll", qcapFitKeyboard);
   }
-  function openQuickCapture(opts) {
+  function openQuickCapture() {
     const el = document.getElementById("qcap");
     const field = document.getElementById("qcap_field");
     if (!el || !field) return;
-    qcapQuick = !!(opts && opts.quick);
     el.classList.remove("leaving");
     document.getElementById("qcap_status").textContent = "";
     if (!quickCaptureOpen()) history.pushState({ v: "qcap" }, "");
@@ -4821,13 +4821,9 @@
     qcapFitKeyboard();
     field.focus();
   }
-  // Close the sheet. `handBack` is set when the capture came from the launcher
-  // shortcut and should return the person to the app they were in.
-  function closeQuickCapture(handBack) {
+  function closeQuickCapture() {
     const el = document.getElementById("qcap");
     if (!el || el.hidden) return;
-    const quick = qcapQuick;
-    qcapQuick = false;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.classList.add("leaving");
     setTimeout(
@@ -4839,12 +4835,6 @@
     );
     document.getElementById("qcap_field").blur();
     if (history.state && history.state.v === "qcap") history.back();
-    if (quick && handBack !== false) finishQuickCaptureTask(0);
-  }
-  function finishQuickCaptureTask(delay) {
-    const bridge = window.EnqueueAndroid;
-    if (!bridge || typeof bridge.finishQuickCapture !== "function") return;
-    setTimeout(() => bridge.finishQuickCapture(), delay);
   }
   async function keepQuickCapture() {
     const field = document.getElementById("qcap_field");
@@ -4861,13 +4851,10 @@
     try {
       await invoke("mobile_capture", { text });
       field.value = "";
-      const quick = qcapQuick;
-      closeQuickCapture(false);
+      closeQuickCapture();
       captureFlight();
       show("library");
       renderLibrary();
-      // From the launcher shortcut: let the raven land, then hand the phone back.
-      if (quick) finishQuickCaptureTask(1700);
     } catch (e) {
       status.textContent = errString(e);
     } finally {
@@ -4878,25 +4865,50 @@
   document.getElementById("qcap_keep").addEventListener("click", keepQuickCapture);
   document.getElementById("qcap_scrim").addEventListener("click", () => closeQuickCapture());
   document.getElementById("qcap_photo").addEventListener("click", () => {
-    closeQuickCapture(false);
+    closeQuickCapture();
     doCaptureImage();
   });
   document.getElementById("qcap_camera").addEventListener("click", () => {
-    closeQuickCapture(false);
+    closeQuickCapture();
     doCaptureCamera();
   });
-  // The launcher shortcut. MainActivity records the launch action and exposes it
-  // over the EnqueueAndroid bridge; a cold start asks once at boot, and a warm start
-  // (app already running) is pushed in through window.__enqLaunchAction.
-  window.__enqLaunchAction = (action) => {
-    if (action === "quick-capture") openQuickCapture({ quick: true });
-  };
-  (() => {
+  // The launcher popup (QuickCaptureActivity) cannot reach the library, so it
+  // leaves each capture in a small inbox (QuickCaptureInbox.kt). File them in with
+  // mobile_capture, the same path as the sheet, and acknowledge each only after it is
+  // saved, so none is lost or filed twice. Runs at boot, whenever the app comes to the
+  // front, and right after a save while the app is running (MainActivity pokes it).
+  let qinboxBusy = false;
+  async function drainQuickInbox() {
     const bridge = window.EnqueueAndroid;
-    if (!bridge || typeof bridge.takeLaunchAction !== "function") return;
-    const action = bridge.takeLaunchAction();
-    if (action) window.__enqLaunchAction(action);
-  })();
+    if (qinboxBusy || !bridge || typeof bridge.quickCaptures !== "function") return;
+    qinboxBusy = true;
+    let filed = 0;
+    try {
+      const items = JSON.parse(bridge.quickCaptures() || "[]");
+      for (const item of items) {
+        if (item.text.trim()) {
+          try {
+            await invoke("mobile_capture", { text: item.text });
+          } catch (e) {
+            console.warn("quick capture not filed yet:", errString(e));
+            break; // keep it (and the rest, in order) for the next try
+          }
+          filed++;
+        }
+        bridge.ackQuickCapture(item.id);
+      }
+    } catch (e) {
+      console.warn("quick capture inbox:", e);
+    } finally {
+      qinboxBusy = false;
+    }
+    if (filed) renderLibrary();
+  }
+  window.__enqDrainQuickInbox = drainQuickInbox;
+  drainQuickInbox();
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) drainQuickInbox();
+  });
 
   // Link capture handlers (MOBFIX.4)
   document.getElementById("link_cancel").addEventListener("click", () => {
@@ -6475,7 +6487,7 @@ return;
     if (!items.length) {
       const p = document.createElement("div");
       p.style.cssText = "color:var(--text-mute);padding:40px 0;text-align:center";
-      p.textContent = "The vault is empty. Lock an artifact from its page to keep it here.";
+      p.textContent = "The vault is empty. Lock an artifact from its page to store it here.";
       scroll.appendChild(p);
       return true;
     }

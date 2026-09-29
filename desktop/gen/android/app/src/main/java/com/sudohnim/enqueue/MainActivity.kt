@@ -12,13 +12,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.sudohnim.enqueue.CameraHelper
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : TauriActivity() {
   companion object {
-    /** The launcher shortcut's action (res/xml/shortcuts.xml). */
-    const val ACTION_QUICK_CAPTURE = "com.sudohnim.enqueue.QUICK_CAPTURE"
-
     private var uiHandler: Handler? = null
     private var currentActivity: MainActivity? = null
     // Store the MainActivity class for JNI access
@@ -37,6 +33,21 @@ class MainActivity : TauriActivity() {
     @JvmStatic
     fun getCurrentActivity(): MainActivity {
       return currentActivity ?: throw IllegalStateException("Activity not initialized")
+    }
+
+    /**
+     * The launcher popup just saved a capture: if the app is running, have the page file
+     * it into the library now rather than the next time it comes to the front.
+     */
+    fun drainQuickCaptures() {
+      val activity = currentActivity?.takeIf { !it.isDestroyed } ?: return
+      val wv = activity.webView ?: return
+      wv.post {
+        wv.evaluateJavascript(
+          "window.__enqDrainQuickInbox && window.__enqDrainQuickInbox()",
+          null,
+        )
+      }
     }
   }
 
@@ -83,26 +94,16 @@ class MainActivity : TauriActivity() {
     return future
   }
 
-  // ---- Quick capture from the launcher shortcut --------------------------------
-  // The shortcut starts (or re-fronts) this activity with ACTION_QUICK_CAPTURE. The
-  // page learns about it two ways, whichever lands first: it PULLS the pending
-  // action at boot over the EnqueueAndroid bridge, and we PUSH it in with
-  // evaluateJavascript once the page's handler exists (a warm start, or a cold start
-  // where the bridge call ran before the page was ready). `pendingLaunch` is taken
-  // with getAndSet so the sheet never opens twice for one launch.
-  private val pendingLaunch = AtomicReference<String?>(null)
   private var webView: WebView? = null
 
   inner class EnqueueBridge {
-    /** The pending launch action ("quick-capture"), consumed on read; "" if none. */
+    /** Captures the launcher popup saved, oldest first: a JSON array of {id, text}. */
     @JavascriptInterface
-    fun takeLaunchAction(): String = pendingLaunch.getAndSet(null) ?: ""
+    fun quickCaptures(): String = QuickCaptureInbox.list(this@MainActivity)
 
-    /** The quick capture is done: hand the phone back to whatever was in front. */
+    /** The page filed this popup capture into the library: forget it. */
     @JavascriptInterface
-    fun finishQuickCapture() {
-      runOnUiThread { moveTaskToBack(true) }
-    }
+    fun ackQuickCapture(id: String) = QuickCaptureInbox.ack(this@MainActivity, id)
 
     /**
      * The page's ground drifts with the time of day (js/ground.js). The status and
@@ -120,40 +121,9 @@ class MainActivity : TauriActivity() {
     super.onWebViewCreate(webView)
     this.webView = webView
     webView.addJavascriptInterface(EnqueueBridge(), "EnqueueAndroid")
-    pushLaunchAction(0)
-  }
-
-  private fun recordLaunch(intent: Intent?) {
-    if (intent?.action == ACTION_QUICK_CAPTURE) pendingLaunch.set("quick-capture")
-  }
-
-  // Deliver a pending action into the page, retrying until the page's handler is
-  // installed (about 10s at most, then the boot-time pull is the only path left).
-  private fun pushLaunchAction(attempt: Int) {
-    val wv = webView ?: return
-    val action = pendingLaunch.getAndSet(null) ?: return
-    wv.post {
-      wv.evaluateJavascript(
-        "(function(){if(typeof window.__enqLaunchAction!=='function')return 'wait';" +
-          "window.__enqLaunchAction('" + action + "');return 'ok';})()",
-      ) { result ->
-        if (result?.contains("wait") == true) {
-          pendingLaunch.compareAndSet(null, action)
-          if (attempt < 40) wv.postDelayed({ pushLaunchAction(attempt + 1) }, 250)
-        }
-      }
-    }
-  }
-
-  override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    setIntent(intent)
-    recordLaunch(intent)
-    pushLaunchAction(0)
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    recordLaunch(intent)
     enableEdgeToEdge()
     WebView.setWebContentsDebuggingEnabled(true)
     super.onCreate(savedInstanceState)

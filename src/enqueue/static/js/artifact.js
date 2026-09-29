@@ -521,9 +521,9 @@
       '<button class="title-action' +
       (a.pinned ? " lit" : "") +
       '" aria-label="' +
-      (a.pinned ? "Kept" : "Keep") +
+      (a.pinned ? "Pinned" : "Pin") +
       '" title="' +
-      (a.pinned ? "Kept" : "Keep at the front") +
+      (a.pinned ? "Pinned" : "Pin to the front") +
       '" onclick="pinArtifact(\'' +
       a.id +
       "'," +
@@ -602,7 +602,7 @@
         '<span class="meta" style="margin-left:auto" id="vers" data-n="' +
         n +
         '">' +
-        (n > 1 ? n + " drafts kept" : "") +
+        (n > 1 ? n + " drafts saved" : "") +
         "</span></div></div>";
       ctx = {
         id,
@@ -1799,9 +1799,9 @@
     const state = document.getElementById("state");
     if (state) {
       state.className = "saved";
-      state.textContent = "kept";
+      state.textContent = "saved";
       setTimeout(() => {
-        if (state.textContent === "kept") state.textContent = "";
+        if (state.textContent === "saved") state.textContent = "";
       }, 2200);
     }
   }
@@ -1874,7 +1874,7 @@
           const n = Number(v.dataset.n || 0) + 1;
           v.dataset.n = n;
           // "3 versions" is a row count. What it means is that nothing you wrote is gone.
-          v.textContent = n > 1 ? n + " drafts kept" : "";
+          v.textContent = n > 1 ? n + " drafts saved" : "";
         }
       } else {
         if (!text.trim()) return;
@@ -1893,7 +1893,7 @@
 
     ctx.saved = text;
     state.className = "saved";
-    state.textContent = ctx.kind === "note" ? "kept" : "noted";
+    state.textContent = ctx.kind === "note" ? "saved" : "noted";
 
     // The rule under the editor fills once in the artifact's own colour. It reads as
     // the page acknowledging the words rather than a toast arriving from elsewhere.

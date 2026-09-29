@@ -681,7 +681,7 @@ async function renderSettingsStorage() {
 		// Q.6: the second sentence reveals portability - the data is the
 		// user's, in a standard format, at a known path (SQLite is the source
 		// of truth per db.py / config.DB_PATH).
-		'<div class="callout note"><p>Nothing you keep here leaves this machine. ' +
+		'<div class="callout note"><p>Nothing you save here leaves this machine. ' +
 		"Everything you capture lives in one SQLite file you can back up, move, or read with any tool.</p></div>" +
 		'<div class="group"><div class="field">' +
 		'<span class="rowlabel">Everything lives at</span>' +
@@ -1738,7 +1738,7 @@ async function openVault() {
 	// Reuse the wall's card() so vaulted artifacts look identical to the main page.
 	const grid = items.length
 		? '<div class="wall">' + items.map((a, i) => card(a, i)).join("") + "</div>"
-		: '<p class="state state-center">The vault is empty. Lock an artifact from its page to keep it here.</p>';
+		: '<p class="state state-center">The vault is empty. Lock an artifact from its page to store it here.</p>';
 	// Full-bleed like the wall (NOT wrapped in the narrow .pagecol used by the
 	// reader/settings) so the header spans and the card grid gets the wall's full
 	// width + column count. No "Lock" button: leaving the vault auto-locks it.

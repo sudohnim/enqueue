@@ -30,6 +30,20 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- The launcher long-press popup (res/xml/shortcuts.xml): translucent, in its own
+             task and out of Recents, so it floats over the app in front and saving or
+             dismissing lands the person back there. -->
+        <activity
+            android:name=".QuickCaptureActivity"
+            android:theme="@style/Theme.enqueue.QuickCapture"
+            android:taskAffinity="com.sudohnim.enqueue.quickcapture"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
+            android:exported="true" />
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"
