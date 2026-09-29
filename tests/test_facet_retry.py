@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from enqueue import db, notes
 from enqueue.ingest import facets as facets_mod
 from enqueue.ingest import queue as q
+from enqueue.ingest.source import Owed
 
 
 def _retry_row(aid):
@@ -26,7 +27,9 @@ def test_transient_failure_owes_a_retry_and_reads_as_generating(store, quiet_que
     aid = notes.create(body="a body long enough to earn a summary from the model")["artifact"]["id"]
 
     monkeypatch.setattr(
-        facets_mod, "generate_for_artifact", lambda conn, _id: (0, "APIError: 500 over capacity")
+        facets_mod,
+        "generate_for_artifact",
+        lambda conn, _id: (0, Owed("APIError: 500 over capacity")),
     )
     assert q._facet_artifact(aid) == 0
     row = _retry_row(aid)
@@ -40,7 +43,9 @@ def test_transient_failure_owes_a_retry_and_reads_as_generating(store, quiet_que
 
 def test_success_clears_the_retry(store, quiet_queue, monkeypatch):
     aid = notes.create(body="another body worth summarizing at some length here")["artifact"]["id"]
-    monkeypatch.setattr(facets_mod, "generate_for_artifact", lambda conn, _id: (0, "APIError: 429"))
+    monkeypatch.setattr(
+        facets_mod, "generate_for_artifact", lambda conn, _id: (0, Owed("APIError: 429"))
+    )
     q._facet_artifact(aid)
     assert _retry_row(aid) is not None
 
@@ -217,3 +222,15 @@ def test_edit_survives_regenerate_and_annotations_feed_generation(store, quiet_q
         machine in facets and facets[machine]["statement"] == "I rewrote this machine facet myself."
     )
     assert facets[machine]["edited"] == 1
+
+
+def test_a_refused_request_is_not_retried(store, quiet_queue, monkeypatch):
+    """A 400 fails the same way every time: retrying it re-sent the request forever."""
+    aid = notes.create(body="a body the provider refuses to summarize, every time")["artifact"][
+        "id"
+    ]
+    monkeypatch.setattr(
+        facets_mod, "generate_for_artifact", lambda conn, _id: (0, "BadRequestError: 400")
+    )
+    assert q._facet_artifact(aid) == 0
+    assert _retry_row(aid) is None

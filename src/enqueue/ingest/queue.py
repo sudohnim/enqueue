@@ -447,12 +447,14 @@ def _facet_artifact(artifact_id: str) -> int:
         if facets_mod.is_current(conn, artifact_id):
             return 0  # written by this model from this body already: no call to spend
         count, error = facets_mod.generate_for_artifact(conn, artifact_id)
-        if error and error != "no facet cleared the quality gate":
+        if isinstance(error, Owed):
             # A transient model failure (rate limit, 500, network): keep the summary
             # owed and retry it in the background with escalating backoff.
             _record_facet_retry(conn, artifact_id, error)
         else:
-            # Success, or a content-skip that a retry would not change: stop owing.
+            # Success, or a failure a retry would not change (a 400 the provider refuses
+            # every time, a bad key, a content-skip): stop owing. Retrying one of these
+            # re-sent the same doomed request forever.
             _clear_facet_retry(conn, artifact_id)
             if error == "no facet cleared the quality gate":
                 # The model ran and produced nothing worth keeping. Mark it skipped so it
