@@ -1044,6 +1044,7 @@ Anything that replaces rows under new ids must drop the old entries while the ol
 Before that fix every reprocess, edit and retry left a full set of orphans behind (one library reached 52,891 orphaned chunk rows for 1,071 chunks), and orphans still take slots in a search's shortlist.
 Regenerated facets, entities and sections replace their rows too; `store.prune_orphans()` (via `queue.prune_index`) removes any entry whose row is gone, each time the ingest queue drains (the `Worker` `on_idle` hook) and once at engine startup.
 `enq index` rebuilds every layer from the tables and also restores entries that are missing.
+A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
 
 ### The title is prepended for indexing only
 

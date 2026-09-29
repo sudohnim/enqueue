@@ -579,6 +579,12 @@ def prune_index() -> None:
 _ingest = Worker("ingest", process, pre=_dequeue, on_idle=prune_index)
 
 
+def run_exclusive(fn, wait: bool = True, timeout: float | None = None):
+    """Run `fn` on the ingest worker between two artifacts: a full index rebuild or
+    prune must never race ingest for the database (SQLite has one writer)."""
+    return _ingest.run_exclusive(fn, wait=wait, timeout=timeout)
+
+
 def submit(artifact_id: str) -> None:
     """Queue an artifact for chunking and indexing. Returns immediately."""
     # I5.1 bookkeeping happens before the put: the counter must be incremented

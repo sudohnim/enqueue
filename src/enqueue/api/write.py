@@ -45,7 +45,9 @@ def generate_facets(req: FacetRequest) -> dict:
 def build_index() -> dict:
     # Rebuild synchronously through the lifecycle: search is blocked for the
     # duration and re-enabled only after the version is written.
-    return bootstrap.rebuild_now()
+    # On the ingest worker's thread, between two artifacts: a rebuild racing ingest
+    # for the database failed with "database is locked" and left search blocked.
+    return ingest_queue.run_exclusive(bootstrap.rebuild_now)
 
 
 @router.post("/reprocess")
