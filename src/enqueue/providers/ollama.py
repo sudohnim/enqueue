@@ -1,17 +1,4 @@
-"""The OpenAI-compatible adapter. Named for Ollama because that is what it points at
-by default, but nothing here is Ollama-specific: any endpoint speaking the same
-protocol works by setting three environment variables. See `config.LLM_MODEL`.
-
-Three things here are deliberate and easy to get wrong:
-
-1. The endpoint is 127.0.0.1, never localhost. This machine may run a second Ollama
-   in Docker bound to the IPv6 wildcard, and localhost resolves to IPv6 first.
-2. The instructor mode is JSON, passed explicitly. The default is TOOLS, which needs
-   function calling. MD_JSON and JSON require nothing of the endpoint beyond chat.
-3. The API key is resolved per client rather than at import, so a key stored in
-   Settings takes effect on the next question instead of the next restart. Ollama
-   ignores it; a hosted endpoint does not.
-"""
+"""The OpenAI-compatible adapter, for every backend. Gotchas: AGENTS.md "Provider layer"."""
 
 from __future__ import annotations
 
@@ -30,12 +17,7 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def _extra_headers() -> dict[str, str]:
-    """Headers the person configured, one `Name: value` per line.
-
-    OpenRouter wants an HTTP-Referer and an X-Title before it will attribute a call,
-    and every hosted endpoint has some variation on that. Without this each one is a
-    code change, which is how an adapter that was meant to be generic stops being it.
-    """
+    """The `llm_headers` setting, one `Name: value` per line. Lines without a colon are dropped."""
     from .. import settings
 
     raw = str(settings.get("llm_headers") or "")
@@ -43,8 +25,6 @@ def _extra_headers() -> dict[str, str]:
     for line in raw.splitlines():
         name, sep, value = line.partition(":")
         name, value = name.strip(), value.strip()
-        # A line with no colon is a typo, not a header. Silently sending it as one
-        # would produce a confusing rejection from the far end.
         if sep and name and value:
             headers[name] = value
     return headers
@@ -60,14 +40,7 @@ class OpenAICompatibleProvider:
 
     @property
     def _client(self):
-        """The instructor-wrapped client, built on first use.
-
-        Building it costs ~50 ms (an OpenAI + httpx client, and on macOS a Keychain
-        subprocess for the key), and many callers construct a provider only to read
-        `.model` - the search staleness checks do it on every query. Deferring the
-        build makes that read free. The key is still resolved once per provider, so
-        a key stored in Settings takes effect on the next provider, as before.
-        """
+        """The instructor client, built on first model call so reading `.model` stays free."""
         if self._instructor is None:
             self._instructor = instructor.from_openai(
                 OpenAI(
@@ -87,14 +60,7 @@ class OpenAICompatibleProvider:
         context: dict | None = None,
         max_retries: int | None = None,
     ) -> T:
-        # instructor >= 1.9 renamed validation_context to context. The keyword is what
-        # carries proper_nouns, artifact_text, and lens into the validators, so getting
-        # it wrong silently disables every context-dependent check rather than erroring.
-        # Many calls put the whole prompt in `system` and send an empty `user`
-        # (the router, the pivot planner, extract). Ollama accepts that; Gemini and
-        # other providers reject a request whose user contents are empty ("contents
-        # is not specified"). When there is no user turn, fold the system prompt into
-        # the user message so the request always carries content, on every backend.
+        # Some backends (Gemini) reject an empty user turn, so fold system into user.
         if user.strip():
             messages: list[ChatCompletionMessageParam] = [
                 {"role": "system", "content": system},
@@ -115,21 +81,13 @@ class OpenAICompatibleProvider:
                     messages=messages,
                 ),
             )
-        # This is the only boundary between somebody else's HTTP endpoint and the rest
-        # of the program, so it is the only place that knows enough to say what went
-        # wrong. Everything above it gets one exception type carrying one sentence.
         except Exception as exc:  # noqa: BLE001 - translated, not swallowed
             raise ProviderError(why(exc, self.base_url, self.model)) from exc
 
     def describe_image(self, image: bytes, mime: str) -> str:
-        """Describe an image in a few factual sentences, for the search index.
+        """A few factual sentences about an image, for the index. Plain client (free text).
 
-        The image travels as a base64 data URL inside an OpenAI vision message,
-        sent to the plain client rather than the instructor-wrapped one: this
-        step wants free text, not a schema. The model is the vision setting this
-        provider was built with, so the caller picks it via `get_vision_provider`.
-        A bare description that comes back empty is a failure like any other:
-        storing it would index a silent nothing.
+        An empty reply raises: indexing nothing would fail silently.
         """
         import base64
 
@@ -160,5 +118,5 @@ class OpenAICompatibleProvider:
         return text
 
 
-# The old name, kept so nothing importing it breaks. It was never Ollama-specific.
+# Old name, kept for imports.
 OllamaProvider = OpenAICompatibleProvider

@@ -1,34 +1,8 @@
-"""The sqlite-vec implementation of the VectorStore interface.
+"""sqlite-vec implementation of VectorStore: vec0 + FTS5 tables inside the library file.
 
-Everything Qdrant kept in a directory - vectors, sparse indices, payloads -
-lives here inside the main SQLite file, which is the whole point of Part 3:
-one file, exact recall (brute force), SQL joins instead of payload filters,
-and no single-process directory lock.
-
-The price is that brute-force search over 768-dim vectors is O(n) per query,
-which is what Phase 19's bake-off measures. The latency gate is real work.
-
-HARD RULE, inherited from the Qdrant backend: the index holds ids only. No
-text, no titles, no URLs. Text lives in SQLite and is joined back by id
-after retrieval. The vec0 tables carry chunk_id/facet_id plus the embedding;
-artifact_id, level, and trust are read from `chunks` and `facets` in the
-same database, in a second query kept in rank order.
-
-Two sqlite-vec constraints that shape the code:
-
-- A vec0 table needs the extension loaded on every connection that touches
-  it, so this store opens its own connections (never db.get_conn) and loads
-  sqlite_vec on each one. One connection per operation, which also makes the
-  store safe to call from the API thread and the ingest worker thread at
-  once.
-- vec0 has no INSERT OR REPLACE (a primary-key conflict errors), so an
-  "upsert" deletes the stale rows and inserts fresh ones in the same
-  transaction. The bulk rebuilds clear their collection first, exactly like
-  the Qdrant backend's reset-then-upsert.
-
-The SQL lives in literal strings at module level: one bundle per collection,
-values always bound with `?`. No statement is ever assembled from user
-input, so any text can be searched and only the `?` placeholders carry data.
+The index holds ids only; text is joined back from SQLite by id. Every connection
+loads the sqlite_vec extension, so the store opens its own (never db.get_conn).
+vec0 has no INSERT OR REPLACE, so an upsert is delete-then-insert in one transaction.
 """
 
 from __future__ import annotations
@@ -47,15 +21,10 @@ from .embed import embed, embed_one
 from .fusion import rrf_scored
 from .store import VectorStore
 
-# The embedding length the vec0 tables are built with. Equal to
-# config.EMBED_DIM (768, BAAI/bge-base-en-v1.5); a dimension change is a new
-# migration, so this stays a literal in both the migration and here.
+# Embedding length (config.EMBED_DIM). A change is a new migration.
 DIM = 768
 
-# Table DDL, one (drop, create) pair per index table. Shared by `ensure`
-# (create if missing) and `reset` (drop and recreate), so the shape of the
-# index tables is defined exactly once. Migration 0010 carries the same DDL
-# with IF NOT EXISTS; the two can never fight.
+# (drop, create) per index table, shared by `ensure` and `reset`. Migration 0010 has the same DDL.
 _DDL = {
     "vec_chunks": (
         "DROP TABLE IF EXISTS vec_chunks",
@@ -92,15 +61,14 @@ _DDL = {
     ),
 }
 
-# Which index tables make up each collection.
 _COLLECTION_TABLES = {
     "chunks": ("vec_chunks", "fts_chunks", "fts_chunks_tri"),
     "facets": ("vec_facets", "fts_facets"),
     "entities": ("vec_entities", "fts_entities"),
 }
 
-# Literal SQL per collection. The id column is selected as `id` so every
-# branch reads row["id"]; values are always bound, never interpolated.
+# Literal SQL per collection; values always bound, never interpolated.
+# bm25 weights map to every column, UNINDEXED included: (chunk_id, title, text) = (1, 10, 1).
 _SQL = {
     "chunks": {
         "select_all": (
@@ -169,46 +137,18 @@ _COUNT_SQL = {
     "fts_entities": "SELECT COUNT(*) FROM fts_entities",
 }
 
-# The text a chunk is embedded and indexed under. The title is prepended for
-# indexing only; the stored chunk text stays clean. Without this, a note
-# whose title is the only place a name appears is unfindable by that name
-# (measured in Part 1: the Epictetus note is the author's own paraphrase and
-# never contains the word "Epictetus").
+# Title is prepended for embedding only; stored chunk text stays clean.
 CHUNK_INDEX_TEXT = "{title}\n\n{text}"
 
-# The keyword branch's voice in the dense+keyword RRF fusion. RRF reads
-# ranks only, so the title-weighted bm25 (R.5's 10x title column) can only
-# matter through the keyword branch's ORDER. When dense and keyword rank the
-# same ids symmetrically the fused scores tie and rrf_scored falls back to
-# first-seen order, which is dense order. That is right when the keyword
-# branch is itself undecided, but a title match the keyword branch clearly
-# prefers must beat a body match. So on an RRF tie, let the keyword branch
-# override dense order only when it is confident: its best score must beat
-# the runner-up by at least this relative margin, or the tie keeps dense
-# order. 0.2 = the keyword winner must be 20% more confident.
+# On an RRF tie, the keyword leg reorders only if its best beats the runner-up by 20%.
 KEYWORD_MARGIN = 0.2
 
 
-# How each collection's rows land in its FTS table. The embed text and the
-# keyword columns can differ: a chunk embeds as "title\n\ntext" (the title is
-# the only place some names appear) but indexes title and text as separate
-# FTS columns, so bm25 can weight the title. Facets and entities have no
-# separate title, so their fts row is the same string they embed.
-#
-# Note on bm25 weights: FTS5 maps weights positionally to every column,
-# including UNINDEXED ones. `bm25(fts_chunks, 10.0, 1.0)` on a
-# (chunk_id, title, text) table would apply 10.0 to the unindexed chunk_id
-# (ignored) and 1.0 to the title - silently no weighting. The three-weight
-# form is the one that actually weights the title.
 def _chunk_entries(row) -> tuple[str, tuple[str, str]]:
-    """(embed_text, fts_row) for one chunk row, shared by rebuild and single-artifact index.
+    """(embed_text, (fts_title, fts_text)) for one chunk row.
 
-    The fts text column drops a leading heading that just restates the
-    artifact title ("# On the Writings of Hypatia"): with that heading in
-    the text too, FTS5 counts the title term in both columns and normalizes
-    by row length, so the title's bm25 weight cannot tell a short title from
-    a long one. The title column alone carries the term then. The embed text
-    keeps the heading - it is still the chunk's context for vectors.
+    A leading "# {title}" heading is dropped from fts_text so the title term is
+    counted only in the weighted title column.
     """
     title = row["title"] or ""
     text = row["text"] or ""
@@ -223,29 +163,13 @@ def _chunk_entries(row) -> tuple[str, tuple[str, str]]:
 
 
 def _fts_query(text: str) -> str:
-    """Make arbitrary user text a valid FTS5 prefix query.
-
-    Every whitespace-separated token is quoted, with embedded quotes doubled,
-    so operators (AND, OR, NOT, NEAR, *) and punctuation are treated as
-    literal terms instead of query syntax. Each token then gets a prefix
-    star *outside* the quotes, so a partial word matches ("hydr" finds
-    "hydroponics") while quoted terms stay literal. An empty string stays
-    empty, and the caller treats that as "match nothing".
-    """
+    """User text as a literal FTS5 prefix query: each token quoted, then `*`."""
     tokens = text.split()
     return " ".join('"' + token.replace('"', '""') + '"*' for token in tokens)
 
 
 def _trigram_query(text: str) -> str:
-    """Make arbitrary user text a trigram FTS5 recall query.
-
-    Trigram matching covers substrings unicode61 cannot see ("hopper"
-    inside "chopper"). Tokens shorter than three characters cannot form a
-    trigram, so they are dropped; an empty result means "no trigram branch"
-    and the caller skips it. Tokens are quoted like `_fts_query` so operators
-    stay literal, and OR-joined so any token matching is a recall hit (RRF
-    does the ranking).
-    """
+    """User text as an OR of quoted trigram tokens (3+ chars). Empty means skip."""
     tokens = [t for t in text.split() if len(t) >= 3]
     return " OR ".join('"' + token.replace('"', '""') + '"' for token in tokens)
 
@@ -257,8 +181,6 @@ class SqliteVecStore(VectorStore):
         """`on_progress(indexed, total)` is called every 500 rows of a rebuild."""
         self._on_progress = on_progress
 
-    # -- connections ------------------------------------------------------
-
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(config.DB_PATH, timeout=10)
         conn.row_factory = sqlite3.Row
@@ -267,8 +189,6 @@ class SqliteVecStore(VectorStore):
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
         return conn
-
-    # -- collections ------------------------------------------------------
 
     def _sql(self, name: str) -> dict:
         if name not in _SQL:
@@ -285,18 +205,7 @@ class SqliteVecStore(VectorStore):
         raise ValueError(f"unknown collection {name!r}")
 
     def ensure(self) -> None:
-        """Create the index tables if they do not exist.
-
-        Safe to call repeatedly. IF NOT EXISTS everywhere means this can also
-        run before alembic ever has: migration 0010 uses the same DDL, so the
-        two paths cannot fight.
-
-        A database indexed before the title-weight change has the old
-        two-column `fts_chunks` shape; recreate it so the title column and
-        its bm25 weight apply. The recreate only fires once (the next write
-        path after an upgrade), and every caller of `ensure` repopulates the
-        rows it clears, so no data is silently dropped.
-        """
+        """Create missing index tables. Recreates a pre-title-column `fts_chunks`."""
         conn = self._connect()
         try:
             for table in _DDL:
@@ -320,8 +229,6 @@ class SqliteVecStore(VectorStore):
         finally:
             conn.close()
 
-    # -- writing ----------------------------------------------------------
-
     def upsert_chunks(self, batch_size: int = 64) -> dict:
         return self._rebuild(self.CHUNKS, _chunk_entries, batch_size)
 
@@ -334,16 +241,9 @@ class SqliteVecStore(VectorStore):
         return self._rebuild(self.ENTITIES, lambda row: (row["fact"], (row["fact"],)), batch_size)
 
     def _rebuild(self, name: str, entries_of, batch_size: int) -> dict:
-        """Rebuild one collection from its source table, in place.
+        """Clear one collection, then embed and insert in batches, vec + fts per transaction.
 
-        Clear the collection, then embed and insert in batches of
-        `batch_size`. Each batch writes the vector table and the keyword
-        table in one transaction, so the two can never diverge mid-write.
-
-        `entries_of(row)` returns `(embed_text, fts_row)`: the embed text is
-        what gets embedded, and `fts_row` is the keyword-table columns after
-        the item id (a single string for facets and entities, `(title, text)`
-        for chunks).
+        `entries_of(row)` returns `(embed_text, fts_columns_after_id)`.
         """
         self.ensure()
         sql = self._sql(name)
@@ -385,14 +285,7 @@ class SqliteVecStore(VectorStore):
         return {"indexed": total, "collection": name}
 
     def index_artifact(self, artifact_id: str) -> int:
-        """Re-embed one artifact's chunks in place.
-
-        The full `upsert_chunks` pass clears the collection, which is right
-        for a rebuild and wrong for a save: it would drop the whole index
-        every time a note is edited. This replaces one artifact's rows and
-        leaves the rest alone. The queue re-chunks the artifact before
-        calling, so this reads the fresh chunk rows.
-        """
+        """Re-embed one artifact's chunks in place. The caller re-chunks first."""
         self.ensure()
         with self._connect() as conn:
             rows = conn.execute(
@@ -440,13 +333,7 @@ class SqliteVecStore(VectorStore):
         return len(entries)
 
     def index_facets_artifact(self, artifact_id: str) -> int:
-        """Re-embed one artifact's facets in place, like index_artifact for chunks.
-
-        The facet's statement is the text embedded (the same text upsert_facets
-        indexes). One artifact's facet rows are replaced; the rest of the facet
-        collection is untouched, so a capture can index its own facets without a
-        whole-collection rebuild. The caller generates the facet rows first.
-        """
+        """Re-embed one artifact's facets in place. The caller generates them first."""
         self.ensure()
         with self._connect() as conn:
             rows = conn.execute(
@@ -481,13 +368,7 @@ class SqliteVecStore(VectorStore):
         return len(entries)
 
     def index_entities_artifact(self, artifact_id: str) -> int:
-        """Re-embed one artifact's entity lines in place, like index_facets_artifact.
-
-        The enriched fact line is the text embedded (the same text upsert_entities
-        indexes). One artifact's entity rows are replaced; the rest of the entity
-        collection is untouched, so a capture can index its own entities without a
-        whole-collection rebuild. The caller generates the entity rows first.
-        """
+        """Re-embed one artifact's entity lines in place. The caller generates them first."""
         self.ensure()
         with self._connect() as conn:
             rows = conn.execute(
@@ -522,11 +403,7 @@ class SqliteVecStore(VectorStore):
         return len(entries)
 
     def drop_artifact(self, name: str, artifact_id: str) -> None:
-        """Remove every indexed row belonging to one artifact.
-
-        Both the vector and the keyword table for the collection lose the
-        artifact's ids in one transaction.
-        """
+        """Remove one artifact's rows from a collection's vec and fts tables."""
         self.ensure()
         with self._connect() as conn:
             if name == self.CHUNKS:
@@ -571,11 +448,7 @@ class SqliteVecStore(VectorStore):
                 raise ValueError(f"unknown collection {name!r}")
 
     def write_embed_version(self) -> None:
-        """Record which embedding version the index was built at.
-
-        Called only once both collections are rebuilt, so the stored version
-        never claims an index that is half updated.
-        """
+        """Record the embedding version. Call only after every collection is rebuilt."""
         self.ensure()
         with self._connect() as conn:
             conn.execute(
@@ -584,21 +457,8 @@ class SqliteVecStore(VectorStore):
                 (config.EMBED_VERSION,),
             )
 
-    # -- reading ----------------------------------------------------------
-
     def search_dense(self, name: str, text: str, limit: int = 30) -> list[dict]:
-        """Vector nearest-neighbour only, for ablations. Same hit shape as `search`.
-
-        The reported `score` is cosine similarity on an honest scale, not the
-        compressed `1/(1+d)` pseudo-value the dense leg used to report (Q.2b).
-        The vec0 tables store L2 distance, and the stored and query embeddings
-        are L2-normalized (bge-base via fastembed; pinned by a unit-norm test),
-        so the true cosine is `1 - d^2/2` - monotone in `distance`, meaning this
-        changes the reported number only, never the ranking, which still orders
-        by distance. Clamped to [0, 1]: exactly equal vectors score 1.0,
-        orthogonal vectors score 0.0, and two vectors more than a right angle
-        apart (d > sqrt(2)) score 0.0 rather than a negative similarity.
-        """
+        """Vector leg only. `score` is cosine similarity in [0, 1]."""
         conn = self._connect()
         try:
             return self._dense(conn, name, text, limit)
@@ -606,13 +466,7 @@ class SqliteVecStore(VectorStore):
             conn.close()
 
     def search_keyword(self, name: str, text: str, limit: int = 30) -> list[dict]:
-        """FTS5 BM25 only, public form. Same hit shape as `search`.
-
-        Public so callers (the relevance floor in `retrieve/candidates.py`)
-        can read raw per-leg hits without re-implementing the FTS5 query.
-        Tolerates a missing keyword table (upgraded DB or minimal test
-        corpus) by returning no hits rather than failing the search.
-        """
+        """FTS5 BM25 leg only."""
         conn = self._connect()
         try:
             return self._keyword(conn, name, text, limit)
@@ -620,68 +474,41 @@ class SqliteVecStore(VectorStore):
             conn.close()
 
     def search_trigram(self, name: str, text: str, limit: int = 30) -> list[dict]:
-        """FTS5 trigram only, public form. Same hit shape as `search`.
-
-        Tolerates a missing trigram table (an upgraded DB whose write path
-        has not yet run, or a collection that does not build one) by
-        returning no hits rather than failing the search.
-        """
+        """FTS5 trigram leg only (chunks only)."""
         conn = self._connect()
         try:
             return self._trigram(conn, name, text, limit)
         finally:
             conn.close()
 
-    # The three legs run on a caller-supplied connection, so one hybrid search
-    # opens one connection instead of one per leg. Opening a connection costs
-    # ~0.6 ms (schema load, WAL files, the sqlite-vec extension), which used to
-    # be a visible share of a search that opened a dozen of them.
+    # Legs take a caller's connection: one search opens one connection (~0.6 ms each).
+    # A missing table (upgraded DB before its first write, minimal test corpus) yields no hits.
 
     def _dense(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
-        """The dense leg; see `search_dense` for the score scale."""
         query = json.dumps(embed_one(text))
         try:
             rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
+            # Unit-norm vectors, L2 distance d: cosine = 1 - d^2/2 (Q.2b).
             ranked = [
                 (row["id"], max(0.0, min(1.0, 1.0 - (row["distance"] ** 2) / 2.0))) for row in rows
             ]
             return self._fetch_hits(conn, name, ranked)
         except OperationalError:
-            # The vec0 table does not exist yet (an upgraded DB whose write
-            # path has not yet run, or a minimal test corpus). The dense leg
-            # is unavailable, so return no hits rather than failing the search.
             return []
 
     def _keyword(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
-        """FTS5 BM25 only, for the fusion inside `search`."""
         query = _fts_query(text)
         if not query:
             return []
         try:
             rows = conn.execute(self._sql(name)["keyword"], (query, limit)).fetchall()
-            # bm25() returns negative values, lower is better; flip so hits
-            # carry a higher-is-better score like every other branch.
+            # bm25 is lower-is-better; flip it.
             ranked = [(row["id"], -row["raw"]) for row in rows]
             return self._fetch_hits(conn, name, ranked)
         except OperationalError:
-            # The keyword table does not exist yet (an upgraded DB whose
-            # write path has not yet run, or a minimal test corpus). Treat
-            # the leg as having no hits rather than failing the whole search.
             return []
 
     def _trigram(self, conn: sqlite3.Connection, name: str, text: str, limit: int) -> list[dict]:
-        """Trigram FTS5 recall branch: substrings unicode61 cannot see.
-
-        `_trigram_query` drops tokens shorter than three characters (they
-        cannot form a trigram), so a two-character query produces no query
-        here and the caller skips the branch entirely. Only chunks build a
-        trigram table; any other collection has no trigram leg.
-
-        A database upgraded to this version without a rebuild has no
-        `fts_chunks_tri` table yet (it is created by `ensure`, which only
-        the write path runs); treat that as "no trigram hits" rather than
-        failing the whole search.
-        """
         sql = self._sql(name).get("keyword_tri")
         query = _trigram_query(text)
         if not sql or not query:
@@ -694,12 +521,7 @@ class SqliteVecStore(VectorStore):
             return []
 
     def search(self, name: str, text: str, limit: int = 30, prefetch: int = 100) -> list[dict]:
-        """Hybrid retrieval: dense and keyword, fused with reciprocal rank fusion.
-
-        Each branch is searched with `prefetch` candidates, the same window
-        the Qdrant backend used, then the two ranked id lists are fused and
-        the top `limit` hits returned with their fused score.
-        """
+        """Dense + keyword fused with RRF, trigram as a recall net. Top `limit`."""
         return self.search_legs(name, text, limit=limit, prefetch=prefetch)["fused"]
 
     def search_legs(
@@ -723,7 +545,7 @@ class SqliteVecStore(VectorStore):
     def _fuse(
         self, name: str, dense: list[dict], keyword: list[dict], trigram: list[dict], limit: int
     ) -> list[dict]:
-        """RRF over the dense and keyword legs, with the trigram leg as a recall net."""
+        """RRF (k=60) over dense + keyword; trigram hits appended after with score 0."""
         id_col = self._id_col(name)
         dense_ids = [hit[id_col] for hit in dense]
         keyword_ids = [hit[id_col] for hit in keyword]
@@ -732,28 +554,13 @@ class SqliteVecStore(VectorStore):
         fused = rrf_scored(
             dense_ids,
             keyword_ids,
-            # k=60 is the canonical RRF constant (Cormack et al., SIGIR 2009).
-            # The old k=1 existed only to keep the fused score magnitude on the
-            # lens threshold's scale; that surface is gone (Phase M), so there
-            # is nothing left to calibrate against. Ranking is k-invariant
-            # within one call - this changes magnitudes, not order.
             k=60,
             limit=limit,
         )
-        # RRF reads ranks only, so the bm25 title weight (10x, R.5) can only
-        # act through the keyword ORDER. On an RRF tie rrf_scored keeps
-        # first-seen order, which is dense order. Let the keyword branch
-        # overturn that only when it is confident - its best score beats the
-        # runner-up by KEYWORD_MARGIN or more; a title match at 10x bm25 is
-        # confidently better than a body match, while two title matches of
-        # the same name ("On the Writings of Hypatia" vs "Teaching the Works
-        # of Hypatia of Alexandria") score within noise of each other and
-        # keep dense order, which is the semantic branch's call.
         by_id = {hit[id_col]: hit for hit in dense}
         by_id.update({hit[id_col]: hit for hit in keyword})
         ordered: list[tuple[Any, float]] = []
-        # rrf_scored sorts by (-score, first-seen), so equal-score items are
-        # contiguous; groupby folds them into tie runs.
+        # Equal RRF scores are contiguous; let a confident keyword winner lead its tie run.
         for _, group in groupby(fused, key=lambda entry: entry[1]):
             run = list(group)
             if len(run) > 1:
@@ -771,18 +578,6 @@ class SqliteVecStore(VectorStore):
                         ]
             ordered.extend(run)
 
-        # The trigram recall net: substrings unicode61 cannot see ("hopper"
-        # inside "chopper"). Fusing it into the RRF above would hand extra
-        # rank credit to body matches the title-only note lacks - the R.5
-        # title-weight test regresses (a2 beats a1) - and appending with the
-        # branch's bm25 score lets substring noise ("grow" inside "growing"
-        # matches half the corpus) outrank real hits where a caller re-sorts
-        # by score (the /search rollup does). So the trigram branch only
-        # ADDS hits the hybrid missed, appended after it with a zero score
-        # that sorts below every fused hit: it can never reorder the
-        # dense+keyword verdict, and only surfaces when the hybrid returned
-        # fewer than the limit. Only chunks have a trigram table, and only
-        # when the query has a token of at least three characters.
         if trigram:
             by_id.update({hit[id_col]: hit for hit in trigram})
             known = {item_id for item_id, _ in ordered}
@@ -798,12 +593,7 @@ class SqliteVecStore(VectorStore):
         ]
 
     def _fetch_hits(self, conn: sqlite3.Connection, name: str, ranked: list) -> list[dict]:
-        """Attach payload ids to ranked (id, score) pairs, preserving rank order.
-
-        The json_each IN pattern is the app's sanctioned way to bind an id
-        list; a source row that vanished after ranking is dropped rather than
-        served stale.
-        """
+        """Attach payload fields to ranked (id, score) pairs, in rank order. Vanished rows drop."""
         if not ranked:
             return []
         ids = json.dumps([item_id for item_id, _ in ranked])
@@ -855,12 +645,7 @@ class SqliteVecStore(VectorStore):
         return out
 
     def counts(self) -> dict:
-        """Row counts for all index tables.
-
-        Keyed by collection for the interface consumers (`chunks`, `facets`)
-        with the keyword tables alongside; a table that does not exist counts
-        as None, matching the Qdrant backend's "absent collection" shape.
-        """
+        """Row counts per index table; a missing table counts as None."""
         conn = self._connect()
         try:
 

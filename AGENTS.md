@@ -488,6 +488,12 @@ The adapter uses `instructor.Mode.JSON` for all endpoints.
 The old AGENTS.md specified different modes per adapter, but the code does not.
 See the questions section above.
 
+Adapter gotchas:
+
+- The API key is resolved per provider instance, not at import, so a key stored in Settings applies on the next question.
+- `llm_headers` is one `Name: value` per line; a line without a colon is dropped rather than sent.
+- A call with an empty `user` folds `system` into the user message, because Gemini and others reject an empty user turn.
+
 All model-call failures are caught in `OpenAICompatibleProvider.complete()` and translated to a `ProviderError` carrying one human-readable sentence.
 The translation walks the exception chain to find the most specific OpenAI exception type, because the useful exception is often below the one that was caught.
 
@@ -661,7 +667,50 @@ Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optional
 
 ### The relevance floor (Q.3, in progress)
 
-Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` shares the same `passes_relevance_floor` predicate so the answer path refuses honestly. Calibration (the two constants + the gray-zone judge) is the active work in `docs/PLAN.md` Phase Q.
+Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` applies the same `_floor_verdict` gate (Q.5 chunks, Q.10 facets/entities) so the answer path refuses honestly. Calibration (the two constants + the gray-zone judge) is the active work in `docs/PLAN.md` Phase Q.
+
+### Retrieval design notes
+
+These used to live as long comments in `retrieve/candidates.py`, `index/store_sqlite.py` and `chats.py`.
+
+**Relevance floor (Q.3 / Q.3b / Q.7).**
+One dense threshold cannot work: the eval showed the weakest real matches (cosine ~0.518) sit below the strongest gibberish neighbors (~0.668).
+So the floor has two bars on the true-cosine scale, `KEEP_ABOVE = 0.75` and `DROP_BELOW = 0.45`, and a gray zone between them decided by one batched model call.
+The bars are start values for the Phase Q.4 eval (all 42 real-match queries passing, Nothing-OK toward 8/8), not final answers.
+Lexical legs that bypass the floor: chunk FTS5 keyword (with prefix recall), fuzzy, exact phrase, and the FTS5 keyword branch of a facet or entity.
+The trigram leg is recall only, not lexical (Minh's decision): a 3-character overlap like "pie" in "pieces" is noise, and partial words are already covered by the keyword prefix query.
+A dense-only facet/entity hit is a semantic neighbor and faces the gate like a chunk (Q.7 fixed a leak where "pecan pie recipes" surfaced an unrelated note through an entity vector at 0.409).
+The gray-zone judge (`judge_gray_zone`) is fail-open (a raising or malformed call keeps what it did not clearly judge), is cached in `derived_values` (scope `gray_judge`) per (query, artifact_id, model_version), and is shown each item's facets because they state its subject better than one snippet.
+Floor survivors keep their order: the floor removes, it never reorders.
+
+**Dense score scale (Q.2b).**
+vec0 stores L2 distance over unit-norm embeddings, so cosine is `1 - d^2/2`, clamped to [0, 1].
+This changes the reported number only, never the ranking.
+
+**Fusion.**
+RRF uses the canonical k=60 (Phase M.5g; the old k=1 only matched the removed lens threshold).
+RRF reads ranks only, so the 10x bm25 title weight (R.5) acts through keyword order: on an RRF tie, the keyword leg reorders only when its best beats the runner-up by `KEYWORD_MARGIN` (20%).
+FTS5 bm25 weights map to every column including UNINDEXED ones, hence `bm25(fts_chunks, 1.0, 10.0, 1.0)` on `(chunk_id, title, text)`.
+The fts text drops a leading `# {title}` heading so the title term counts only in the title column.
+Trigram hits are appended after the fused list with score 0: fusing them regressed the R.5 title test, and substring noise ("grow" in "growing") would outrank real hits.
+
+**Fuzzy leg (R.7).**
+`FUZZY_BASE_SCORE = 0.02` sits between a single-leg rank-1 RRF hit (~0.016) and a dual-leg one (~0.033), so a typo match wins only when the hybrid was weak.
+It is a full Python scan of titles, entity names and current annotations, gated by `_needs_fuzzy` (PERF.1), and pruned by upper bounds on `SequenceMatcher.ratio`.
+
+**Recency (R.8).**
+A note touched today scores 1.5x, one from 180 days ago is unchanged; relevance still dominates.
+
+**Rerank (R.9).**
+The cross-encoder runs on CPU only: a second CoreML model in the process leaks contexts until the OS kills it (SIGKILL, "Context leak detected").
+
+**Staleness.**
+A facet or entity hit counts only while its `body_version` matches the artifact's latest `artifact_versions` row and its `model_version` matches the current SUMMARY model (not the chat model; keying it to the chat model once voided every facet on a chat-model swap).
+
+**Chat passages.**
+At most `CHUNKS_PER_ARTIFACT` chunks per note so one long note cannot take the whole `PASSAGES` budget (the "do I have notes on a president" case).
+A facet or entity hit pulls its artifact's opening chunk in, so the answer has literal text to stand on.
+A scoped chat does no retrieval: the artifact is the candidate set.
 
 ### Scope dial for chat
 
