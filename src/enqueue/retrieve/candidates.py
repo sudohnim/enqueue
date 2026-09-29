@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from .. import config, db
 from ..index.store import get_store
+from ..opens import usage_boost
 from ..providers.base import get_provider
 
 # R.7 fuzzy leg: min SequenceMatcher ratio for a typo match, and its score (RRF k=60 scale).
@@ -786,8 +787,9 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
         (json.dumps(sorted(best)),),
     ).fetchall()
     age = {row["id"]: _age_days(row["updated_at"]) for row in rows}
+    usage = usage_boost(conn, list(best))
     for aid, info in best.items():
-        info["score"] = _recency_score(info["score"], age.get(aid, 0.0))
+        info["score"] = _recency_score(info["score"], age.get(aid, 0.0)) * usage.get(aid, 1.0)
 
     ranked = sorted(best.items(), key=lambda kv: kv[1]["score"], reverse=True)[:limit]
 

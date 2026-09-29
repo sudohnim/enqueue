@@ -47,6 +47,7 @@ Ollama's adapter calls it out in a comment because the default is `TOOLS`, which
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
 A trust-update mechanism (promote on save, demote on eject) is a planned feature, not an implemented one.
 For now, trust is a flat constant and every facet contributes equally after the 0.5 weighting.
+Usage does feed ranking one level up, per artifact rather than per facet: see "Usage" under Retrieval design notes.
 
 4. **There is no Lumo. The cloud backend is OpenRouter.**
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
@@ -198,7 +199,7 @@ One line per file, describing its job.
 | `events.py` | The activity log: `emit()`/`recent()` over the persisted `events` table. Never raises. Backs the Settings Activity tab and the vault decoy. |
 | `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
-| `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
 | `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
 | `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
 
@@ -743,6 +744,11 @@ It is a full Python scan of titles, entity names and current annotations, gated 
 
 **Recency (R.8).**
 A note touched today scores 1.5x, one from 180 days ago is unchanged; relevance still dominates.
+
+**Usage.**
+`opens.usage_boost` multiplies a hit's fused score by `1 + 0.2 * use / (use + 3)`, where `use` is the decayed count (tau 90 days) of the artifact's opens (any source) and chat citations, plus 3 if it is pinned.
+It saturates below 1.2x and stays under the recency boost, so relevance still decides and one burst of use fades; it only reorders, never adds or floors a hit.
+The committed evals have no opens, so it cannot move them; `enq eval-real` is where to watch it.
 
 **Rerank (R.9).**
 The cross-encoder runs on CPU only: a second CoreML model in the process leaks contexts until the OS kills it (SIGKILL, "Context leak detected").
