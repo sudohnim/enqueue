@@ -156,6 +156,7 @@ def _drop_from_index(artifact_id: str) -> None:
         store.drop_artifact(store.CHUNKS, artifact_id)
         store.drop_artifact(store.FACETS, artifact_id)
         store.drop_artifact(store.ENTITIES, artifact_id)
+        store.drop_artifact(store.SECTIONS, artifact_id)
 
 
 def purge(artifact_id: str) -> dict:
@@ -189,12 +190,16 @@ def purge(artifact_id: str) -> dict:
             "annotations",
             "artifact_tags",
             "artifact_versions",
+            "related",
+            "opens",
+            "sections",
         ):
             column = "artifact_id"
             # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
             conn.execute(
                 f"DELETE FROM {table} WHERE {column} = ?", (artifact_id,)
             )  # table names are hardcoded tuple
+        conn.execute("DELETE FROM related WHERE related_id = ?", (artifact_id,))
         # A tag the purged artifact was the last user of has nothing left to
         # reference it; drop the orphan so the cloud never lists a dead tag.
         conn.execute(

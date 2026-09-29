@@ -1,4 +1,4 @@
-"""Entities: the proper names in a body, enriched with one line of world knowledge.
+"""Entities: the proper names in an artifact's text, enriched with one line of world knowledge.
 
 Pure embeddings, and even facets, miss a whole class of question. "Notes on
 presidents" never reaches a Roosevelt biography that never says "president":
@@ -26,9 +26,8 @@ import uuid
 
 from pydantic import BaseModel
 
-# The cost bound per artifact. Every name costs one enrichment call, so the
-# number of names is capped; the most prominent names come first, and the cap
-# keeps a dense text from turning one save into a batch job.
+# The cost bound per artifact. All names are enriched in one call, but a longer list
+# is a longer prompt and more lines to gate; the most prominent names come first.
 MAX_ENTITIES = 8
 
 _FACT_MIN_WORDS = 6
@@ -51,6 +50,57 @@ class _RawFact(BaseModel):
     fact: str
 
 
+class _RawNamedFact(BaseModel):
+    name: str
+    fact: str
+
+
+class _RawFactSet(BaseModel):
+    """Every name's line from one batched enrichment call."""
+
+    facts: list[_RawNamedFact]
+
+
+def _gate(entity: str, fact: str | None) -> str | None:
+    """The per-line quality bar: 6-30 words, a full sentence, and names the entity."""
+    fact = (fact or "").strip()
+    if not fact:
+        return None
+    if not (_FACT_MIN_WORDS <= len(fact.split()) <= _FACT_MAX_WORDS):
+        return None
+    if not fact.rstrip().endswith("."):
+        return None
+    # The line must name the entity, or it cannot bridge the vocabulary gap.
+    if entity.lower() not in fact.lower():
+        return None
+    return fact
+
+
+def _enrich_all(provider, names: list[str]) -> dict[str, str | None]:
+    """One world-knowledge line per name, from one batched call.
+
+    Each line is gated on its own; a name the reply leaves out gets None. If the
+    batched call itself fails, fall back to one call per name so a single bad
+    response cannot lose every entity.
+    """
+    from ..prompts import ENTITY_ENRICH_BATCH
+
+    try:
+        raw = provider.complete(
+            system=ENTITY_ENRICH_BATCH,
+            user="Entities:\n" + "\n".join(names),
+            response_model=_RawFactSet,
+        )
+    except Exception as exc:  # noqa: BLE001 - classified just below
+        from ..providers.base import is_transient
+
+        if is_transient(exc):
+            raise  # a rate limit would fail every per-name call too; retry later
+        return {name: _enrich_one(provider, name) for name in names}
+    replied = {f.name.strip().lower(): f.fact for f in raw.facts}
+    return {name: _gate(name, replied.get(name.lower())) for name in names}
+
+
 def _enrich_one(provider, entity: str) -> str | None:
     """One world-knowledge line for one entity, or None when it cannot be written.
 
@@ -65,21 +115,37 @@ def _enrich_one(provider, entity: str) -> str | None:
             user=f"Entity:\n{entity}",
             response_model=_RawFact,
         )
-    except Exception:  # noqa: BLE001 - one bad entity never fails the artifact
+    except Exception as exc:  # noqa: BLE001 - one bad entity never fails the artifact
+        from ..providers.base import is_transient
+
+        if is_transient(exc):
+            raise  # not a bad entity: the model is unavailable, so retry the artifact
         return None
 
-    fact = (raw.fact or "").strip()
-    if not fact:
-        return None
-    words = fact.split()
-    if not (_FACT_MIN_WORDS <= len(words) <= _FACT_MAX_WORDS):
-        return None
-    if not fact.rstrip().endswith("."):
-        return None
-    # The line must name the entity, or it cannot bridge the vocabulary gap.
-    if entity.lower() not in fact.lower():
-        return None
-    return fact
+    return _gate(entity, raw.fact)
+
+
+def is_current(conn, artifact_id: str) -> bool:
+    """Whether the artifact's entities were written by the current ingest model from
+    its current body, so regenerating would only spend model calls."""
+    from ..providers.base import get_provider
+
+    row = conn.execute(
+        "SELECT local_only, (SELECT MAX(created_at) FROM artifact_versions v"
+        "  WHERE v.artifact_id = artifacts.id) AS body_version FROM artifacts WHERE id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    model = get_provider(local_only=bool(row["local_only"]), summarize=True).model
+    return (
+        conn.execute(
+            "SELECT 1 FROM entities WHERE artifact_id = ? AND model_version = ?"
+            " AND body_version IS ?",
+            (artifact_id, model, row["body_version"]),
+        ).fetchone()
+        is not None
+    )
 
 
 def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
@@ -91,6 +157,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     """
     from ..prompts import ENTITY_EXTRACT
     from ..providers.base import get_provider
+    from .source import SummariesOwed, ingest_text, owed_or_plain
 
     row = conn.execute(
         "SELECT title, body, local_only,"
@@ -101,7 +168,11 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     ).fetchone()
     if row is None:
         return 0, "no such artifact"
-    text = row["body"] or ""
+    # Body for a note, extracted pages for a link/PDF/image, plus the person's notes.
+    try:
+        text = ingest_text(conn, artifact_id)
+    except SummariesOwed as exc:
+        return 0, owed_or_plain(exc)
 
     provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
 
@@ -112,17 +183,20 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
             response_model=_RawEntitySet,
         )
     except Exception as exc:  # noqa: BLE001 - the caller reports and continues
-        return 0, f"{type(exc).__name__}: {exc}"[:300]
+        return 0, owed_or_plain(exc)
 
-    kept: list[tuple[str, str]] = []
-    for rf in raw.entities[:MAX_ENTITIES]:
-        name = (rf.name or "").strip()
-        if len(name) < 2 or len(name) > 80:
-            continue
-        fact = _enrich_one(provider, name)
-        if fact is None:
-            continue
-        kept.append((name, fact))
+    names = list(
+        dict.fromkeys(
+            n
+            for n in ((rf.name or "").strip() for rf in raw.entities[:MAX_ENTITIES])
+            if 2 <= len(n) <= 80
+        )
+    )
+    try:
+        facts = _enrich_all(provider, names) if names else {}
+    except Exception as exc:  # noqa: BLE001 - only transient failures reach here
+        return 0, owed_or_plain(exc)
+    kept = [(name, facts[name]) for name in names if facts.get(name)]
 
     if not kept:
         return 0, "no entity cleared the quality gate"

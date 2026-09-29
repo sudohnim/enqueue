@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Gate: the cross-domain search eval must not regress.
+
+Runs `enq eval-cross` and compares it with the committed baseline
+(evals/results/cross-domain.json). Fails when:
+  - a layer makes results worse than the one below it (enriched - facets and
+    entities - vs chunks alone, lifted vs enriched, ranked vs lifted): each must
+    never hurt, or
+  - a query that passed in the baseline fails now, in any mode the baseline has.
+With no baseline yet it prints the report and passes, so the first CI run can
+produce one. `--update-baseline` writes the current run as the new baseline.
+
+Usage: bin/check-eval-cross [--update-baseline]
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+SRC = "bin/check-eval-cross"
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASELINE = os.path.join(HERE, "evals", "results", "cross-domain.json")
+
+
+def _passing(mode: dict) -> set[str]:
+    return {r["id"] for r in mode["results"] if r["pass"]}
+
+
+def main() -> int:
+    fd, tmp = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    try:
+        cmd = ["uv", "run", "enq", "eval-cross", "--json-path", tmp]
+        print(f"  $ {' '.join(cmd)}")
+        if subprocess.run(cmd, cwd=HERE, timeout=900).returncode != 0:
+            print(f"{SRC}: eval-cross run failed", file=sys.stderr)
+            return 1
+        with open(tmp, encoding="utf-8") as f:
+            now = json.load(f)
+    finally:
+        os.unlink(tmp)
+
+    if "--update-baseline" in sys.argv:
+        with open(BASELINE, "w", encoding="utf-8") as f:
+            json.dump(now, f, indent=2)
+            f.write("\n")
+        print(f"{SRC}: wrote baseline {BASELINE}")
+        return 0
+
+    failures: list[str] = []
+    modes = now["modes"]
+    for lower, upper in (("chunks", "enriched"), ("enriched", "lifted"), ("lifted", "ranked")):
+        if upper in modes and modes[upper]["pass"] < modes[lower]["pass"]:
+            failures.append(
+                f"{upper} made search worse: {modes[upper]['pass']} pass vs "
+                f"{modes[lower]['pass']} with {lower}"
+            )
+
+    if not os.path.exists(BASELINE):
+        print(f"{SRC}: no baseline at {BASELINE}; current run:")
+        print(json.dumps(now, indent=2))
+        print(f"{SRC}: commit one with: bin/check-eval-cross --update-baseline")
+    else:
+        with open(BASELINE, encoding="utf-8") as f:
+            base = json.load(f)
+        for label in base["modes"]:
+            if label not in now["modes"]:
+                failures.append(f"mode {label} is missing from the current run")
+                continue
+            lost = _passing(base["modes"][label]) - _passing(now["modes"][label])
+            if lost:
+                failures.append(f"{label}: no longer passing: {', '.join(sorted(lost))}")
+            print(
+                f"  {label:>6}: baseline {base['modes'][label]['pass']}/"
+                f"{base['modes'][label]['total']}  now {now['modes'][label]['pass']}/"
+                f"{now['modes'][label]['total']}"
+            )
+
+    for msg in failures:
+        print(f"{SRC}: FAIL {msg}", file=sys.stderr)
+    if not failures:
+        print(f"{SRC}: OK")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

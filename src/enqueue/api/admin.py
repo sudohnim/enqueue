@@ -16,6 +16,14 @@ from ..ingest import queue as ingest_queue
 router = APIRouter()
 
 
+@router.post("/eval/real")
+def eval_real(update_baseline: bool = False) -> dict:
+    """Score the searches this person ran against the live library (eval_real.py)."""
+    from .. import eval_real as real
+
+    return real.check(update_baseline=update_baseline)
+
+
 @router.post("/ingest/wait")
 def ingest_wait(timeout: float = 60.0) -> dict:
     """Block until the ingest queue is drained. For scripts and tests, not the UI."""

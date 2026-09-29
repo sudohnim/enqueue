@@ -13,7 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from .. import capture, db, notes, pivots_saved, preview, trash
+from .. import capture, db, notes, opens, pivots_saved, preview, trash
 from .. import tags as tags_mod
 from ..ingest import queue as ingest_queue
 from .wall import ORDERINGS, _link_images, _wall_item, _wall_tags
@@ -22,6 +22,49 @@ router = APIRouter()
 
 
 # --------------------------------------------------------------------------- read
+
+
+@router.get("/artifacts/{artifact_id}/connections")
+def connections(artifact_id: str) -> dict:
+    """Per passage, the other notes that say something close (retrieve/passage_links.py)."""
+    from ..retrieve import passage_links
+
+    return {"passages": passage_links.for_artifact(artifact_id)}
+
+
+@router.get("/resurface")
+def resurface() -> dict:
+    """Today's older note for the wall (resurface.py), as a wall item, or null."""
+    from .. import resurface as resurface_mod
+
+    chosen = resurface_mod.pick()
+    if chosen is None:
+        return {"item": None, "reason": None}
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
+            " updated_at, local_only, pinned, status, pages FROM artifacts WHERE id = ?",
+            (chosen["id"],),
+        ).fetchone()
+        with_image = _link_images(conn, [row["id"]] if row["kind"] == "link" else [])
+        item = _wall_item(conn, row, with_image, _wall_tags(conn, [row["id"]]))
+    finally:
+        conn.close()
+    return {"item": item, "reason": chosen["reason"]}
+
+
+class Opened(BaseModel):
+    source: str = "other"
+    query: str | None = None
+    rank: int | None = None
+
+
+@router.post("/artifacts/{artifact_id}/opened", status_code=204)
+def opened(artifact_id: str, req: Opened) -> Response:
+    """The interface reports each open; a search open carries its query and rank."""
+    opens.record(artifact_id, req.source, req.query, req.rank)
+    return Response(status_code=204)
 
 
 class ArtifactFlags(BaseModel):
@@ -307,6 +350,15 @@ def get_artifact(artifact_id: str) -> dict:
         if artifact_id in included and artifact_id not in excluded:
             views.append({"id": saved["id"], "name": saved["name"]})
     detail["views"] = sorted(views, key=lambda v: v["name"])
+
+    from .. import db
+    from ..ingest import related
+
+    conn = db.get_conn()
+    try:
+        detail["related"] = related.for_artifact(conn, artifact_id)
+    finally:
+        conn.close()
     return detail
 
 

@@ -11,14 +11,12 @@ fresh cursor (MOBFIX.5), which is how the mutation reaches other devices.
 from __future__ import annotations
 
 import contextlib
-
 import logging
 
 import httpx
 
 from .. import config, crypto, db, keyring, keyring_file, settings
 
-log = logging.getLogger(__name__)
 from . import device_id
 from .guard import assert_local_relay
 from .snapshot import (
@@ -29,6 +27,8 @@ from .snapshot import (
     read_chat_snapshot,
     serialize,
 )
+
+log = logging.getLogger(__name__)
 
 
 def _relay_url() -> str:
@@ -486,7 +486,6 @@ def pull_settings() -> None:
         listing = client.get(f"{base}/sync/objects", params={"since": cursor}, headers=headers)
         if listing.status_code != 200:
             return
-        new_cursor = listing.json()["cursor"]
 
         for obj in listing.json()["objects"]:
             name = obj["name"]

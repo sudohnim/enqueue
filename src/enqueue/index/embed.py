@@ -42,9 +42,28 @@ def _model():
 
 
 def embed(texts: list[str]) -> list[list[float]]:
+    """Passages, framed as the model expects (config.EMBED_DOC_PREFIX)."""
     if not texts:
         return []
-    return [vector.tolist() for vector in _model().embed(texts)]
+    prefix = config.EMBED_DOC_PREFIX
+    return [vector.tolist() for vector in _model().embed([prefix + t for t in texts])]
+
+
+def token_count(text: str) -> int:
+    """Tokens the embedder sees in `text`, not counting its two special tokens. The
+    tokenizer truncates, so anything past config.EMBED_MAX_TOKENS reads as the cap."""
+    return max(0, _model().token_count(text) - 2)
+
+
+def embed_query(text: str) -> list[float]:
+    """A search, as the model expects one: EMBED_QUERY_PREFIX, then the text."""
+    return embed_one(config.EMBED_QUERY_PREFIX + text)
+
+
+def embed_passage(text: str) -> list[float]:
+    """One passage, framed like the indexed ones, for passage-to-passage similarity
+    (related notes)."""
+    return embed_one(config.EMBED_DOC_PREFIX + text)
 
 
 @lru_cache(maxsize=512)
@@ -61,4 +80,4 @@ def embed_one(text: str) -> list[float]:
     only caller serialises it read-only. Indexing uses `embed()` (the batch path), which
     is deliberately uncached because its texts are unique and would only bloat the cache.
     """
-    return embed([text])[0]
+    return [v.tolist() for v in _model().embed([text])][0]

@@ -1,25 +1,7 @@
-"""Chats: exploring the collection by talking to it.
+"""Chats: conversations with the library.
 
-Asking used to be one shot. You named a theme, a room was hung, and the thread was
-gone. That is the wrong shape for the thing this product is actually for, because
-the conceptualisation is rarely known in advance. It gets found by circling.
-
-So a chat keeps the thread, and the concepts it circles are extracted and kept
-against it. Those topics are the same kind of object a lens is: a topic taken out of
-a conversation can be handed straight to the curator to hang a room. That is the
-whole reason to store them rather than to name conversations by their first line.
-
-Three model calls, in falling order of importance:
-
-  answer   grounded in retrieved passages, or honestly refused
-  topics   the concepts the conversation is circling
-  title    what it is called in the list
-
-None of them blocks the reply. Submitting a question writes a pending turn and
-returns immediately; the answer worker (chats_worker) computes all three off the
-request thread and fills the turn in place. A failure in either of the other two
-leaves a chat that works and is named by its first question, which is a bad name
-and not a broken product.
+A turn is submitted, not computed: the answer worker (chats_worker) answers, then
+titles and re-topics best effort. See AGENTS.md "Chat".
 """
 
 from __future__ import annotations
@@ -36,35 +18,20 @@ from .schemas import Answer, ChatTitle, ChatTopics
 
 log = logging.getLogger(__name__)
 
-# How many passages an answer is allowed to read. Small on purpose: a local 8B model
-# given twenty passages produces a summary of the passages instead of an answer.
+# Passages an answer may read. Small: a local 8B model given more summarizes instead.
 PASSAGES = 8
-# At most this many chunks from one artifact in a passage set: breadth over depth, so
-# one long note cannot crowd every other note out of the answer's view.
+# Max chunks per artifact in a passage set, so one long note cannot crowd out the rest.
 CHUNKS_PER_ARTIFACT = 2
 PASSAGE_WORDS = 220
 
-# Turns of history sent with a question. Enough that the model remembers the whole of
-# any normal conversation, so a follow-up ("and the second one?") lands - the old value
-# of 6 was tuned for a small local model whose context the passages had to win outright.
-# A capable model has room for both; the cap stays only so a pathologically long thread
-# cannot grow the prompt (and the cost) without bound or finally crowd out the passages,
-# which are still the part that makes the answer worth anything.
+# History turns sent with a question; the cap only bounds pathological threads.
 HISTORY_TURNS = 40
 
 UNTITLED = "New chat"
 
 
-# --------------------------------------------------------------------------- shape
-
-
 def _push(chat_id: str) -> None:
-    """Best-effort push of a conversation to the relay, like push_artifact for a note.
-
-    Conversations sync now (0030): create, every turn, rename/pin, and delete each
-    push the whole snapshot. A sync failure never breaks the local write, so this
-    swallows everything and lets the next push retry.
-    """
+    """Best-effort push of the whole chat snapshot to the relay. Never fails the local write."""
     try:
         from .sync.client import push_chat
 
@@ -95,8 +62,7 @@ def get(chat_id: str) -> dict:
     conn = db.get_conn()
     try:
         chat = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
-        # A tombstone (deleted, kept only so the delete can sync) is gone to every
-        # reader, the same as a missing row.
+        # A tombstone reads as missing.
         if chat is None or chat["deleted_at"]:
             raise KeyError(chat_id)
 
@@ -124,8 +90,6 @@ def get(chat_id: str) -> dict:
 
         def _message(m) -> dict:
             out = dict(m)
-            # The payload is stored as JSON text; the client gets the dict it can
-            # re-run (the pivot spec), or None for a turn with no payload.
             raw = out.pop("payload", None)
             out["payload"] = json.loads(raw) if raw else None
             return out | {"cited": cited.get(m["id"], [])}
@@ -147,19 +111,13 @@ def get(chat_id: str) -> dict:
 
 
 def pin(chat_id: str, pinned: bool = True) -> dict:
-    """Keep a conversation at the top.
-
-    Recency is the right order for the threads you are working through and the wrong
-    one for the two or three you keep returning to: those sink after one busy week,
-    and sinking is the failure this product exists to prevent.
-    """
+    """Keep a conversation at the top of the list."""
     with db.transaction() as conn:
         try:
             pinned_int = int(pinned)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"pinned must be an integer: {exc}") from None
-        # updated_at is bumped so the pin change wins LWW and reaches other devices;
-        # without it the pushed snapshot ties the peer's and the pin never propagates.
+        # Bump updated_at so the change wins LWW on other devices.
         cur = conn.execute(
             "UPDATE chats SET pinned = ?, updated_at = ? WHERE id = ?",
             (pinned_int, db.now(), chat_id),
@@ -179,8 +137,6 @@ def listing(limit: int = 40) -> dict:
             " ORDER BY pinned DESC, updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        # P.2f: the topics table was loaded in full for every listing; filter
-        # it to the chats that are actually on this page.
         topics: dict[str, list[str]] = {}
         if chats:
             ids = [c["id"] for c in chats]
@@ -213,21 +169,12 @@ def rename(chat_id: str, title: str) -> dict:
 
 
 def delete(chat_id: str) -> dict:
-    """Chats are the one thing here that can be thrown away.
-
-    Everything else in the library is kept by design. A conversation is not an
-    artifact: it is scaffolding around the artifacts, and keeping every one of them
-    forever would make the list useless, which is the failure mode the whole product
-    is built against.
-    """
+    """Delete a chat (the one deletable object). Leaves a tombstone so the delete syncs."""
     now = db.now()
     with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM chats WHERE id = ?", (chat_id,)).fetchone()
         if exists is None:
             raise KeyError(chat_id)
-        # A tombstone, not a hard delete: the children go, but the row is kept with
-        # deleted_at set and updated_at bumped so the deletion wins LWW and reaches the
-        # other devices. Every reader already treats a deleted_at row as gone.
         conn.execute(
             "DELETE FROM chat_citations WHERE message_id IN"
             " (SELECT id FROM chat_messages WHERE chat_id = ?)",
@@ -241,9 +188,6 @@ def delete(chat_id: str) -> dict:
         )
     _push(chat_id)
     return {"deleted": chat_id}
-
-
-# ----------------------------------------------------------------------- retrieval
 
 
 def _clip(text: str, words: int = PASSAGE_WORDS) -> str:
@@ -266,62 +210,69 @@ def _scoped_passages(conn, artifact_ids: list[str]) -> list[dict]:
 
 
 def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]:
-    """The passages an answer is allowed to read.
+    """The passages an answer may read. A scoped chat reads its artifact, no search.
 
-    Scoped chats do not search at all: if you asked about one PDF, the PDF is the
-    candidate set, and running retrieval over it would only find reasons to leave
-    parts of it out.
+    Everything-scope applies the same relevance floor as /search (Q.5, Q.10). A
+    two-sided question ("compare X and Y", retrieve/decompose.py) searches each side
+    on its own and interleaves them, so both sides reach the answer; slots left over
+    are filled from the whole question.
     """
+    if scope_kind == "artifact":
+        if scope_id is None:
+            return []
+        conn = db.get_conn()
+        try:
+            return _scoped_passages(conn, [scope_id])
+        finally:
+            conn.close()
+
+    from .retrieve.decompose import parts
+
+    sides = parts(question)
+    if not sides:
+        return _library_passages(question)
+    lists = [_library_passages(side) for side in sides] + [_library_passages(question)]
+    out: list[dict] = []
+    seen: set[str] = set()
+    for rank in range(PASSAGES):
+        for found in lists[:-1]:
+            if rank < len(found) and found[rank]["id"] not in seen:
+                out.append(found[rank])
+                seen.add(found[rank]["id"])
+    for p in lists[-1]:
+        if p["id"] not in seen:
+            out.append(p)
+            seen.add(p["id"])
+    return out[:PASSAGES]
+
+
+def _library_passages(question: str) -> list[dict]:
+    """Everything-scope retrieval for one question, best first."""
     conn = db.get_conn()
     try:
-        if scope_kind == "artifact":
-            if scope_id is None:
-                return []
-            return _scoped_passages(conn, [scope_id])
-
         from .index.store import get_store
         from .retrieve.candidates import _floor_verdict, judge_gray_zone
 
         store = get_store()
         found: dict[str, dict] = {}
-        # Q.5: the answer path reads the same relevance floor as /search. The
-        # fused RRF score `store.search` returns can look strong on a gibberish
-        # query - a rank-1 on a low-rank list - so the floor must read the raw
-        # legs, exactly as `_hybrid_results` does: keep a chunk if it has a
-        # lexical hit (keyword/trigram) or a dense neighbor close enough, drop
-        # it otherwise. `dense_similarity` here is the best cosine the dense
-        # branch produced for this chunk; `had_lexical_hit` is set from the
-        # keyword and trigram branches alone (a fused hit can be dense-only).
+        window = PASSAGES * 4
+        chunk_legs = store.search_legs(store.CHUNKS, question, limit=window)
         dense_sims: dict[str, float] = {}
         lexical_chunks: set[str] = set()
-        for hit in store.search_dense(store.CHUNKS, question, limit=PASSAGES * 4):
+        for hit in chunk_legs["dense"][:window]:
             cid = hit["chunk_id"]
             if hit["score"] > dense_sims.get(cid, 0.0):
                 dense_sims[cid] = hit["score"]
-        for hit in store.search_keyword(store.CHUNKS, question, limit=PASSAGES * 4):
-            lexical_chunks.add(hit["chunk_id"])
-        for hit in store.search_trigram(store.CHUNKS, question, limit=PASSAGES * 4):
-            lexical_chunks.add(hit["chunk_id"])
-        # Roll chunk hits up to at most CHUNKS_PER_ARTIFACT per note, over a window
-        # wider than the passage budget. Without the cap, six chunks of one long note
-        # eat the whole budget and every other note is invisible to the answer - the
-        # "do I have notes on a president" case, where three slots went to one book
-        # and the note that answered it never got a slot. The cap spreads the budget
-        # across distinct artifacts so breadth, not one note's length, decides recall.
+        for leg in ("keyword", "trigram"):
+            for hit in chunk_legs[leg][:window]:
+                lexical_chunks.add(hit["chunk_id"])
         per_artifact: dict[str, int] = {}
-        # Q.3b: a chunk in the gray zone (no lexical leg, dense similarity in
-        # [DROP_BELOW, KEEP_ABOVE)) is not decided here - it is collected with
-        # its score and sent to the same judge /search uses, in one batched
-        # call, once its artifact's text can be read for the prompt.
+        # Gray-zone chunks are collected, then judged in one batched call below.
         gray_chunks: list[str] = []
         gray_scores: dict[str, float] = {}
         gray_artifacts: dict[str, str] = {}
-        for hit in store.search(store.CHUNKS, question, limit=PASSAGES * 4):
+        for hit in chunk_legs["fused"]:
             aid = hit["artifact_id"]
-            # Q.5: the same floor /search applies. A chunk with no lexical leg
-            # and a far dense neighbor is a far neighbor, not evidence an
-            # answer may stand on; dropping it here keeps a no-match question
-            # from grounding on it.
             verdict = _floor_verdict(
                 {
                     "dense_similarity": dense_sims.get(hit["chunk_id"], 0.0),
@@ -342,11 +293,6 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             if len(found) >= PASSAGES:
                 break
 
-        # Q.3b: resolve the gray zone through the judge, exactly as /search
-        # does. One batched call over the distinct artifacts involved - each as
-        # `[{kind}] {title}\n{text}` with its id - then the judged-relevant
-        # chunks take their passage slots under the same per-artifact cap and
-        # budget as the direct keeps.
         if gray_chunks:
             gray_rows = conn.execute(
                 "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
@@ -379,20 +325,30 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
                 if len(found) >= PASSAGES:
                     break
 
-        # Q.10: a dense-only facet/entity hit is a semantic neighbor, not a
-        # lexical leg, and it used to ground an answer with no floor check - the
-        # same leak /search had before Q.7. Read the raw legs per collection exactly
-        # as _hybrid_results does (the keyword branch is the lexical leg, the dense
-        # branch is the dense similarity), then apply the same two-tier gate: keep
-        # >= KEEP_ABOVE, drop < DROP_BELOW, gray zone -> judge.
+        # Facet/entity hits face the same floor: keyword leg = lexical, dense leg = similarity.
         facet_entity_dense: dict[str, float] = {}
         facet_entity_lexical: set[str] = set()
-        for name in (store.FACETS, store.ENTITIES):
-            for hit in store.search_dense(name, question, limit=PASSAGES * 4):
+        fe_legs = {
+            name: store.search_legs(name, question, limit=4)
+            for name in (store.FACETS, store.ENTITIES, store.SECTIONS)
+        }
+        # Query lifting (retrieve/lift.py): facet-style restatements of the question
+        # search the facet index too. Their dense similarity counts; never lexical.
+        from .retrieve.lift import lift
+
+        lift_legs = [store.search_legs(store.FACETS, claim, limit=4) for claim in lift(question)]
+        facet_hits = fe_legs[store.FACETS]["fused"] + [h for ll in lift_legs for h in ll["fused"]]
+        for ll in lift_legs:
+            for hit in ll["dense"][:window]:
                 aid = hit["artifact_id"]
                 if hit["score"] > facet_entity_dense.get(aid, 0.0):
                     facet_entity_dense[aid] = hit["score"]
-            for hit in store.search_keyword(name, question, limit=PASSAGES * 4):
+        for legs in fe_legs.values():
+            for hit in legs["dense"][:window]:
+                aid = hit["artifact_id"]
+                if hit["score"] > facet_entity_dense.get(aid, 0.0):
+                    facet_entity_dense[aid] = hit["score"]
+            for hit in legs["keyword"][:window]:
                 facet_entity_lexical.add(hit["artifact_id"])
 
         def _pull_opening(aid: str, why: str, score: float) -> None:
@@ -403,14 +359,27 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             if row and row["id"] not in found:
                 found[row["id"]] = {"score": score, "why": why}
 
-        # The other half of the abstraction gap. A question phrased as a concept can
-        # match a facet whose artifact shares no vocabulary with it, which is the case
-        # the whole facet ladder exists for. Pull the artifact's opening chunk in so
-        # the answer has something literal to stand on. A facet built from an older
-        # body or by an older model no longer describes the artifact and is skipped.
+        def _pull_section(aid: str, ordinal: int, why: str, score: float) -> None:
+            n_sections = conn.execute(
+                "SELECT COUNT(*) AS n FROM sections WHERE artifact_id = ?", (aid,)
+            ).fetchone()["n"]
+            n_chunks = conn.execute(
+                "SELECT COUNT(*) AS n FROM chunks WHERE artifact_id = ?", (aid,)
+            ).fetchone()["n"]
+            if not n_chunks:
+                return
+            at = min(n_chunks - 1, int((ordinal - 0.5) / max(n_sections, 1) * n_chunks))
+            row = conn.execute(
+                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1 OFFSET ?",
+                (aid, at),
+            ).fetchone()
+            if row and row["id"] not in found:
+                found[row["id"]] = {"score": score, "why": why}
+
+        # A facet or entity hit pulls in its artifact's opening chunk. Stale hits are skipped.
         cache: dict = {}
         gray_facet_entity: dict[str, tuple[str, float, str]] = {}
-        for hit in store.search(store.FACETS, question, limit=4):
+        for hit in facet_hits:
             if hit_is_stale(conn, hit, cache):
                 continue
             aid = hit["artifact_id"]
@@ -433,12 +402,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
                 continue
             _pull_opening(aid, why, hit["score"])
 
-        # The name-side of the same gap: a question phrased in the world's vocabulary
-        # ("presidents") reaches an artifact through its enriched entity line even
-        # when the artifact never says it. Same handling as the facet branch: pull
-        # the opening chunk so the answer has something literal to stand on, and skip
-        # lines built from an older body or by an older model.
-        for hit in store.search(store.ENTITIES, question, limit=4):
+        for hit in fe_legs[store.ENTITIES]["fused"]:
             if hit_is_stale(conn, hit, cache):
                 continue
             aid = hit["artifact_id"]
@@ -455,12 +419,33 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
                 continue
             _pull_opening(aid, "entity", hit["score"])
 
-        # Q.10: resolve the gray-zone facet/entity hits through the same judge
-        # as the chunk gray zone and /search, in one batched call. The judge reads
-        # the matched text - the facet statement or the entity fact - not the
-        # artifact's opening chunk, because that line is what the dense match was
-        # computed against, exactly as /search shows an entity fact for an
-        # entity-only hit. A kept artifact's opening chunk then takes its slot.
+        # A section hit pulls the chunk from that part of the document (section i of n
+        # sits around i/n of the way through), so the answer reads the page the summary
+        # described rather than the opening.
+        for hit in fe_legs[store.SECTIONS]["fused"]:
+            if hit_is_stale(conn, hit, cache):
+                continue
+            aid = hit["artifact_id"]
+            verdict = _floor_verdict(
+                {
+                    "dense_similarity": facet_entity_dense.get(aid, 0.0),
+                    "had_lexical_hit": aid in facet_entity_lexical,
+                }
+            )
+            if verdict == "drop":
+                continue
+            why = f"section {hit.get('ordinal')}"
+            if verdict == "gray":
+                row = conn.execute(
+                    "SELECT summary FROM sections WHERE id = ?", (hit["section_id"],)
+                ).fetchone()
+                gray_facet_entity.setdefault(
+                    aid, (why, hit["score"], row["summary"] if row else "")
+                )
+                continue
+            _pull_section(aid, hit.get("ordinal") or 1, why, hit["score"])
+
+        # The judge reads the matched facet statement / entity fact, not the opening chunk.
         if gray_facet_entity:
             faces = {
                 r["id"]: (r["title"], r["kind"])
@@ -485,7 +470,10 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             for aid, (why, score, _snippet) in gray_facet_entity.items():
                 if aid not in kept:
                     continue
-                _pull_opening(aid, why, score)
+                if why.startswith("section "):
+                    _pull_section(aid, int(why.split()[1]), why, score)
+                else:
+                    _pull_opening(aid, why, score)
 
         if not found:
             return []
@@ -505,12 +493,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
 
 
 def readiness() -> dict:
-    """Whether there is anything to retrieve from, and why not if not.
-
-    An empty answer has three completely different causes: nothing saved, nothing
-    indexed, or nothing relevant. Telling them apart is the difference between a
-    person fixing it in ten seconds and concluding the product does not work.
-    """
+    """Whether there is anything to answer from, and which of the reasons if not."""
     conn = db.get_conn()
     try:
         artifacts = conn.execute("SELECT COUNT(*) AS n FROM artifacts").fetchone()["n"]
@@ -535,9 +518,6 @@ def readiness() -> dict:
     return {"ready": True, "reason": None}
 
 
-# ------------------------------------------------------------------------- talking
-
-
 def _history(conn, chat_id: str) -> str:
     rows = conn.execute(
         "SELECT role, text FROM chat_messages WHERE chat_id = ? ORDER BY ordinal DESC LIMIT ?",
@@ -550,13 +530,7 @@ def _history(conn, chat_id: str) -> str:
 
 
 def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
-    """Why a scoped chat found nothing, when the reason is the scope itself.
-
-    Measured: a chat opened from a link whose preview had failed reported "nothing you
-    have saved speaks to that yet" for a question the collection answered immediately
-    at a retrieval score of 1.0. The answer was true of the scope and false of the
-    library, and nothing on screen said which one had been searched.
-    """
+    """Why a scoped chat found nothing, when the scope itself is the reason (unfetched link)."""
     if scope_kind == "everything" or not scope_id:
         return None
 
@@ -598,17 +572,8 @@ def _ask_model(
             cited=[],
         )
 
-    # L.1: carry the artifact kind into the passage header so the model can tell
-    # an image with a user-supplied note from a standalone text note. The chunk
-    # text already merges annotations, and chunk.py marks those lines with
-    # "(note added by you)" (L.1); the kind prefix lets the model connect the
-    # marker to the right kind of artifact. The artifact_id still rides in
-    # context (offered_artifact_ids below) and in every cited[] the model writes
-    # back; the header is for shape, the id is in the answer's metadata.
-    # CHATBUG.1: the model is asked to cite artifact ids, and the Answer validator
-    # rejects any cited id it was not offered. So the id MUST appear in the passage the
-    # model reads - otherwise it cites the only label it can see (the title) and the turn
-    # fails validation. Put the id in the header so `cited` can be a real, valid id.
+    # The header MUST carry the artifact id: the Answer validator rejects cited ids it
+    # was not offered (CHATBUG.1).
     body = "\n\n".join(
         f"[{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n{_clip(p['text'])}"
         for p in found
@@ -631,15 +596,10 @@ def _append(
     payload: dict | None = None,
     status: str = "done",
 ) -> str:
-    """Write one message row, computing the next ordinal.
+    """Write one message row at the next ordinal.
 
-    `kind` is the skill that produced the turn (default 'answer' backfills the
-    pre-router corpus). `payload` is the JSON the turn needs to re-render itself
-    - the pivot spec for an organize turn - stored as JSON text, NULL otherwise.
-    `status` is how far the turn has got: 'done' is the resting state and every
-    pre-Phase-H caller writes it by omission; a submitted answer writes a pending
-    assistant turn that the worker moves to 'done' or 'failed'.
-    Both (all three) default so every existing caller is untouched.
+    `kind` is the skill, `payload` the JSON a turn re-renders from (the pivot spec),
+    `status` pending/done/failed.
     """
     ordinal = conn.execute(
         "SELECT COALESCE(MAX(ordinal), -1) + 1 AS n FROM chat_messages WHERE chat_id = ?",
@@ -672,35 +632,19 @@ def _append(
 
 
 def ask(question: str, scope_kind: str = "everything", scope_id: str | None = None) -> dict:
-    """Open a conversation with its first turn - submitted, not computed.
-
-    The eye opens a new chat, so the first message is where an `organize` request
-    most often lands: it goes through the same submit path as every later turn
-    (`send`), so a fresh "organize my notes by X" is grouped, never answered.
-
-    The chat is created and the turn is queued; the request returns before the
-    model runs. A failed answer lands as a `failed` turn inside the chat, never as
-    a deleted chat - submitting cannot fail on the model, because the model runs
-    later, on the worker.
-    """
+    """Create a chat and submit its first turn. Returns before the model runs."""
     question = question.strip()
     if not question:
         raise ValueError("say something")
-    # create() validates the scope; let its ValueError surface before any row exists.
     chat_id = create(scope_kind, scope_id)["chat"]["id"]
     _submit(chat_id, question)
     return get(chat_id)
 
 
 def run_answer(chat_id: str, text: str) -> dict:
-    """The `answer` skill: retrieve passages, ask the model, compose the turn.
+    """The `answer` skill: retrieve, ask, return the turn dict. Writes nothing.
 
-    This is today's answer path, extracted verbatim from the old `send`: read the
-    chat for its scope and history, retrieve the passages it is allowed to read,
-    ask the model, and return the message dict the dispatcher stores. Nothing is
-    written here - the dispatcher writes both turns and the citations together.
-    A citation the model invented is filtered out exactly as before (the Answer
-    validator usually prevents it; this is the same guard, kept byte-identical).
+    Citations outside the offered passages are dropped.
     """
     conn = db.get_conn()
     try:
@@ -727,14 +671,9 @@ def run_answer(chat_id: str, text: str) -> dict:
 
 
 def run_organize(chat_id: str, text: str) -> dict:
-    """The `organize` skill: plan a pivot, run it, compose a one-line summary.
+    """The `organize` skill: plan and run a pivot; the spec rides in `payload`.
 
-    The rendered groups are not stored in text - the frontend re-runs the spec
-    from `payload` (S4), so a reload shows the same groups without re-planning.
-    Any failure - a PivotError from a request that will not plan, or a runtime
-    error mid-run (a stale index id, a missing row) - falls to the answer floor
-    (Rule 1): a structured skill that cannot finish is never allowed to crash the
-    turn. The person gets a grounded answer, never a 500 or a half-built group.
+    Any failure falls back to `run_answer` (Rule 1: never crash the turn).
     """
     try:
         spec = pivot.plan(text)
@@ -758,21 +697,7 @@ def run_organize(chat_id: str, text: str) -> dict:
 
 
 def send(chat_id: str, text: str, force_skill: str | None = None) -> dict:
-    """Submit one turn: write the exchange skeleton and return immediately.
-
-    Asking used to compute inside the request. The browser held the connection
-    open while the local model ground for twenty seconds, and navigating away
-    aborted the fetch and abandoned the answer (Rule 1: the work must outlive the
-    page). Phase H moves the model off the request thread entirely.
-
-    This writes the question plus a visible pending assistant turn in one
-    transaction, hands the work to the answer worker, and returns the chat as it
-    is - it now ends in a pending turn. The worker routes the request, runs the
-    chosen skill (Rule 1's `answer` floor and `force_skill` work exactly as
-    before), and fills the pending turn in place: `done` with the answer, or
-    `failed` with a reason a person can read. Naming and retopic happen there
-    too, best effort, after a successful `done`.
-    """
+    """Submit one turn. Returns the chat ending in a pending turn the worker fills."""
     text = text.strip()
     if not text:
         raise ValueError("say something")
@@ -786,21 +711,13 @@ def send(chat_id: str, text: str, force_skill: str | None = None) -> dict:
         raise KeyError(chat_id)
 
     _submit(chat_id, text, force_skill)
-    # Push the question and the pending turn now; the worker pushes again with the
-    # answer once it lands, so the other device sees the thread advance in two steps.
+    # The worker pushes again once the answer lands.
     _push(chat_id)
     return get(chat_id)
 
 
 def _submit(chat_id: str, text: str, force_skill: str | None = None) -> None:
-    """Write the exchange skeleton and hand the answer to the worker.
-
-    The user turn and a pending assistant turn are written together in one
-    transaction, then the job is queued. Nothing here routes, runs a skill, or
-    calls the model - all of that happens on the worker, after the request has
-    returned. The chat's `updated_at` is touched so the thread surfaces on the
-    wall the moment it is asked.
-    """
+    """Write the user turn + a pending assistant turn in one transaction, then queue the job."""
     with db.transaction() as conn:
         _append(conn, chat_id, "user", text)
         message_id = _append(conn, chat_id, "assistant", "", kind="answer", status="pending")
@@ -813,9 +730,6 @@ def _submit(chat_id: str, text: str, force_skill: str | None = None) -> None:
         data={"question": text, "chat_id": chat_id},
     )
     chats_worker.submit(chats_worker.Job(chat_id, message_id, text, force_skill))
-
-
-# --------------------------------------------------------------------------- names
 
 
 def _name(chat_id: str, question: str, answer: str) -> None:
@@ -836,15 +750,7 @@ def _name(chat_id: str, question: str, answer: str) -> None:
 
 
 def _retopic(chat_id: str) -> None:
-    """Re-derive the concepts this conversation is circling.
-
-    Regenerated from the whole transcript each time rather than appended to, because
-    a conversation's real subject is often not visible until several turns in, and a
-    topic list that only grows accumulates the wrong early guesses forever.
-
-    Existing topics are kept if they come back, so a topic that has already been used
-    to hang a room does not change identity underneath it.
-    """
+    """Re-derive topics from the whole transcript. Topics that come back keep their ids."""
     conn = db.get_conn()
     try:
         rows = conn.execute(
@@ -857,13 +763,7 @@ def _retopic(chat_id: str) -> None:
     if len(rows) < 2:
         return
 
-    # A conversation where nothing was found has no concept in it to extract, and the
-    # model will invent one rather than return none. Observed: a chat whose only two
-    # answers were both "nothing here to answer from" produced the topics
-    # "NotesNotFetched" and "CollectionDump", which name the failure and the app.
-    #
-    # Topics are meant to be handed back to the curator as a lens. A lens drawn from
-    # an empty exchange retrieves nothing, so it is worse than having none.
+    # No grounded answer: nothing to extract (the model would invent failure topics).
     if not any(row["grounded"] for row in rows if row["role"] == "assistant"):
         return
 

@@ -230,7 +230,6 @@ def test_artifact_detail_loads_all_specs_in_one_query(store, monkeypatch):
 def test_result_cache_round_trips_and_clears_on_spec_edit(store):
     """The materialized result cache: set_result stores the group structure, get reads
     it back, and any spec edit (update_spec) drops it so the next open recomputes."""
-    from enqueue import db
 
     pivot_id = pivots_saved.save("Cached view", _SPEC)
     assert pivots_saved.get(pivot_id)["result"] is None  # nothing run yet

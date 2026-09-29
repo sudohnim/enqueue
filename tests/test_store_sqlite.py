@@ -102,6 +102,8 @@ class TestEnsureAndCounts:
             "fts_chunks_tri",
             "fts_facets",
             "fts_entities",
+            "sections",
+            "fts_sections",
         }
         assert all(v == 0 for v in counts.values())
 

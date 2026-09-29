@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Gate: JS parse check on both pages, pytest, contrast check, Android compile check.
+"""Gate: lint, JS parse check on the pages, pytest, contrast check, Android compile check.
+
+`bin/verify --fast` runs only the checks that take seconds (black, ruff, JS parse,
+contrast); it is what the pre-commit hook runs. CI runs the tests, the JS and
+contrast checks, and both eval gates on every PR. The full `bin/verify` adds pytest,
+the desktop Rust tests and the Android compile check, which CI does not cover: run it
+before merging a desktop or mobile change.
 
 home.html has no inline scripts since M.8: its JS lives in static/js/*.js,
 loaded by <script src> in shell order. Each file is checked individually
@@ -297,9 +303,31 @@ def check_desktop_tests():
     print(f"{SRC}: desktop tests FAILED", file=sys.stderr)
     return False
 
+def check_lint():
+    """black and ruff, the same checks CI runs."""
+    ok = True
+    for cmd in (
+        ["uv", "run", "black", "--check", "-q", "src/", "tests/"],
+        ["uv", "run", "ruff", "check", "-q", "src/", "tests/"],
+    ):
+        if subprocess.run(cmd, timeout=120).returncode != 0:
+            print(f"{SRC}: {cmd[2]} FAILED", file=sys.stderr)
+            ok = False
+    if ok:
+        print(f"{SRC}: lint OK")
+    return ok
+
+
 def main():
     os.chdir(HERE)
+    fast = "--fast" in sys.argv[1:]
     pass_flag = True
+
+    print(f"=== {SRC}: lint (black, ruff) ===")
+    if not check_lint():
+        pass_flag = False
+
+    print("")
 
     print(f"=== {SRC}: JS parse: {FILES[0]} (static/js/*.js) ===")
     if not check_home_js():
@@ -317,14 +345,17 @@ def main():
     if not check_inline_js(FILES[2]):
         pass_flag = False
 
-    print("")
-    print(f"=== {SRC}: pytest ===")
-    r = subprocess.run(["uv", "run", "pytest", "-q"], capture_output=False, timeout=300)
-    if r.returncode == 0:
-        print(f"{SRC}: pytest OK")
-    else:
-        print(f"{SRC}: pytest FAILED", file=sys.stderr)
-        pass_flag = False
+    if not fast:
+        print("")
+        print(f"=== {SRC}: pytest ===")
+        r = subprocess.run(
+            ["uv", "run", "pytest", "-q", "-n", "auto"], capture_output=False, timeout=900
+        )
+        if r.returncode == 0:
+            print(f"{SRC}: pytest OK")
+        else:
+            print(f"{SRC}: pytest FAILED", file=sys.stderr)
+            pass_flag = False
 
     print("")
     print(f"=== {SRC}: contrast check ===")
@@ -335,14 +366,15 @@ def main():
         print(f"{SRC}: contrast check FAILED", file=sys.stderr)
         pass_flag = False
 
-    print("")
-    print(f"=== {SRC}: desktop tests ===")
-    if not check_desktop_tests():
-        pass_flag = False
+    if not fast:
+        print("")
+        print(f"=== {SRC}: desktop tests ===")
+        if not check_desktop_tests():
+            pass_flag = False
 
-    print("")
-    if not check_android_compile():
-        pass_flag = False
+        print("")
+        if not check_android_compile():
+            pass_flag = False
 
     print("")
     if pass_flag:

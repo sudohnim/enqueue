@@ -270,7 +270,9 @@ class TestTrigramRecall:
         # The trigram branch exists for substrings unicode61 cannot see:
         # "hopper" sits inside "chopper", and no unicode61 prefix star can
         # match the middle of a word. Only trigram tokens (hop/opp/ppe/per)
-        # see it, so this test fails without the branch.
+        # see it, so this test fails without the branch. It checks recall before
+        # the floor: trigram is recall only, so the floor then judges the hit on
+        # its dense similarity like any other.
         conn = db.get_conn()
         try:
             _note(conn, "a1", "Field notes", "tony tony chopper appears once in the body.")
@@ -280,7 +282,7 @@ class TestTrigramRecall:
             conn.close()
         sqlite_store.upsert_chunks()
 
-        hits = search_results("hopper", limit=20)
+        hits = sqlite_store.search(sqlite_store.CHUNKS, "hopper", limit=20)
         ids = [h["artifact_id"] for h in hits]
         assert "a1" in ids
 
@@ -298,7 +300,7 @@ class TestTrigramRecall:
         sqlite_store.upsert_chunks()
 
         assert _trigram_query("to") == ""
-        assert sqlite_store._search_trigram(sqlite_store.CHUNKS, "to", 20) == []
+        assert sqlite_store.search_trigram(sqlite_store.CHUNKS, "to", 20) == []
         hits = search_results("to", limit=20)
         assert [h["artifact_id"] for h in hits] == ["a1"]
 
@@ -762,7 +764,7 @@ class TestQ3RelevanceFloor:
     ):
         """The gray zone between the two bars is the judge's patch (Q.3b).
 
-        "hyperdimensional cheese grater" measures 0.469 against the rooftops
+        "food supply chains" measures 0.474 against the rooftops
         note - below KEEP_ABOVE, at or above DROP_BELOW - so it is neither
         clearly relevant nor clearly irrelevant. One batched model call
         decides it: a "not relevant" ruling drops the hit to [], a
@@ -794,7 +796,7 @@ class TestQ3RelevanceFloor:
         monkeypatch.setattr(
             cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": False}])
         )
-        hits = search_results("hyperdimensional cheese grater", limit=20)
+        hits = search_results("food supply chains", limit=20)
         assert hits == [], f"judge said not relevant, expected [], got {hits}"
         # Clear the judge's cache so the next call is judged fresh.
         conn = db.get_conn()
@@ -806,7 +808,7 @@ class TestQ3RelevanceFloor:
         monkeypatch.setattr(
             cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": True}])
         )
-        hits = search_results("hyperdimensional cheese grater", limit=20)
+        hits = search_results("food supply chains", limit=20)
         assert len(hits) == 1 and hits[0]["artifact_id"] == "a1"
         assert not hits[0]["had_lexical_hit"]
         assert DROP_BELOW <= hits[0]["dense_similarity"] < KEEP_ABOVE

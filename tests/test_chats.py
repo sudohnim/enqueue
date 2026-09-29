@@ -38,7 +38,7 @@ class FakeProvider:
 def _no_real_judge(monkeypatch):
     """No chat test may touch a real model. The Q.3b gray-zone judge (Q.3)
     fires the moment a question lands in the gray zone - here the
-    "hyperdimensional cheese grater" test - so stub `get_provider` fail-open
+    "food supply chains" test - so stub `get_provider` fail-open
     (keep everything), the gate's error budget, unless a test installs its
     own verdicts.
     """
@@ -499,7 +499,7 @@ class TestQ5AnswerPathFloor:
     ):
         """The gray zone (at or above DROP_BELOW, below KEEP_ABOVE) is the
         judge's patch (Q.3b), and the answer path runs the same judge as
-        /search. "hyperdimensional cheese grater" measures in the gray zone
+        /search. "food supply chains" measures in the gray zone
         against this corpus, so `passages()` sends it to the judge in one
         batched call: a "not relevant" ruling feeds the answer nothing, a
         "relevant" ruling lets the passage through."""
@@ -519,7 +519,7 @@ class TestQ5AnswerPathFloor:
         monkeypatch.setattr(
             cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": False}])
         )
-        found = chats.passages("hyperdimensional cheese grater", "library", None)
+        found = chats.passages("food supply chains", "library", None)
         assert found == [], f"judge said not relevant, expected no passages, got {found}"
         # Clear the judge's cache and rule it relevant.
         conn = db.get_conn()
@@ -531,7 +531,7 @@ class TestQ5AnswerPathFloor:
         monkeypatch.setattr(
             cand, "get_provider", lambda *a, **k: _Judge([{"id": "a1", "relevant": True}])
         )
-        found = chats.passages("hyperdimensional cheese grater", "library", None)
+        found = chats.passages("food supply chains", "library", None)
         assert len(found) == 1
         assert found[0]["artifact_id"] == "a1"
 

@@ -41,7 +41,8 @@
   // the old page while the network happens, then swaps to a half-built new one: the
   // jumble. Warming the cache first makes the callback a synchronous DOM write, which
   // is the only thing the API can actually tween.
-  async function openArtifact(id) {
+  async function openArtifact(id, source) {
+    reportOpen(id, source || "wall");
     claimMorph(id);
     const path = "/artifacts/" + id;
     try {

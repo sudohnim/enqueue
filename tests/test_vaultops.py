@@ -6,7 +6,6 @@ absent from the local DB and blob store, and only the vault key recovers it.
 
 from __future__ import annotations
 
-import json
 
 import pytest
 

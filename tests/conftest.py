@@ -25,6 +25,15 @@ def _fast_argon2(monkeypatch):
     monkeypatch.setattr(crypto, "MEMLIMIT", nacl.pwhash.argon2id.MEMLIMIT_INTERACTIVE)
 
 
+@pytest.fixture(autouse=True)
+def _no_query_lift(monkeypatch):
+    """Query lifting calls the search model; no test reaches a network by accident.
+    tests/test_query_lift.py exercises the real function directly."""
+    from enqueue.retrieve import lift
+
+    monkeypatch.setattr(lift, "lift", lambda query: [])
+
+
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)

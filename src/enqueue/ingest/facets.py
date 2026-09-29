@@ -106,6 +106,29 @@ def _trust_from_confidence(confidence: float | None) -> float:
     return max(0.0, min(1.0, value))
 
 
+def is_current(conn, artifact_id: str) -> bool:
+    """Whether the artifact's machine facets were written by the current ingest model
+    from its current body, so regenerating would only spend a model call."""
+    from ..providers.base import get_provider
+
+    row = conn.execute(
+        "SELECT local_only, (SELECT MAX(created_at) FROM artifact_versions v"
+        "  WHERE v.artifact_id = artifacts.id) AS body_version FROM artifacts WHERE id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    model = get_provider(local_only=bool(row["local_only"]), summarize=True).model
+    return (
+        conn.execute(
+            "SELECT 1 FROM facets WHERE artifact_id = ? AND edited = 0 AND model_version = ?"
+            " AND body_version IS ?",
+            (artifact_id, model, row["body_version"]),
+        ).fetchone()
+        is not None
+    )
+
+
 def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     """Generate and store facets for one artifact. Returns (count, error).
 
@@ -120,8 +143,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     from ..prompts import FACET_GENERATION
     from ..providers.base import get_provider
     from ..schemas import Facet
-
-    from .. import config
+    from .source import SummariesOwed, ingest_text, owed_or_plain
 
     row = conn.execute(
         "SELECT title, body, local_only,"
@@ -130,34 +152,10 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
         " FROM artifacts WHERE id = ?",
         (artifact_id,),
     ).fetchone()
-    # A note carries its words in `body`; a link, PDF, or image carries its extracted
-    # text in page_text and leaves `body` empty. Feeding only `body` here is why those
-    # captures got facets paraphrased from the title alone (generic, ungrounded). Read
-    # both, capped, so the model sees the actual document.
-    text = row["body"] or ""
-    if not text.strip():
-        pages = conn.execute(
-            "SELECT text FROM page_text WHERE artifact_id = ? ORDER BY page",
-            (artifact_id,),
-        ).fetchall()
-        text = "\n\n".join(p["text"] for p in pages if p["text"])
-    text = text[: config.FACET_INPUT_CHARS]
-
-    # Your own notes on a capture are original thought the source text does not carry -
-    # often the whole reason you saved it - so they must shape the summary, not just the
-    # search index. Append the current (non-superseded) annotations, marked as yours, so
-    # the model abstracts from what you wrote too. This is what makes a facet reflect the
-    # angle you saw, not only what the page says.
-    annotations = conn.execute(
-        "SELECT a.text FROM annotations a WHERE a.artifact_id = ?"
-        " AND NOT EXISTS (SELECT 1 FROM annotations b WHERE b.supersedes_id = a.id)"
-        " ORDER BY a.created_at",
-        (artifact_id,),
-    ).fetchall()
-    yours = "\n\n".join(f"(your note) {a['text']}" for a in annotations if a["text"])
-    if yours:
-        text = (text + "\n\n" if text.strip() else "") + yours
-        text = text[: config.FACET_INPUT_CHARS + len(yours)]
+    try:
+        text = ingest_text(conn, artifact_id)
+    except SummariesOwed as exc:
+        return 0, owed_or_plain(exc)
 
     provider = get_provider(local_only=bool(row["local_only"]), summarize=True)
     nouns = proper_nouns(text, row["title"])
@@ -170,7 +168,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
             context={"proper_nouns": nouns},
         )
     except Exception as exc:  # noqa: BLE001 - the caller reports and continues
-        return 0, f"{type(exc).__name__}: {exc}"[:300]
+        return 0, owed_or_plain(exc)
 
     # Keep each facet that passes the same per-facet quality bar the strict schema
     # enforces; drop the ones that do not. One long or subject-naming facet no
@@ -221,6 +219,9 @@ def _reindex(artifact_id: str) -> None:
 
     try:
         get_store().index_facets_artifact(artifact_id)
+        from . import related
+
+        related.compute(artifact_id)  # the links follow the facets they come from
     except Exception:  # noqa: BLE001 - the DB rows are the truth; a reindex hiccup is not fatal
         pass
 

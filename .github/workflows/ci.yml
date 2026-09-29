@@ -1,8 +1,20 @@
 name: ci
 
+# A PR's pushes run through pull_request only; push covers main after a merge. Both
+# triggers on every branch ran each check twice.
 on:
   push:
+    branches: [main]
   pull_request:
+
+# A newer push to the same PR makes the running checks moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The embedding and rerank models, cached between runs instead of re-downloaded.
+  FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
 
 jobs:
   test:
@@ -13,18 +25,22 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/fastembed
+          key: fastembed-${{ hashFiles('src/enqueue/config.py') }}
+          restore-keys: fastembed-
 
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Lint (black)
-        run: uv run black --check src/ tests/
-
-      - name: Lint (ruff)
-        run: uv run ruff check src/ tests/
+      - name: Lint, JS parse, contrast
+        run: bin/verify --fast
 
       - name: Test
-        run: uv run pytest -q
+        run: uv run pytest -q -n auto
 
   eval:
     runs-on: ubuntu-latest
@@ -34,9 +50,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/fastembed
+          key: fastembed-${{ hashFiles('src/enqueue/config.py') }}
+          restore-keys: fastembed-
 
       - name: Install dependencies
         run: uv sync --all-groups
 
       - name: Eval regression gate
         run: bin/check-eval
+
+      - name: Cross-domain eval regression gate
+        run: bin/check-eval-cross

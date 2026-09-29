@@ -11,9 +11,28 @@ DATA_DIR = Path.home() / ".enqueue-poc"
 DB_PATH = DATA_DIR / "enqueue.db"
 BLOB_DIR = DATA_DIR / "blobs"
 
-EMBED_MODEL = "BAAI/bge-base-en-v1.5"
+# The embedding models the index can run on, all 768-dimensional: the width the vec0
+# tables are built at (a different width is a migration). Per model: how it wants a
+# search and a passage framed, and the relevance floor calibrated on its cosine scale
+# (AGENTS.md "Relevance floor"). A model joins only with measured bars; `enq
+# eval-embedders` measures candidates and suggests them.
+EMBED_MODELS = {
+    "BAAI/bge-base-en-v1.5": {
+        "version": "bge-base-en-v1.5",
+        "query_prefix": "Represent this sentence for searching relevant passages: ",
+        "doc_prefix": "",
+        "keep_above": 0.68,
+        "drop_below": 0.40,
+    },
+}
+EMBED_MODEL = os.getenv("ENQ_EMBED_MODEL", "BAAI/bge-base-en-v1.5")
 EMBED_DIM = 768
-EMBED_VERSION = "bge-base-en-v1.5"
+EMBED_VERSION = EMBED_MODELS[EMBED_MODEL]["version"]
+EMBED_QUERY_PREFIX = EMBED_MODELS[EMBED_MODEL]["query_prefix"]
+EMBED_DOC_PREFIX = EMBED_MODELS[EMBED_MODEL]["doc_prefix"]
+EMBED_KEEP_ABOVE = EMBED_MODELS[EMBED_MODEL]["keep_above"]
+EMBED_DROP_BELOW = EMBED_MODELS[EMBED_MODEL]["drop_below"]
+EMBED_MAX_TOKENS = 512  # the shortest a candidate reads; more is silently dropped
 
 # 127.0.0.1, never localhost. This machine runs a second Ollama in Docker bound to
 # the IPv6 wildcard, and localhost resolves to IPv6 first. See docs/PROGRESS.md.

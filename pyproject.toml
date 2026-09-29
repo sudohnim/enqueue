@@ -33,8 +33,10 @@ enq = "enqueue.cli:app"
 [dependency-groups]
 dev = [
     "black>=24.0",
- "hypothesis>=6.165.4",
- "pytest>=8.0",
+    "hypothesis>=6.165.4",
+    "pytest>=8.0",
+    "pytest-xdist>=3.6",
+    "ruff>=0.15,<0.16",
 ]
 
 [build-system]

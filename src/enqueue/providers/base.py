@@ -42,6 +42,27 @@ def _chain(exc: BaseException) -> list[BaseException]:
     return chain
 
 
+def is_transient(exc: BaseException) -> bool:
+    """Whether a failed model call is worth retrying later as-is: a rate limit or usage
+    cap, a timeout, an unreachable host, or a server error. A bad key, a missing model
+    or output that failed validation will fail the same way again."""
+    import openai
+
+    for link in _chain(exc):
+        if isinstance(
+            link,
+            openai.RateLimitError
+            | openai.APITimeoutError
+            | openai.APIConnectionError
+            | openai.InternalServerError,
+        ):
+            return True
+        if isinstance(link, openai.APIStatusError):
+            code = link.response.status_code
+            return code in (408, 409, 429) or code >= 500
+    return False
+
+
 def why(exc: BaseException, base_url: str, model: str) -> str:
     """Turn a failed model call into something a person can act on.
 
@@ -229,19 +250,32 @@ def get_vision_provider(local_only: bool = False) -> Provider:
     )
 
 
-def get_provider(local_only: bool = False, summarize: bool = False) -> Provider:
-    """Return the configured provider.
+# Model roles, each backed by one setting. An empty ingest/search setting falls back to
+# the chat model, so a single-model setup is unchanged. `summarize_model` keeps its
+# storage name (it syncs and lives in existing settings.json files); the UI calls it
+# the ingestion model.
+ROLE_SETTINGS = {
+    "chat": "llm_model",
+    "ingest": "summarize_model",
+    "search": "search_model",
+}
 
-    Local-only artifacts always route to the local backend, whatever the default is.
-    That is the one rule here that is not a preference: marking something local-only
-    is a promise that its text never leaves the machine, and a configuration change
-    must not be able to quietly break it.
 
-    `summarize=True` selects the summary model (`summarize_model`) when one is set,
-    for the background facet/entity writers. It shares the backend, key, and headers
-    of the default provider - only the model name differs - and falls back to
-    `llm_model` when unset, so a single-model configuration behaves exactly as before.
-    A local-only artifact ignores it: its text is pinned to the local model regardless.
+def model_for(role: str) -> str:
+    """The model name configured for a role: chat, ingest or search."""
+    from .. import settings
+
+    if role not in ROLE_SETTINGS:
+        raise ValueError(f"unknown model role {role!r}")
+    return settings.get(ROLE_SETTINGS[role]) or settings.get("llm_model")
+
+
+def get_provider(local_only: bool = False, summarize: bool = False, role: str = "chat") -> Provider:
+    """The configured provider for a role. All roles share backend, key and headers.
+
+    Local-only artifacts always route to the local backend and model: marking
+    something local-only is a promise its text never leaves the machine.
+    `summarize=True` is the older spelling of `role="ingest"`.
     """
     from .. import config, settings
     from .ollama import OpenAICompatibleProvider
@@ -263,10 +297,7 @@ def get_provider(local_only: bool = False, summarize: bool = False) -> Provider:
         url = settings.get("llm_url") or backend["url"]
     else:
         url = backend["url"]
-    if local_only:
-        model = config.LLM_MODEL
-    elif summarize:
-        model = settings.get("summarize_model") or settings.get("llm_model")
-    else:
-        model = settings.get("llm_model")
+    if summarize:
+        role = "ingest"
+    model = config.LLM_MODEL if local_only else model_for(role)
     return OpenAICompatibleProvider(model=model, base_url=url)

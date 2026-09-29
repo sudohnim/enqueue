@@ -1,0 +1,264 @@
+# Cross-domain eval: a query phrased in one field must find a note from another field
+# that shares its mechanism but none of its vocabulary. This is the case the facet
+# layer exists for; plain chunk search is expected to miss most of it.
+#
+# notes    - target notes. Each target has one query; `forbidden` lists the query's key
+#            words, none of which may appear in the note (tests/test_eval_cross.py).
+# decoys   - share the queries' vocabulary but not their idea. A decoy outranking its
+#            target means search matched words, not meaning.
+# queries  - pass when the expected note ranks in the top 3 of /search, run over these
+#            notes plus the 50-note main corpus as background.
+#
+# Run: uv run enq eval-cross. Gate: bin/check-eval-cross.
+
+notes:
+  - id: xd_bend_not_break
+    title: Why the willow survives the storm
+    body: |
+      After the gale the old oak by the river lay across the path, snapped clean at the
+      trunk, while the willow beside it stood as it had the day before. The oak met the
+      wind with stiffness and held until it could hold no more, and then it failed all at
+      once. The willow bent almost to the water, shed a few thin branches, and rose again
+      when the gust passed. Its wood is weak by any measure a carpenter would use, yet it
+      outlasts the strong tree because it gives way a little everywhere instead of
+      nothing anywhere. Losing some twigs is the price it pays to keep the whole tree.
+      Reed beds do the same thing: they flatten under flood water and stand back up
+      afterward, where a rigid wall would be undercut and fall.
+
+  - id: xd_baton_zone
+    title: The exchange zone in a relay race
+    body: |
+      Most relay races are lost in the twenty metres where the baton changes hands, not
+      on the straights. The incoming runner never stops; the outgoing runner starts
+      moving before the baton arrives, so for a few strides both are running side by
+      side at nearly the same speed. The outgoing runner does not look back and does not
+      let go of the rhythm. The incoming runner calls the word, places the baton firmly
+      in the open palm, and only releases once the grip is felt. A clean pass is a short
+      period where two people are both responsible at once, and a dropped baton almost
+      always comes from one of them assuming the other already had it.
+
+  - id: xd_mise_en_place
+    title: Mise en place before dinner service
+    body: |
+      Before the first ticket comes in, every cook on the line has every ingredient
+      washed, cut, measured and within arm's reach: shallots minced, stock reduced,
+      sauces held warm, garnishes in small tubs in the order they will be used. Nothing
+      is chopped to order during service. The hour of preparation looks slow, but it is
+      what makes the next four hours possible, because during service there is no time
+      to think about anything except the plate in front of you. A cook who skips it is
+      still peeling garlic when forty covers arrive at once, and the whole line waits
+      on one station.
+
+  - id: xd_controlled_burn
+    title: Controlled burns in dry forests
+    body: |
+      Foresters deliberately set small, cool fires in the spring when the ground is damp
+      and the wind is low. The flames clear the dead brush and fallen needles on the
+      forest floor but rarely reach the canopy. Where these small burns were suppressed
+      for decades, the fuel piled up year after year, and when a fire finally came in a
+      dry August it was too hot to stop and took entire hillsides. Many small, managed
+      fires burn off the same material that one enormous fire would, but each one is
+      small enough to walk beside and put out.
+
+  - id: xd_hive_split
+    title: Splitting a crowded beehive
+    body: |
+      When a colony fills every frame and the queen has nowhere left to lay, the bees
+      start building queen cells and prepare to swarm, and half the hive leaves with the
+      old queen. A beekeeper who sees the signs early divides the colony by hand: frames
+      of brood, stores and nurse bees go into a second box, which raises its own queen.
+      Each smaller colony works better than the crowded one did, because foragers no
+      longer compete for the same entrance and the brood nest has room again. Waiting too
+      long means the split happens anyway, on the bees' terms, and usually into a tree.
+
+  - id: xd_opening_theory
+    title: Opening theory and the middlegame
+    body: |
+      Strong chess players memorise opening lines for the first ten or fifteen moves,
+      because those positions have been analysed for a century and improvising there
+      mostly just loses time. But the memorised lines end, and once the position is new
+      the player has to understand why the moves were played, not just recite them. A
+      player who only knows the sequence is lost the moment the opponent deviates. The
+      skill is knowing where the prepared part ends and switching from recall to
+      judgement at that point, instead of forcing the book onto a position it no longer
+      describes.
+
+  - id: xd_crop_rotation
+    title: Resting the soil with crop rotation
+    body: |
+      Planting the same crop in the same field every year strips the soil of the
+      nutrients that crop needs most and lets its pests settle in. Growers rotate: a
+      heavy feeder like corn, then beans that put nitrogen back, then a season of clover
+      that is ploughed under rather than harvested. The field yields less in the resting
+      year, and farmers who push every field every season get more for a few years and
+      then watch yields collapse. The fallow season is not lost output; it is what keeps
+      the land producing at all.
+
+  - id: xd_bulkheads
+    title: Watertight bulkheads on ships
+    body: |
+      A ship's hull is divided by steel bulkheads into sealed compartments. If the hull
+      is holed, water floods one or two compartments and stops at the walls, and the
+      ship stays afloat and limps to port. The doors between compartments are closed
+      when danger is expected, which makes moving through the ship slower in ordinary
+      times. Ships lost to a single hole were usually ones where the walls did not reach
+      high enough, so the water rose over the top of one wall and poured into the next,
+      and the next, until there were no dry compartments left.
+
+  - id: xd_trading_fours
+    title: Trading fours in a jazz combo
+    body: |
+      Late in a tune the soloists stop taking long choruses and start trading fours:
+      the saxophone plays four bars, the drummer answers with four, the trumpet takes
+      the next four, and around it goes. Nobody can dominate, because the form hands the
+      next phrase to someone else whether or not you are finished. Quieter players who
+      would never push forward for a full chorus get their four bars like everyone else,
+      and each answer has to respond to what was just played, so the players actually
+      listen to each other instead of waiting for their turn.
+
+  - id: xd_sourdough_feeding
+    title: Keeping a sourdough starter alive
+    body: |
+      A starter kept on the counter needs a little fresh flour and water every day.
+      Each feeding takes a minute, and skipping one does no visible harm, but skip a
+      week and the culture turns sour, grey and sluggish, and it can take days of care to
+      bring it back, if it comes back at all. Bakers who keep a starter for years are not
+      doing anything difficult. They made the feeding so small and so routine, the same
+      jar at the same time each morning, that it no longer depends on remembering or on
+      feeling like it.
+
+  # Long targets: `pad_with` prepends those main-corpus documents' text, so the idea
+  # below sits ~56,000 characters in, far past the 12,000-character read limit.
+  # Only map-reduced ingestion (ingest/source.py) can put it in the facets.
+  - id: xd_long_wedging
+    title: Notes from a year of pottery classes
+    pad_with: [long_0002, long_0004]
+    body: |
+      The last lesson of the year was about wedging. Before a lump of clay goes on the
+      wheel, you knead it on a canvas board for several minutes, folding and pressing
+      until the pockets of trapped air are pushed out. Skip it and the pot looks perfect
+      on the wheel, dries without complaint, and then bursts in the kiln when a hidden
+      bubble expands in the heat. The teacher's point was that the kiln only reveals
+      what was already wrong at the start, when fixing it cost nothing.
+
+  - id: xd_long_tuning
+    title: A season of volunteering with the town orchestra
+    pad_with: [long_0001, long_0005]
+    body: |
+      What surprised me most was the minute before each rehearsal. The oboe plays a
+      single A and every other instrument tunes to it, one section at a time, before a
+      note of music is played. Nobody tunes to their own idea of the pitch, and nobody
+      starts until the room agrees. The conductor told me that a hall full of players
+      each slightly sharp or flat sounds worse than any single wrong note, and that the
+      minute spent on one reference saves the whole evening.
+
+decoys:
+  - id: xd_decoy_k8s_limits
+    title: Kubernetes resource limits cheat sheet
+    body: |
+      Quick reference for the cluster. Requests are what the scheduler reserves for a
+      pod; limits are the ceiling before the container is throttled or killed. Set CPU
+      requests from the p95 of real usage, memory limits a little above the observed
+      peak. Our system dashboards live in the monitoring folder. For load tests use the
+      staging namespace, never production, and tag the run with your name so the cost
+      report can attribute it. The software team owns the base images; open a ticket for
+      new ones.
+
+  - id: xd_decoy_oncall_sheet
+    title: On-call rotation spreadsheet setup
+    body: |
+      The rotation lives in the shared spreadsheet. Each engineering shift is one row
+      with the primary and secondary names, their time zone and a phone number. The
+      pager tool reads the sheet every night at midnight, so edits made after that apply
+      the following day. Swaps between people are fine but must be entered in the sheet,
+      not just agreed in chat. Public holidays are marked in orange. Incidents are
+      logged in the tracker, not in this sheet.
+
+  - id: xd_decoy_launch_party
+    title: Product launch party venue options
+    body: |
+      Three venues shortlisted for the launch party. The rooftop bar fits eighty with a
+      covered area if it rains; the gallery space fits one hundred and twenty but needs
+      its own caterer; the hotel ballroom is the most expensive and the least fun. Release
+      day is a Thursday, so book for that evening. Budget covers drinks, light food and a
+      photographer. Send dietary requirements to the events inbox by the end of next
+      week.
+
+  - id: xd_decoy_team_photos
+    title: Captions for the team offsite photo album
+    body: |
+      Draft captions for the album from the offsite. Growing team, first time we have
+      all been in one place: photo one is the whole team on the steps, photo two the
+      boat trip, photo three the dinner with the terrible karaoke. Coordinate with the
+      design lead before publishing so the names are spelled correctly, and check that
+      everyone pictured is happy for the photos to go on the internal site.
+
+  - id: xd_decoy_meeting_rooms
+    title: Meeting room booking policy
+    body: |
+      Meeting rooms are booked through the calendar and released automatically if nobody
+      checks in within ten minutes. Recurring meetings longer than an hour need approval
+      from the office manager. The large room is reserved for all-hands on Mondays.
+      Everyone is expected to clean the whiteboard after use and leave the room for the
+      next group on time. Report broken screens to facilities.
+
+queries:
+  - id: xd_q_graceful
+    query: designing software that degrades gracefully under heavy load instead of crashing
+    expect: [xd_bend_not_break]
+    forbidden: [software, degrade, graceful, load, crash]
+
+  - id: xd_q_oncall_handoff
+    query: handing over on-call responsibility between engineering shifts without dropping incidents
+    expect: [xd_baton_zone]
+    forbidden: [on-call, engineering, shift, incident, handover]
+
+  - id: xd_q_launch_prep
+    query: getting everything ready before a product launch so nothing blocks on release day
+    expect: [xd_mise_en_place]
+    forbidden: [product, launch, release]
+
+  - id: xd_q_small_releases
+    query: shipping small frequent deploys to avoid one big risky release
+    expect: [xd_controlled_burn]
+    forbidden: [ship, deploy, release, risky]
+
+  - id: xd_q_split_team
+    query: when to split a growing engineering team before it gets too big to coordinate
+    expect: [xd_hive_split]
+    forbidden: [engineering, team, coordinate]
+
+  - id: xd_q_sales_playbook
+    query: when to stick to the sales playbook and when to improvise on a customer call
+    expect: [xd_opening_theory]
+    forbidden: [sales, playbook, customer, call]
+
+  - id: xd_q_burnout_rotation
+    query: rotating people off demanding projects so they do not burn out
+    expect: [xd_crop_rotation]
+    forbidden: [people, project, burn out, burnout, demanding]
+
+  - id: xd_q_blast_radius
+    query: isolating failures between microservices so one outage does not take down everything
+    expect: [xd_bulkheads]
+    forbidden: [microservice, outage, service, failure]
+
+  - id: xd_q_meeting_turns
+    query: running meetings so quieter colleagues get equal airtime
+    expect: [xd_trading_fours]
+    forbidden: [meeting, colleague, airtime]
+
+  - id: xd_q_catch_early
+    query: catching defects before they blow up in production
+    expect: [xd_long_wedging]
+    forbidden: [defect, production, bug]
+
+  - id: xd_q_shared_baseline
+    query: calibrating a group to one shared baseline before work begins
+    expect: [xd_long_tuning]
+    forbidden: [calibrate, calibrating, calibration, baseline, group]
+
+  - id: xd_q_habit
+    query: making a daily habit stick with tiny consistent effort
+    expect: [xd_sourdough_feeding]
+    forbidden: [habit, tiny, consistent, effort]

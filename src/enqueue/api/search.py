@@ -26,10 +26,17 @@ def search(q: str, limit: int = 20) -> dict:
     # Chunk and facet hits rolled up to one row per artifact (deduplicated),
     # so an artifact whose six chunks match does not occupy every slot.
     hits = search_results(q, limit=limit)
+    # What the search understood as filters ("PDFs · saved last month"), for the header.
+    from .. import tags
+    from ..retrieve import filters
+    from ..retrieve.candidates import _quoted_phrase
+
+    free, _ = tags.parse_tags(q)
+    understood = filters.parse(free)[1].label if _quoted_phrase(free) is None else ""
     try:
         from .. import events
 
         events.emit("search", f'"{q}" -> {len(hits)} hits')
     except Exception:  # noqa: BLE001
         pass
-    return {"query": q, "hits": hits}
+    return {"query": q, "hits": hits, "filters": understood}

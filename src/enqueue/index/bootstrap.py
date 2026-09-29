@@ -103,11 +103,13 @@ def rebuild_index(store: VectorStore) -> dict:
     chunks = store.upsert_chunks()
     facets = store.upsert_facets()
     entities = store.upsert_entities()
+    sections = store.upsert_sections()
     store.write_embed_version()
     return {
         "chunks": chunks,
         "facets": facets,
         "entities": entities,
+        "sections": sections,
         "counts": store.counts(),
     }
 

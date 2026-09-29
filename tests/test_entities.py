@@ -48,6 +48,11 @@ class _FakeProvider:
         return response_model(**reply)
 
 
+def _batch(*pairs):
+    """One batched enrichment reply: (name, fact) per entity."""
+    return {"facts": [{"name": n, "fact": f} for n, f in pairs]}
+
+
 def _patch_provider(monkeypatch, script):
     import enqueue.providers.base as base_mod
 
@@ -89,6 +94,12 @@ def sqlite_store(store, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_background_ingest(quiet_queue):
+    """notes.create queues real ingest, whose worker thread would generate entities with
+    the scripted provider too and take the replies a test expects for itself."""
+
+
+@pytest.fixture(autouse=True)
 def _no_real_judge(monkeypatch):
     """Retrieval tests here assert the entity/facet ladder, not the gray-zone
     judge. Stub it fail-open (keep everything) exactly as test_chats.py and
@@ -112,8 +123,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
-                {"fact": ROOSEVELT},
-                {"fact": CURIE},
+                _batch(("Theodore Roosevelt", ROOSEVELT), ("Marie Curie", CURIE)),
             ],
         )
 
@@ -121,7 +131,7 @@ class TestExtraction:
 
         assert error is None
         assert count == 2
-        assert provider.calls == 3  # one extraction, one enrich per entity
+        assert provider.calls == 2  # one extraction, one batched enrichment
         conn = db.get_conn()
         rows = _entities(conn, aid)
         conn.close()
@@ -140,7 +150,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Marie Curie"}]},
-                {"fact": CURIE},
+                _batch(("Marie Curie", CURIE)),
             ],
         )
 
@@ -157,8 +167,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
-                RuntimeError("model down"),
-                {"fact": CURIE},
+                _batch(("Theodore Roosevelt", ""), ("Marie Curie", CURIE)),
             ],
         )
 
@@ -183,11 +192,16 @@ class TestExtraction:
                         {"name": "World War II"},
                     ]
                 },
-                # Fact that never names the entity: cannot bridge the gap.
-                {"fact": "A famous president who led reforms in the early 1900s."},
-                # Too short, and no period.
-                {"fact": "Curie!"},
-                {"fact": WAR},
+                _batch(
+                    # Fact that never names the entity: cannot bridge the gap.
+                    (
+                        "Theodore Roosevelt",
+                        "A famous president who led reforms in the early 1900s.",
+                    ),
+                    # Too short, and no period.
+                    ("Marie Curie", "Curie!"),
+                    ("World War II", WAR),
+                ),
             ],
         )
 
@@ -206,7 +220,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}]},
-                {"fact": ""},  # the model does not know the entity
+                _batch(("Theodore Roosevelt", "")),  # the model does not know the entity
             ],
         )
 
@@ -234,8 +248,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
-                {"fact": ROOSEVELT},
-                {"fact": CURIE},
+                _batch(("Theodore Roosevelt", ROOSEVELT), ("Marie Curie", CURIE)),
             ],
         )
         _generate(aid)
@@ -244,7 +257,7 @@ class TestExtraction:
             monkeypatch,
             [
                 {"entities": [{"name": "Marie Curie"}]},
-                {"fact": CURIE},
+                _batch(("Marie Curie", CURIE)),
             ],
         )
         count, error = _generate(aid)
@@ -259,13 +272,57 @@ class TestExtraction:
     def test_entity_count_is_capped(self, store, monkeypatch):
         aid = notes.create(body="Many names in this text.")["artifact"]["id"]
         names = [{"name": f"Person {i}"} for i in range(12)]
-        facts = [{"fact": f"Person {i} - a notable figure from history books."} for i in range(12)]
-        _patch_provider(monkeypatch, [{"entities": names}, *facts])
+        facts = _batch(
+            *(
+                (f"Person {i}", f"Person {i} - a notable figure from history books.")
+                for i in range(12)
+            )
+        )
+        provider = _patch_provider(monkeypatch, [{"entities": names}, facts])
 
         count, error = _generate(aid)
 
         assert error is None
         assert count == entities_mod.MAX_ENTITIES
+        assert provider.calls == 2
+
+    def test_batch_failure_falls_back_to_one_call_per_name(self, store, monkeypatch):
+        aid = notes.create(body="Roosevelt and Curie both left a mark.")["artifact"]["id"]
+        _patch_provider(
+            monkeypatch,
+            [
+                {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
+                RuntimeError("batch call down"),
+                RuntimeError("model down"),  # Roosevelt, per name
+                {"fact": CURIE},  # Curie, per name
+            ],
+        )
+
+        count, error = _generate(aid)
+
+        assert (count, error) == (1, None)
+        conn = db.get_conn()
+        rows = _entities(conn, aid)
+        conn.close()
+        assert [r["entity"] for r in rows] == ["Marie Curie"]
+
+    def test_a_name_the_reply_leaves_out_is_dropped(self, store, monkeypatch):
+        aid = notes.create(body="Roosevelt and Curie.")["artifact"]["id"]
+        _patch_provider(
+            monkeypatch,
+            [
+                {"entities": [{"name": "Theodore Roosevelt"}, {"name": "Marie Curie"}]},
+                _batch(("marie curie", CURIE), ("Someone Else", "Someone Else - not asked for.")),
+            ],
+        )
+
+        count, error = _generate(aid)
+
+        assert (count, error) == (1, None)
+        conn = db.get_conn()
+        rows = _entities(conn, aid)
+        conn.close()
+        assert [r["entity"] for r in rows] == ["Marie Curie"]
 
 
 class TestQueueHook:
@@ -287,7 +344,7 @@ class TestQueueHook:
             monkeypatch,
             [
                 {"entities": [{"name": "Theodore Roosevelt"}]},
-                {"fact": ROOSEVELT},
+                _batch(("Theodore Roosevelt", ROOSEVELT)),
             ],
         )
 
@@ -340,7 +397,7 @@ class TestQueueHook:
             [
                 RuntimeError("facet generation down"),
                 {"entities": [{"name": "Theodore Roosevelt"}]},
-                {"fact": ROOSEVELT},
+                _batch(("Theodore Roosevelt", ROOSEVELT)),
             ],
         )
 
@@ -479,7 +536,7 @@ class TestIndex:
         aid = self._seed(store)
         sqlite_store.index_entities_artifact(aid)
 
-        hits = sqlite_store._search_keyword(sqlite_store.ENTITIES, "President", limit=5)
+        hits = sqlite_store.search_keyword(sqlite_store.ENTITIES, "President", limit=5)
 
         assert any(h["entity_id"] == "entity-1" for h in hits)
 
@@ -500,3 +557,70 @@ class TestIndex:
 
         assert result["indexed"] == 1
         assert result["collection"] == sqlite_store.ENTITIES
+
+
+class TestCapturesGetEntities:
+    """A link/PDF/image has no body; its words live in page_text. Entities used to read
+    only `body`, so every capture got none."""
+
+    def _capture_with_pages(self, pages):
+        import uuid
+
+        aid = str(uuid.uuid4())
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, body, content_hash, status,"
+                " created_at, updated_at) VALUES (?, 'pdf', 'A biography', NULL, ?, 'ok', ?, ?)",
+                (aid, aid, db.now(), db.now()),
+            )
+            for i, text in enumerate(pages):
+                conn.execute(
+                    "INSERT INTO page_text (artifact_id, page, text, extractor) VALUES (?,?,?,?)",
+                    (aid, i + 1, text, "pymupdf"),
+                )
+        return aid
+
+    def test_a_pdf_capture_is_read_from_its_pages(self, store, monkeypatch):
+        seen = []
+        provider = _patch_provider(
+            monkeypatch,
+            [
+                {"entities": [{"name": "Theodore Roosevelt"}]},
+                _batch(("Theodore Roosevelt", ROOSEVELT)),
+            ],
+        )
+        real = provider.complete
+
+        def spy(system, user, response_model, context=None, max_retries=None):
+            seen.append(user)
+            return real(system, user, response_model, context, max_retries)
+
+        provider.complete = spy
+        aid = self._capture_with_pages(["He charged up San Juan Hill.", "Later, trust-busting."])
+
+        count, error = _generate(aid)
+
+        assert (count, error) == (1, None)
+        assert "San Juan Hill" in seen[0] and "trust-busting" in seen[0]
+        conn = db.get_conn()
+        try:
+            assert [r["entity"] for r in _entities(conn, aid)] == ["Theodore Roosevelt"]
+        finally:
+            conn.close()
+
+    def test_annotations_reach_the_extractor(self, store, quiet_queue, monkeypatch):
+        seen = []
+        provider = _patch_provider(monkeypatch, [{"entities": []}])
+        real = provider.complete
+
+        def spy(system, user, response_model, context=None, max_retries=None):
+            seen.append(user)
+            return real(system, user, response_model, context, max_retries)
+
+        provider.complete = spy
+        aid = self._capture_with_pages(["Some page text."])
+        notes.annotate(aid, "Reminds me of Marie Curie.")
+
+        _generate(aid)
+
+        assert "(your note) Reminds me of Marie Curie." in seen[0]

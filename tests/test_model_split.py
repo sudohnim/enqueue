@@ -146,3 +146,41 @@ def test_gray_zone_judge_is_given_the_facets(store, quiet_queue, monkeypatch):
         [{"artifact_id": aid, "title": "Backfill", "snippet": "assorted", "kind": "note"}],
     )
     assert "leadership and debt" in seen["user"]  # the facet reached the judge
+
+
+def test_each_role_reads_its_own_model_and_falls_back_to_chat(store):
+    """chat/ingest/search each resolve their own setting; blank ingest/search use chat."""
+    settings.update(
+        {"llm_backend": "ollama", "llm_model": "glm", "summarize_model": "", "search_model": ""}
+    )
+    assert [provider_base.model_for(r) for r in ("chat", "ingest", "search")] == ["glm"] * 3
+
+    settings.update({"summarize_model": "kimi", "search_model": "fast"})
+    assert provider_base.get_provider().model == "glm"
+    assert provider_base.get_provider(role="ingest").model == "kimi"
+    assert provider_base.get_provider(summarize=True).model == "kimi"
+    assert provider_base.get_provider(role="search").model == "fast"
+
+
+def test_local_only_ignores_every_role(store):
+    """A local-only artifact stays on the local model whatever the roles say."""
+    from enqueue import config
+
+    settings.update({"llm_model": "glm", "summarize_model": "kimi", "search_model": "fast"})
+    for role in ("chat", "ingest", "search"):
+        assert provider_base.get_provider(local_only=True, role=role).model == config.LLM_MODEL
+
+
+def test_gray_zone_judge_uses_the_search_model(store, monkeypatch):
+    """The relevance judge asks for the search role, not chat."""
+    from enqueue.retrieve import candidates as cand
+
+    asked = []
+
+    def _fake(**kw):
+        asked.append(kw.get("role"))
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(cand, "get_provider", _fake)
+    kept = cand.judge_gray_zone("q", [{"artifact_id": "a1", "title": "t", "snippet": "s"}])
+    assert asked == ["search"] and kept == {"a1"}

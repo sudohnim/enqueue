@@ -34,6 +34,18 @@ const api = async (p, o) => {
 	return r.json();
 };
 
+// Tell the engine an artifact was opened (opens.py). Fire and forget: a lost report
+// must never slow or break opening. A search open carries its query and the result's
+// 1-based rank, which makes it a case in the real-search eval (eval_real.py).
+function reportOpen(id, source, query, rank) {
+	fetch("/artifacts/" + id + "/opened", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ source, query: query || null, rank: rank || null }),
+		keepalive: true,
+	}).catch(() => {});
+}
+
 // Trailing-edge debounce: coalesce a burst of calls into one, `ms` after the
 // last. Used for the per-keystroke work that only needs to land once the typing
 // pauses (UIUX.3 title derivation, the mobile search box).

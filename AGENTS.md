@@ -47,6 +47,7 @@ Ollama's adapter calls it out in a comment because the default is `TOOLS`, which
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
 A trust-update mechanism (promote on save, demote on eject) is a planned feature, not an implemented one.
 For now, trust is a flat constant and every facet contributes equally after the 0.5 weighting.
+Usage does feed ranking one level up, per artifact rather than per facet: see "Usage" under Retrieval design notes.
 
 4. **There is no Lumo. The cloud backend is OpenRouter.**
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
@@ -198,29 +199,41 @@ One line per file, describing its job.
 | `events.py` | The activity log: `emit()`/`recent()` over the persisted `events` table. Never raises. Backs the Settings Activity tab and the vault decoy. |
 | `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
+| `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
+| `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
+| `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
 
 ### Ingest
 
 | File | Job |
 | --- | --- |
-| `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. A vision describe failure marks the image `status='failed'` and surfaces in `/doctor` (`images_without_body`) instead of failing silently. |
-| `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
+| `ingest/queue.py` | In-memory work queue. One daemon thread. `submit()` returns immediately. Model steps run sections -> facets -> entities -> contexts; each skips work already current (facets/entities written by the current ingest model from the current body; contexts only for chunks missing one, and `chunk_artifact` carries contexts over unchanged chunk text), and a transient failure in any of them (`source.Owed`) owes the artifact a `facet_retry`, so a rate-limited reprocess finishes itself later at the cost of only what was missing. "Rebuild concepts" is how to force facets with the same model. A vision describe failure marks the image `status='failed'` and surfaces in `/doctor` (`images_without_body`) instead of failing silently. |
+| `ingest/chunk.py` | Markdown chunker. Headings, lists, code fences kept whole. Prose merged to a floor. Anything over `CHUNK_MAX_TOKENS` (counted with the embedder's own tokenizer) is split at line, then sentence, then word boundaries. Chunk source includes the artifact's current annotation text; a bodyless capture falls back to its title + filename so it always has at least one chunk. |
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
+| `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), plus current annotations marked "(your note)". A document over `FACET_INPUT_CHARS` is map-reduced: split into sections of up to 10k characters on paragraph boundaries (at most 24), each summarized by the ingest model (cached in `derived_values`, scope `section_summary`, per section hash and model), and read as ordered summaries. The summaries are also written to `sections` (stamped with ingest model and body version; left untouched when unchanged, since facets, entities and contexts each read through here) and indexed as their own search layer by the ingest queue. A section that fails for a reason that will pass (rate limit, outage; `providers.base.is_transient`) raises `SummariesOwed` so the artifact is retried instead of written from its opening; any other failure falls back to the capped opening; `text_only` text is never mapped. Facets, entities and chunk contexts all read through it. |
+| `ingest/context.py` | Contextual chunks: for an artifact with 2+ chunks, the ingest model writes one or two sentences per chunk placing it in the document (batches of 30). Stored in `chunks.context`, embedded and keyword-indexed with the chunk (not in the trigram table). Skips `text_only` artifacts. |
+| `ingest/related.py` | Related artifacts: each facet statement searches the facet index; another artifact's closeness is its best similarity to any of them. Mention links join them: another artifact whose current entities name the same person, place or thing (case-insensitive) scores 0.7 and stores that name in `related.via`; a name more than 8 artifacts share is too common to link. The top 5 at or above 0.7 are stored in `related` in both directions. Stale facets and entities never count. Recomputed after ingest writes facets or entities and after any facet edit/regenerate (`facets._reindex`); no model call. `GET /artifacts/{id}` returns `related` (each with `via`), shown as a Related section in the artifact drawer; a mention link's chip adds "both mention <name>" on a second line. |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve
 
 | File | Job |
 | --- | --- |
+| `retrieve/lift.py` | Query lifting: the search model restates a search as 2-4 facet-style claims, each also searched against facets (dense similarity counts for the floor; never lexical). Cached in `derived_values` (scope `query_lift`). Chat always lifts; `/search` only with the `search_lift` setting (Settings > Features > Search, default off). Tests stub it via an autouse conftest fixture. |
+| `retrieve/decompose.py` | Two-sided questions: "compare X and/with Y", "the difference between X and Y", "how does X compare to Y", "X vs Y" split into their sides (each 1-12 words; plain rules, no model call). `chats.passages` searches each side on its own (`_library_passages`), interleaves them rank by rank so both sides reach the answer, then fills leftover slots from the whole question. |
+| `retrieve/passage_links.py` | Passage connections: for each of an artifact's first 40 chunks, its stored vector finds the nearest chunks in other live artifacts (`store.similar_chunks`); those at or above `PASSAGE_MIN` (0.78 cosine, about a quarter of eval-corpus passages link) become up to 3 connections per passage. On demand, nothing stored, no model call. `GET /artifacts/{id}/connections`; the drawer's "Passages that connect" section (`mountConnections` in `static/js/artifact.js`) shows each passage's opening words and its linked notes. |
+| `retrieve/filters.py` | Filters in the words of a search: an unambiguous kind word (pdf, link/article, image/photo/screenshot; never "note") and a time phrase (today, yesterday, this/last week/month/year, the last N days/weeks/months, in March [2025], in 2024) become exact filters on kind and `created_at`, and the rest is searched. Plain rules, no model call. `search_results` intersects them with `#tag` filters into one `allowed` set (empty means no results, never the whole library); a filter with no other words lists what it allows. `/search` returns the understood filters as `filters` ("PDFs · saved last month") for the results header. A quoted phrase is never parsed. |
+| `retrieve/model_rank.py` | Model re-ranking: the search model reads the top `WINDOW` (20) floor survivors (title, snippet, facets) and returns them best first; missing ids keep their fused order, a failure keeps the whole fused order. Cached in `derived_values` (scope `model_rank`) per query, candidate set and model. Opt-in via the `search_model_rank` setting (Settings > Features > Search, default off); runs after the R.9 cross-encoder when both are on. |
 | `retrieve/candidates.py` | `/search` rollup: dense + FTS5 keyword fused with RRF, plus trigram substring recall, a fuzzy short-field branch (titles, entities, annotations), and exact quoted-phrase pinning. One row per artifact. |
 
 ### Index
 
 | File | Job |
 | --- | --- |
-| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). |
+| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). `embed()` for passages, `embed_query()` for searches (adds `EMBED_QUERY_PREFIX`), `token_count()` for the chunker. |
 | `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
-| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. |
+| `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. `search_legs()` returns the fused list plus the raw dense/keyword/trigram legs from one pass on one connection; callers that need both (the relevance floor in `/search` and `chats.passages`) must use it rather than re-running `search_dense`/`search_keyword`. |
 | `index/fusion.py` | Reciprocal rank fusion as a pure function. |
 | `index/bootstrap.py` | Startup index build (no manual step) + cutover cleanup. |
 
@@ -244,6 +257,11 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0037_related_via.py` | `related.via`: the shared name behind a "both mention" link (NULL for an idea link). |
+| `migrations/versions/0036_sections.py` | `sections` (artifact_id, ordinal, summary, model_version, body_version): section summaries of long documents, a search layer. Purge deletes an artifact's rows. |
+| `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
+| `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
+| `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop
@@ -263,12 +281,13 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `bin/setup` | Make a fresh machine buildable: install/update Rust to a stable >= MSRV 1.88 (`rustup update stable --no-self-update`), install `uv` + pin Python 3.12, check Node. `--android` also checks SDK/NDK/JDK, installs tauri-cli, adds the aarch64-linux-android target. Idempotent, no sudo. Run it when `bin/launch` fails on toolchain (e.g. `rustc <ver> is not supported`). |
-| `bin/verify` | JS parse on the HTML pages, pytest, contrast check, desktop Rust unit tests (`cargo test --lib` on the host target when any `desktop/**/*.rs` changed - the Android check builds for the android target and cannot run tests), and an Android build check (auto-detects the NDK; runs a full `cargo tauri android build` when Rust/Kotlin/`gen/android` changed, else `cargo check --lib`). Gated on every code commit by `.githooks/pre-commit`. |
+| `bin/verify` | `--fast`: black, ruff, JS parse on the HTML pages and contrast (seconds; the pre-commit hook). Full: adds pytest (`-n auto`), desktop Rust unit tests (`cargo test --lib` on the host target when any `desktop/**/*.rs` changed - the Android check builds for the android target and cannot run tests), and an Android build check (auto-detects the NDK; runs a full `cargo tauri android build` when Rust/Kotlin/`gen/android` changed, else `cargo check --lib`). `.githooks/pre-commit` runs `--fast` on every code commit; CI runs the tests and evals; run the full gate by hand before merging a desktop or mobile change. |
 | `bin/check-contrast` | WCAG contrast check on home.html palette tokens. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
+| `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
 | `bin/deploy-relay` | Deploy the sync relay to Railway (dev/prod), gated on the relay tests, polls `/health`. |
 
 ### Static
@@ -290,8 +309,9 @@ One line per file, describing its job.
 1. **Capture** (`capture.py` or `notes.py`): create an artifact row, write blob if applicable, return immediately.
 2. **Queue** (`ingest/queue.py`): `submit(artifact_id)` puts it on an in-memory queue. Returns before processing.
 3. **Worker thread**: for links, optionally fetch preview; for PDFs, extract text via pymupdf; chunk the text; index into the sqlite-vec store. An image whose vision describe fails is marked `status='failed'` and surfaced in `/doctor` rather than failing silently.
-4. **Chunk** (`ingest/chunk.py`): markdown-aware splitting. Headings, lists, code fences are coherent units. Loose prose merged to a floor of 120 words. Long chunks split at 380 words with 60-word overlap. The chunk source includes the artifact's current annotation text (superseded annotations excluded), and a bodyless capture falls back to its title + filename so every artifact has at least one chunk.
+4. **Chunk** (`ingest/chunk.py`): markdown-aware splitting. Headings, lists, code fences are coherent units. Loose prose merged to a floor of 120 words. A unit over `CHUNK_MAX_TOKENS` (400, counted with the embedder's tokenizer via `embed.token_count`) is split at line, then sentence, then word boundaries, each piece opening with up to 60 tokens of the one before. bge-base reads 512 tokens and silently drops the rest, and the embedded text is title + context line + chunk, so the 112-token remainder is the title's and context's budget (`tests/test_chunk.py` pins it). Text of at most 400 characters skips the tokenizer, since a token covers at least one character. The chunk source includes the artifact's current annotation text (superseded annotations excluded), and a bodyless capture falls back to its title + filename so every artifact has at least one chunk.
 5. **Index** (`index/store_sqlite.py`): embed chunks (dense), upsert into `vec_chunks`, `fts_chunks`, and the trigram `fts_chunks_tri`. Title prepended for indexing only. Writing an annotation re-queues the artifact so its new text is searchable.
+6. **Facets, entities, chunk context** run after the first index, behind the capture: facets and entities from `ingest/source.py` text, then (multi-chunk artifacts only) chunk contexts, after which the artifact is re-indexed so the contexts are embedded. A quoted exact-phrase search only matches a chunk's own words, never its context.
 
 ### Facet generation
 
@@ -360,10 +380,10 @@ Migrations run automatically at startup via Alembic.
 | `artifacts` | the primary model | `kind` is note/link/pdf/image/file. `content_hash` UNIQUE for dedupe. Captures have `body IS NULL` (CHECK constraint). Notes have editable body. |
 | `artifact_versions` | every saved state of a note's body | append-only, before each update |
 | `annotations` | commentary on a captured artifact | append-only, superseding by id |
-| `chunks` | literal layer for search | text, ordinal, chunker name |
+| `chunks` | literal layer for search | text, ordinal, chunker name; `context` + `context_model` (model-written placement line, multi-chunk artifacts only) |
 | `facets` | conceptual layer for search | level 0-4, statement, model_version, trust (default 0.5), `edited` (1 = hand-written/edited, protected from regeneration; migration 0031) |
 | `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only |
-| `facet_retry` | facets owed after a transient model failure | attempts, next_at, last_error; retried with backoff |
+| `facet_retry` | an artifact owed a retry after a transient model failure in any ingest step (sections, facets, entities, contexts) | attempts, next_at, last_error; retried with backoff (30s doubling to 24h) by the sweeper, which re-runs the whole artifact; cleared only by a run in which no step owed |
 | `events` | the activity log (migration 0032) | ts, kind, detail, JSON `data`, duration_ms. Local-only, never synced. Bounded/trimmed. |
 | `secret_hits` | credential patterns found in artifact text | redacted excerpts only |
 | `page_text` | extracted text per PDF page | derived, rebuildable |
@@ -372,6 +392,9 @@ Migrations run automatically at startup via Alembic.
 | `chat_messages` | one turn | append-only. grounded flag. |
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
+| `related` | links between artifacts whose facets make the same point, or that name the same thing (`via`) | derived at ingest, both directions, filtered to live artifacts on read |
+| `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
+| `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
 
 ### Invariants
 
@@ -393,8 +416,8 @@ after retrieval.
 
 | Table | What it holds |
 | --- | --- |
-| `vec_chunks` / `vec_facets` | sqlite-vec (vec0) tables: id + 768-dim embedding |
-| `fts_chunks` / `fts_facets` | FTS5 tables: the indexed text, with the id as an unindexed reference |
+| `vec_chunks` / `vec_facets` / `vec_entities` / `vec_sections` | sqlite-vec (vec0) tables: id + 768-dim embedding |
+| `fts_chunks` / `fts_facets` / `fts_entities` / `fts_sections` | FTS5 tables: the indexed text, with the id as an unindexed reference |
 | `fts_chunks_tri` | FTS5 trigram table over chunk text: substring matches unicode61 cannot see ("hopper" inside "chopper") |
 | `index_meta` | key/value: the embedding version the index was built at |
 
@@ -427,7 +450,8 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | --- | --- | --- |
 | `ENQ_LLM_BACKEND` | `ollama` | Which backend to use: ollama, openrouter, opencode, custom |
 | `ENQ_LLM_MODEL` | `llama3.1:8b` | The interactive model id (chat, routing, gray-zone judge). Placeholder, known bad at structured output. |
-| `ENQ_SUMMARIZE_MODEL` | (empty) | Optional summary-only model. `get_provider(summarize=True)` uses it for facet generation; empty falls back to `llm_model`. See "Which stage runs where". |
+| `ENQ_SUMMARIZE_MODEL` | (empty) | The ingestion model (facets, entities), `role="ingest"`. Empty falls back to `llm_model`. See "Model roles". |
+| `ENQ_SEARCH_MODEL` | (empty) | The search model (gray-zone relevance judge), `role="search"`. Empty falls back to `llm_model`. |
 | `ENQ_OLLAMA_URL` | `http://127.0.0.1:11434/v1` | LLM endpoint URL |
 | `ENQ_LLM_API_KEY` | `ollama` (ignored by Ollama) | API key for hosted backends |
 | `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
@@ -437,6 +461,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
+| `ENQ_SEARCH_MODEL_RANK` | `off` | The `search_model_rank` setting: the search model re-orders the top 20 results of `/search` (`retrieve/model_rank.py`). |
 | `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
 
 ### Where secrets live
@@ -483,11 +508,23 @@ class Provider(Protocol):
 Local-only artifacts always route to ollama, regardless of the configured backend.
 This is the one rule that is not a preference: marking something local-only is a promise that its text never leaves the machine.
 
-**Two models, split by job (the summary model).** `summarize=True` selects `summarize_model` when one is set, otherwise `llm_model`. So facet generation can run on a different model than chat: pass `get_provider(summarize=True)` for the background summary work (`ingest/facets.py`), plain `get_provider()` for interactive work (chat answers, `assistant.route`, the search gray-zone judge). This lets a fast/cheap model answer while a strong/slow one writes the summaries that power conceptual search, or the reverse. A facet is stamped with the model that wrote it, and retrieval drops facets whose `model_version` no longer matches the active summary model, so a model switch never surfaces stale summaries. `test_model_split.py` covers the routing.
+**Model roles.** `get_provider(role=...)` picks one of three models, all on the same backend, key and headers (`providers/base.py` `ROLE_SETTINGS`, `model_for`):
+- `chat` (`llm_model`): chat answers, titles/topics, `assistant.route`, pivot planning and `derive`.
+- `ingest` (`summarize_model`, UI label "Ingestion"): facets and entities. `summarize=True` is the older spelling of `role="ingest"`. The storage name stays `summarize_model` because it syncs and lives in existing settings files.
+- `search` (`search_model`): the gray-zone relevance judge.
+Blank `ingest`/`search` fall back to `llm_model`, so a single-model setup is unchanged. Local-only artifacts ignore every role and use the local model. A facet is stamped with the ingest model that wrote it, and retrieval drops facets whose `model_version` no longer matches the current ingest model, so changing it marks concepts stale until "Rebuild concepts". The Settings AI tab has a "Models" group (Chat, Ingestion, Search, Images) with a picker of the backend's known models. `test_model_split.py` covers the routing.
+
+The adapter builds its OpenAI/instructor client lazily on the first model call, so `get_provider().model` is free (the search staleness checks read it on every query; building the client costs ~50 ms plus a Keychain subprocess on macOS).
 
 The adapter uses `instructor.Mode.JSON` for all endpoints.
 The old AGENTS.md specified different modes per adapter, but the code does not.
 See the questions section above.
+
+Adapter gotchas:
+
+- The API key is resolved per provider instance, not at import, so a key stored in Settings applies on the next question.
+- `llm_headers` is one `Name: value` per line; a line without a colon is dropped rather than sent.
+- A call with an empty `user` folds `system` into the user message, because Gemini and others reject an empty user turn.
 
 All model-call failures are caught in `OpenAICompatibleProvider.complete()` and translated to a `ProviderError` carrying one human-readable sentence.
 The translation walks the exception chain to find the most specific OpenAI exception type, because the useful exception is often below the one that was caught.
@@ -497,10 +534,11 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | Stage | Backend | Why |
 | --- | --- | --- |
 | Embeddings | always local (fastembed) | No network, strictly more private |
-| Facet generation | the **summary** model (`summarize_model`, else `llm_model`) | The moat. Bad facets are permanent pollution. |
+| Facet + entity generation | the **ingest** model (`summarize_model`, else `llm_model`) | The moat. Bad facets are permanent pollution. |
 | Rerank | the configured backend | Low volume, high value |
 | Synthesis | the configured backend | The room: through-line, tensions, view sections (internally grouped) |
-| Chat answer / routing / gray-zone judge | the **interactive** model (`llm_model`) | |
+| Chat answer / routing | the **chat** model (`llm_model`) | |
+| Gray-zone search judge | the **search** model (`search_model`, else `llm_model`) | Runs per query; fast beats clever. |
 | Chat title/topics | the interactive model | Best-effort, non-blocking |
 
 ---
@@ -527,6 +565,8 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq chats [--limit N]` | List conversations |
 | `enq chunk` | Rebuild chunks from note bodies |
 | `enq facet-gate` | Decide which artifacts never get facets |
+| `enq eval-embedders [--models a,b]` | Compare embedding models on both evals and suggest each one's floor bars |
+| `enq eval-real [--update-baseline]` | Score your real searches against your library; fails when a baseline query now fails |
 
 The CLI never touches the database directly.
 Every command calls `httpx` against `http://127.0.0.1:8787`.
@@ -544,16 +584,18 @@ All endpoints on `127.0.0.1:8787`.
 GET    /                            home HTML
 GET    /capture                     capture overlay HTML
 GET    /health                      status + row counts
+GET    /resurface                   today's older note for the wall (wall item + reason), or null
 GET    /greeting                    the wall's greeting for the current four-hour bucket (cached or fallback)
 GET    /artifacts                   list, newest first. ?limit&offset&order&pinned
 GET    /artifacts/{id}              detail, body, annotations, facets, versions
 GET    /artifacts/{id}/text         readable text, with page numbers for PDFs
+GET    /artifacts/{id}/connections  per passage, the other notes that say something close
 GET    /artifacts/{id}/blob         original bytes
 GET    /artifacts/{id}/versions/{vid}  one saved body
 GET    /artifacts/{id}/find?q=      phrase locations in a PDF (page fractions)
 GET    /artifacts/{id}/preview-image  link's stored picture
 GET    /artifacts/{id}/page/{n}     rendered PNG of a PDF page
-GET    /search?q=                   hybrid search, no model calls
+GET    /search?q=                   hybrid search, no model calls; kind/time words become filters (returned as `filters`)
 GET    /chats                       conversations, pinned first
 GET    /chats/ready                 whether there is anything to answer from
 GET    /chats/passages?q=           what an answer would be allowed to read
@@ -605,6 +647,8 @@ DELETE /facets/{fid}                 delete one summary line
 POST   /index                        rebuild the search index
 POST   /reprocess                    re-extract, re-chunk, re-index everything
 POST   /ingest/wait                  block until queue drains (for tests)
+POST   /artifacts/{id}/opened        record an open (source, and a search open's query + rank)
+POST   /eval/real                    run the real-search eval (?update_baseline=true stores it)
 PUT    /settings/api-key             store key in Keychain
 DELETE /settings/api-key             remove key from Keychain
 PATCH  /settings                     update writable settings
@@ -636,11 +680,12 @@ Per artifact, once, re-runnable, all behind the capture response (`ingest/queue.
 1. **Chunks** (the literal layer). Chunk the text with the markdown chunker and embed each chunk locally (bge-base, 768-dim). Chunk text is fed from the note body, PDF page text, link preview text, image annotations (R.2), and a vision model's image description (K.11). The title is prepended for indexing only (see gotchas).
 2. **Facets** (the conceptual layer). 5-15 model-written statements of what the artifact could be an example of, climbing levels 0-4, each embedded. Per-facet quality gate; best effort. Bridges the semantic-to-conceptual gap.
 3. **Entities** (the named-thing layer). Named things in the body, each enriched with a one-line world-knowledge fact and embedded. Bridges a query in the world's vocabulary to a note that never uses it ("presidents" reaching a Roosevelt biography).
+4. **Section summaries** (the long-document layer). For a document too long to read in one pass, the ingest model's summary of each ~10k-character section, embedded and keyword-indexed. A long PDF becomes findable by what each part is about, not only by its sentences; in chat a section hit pulls the chunk from that part of the document (section i of n sits about i/n of the way through).
 
-Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`); see the index-tables section.
+Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`, `sections`); facets, entities and sections share one per-artifact indexing path (`_index_layer_artifact`). See the index-tables section.
 
 **Query lowers concepts toward artifacts.**
-`retrieve/candidates.py::search_results` runs seven legs, each a ranked list, and fuses them:
+`retrieve/candidates.py::search_results` runs eight legs, each a ranked list, and fuses them:
 
 1. **Dense** - query embedding against chunk vectors.
 2. **Keyword** - FTS5 BM25 over chunk text, title column weighted 10x (`bm25(fts_chunks, 1.0, 10.0, 1.0)`).
@@ -649,6 +694,7 @@ Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`); see 
 5. **Exact phrase** - quoted phrases pinned (R.10).
 6. **Facets** - the conceptual channel, hits weighted by trust (`score * trust * 2.0`).
 7. **Entities** - the named-thing channel.
+8. **Sections** - long-document section summaries, weighted like an untrusted facet and staled the same way.
 
 Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optionally rerank the top window with the bge-reranker cross-encoder (R.9, off by default), then roll up to one row per artifact.
 
@@ -659,10 +705,93 @@ Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optional
 | Literal | chunk | Search, citation to passage |
 | Conceptual | facet | Search's conceptual channel, weighted by trust |
 | Named-thing | entity | Search's world-vocabulary channel |
+| Section | section summary | Long documents found by what each part is about |
 
 ### The relevance floor (Q.3, in progress)
 
-Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` shares the same `passes_relevance_floor` predicate so the answer path refuses honestly. Calibration (the two constants + the gray-zone judge) is the active work in `docs/PLAN.md` Phase Q.
+Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` applies the same `_floor_verdict` gate (Q.5 chunks, Q.10 facets/entities) so the answer path refuses honestly. Calibration (the two constants + the gray-zone judge) is the active work in `docs/PLAN.md` Phase Q.
+
+### Retrieval design notes
+
+These used to live as long comments in `retrieve/candidates.py`, `index/store_sqlite.py` and `chats.py`.
+
+**Relevance floor (Q.3 / Q.3b / Q.7).**
+One dense threshold cannot work: the eval showed the weakest real matches (cosine ~0.518) sit below the strongest gibberish neighbors (~0.668).
+So the floor has two bars on the true-cosine scale, `KEEP_ABOVE = 0.68` and `DROP_BELOW = 0.40`, and a gray zone between them decided by one batched model call.
+The bars are on the scale of a PREFIXED query (see "Query prefix"): the prefix lowers every query-to-passage cosine by about 0.07 (real matches: weakest 0.516 -> 0.427, median 0.624 -> 0.564; strongest gibberish 0.665 -> 0.597), so the old unprefixed bars (0.75/0.45) moved down by the same margin.
+The bars live per model in `config.EMBED_MODELS` (`keep_above`, `drop_below`) and are read into `KEEP_ABOVE`/`DROP_BELOW`; recalibrate them whenever the model or its prefix changes: `evals/queries.yaml` real-match minimum must stay above `DROP_BELOW`, and every "nothing" query's best hit below `KEEP_ABOVE` (`enq eval-embedders` prints fitted values).
+The bars are start values for the Phase Q.4 eval (all 42 real-match queries passing, Nothing-OK toward 8/8), not final answers.
+Lexical legs that bypass the floor: chunk FTS5 keyword (with prefix recall), fuzzy, exact phrase, and the FTS5 keyword branch of a facet or entity.
+The trigram leg is recall only, not lexical (Minh's decision): a 3-character overlap like "pie" in "pieces" is noise, and partial words are already covered by the keyword prefix query.
+A dense-only facet/entity hit is a semantic neighbor and faces the gate like a chunk (Q.7 fixed a leak where "pecan pie recipes" surfaced an unrelated note through an entity vector at 0.409).
+The gray-zone judge (`judge_gray_zone`) is fail-open (a raising or malformed call keeps what it did not clearly judge), is cached in `derived_values` (scope `gray_judge`) per (query, artifact_id, model_version), and is shown each item's facets because they state its subject better than one snippet.
+Floor survivors keep their order: the floor removes, it never reorders.
+
+**Query prefix.**
+bge v1.5 is trained to read a search with `config.EMBED_QUERY_PREFIX` ("Represent this sentence for searching relevant passages: ") in front, and passages bare.
+Every search embeds through `embed.embed_query` (the dense leg of `/search`, chat passages, lifted claims); indexing uses `embed()` with no prefix.
+Passage-to-passage similarity (related notes, `ingest/related.py`) passes `as_query=False` to `search_dense` so it stays on the unprefixed scale `RELATED_MIN` was set on.
+Measured on adding it: cross-domain 3/12 -> 7/12 (with the recalibrated floor), main eval MRR 0.928 -> 0.945 at unchanged recall.
+
+**Embedding models.**
+`config.EMBED_MODELS` is the registry the engine can run on, selected by `ENQ_EMBED_MODEL` (default bge-base-en-v1.5): per model its index `version` (a change triggers the automatic index rebuild in `index/bootstrap.py`), `query_prefix`, `doc_prefix` (prepended to every indexed passage and to passage-to-passage comparisons, e.g. nomic's "search_document: "), and its floor bars.
+Only 768-dimensional models fit, because the vec0 tables are built at that width; another width is a migration.
+To evaluate a switch, run `enq eval-embedders` on a machine that can reach Hugging Face (each candidate downloads once): it lists the 768-d fastembed candidates in `eval_embedders.CANDIDATES` (bge-base, nomic-embed-text-v1.5, arctic-embed-m and m-long, gte-base, jina-v2-base-en) with main recall@10/MRR/Nothing-OK, cross-domain passes, and fitted bars, with the gray-zone judge held fail-open so it compares embedders only.
+A winner joins `EMBED_MODELS` with its fitted bars; then set `ENQ_EMBED_MODEL`, let the index rebuild, rerun both eval gates and `enq eval-real`, and refresh the committed baselines.
+
+**Dense score scale (Q.2b).**
+vec0 stores L2 distance over unit-norm embeddings, so cosine is `1 - d^2/2`, clamped to [0, 1].
+This changes the reported number only, never the ranking.
+
+**Fusion.**
+RRF uses the canonical k=60 (Phase M.5g; the old k=1 only matched the removed lens threshold).
+RRF reads ranks only, so the 10x bm25 title weight (R.5) acts through keyword order: on an RRF tie, the keyword leg reorders only when its best beats the runner-up by `KEYWORD_MARGIN` (20%).
+FTS5 bm25 weights map to every column including UNINDEXED ones, hence `bm25(fts_chunks, 1.0, 10.0, 1.0)` on `(chunk_id, title, text)`.
+The fts text drops a leading `# {title}` heading so the title term counts only in the title column.
+Trigram hits are appended after the fused list with score 0: fusing them regressed the R.5 title test, and substring noise ("grow" in "growing") would outrank real hits.
+
+**Fuzzy leg (R.7).**
+`FUZZY_BASE_SCORE = 0.02` sits between a single-leg rank-1 RRF hit (~0.016) and a dual-leg one (~0.033), so a typo match wins only when the hybrid was weak.
+It is a full Python scan of titles, entity names and current annotations, gated by `_needs_fuzzy` (PERF.1), and pruned by upper bounds on `SequenceMatcher.ratio`.
+
+**Recency (R.8).**
+A note touched today scores 1.5x, one from 180 days ago is unchanged; relevance still dominates.
+
+**Usage.**
+`opens.usage_boost` multiplies a hit's fused score by `1 + 0.2 * use / (use + 3)`, where `use` is the decayed count (tau 90 days) of the artifact's opens (any source) and chat citations, plus 3 if it is pinned.
+It saturates below 1.2x and stays under the recency boost, so relevance still decides and one burst of use fades; it only reorders, never adds or floors a hit.
+The committed evals have no opens, so it cannot move them; `enq eval-real` is where to watch it.
+
+**Rerank (R.9).**
+The cross-encoder runs on CPU only: a second CoreML model in the process leaks contexts until the OS kills it (SIGKILL, "Context leak detected").
+
+**Staleness.**
+A facet or entity hit counts only while its `body_version` matches the artifact's latest `artifact_versions` row and its `model_version` matches the current SUMMARY model (not the chat model; keying it to the chat model once voided every facet on a chat-model swap).
+
+**Chat passages.**
+At most `CHUNKS_PER_ARTIFACT` chunks per note so one long note cannot take the whole `PASSAGES` budget (the "do I have notes on a president" case).
+A facet or entity hit pulls its artifact's opening chunk in, so the answer has literal text to stand on.
+A scoped chat does no retrieval: the artifact is the candidate set.
+A two-sided question is searched per side and interleaved (`retrieve/decompose.py`), because one embedding of "X vs Y" lands on whichever side dominates.
+
+### Cross-domain eval
+
+`evals/cross_domain.yaml` holds 10 queries phrased in one field (software, teams, habits) whose target note is from another (a willow in a storm, a relay baton, mise en place), plus 5 lexical decoys that share the queries' words but not their idea.
+Each target must not contain its query's key words; `tests/test_eval_cross.py` enforces that, so the suite can only be passed on meaning.
+`enq eval-cross` (`src/enqueue/eval_cross.py`) loads the suite plus the 50-note main corpus into `evals/test-data-cross/`, then runs every query through `search_results` four times: `chunks` (chunks only), `enriched` (plus facets and entities), `lifted` (plus query lifting) and `ranked` (plus model re-ranking). A query passes when its target ranks in the top 3.
+Facets, entities, section summaries, lifts and ranking orders come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "entities": {artifact_id: [...]}, "sections": {artifact_id: [summaries in order]}, "lifts": {query_id: [...]}, "ranks": {query_id: [artifact ids, best first]}}`; facets and entities are stamped with the current ingest model on load so the staleness check keeps them; lifts and ranking orders are served from the fixture, so the eval never calls a model; `bin/check-eval-cross` fails if any layer scores below the one before it). `enq eval-cross --generate-facets` rewrites the whole fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
+Two targets are long: `pad_with` prepends main-corpus documents so the idea sits ~56,000 characters in, past the read limit, which only map-reduced ingestion can reach (`test_long_targets_put_their_idea_past_the_read_limit`).
+This suite is separate from the main 50-note eval on purpose: adding its notes there would shift the main baseline.
+
+### Real-search eval
+
+The two committed evals use made-up queries; this one uses the person's own.
+Every time a search result is opened, the interface records the query and the result's rank (`opens`, source `search`).
+Each distinct query (case- and space-insensitive) becomes a case expecting any live artifact opened from it, and passes when one of them ranks in the top 3 of the live `/search` rollup (`eval_real.py`, same `PASS_RANK`/`score` as the cross-domain eval).
+It runs inside the engine against the real library (`POST /eval/real`, `enq eval-real`), because the cases are private: they never leave the machine and are never committed.
+The baseline is stored at `~/.enqueue-poc/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
+Run it on the laptop before and after any retrieval change (model swap, re-rank, ranking signals).
+Its blind spot: a person only opens what search already showed, so it measures ranking among surfaced results, not recall of notes search never surfaced; the cross-domain eval covers that.
 
 ### Scope dial for chat
 
@@ -800,13 +929,16 @@ uv run enq serve
 uv run enq health
 uv run enq search "antifragility"
 
-# Run tests
-uv run pytest -q
+# Run tests (parallel; pytest-xdist)
+uv run pytest -q -n auto
 
 # Format check
 uv run black --check src/ tests/
 
-# Full verification gate (JS parse + pytest + contrast)
+# Lint gate, seconds (what the pre-commit hook runs)
+bin/verify --fast
+
+# Full verification gate (lint + JS parse + pytest + contrast + desktop Rust + Android compile)
 bin/verify
 ```
 
@@ -840,13 +972,15 @@ The shell finds the engine repo via (in order):
 
 ### Verification gate limits
 
-`bin/verify` runs JS parse, pytest, contrast check, the desktop Rust unit tests (`cargo test --lib` on the host target, run whenever any `desktop/**/*.rs` changed since the Android check builds for the android target and cannot run tests), and an Android build check. The Android check auto-detects the SDK/NDK from the standard install location (`~/Library/Android/sdk`, newest `ndk/*`) when `ANDROID_HOME`/`NDK_HOME` are unset (FIX.3), so it runs on a plain `./bin/verify` instead of silently skipping; it skips cleanly only when no SDK/NDK exists on disk. When Rust, Kotlin, or `desktop/gen/android/**` files changed, it runs the full `cargo tauri android build` (GATE.1) rather than just `cargo check --lib`, because `cargo check` never compiles Kotlin/gradle and a broken `.kt` used to pass the gate green. A green `bin/verify` is still NOT proof the app runs on a device - it proves the code parses, tests pass, the palette meets contrast, and the app compiles for Android. The desktop window (`bin/launch desktop`) and a real device (see "Verifying the Android app" above) are the only proof the app runs. A pre-commit hook (`.githooks/pre-commit`, activated via `git config core.hooksPath .githooks`) runs `bin/verify` when code is staged and blocks the commit on failure; docs-only commits stay instant.
+`bin/verify` runs JS parse, pytest, contrast check, the desktop Rust unit tests (`cargo test --lib` on the host target, run whenever any `desktop/**/*.rs` changed since the Android check builds for the android target and cannot run tests), and an Android build check. The Android check auto-detects the SDK/NDK from the standard install location (`~/Library/Android/sdk`, newest `ndk/*`) when `ANDROID_HOME`/`NDK_HOME` are unset (FIX.3), so it runs on a plain `./bin/verify` instead of silently skipping; it skips cleanly only when no SDK/NDK exists on disk. When Rust, Kotlin, or `desktop/gen/android/**` files changed, it runs the full `cargo tauri android build` (GATE.1) rather than just `cargo check --lib`, because `cargo check` never compiles Kotlin/gradle and a broken `.kt` used to pass the gate green. A green `bin/verify` is still NOT proof the app runs on a device - it proves the code parses, tests pass, the palette meets contrast, and the app compiles for Android. The desktop window (`bin/launch desktop`) and a real device (see "Verifying the Android app" above) are the only proof the app runs. A pre-commit hook (`.githooks/pre-commit`, activated via `git config core.hooksPath .githooks`) runs `bin/verify --fast` (black, ruff, JS parse, contrast; about two seconds) when code is staged and blocks the commit on failure; docs-only commits stay instant.
+CI (`.github/workflows/ci.yml`) runs on pull requests and on pushes to main: `bin/verify --fast` and `pytest -n auto` in the `test` job, both eval gates in the `eval` job, with uv and the fastembed model cache kept between runs and superseded runs cancelled.
+The desktop Rust tests and the Android compile check run only in the full `bin/verify`, because CI has no Rust/Android toolchain.
 
 ## Working agreement: verification split + commit discipline (do not skip)
 
 Verified work has been lost twice to uncommitted-then-reverted working trees, and a broken mobile module was committed after `bin/verify` was skipped. Two rules prevent the recurrence:
 
-1. **`bin/verify` gates every commit, enforced by git.** A pre-commit hook (`.githooks/pre-commit`, activated with `git config core.hooksPath .githooks`) runs `bin/verify` whenever code is staged and blocks the commit if it fails. Run `bin/verify` yourself before claiming any task "done" - do not rely on the hook to find breakage late. A broken `cargo check --lib --target aarch64-linux-android` is a failure, not a "device blocker."
+1. **Lint gates every commit (enforced by git), tests and evals gate every PR (CI), and the full `bin/verify` gates done.** The pre-commit hook runs `bin/verify --fast`; CI runs the tests and both evals. Run the full `bin/verify` yourself before claiming any task "done" - it is the only gate that covers the desktop Rust tests and the Android compile check. A broken `cargo check --lib --target aarch64-linux-android` is a failure, not a "device blocker."
 
 2. **Commit the same turn work goes green - never leave verified code uncommitted.** The loss happened in the gap between "it works in the working tree" and "someone commits it." Close that gap: as soon as `bin/verify` is green, the working tree is committed (the human commits after each green turn; or, if agreed, an agent commits its own verified work to a branch the human reviews). Uncommitted verified work is treated as work that will be lost.
 
@@ -933,7 +1067,7 @@ See the Resolved decisions section above for the status of each of these.
 | Pydantic | schemas + validation | Validators are the quality floor. Instructor re-prompts on failure. |
 | instructor | structured LLM output | Mode.JSON for all adapters. Wraps the OpenAI client. |
 | openai | LLM client | Used for all OpenAI-compatible endpoints. |
-| fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d). |
+| fastembed | local embeddings | BAAI/bge-base-en-v1.5 (dense, 768d) by default; any 768-d model in `config.EMBED_MODELS`. |
 | sqlite-vec | search index | vec0 + FTS5 tables inside the SQLite file; hybrid fused with RRF. |
 | pymupdf (fitz) | PDF parsing | Text extraction, page rendering, page counting, phrase search. |
 | beautifulsoup4 + lxml | HTML parsing | For link preview metadata extraction. |
