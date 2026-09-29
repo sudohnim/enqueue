@@ -1391,8 +1391,8 @@
   }
 
   /* Quick capture: a bottom sheet over the dimmed library, the phone's version
-     of the desktop overlay (raven + "Keep something.", a white field, Photo and
-     Camera beside Keep). It rides the visual viewport so the on-screen keyboard
+     of the desktop overlay (raven + "Capture your thoughts.", a white field, Photo and
+     Camera beside Save). It rides the visual viewport so the on-screen keyboard
      never covers it. Also the target of the launcher long-press shortcut. */
   .qcap {
     position: fixed;
@@ -1428,14 +1428,17 @@
     border-radius: 3px;
     background: var(--line);
   }
+  /* The raven above the heading, both centred, the same as the launcher popup. */
   .qcap-head {
     display: flex;
+    flex-direction: column;
     align-items: center;
+    text-align: center;
   }
   .qcap-raven {
-    width: 46px;
+    width: 56px;
     height: auto;
-    margin: -4px -2px -6px -6px;
+    margin: -6px 0 -4px;
   }
   .qcap-head h2 {
     margin: 0;
@@ -2254,7 +2257,7 @@
     <div class="lib-date" id="lib_date"></div>
     <h1 id="lib_greeting">Library</h1>
   </header>
-  <input id="search" type="search" placeholder="Find anything you kept" autocomplete="off" />
+  <input id="search" type="search" placeholder="Find anything you saved" autocomplete="off" />
   <div class="viewchips" id="viewchips" role="tablist">
     <button class="chip" data-mode="touched" aria-pressed="true">Last touch</button>
     <button class="chip" data-mode="type" aria-pressed="false">Type</button>
@@ -2369,7 +2372,7 @@
     <div class="qcap-grab" aria-hidden="true"></div>
     <div class="qcap-head">
       <img class="qcap-raven" src="raven-mark.png" alt="" aria-hidden="true" />
-      <h2 id="qcap_title">Keep something<span class="greet-mark">.</span></h2>
+      <h2 id="qcap_title">Capture your thoughts<span class="greet-mark">.</span></h2>
     </div>
     <textarea
       id="qcap_field"
@@ -2386,7 +2389,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z" /><circle cx="12" cy="13" r="3.2" /></svg>
         Camera
       </button>
-      <button class="qcap-keep" id="qcap_keep" type="button">Keep</button>
+      <button class="qcap-keep" id="qcap_keep" type="button">Save</button>
     </div>
     <div class="qcap-status" id="qcap_status" role="status"></div>
   </div>
@@ -6475,7 +6478,7 @@ return;
     if (!items.length) {
       const p = document.createElement("div");
       p.style.cssText = "color:var(--text-mute);padding:40px 0;text-align:center";
-      p.textContent = "The vault is empty. Lock an artifact from its page to keep it here.";
+      p.textContent = "The vault is empty. Lock an artifact from its page to store it here.";
       scroll.appendChild(p);
       return true;
     }

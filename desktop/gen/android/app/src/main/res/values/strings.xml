@@ -2,5 +2,5 @@
     <string name="app_name">"Enqueue"</string>
     <string name="main_activity_title">"Enqueue"</string>
     <string name="shortcut_quick_capture_short">"Quick capture"</string>
-    <string name="shortcut_quick_capture_long">"Keep something"</string>
+    <string name="shortcut_quick_capture_long">"Capture your thoughts"</string>
 </resources>

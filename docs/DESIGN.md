@@ -32,7 +32,7 @@ Surfaces climb toward white from the canvas, and recessed wells sink below it.
 
 ### Accent
 
-- **Violet** `--accent` / `--purple-bold` `#60079f`: primary buttons, the capture disc and Keep, focus rings, links, the active tab bar, the greeting's last word and period. White ink on it (10.35:1).
+- **Violet** `--accent` / `--purple-bold` `#60079f`: primary buttons, the capture disc and Save, focus rings, links, the active tab bar, the greeting's last word and period. White ink on it (10.35:1).
 - **Violet hover** `--lavender-focus` / `--purple-bold-hover` `#7a1fc0`, **pressed** `--lavender-deep` `#4a0578`.
 - **Violet subtle** `--lavender-subtle` `rgba(96, 7, 159, 0.12)`: low-emphasis accent washes.
 - The `--lavender*` names are aliases kept for existing consumers; they all resolve to the violet family.
@@ -86,7 +86,7 @@ A kind hue only ever colours its 8px dot; kind is a fact, never an action.
 | Headline | Instrument Sans | 26px | 600 | -0.03 to -0.035em | Wall shelves, `.h1` |
 | Section | Instrument Sans | 18-22px | 600 | -0.02 to -0.03em | Settings sections, phone shelves |
 | Card title | Instrument Sans | 16.5-19px | 600 | -0.02 to -0.025em | Tiles |
-| Capture heading | Instrument Sans | 21px | 600 | -0.03em | "Keep something." |
+| Capture heading | Instrument Sans | 21px | 600 | -0.03em | "Capture your thoughts." |
 | Body | IBM Plex Sans | 16px | 400 | 0 | Reading, fields |
 | Body SM | IBM Plex Sans | 14px | 400 | 0 | Tile excerpts, tabs |
 | Caption | IBM Plex Sans | 12-13px | 400 | 0 | Meta, counts, the date line |
@@ -111,7 +111,7 @@ Tiles pad 14-16px; settings groups 24px; the capture card 14-16px; the phone gut
 | --- | --- | --- |
 | `--r-sm` | 6px | Keycaps, small thumbnails |
 | `--r-md` | 8px | Legacy small controls |
-| `--r-lg` | 12px | Buttons, inputs, Keep |
+| `--r-lg` | 12px | Buttons, inputs, Save |
 | `--r-xl` | 16px | Search, list rows, the capture field, event log |
 | `--r-2xl` | 20px | Settings groups, dialogs, the reading pane |
 | tiles | 18px | Wall tiles (desktop and phone) |
@@ -187,14 +187,14 @@ White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture field
 ### Quick capture (desktop overlay)
 
 - A 640x320 transparent window holding a 22px-radius card on the canvas, so the card's `--shadow-lifted` falls inside the window instead of being clipped into a box.
-- Header (the drag handle): the raven tight against "Keep something." centred.
+- Header (the drag handle): the raven tight against "Capture your thoughts." centred.
 - A white field plate (the one pure-white thing on the card); focus adds the accent ring and `--shadow-field`.
-- Footer: a tonal kind chip (dot + "link · psyche.co"), the key hints (↵ keep, ⇧↵ new line, esc close), and the violet Keep.
+- Footer: a tonal kind chip (dot + "link · psyche.co"), the key hints (↵ save, ⇧↵ new line, esc close), and the violet Save.
 - On a keep, the card leaves and the raven flies across the app you were in (CAP2.2).
 
 ### Quick capture (phone sheet)
 
-- A bottom sheet over the blurred, dimmed library: grab handle, the raven + "Keep something.", a white field, Photo and Camera beside Keep.
+- A bottom sheet over the blurred, dimmed library: grab handle, the raven + "Capture your thoughts.", a white field, Photo and Camera beside Save.
 - It follows the visual viewport, so the keyboard never covers it.
 - Opened from the pill's "Note" and from the launcher shortcut (long-press the app icon, "Quick capture"). From the shortcut, a keep or a dismiss hands the phone back to the app the person was in.
 
@@ -294,7 +294,7 @@ The Android status bar and navigation bar are reserved by `MainActivity` (system
 | Uppercase shelf labels | Removed | Sentence-case display headings |
 | Segmented pill mode switcher | Replaced | Text tabs with an accent bar |
 | IBM Plex for everything | Split | Instrument Sans display, Plex body |
-| Bordered capture card with a tiny disc | Replaced | Raven + "Keep something." header, white field, key hints |
+| Bordered capture card with a tiny disc | Replaced | Raven + "Capture your thoughts." header, white field, key hints |
 | Full-screen phone capture page | Replaced | Bottom sheet, plus the launcher long-press shortcut |
 | Bold violet `#60079f` accent | Kept | Still the single accent |
 | The raven, the living eye, IBM Plex body, the layout | Kept | Unchanged in behaviour |
