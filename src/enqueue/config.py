@@ -14,6 +14,7 @@ BLOB_DIR = DATA_DIR / "blobs"
 EMBED_MODEL = "BAAI/bge-base-en-v1.5"
 EMBED_DIM = 768
 EMBED_VERSION = "bge-base-en-v1.5"
+EMBED_MAX_TOKENS = 512  # the model reads this many tokens and drops the rest
 
 # 127.0.0.1, never localhost. This machine runs a second Ollama in Docker bound to
 # the IPv6 wildcard, and localhost resolves to IPv6 first. See docs/PROGRESS.md.

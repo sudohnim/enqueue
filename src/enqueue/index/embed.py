@@ -47,6 +47,12 @@ def embed(texts: list[str]) -> list[list[float]]:
     return [vector.tolist() for vector in _model().embed(texts)]
 
 
+def token_count(text: str) -> int:
+    """Tokens the embedder sees in `text`, not counting its two special tokens. The
+    tokenizer truncates, so anything past config.EMBED_MAX_TOKENS reads as the cap."""
+    return max(0, _model().token_count(text) - 2)
+
+
 @lru_cache(maxsize=512)
 def embed_one(text: str) -> list[float]:
     """Embed a single string, memoized.
