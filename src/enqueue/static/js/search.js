@@ -58,6 +58,15 @@
     filteredWallView(title, r.items || [], "Nothing here carries that tag.");
   }
 
+  // The query whose results are on screen, so opening one can report which search
+  // found it and at what rank.
+  let lastQuery = "";
+
+  function openHit(id, rank) {
+    reportOpen(id, "search", lastQuery, rank);
+    showArtifact(id);
+  }
+
   async function doSearch(q) {
     teardown();
     setRoute("s/" + encodeURIComponent(q));
@@ -91,6 +100,7 @@
       return;
     }
     if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
+    lastQuery = q;
     view.innerHTML =
       '<div class="back" onclick="home()">&larr; everything</div>' +
       '<div class="shelf center">' +
@@ -104,14 +114,18 @@
       (r.hits.length
         ? r.hits
             .map(
-              (h) =>
+              (h, i) =>
                 '<div class="item" tabindex="0" role="button"' +
-                " onclick=\"showArtifact('" +
+                " onclick=\"openHit('" +
                 h.artifact_id +
-                "')\"" +
-                " onkeydown=\"rowKey(event, () => showArtifact('" +
+                "', " +
+                (i + 1) +
+                ')"' +
+                " onkeydown=\"rowKey(event, () => openHit('" +
                 h.artifact_id +
-                "'))\">" +
+                "', " +
+                (i + 1) +
+                '))">' +
                 '<div class="item-body"><div class="title">' +
                 esc(h.title) +
                 "</div>" +

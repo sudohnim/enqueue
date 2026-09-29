@@ -198,6 +198,8 @@ One line per file, describing its job.
 | `events.py` | The activity log: `emit()`/`recent()` over the persisted `events` table. Never raises. Backs the Settings Activity tab and the vault decoy. |
 | `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
+| `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
 
 ### Ingest
 
@@ -248,6 +250,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
 | `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
@@ -381,6 +384,7 @@ Migrations run automatically at startup via Alembic.
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
 | `related` | links between artifacts whose facets make the same point | derived at ingest, both directions, filtered to live artifacts on read |
+| `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
 
 ### Invariants
 
@@ -550,6 +554,7 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq chats [--limit N]` | List conversations |
 | `enq chunk` | Rebuild chunks from note bodies |
 | `enq facet-gate` | Decide which artifacts never get facets |
+| `enq eval-real [--update-baseline]` | Score your real searches against your library; fails when a baseline query now fails |
 
 The CLI never touches the database directly.
 Every command calls `httpx` against `http://127.0.0.1:8787`.
@@ -628,6 +633,8 @@ DELETE /facets/{fid}                 delete one summary line
 POST   /index                        rebuild the search index
 POST   /reprocess                    re-extract, re-chunk, re-index everything
 POST   /ingest/wait                  block until queue drains (for tests)
+POST   /artifacts/{id}/opened        record an open (source, and a search open's query + rank)
+POST   /eval/real                    run the real-search eval (?update_baseline=true stores it)
 PUT    /settings/api-key             store key in Keychain
 DELETE /settings/api-key             remove key from Keychain
 PATCH  /settings                     update writable settings
@@ -738,6 +745,16 @@ Each target must not contain its query's key words; `tests/test_eval_cross.py` e
 Facets, entities and lifts come from the committed fixture `evals/cross_domain_facets.json` (`{"facets": {artifact_id: [...]}, "entities": {artifact_id: [...]}, "lifts": {query_id: [...]}}`; facets and entities are stamped with the current ingest model on load so the staleness check keeps them; lifts are served from the fixture, so the eval never calls a model). `enq eval-cross --generate-facets` rewrites the whole fixture with the live ingestion and search models; after a facet-prompt or ingest-model change, regenerate it, then refresh the baseline with `bin/check-eval-cross --update-baseline` and commit both.
 Two targets are long: `pad_with` prepends main-corpus documents so the idea sits ~56,000 characters in, past the read limit, which only map-reduced ingestion can reach (`test_long_targets_put_their_idea_past_the_read_limit`).
 This suite is separate from the main 50-note eval on purpose: adding its notes there would shift the main baseline.
+
+### Real-search eval
+
+The two committed evals use made-up queries; this one uses the person's own.
+Every time a search result is opened, the interface records the query and the result's rank (`opens`, source `search`).
+Each distinct query (case- and space-insensitive) becomes a case expecting any live artifact opened from it, and passes when one of them ranks in the top 3 of the live `/search` rollup (`eval_real.py`, same `PASS_RANK`/`score` as the cross-domain eval).
+It runs inside the engine against the real library (`POST /eval/real`, `enq eval-real`), because the cases are private: they never leave the machine and are never committed.
+The baseline is stored at `~/.enqueue-poc/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
+Run it on the laptop before and after any retrieval change (model swap, re-rank, ranking signals).
+Its blind spot: a person only opens what search already showed, so it measures ranking among surfaced results, not recall of notes search never surfaced; the cross-domain eval covers that.
 
 ### Scope dial for chat
 

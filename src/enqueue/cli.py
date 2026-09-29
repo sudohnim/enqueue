@@ -916,5 +916,33 @@ def eval_cross(json_path: str = "", generate_facets: bool = False) -> None:
         typer.echo(f"wrote {json_path}")
 
 
+@app.command("eval-real")
+def eval_real(update_baseline: bool = False) -> None:
+    """Score the searches you actually ran (a search, then opening a result) against
+    your library. Fails when a query that passed in the stored baseline fails now.
+    `--update-baseline` stores this run as the new baseline.
+    """
+    report = _call("POST", "/eval/real", params={"update_baseline": update_baseline})
+    if not report["total"]:
+        typer.echo("No real searches yet: search, then open a result, and it becomes a case.")
+        return
+    for r in report["results"]:
+        mark = "pass" if r["pass"] else "FAIL"
+        typer.echo(f"{mark}  {r['rank'] or '-':>3}  {r['query']}")
+    typer.echo(
+        f"pass {report['pass']}/{report['total']} (top {report['pass_rank']})  "
+        f"found in top 10 {report['found_in_top_10']}  MRR {report['MRR']:.3f}"
+    )
+    base = report["baseline"]
+    if base:
+        typer.echo(f"baseline pass {base['pass']}/{base['total']}  MRR {base['MRR']:.3f}")
+    if update_baseline:
+        typer.echo("stored this run as the baseline")
+    elif report["lost"]:
+        for q in report["lost"]:
+            typer.secho(f"no longer passing: {q}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

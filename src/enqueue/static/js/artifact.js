@@ -306,7 +306,7 @@
 
   function mountRelatedRow() {
     view.querySelectorAll(".relatedchip").forEach((chip) => {
-      chip.addEventListener("click", () => openArtifact(chip.dataset.id));
+      chip.addEventListener("click", () => openArtifact(chip.dataset.id, "related"));
     });
   }
 

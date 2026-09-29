@@ -13,7 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from .. import capture, db, notes, pivots_saved, preview, trash
+from .. import capture, db, notes, opens, pivots_saved, preview, trash
 from .. import tags as tags_mod
 from ..ingest import queue as ingest_queue
 from .wall import ORDERINGS, _link_images, _wall_item, _wall_tags
@@ -22,6 +22,19 @@ router = APIRouter()
 
 
 # --------------------------------------------------------------------------- read
+
+
+class Opened(BaseModel):
+    source: str = "other"
+    query: str | None = None
+    rank: int | None = None
+
+
+@router.post("/artifacts/{artifact_id}/opened", status_code=204)
+def opened(artifact_id: str, req: Opened) -> Response:
+    """The interface reports each open; a search open carries its query and rank."""
+    opens.record(artifact_id, req.source, req.query, req.rank)
+    return Response(status_code=204)
 
 
 class ArtifactFlags(BaseModel):

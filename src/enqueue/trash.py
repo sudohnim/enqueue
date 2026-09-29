@@ -190,6 +190,7 @@ def purge(artifact_id: str) -> dict:
             "artifact_tags",
             "artifact_versions",
             "related",
+            "opens",
         ):
             column = "artifact_id"
             # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
