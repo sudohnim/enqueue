@@ -199,10 +199,13 @@ def _process(artifact_id: str) -> dict:
     # unsearchable; the capture itself already succeeded.
     described = _describe_image_if_needed(artifact_id)
 
+    # Re-chunking gives every chunk a new id, and an index row can only be found
+    # through its chunk, so the old rows are dropped while the old chunks still exist.
+    store = get_store()
+    store.drop_artifact(store.CHUNKS, artifact_id)
     with db.transaction() as conn:
         chunks = chunk_mod.chunk_artifact(conn, artifact_id)
 
-    store = get_store()
     indexed = store.index_artifact(artifact_id) if chunks else 0
     if not chunks:
         # An artifact can lose its text: a note emptied, a preview refetched and
@@ -562,7 +565,18 @@ def _entities_artifact(artifact_id: str) -> int:
     return count
 
 
-_ingest = Worker("ingest", process, pre=_dequeue)
+def prune_index() -> None:
+    """Drop index rows whose chunk, facet, entity or section is gone. Regenerated facets,
+    entities and sections take new ids, so their old index rows are left behind until
+    this runs: whenever the queue drains, and once at engine startup."""
+    from ..index.store import get_store
+
+    removed = get_store().prune_orphans()
+    if any(removed.values()):
+        log.info("pruned orphaned index rows: %s", removed)
+
+
+_ingest = Worker("ingest", process, pre=_dequeue, on_idle=prune_index)
 
 
 def submit(artifact_id: str) -> None:

@@ -82,6 +82,10 @@ def serve() -> None:
 
         ingest_queue.start_facet_retry_sweeper()
         ingest_queue.start_summary_backfill()
+        # Heal index rows orphaned by earlier builds, off the startup path.
+        import threading
+
+        threading.Thread(target=ingest_queue.prune_index, name="index-prune", daemon=True).start()
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 

@@ -29,6 +29,8 @@ class Worker(Generic[T]):
     loop; the loop logs and swallows so one bad item cannot stop the queue.
     `pre(item)` is optional and runs before the handler, still on the worker
     thread - the ingest queue uses it for its I5.1 coalescing bookkeeping.
+    `on_idle()` is optional and runs on the worker thread each time the queue
+    drains, before `wait_idle` returns - the ingest queue prunes its index there.
     """
 
     def __init__(
@@ -36,10 +38,12 @@ class Worker(Generic[T]):
         name: str,
         handle: Callable[[T], object],
         pre: Callable[[T], None] | None = None,
+        on_idle: Callable[[], None] | None = None,
     ) -> None:
         self._name = name
         self._handle = handle
         self._pre = pre
+        self._on_idle = on_idle
         self._work: queue.Queue[T] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -59,6 +63,11 @@ class Worker(Generic[T]):
             finally:
                 self._work.task_done()
                 if self._work.empty():
+                    if self._on_idle is not None:
+                        try:
+                            self._on_idle()  # housekeeping once a burst of work drains
+                        except Exception:  # noqa: BLE001 - never stop the queue for it
+                            log.exception("%s idle hook failed", self._name)
                     self._idle.set()
 
     def _ensure_worker(self) -> None:

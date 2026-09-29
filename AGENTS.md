@@ -1037,6 +1037,14 @@ directory to keep in sync or lock. `get_store()` is still cached via `lru_cache`
 so the engine holds one instance for its lifetime; the eval harness repoints it
 via `get_store.cache_clear()`.
 
+### Index rows are found through their source rows
+
+An index row (vec0 or FTS5) carries only its chunk/facet/entity/section id, so the only way to find a row's index entries is through the row.
+Anything that replaces rows under new ids must drop the old entries while the old rows still exist: `ingest/queue.py` drops an artifact's chunk entries before re-chunking it.
+Before that fix every reprocess, edit and retry left a full set of orphans behind (one library reached 52,891 orphaned chunk rows for 1,071 chunks), and orphans still take slots in a search's shortlist.
+Regenerated facets, entities and sections replace their rows too; `store.prune_orphans()` (via `queue.prune_index`) removes any entry whose row is gone, each time the ingest queue drains (the `Worker` `on_idle` hook) and once at engine startup.
+`enq index` rebuilds every layer from the tables and also restores entries that are missing.
+
 ### The title is prepended for indexing only
 
 `index_chunks` prepends the artifact title to the chunk text before embedding.
