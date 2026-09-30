@@ -25,8 +25,10 @@ Two rules hold this together.
 from __future__ import annotations
 
 import contextlib
-import threading
+import ipaddress
 import os
+import socket
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -112,6 +114,32 @@ def _clean(value: str | None, limit: int = 500) -> str | None:
     return collapsed[:limit] or None
 
 
+class PrivateAddress(httpx.RequestError):
+    """The link, or a redirect it took, points into a private network."""
+
+
+def _refuse_private(request: httpx.Request) -> None:
+    """Refuse any request, a redirect included, whose host is not on the public internet.
+
+    A saved link (or one synced from the phone) is fetched automatically, so without
+    this a link to the router, another service on this machine, or the engine itself
+    would be read from inside the network and its text stored as the link's body.
+    httpx calls this before every request, so a public page that redirects inward is
+    stopped too.
+    """
+    host = request.url.host
+    try:
+        infos = socket.getaddrinfo(host, request.url.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return  # an unknown name fails on its own, with the usual message
+    for info in infos:
+        ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if not ip.is_global:
+            raise PrivateAddress(f"{host} is not a public address", request=request)
+
+
 def _read_capped(url: str) -> tuple[str, str]:
     """Return (content_type, text), never reading more than MAX_BYTES."""
     with (
@@ -121,6 +149,7 @@ def _read_capped(url: str) -> tuple[str, str]:
             max_redirects=MAX_REDIRECTS,
             http2=True,
             headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
+            event_hooks={"request": [_refuse_private]},
         ) as client,
         client.stream("GET", url) as response,
     ):
@@ -191,6 +220,7 @@ def _fetch_image(url: str) -> tuple[str, str] | None:
                 # has already decided it does not like.
                 http2=True,
                 headers={"User-Agent": USER_AGENT, "Accept": "image/*"},
+                event_hooks={"request": [_refuse_private]},
             ) as client,
             client.stream("GET", url) as response,
         ):
@@ -253,6 +283,8 @@ def _why(exc: Exception) -> str:
         if code == 404:
             return "that page is gone"
         return f"the publisher answered {code}"
+    if isinstance(exc, PrivateAddress):
+        return "that address is on a private network, and previews only fetch public pages"
     if isinstance(exc, httpx.TooManyRedirects):
         return "the address kept redirecting"
     if isinstance(exc, httpx.TimeoutException):

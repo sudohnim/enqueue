@@ -874,6 +874,7 @@ Rules:
 3. **SVG is refused as a preview picture.** It can carry script, and is served from the engine's own origin.
 4. **Local-only links are never fetched.** Fetching would reach the network on their behalf.
 5. **HTTP/2 is used** because some publishers (Wikimedia) treat clients that do not negotiate h2 as bots.
+6. **Only public addresses are fetched.** `preview._refuse_private` runs before every request, redirects included, and refuses a host that resolves to a loopback, private, link-local or otherwise non-global address, so a saved link (or one synced from the phone) can never read the router, another local service or the engine itself.
 
 Auto-preview is controlled by the `auto_preview` setting (default on).
 When on, the ingest worker fetches the preview in the background after capture.
