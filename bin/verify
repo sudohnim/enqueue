@@ -2,10 +2,14 @@
 """Gate: lint, JS parse check on the pages, pytest, contrast check, Android compile check.
 
 `bin/verify --fast` runs only the checks that take seconds (black, ruff, JS parse,
-contrast); it is what the pre-commit hook runs. CI runs the tests, the JS and
-contrast checks, and both eval gates on every PR. The full `bin/verify` adds pytest,
-the desktop Rust tests and the Android compile check, which CI does not cover: run it
-before merging a desktop or mobile change.
+contrast); it is what the pre-commit hook runs. The full `bin/verify` adds pytest,
+the desktop Rust tests and the Android compile check.
+
+CI (.github/workflows/ci.yml) runs the same checks as parallel jobs, each only when
+its files change: `--fast` plus pytest, both eval gates, `bin/verify --desktop-tests`
+(cargo test --lib) and `bin/verify --android` (the full debug apk build). Those two
+flags run one check unconditionally, since a clean CI checkout has no local changes to
+gate on, and fail rather than skip when the toolchain is missing.
 
 home.html has no inline scripts since M.8: its JS lives in static/js/*.js,
 loaded by <script src> in shell order. Each file is checked individually
@@ -17,7 +21,7 @@ capture.html still carries its JS inline: every <script> block is wrapped in
 { } so const/let scoping cannot collide across blocks, then run through
 node --check.
 
-The Android compile check runs the full `cargo tauri android build --debug --target aarch64` when a
+The Android compile check runs the full `cargo tauri android build --debug --target aarch64 --apk` when a
 changed file (staged, unstaged, or untracked) could break the apk in a way `cargo
 check` never parses - Kotlin/gradle/manifest/resource files under desktop/gen/android,
 or the build config (desktop/tauri.conf.json, build.rs, Cargo.toml). Otherwise it runs
@@ -132,8 +136,11 @@ def check_inline_js(path):
     wrapped = "\n".join("{" + b + "\n}" for b in blocks)
     return node_check(wrapped, path)
 
-def check_android_compile():
-    """Check that the mobile module compiles for Android (Rust + Kotlin)."""
+def check_android_compile(force_full=False):
+    """Check that the mobile module compiles for Android (Rust + Kotlin).
+
+    `force_full` (CI, `bin/verify --android`) always runs the full build, and a missing
+    toolchain fails instead of skipping: a green check that never ran proves nothing."""
     desktop_dir = os.path.join(HERE, "desktop")
     
     # Auto-detect Android SDK and NDK from standard locations (same as bin/launch mobile)
@@ -153,11 +160,11 @@ def check_android_compile():
     
     if not android_home or not os.path.isdir(android_home):
         print(f"{SRC}: Android compile check SKIPPED - Android SDK not found at {android_home}")
-        return True
+        return not force_full
     
     if not ndk_home or not os.path.isdir(ndk_home):
         print(f"{SRC}: Android compile check SKIPPED - NDK not found at {ndk_home}")
-        return True
+        return not force_full
     
     # Check if the target is installed
     rustup_target = subprocess.run(
@@ -166,7 +173,7 @@ def check_android_compile():
     )
     if "aarch64-linux-android" not in rustup_target.stdout:
         print(f"{SRC}: Android compile check SKIPPED - aarch64-linux-android target not installed")
-        return True
+        return not force_full
     
     # Check if the NDK has the required clang tool (unversioned name)
     # Determine the host platform for the NDK toolchain path
@@ -191,7 +198,7 @@ def check_android_compile():
                 pass
         else:
             print(f"{SRC}: Android compile check SKIPPED - aarch64-linux-android-clang not found in NDK")
-            return True
+            return not force_full
     
     # Decide whether to run the full `cargo tauri android build` (catches Kotlin/gradle/
     # config breakage that `cargo check --lib` never parses) or the fast Rust-only check.
@@ -227,7 +234,7 @@ def check_android_compile():
             return True
         return False
 
-    android_files_staged = any(_needs_full_android_build(f) for f in changed_files)
+    android_files_staged = force_full or any(_needs_full_android_build(f) for f in changed_files)
 
     print(f"=== {SRC}: Android compile check ===")
     env = os.environ.copy()
@@ -239,11 +246,11 @@ def check_android_compile():
     if android_files_staged:
         print(f"{SRC}: Android/build files changed, running full cargo tauri android build")
         result = subprocess.run(
-            ["cargo", "tauri", "android", "build", "--debug", "--target", "aarch64"],
+            ["cargo", "tauri", "android", "build", "--debug", "--target", "aarch64", "--apk"],
             cwd=desktop_dir,
             env=env,
             capture_output=False,
-            timeout=600
+            timeout=2400 if force_full else 600,  # a cold CI build compiles everything
         )
     else:
         # No Android files staged, just check Rust compilation (faster)
@@ -262,7 +269,7 @@ def check_android_compile():
         print(f"{SRC}: Android compile FAILED", file=sys.stderr)
         return False
 
-def check_desktop_tests():
+def check_desktop_tests(force=False):
     """Run the desktop crate's unit tests (`cargo test --lib`) on the HOST target when any
     Rust source under desktop/ changed. The Android compile check builds for the android
     target, which cannot RUN tests on this machine, so the crypto/sync regression tests
@@ -272,13 +279,13 @@ def check_desktop_tests():
     desktop_dir = os.path.join(HERE, "desktop")
     if shutil.which("cargo") is None:
         print(f"{SRC}: desktop tests SKIPPED - cargo not found")
-        return True
+        return not force  # CI asked for them: not running is a failure
 
     changed = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=HERE, capture_output=True, text=True, timeout=10
     ).stdout.splitlines()
-    rust_changed = False
+    rust_changed = force
     for line in changed:
         if not line.strip():
             continue
@@ -320,7 +327,16 @@ def check_lint():
 
 def main():
     os.chdir(HERE)
-    fast = "--fast" in sys.argv[1:]
+    args = sys.argv[1:]
+    fast = "--fast" in args
+
+    # CI runs each heavy check as its own job, on a clean checkout where the git-status
+    # gating below would always skip them: these run one check, unconditionally.
+    if "--desktop-tests" in args:
+        sys.exit(0 if check_desktop_tests(force=True) else 1)
+    if "--android" in args:
+        sys.exit(0 if check_android_compile(force_full=True) else 1)
+
     pass_flag = True
 
     print(f"=== {SRC}: lint (black, ruff) ===")
