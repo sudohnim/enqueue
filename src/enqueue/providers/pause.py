@@ -136,6 +136,33 @@ def trip_from(exc: BaseException) -> bool:
     return True
 
 
+def lift(why: str) -> int:
+    """End the pause early because what it was about changed: a new API key, or a
+    different backend, model, or endpoint. The limit belonged to the old account or
+    model, so waiting it out would only idle a working one.
+
+    Also brings every owed summary retry forward to now, so the backlog resumes at
+    once instead of at the old pause end (the sweeper takes 20 every 30s). Returns
+    how many retries were brought forward.
+    """
+    from .. import db, events
+
+    was = active()
+    reset()
+    now = _now().isoformat()
+    with db.transaction() as conn:
+        moved = conn.execute(
+            "UPDATE facet_retry SET next_at = ? WHERE next_at > ?", (now, now)
+        ).rowcount
+    if was or moved:
+        events.emit(
+            "model.resumed",
+            f"{why}: model calls resumed, {moved} owed summaries brought forward",
+            data={"was_paused": was, "retries_moved": moved},
+        )
+    return moved
+
+
 def reset() -> None:
     """Clear any pause. For tests."""
     global _until, _reason

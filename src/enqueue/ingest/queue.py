@@ -19,6 +19,7 @@ machine's copy of it.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import logging
 import random
 import threading
@@ -108,7 +109,7 @@ def _sweep_due() -> list[str]:
         conn.close()
     submitted = [aid for aid in due if _pending(aid) == 0]
     for aid in submitted:
-        submit(aid)
+        submit_background(aid)
     return submitted
 
 
@@ -138,33 +139,52 @@ def start_facet_retry_sweeper() -> None:
 # note enqueues that id several times; the worker processes them in order, and
 # the facet/entity step is skipped whenever a newer item for the same id is still
 # queued, so the last edit in the burst regenerates the derived data once instead
-# of every keystroke-save paying a model call. The count is the number of queued
-# items, decremented as each is dequeued; `_pending` is what the derived steps
+# of every keystroke-save paying a model call. `_pending` is what the derived steps
 # read at the moment they are about to spend a model call.
-_queued: dict[str, int] = {}
+#
+# "Newer" means submitted later, not merely still queued. The worker takes the
+# person's work ahead of background upkeep (worker.py lanes), so an artifact can
+# have an older background copy still waiting when a fresh copy of it runs; that
+# older copy must not make the fresh one skip its model calls. So each queued item
+# carries its submission number, and the item being processed counts only the
+# copies submitted after it. (Outside the worker, every queued copy counts.)
+_queued: dict[str, list[int]] = {}
 _queued_lock = threading.Lock()
+_submitted = itertools.count(1)
+_running = threading.local()  # (artifact_id, number) of the item this thread is on
 
 
-def _queue(artifact_id: str) -> None:
-    """Remember one pending queue item. Called by `submit`, under the lock."""
+def _queue(artifact_id: str) -> int:
+    """Remember one pending queue item, returning its submission number."""
     with _queued_lock:
-        _queued[artifact_id] = _queued.get(artifact_id, 0) + 1
+        number = next(_submitted)
+        _queued.setdefault(artifact_id, []).append(number)
+        return number
 
 
-def _dequeue(artifact_id: str) -> None:
-    """Forget one pending queue item. Called by the worker when it picks one up."""
+def _dequeue(artifact_id: str, number: int | None = None) -> None:
+    """Forget one pending queue item (the oldest, unless `number` names it). Called by
+    the worker when it picks the item up; it is then the one this thread is running."""
     with _queued_lock:
-        remaining = _queued.get(artifact_id, 0) - 1
-        if remaining > 0:
-            _queued[artifact_id] = remaining
-        else:
+        numbers = _queued.get(artifact_id, [])
+        if not numbers:
+            return
+        if number is None or number not in numbers:
+            number = min(numbers)
+        numbers.remove(number)
+        if not numbers:
             _queued.pop(artifact_id, None)
+        _running.item = (artifact_id, number)
 
 
 def _pending(artifact_id: str) -> int:
     """How many newer queue items for this artifact are still unprocessed."""
+    running = getattr(_running, "item", None)
     with _queued_lock:
-        return _queued.get(artifact_id, 0)
+        numbers = _queued.get(artifact_id, [])
+        if running is not None and running[0] == artifact_id:
+            return sum(1 for n in numbers if n > running[1])
+        return len(numbers)
 
 
 def process(artifact_id: str) -> dict:
@@ -640,7 +660,12 @@ def prune_index() -> None:
         log.info("indexed rows missing from the index: %s", restored)
 
 
-_ingest = Worker("ingest", process, pre=_dequeue, on_idle=prune_index)
+_ingest = Worker(
+    "ingest",
+    lambda job: process(job[0]),
+    pre=lambda job: _dequeue(*job),
+    on_idle=prune_index,
+)
 
 
 def run_exclusive(fn, wait: bool = True, timeout: float | None = None):
@@ -653,8 +678,13 @@ def submit(artifact_id: str) -> None:
     """Queue an artifact for chunking and indexing. Returns immediately."""
     # I5.1 bookkeeping happens before the put: the counter must be incremented
     # before the worker could possibly dequeue the item.
-    _queue(artifact_id)
-    _ingest.submit(artifact_id)
+    _ingest.submit((artifact_id, _queue(artifact_id)))
+
+
+def submit_background(artifact_id: str) -> None:
+    """Queue an artifact behind everything the person is doing: bulk upkeep (a summary
+    refresh, a due retry, a startup backfill) that nobody is waiting on."""
+    _ingest.submit((artifact_id, _queue(artifact_id)), background=True)
 
 
 def backfill_summaries() -> int:
@@ -702,7 +732,7 @@ def backfill_summaries() -> int:
         if row["kind"] == "link" and not (row["body"] or "").strip():
             with contextlib.suppress(Exception):
                 preview.force(row["id"])
-        submit(row["id"])
+        submit_background(row["id"])
     return len(rows)
 
 
@@ -737,7 +767,7 @@ def queue_summary_refresh(redo: bool = False) -> int:
     for aid in ids:
         facets_mod.force(aid)
         if _pending(aid) == 0:
-            submit(aid)
+            submit_background(aid)
     return len(ids)
 
 
@@ -781,7 +811,7 @@ def submit_all() -> int:
         conn.close()
 
     for artifact_id in ids:
-        submit(artifact_id)
+        submit_background(artifact_id)
     return len(ids)
 
 
@@ -809,7 +839,7 @@ def submit_images() -> int:
         conn.close()
 
     for artifact_id in ids:
-        submit(artifact_id)
+        submit_background(artifact_id)
     return len(ids)
 
 

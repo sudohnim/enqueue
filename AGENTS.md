@@ -51,6 +51,7 @@ While paused, `complete`/`describe_image` raise `ModelPaused` without touching t
 The first call after the pause goes out normally; a still-limited provider just trips it again.
 `enq doctor` shows it as `model_pause` (null when not paused).
 The pause is in-memory: a restart forgets it and the first call re-trips it.
+Switching accounts ends it early: storing or removing the API key (`PUT`/`DELETE /settings/api-key`) or changing `llm_backend`/`llm_model`/`summarize_model`/`llm_url`/`llm_headers` calls `pause.lift()`, which clears the pause, brings every owed summary retry forward to now, and logs `model.resumed`.
 
 3. **Facet trust is a fixed multiplier, not a learning loop.**
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
@@ -830,6 +831,11 @@ That is the right trade for derived data: nothing the person wrote is ever at ri
 
 One worker thread, not a pool.
 The search index lives inside the SQLite file and embedding models are large enough that a second engine is not free.
+
+Two lanes on that one thread (`worker.py`, 2026-09-29).
+`submit(id)` is the person's own work (a capture, an edit, a preview "Try again") and always runs first; `submit_background(id)` is bulk upkeep (the summary backfill/refresh, the retry sweeper, `submit_all`, `submit_images`) and waits until no foreground item is queued.
+Before this, a library-wide summary refresh put a fresh capture hours behind it.
+The I5.1 coalescing counts only copies submitted AFTER the running one as "newer", so an older background copy still waiting never makes a fresh foreground run skip its model calls.
 
 ### Per type
 
