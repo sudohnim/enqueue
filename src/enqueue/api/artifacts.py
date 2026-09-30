@@ -334,6 +334,9 @@ def get_artifact(artifact_id: str) -> dict:
         detail["pages"] = capture.page_count(artifact_id)
     if kind == "link":
         detail["preview"] = preview.get(artifact_id)
+        # Whether a refused preview can still be tried in a browser, so the page can
+        # say what is left to do rather than what went wrong.
+        detail["preview_browser"] = preview.browser_enabled()
     detail["tags"] = tags_mod.for_artifact(artifact_id)
 
     # Saved-view membership: which saved pivots include this artifact. The spec
@@ -466,6 +469,8 @@ class TagCreate(BaseModel):
 class LinkCreate(BaseModel):
     url: str
     local_only: bool = False
+    # The page's name when the capture carried one (a share's "Title" line).
+    title: str | None = None
 
 
 @router.post("/notes", status_code=201)
@@ -523,7 +528,7 @@ def get_tags() -> dict:
 @router.post("/capture/link", status_code=201)
 def capture_link(req: LinkCreate) -> dict:
     try:
-        return capture.link(req.url, local_only=req.local_only)
+        return capture.link(req.url, local_only=req.local_only, title=req.title)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 

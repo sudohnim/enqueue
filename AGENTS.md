@@ -62,9 +62,9 @@ Usage does feed ranking one level up, per artifact rather than per facet: see "U
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
 The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
-5. **crawl4ai may be added later.**
-The old docs reference crawl4ai, marker, and whisper.cpp; none are in `pyproject.toml`.
-crawl4ai may return for better link capture.
+5. **crawl4ai is the opt-in browser fallback for link previews (2026-09-29).**
+It is a dependency, used only by `preview._read_browser` when the `preview_browser` setting is on (see "Link previews").
+The Chromium it drives is a separate download that `bin/setup` installs.
 marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
@@ -879,6 +879,18 @@ Rules:
 
 Auto-preview is controlled by the `auto_preview` setting (default on).
 When on, the ingest worker fetches the preview in the background after capture.
+
+**Browser fallback (`preview_browser`, default off).**
+Some sites refuse any non-browser client (Medium's bot wall answers 403 to httpx every time, whatever the user agent).
+With the setting on, a refusal (401/403), or a page with no title and no description until its scripts run, is opened once more in headless Chromium through crawl4ai (`preview._read_browser`), and its HTML goes through the same `parse` and `_extract_body`.
+The line from rule "Not a browser string" still holds: a real browser loading a page is not a disguise, faking one is.
+So none of crawl4ai's anti-detection is enabled (no `enable_stealth`, `magic`, `simulate_user`, `override_navigator`, or random user agent); a page that still refuses a real browser stays refused.
+crawl4ai's cache lives under the data dir (`CRAWL4_AI_BASE_DIRECTORY`), not `~/.crawl4ai`.
+A missing Chromium fails with "run bin/setup" rather than silently.
+
+**A shared link's name is its title.**
+A capture of exactly "Title" on one line and the address alone on the next (what a share sheet or "copy link" hands over) saves the line as the link's title, not as a note (`capture.html` `splitLink`, `sync.rs` `shared_link_title` for the phone, `LinkCreate.title`).
+Before this, the page name landed as the link's first note and read like something the person wrote.
 
 ---
 

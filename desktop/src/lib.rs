@@ -539,6 +539,12 @@ mod mobile {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_iso();
 
+        // "Title" on one line and the address alone on the next is what a share or a
+        // "copy link" hands over. That line is the page's name, not a thought about it,
+        // so it becomes the title rather than a note (same rule as the desktop's
+        // splitLink).
+        let shared_title = crate::sync::shared_link_title(&trimmed, looks_like_link);
+
         // Split a URL from surrounding words, like the desktop's splitLink.
         let words: Vec<&str> = trimmed.split_whitespace().collect();
         let url_at = words.iter().position(|w| looks_like_link(w));
@@ -557,13 +563,17 @@ mod mobile {
                         .collect::<Vec<_>>()
                         .join(" ")
                 };
+                let note = if shared_title.is_some() { String::new() } else { note };
                 ("link", Some(url), None, (!note.trim().is_empty()).then_some(note))
             }
             None => ("note", None, Some(trimmed.clone()), None),
         };
 
         let title = if kind == "link" {
-            source_url.clone().unwrap_or_else(|| "link".into())
+            shared_title
+                .clone()
+                .or_else(|| source_url.clone())
+                .unwrap_or_else(|| "link".into())
         } else {
             body.clone().unwrap_or_default()
         };

@@ -129,6 +129,20 @@ if command -v uv >/dev/null 2>&1; then
   uv python install "$PY_MIN" >/dev/null 2>&1 || warn "could not pre-install Python $PY_MIN (uv will fetch it on first run)"
 fi
 
+# --- Headless browser (link previews) --------------------------------------------
+# The "Open refused links in a browser" setting opens a site that refuses plain
+# requests (Medium) in headless Chromium through crawl4ai. crawl4ai is a Python
+# dependency; the browser itself is a separate download into Playwright's cache
+# (~/Library/Caches/ms-playwright). A no-op when it is already installed.
+if command -v uv >/dev/null 2>&1; then
+  bold "Headless browser (link previews)"
+  if (cd "$REPO" && uv run --quiet python -m playwright install chromium >/dev/null 2>&1); then
+    ok "Chromium for link previews"
+  else
+    warn "could not install Chromium - 'Open refused links in a browser' will say so"
+  fi
+fi
+
 # --- Node (optional) -------------------------------------------------------------
 # Node is only the launch script's JS parse gate (bin/launch js_gate), which is skipped
 # when node is absent. Nice to have, never required - so a miss is a warning, not a fail.

@@ -13,6 +13,7 @@ const SETTING_LABELS = {
 	hotkey: "Capture hotkey",
 	llm_headers: "Extra headers",
 	auto_preview: "Resolve links when you save them",
+	preview_browser: "Open refused links in a browser",
 	search_lift: "Rewrite searches as ideas",
 	search_model_rank: "Let the model order results",
 	trash_days: "Days a deleted thing waits before it goes",
@@ -643,7 +644,15 @@ async function renderSettingsFeatures() {
 		'"' +
 		(ap.locked ? ' disabled aria-disabled="true"' : "") +
 		' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
-		"</div></div></div>";
+		"</div></div>" +
+		searchSwitchRow(
+			d.settings.preview_browser,
+			"preview_browser",
+			"When a site turns the plain request away, or its page is empty until it " +
+				"runs, a headless browser opens it once, the way you would. Slower.",
+			"A site that turns the plain request away stays without a preview.",
+		) +
+		"</div>";
 
 	// Both search-model stages are opt-in: each adds a model call to a new search
 	// (cached after), and chat already does both on its own.

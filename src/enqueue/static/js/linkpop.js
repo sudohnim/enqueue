@@ -5,7 +5,7 @@
 // click that navigates away is a click that fought the caret.
 //
 // Only links md() rendered (class "mdlink") get the bar. Deliberate action links such as
-// "Open original" are not content, so they keep opening directly.
+// the saved address on a link are not content, so they keep opening directly.
 //
 // One implementation for both shells. Each passes its own platform plumbing to
 // LinkPop.attach: the desktop hands the URL to the OS through open_external and copies

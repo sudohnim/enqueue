@@ -86,6 +86,10 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # the moment you save it; off means it stays a bare address until you ask. Default
     # on, because a wall of unresolved URLs is the thing the preview exists to fix.
     "auto_preview": ("ENQ_AUTO_PREVIEW", "on", True),
+    # Whether a link the site refuses to a plain request (Medium's bot wall), or whose
+    # page is empty until its scripts run, is opened once more in headless Chromium
+    # through crawl4ai (preview.py). Off by default: a browser start per such link.
+    "preview_browser": ("ENQ_PREVIEW_BROWSER", "off", True),
     # Free text, sent as extra headers on every model call. Some endpoints want a
     # referer or an app name before they will answer; this is the escape hatch that
     # stops each one becoming a code change. One `Name: value` per line.

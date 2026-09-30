@@ -22,6 +22,7 @@ dependencies = [
   "trafilatura>=1.8",
   "sqlite-vec>=0.1.9",
   "pynacl>=1.6.2",
+  "crawl4ai>=0.9.4",
 ]
 
 [project.optional-dependencies]
