@@ -1,5 +1,10 @@
 """Credential detection, run before any text reaches a model.
 
+`scan` records what a note holds (the Settings list of secret hits); `redact` blanks
+the same shapes out of every prompt a remote model is sent (providers/ollama.py), so
+a credential in a note, a PDF or a page never leaves the machine while the rest of
+the text still gets its summary.
+
 This is not a sensitivity classifier. It catches credential shapes, not private
 material. Personal content is handled by the local_only flag instead.
 
@@ -38,6 +43,23 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("slack_token", re.compile(r"\b(?P<value>xox[baprs]-[A-Za-z0-9-]{10,})\b")),
     ("github_token", re.compile(r"\b(?P<value>gh[pousr]_[A-Za-z0-9]{20,})\b")),
 ]
+
+
+# A whole PEM private key, header to footer: the header alone is what `scan` reports,
+# but the base64 body between is the secret itself.
+_PRIVATE_KEY_BLOCK = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S
+)
+
+
+def redact(text: str) -> str:
+    """`text` with every credential value replaced by REDACTION."""
+    if not text:
+        return text
+    text = _PRIVATE_KEY_BLOCK.sub(REDACTION, text)
+    for _kind, pattern in _PATTERNS:
+        text = pattern.sub(lambda m: m.group(0).replace(m.group("value"), REDACTION), text)
+    return text
 
 
 def scan(text: str) -> list[SecretHit]:

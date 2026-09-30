@@ -52,7 +52,7 @@ class _ByNameProvider:
 def _stub_router(monkeypatch, skill: str = "answer"):
     """The router: one cheap model call that picks a skill, stubbed to `skill`."""
     provider = _FakeProvider({"skill": skill})
-    monkeypatch.setattr(assistant, "get_provider", lambda: provider)
+    monkeypatch.setattr(assistant, "get_provider", lambda **kw: provider)
     return provider
 
 
@@ -70,7 +70,7 @@ def _stub_answer(monkeypatch, passages: list | None = None, answer=None):
     if answer is not None:
         byname["Answer"] = answer
     provider = _ByNameProvider(**byname)
-    monkeypatch.setattr(chats, "get_provider", lambda: provider)
+    monkeypatch.setattr(chats, "get_provider", lambda **kw: provider)
     return provider
 
 
@@ -181,7 +181,7 @@ class TestSweep:
             lambda *a, **k: [{"artifact_id": "a", "title": "T", "text": "body", "kind": "note"}],
         )
         provider = _ByNameProvider(Answer=RuntimeError("the model fell over"))
-        monkeypatch.setattr(chats, "get_provider", lambda: provider)
+        monkeypatch.setattr(chats, "get_provider", lambda **kw: provider)
 
         chats_worker.compute(
             chats_worker.Job(chat["chat"]["id"], message_id, "what outlasts what?", None)
@@ -212,7 +212,7 @@ class TestSweep:
         provider = _ByNameProvider(
             Answer=ProviderError("the endpoint at 127.0.0.1 rejected the API key")
         )
-        monkeypatch.setattr(chats, "get_provider", lambda: provider)
+        monkeypatch.setattr(chats, "get_provider", lambda **kw: provider)
 
         chats_worker.compute(
             chats_worker.Job(chat["chat"]["id"], message_id, "what outlasts what?", None)

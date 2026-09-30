@@ -198,6 +198,9 @@ One line per file, describing its job.
 | `cli.py` | Thin Typer CLI over the engine API. Every command calls `httpx` against localhost. |
 | `api/` | FastAPI app split into one router per domain (M.9): `static.py` (shell, capture, health), `artifacts.py` (wall, artifact, tags, capture writes), `wall.py` (shared wall-shaping helpers), `write.py` (re-chunk, facets, index rebuild), `admin.py` (doctor, index counts, ingest wait), `search.py`, `chats.py`, `settings.py`, `pivots.py`. `app.py` has `create_app()` + `serve()` and binds 127.0.0.1:8787. |
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
+| `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421) and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403), so no other website can reach the engine, even through DNS rebinding. Requests with no Origin (CLI, the shell's health check) pass. Tests add `testserver` via conftest. |
+| `privacy.py` | What may go to which model. `is_remote(provider)` (endpoint not loopback), `shareable(items, provider)` drops local-only artifacts from anything shown to a remote model: chat passages, the gray-zone judge, model re-ranking. A chat scoped to a local-only artifact, and attribute extraction from one, use the local model. The phone's chat does the same through `sync::chat_sources`. |
+| `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
 | `greeting.py` | The wall's greeting: one model phrase per four-hour bucket, generated in the background. |
@@ -366,7 +369,7 @@ Structured-output gotchas (CHATBUG.1, 2026-08-20): `config.MODEL_RETRIES` is ins
 
 ### Activity log (events)
 
-`events.py` is a persisted activity log (migration `0032_events_log`, the `events` table): `emit(kind, detail, data=None, duration_ms=None)` inserts a row (never raises; trims to a bounded size), `recent(limit)` reads newest-first with the JSON `data` parsed. Emit sites: `ask.submitted`/`ask.answered`/`ask.failed` (chats + chats_worker), `capture.note` (notes.py), `facet.regenerated`/`facet.edited` (facets.py, carrying model + source), `ingest` (queue.py, only when it produced chunks/facets/entities - an empty re-ingest is not logged), `sync.pull`, `start`. `GET /events?limit=N` serves it; the Settings "Events"/Activity tab (`static/js/settings.js` desktop, `mobile.html` mobile) renders each row expandable to its full record with clickable artifact links, folds runs of sync pulls, and polls to stay live while open. It is local diagnostics only (never synced) and is also the decoy front door to the vault (VAULT.6). Mobile has its own `events` table in `desktop/src/sync.rs` (`log_event`/`read_events`) written by the Rust ask/facet/capture/sync paths and read by `mobile_events`.
+`events.py` is a persisted activity log (migration `0032_events_log`, the `events` table): `emit(kind, detail, data=None, duration_ms=None)` inserts a row (never raises; trims to a bounded size), `recent(limit)` reads newest-first with the JSON `data` parsed. Emit sites: `ask.submitted`/`ask.answered`/`ask.failed` (chats + chats_worker), `capture.note` (notes.py), `facet.regenerated`/`facet.edited` (facets.py, carrying model + source), `ingest` (queue.py, only when it produced chunks/facets/entities - an empty re-ingest is not logged), `model.sent` (outbound.py, what went to remote models, added up per 10 minutes), `sync.pull`, `start`. `GET /events?limit=N` serves it; the Settings "Events"/Activity tab (`static/js/settings.js` desktop, `mobile.html` mobile) renders each row expandable to its full record with clickable artifact links, folds runs of sync pulls, and polls to stay live while open. It is local diagnostics only (never synced) and is also the decoy front door to the vault (VAULT.6). Mobile has its own `events` table in `desktop/src/sync.rs` (`log_event`/`read_events`) written by the Rust ask/facet/capture/sync paths and read by `mobile_events`.
 
 ### Sync (relay, E2E, device linking)
 
@@ -846,10 +849,11 @@ Re-saving an existing artifact moves it to the front of the wall (updates `updat
 
 ### Secret scanning
 
-`ingest/secrets.py` scans all text before it reaches a model.
-Detects: password assignments, AWS access keys, private keys, bearer tokens, Slack tokens, GitHub tokens.
-Excerpts are redacted (value replaced with `***`).
-Artifacts with hits get `status = 'text_only'`, which excludes them from facet generation.
+`ingest/secrets.py` knows the credential shapes: password assignments, AWS access keys, private keys (the whole PEM block), bearer tokens, Slack tokens, GitHub tokens.
+`scan` records a note's or a link page's hits for the Settings list (excerpts with the value replaced by `***`) and marks the artifact `status = 'text_only'`.
+`redact` blanks the same shapes out of every prompt sent to a remote model, in `OpenAICompatibleProvider.complete`, the one place every structured call passes, so a credential in a note, a PDF or a page never leaves the machine while the rest of the text still gets its facets and entities.
+The phone does the same in `call_llm_mobile` (`sync::redact_secrets`); keep the two pattern lists in step.
+A local model is sent the text as written.
 
 ### Untrusted content
 
@@ -871,6 +875,7 @@ Rules:
 3. **SVG is refused as a preview picture.** It can carry script, and is served from the engine's own origin.
 4. **Local-only links are never fetched.** Fetching would reach the network on their behalf.
 5. **HTTP/2 is used** because some publishers (Wikimedia) treat clients that do not negotiate h2 as bots.
+6. **Only public addresses are fetched.** `preview._refuse_private` runs before every request, redirects included, and refuses a host that resolves to a loopback, private, link-local or otherwise non-global address, so a saved link (or one synced from the phone) can never read the router, another local service or the engine itself.
 
 Auto-preview is controlled by the `auto_preview` setting (default on).
 When on, the ingest worker fetches the preview in the background after capture.

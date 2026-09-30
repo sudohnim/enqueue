@@ -26,6 +26,13 @@ def _fast_argon2(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _test_host(monkeypatch):
+    """TestClient sends Host: testserver; the engine only answers loopback names
+    (api/guard.py). tests/test_guard.py checks the production set on its own."""
+    monkeypatch.setattr(config, "ALLOWED_HOSTS", config.ALLOWED_HOSTS | {"testserver"})
+
+
+@pytest.fixture(autouse=True)
 def _no_query_lift(monkeypatch):
     """Query lifting calls the search model; no test reaches a network by accident.
     tests/test_query_lift.py exercises the real function directly."""

@@ -52,27 +52,27 @@ class _ByNameProvider:
 class TestRoute:
     def test_routes_to_a_named_skill(self, monkeypatch):
         provider = _FakeProvider({"skill": "organize"})
-        monkeypatch.setattr(assistant, "get_provider", lambda: provider)
+        monkeypatch.setattr(assistant, "get_provider", lambda **kw: provider)
 
         assert assistant.route("organize my notes by region") == "organize"
 
     def test_unknown_skill_name_falls_to_answer(self, monkeypatch):
         # Rule 1: a name outside the registry is never run, it falls to answer.
         provider = _FakeProvider({"skill": "translate"})
-        monkeypatch.setattr(assistant, "get_provider", lambda: provider)
+        monkeypatch.setattr(assistant, "get_provider", lambda **kw: provider)
 
         assert assistant.route("translate this") == "answer"
 
     def test_model_error_falls_to_answer(self, monkeypatch):
         # Rule 1: a failed model call is a floor, not a crash.
         provider = _FakeProvider(RuntimeError("the router fell over"))
-        monkeypatch.setattr(assistant, "get_provider", lambda: provider)
+        monkeypatch.setattr(assistant, "get_provider", lambda **kw: provider)
 
         assert assistant.route("anything") == "answer"
 
     def test_empty_request_falls_to_answer_without_calling_the_model(self, monkeypatch):
         provider = _FakeProvider({"skill": "organize"})
-        monkeypatch.setattr(assistant, "get_provider", lambda: provider)
+        monkeypatch.setattr(assistant, "get_provider", lambda **kw: provider)
 
         assert assistant.route("") == "answer"
         assert assistant.route("   ") == "answer"
@@ -92,7 +92,7 @@ class TestDispatch:
 
     def _stub_router(self, monkeypatch, skill: str):
         provider = _FakeProvider({"skill": skill})
-        monkeypatch.setattr(assistant, "get_provider", lambda: provider)
+        monkeypatch.setattr(assistant, "get_provider", lambda **kw: provider)
         return provider
 
     def _stub_answer(self, monkeypatch, passages: list | None = None):
@@ -104,7 +104,7 @@ class TestDispatch:
             ChatTitle=ChatTitle(title="Movement over rigidity"),
             ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
         )
-        monkeypatch.setattr(chats, "get_provider", lambda: provider)
+        monkeypatch.setattr(chats, "get_provider", lambda **kw: provider)
         return provider
 
     def _resolve(self, async_turns, chat_id):
