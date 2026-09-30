@@ -229,3 +229,108 @@ class TestArticleBody:
                 (made["id"], "x" * 300),
             )
         assert preview.needs_fetch(made["id"]) is False
+
+
+def _refused(url):
+    import httpx
+
+    request = httpx.Request("GET", url)
+    raise httpx.HTTPStatusError(
+        "403", request=request, response=httpx.Response(403, request=request)
+    )
+
+
+class TestBrowserFallback:
+    """A site that refuses any client but a browser (Medium's bot wall) can be opened
+    once in headless Chromium, when the person turned that on."""
+
+    def _setting(self, monkeypatch, value):
+        from enqueue import settings
+
+        real = settings.get
+        monkeypatch.setattr(
+            settings, "get", lambda name: value if name == "preview_browser" else real(name)
+        )
+
+    def test_off_a_refusal_says_so_and_no_browser_starts(self, store, quiet_queue, monkeypatch):
+        made = capture.link("https://steve-yegge.medium.com/a-post")
+        self._setting(monkeypatch, "off")
+        monkeypatch.setattr(preview, "_read_capped", _refused)
+        started = []
+        monkeypatch.setattr(preview, "_read_browser", lambda url: started.append(url))
+
+        row = preview.fetch(made["id"])
+
+        assert row["status"] == "failed"
+        assert row["error"] == "the site turned the preview away"
+        assert started == []
+
+    def test_on_a_refusal_is_opened_in_the_browser(self, store, quiet_queue, monkeypatch):
+        made = capture.link("https://steve-yegge.medium.com/a-post")
+        self._setting(monkeypatch, "on")
+        monkeypatch.setattr(preview, "_read_capped", _refused)
+        monkeypatch.setattr(preview, "_read_browser", lambda url: ("text/html", ARTICLE))
+
+        row = preview.fetch(made["id"])
+
+        assert row["status"] == "ok"
+        assert row["title"] == "Lumo's not a kitten anymore"
+        assert preview.has_body(made["id"]) is True
+
+    def test_on_an_empty_script_shell_is_opened_in_the_browser(
+        self, store, quiet_queue, monkeypatch
+    ):
+        made = capture.link("https://app.example.com/p")
+        self._setting(monkeypatch, "on")
+        shell = "<html><head></head><body><div id='root'></div></body></html>"
+        monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", shell))
+        monkeypatch.setattr(preview, "_read_browser", lambda url: ("text/html", ARTICLE))
+
+        assert preview.fetch(made["id"])["title"] == "Lumo's not a kitten anymore"
+
+    def test_a_missing_browser_is_named_with_its_fix(self, store, quiet_queue, monkeypatch):
+        made = capture.link("https://steve-yegge.medium.com/a-post")
+        self._setting(monkeypatch, "on")
+        monkeypatch.setattr(preview, "_read_capped", _refused)
+
+        def missing(url):
+            raise preview.BrowserMissing("Executable doesn't exist")
+
+        monkeypatch.setattr(preview, "_read_browser", missing)
+
+        row = preview.fetch(made["id"])
+
+        assert row["status"] == "failed"
+        assert "bin/setup" in row["error"]
+
+    def test_a_page_the_plain_fetch_read_keeps_it_when_the_browser_fails(
+        self, store, quiet_queue, monkeypatch
+    ):
+        made = capture.link("https://app.example.com/p")
+        self._setting(monkeypatch, "on")
+        shell = "<html><head></head><body><div id='root'></div></body></html>"
+        monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", shell))
+        tried = []
+
+        def broken(url):
+            tried.append(url)
+            raise RuntimeError("the browser could not open the page (500)")
+
+        monkeypatch.setattr(preview, "_read_browser", broken)
+
+        row = preview.fetch(made["id"])
+        assert tried  # the browser was asked
+        assert row["status"] == "ok"  # and the page the plain fetch got still stands
+
+
+class TestSharedTitle:
+    def test_a_capture_that_names_its_page_keeps_the_name(self, store, quiet_queue):
+        made = capture.link("https://example.com/post", title="  The   Real Name ")
+        conn = db.get_conn()
+        try:
+            title = conn.execute(
+                "SELECT title FROM artifacts WHERE id = ?", (made["id"],)
+            ).fetchone()["title"]
+        finally:
+            conn.close()
+        assert title == "The Real Name"

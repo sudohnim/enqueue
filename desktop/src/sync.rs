@@ -1853,6 +1853,22 @@ pub fn title_hint(body: &str) -> String {
     "Untitled".to_string()
 }
 
+/// The page name in a shared link: exactly two non-empty lines, a name and then the
+/// address alone (what a share sheet or a "copy link" hands over). Returns the name,
+/// which the capture uses as the link's title instead of keeping it as a note. Any
+/// other shape (words around the address, an address mid-sentence) returns None.
+/// Mirrors `sharedTitle` in capture.html.
+#[allow(dead_code)]
+pub fn shared_link_title(text: &str, is_link: impl Fn(&str) -> bool) -> Option<String> {
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    match lines.as_slice() {
+        [name, url] if is_link(url) && !name.split_whitespace().any(&is_link) => {
+            Some(name.chars().take(300).collect())
+        }
+        _ => None,
+    }
+}
+
 /// The content-addressed blob name: HMAC-SHA256 of the content hash keyed by the DEK
 /// (mirrors `crypto.blob_name`), so a blob's address leaks nothing about its contents.
 #[allow(dead_code)]
@@ -1943,6 +1959,20 @@ pub fn resolve_vaulted_blob<F: Fn() -> Result<Vec<u8>, String>>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_shared_link_names_its_page() {
+        let is_link = |w: &str| w.starts_with("https://");
+        assert_eq!(
+            shared_link_title("The Anthropic Hive Mind\nhttps://x.com/a", is_link).as_deref(),
+            Some("The Anthropic Hive Mind")
+        );
+        // A note beside the address on the same line is a note, not a name.
+        assert_eq!(shared_link_title("read later https://x.com/a", is_link), None);
+        assert_eq!(shared_link_title("https://x.com/a", is_link), None);
+        assert_eq!(shared_link_title("one\ntwo\nhttps://x.com/a", is_link), None);
+        assert_eq!(shared_link_title("see https://y.com\nhttps://x.com/a", is_link), None);
+    }
+
     use super::*;
 
     // A unique scratch dir under the system temp dir, since there is no tempfile dev-dep.

@@ -559,13 +559,6 @@
       (a.local_only
         ? '<span class="sep">&bull;</span><span class="badge neutral">local only</span>'
         : "") +
-      "</div>" +
-      '<div class="actions">' +
-      (a.source_url
-        ? '<a class="btn secondary" href="' +
-          esc(a.source_url) +
-          '" target="_blank" rel="noopener">Open original</a>'
-        : "") +
       "</div>";
 
     if (a.source_url)
@@ -629,8 +622,15 @@
           '/blob" alt="' +
           esc(a.title) +
           '"></div>';
-      } else if (a.kind === "link") {
-        body += linkFace(a, d.preview);
+      }
+      // What went wrong with a link's preview is a footnote, not the page: it sits
+      // under the note, where it cannot be mistaken for the note or the summary.
+      // While the face is still asking, there is nothing to footnote yet.
+      let notice = "";
+      if (a.kind === "link") {
+        const face = linkFace(a, d.preview);
+        body += face;
+        if (!face) notice = linkNotice(a, d.preview, d.preview_browser);
       }
       const current = d.annotations.filter((x) => x.current);
       const last = current.length ? current[current.length - 1] : null;
@@ -639,7 +639,8 @@
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="Your notes here" ' +
         'style="min-height:150px" data-placeholder="Your notes here"></div>' +
-        '<div class="bar"><span id="state" class="meta"></span></div></div>';
+        '<div class="bar"><span id="state" class="meta"></span></div></div>' +
+        notice;
       ctx = {
         id,
         kind: a.kind,
@@ -959,39 +960,41 @@
           " what this is...</div>"
         );
       }
-      // Past the limit, saying "asking" would be a lie: nothing is in flight. Offer
-      // the one request that is left to decide on.
-      return (
-        '<div class="preview-fail">' +
-        "<p>Nothing has come back from " +
-        esc(h) +
-        ". Automatic previews may be off in settings.</p>" +
-        '<div class="preview-fail-row">' +
-        '<button class="btn secondary sm" id="btnPreview" onclick="fetchPreview(\'' +
-        a.id +
-        "')\">Ask " +
-        esc(h) +
-        "</button></div></div>"
-      );
+      // Past the limit, saying "asking" would be a lie: nothing is in flight. The
+      // one request left to decide on is offered under the note (linkNotice).
+      return "";
     }
 
-    // Only a refusal gets a button, because only a refusal is a decision left to
-    // make: the publisher said no, and another request is either worth it or not.
-    // A preview that failed sits in its own quiet tile: the reason in plain ink,
-    // then the one decision left (another request) as a real button, with what it
-    // costs said beside it.
+    // A failed preview leaves the face empty; linkNotice says why, under the note.
+    return "";
+  }
+
+  // The footnote for a link whose preview failed or never came: one quiet line with
+  // the reason and the one decision left (another request). A refusal the browser
+  // setting could still get past says so, since that is the only thing that would
+  // change the answer.
+  function linkNotice(a, p, browser) {
+    if (p && p.status === "ok") return "";
+    const h = host(a.source_url) || "the publisher";
+    const refused = !!(p && /turned the preview away/.test(p.error || ""));
+    let why;
+    if (!p) why = "Nothing has come back from " + esc(h) + " yet.";
+    else if (refused && !browser)
+      why =
+        esc(h) +
+        " turns previews away. Turning on <em>Open refused links in a browser</em> " +
+        'in <button class="inline-link" onclick="showSettings()">Settings</button> may get past it.';
+    else why = "No preview: " + esc(p.error || "that page did not resolve") + ".";
     return (
-      '<div class="preview-fail">' +
-      "<p>" +
-      esc(p.error || "That page did not resolve.") +
-      "</p>" +
-      '<div class="preview-fail-row">' +
-      '<button class="btn secondary sm" id="btnPreview" onclick="fetchPreview(\'' +
+      '<div class="preview-note">' +
+      "<span>" +
+      why +
+      "</span>" +
+      '<button class="inline-link" id="btnPreview" onclick="fetchPreview(\'' +
       a.id +
-      "')\">Try again</button>" +
-      "<span>one more request to " +
-      esc(h) +
-      "</span></div></div>"
+      "')\">" +
+      (p ? "Try again" : "Ask " + esc(h)) +
+      "</button></div>"
     );
   }
 
@@ -1082,9 +1085,15 @@
     const button = document.getElementById("btnPreview");
     if (button) {
       button.disabled = true;
-      button.textContent = "asking " + "...";
+      button.textContent = "Trying...";
     }
+    // The request runs on the ingest worker, so the old answer stays in place until
+    // the new one lands; wait for it (a browser open can take a while) rather than
+    // re-rendering the old failure as if nothing had happened.
+    let before = null;
     try {
+      const d = await api("/artifacts/" + id);
+      before = d.preview ? d.preview.fetched_at : null;
       await api("/artifacts/" + id + "/preview", { method: "POST" });
     } catch (err) {
       if (button) {
@@ -1092,6 +1101,16 @@
         button.textContent = "Try again";
       }
       return toast(String(err.message || err), true);
+    }
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      if (!ctx || ctx.id !== id) return; // the reader moved on
+      try {
+        const d = await api("/artifacts/" + id);
+        if (d.preview && d.preview.fetched_at !== before) break;
+      } catch (err) {
+        break;
+      }
     }
     faceTries = 0;
     showArtifact(id);

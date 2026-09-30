@@ -292,7 +292,7 @@ document.addEventListener("click", (e) => {
 
 // Links inside rendered content (notes, chat answers) open the copy / open-in-browser
 // bar instead of navigating (LINKPOP.1). LinkPop runs in the capture phase, so the
-// direct-open handler above only ever sees deliberate action links like "Open original".
+// direct-open handler above only ever sees deliberate action links like a link's saved address.
 // Opening goes through the same open_external bridge; a plain browser opens a tab.
 LinkPop.attach({
 	open: (url) =>
