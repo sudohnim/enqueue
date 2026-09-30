@@ -273,11 +273,7 @@ def _why(exc: Exception) -> str:
             # Two different causes wear this status, and guessing wrong costs a person
             # a configuration change that fixes nothing. Retrying is the cheaper test,
             # so it is named first.
-            return (
-                "the publisher refused the request; it may be a temporary block, so "
-                "try again first. If it keeps refusing, set ENQ_USER_AGENT to a user "
-                "agent with a contact URL"
-            )
+            return "the site turned the preview away"
         if code == 429:
             return "the publisher is rate limiting; try later"
         if code == 404:
@@ -387,6 +383,81 @@ def _store(artifact_id: str, fields: dict) -> None:
         )
 
 
+# ---- the browser fallback -------------------------------------------------------
+# Some publishers (Medium, behind its bot wall) refuse any client that is not a
+# browser, whatever it says about itself: the plain request above gets a 403 every
+# time. The `preview_browser` setting lets the person have a real browser open the
+# page instead - headless Chromium through crawl4ai, the way they would open it
+# themselves. It is off by default: it is heavier (a browser start per link) and it
+# runs the page's scripts.
+#
+# The line this does not cross is the one drawn at USER_AGENT above: a real browser
+# loading a page is not a disguise, but faking one is. So none of crawl4ai's
+# anti-detection is turned on - no stealth patches, no navigator overrides, no
+# simulated mouse, no randomised user agent - and a page that still refuses a real
+# browser stays refused.
+BROWSER_TIMEOUT_MS = 30_000
+
+
+class BrowserMissing(RuntimeError):
+    """The browser the fallback needs is not installed (bin/setup installs it)."""
+
+
+def browser_enabled() -> bool:
+    from . import settings
+
+    return str(settings.get("preview_browser") or "off").lower() in ("on", "1", "true")
+
+
+def _read_browser(url: str) -> tuple[str, str]:
+    """Return (content_type, html) for a page opened in headless Chromium."""
+    import asyncio
+
+    # crawl4ai keeps a cache directory; keep it with the rest of our data, not in ~.
+    os.environ.setdefault("CRAWL4_AI_BASE_DIRECTORY", str(config.DATA_DIR))
+    try:
+        from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+    except ImportError as exc:
+        raise BrowserMissing("crawl4ai is not installed") from exc
+
+    browser = BrowserConfig(headless=True, verbose=False, text_mode=True)
+    run = CrawlerRunConfig(
+        cache_mode=CacheMode.BYPASS, verbose=False, page_timeout=BROWSER_TIMEOUT_MS
+    )
+
+    async def go():
+        async with AsyncWebCrawler(config=browser) as crawler:
+            return await crawler.arun(url, config=run)
+
+    try:
+        result = asyncio.run(go())
+    except Exception as exc:  # noqa: BLE001 - classified below, then re-raised
+        if "Executable doesn't exist" in str(exc) or "playwright install" in str(exc):
+            raise BrowserMissing(str(exc)) from exc
+        raise
+    code = result.status_code or 0
+    if not result.success or code >= 400:
+        raise RuntimeError(f"the browser could not open the page ({code or 'no answer'})")
+    html = (result.html or "")[: MAX_BYTES * 4]
+    return "text/html", html
+
+
+def _why_browser(exc: Exception) -> str:
+    if isinstance(exc, BrowserMissing):
+        return "the browser for previews is not installed; run bin/setup, then try again"
+    if "(401)" in str(exc) or "(403)" in str(exc):
+        return "the site turned the preview away, even in a browser"
+    return "the site did not open in a browser either"
+
+
+def _worth_a_browser(exc: Exception | None, fields: dict | None) -> bool:
+    """Whether the plain fetch's outcome is one a real browser could plausibly fix:
+    a refusal, or a page with nothing to say until its scripts run."""
+    if exc is not None:
+        return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (401, 403)
+    return fields is not None and not (fields.get("title") or fields.get("description"))
+
+
 def fetch(artifact_id: str) -> dict | None:
     """Make the one request. Raises KeyError if the artifact is not a saved link."""
     from .capture import title_from_url
@@ -414,17 +485,30 @@ def fetch(artifact_id: str) -> dict | None:
     if urlparse(url).scheme not in ("http", "https"):
         raise ValueError(f"cannot fetch {urlparse(url).scheme or 'that'} links")
 
+    fields: dict | None = None
     try:
         content_type, html = _read_capped(url)
     except Exception as exc:  # noqa: BLE001 - the reason is shown to the person, not raised
-        _store(artifact_id, {"status": "failed", "error": _why(exc)})
-        return get(artifact_id)
+        if not (browser_enabled() and _worth_a_browser(exc, None)):
+            _store(artifact_id, {"status": "failed", "error": _why(exc)})
+            return get(artifact_id)
+        html = ""
+    else:
+        if content_type and not content_type.startswith(("text/html", "application/xhtml")):
+            _store(artifact_id, {"status": "failed", "error": f"not a web page ({content_type})"})
+            return get(artifact_id)
+        fields = parse(html, url)
 
-    if content_type and not content_type.startswith(("text/html", "application/xhtml")):
-        _store(artifact_id, {"status": "failed", "error": f"not a web page ({content_type})"})
-        return get(artifact_id)
-
-    fields = parse(html, url)
+    if fields is None or (browser_enabled() and _worth_a_browser(None, fields)):
+        try:
+            _, browser_html = _read_browser(url)
+        except Exception as exc:  # noqa: BLE001 - the reason is shown to the person
+            if fields is None:
+                _store(artifact_id, {"status": "failed", "error": _why_browser(exc)})
+                return get(artifact_id)
+        else:
+            html, fields = browser_html, parse(browser_html, url)
+    assert fields is not None
     body_text = _extract_body(html, url)
 
     # One more request, inside the same act the person already chose, and then the

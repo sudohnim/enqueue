@@ -87,6 +87,7 @@ def quiet_queue(monkeypatch):
 
     done = []
     monkeypatch.setattr(ingest_queue, "submit", done.append)
+    monkeypatch.setattr(ingest_queue, "submit_background", done.append)
     return done
 
 

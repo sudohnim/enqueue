@@ -57,8 +57,14 @@ def title_from_url(url: str) -> str:
     return f"{tail} - {host}" if tail else host or url[:120]
 
 
-def link(url: str, local_only: bool = False) -> dict:
-    """Save a URL. Nothing is fetched: that would tell the publisher you read it."""
+def link(url: str, local_only: bool = False, title: str | None = None) -> dict:
+    """Save a URL. Nothing is fetched: that would tell the publisher you read it.
+
+    `title` is the page's name when the capture carried one (a share hands over
+    "Title" then the address). It stands in for the URL-derived placeholder; a
+    preview never overrules it, since only the placeholder is replaced.
+    """
+    title = " ".join((title or "").split())[:300] or None
     url = url.strip()
     if not url:
         raise ValueError("a link needs a url")
@@ -101,7 +107,7 @@ def link(url: str, local_only: bool = False) -> dict:
                 " VALUES (?,'link',?,NULL,?,?,?,?,?,'pending')",
                 (
                     artifact_id,
-                    title_from_url(url),
+                    title or title_from_url(url),
                     url,
                     digest,
                     now,

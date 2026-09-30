@@ -111,7 +111,7 @@ def test_backfill_queues_only_untracked_missing(store, quiet_queue, monkeypatch)
 
     # Capture only the backfill's submits (each create already submitted itself).
     submitted = []
-    monkeypatch.setattr(q, "submit", lambda aid: submitted.append(aid))
+    monkeypatch.setattr(q, "submit_background", lambda aid: submitted.append(aid))
 
     n = q.backfill_summaries()
     assert a in submitted and b not in submitted

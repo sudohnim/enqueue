@@ -150,3 +150,47 @@ def test_the_sweeper_waits_while_paused(store, quiet_queue, monkeypatch):
     assert q._sweep_due() == []
     monkeypatch.setattr(pause, "active", lambda: False)
     assert q._sweep_due() == [aid]
+
+
+def test_a_new_api_key_lifts_the_pause_and_brings_retries_forward(store, quiet_queue):
+    aid = notes.create(body="a body long enough to earn a summary from the model")["artifact"]["id"]
+    later = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO facet_retry (artifact_id, attempts, next_at, last_error)"
+            " VALUES (?, 1, ?, 'ModelPaused')",
+            (aid, later),
+        )
+    pause._until = datetime.now(timezone.utc) + timedelta(hours=4)
+    pause._reason = "OpenCode Go usage limit (5 hour)"
+    assert pause.active()
+
+    moved = pause.lift("new API key")
+
+    assert moved == 1
+    assert not pause.active()
+    conn = db.get_conn()
+    try:
+        next_at = conn.execute(
+            "SELECT next_at FROM facet_retry WHERE artifact_id = ?", (aid,)
+        ).fetchone()["next_at"]
+    finally:
+        conn.close()
+    assert datetime.fromisoformat(next_at) <= datetime.now(timezone.utc)
+    assert [e for e in events.recent(20) if e["kind"] == "model.resumed"]
+
+
+def test_changing_the_model_lifts_the_pause(store):
+    from enqueue import settings
+
+    pause._until = datetime.now(timezone.utc) + timedelta(hours=4)
+    settings.update({"summarize_model": "some-other-model"})
+    assert not pause.active()
+
+
+def test_an_unrelated_setting_leaves_the_pause(store):
+    from enqueue import settings
+
+    pause._until = datetime.now(timezone.utc) + timedelta(hours=4)
+    settings.update({"trash_days": 10})
+    assert pause.active()

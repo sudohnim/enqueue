@@ -571,7 +571,18 @@
           .join(" ")
           .trim();
 
-    return { url, note };
+    // "Title" on one line and the address alone on the next is what a share or a
+    // "copy link" hands over: the line is the page's name, not a thought about it, so
+    // it travels as the title instead of a note. Mirrors shared_link_title (sync.rs).
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (
+      lines.length === 2 &&
+      lines[1] === url &&
+      !lines[0].split(/\s+/).some((w) => URLISH.test(w))
+    )
+      return { url, note: "", title: lines[0].slice(0, 300) };
+
+    return { url, note, title: null };
   }
 
   let pending = 0; // files waiting to be dropped, only meaningful while hovering
@@ -868,7 +879,7 @@
         const made = await send("/capture/link", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: split.url }),
+          body: JSON.stringify({ url: split.url, title: split.title }),
         });
         // A note on a capture is an annotation, which is exactly what the box on the
         // artifact's own page writes. Same field, reached from somewhere else.

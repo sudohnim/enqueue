@@ -51,6 +51,7 @@ While paused, `complete`/`describe_image` raise `ModelPaused` without touching t
 The first call after the pause goes out normally; a still-limited provider just trips it again.
 `enq doctor` shows it as `model_pause` (null when not paused).
 The pause is in-memory: a restart forgets it and the first call re-trips it.
+Switching accounts ends it early: storing or removing the API key (`PUT`/`DELETE /settings/api-key`) or changing `llm_backend`/`llm_model`/`summarize_model`/`llm_url`/`llm_headers` calls `pause.lift()`, which clears the pause, brings every owed summary retry forward to now, and logs `model.resumed`.
 
 3. **Facet trust is a fixed multiplier, not a learning loop.**
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
@@ -62,9 +63,9 @@ Usage does feed ranking one level up, per artifact rather than per facet: see "U
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
 The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
-5. **crawl4ai may be added later.**
-The old docs reference crawl4ai, marker, and whisper.cpp; none are in `pyproject.toml`.
-crawl4ai may return for better link capture.
+5. **crawl4ai is the opt-in browser fallback for link previews (2026-09-29).**
+It is a dependency, used only by `preview._read_browser` when the `preview_browser` setting is on (see "Link previews").
+The Chromium it drives is a separate download that `bin/setup` installs.
 marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
@@ -831,6 +832,11 @@ That is the right trade for derived data: nothing the person wrote is ever at ri
 One worker thread, not a pool.
 The search index lives inside the SQLite file and embedding models are large enough that a second engine is not free.
 
+Two lanes on that one thread (`worker.py`, 2026-09-29).
+`submit(id)` is the person's own work (a capture, an edit, a preview "Try again") and always runs first; `submit_background(id)` is bulk upkeep (the summary backfill/refresh, the retry sweeper, `submit_all`, `submit_images`) and waits until no foreground item is queued.
+Before this, a library-wide summary refresh put a fresh capture hours behind it.
+The I5.1 coalescing counts only copies submitted AFTER the running one as "newer", so an older background copy still waiting never makes a fresh foreground run skip its model calls.
+
 ### Per type
 
 | Type | Path |
@@ -879,6 +885,18 @@ Rules:
 
 Auto-preview is controlled by the `auto_preview` setting (default on).
 When on, the ingest worker fetches the preview in the background after capture.
+
+**Browser fallback (`preview_browser`, default off).**
+Some sites refuse any non-browser client (Medium's bot wall answers 403 to httpx every time, whatever the user agent).
+With the setting on, a refusal (401/403), or a page with no title and no description until its scripts run, is opened once more in headless Chromium through crawl4ai (`preview._read_browser`), and its HTML goes through the same `parse` and `_extract_body`.
+The line from rule "Not a browser string" still holds: a real browser loading a page is not a disguise, faking one is.
+So none of crawl4ai's anti-detection is enabled (no `enable_stealth`, `magic`, `simulate_user`, `override_navigator`, or random user agent); a page that still refuses a real browser stays refused.
+crawl4ai's cache lives under the data dir (`CRAWL4_AI_BASE_DIRECTORY`), not `~/.crawl4ai`.
+A missing Chromium fails with "run bin/setup" rather than silently.
+
+**A shared link's name is its title.**
+A capture of exactly "Title" on one line and the address alone on the next (what a share sheet or "copy link" hands over) saves the line as the link's title, not as a note (`capture.html` `splitLink`, `sync.rs` `shared_link_title` for the phone, `LinkCreate.title`).
+Before this, the page name landed as the link's first note and read like something the person wrote.
 
 ---
 

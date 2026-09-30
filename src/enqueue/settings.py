@@ -86,6 +86,10 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # the moment you save it; off means it stays a bare address until you ask. Default
     # on, because a wall of unresolved URLs is the thing the preview exists to fix.
     "auto_preview": ("ENQ_AUTO_PREVIEW", "on", True),
+    # Whether a link the site refuses to a plain request (Medium's bot wall), or whose
+    # page is empty until its scripts run, is opened once more in headless Chromium
+    # through crawl4ai (preview.py). Off by default: a browser start per such link.
+    "preview_browser": ("ENQ_PREVIEW_BROWSER", "off", True),
     # Free text, sent as extra headers on every model call. Some endpoints want a
     # referer or an app name before they will answer; this is the escape hatch that
     # stops each one becoming a code change. One `Name: value` per line.
@@ -98,6 +102,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # (previews started riding the snapshot after most links had synced).
     "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
 }
+
+# The settings that pick which account/model a call goes to.
+_PROVIDER_FIELDS = {"llm_backend", "llm_model", "summarize_model", "llm_url", "llm_headers"}
 
 WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}
 
@@ -215,6 +222,12 @@ def update(changes: dict) -> dict:
     settings_path().chmod(0o600)
     # Propagate the change to a linked phone (LLM backend/model/url/auto-preview).
     _resync_to_relay()
+    # A usage limit belongs to the account or model it was hit on; a switch to
+    # another one should not keep waiting it out (providers/pause.py).
+    if set(changes) & _PROVIDER_FIELDS:
+        from .providers import pause
+
+        pause.lift("model settings changed")
     return all_settings()
 
 

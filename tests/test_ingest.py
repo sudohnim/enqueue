@@ -289,3 +289,45 @@ class TestFacetCoalescing:
         for _ in range(3):
             queue._dequeue("a")
         assert queue._pending("a") == 0
+
+
+def test_the_persons_work_runs_ahead_of_background_upkeep():
+    """A summary refresh of a whole library must not make a fresh capture wait."""
+    import threading
+
+    from enqueue.worker import Worker
+
+    ran: list[str] = []
+    started, gate = threading.Event(), threading.Event()
+
+    def handle(item):
+        if item == "first":
+            started.set()
+            gate.wait(5)
+        ran.append(item)
+
+    worker = Worker("test-lanes", handle)
+    worker.submit("first", background=True)  # occupies the worker
+    assert started.wait(5)
+    for name in ("bg-1", "bg-2"):
+        worker.submit(name, background=True)
+    worker.submit("capture")
+    gate.set()
+    assert worker.wait_idle(5)
+    assert ran[0] == "first"
+    assert ran[1] == "capture"
+    assert ran[2:] == ["bg-1", "bg-2"]
+
+
+def test_an_older_background_copy_does_not_make_a_fresh_one_skip():
+    """With lanes, an artifact can have an older background copy still queued when a
+    fresh copy of it runs. Only copies submitted AFTER the running one count as newer."""
+    from enqueue.ingest import queue
+
+    older = queue._queue("lanes")  # background copy, still waiting
+    fresh = queue._queue("lanes")  # the person's copy, taken first
+    queue._dequeue("lanes", fresh)
+    assert queue._pending("lanes") == 0  # the fresh run spends its model calls
+    queue._dequeue("lanes", older)
+    assert queue._pending("lanes") == 0
+    assert "lanes" not in queue._queued

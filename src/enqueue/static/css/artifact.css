@@ -669,8 +669,8 @@
     text-decoration: none;
   }
 
-  /* The saved address, under "Open original": one quiet line that truncates, so a
-     long tracking-laden URL never sprawls across the page in underlined violet.
+  /* The saved address, and the one way to open it: one quiet line that truncates,
+     so a long tracking-laden URL never sprawls across the page in underlined violet.
      The full address is still the link target and shows on hover. */
   .url {
     font-size: 13.5px;
@@ -690,30 +690,43 @@
     text-decoration: underline;
     text-underline-offset: 2px;
   }
-  /* A link whose preview failed or never came: a quiet tile with the reason in
-     plain ink and the one request left as a real button. */
-  .preview-fail {
-    margin-top: var(--sp-5);
-    padding: var(--sp-4) var(--sp-5);
-    border-radius: var(--r-xl);
-    background: var(--surface);
-    box-shadow: var(--hairline);
-  }
-  .preview-fail p {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.5;
-    color: var(--text-dim);
-    max-width: 64ch;
-  }
-  .preview-fail-row {
+  /* A link whose preview failed or never came: a footnote under the note, the
+     reason in muted ink and the one request left as an inline text button. */
+  .preview-note {
     display: flex;
-    align-items: center;
     flex-wrap: wrap;
-    gap: var(--sp-3);
+    align-items: baseline;
+    gap: var(--sp-1) var(--sp-3);
     margin-top: var(--sp-3);
-    font-size: 13px;
+    padding: 0 var(--sp-1);
+    font-size: 13.5px;
+    line-height: 20px;
     color: var(--text-mute);
+    max-width: 72ch;
+  }
+  .preview-note em {
+    font-style: normal;
+    color: var(--text-dim);
+  }
+  .inline-link {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--link) 35%, transparent);
+    text-underline-offset: 2px;
+    transition: text-decoration-color var(--dur-fast) var(--ease);
+  }
+  .inline-link:hover {
+    text-decoration-color: currentColor;
+  }
+  .inline-link:disabled {
+    color: var(--text-mute);
+    cursor: default;
+    text-decoration: none;
   }
   .lede {
     font-size: 16px;
