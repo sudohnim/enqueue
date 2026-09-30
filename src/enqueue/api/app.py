@@ -13,6 +13,7 @@ from fastapi import FastAPI
 
 from .. import chats_worker, config, trash
 from . import admin, artifacts, chats, pivots, search, settings, static, vault, write
+from .guard import LocalOnlyGuard
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,8 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(pivots.router)
     app.include_router(vault.router)
+    # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
+    app.add_middleware(LocalOnlyGuard)
     return app
 
 

@@ -1696,6 +1696,57 @@ pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, St
     search_like(conn, &terms)
 }
 
+/// What the phone's chat may send to the model: the keyword matches minus anything
+/// marked local-only. The phone has no local model, so a local-only note's text is
+/// never put in a prompt (the desktop keeps the same promise in privacy.py).
+pub fn chat_sources(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
+    let mut private = conn
+        .prepare("SELECT 1 FROM artifacts WHERE id = ?1 AND local_only = 1")
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for art in search_artifacts(conn, query)? {
+        let id = art["id"].as_str().unwrap_or("");
+        if !private.exists([id]).map_err(|e| e.to_string())? {
+            out.push(art);
+        }
+    }
+    Ok(out)
+}
+
+/// A prompt with every credential blanked, the phone's twin of the desktop's
+/// `ingest/secrets.py::redact`: the same shapes, replaced by `***` before the text
+/// goes to the model, so a key in a note never leaves the phone.
+pub fn redact_secrets(text: &str) -> String {
+    use std::sync::OnceLock;
+    static PATTERNS: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+    static PEM: OnceLock<regex::Regex> = OnceLock::new();
+    let pem = PEM.get_or_init(|| {
+        regex::Regex::new(
+            r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\z)",
+        )
+        .expect("valid pem pattern")
+    });
+    let patterns = PATTERNS.get_or_init(|| {
+        [
+            r#"(?i)\b(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key)\b\s*[:=]\s*(?P<value>"[^"]{3,}"|'[^']{3,}'|\S{3,})"#,
+            r"\b(?P<value>(?:AKIA|ASIA)[0-9A-Z]{16})\b",
+            r"(?i)\bbearer\s+(?P<value>[A-Za-z0-9._\-]{20,})",
+            r"\b(?P<value>xox[baprs]-[A-Za-z0-9-]{10,})\b",
+            r"\b(?P<value>gh[pousr]_[A-Za-z0-9]{20,})\b",
+        ]
+        .iter()
+        .map(|p| regex::Regex::new(p).expect("valid secret pattern"))
+        .collect()
+    });
+    let mut out = pem.replace_all(text, "***").into_owned();
+    for re in patterns {
+        out = re
+            .replace_all(&out, |c: &regex::Captures| c[0].replace(&c["value"], "***"))
+            .into_owned();
+    }
+    out
+}
+
 /// Keywords worth matching: lowercased, split on non-alphanumerics, stopwords and
 /// one-character tokens dropped, de-duplicated, capped so a rambling query stays cheap.
 fn query_terms(query: &str) -> Vec<String> {
@@ -2013,6 +2064,48 @@ mod tests {
         .unwrap();
         apply_snapshot(&conn, &snap).unwrap();
         assert_eq!(list_artifact_ids(&conn).unwrap(), vec!["a1".to_string()]);
+    }
+
+    #[test]
+    fn chat_never_offers_a_local_only_note_to_the_model() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        for (id, local_only) in [("open1", 0), ("secret1", 1)] {
+            let snap: Value = serde_json::from_str(&format!(
+                r#"{{"artifact": {{"id":"{id}","kind":"note","title":"kiln notes","body":"cone six kiln",
+                  "source_url":null,"content_hash":"h-{id}","mime":null,"filename":null,
+                  "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+                  "local_only":{local_only},"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                  "title_explicit":0,"_device_id":"d1"}},
+                  "annotations": [], "page_text": [], "versions": []}}"#
+            ))
+            .unwrap();
+            apply_snapshot(&conn, &snap).unwrap();
+        }
+        let found = |v: Vec<Value>| -> Vec<String> {
+            let mut ids: Vec<String> =
+                v.iter().map(|a| a["id"].as_str().unwrap().to_string()).collect();
+            ids.sort();
+            ids
+        };
+        // Search still finds both; only what goes to the model leaves it out.
+        assert_eq!(found(search_artifacts(&conn, "kiln").unwrap()), vec!["open1", "secret1"]);
+        assert_eq!(found(chat_sources(&conn, "kiln").unwrap()), vec!["open1"]);
+    }
+
+    #[test]
+    fn a_prompt_goes_out_with_its_credentials_blanked() {
+        let text = "Deploy notes.\naws AKIAIOSFODNN7EXAMPLE\nsftp password = hunter2hunter2\n\
+                    -----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXkt\n\
+                    -----END OPENSSH PRIVATE KEY-----\nThe kiln runs cone six.";
+        let out = redact_secrets(text);
+        for secret in ["AKIAIOSFODNN7EXAMPLE", "hunter2hunter2", "b3BlbnNzaC1rZXkt"] {
+            assert!(!out.contains(secret), "{secret} leaked: {out}");
+        }
+        assert!(out.contains("Deploy notes.") && out.contains("The kiln runs cone six."));
+        assert!(out.contains("password = ***"));
+        let prose = "A token of thanks for the potter.";
+        assert_eq!(redact_secrets(prose), prose);
     }
 
     #[test]

@@ -87,27 +87,34 @@ def order(query: str, hits: list[dict]) -> list[dict]:
     from ..providers.base import get_provider
 
     head, tail = hits[:WINDOW], hits[WINDOW:]
-    if len(head) < 2:
-        return hits
-    query = " ".join(query.split())
-    ids = [h["artifact_id"] for h in head]
     try:
         provider = get_provider(role="search")
         model = provider.model
     except Exception:  # noqa: BLE001 - ranking is an enhancement, never a gate
         return hits
+    # A remote model never sees a local-only artifact (privacy.py): those keep their
+    # places, and the model orders the rest around them.
+    from .. import privacy
+
+    shown = privacy.shareable(head, provider)
+    if len(shown) < 2:
+        return hits
+    query = " ".join(query.split())
+    ids = [h["artifact_id"] for h in shown]
     key = _key(ids)
     cached = _read(query, key, model)
     if cached is None:
         try:
             raw = provider.complete(
-                system=MODEL_RANK, user=_prompt(query, head), response_model=_RawOrder
+                system=MODEL_RANK, user=_prompt(query, shown), response_model=_RawOrder
             )
         except Exception:  # noqa: BLE001 - the fused order stands
             return hits
         cached = [i for i in dict.fromkeys(raw.ids) if i in ids]
         _store(query, key, model, cached)
-    return apply_order(head, cached) + tail
+    ranked = iter(apply_order(shown, cached))
+    kept = {h["artifact_id"] for h in shown}
+    return [next(ranked) if h["artifact_id"] in kept else h for h in head] + tail
 
 
 def enabled() -> bool:

@@ -63,7 +63,7 @@ class TestRun:
                 {"value": "South America"},  # enrich: Gabriel Garcia Marquez
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{solitude} {cholera} {stranger}"},
@@ -113,7 +113,7 @@ class TestRun:
                 {"value": "South America"},  # enrich: Gabriel Garcia Marquez
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{solitude} {cholera} {stranger}"},
@@ -148,7 +148,7 @@ class TestRun:
                 {"value": ""},  # extract: unknown - the text supports no setting
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{known} {unknown}"},
@@ -194,7 +194,7 @@ class TestRun:
                 {"value": "Spanish"},  # enrich: tortilla
             ]
         )
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{paella} {tortilla} {sushi}"},
@@ -233,8 +233,8 @@ class TestRun:
         link = capture.link("https://example.com/some/page")["id"]
         pdf = capture.upload(b"%PDF-1.4 fake", "paper.pdf", "application/pdf")["id"]
         provider = _FakeProvider([])  # any call is a failure
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{note} {link} {pdf}"},
@@ -264,8 +264,8 @@ class TestRun:
         """A stored value that reads "" is never dropped, even from a field lead."""
         note = _note("A note about the estuary.")
         provider = _FakeProvider([])
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": note},
@@ -300,8 +300,8 @@ class TestRun:
                 {"value": "text"},  # enrich: note
             ]
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{first_note} {second_note} {link}"},
@@ -352,8 +352,8 @@ class TestRun:
                 {"value": "Europe"},
             ]
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{odyssey} {chip_war}"},
@@ -407,8 +407,8 @@ class TestRun:
                 {"value": "fiction"},  # The Odyssey
             ]
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
-        monkeypatch.setattr(derive, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: provider)
 
         spec = {
             "subset": {"kind": "ids", "value": f"{odyssey} {grocery} {chip_war}"},
@@ -492,7 +492,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("organize my book notes by author region")
         assert spec["group_by"] == "region"
@@ -518,7 +518,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("group everything I have saved into categories")
 
@@ -547,7 +547,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("group my kitchen notes by space")
 
@@ -573,7 +573,7 @@ class TestPlan:
         first = ProviderError("wrong shape")
         first.__cause__ = bad  # the provider raises with `from exc`; mimic that chain
         provider = _FakeProvider([first, valid])
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("organize my book notes by author")
 
@@ -585,7 +585,7 @@ class TestPlan:
         # down, a key that is rejected, or a host that is not a model is reported
         # immediately - retrying those is not a fix, it is a delay.
         provider = _FakeProvider([RuntimeError("endpoint down")])
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         with pytest.raises(pivot.PivotError):
             pivot.plan("organize my book notes by author")
@@ -604,7 +604,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         with pytest.raises(pivot.PivotError):
             pivot.plan("group everything I have saved")
@@ -636,7 +636,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("organize my book notes by fiction vs non-fiction")
 
@@ -673,7 +673,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("organize my saved things by kind")
 
@@ -714,7 +714,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         spec = pivot.plan("group my book notes by genre")
 
@@ -738,7 +738,7 @@ class TestPlan:
                 "bucketize_instruction": "",
             }
         )
-        monkeypatch.setattr(pivot, "get_provider", lambda: provider)
+        monkeypatch.setattr(pivot, "get_provider", lambda **kw: provider)
 
         with pytest.raises(pivot.PivotError, match="first step"):
             pivot.plan("keep only my books")

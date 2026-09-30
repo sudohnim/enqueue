@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 
-from . import chats_worker, db, pivot
+from . import chats_worker, db, pivot, privacy
 from .prompts import CHAT_ANSWER, CHAT_TITLE, CHAT_TOPICS
 from .providers.base import get_provider
 from .retrieve.candidates import hit_is_stale
@@ -215,7 +215,9 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
     Everything-scope applies the same relevance floor as /search (Q.5, Q.10). A
     two-sided question ("compare X and Y", retrieve/decompose.py) searches each side
     on its own and interleaves them, so both sides reach the answer; slots left over
-    are filled from the whole question.
+    are filled from the whole question. When the chat model is remote, local-only
+    artifacts are left out: their text never leaves the machine (privacy.py). A chat
+    scoped to one local-only artifact is answered by the local model instead.
     """
     if scope_kind == "artifact":
         if scope_id is None:
@@ -225,7 +227,23 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
             return _scoped_passages(conn, [scope_id])
         finally:
             conn.close()
+    return privacy.shareable(_everything_passages(question), get_provider())
 
+
+def _chat_provider(chat_id: str):
+    """The model for a chat: the local one when it is scoped to a local-only artifact."""
+    conn = db.get_conn()
+    try:
+        chat = conn.execute(
+            "SELECT scope_kind, scope_id FROM chats WHERE id = ?", (chat_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    private = chat is not None and chat["scope_kind"] == "artifact"
+    return get_provider(local_only=private and privacy.is_local_only(chat["scope_id"]))
+
+
+def _everything_passages(question: str) -> list[dict]:
     from .retrieve.decompose import parts
 
     sides = parts(question)
@@ -559,7 +577,11 @@ def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
 
 
 def _ask_model(
-    question: str, history: str, found: list[dict], empty_reason: str | None = None
+    question: str,
+    history: str,
+    found: list[dict],
+    empty_reason: str | None = None,
+    provider=None,
 ) -> Answer:
     if not found:
         return Answer(
@@ -578,7 +600,7 @@ def _ask_model(
         f"[{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n{_clip(p['text'])}"
         for p in found
     )
-    return get_provider().complete(
+    return (provider or get_provider()).complete(
         system=CHAT_ANSWER,
         user=f"{history}Question: {question}\n\nPassages:\n\n{body}",
         response_model=Answer,
@@ -657,7 +679,7 @@ def run_answer(chat_id: str, text: str) -> dict:
 
     found = passages(text, chat["scope_kind"], chat["scope_id"])
     empty_reason = empty_scope_reason(chat["scope_kind"], chat["scope_id"]) if not found else None
-    answer = _ask_model(text, history, found, empty_reason)
+    answer = _ask_model(text, history, found, empty_reason, provider=_chat_provider(chat_id))
 
     by_artifact = {p["artifact_id"] for p in found}
     return {
@@ -735,7 +757,7 @@ def _submit(chat_id: str, text: str, force_skill: str | None = None) -> None:
 def _name(chat_id: str, question: str, answer: str) -> None:
     """Title the chat from its first exchange. Best effort: a bad name is not a fault."""
     try:
-        named = get_provider().complete(
+        named = _chat_provider(chat_id).complete(
             system=CHAT_TITLE,
             user=f"Question: {question}\n\nAnswer: {' '.join(answer.split())[:800]}",
             response_model=ChatTitle,
@@ -769,7 +791,7 @@ def _retopic(chat_id: str) -> None:
 
     transcript = "\n\n".join(f"{r['role']}: {' '.join(r['text'].split())[:700]}" for r in rows)
     try:
-        found = get_provider().complete(
+        found = _chat_provider(chat_id).complete(
             system=CHAT_TOPICS,
             user=transcript[:6000],
             response_model=ChatTopics,

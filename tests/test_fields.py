@@ -76,7 +76,7 @@ class TestField:
     def test_field_reads_the_row(self, store, quiet_queue, monkeypatch):
         """derive.field reads the artifact's own row, with zero model calls."""
         artifact_id = _note("A field note about the estuary.")
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider())
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: _FakeProvider())
 
         result = derive.field(artifact_id, "kind")
 
@@ -85,7 +85,7 @@ class TestField:
     def test_source_and_captured_read_through_derive_field(self, store, quiet_queue, monkeypatch):
         """A link's host and month resolve through the same row read."""
         made = capture.link("https://example.com/some/page")
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider())
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: _FakeProvider())
 
         conn = db.get_conn()
         try:
@@ -105,7 +105,7 @@ class TestField:
     def test_user_override_wins(self, store, quiet_queue, monkeypatch):
         """A user correction beats the stored row, exactly as it beats a model row."""
         artifact_id = _note("A field note about the estuary.")
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider())
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: _FakeProvider())
 
         derive.override("artifact", artifact_id, "kind", "pdf")
         result = derive.field(artifact_id, "kind")
@@ -115,7 +115,7 @@ class TestField:
     def test_unknown_field_raises_keyerror(self, store, quiet_queue, monkeypatch):
         """A name outside the registry is refused, not guessed (the belt)."""
         artifact_id = _note("A field note about the estuary.")
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider())
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: _FakeProvider())
 
         with pytest.raises(KeyError):
             derive.field(artifact_id, "flavor")
@@ -126,7 +126,7 @@ class TestField:
         One dangling index id must not crash a whole pivot run - it lands in the
         "not determined" bucket like any other empty value.
         """
-        monkeypatch.setattr(derive, "get_provider", lambda: _FakeProvider())
+        monkeypatch.setattr(derive, "get_provider", lambda **kw: _FakeProvider())
 
         result = derive.field("does-not-exist", "kind")
 
