@@ -12,6 +12,7 @@ from pydantic import BaseModel
 import threading
 
 from .. import db, greeting, keyring, keyring_file, settings
+from ..providers import pause
 from ..sync.client import push_keyring
 
 router = APIRouter()
@@ -72,6 +73,8 @@ def store_api_key(req: ApiKey) -> dict:
     # The key is part of the config the phone needs to run chat; propagate it
     # (E2E-encrypted) the same way a settings change is propagated.
     settings._resync_to_relay()
+    # A usage limit belonged to the old key: stop waiting it out.
+    pause.lift("new API key")
     return settings.api_key_state()
 
 
@@ -80,6 +83,7 @@ def forget_api_key() -> dict:
 
     keyring.clear()
     settings._resync_to_relay()
+    pause.lift("API key removed")
     return settings.api_key_state()
 
 

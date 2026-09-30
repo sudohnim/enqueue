@@ -7,10 +7,17 @@ instant. They differ only in what they do with each item (and the ingest
 queue's I5.1 bookkeeping before it does it), so the whole lifecycle - the
 queue, the idle Event, the double-checked worker start, the run loop, and
 wait_idle - lives here once.
+
+Items carry a priority: `submit(item)` is the person's own work (a capture, an
+edit, a "Try again") and `submit(item, background=True)` is bulk upkeep (a
+summary-model refresh, the retry sweeper, a startup backfill). The worker always
+takes the person's work first, so a refresh of a whole library never makes a
+fresh capture wait behind it. Within a lane, order is first-in, first-out.
 """
 
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
@@ -24,6 +31,9 @@ T = TypeVar("T")
 
 # Put on the work queue to wake an idle worker for an exclusive job; never handled.
 _WAKE = object()
+
+# Lanes, lowest first: exclusive-job wakeups, the person's work, background upkeep.
+_P_WAKE, _P_NOW, _P_BACKGROUND = 0, 1, 2
 
 
 class Worker(Generic[T]):
@@ -51,7 +61,9 @@ class Worker(Generic[T]):
         self._handle = handle
         self._pre = pre
         self._on_idle = on_idle
-        self._work: queue.Queue[T] = queue.Queue()
+        # (lane, submission order, item): the order breaks ties, so items never compare.
+        self._work: queue.PriorityQueue[tuple[int, int, Any]] = queue.PriorityQueue()
+        self._order = itertools.count()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
         self._idle = threading.Event()
@@ -73,7 +85,7 @@ class Worker(Generic[T]):
 
     def _run(self) -> None:
         while True:
-            item = self._work.get()
+            _, _, item = self._work.get()
             self._idle.clear()
             self._run_jobs()
             if item is _WAKE:
@@ -108,11 +120,13 @@ class Worker(Generic[T]):
             )
             self._worker.start()
 
-    def submit(self, item: T) -> None:
-        """Queue an item for processing; returns immediately."""
+    def submit(self, item: T, background: bool = False) -> None:
+        """Queue an item for processing; returns immediately. `background` items wait
+        until no foreground item is queued."""
         self._ensure_worker()
         self._idle.clear()
-        self._work.put(item)
+        lane = _P_BACKGROUND if background else _P_NOW
+        self._work.put((lane, next(self._order), item))
 
     def run_exclusive(
         self, fn: Callable[[], Any], wait: bool = True, timeout: float | None = None
@@ -125,7 +139,7 @@ class Worker(Generic[T]):
         done: Future = Future()
         self._jobs.put((fn, done))
         self._ensure_worker()
-        self._work.put(_WAKE)
+        self._work.put((_P_WAKE, next(self._order), _WAKE))
         return done.result(timeout) if wait else None
 
     def wait_idle(self, timeout: float = 60.0) -> bool:

@@ -99,6 +99,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
 }
 
+# The settings that pick which account/model a call goes to.
+_PROVIDER_FIELDS = {"llm_backend", "llm_model", "summarize_model", "llm_url", "llm_headers"}
+
 WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}
 
 
@@ -215,6 +218,12 @@ def update(changes: dict) -> dict:
     settings_path().chmod(0o600)
     # Propagate the change to a linked phone (LLM backend/model/url/auto-preview).
     _resync_to_relay()
+    # A usage limit belongs to the account or model it was hit on; a switch to
+    # another one should not keep waiting it out (providers/pause.py).
+    if set(changes) & _PROVIDER_FIELDS:
+        from .providers import pause
+
+        pause.lift("model settings changed")
     return all_settings()
 
 

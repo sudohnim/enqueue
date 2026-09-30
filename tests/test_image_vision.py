@@ -267,7 +267,7 @@ class TestRequeueImages:
                 (note_id, "note", "A note", "Some words", "n1"),
             )
         submitted = []
-        monkeypatch.setattr(ingest_queue, "submit", submitted.append)
+        monkeypatch.setattr(ingest_queue, "submit_background", submitted.append)
 
         assert ingest_queue.submit_images() == 1
         assert submitted == [image_id]
@@ -286,7 +286,7 @@ class TestRequeueImages:
         text_only_id = _seed_image(store, status="text_only")
         failed_id = _seed_image(store, status="failed")
         submitted = []
-        monkeypatch.setattr(ingest_queue, "submit", submitted.append)
+        monkeypatch.setattr(ingest_queue, "submit_background", submitted.append)
 
         assert ingest_queue.submit_images() == 2
         assert sorted(submitted) == sorted([text_only_id, failed_id])
