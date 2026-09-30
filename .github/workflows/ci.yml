@@ -1,7 +1,7 @@
 name: ci
 
-# A PR's pushes run through pull_request only; push covers main after a merge. Both
-# triggers on every branch ran each check twice.
+# A PR's pushes run through pull_request only; push covers main. Both triggers on
+# every branch ran each check twice.
 on:
   push:
     branches: [main]
@@ -13,56 +13,150 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The embedding and rerank models, cached between runs instead of re-downloaded.
   FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
 
+# Every job runs in parallel after `changes`, and only when its own files changed, so a
+# run takes as long as its slowest relevant job. A job skipped by its `if` counts as
+# passed, so any of them can be made a required check.
 jobs:
+  changes:
+    # Merging a PR pushes a merge commit to main whose checks already ran on the PR, so
+    # it runs nothing again. A direct push to main runs as usual.
+    if: >-
+      github.event_name != 'push' ||
+      !startsWith(github.event.head_commit.message, 'Merge pull request #')
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      evals: ${{ steps.filter.outputs.evals }}
+      rust: ${{ steps.filter.outputs.rust }}
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ci: &ci
+              - .github/**
+              - bin/verify
+            python:
+              - *ci
+              - src/**
+              - tests/**
+              - bin/**
+              - evals/**
+              - pyproject.toml
+              - uv.lock
+            # What search and the evals read: retrieval, the index, ingest and what
+            # feeds them. A UI or phone change cannot move the eval numbers.
+            evals:
+              - *ci
+              - src/enqueue/retrieve/**
+              - src/enqueue/index/**
+              - src/enqueue/ingest/**
+              - src/enqueue/providers/**
+              - src/enqueue/migrations/**
+              - src/enqueue/chats.py
+              - src/enqueue/prompts.py
+              - src/enqueue/schemas.py
+              - src/enqueue/config.py
+              - src/enqueue/settings.py
+              - src/enqueue/db.py
+              - src/enqueue/opens.py
+              - src/enqueue/privacy.py
+              - src/enqueue/eval*.py
+              - evals/**
+              - bin/check-eval*
+              - pyproject.toml
+              - uv.lock
+            rust:
+              - *ci
+              - desktop/src/**
+              - desktop/plugins/**
+              - desktop/build.rs
+              - desktop/Cargo.*
+            android:
+              - *ci
+              - desktop/**
+
   test:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - uses: actions/cache@v4
-        with:
-          path: /home/runner/.cache/fastembed
-          key: fastembed-${{ hashFiles('src/enqueue/config.py') }}
-          restore-keys: fastembed-
-
-      - name: Install dependencies
-        run: uv sync --all-groups
-
+      - uses: ./.github/actions/python
       - name: Lint, JS parse, contrast
         run: bin/verify --fast
-
       - name: Test
         run: uv run pytest -q -n auto
 
   eval:
+    needs: changes
+    if: needs.changes.outputs.evals == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - uses: actions/cache@v4
-        with:
-          path: /home/runner/.cache/fastembed
-          key: fastembed-${{ hashFiles('src/enqueue/config.py') }}
-          restore-keys: fastembed-
-
-      - name: Install dependencies
-        run: uv sync --all-groups
-
+      - uses: ./.github/actions/python
       - name: Eval regression gate
         run: bin/check-eval
 
+  eval-cross:
+    needs: changes
+    if: needs.changes.outputs.evals == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/python
       - name: Cross-domain eval regression gate
         run: bin/check-eval-cross
+
+  # The desktop crate's unit tests on the host (the crypto and sync tests in sync.rs
+  # included). Tauri links the Linux webview stack, so its dev packages come first.
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux webview libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          key: host
+      - name: Desktop tests
+        run: bin/verify --desktop-tests
+
+  # The full debug apk: the only check that compiles the mobile Rust module, the Kotlin
+  # and the gradle build. The runner image carries the Android SDK, NDK and Java 17.
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          key: android
+          cache-bin: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: desktop/gen/android/**/*.gradle*
+      - name: Tauri CLI
+        run: cargo tauri --version || cargo install tauri-cli --locked --version "^2"
+      - name: Android build
+        run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" bin/verify --android

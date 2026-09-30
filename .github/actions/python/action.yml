@@ -1,0 +1,20 @@
+name: Python engine setup
+description: uv, Python 3.12, the project's dependencies, and the cached embedding models.
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.12"
+        enable-cache: true
+
+    # The embedding and rerank models, cached between runs instead of re-downloaded.
+    - uses: actions/cache@v4
+      with:
+        path: /home/runner/.cache/fastembed
+        key: fastembed-${{ hashFiles('src/enqueue/config.py') }}
+        restore-keys: fastembed-
+
+    - name: Install dependencies
+      shell: bash
+      run: uv sync --all-groups
