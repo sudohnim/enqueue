@@ -156,7 +156,12 @@ jobs:
           java-version: "17"
           cache: gradle
           cache-dependency-path: desktop/gen/android/**/*.gradle*
+      # The prebuilt cargo-tauri binary, not `cargo install` (which compiled the CLI
+      # from source for six minutes on a cold runner).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
       - name: Tauri CLI
-        run: cargo tauri --version || cargo install tauri-cli --locked --version "^2"
+        run: cargo tauri --version || cargo binstall --no-confirm --locked "tauri-cli@^2"
       - name: Android build
         run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" bin/verify --android
