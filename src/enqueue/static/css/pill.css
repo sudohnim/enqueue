@@ -587,7 +587,6 @@ dialog.ask.name .namefield:focus {
 		padding-left: var(--sp-4);
 		padding-right: var(--sp-4);
 	}
-	.docpane,
 	.group {
 		padding: var(--sp-4);
 	}

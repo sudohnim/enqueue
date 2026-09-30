@@ -803,31 +803,203 @@
     box-shadow: var(--hairline);
   }
 
-  /* Editable note body: a real textarea (Android raises the keyboard for it, unlike a
-     contenteditable div). Matches the reader's body type + surface so editing does not
-     feel like a different screen. */
-  .reader-edit-area {
+/* The writing page: one full-screen layer for writing a note, new or existing.
+     It is sized to the VISUAL viewport (--writer-top / --writer-h, set from
+     visualViewport), so when the keyboard opens the page shrinks to the space above
+     it instead of being covered, and the tool bar sits on top of the keyboard. The
+     body is its own scroller, and the caret is kept in view as the page resizes.
+     Open page: no box, the words on the violet ground like the library greeting. */
+  .writer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--writer-top, 0px);
+    height: var(--writer-h, 100dvh);
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    animation: writer-in 220ms var(--ease) both;
+  }
+  .writer[hidden] {
+    display: none;
+  }
+  .writer-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 10px 2px;
+    flex: none;
+  }
+  .writer-back {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 0;
+    background: none;
+    color: var(--text-dim);
+    display: grid;
+    place-items: center;
+  }
+  .writer-back:active {
+    background: var(--line-soft);
+  }
+  .writer-back svg {
+    width: 22px;
+    height: 22px;
+  }
+  .writer-saved {
+    margin-left: auto;
+    margin-right: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
+    color: var(--text-mute);
+    transition: opacity 300ms var(--ease);
+  }
+  .writer-saved:empty {
+    opacity: 0;
+  }
+  .writer-saved svg {
+    width: 13px;
+    height: 13px;
+    stroke: var(--success);
+  }
+  .writer-head {
+    flex: none;
+    padding: 4px 20px 0;
+  }
+  .writer-date {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: var(--text-mute);
+    margin-bottom: 6px;
+  }
+  .writer-date img {
+    width: 20px;
+    height: 20px;
+  }
+  .writer-date[hidden] {
+    display: none;
+  }
+  .writer-title {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    outline: none;
+    background: none;
+    padding: 0;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 25px;
+    line-height: 1.15;
+    letter-spacing: -0.035em;
+    color: var(--text);
+    caret-color: var(--accent);
+  }
+  .writer-title:focus,
+  .writer-title:focus-visible,
+  .writer-body:focus,
+  .writer-body:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+  .writer-title::placeholder {
+    color: var(--text-mute);
+    opacity: 0.75;
+  }
+  .writer-body {
+    flex: 1;
+    min-height: 0;
     width: 100%;
     box-sizing: border-box;
-    min-height: 240px;
-    resize: vertical;
-    padding: 16px;
+    resize: none;
     border: 0;
-    box-shadow: var(--hairline);
-    border-radius: var(--r-xl);
-    background: var(--surface-2);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 16px; /* >=16px so mobile Safari/WebView never zooms on focus */
-    line-height: 1.6;
+    border-radius: 0;
+    box-shadow: none;
     outline: none;
+    background: none;
+    margin: 0;
+    padding: 12px 20px 24px;
+    font-family: var(--sans);
+    font-size: 16px; /* >=16px so the WebView never zooms on focus */
+    line-height: 1.6;
+    color: var(--text);
+    caret-color: var(--accent);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
-  .reader-edit-area:focus {
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
-      var(--shadow-field);
+  .writer-body::placeholder {
+    color: var(--text-mute);
   }
-  /* The note body is tappable to edit; hint it with a text caret. */
+  .writer ::selection {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  .writer-acc {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 8px;
+    background: var(--surface);
+    box-shadow: 0 -1px 0 var(--line-soft);
+  }
+  .writer-acc .tool {
+    width: 42px;
+    height: 40px;
+    border: 0;
+    border-radius: 12px;
+    background: none;
+    color: var(--text-dim);
+    display: grid;
+    place-items: center;
+  }
+  .writer-acc .tool:active {
+    background: var(--line-soft);
+    color: var(--text);
+  }
+  .writer-acc .tool svg {
+    width: 21px;
+    height: 21px;
+  }
+  .writer-acc .grow {
+    flex: 1;
+  }
+  .writer-done {
+    height: 38px;
+    padding: 0 18px 0 14px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--purple-bold);
+    color: #fff;
+    font: 600 15px var(--sans);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .writer-done:active {
+    background: var(--purple-bold-hover);
+  }
+  .writer-done svg {
+    width: 16px;
+    height: 16px;
+  }
+  @keyframes writer-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .writer {
+      animation: none;
+    }
+  }
+  /* A note in the reader is the page itself: tap anywhere to write there. */
   #reader_body.note-tappable {
     cursor: text;
   }
@@ -1388,147 +1560,6 @@
     margin-top: 12px;
     font-size: 14px;
     color: var(--danger);
-  }
-
-  /* Quick capture: a bottom sheet over the dimmed library, the phone's version
-     of the desktop overlay (raven + "Capture your thoughts.", a white field, Photo and
-     Camera beside Save). It rides the visual viewport so the on-screen keyboard
-     never covers it. The launcher long-press has a native twin
-     (QuickCaptureActivity, res/layout/activity_quick_capture.xml); keep them alike. */
-  .qcap {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
-  }
-  .qcap[hidden] {
-    display: none;
-  }
-  .qcap-scrim {
-    position: absolute;
-    inset: 0;
-    background: rgba(33, 10, 56, 0.34);
-    -webkit-backdrop-filter: blur(3px);
-    backdrop-filter: blur(3px);
-    animation: qcap-fade var(--dur) var(--ease) both;
-  }
-  .qcap-sheet {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: var(--qcap-kb, 0px);
-    padding: 10px 18px calc(16px + env(safe-area-inset-bottom));
-    border-radius: 28px 28px 0 0;
-    background: color-mix(in srgb, var(--bg) 70%, #ffffff);
-    box-shadow: 0 -20px 50px -20px rgba(20, 6, 40, 0.5);
-    animation: qcap-rise 260ms var(--ease) both;
-  }
-  .qcap-grab {
-    width: 40px;
-    height: 5px;
-    margin: 0 auto 10px;
-    border-radius: 3px;
-    background: var(--line);
-  }
-  /* The raven above the heading, both centred, the same as the launcher popup. */
-  .qcap-head {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-  .qcap-raven {
-    width: 56px;
-    height: auto;
-    margin: -6px 0 -4px;
-  }
-  .qcap-head h2 {
-    margin: 0;
-    font-family: var(--display);
-    font-size: 21px;
-    font-weight: 600;
-    letter-spacing: -0.03em;
-  }
-  .qcap-head h2 .greet-mark {
-    color: var(--purple-bold);
-  }
-  #qcap_field {
-    margin-top: 12px;
-    min-height: 104px;
-    max-height: 38vh;
-    font-size: 16px;
-    line-height: 1.5;
-    border-radius: var(--r-xl);
-    padding: 14px 16px;
-    resize: none;
-  }
-  .qcap-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  .qcap-act {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 14px;
-    border-radius: var(--r-lg);
-    background: var(--line-soft);
-    color: var(--text-dim);
-    font-size: 14px;
-    font-weight: 500;
-  }
-  .qcap-act svg {
-    width: 18px;
-    height: 18px;
-  }
-  .qcap-keep {
-    margin-left: auto;
-    padding: 10px 22px;
-    border-radius: var(--r-lg);
-    background: var(--purple-bold);
-    color: var(--on-purple-bold);
-    font-weight: 600;
-    box-shadow: 0 8px 20px -8px rgba(96, 7, 159, 0.8);
-  }
-  .qcap-keep:disabled {
-    opacity: 0.55;
-  }
-  .qcap-status {
-    margin-top: 8px;
-    font-size: 13px;
-    color: var(--danger);
-  }
-  .qcap-status:empty {
-    display: none;
-  }
-  .qcap.leaving .qcap-sheet {
-    transform: translateY(105%);
-    transition: transform 200ms var(--ease);
-  }
-  .qcap.leaving .qcap-scrim {
-    opacity: 0;
-    transition: opacity 200ms var(--ease);
-  }
-  @keyframes qcap-rise {
-    from {
-      transform: translateY(100%);
-    }
-  }
-  @keyframes qcap-fade {
-    from {
-      opacity: 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .qcap-sheet,
-    .qcap-scrim {
-      animation: none;
-    }
-    .qcap.leaving .qcap-sheet {
-      transform: none;
-      opacity: 0;
-    }
   }
 
   /* Unsynced state indicator (MOB.7) */
@@ -2367,32 +2398,24 @@
   </div>
 </aside>
 
-<div id="qcap" class="qcap" hidden>
-  <div class="qcap-scrim" id="qcap_scrim"></div>
-  <div class="qcap-sheet" role="dialog" aria-modal="true" aria-labelledby="qcap_title">
-    <div class="qcap-grab" aria-hidden="true"></div>
-    <div class="qcap-head">
-      <img class="qcap-raven" src="raven-mark.png" alt="" aria-hidden="true" />
-      <h2 id="qcap_title">Capture your thoughts<span class="greet-mark">.</span></h2>
-    </div>
-    <textarea
-      id="qcap_field"
-      rows="3"
-      placeholder="A thought, a link, or markdown"
-      autocomplete="off"
-    ></textarea>
-    <div class="qcap-row">
-      <button class="qcap-act" id="qcap_photo" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="m20.5 16-5-5-8 8" /></svg>
-        Photo
-      </button>
-      <button class="qcap-act" id="qcap_camera" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3v10H4z" /><circle cx="12" cy="13" r="3.2" /></svg>
-        Camera
-      </button>
-      <button class="qcap-keep" id="qcap_keep" type="button">Save</button>
-    </div>
-    <div class="qcap-status" id="qcap_status" role="status"></div>
+<div id="writer" class="writer" hidden role="dialog" aria-label="Write a note">
+  <div class="writer-top">
+    <button class="writer-back" id="writer_back" type="button" aria-label="Done writing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6.5L9 12l5.5 5.5"/></svg></button>
+    <span class="writer-saved" id="writer_saved" role="status" aria-live="polite"></span>
+  </div>
+  <div class="writer-head">
+    <div class="writer-date" id="writer_date"><img src="raven-mark.png" alt="" aria-hidden="true" /><span id="writer_date_text"></span></div>
+    <input id="writer_title" class="writer-title" type="text" placeholder="Title" autocomplete="off" enterkeyhint="next" aria-label="Title" />
+  </div>
+  <textarea id="writer_body" class="writer-body" placeholder="Start writing." aria-label="The note"></textarea>
+  <div class="writer-acc" id="writer_acc">
+      <button class="tool" type="button" data-tool="bullet" aria-label="Bulleted list" title="Bulleted list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.6" cy="6.5" r="1.1" fill="currentColor"/><circle cx="4.6" cy="12" r="1.1" fill="currentColor"/><circle cx="4.6" cy="17.5" r="1.1" fill="currentColor"/></svg></button>
+      <button class="tool" type="button" data-tool="number" aria-label="Numbered list" title="Numbered list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6.5h10M10 12h10M10 17.5h10M4 5l1.5-1v5M3.6 14.2c.3-.8 2.6-1.1 2.6.4 0 1-2.6 2-2.6 3.4h2.8"/></svg></button>
+      <button class="tool" type="button" data-tool="heading" aria-label="Heading" title="Heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5v14M14 5v14M5 12h9M17.5 19v-7l-2 1.5"/></svg></button>
+      <button class="tool" type="button" data-tool="indent" aria-label="Indent" title="Indent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M11 12h9M11 18h9M4 10l3.5 2.5L4 15"/></svg></button>
+      <button class="tool" type="button" data-tool="outdent" aria-label="Outdent" title="Outdent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M11 12h9M11 18h9M7.5 10 4 12.5 7.5 15"/></svg></button>
+      <span class="grow"></span>
+      <button class="writer-done" id="writer_done" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done</button>
   </div>
 </div>
 
@@ -3913,11 +3936,9 @@
   }
 
   let currentArtifactId = null;
-  let isEditingNote = false;
 
   function openArtifact(id) {
     currentArtifactId = id;
-    isEditingNote = false;
     invoke("mobile_get", { id })
       .then((raw) => {
         const data = parse(raw);
@@ -3950,6 +3971,8 @@
     ann.hidden = true;
     body.removeAttribute("contenteditable");
     body.removeAttribute("data-placeholder");
+    body.classList.remove("note-tappable");
+    body.onclick = null;
     actions.replaceChildren();
     tagsEl.replaceChildren();
     tagsEl.hidden = true;
@@ -3981,19 +4004,6 @@
     // Mobile writes are deliberately the light, in-the-moment ones: edit / delete /
     // pin. Tagging and annotating are curation - a sit-down pass that belongs on the
     // desktop workbench - so those controls are intentionally NOT on the phone reader.
-
-    // Edit button (only for notes). Enters edit SYNCHRONOUSLY inside the click so the
-    // Android soft keyboard rises (it only rises when focus() runs within the gesture).
-    if (isNote && !a.vaulted_at) {
-      // Editing a vaulted note would re-write plaintext to disk, so it is
-      // read-only in the vault - remove it first to edit.
-      const editBtn = document.createElement("button");
-      editBtn.appendChild(createIcon("pencil"));
-      editBtn.title = "Edit";
-      editBtn.ariaLabel = "Edit note";
-      editBtn.addEventListener("click", () => beginNoteEdit(a, data, body));
-      actions.appendChild(editBtn);
-    }
 
     // Vault button: a single toggle. Lit = in the vault (tap to remove); unlit =
     // tap to move here. Mirrors the desktop reader lock.
@@ -4046,9 +4056,19 @@
     // Render body based on kind
     if (isNote) {
       renderMd(body, a.body || "");
-      // Editing is via the pencil button only (it calls beginNoteEdit synchronously so
-      // the Android keyboard rises). Tapping the note text does NOT edit - deliberate,
-      // so reading a note never risks dropping into the editor by accident.
+      // The note is the page: a tap anywhere in its text opens the writing page with
+      // the caret where the finger landed. Links keep their link bar (LinkPop takes
+      // those taps first), a text selection is left alone, and a vaulted note stays
+      // read-only (writing it would put plaintext back on disk).
+      if (!a.vaulted_at) {
+        body.classList.add("note-tappable");
+        body.onclick = (e) => {
+          if (e.target.closest("a, .mdlink, img")) return;
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed) return;
+          openWriter(a, rawOffsetAt(body, a.body || "", e.clientX, e.clientY));
+        };
+      }
     } else if (a.kind === "link") {
       // Render stored preview card if available, else fall back to plain link
       const preview = data.preview;
@@ -4206,129 +4226,10 @@
     // panel (the info button), not inline - so the reader stays focused on the content.
     // The inline `#reader_ann` / `#reader_tags` blocks stay hidden.
 
-    history.pushState({ v: "reader" }, "");
+    // One history entry per visit, not per re-render (a pin, or coming back from the
+    // writing page, re-renders the same reader).
+    if (!(history.state && history.state.v === "reader")) history.pushState({ v: "reader" }, "");
     show("reader");
-  }
-
-  // Enter note edit mode IN PLACE, synchronously. Must be called directly from a user
-  // gesture (a tap on the note text, or on the pencil) so `area.focus()` runs inside
-  // that gesture - Android's WebView raises the soft keyboard only then, never from a
-  // focus() deferred to a timeout or a later re-render (the bug that made notes look
-  // editable but impossible to type into).
-  function beginNoteEdit(a, data, body) {
-    if (isEditingNote) return; // already editing; a bubbled click must not rebuild
-    isEditingNote = true;
-    // Detach the tap-to-edit listener so clicks inside the editor (textarea / Cancel)
-    // do not bubble back to the body and re-enter edit.
-    if (body._tapToEdit) {
-      body.removeEventListener("click", body._tapToEdit);
-      body._tapToEdit = null;
-    }
-    body.replaceChildren();
-    body.classList.remove("note-tappable");
-    body.removeAttribute("contenteditable");
-
-    const area = document.createElement("textarea");
-    area.className = "reader-edit-area";
-    area.value = a.body || "";
-    area.placeholder = "Start writing.";
-    body.appendChild(area);
-    area.focus(); // synchronous, inside the gesture -> keyboard rises
-    const end = area.value.length;
-    try {
-      area.setSelectionRange(end, end);
-    } catch (e) {
-      /* selection not supported */
-    }
-
-    // List-aware keys for the plaintext markdown textarea. The rich contenteditable
-    // editor lives on desktop; Android's WebView raises the keyboard reliably only for
-    // a real <textarea>, so here we add the list smarts by hand instead of switching
-    // element. Two spaces = one level, markers -*+ and `N.`/`N)`, matching md.js so the
-    // note round-trips.
-    const LIST_RE = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/;
-    area.addEventListener("keydown", (e) => {
-      if (e.isComposing) return;
-      const v = area.value;
-      const s = area.selectionStart;
-      const en = area.selectionEnd;
-      const lineStart = v.lastIndexOf("\n", s - 1) + 1;
-
-      if (e.key === "Enter" && !e.shiftKey && s === en) {
-        const m = v.slice(lineStart, s).match(LIST_RE);
-        if (!m) return; // not on a list line -> normal newline
-        const indent = m[1];
-        const marker = m[2];
-        const content = m[4];
-        e.preventDefault();
-        if (!content.trim()) {
-          // Empty item: outdent one level, or drop the marker to leave the list.
-          const repl = indent.length >= 2 ? indent.slice(2) + marker + " " : "";
-          const before = v.slice(0, lineStart);
-          area.value = before + repl + v.slice(s);
-          const pos = before.length + repl.length;
-          area.setSelectionRange(pos, pos);
-          return;
-        }
-        const om = marker.match(/^(\d+)([.)])$/);
-        const next = om ? parseInt(om[1], 10) + 1 + om[2] : marker;
-        const insert = "\n" + indent + next + " ";
-        const before = v.slice(0, s);
-        area.value = before + insert + v.slice(s);
-        const pos = before.length + insert.length;
-        area.setSelectionRange(pos, pos);
-        return;
-      }
-
-      if (e.key === "Tab") {
-        // Nest / unnest the current line by one level. Keyboards without a Tab key
-        // fall back to typing the two leading spaces by hand, which md.js also nests.
-        e.preventDefault();
-        if (!e.shiftKey) {
-          area.value = v.slice(0, lineStart) + "  " + v.slice(lineStart);
-          area.setSelectionRange(s + 2, en + 2);
-        } else {
-          const rest = v.slice(lineStart);
-          const cut = rest.startsWith("  ") ? 2 : rest.startsWith(" ") ? 1 : 0;
-          if (cut) {
-            area.value = v.slice(0, lineStart) + v.slice(lineStart + cut);
-            area.setSelectionRange(Math.max(lineStart, s - cut), Math.max(lineStart, en - cut));
-          }
-        }
-      }
-    });
-
-    const saveBar = document.createElement("div");
-    saveBar.style.cssText =
-      "position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:8px 16px;display:flex;gap:8px;justify-content:flex-end;";
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "keep";
-    saveBtn.textContent = "Save";
-    saveBtn.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      const newBody = area.value || "";
-      try {
-        const raw = await invoke("mobile_update_note", { id: a.id, body: newBody });
-        invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
-        const updated = parse(raw);
-        isEditingNote = false;
-        renderReader(updated.artifact, updated);
-      } catch (e) {
-        toast("Save failed: " + e, true);
-      }
-    });
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.style.cssText =
-      "background:var(--surface-2);color:var(--text);border:1px solid var(--line);padding:8px 16px;border-radius:var(--r-md);";
-    cancelBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      isEditingNote = false;
-      renderReader(a, data);
-    });
-    saveBar.appendChild(cancelBtn);
-    saveBar.appendChild(saveBtn);
-    body.appendChild(saveBar);
   }
 
   // The details side panel: editable tags + the AI summary for the open artifact. Tags
@@ -4725,11 +4626,45 @@
       show("library");
       renderLibrary();
     });
-  // The Android system Back gesture pops the webview history; a pop while the reader
-  // or capture sheet is open returns to the library (never traps the user).
+  // The Android Back gesture. The shell asks the page first (MainActivity's back
+  // callback calls this) and only leaves the app when the page says it had nothing to
+  // close. Web history is not trusted for this: Chromium skips history entries a page
+  // adds on its own, so Back used to close the app from the reader and the writing
+  // page. Innermost first: the writing page, the pill menu, the details panel, then any
+  // screen other than the library.
+  window.__enqBack = () => {
+    if (writerOpen()) {
+      closeWriter(true);
+      return true;
+    }
+    if (pillMenu) {
+      pillCloseMenu(false);
+      return true;
+    }
+    const dp = document.getElementById("details_panel");
+    if (dp && dp.classList.contains("open")) {
+      dp.classList.remove("open");
+      const db = document.getElementById("details_backdrop");
+      if (db) db.classList.remove("open");
+      return true;
+    }
+    if (!document.getElementById("reader").hidden && readerVaulted) {
+      openMobileVault(); // back to the vault, still unlocked
+      return true;
+    }
+    if (!document.getElementById("library").hidden) return false;
+    show("library");
+    renderLibrary();
+    return true;
+  };
+  // A pop of the web history (the page's own history.back()) returns to the library.
   window.addEventListener("popstate", () => {
-    if (quickCaptureOpen()) {
-      closeQuickCapture();
+    if (writer.skipPop) {
+      writer.skipPop = false;
+      return;
+    }
+    if (writerOpen()) {
+      closeWriter(true);
       return;
     }
     if (!document.getElementById("library").hidden) return;
@@ -4788,93 +4723,351 @@
     setTimeout(() => img.remove(), reduced ? 1600 : 1900);
   }
 
-  // ---- Quick capture sheet ---------------------------------------------------
-  // The pill's "Note". The launcher long-press has its own native popup
-  // (QuickCaptureActivity), whose captures reach the library through
-  // drainQuickInbox below.
-  let qcapBusy = false;
-  function quickCaptureOpen() {
-    const el = document.getElementById("qcap");
+  // ---- The writing page ----------------------------------------------------
+  // One full-screen page for writing a note: a new one (the pill's Note) or an
+  // existing one (a tap on the note in the reader). It is not the quick-capture
+  // popup - that is the launcher's one-thought flow over another app
+  // (QuickCaptureActivity). This is a page you stay on: it saves as you go, keeps
+  // the line you are on above the keyboard, and a note left empty never exists.
+  const writer = {
+    art: null, // the note being written ({id, title, title_explicit, body}), or null when new
+    saved: { title: "", body: "" }, // what the store holds, so an unchanged save is skipped
+    timer: 0,
+    chain: Promise.resolve(), // saves run one at a time, in order
+    lastBlink: 0,
+    titleTouched: false, // only a title the person typed is sent (it becomes explicit)
+    closing: false,
+    skipPop: false, // the writer's own history.back(), which popstate must ignore
+  };
+
+  function writerOpen() {
+    const el = document.getElementById("writer");
     return !!el && !el.hidden;
   }
-  // Keep the sheet above the on-screen keyboard: the visual viewport shrinks when
-  // the keyboard opens, and the gap below it is how far the sheet must rise.
-  function qcapFitKeyboard() {
+
+  // Size the page to the visual viewport: the keyboard shrinks it, and the page
+  // (with its tool bar at the bottom) shrinks with it instead of being covered.
+  function fitWriter() {
     const vv = window.visualViewport;
-    const el = document.getElementById("qcap");
-    if (!vv || !el) return;
-    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    el.style.setProperty("--qcap-kb", kb + "px");
-  }
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", qcapFitKeyboard);
-    window.visualViewport.addEventListener("scroll", qcapFitKeyboard);
-  }
-  function openQuickCapture() {
-    const el = document.getElementById("qcap");
-    const field = document.getElementById("qcap_field");
-    if (!el || !field) return;
-    el.classList.remove("leaving");
-    document.getElementById("qcap_status").textContent = "";
-    if (!quickCaptureOpen()) history.pushState({ v: "qcap" }, "");
-    el.hidden = false;
-    qcapFitKeyboard();
-    field.focus();
-  }
-  function closeQuickCapture() {
-    const el = document.getElementById("qcap");
+    const el = document.getElementById("writer");
     if (!el || el.hidden) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.classList.add("leaving");
-    setTimeout(
-      () => {
-        el.hidden = true;
-        el.classList.remove("leaving");
-      },
-      reduced ? 0 : 200,
-    );
-    document.getElementById("qcap_field").blur();
-    if (history.state && history.state.v === "qcap") history.back();
-  }
-  async function keepQuickCapture() {
-    const field = document.getElementById("qcap_field");
-    const text = field.value.trim();
-    if (!text || qcapBusy) {
-      field.focus();
-      return;
+    if (vv) {
+      el.style.setProperty("--writer-top", vv.offsetTop + "px");
+      el.style.setProperty("--writer-h", vv.height + "px");
     }
-    const status = document.getElementById("qcap_status");
-    const keep = document.getElementById("qcap_keep");
-    status.textContent = "";
-    qcapBusy = true;
-    keep.disabled = true;
+    keepCaretVisible();
+  }
+  // The shell shrinks the WebView above the keyboard (MainActivity pads by the IME
+  // inset), so the window resizes; the visual viewport covers a browser that overlays.
+  window.addEventListener("resize", fitWriter);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", fitWriter);
+    window.visualViewport.addEventListener("scroll", fitWriter);
+  }
+
+  // Scroll the body so the caret's line is inside it. A textarea keeps its caret in
+  // view while typing, but not when its box shrinks under it (the keyboard opening),
+  // so measure the caret with a mirror of the textarea and scroll to it.
+  function keepCaretVisible() {
+    const ta = document.getElementById("writer_body");
+    if (!ta || document.activeElement !== ta) return;
+    const cs = getComputedStyle(ta);
+    const mirror = document.createElement("div");
+    for (const k of ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "paddingLeft", "paddingRight", "paddingTop", "boxSizing"])
+      mirror.style[k] = cs[k];
+    mirror.style.cssText += ";position:absolute;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;top:0;left:-9999px";
+    mirror.style.width = ta.clientWidth + "px";
+    mirror.textContent = ta.value.slice(0, ta.selectionEnd);
+    const mark = document.createElement("span");
+    mark.textContent = "​";
+    mirror.appendChild(mark);
+    document.body.appendChild(mirror);
+    const y = mark.offsetTop;
+    const line = parseFloat(cs.lineHeight) || 26;
+    mirror.remove();
+    const pad = line * 1.5;
+    if (y - pad < ta.scrollTop) ta.scrollTop = Math.max(0, y - pad);
+    else if (y + line + pad > ta.scrollTop + ta.clientHeight)
+      ta.scrollTop = y + line + pad - ta.clientHeight;
+  }
+
+  // Where a tap on the rendered note lands in its markdown source. The rendered text
+  // is (nearly) a subsequence of the source - markdown only adds markers - so walk
+  // the source matching each rendered character before the tap in order.
+  function rawOffsetAt(bodyEl, src, x, y) {
+    let range = null;
+    if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(x, y);
+    if (!range || !bodyEl.contains(range.startContainer)) return src.length;
+    const before = document.createRange();
+    before.setStart(bodyEl, 0);
+    before.setEnd(range.startContainer, range.startOffset);
+    const rendered = before.toString().replace(/\s+/g, "");
+    let r = 0;
+    for (const ch of rendered) {
+      const at = src.indexOf(ch, r);
+      if (at === -1) return src.length;
+      r = at + 1;
+    }
+    return r;
+  }
+
+  // The name a note gets from its body: first heading or first line, markers stripped.
+  // Mirrors title_hint (sync.rs) and notes.title_from_body on the desktop.
+  function titleHint(body) {
+    for (const raw of (body || "").split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      const cleaned = (line.startsWith("#") ? line.replace(/^#+\s*/, "") : line)
+        .replace(/[*_`]/g, "")
+        .trim();
+      if (cleaned) return cleaned.slice(0, 120);
+    }
+    return "Untitled";
+  }
+
+  // The title field holds a title of its own only; a note without one is named by its
+  // first line, which the placeholder says. A title that is not the first line is the
+  // note's own even when the flag says otherwise (a synced copy can lose the flag),
+  // and it is always sent back, so saving never renames a note after its first line.
+  function openWriter(art, caretAt) {
+    const el = document.getElementById("writer");
+    const title = document.getElementById("writer_title");
+    const ta = document.getElementById("writer_body");
+    if (!el || !title || !ta) return;
+    writer.art = art ? { ...art } : null;
+    writer.isNew = !art;
+    const own =
+      art && art.title && (art.title_explicit || art.title !== titleHint(art.body));
+    const explicit = own ? art.title : "";
+    writer.ownTitle = explicit;
+    title.value = explicit;
+    title.placeholder = "Title";
+    ta.value = art ? art.body || "" : "";
+    writer.saved = { title: explicit, body: ta.value };
+    writer.titleTouched = false;
+    const date = document.getElementById("writer_date");
+    date.hidden = !!art; // a new note opens with today's date and the raven
+    document.getElementById("writer_date_text").textContent = new Date().toLocaleDateString(
+      undefined,
+      { weekday: "long", month: "long", day: "numeric" },
+    );
+    setWriterSaved("");
+    if (!writerOpen()) history.pushState({ v: "writer" }, "");
+    el.hidden = false;
+    const pillEl = document.getElementById("pill");
+    if (pillEl) pillEl.hidden = true;
+    // Focus inside the tap that opened the page: Android raises the keyboard only
+    // for a focus() made within the gesture.
+    ta.focus();
+    const at = caretAt === undefined ? ta.value.length : Math.min(caretAt, ta.value.length);
     try {
-      await invoke("mobile_capture", { text });
-      field.value = "";
-      closeQuickCapture();
+      ta.setSelectionRange(at, at);
+    } catch (e) {
+      /* selection not supported */
+    }
+    fitWriter();
+  }
+
+  function setWriterSaved(state) {
+    const el = document.getElementById("writer_saved");
+    if (!el) return;
+    if (state === "saved") {
+      el.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Saved';
+    } else {
+      el.textContent = state || "";
+    }
+  }
+
+  function queueWriterSave() {
+    clearTimeout(writer.timer);
+    writer.timer = setTimeout(() => saveWriter(), 1200);
+  }
+
+  // One save, run after any save already in flight. A new note is created on its
+  // first save with any words in it (as a note, never split into a link), then
+  // updated in place; an explicit title rides every update.
+  function saveWriter() {
+    clearTimeout(writer.timer);
+    writer.chain = writer.chain.then(async () => {
+      const title = document.getElementById("writer_title").value.trim();
+      const body = document.getElementById("writer_body").value;
+      if (title === writer.saved.title && body === writer.saved.body) return;
+      if (!writer.art && !title && !body.trim()) return; // nothing yet; nothing kept
+      setWriterSaved("Saving");
+      try {
+        // null keeps the note's title as it is (explicit or first-line); a typed title,
+        // even an emptied one, is sent so it can be set or given back to the first line.
+        const sendTitle = writer.titleTouched ? title : writer.ownTitle || null;
+        let raw;
+        if (!writer.art) {
+          raw = await invoke("mobile_capture", { text: body.trim() ? body : title, asNote: true });
+          const made = parse(raw);
+          writer.art = made.artifact || made;
+          if (sendTitle !== null || !body.trim()) {
+            raw = await invoke("mobile_update_note", { id: writer.art.id, body, title: sendTitle });
+          }
+        } else {
+          raw = await invoke("mobile_update_note", { id: writer.art.id, body, title: sendTitle });
+        }
+        const updated = parse(raw);
+        writer.art = { ...writer.art, ...(updated.artifact || updated) };
+        writer.saved = { title, body };
+        setWriterSaved("saved");
+        // The eye approves, now and then - not on every pause in the typing.
+        const now = Date.now();
+        if (window.eyeMood && now - writer.lastBlink > 30000) {
+          writer.lastBlink = now;
+          eyeMood.play("approve");
+        }
+      } catch (e) {
+        setWriterSaved("Not saved: " + errString(e));
+      }
+    });
+    return writer.chain;
+  }
+
+  // Leave the page: save what is there, send it on, and land where the note lives -
+  // its reader for an existing note, the library (with the raven flight) for a new one.
+  // `fromPop`: the Back gesture already popped the writer's history entry.
+  async function closeWriter(fromPop) {
+    const el = document.getElementById("writer");
+    if (!el || el.hidden || writer.closing) return;
+    writer.closing = true;
+    const wasNew = writer.isNew;
+    if (!fromPop && history.state && history.state.v === "writer") {
+      writer.skipPop = true;
+      history.back();
+    }
+    document.getElementById("writer_body").blur();
+    document.getElementById("writer_title").blur();
+    // The page goes at once; the last save (a local write) finishes behind it, and
+    // only then does the note's reader or the library render with it.
+    el.hidden = true;
+    try {
+      await saveWriter();
+    } finally {
+      writer.closing = false;
+    }
+    invoke("mobile_outbox_push").catch(() => {}); // returns at once; the relay is background work
+    if (writer.art && !wasNew) {
+      openArtifact(writer.art.id);
+    } else if (writer.art) {
       captureFlight();
       show("library");
       renderLibrary();
-    } catch (e) {
-      status.textContent = errString(e);
-    } finally {
-      qcapBusy = false;
-      keep.disabled = false;
+    } else {
+      // An empty new page leaves nothing behind; the pill comes back.
+      const pillEl = document.getElementById("pill");
+      if (pillEl) pillEl.hidden = false;
     }
   }
-  document.getElementById("qcap_keep").addEventListener("click", keepQuickCapture);
-  document.getElementById("qcap_scrim").addEventListener("click", () => closeQuickCapture());
-  document.getElementById("qcap_photo").addEventListener("click", () => {
-    closeQuickCapture();
-    doCaptureImage();
-  });
-  document.getElementById("qcap_camera").addEventListener("click", () => {
-    closeQuickCapture();
-    doCaptureCamera();
-  });
+
+  // Line-level markdown tools. Each acts on every line the selection touches.
+  function writerTool(name) {
+    const ta = document.getElementById("writer_body");
+    const v = ta.value;
+    const s0 = ta.selectionStart;
+    const e0 = ta.selectionEnd;
+    const start = v.lastIndexOf("\n", s0 - 1) + 1;
+    let end = v.indexOf("\n", e0);
+    if (end === -1) end = v.length;
+    const lines = v.slice(start, end).split("\n");
+    const LIST = /^(\s*)([-*+]|\d+[.)])\s+/;
+    const HEAD = /^(#{1,6})\s+/;
+    let out;
+    if (name === "bullet" || name === "number") {
+      const want = name === "bullet" ? /^(\s*)[-*+]\s+/ : /^(\s*)\d+[.)]\s+/;
+      const all = lines.every((l) => want.test(l) || !l.trim());
+      let n = 0;
+      out = lines.map((l) => {
+        if (!l.trim()) return l;
+        const bare = l.replace(LIST, "$1");
+        if (all) return bare;
+        const indent = bare.match(/^\s*/)[0];
+        n += 1;
+        return indent + (name === "bullet" ? "- " : n + ". ") + bare.slice(indent.length);
+      });
+    } else if (name === "heading") {
+      const all = lines.every((l) => HEAD.test(l) || !l.trim());
+      out = lines.map((l) => (!l.trim() ? l : all ? l.replace(HEAD, "") : "## " + l.replace(HEAD, "").replace(LIST, "$1").trimStart()));
+    } else if (name === "indent") {
+      out = lines.map((l) => "  " + l);
+    } else {
+      out = lines.map((l) => l.replace(/^ {1,2}/, ""));
+    }
+    const next = out.join("\n");
+    ta.value = v.slice(0, start) + next + v.slice(end);
+    const caret = start + next.length;
+    ta.setSelectionRange(s0 === e0 ? caret : start, caret);
+    ta.dispatchEvent(new Event("input"));
+  }
+
+  (function wireWriter() {
+    const ta = document.getElementById("writer_body");
+    const title = document.getElementById("writer_title");
+    if (!ta || !title) return;
+    ta.addEventListener("input", () => {
+      setWriterSaved("");
+      queueWriterSave();
+    });
+    title.addEventListener("input", () => {
+      writer.titleTouched = true;
+      setWriterSaved("");
+      queueWriterSave();
+    });
+    // Enter in the title moves to the body, the way a page would.
+    title.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        ta.focus();
+        ta.setSelectionRange(0, 0);
+      }
+    });
+    // Lists continue on Enter; an empty item ends the list (outdents first). Two
+    // spaces = one level, markers -*+ and N./N), matching md.js so notes round-trip.
+    const LIST_RE = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/;
+    ta.addEventListener("keydown", (e) => {
+      if (e.isComposing || e.key !== "Enter" || e.shiftKey) return;
+      const v = ta.value;
+      const s = ta.selectionStart;
+      if (s !== ta.selectionEnd) return;
+      const lineStart = v.lastIndexOf("\n", s - 1) + 1;
+      const m = v.slice(lineStart, s).match(LIST_RE);
+      if (!m) return;
+      e.preventDefault();
+      const [, indent, marker, , content] = m;
+      if (!content.trim()) {
+        const repl = indent.length >= 2 ? indent.slice(2) + marker + " " : "";
+        ta.value = v.slice(0, lineStart) + repl + v.slice(s);
+        const pos = lineStart + repl.length;
+        ta.setSelectionRange(pos, pos);
+      } else {
+        const om = marker.match(/^(\d+)([.)])$/);
+        const next = om ? parseInt(om[1], 10) + 1 + om[2] : marker;
+        const insert = "\n" + indent + next + " ";
+        ta.value = v.slice(0, s) + insert + v.slice(s);
+        ta.setSelectionRange(s + insert.length, s + insert.length);
+      }
+      ta.dispatchEvent(new Event("input"));
+    });
+    ta.addEventListener("click", keepCaretVisible);
+    // Tool buttons must not take focus, or the keyboard drops on every tap.
+    for (const b of document.querySelectorAll("#writer_acc [data-tool]")) {
+      b.addEventListener("pointerdown", (e) => e.preventDefault());
+      b.addEventListener("click", () => writerTool(b.dataset.tool));
+    }
+    document.getElementById("writer_done").addEventListener("click", () => closeWriter(false));
+    document.getElementById("writer_back").addEventListener("click", () => closeWriter(false));
+    // Leaving the app mid-sentence still saves it.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && writerOpen()) saveWriter();
+    });
+  })();
+
   // The launcher popup (QuickCaptureActivity) cannot reach the library, so it
   // leaves each capture in a small inbox (QuickCaptureInbox.kt). File them in with
-  // mobile_capture, the same path as the sheet, and acknowledge each only after it is
+  // mobile_capture, the same path as any capture, and acknowledge each only after it is
   // saved, so none is lost or filed twice. Runs at boot, whenever the app comes to the
   // front, and right after a save while the app is running (MainActivity pokes it).
   let qinboxBusy = false;
@@ -5681,7 +5874,7 @@ return;
     if (noteBtn)
       noteBtn.addEventListener("click", () => {
         pillCloseMenu(true);
-        openQuickCapture();
+        openWriter(null);
       });
 
     // Upload
@@ -6633,6 +6826,19 @@ return;
 
   bootstrap();
 
+  // Local-first: every write lands in the phone's library at once and waits in the
+  // outbox; this is what carries it (and pulls the desktop's changes) once there is a
+  // connection. Coming back to the app or back online sends what is waiting, then
+  // pulls. Both commands return at once and work in the background, and the shell
+  // runs one of each at a time, so a burst of triggers costs nothing extra.
+  let reconcileTimer = 0;
+  window.mobileSyncAndReconcile = () => {
+    clearTimeout(reconcileTimer);
+    reconcileTimer = setTimeout(() => {
+      invoke("mobile_outbox_push").catch(() => {});
+      invoke("mobile_sync", { config: "{}" }).catch(() => {});
+    }, 400);
+  };
   // QR.5b: Resume sync when app becomes visible or comes online
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {

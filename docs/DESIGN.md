@@ -15,7 +15,7 @@ the canvas is a flat medium lavender, surfaces climb toward white from it, edges
 - Tiles are lighter plates on that ground; anything hovered, raised, or typed into is white.
 - Edges come from a 1px violet hairline drawn as an inset shadow, or from a layered violet shadow. There are no grey borders.
 - The bold violet `#60079f` (the raven eye's pupil) is the only chromatic accent: primary fills, focus rings, links, the active-tab bar, the greeting's last word and period.
-- The raven sits tight against its heading everywhere it appears (home greeting, settings title, capture overlay, capture sheet), as part of the title rather than beside it.
+- The raven sits tight against its heading everywhere it appears (home greeting, settings title, capture overlay, the phone's quick-capture popup, a new note's date line), as part of the title rather than beside it.
 - Display type (Instrument Sans) is tight and bold; body type (IBM Plex Sans) is calm and holds zero tracking.
 
 ## 2. Color
@@ -26,7 +26,8 @@ Surfaces climb toward white from the canvas, and recessed wells sink below it.
 
 - **Canvas** `--bg` `#eee8f6`: the page, the frozen home header, the capture card, dialogs' page behind the scrim.
 - **Tile** `--surface` `#f8f5fb`: wall cards, settings groups, list rows, resting chips.
-- **Reading** `--surface-doc` `#fbf9fd`: the note/reading pane, menus, dialogs, drawers, toasts.
+- **Reading** `--surface-doc` `#fbf9fd`: menus, dialogs, drawers, toasts.
+- A note (and a capture's notes) is NOT on a surface: it is an open page on the canvas, one ~68ch column under a single `--line` rule. The rule fills once in the accent when a save lands, and "✓ Saved" whispers beside the date. The phone's writing page is the same open page, full screen, with a `--surface` tool bar on the keyboard. The caret is the accent everywhere you write.
 - **Raised** `--surface-2` `#ffffff`: a hovered tile, search, inputs, the active settings section, secondary buttons.
 - **Recessed** `--surface-3` `#e3d9ef`: an OFF toggle track, pressed wells. The darkest ground any text sits on.
 
@@ -113,9 +114,9 @@ Tiles pad 14-16px; settings groups 24px; the capture card 14-16px; the phone gut
 | `--r-md` | 8px | Legacy small controls |
 | `--r-lg` | 12px | Buttons, inputs, Save |
 | `--r-xl` | 16px | Search, list rows, the capture field, event log |
-| `--r-2xl` | 20px | Settings groups, dialogs, the reading pane |
+| `--r-2xl` | 20px | Settings groups, dialogs |
 | tiles | 18px | Wall tiles (desktop and phone) |
-| sheets | 22-28px | The capture overlay card (22px), the phone capture sheet top (28px) |
+| sheets | 22px | The capture overlay card |
 | `--r-full` | pill | The capture pill, tag chips, status badges |
 
 ## 6. Elevation

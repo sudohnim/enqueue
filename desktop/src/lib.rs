@@ -69,10 +69,6 @@ mod mobile {
     use tauri_plugin_dialog::DialogExt;
     // JNI for foreground service (QR.5b) - only on Android
     #[cfg(target_os = "android")]
-    use jni::JNIEnv;
-    #[cfg(target_os = "android")]
-    use jni::objects::{JClass, JObject};
-    #[cfg(target_os = "android")]
     use ndk_context::android_context;
 
     /// Start the Android foreground sync service via JNI.
@@ -237,8 +233,8 @@ mod mobile {
     /// Run one sync from the persisted config, emitting sync-started/done/error to
     /// the webview (same events the UI already listens for). Non-blocking: it spawns
     /// its own thread and returns immediately, and it no-ops if a sync is already
-    /// running. Used by the live SSE listener; the UI's Sync Now path keeps its own
-    /// spawn in `mobile_sync`.
+    /// running. Used by the live SSE listener; the UI's Sync Now path (`mobile_sync`)
+    /// has its own spawn but shares this guard.
     fn run_sync_once(app: &AppHandle) {
         use std::sync::atomic::Ordering;
         if SYNC_RUNNING.swap(true, Ordering::SeqCst) {
@@ -356,8 +352,20 @@ mod mobile {
             return Err("sync not configured".into());
         }
 
+        // One pull at a time: resume, reconnect, the timer and a pull-to-refresh can all
+        // ask at once. A request while one runs is already answered by the sync-done that
+        // pull will emit.
+        if SYNC_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return Ok(serde_json::json!({ "started": false, "running": true }).to_string());
+        }
         // Open the library connection
-        let conn = open_lib(&app)?;
+        let conn = match open_lib(&app) {
+            Ok(c) => c,
+            Err(e) => {
+                SYNC_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+                return Err(e);
+            }
+        };
 
         // Spawn sync_library on a background thread so the UI doesn't freeze (QR.5a).
         // The thread will emit events (sync-started, sync-progress, sync-done, sync-error)
@@ -424,6 +432,7 @@ mod mobile {
                     }),
                 );
             }
+            SYNC_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
         });
 
         // Return immediately; the UI will listen for sync events
@@ -528,8 +537,13 @@ mod mobile {
     /// Create a note or link locally, then push its snapshot (MOB.7). A bare URL becomes
     /// a link, a URL plus words a link with a note, plain text a note - the desktop
     /// overlay's four-outcomes logic minus the image path (which needs the blob push).
+    ///
+    /// Local-first: it writes the library and the outbox and returns. The relay gets it
+    /// from the background outbox worker (`kick_outbox`), never on this call, so saving
+    /// is as fast as a local write whatever the network is doing. `async` keeps even
+    /// the local write off the UI thread (Tauri runs a plain command on the main one).
     #[tauri::command]
-    fn mobile_capture(app: AppHandle, text: String) -> Result<String, String> {
+    async fn mobile_capture(app: AppHandle, text: String, as_note: Option<bool>) -> Result<String, String> {
         let trimmed = text.trim().to_string();
         if trimmed.is_empty() {
             return Err("empty capture".into());
@@ -547,7 +561,13 @@ mod mobile {
 
         // Split a URL from surrounding words, like the desktop's splitLink.
         let words: Vec<&str> = trimmed.split_whitespace().collect();
-        let url_at = words.iter().position(|w| looks_like_link(w));
+        // The writing page makes notes, whatever is in them: an address in a note stays
+        // in the note (`as_note`). Only a capture decides between a note and a link.
+        let url_at = if as_note.unwrap_or(false) {
+            None
+        } else {
+            words.iter().position(|w| looks_like_link(w))
+        };
         let (kind, source_url, body, annotation) = match url_at {
             Some(at) => {
                 let url = words[at].to_string();
@@ -607,20 +627,9 @@ mod mobile {
             .map_err(|e| e.to_string())?;
         }
 
-        // Push the snapshot when sync is configured + unlocked.
-        if let Some(cfg) = load_config(&app)? {
-            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
-                if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id)? {
-                    let mut snapshot = snapshot;
-                    snapshot["artifact"]["_device_id"] = serde_json::Value::String(
-                        crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?),
-                    );
-                    let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
-                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-                    let _ = crate::sync::push_snapshot(relay_url, secret, &dek, &snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot);
-                }
-            }
-        }
+        // Sent to the relay in the background, now if there is a connection and
+        // otherwise on the next sync, resume or reconnect.
+        kick_outbox(app.clone());
 
         crate::sync::log_event(
             &conn,
@@ -833,34 +842,12 @@ mod mobile {
         )
         .map_err(|e| e.to_string())?;
         
-        // Try to push immediately if sync configured
-        if let Some(cfg) = load_config(&app)? {
-            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
-                if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id)? {
-                    let mut snapshot = snapshot;
-                    snapshot["artifact"]["_device_id"] = serde_json::Value::String(
-                        crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?),
-                    );
-                    let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
-                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-                    // The push result is authoritative (DEAD.7): if push_snapshot returned
-                    // Ok the object is on the relay, so mark it synced and drop the outbox
-                    // row - no extra GET to read the object back.
-                    // Mark synced only when BOTH the snapshot and the blob are on the
-                    // relay - an image is not really synced until its bytes are up, and
-                    // flipping status to 'ok' early left blob-less images that render as
-                    // text_only on the desktop. On any failure the row stays 'pending'
-                    // with its outbox entry, so mobile_outbox_push retries it later.
-                    if crate::sync::push_snapshot(relay_url, secret, &dek, snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot).is_ok()
-                        && push_capture_blob(&app, &conn, &id, relay_url, secret, &dek).unwrap_or(false)
-                    {
-                        let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
-                        let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
-                    }
-                }
-            }
-        }
-        
+        // Local-first: the row and its outbox entry are written; the snapshot and the
+        // image bytes go up from the background outbox worker, which marks it synced
+        // once BOTH have landed (an image without its blob renders text_only on the
+        // desktop). Saving never waits on the network.
+        kick_outbox(app.clone());
+
         let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
         Ok(art.to_string())
     }
@@ -989,15 +976,11 @@ mod mobile {
     #[tauri::command]
     async fn mobile_capture_camera(_app: AppHandle) -> Result<String, String> {
         use std::sync::mpsc;
-        use jni::objects::{JClass, JString, JValue};
-        
+
         let (tx, rx) = mpsc::channel();
         
         // Run JNI code on a background thread
         std::thread::spawn(move || -> Result<(), String> {
-            use jni::objects::{JClass, JString, JValue};
-            use jni::JNIEnv;
-            
             let result: Result<String, String> = (|| {
                 let vm_arc = crate::get_android_vm()?;
                 let mut env = vm_arc.attach_current_thread()
@@ -1070,7 +1053,7 @@ mod mobile {
 
     /// Save a cropped/rotated image as an artifact (MOB2.6).
     #[tauri::command]
-    fn mobile_save_cropped_image(app: AppHandle, base64: String, mime: String) -> Result<String, String> {
+    async fn mobile_save_cropped_image(app: AppHandle, base64: String, mime: String) -> Result<String, String> {
         use base64::Engine as _;
         
         let conn = open_lib(&app)?;
@@ -1139,32 +1122,12 @@ mod mobile {
         )
         .map_err(|e| e.to_string())?;
         
-        // Try to push immediately if sync configured
-        if let Some(cfg) = load_config(&app)? {
-            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
-                if let Some(snapshot) = crate::sync::build_snapshot(&conn, &id)? {
-                    let mut snapshot = snapshot;
-                    snapshot["artifact"]["_device_id"] = serde_json::Value::String(
-                        crate::sync::device_id(&app.path().app_data_dir().map_err(|e| e.to_string())?),
-                    );
-                    let relay_url = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
-                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-                    // The push result is authoritative (DEAD.7): no GET-back needed.
-                    // Mark synced only when BOTH the snapshot and the blob are on the
-                    // relay - an image is not really synced until its bytes are up, and
-                    // flipping status to 'ok' early left blob-less images that render as
-                    // text_only on the desktop. On any failure the row stays 'pending'
-                    // with its outbox entry, so mobile_outbox_push retries it later.
-                    if crate::sync::push_snapshot(relay_url, secret, &dek, snapshot["artifact"]["_device_id"].as_str().unwrap_or(""), &snapshot).is_ok()
-                        && push_capture_blob(&app, &conn, &id, relay_url, secret, &dek).unwrap_or(false)
-                    {
-                        let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [&id]);
-                        let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [&id]);
-                    }
-                }
-            }
-        }
-        
+        // Local-first: the row and its outbox entry are written; the snapshot and the
+        // image bytes go up from the background outbox worker, which marks it synced
+        // once BOTH have landed (an image without its blob renders text_only on the
+        // desktop). Saving never waits on the network.
+        kick_outbox(app.clone());
+
         let art = crate::sync::get_artifact(&conn, &id).map_err(|e| e.to_string())?;
         Ok(art.to_string())
     }
@@ -1497,27 +1460,10 @@ mod mobile {
     /// on the desktop. Best-effort; the local change already landed. Used by the facet
     /// edit/delete commands so a summary edited on the phone reaches the desktop.
     fn push_artifact_now(app: &AppHandle, conn: &Connection, id: &str) -> Result<(), String> {
-        let now = now_iso();
-        let _ = conn.execute(
-            "UPDATE artifacts SET updated_at = ?1 WHERE id = ?2",
-            rusqlite::params![now, id],
-        );
-        if let Some(cfg) = load_config(app)? {
-            if let Some(dek) = cfg.get("dek").and_then(Value::as_str).and_then(dek_from_hex) {
-                if let Some(mut snapshot) = crate::sync::build_snapshot(conn, id)? {
-                    let device = crate::sync::device_id(
-                        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-                    );
-                    snapshot["artifact"]["_device_id"] = Value::String(device.clone());
-                    let relay = cfg.get("relay_url").and_then(Value::as_str).unwrap_or("");
-                    let secret = cfg.get("secret").and_then(Value::as_str).unwrap_or("");
-                    if !relay.is_empty() && !secret.is_empty() {
-                        let _ =
-                            crate::sync::push_snapshot(relay, secret, &dek, &device, &snapshot);
-                    }
-                }
-            }
-        }
+        // Queued like every other phone write (bumps updated_at so the edit wins LWW),
+        // then sent by the background outbox worker - never on the calling thread.
+        queue_mutation_push(conn, id, "update")?;
+        kick_outbox(app.clone());
         Ok(())
     }
 
@@ -1721,9 +1667,46 @@ mod mobile {
     }
 
 
-    /// Push any queued offline captures and mutations to the relay (MOB.7 + CRUDSYNC.2).
+    /// Send whatever is waiting in the outbox to the relay, in the background (MOB.7 +
+    /// CRUDSYNC.2). Returns at once: the page calls this after every write, and a network
+    /// round trip here used to run on the UI thread, which froze the app for as long as
+    /// the relay took (or timed out, offline).
     #[tauri::command]
     fn mobile_outbox_push(app: AppHandle) -> Result<String, String> {
+        kick_outbox(app);
+        Ok(serde_json::json!({ "queued": true }).to_string())
+    }
+
+    /// One outbox worker at a time. A kick while it runs asks for one more pass, so a
+    /// burst of writes costs one or two passes, not one each; a kick while idle starts a
+    /// background thread. Nothing here blocks the caller.
+    static OUTBOX_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static OUTBOX_AGAIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    fn kick_outbox(app: AppHandle) {
+        use std::sync::atomic::Ordering;
+        OUTBOX_AGAIN.store(true, Ordering::SeqCst);
+        if OUTBOX_RUNNING.swap(true, Ordering::SeqCst) {
+            return; // the running worker will see OUTBOX_AGAIN and go round once more
+        }
+        std::thread::spawn(move || loop {
+            while OUTBOX_AGAIN.swap(false, Ordering::SeqCst) {
+                // Offline or not linked is not an error here: the rows stay queued and
+                // the next kick (sync, resume, reconnect, the next write) retries them.
+                let _ = drain_outbox(&app);
+            }
+            OUTBOX_RUNNING.store(false, Ordering::SeqCst);
+            // A kick that landed between the last pass and the store above found the
+            // worker still "running" and returned; take it here rather than drop it.
+            if !OUTBOX_AGAIN.load(Ordering::SeqCst) || OUTBOX_RUNNING.swap(true, Ordering::SeqCst) {
+                break;
+            }
+        });
+    }
+
+    /// Push queued captures and mutations to the relay. Runs on the outbox worker only.
+    fn drain_outbox(app: &AppHandle) -> Result<usize, String> {
+        let app = app.clone();
         let conn = open_lib(&app)?;
         let cfg = load_config(&app)?.ok_or("not configured")?;
         let dek = cfg
@@ -1746,7 +1729,11 @@ mod mobile {
             .collect();
         
         let mut pushed = 0;
-        let mut push_pending = |id: &str| -> bool {
+        let push_pending = |id: &str| -> bool {
+            // The snapshot built next is the artifact's whole current state, so it also
+            // covers every edit queued for it up to now: clear those on success instead
+            // of uploading the same note again for them below.
+            let cutoff = now_iso();
             let snapshot = match crate::sync::build_snapshot(&conn, id) {
                 Ok(Some(s)) => s,
                 _ => return false,
@@ -1761,6 +1748,10 @@ mod mobile {
             {
                 let _ = conn.execute("UPDATE artifacts SET status = 'ok' WHERE id = ?1", [id]);
                 let _ = conn.execute("DELETE FROM capture_outbox WHERE id = ?1", [id]);
+                let _ = conn.execute(
+                    "DELETE FROM mutation_outbox WHERE artifact_id = ?1 AND created_at <= ?2",
+                    rusqlite::params![id, &cutoff],
+                );
                 true
             } else {
                 false
@@ -1805,7 +1796,16 @@ mod mobile {
             .filter_map(Result::ok)
             .collect();
         
+        // A snapshot is the artifact's whole current state, so one push per artifact
+        // covers every mutation queued for it (the writing page queues one per save).
+        let mut seen = std::collections::HashSet::new();
         for (mutation_id, artifact_id, mutation_type) in mutations {
+            if !seen.insert(artifact_id.clone()) {
+                continue;
+            }
+            // Rows queued up to now are covered by the snapshot built next; a write that
+            // lands after this instant keeps its row for the next pass.
+            let cutoff = now_iso();
             if let Some(snapshot) = crate::sync::build_snapshot(&conn, &artifact_id).map_err(|e| e.to_string())? {
                 let mut snapshot = snapshot;
                 snapshot["artifact"]["_device_id"] = serde_json::Value::String(device_id.clone());
@@ -1819,13 +1819,17 @@ mod mobile {
                 
                 let result = crate::sync::push_snapshot(&relay_url, &secret, &dek, &device_id, &snapshot);
                 if result.is_ok() {
-                    let _ = conn.execute("DELETE FROM mutation_outbox WHERE id = ?1", [&mutation_id]);
+                    // Every row for this artifact up to now is covered by the push.
+                    let _ = conn.execute(
+                        "DELETE FROM mutation_outbox WHERE id = ?1 OR (artifact_id = ?2 AND created_at <= ?3)",
+                        rusqlite::params![&mutation_id, &artifact_id, &cutoff],
+                    );
                     pushed += 1;
                 }
             }
         }
         
-        Ok(serde_json::json!({ "pushed": pushed }).to_string())
+        Ok(pushed)
     }
 
     /// List pending outbox items (MOB.7).
@@ -1997,8 +2001,10 @@ mod mobile {
     }
 
     /// Update a note's body (MOB2.4).
+    /// Local only (the outbox carries it to the relay later); `async` keeps the write off
+    /// the UI thread, since the writing page saves every pause in the typing.
     #[tauri::command]
-    fn mobile_update_note(app: AppHandle, id: String, body: String, title: Option<String>) -> Result<String, String> {
+    async fn mobile_update_note(app: AppHandle, id: String, body: String, title: Option<String>) -> Result<String, String> {
         let conn = open_lib(&app)?;
         let art = crate::sync::update_note_body(&conn, &id, &body, title.as_deref()).map_err(|e| e.to_string())?;
         queue_mutation_push(&conn, &id, "update")?;
