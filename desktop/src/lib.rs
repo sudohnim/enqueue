@@ -3349,18 +3349,21 @@ mod desktop {
                     eprintln!("[shell] engine did not come up within 60s; will reload the window when it does");
                 }
 
-                let window = tauri::WebviewWindowBuilder::new(
+                let builder = tauri::WebviewWindowBuilder::new(
                     app,
                     "main",
                     tauri::WebviewUrl::External(ENGINE.parse().expect("valid engine url")),
                 )
                 .title("Enqueue")
                 .inner_size(1080.0, 780.0)
-                .min_inner_size(560.0, 480.0)
-                .title_bar_style(tauri::TitleBarStyle::Overlay)
-                .hidden_title(true)
-                .disable_drag_drop_handler()
-                .build()?;
+                .min_inner_size(560.0, 480.0);
+                // The overlay title bar is a macOS window style; other desktops (CI's
+                // Linux test build) keep their native one.
+                #[cfg(target_os = "macos")]
+                let builder = builder
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true);
+                let window = builder.disable_drag_drop_handler().build()?;
 
                 #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Regular);
@@ -3438,6 +3441,8 @@ mod desktop {
             .build(tauri::generate_context!())
             .expect("failed to start Enqueue")
             .run(|app, event| match event {
+                // Clicking the Dock icon with the window hidden (macOS only).
+                #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
