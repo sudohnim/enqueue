@@ -1492,7 +1492,8 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
 pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
     let artifact: Option<Value> = conn
         .query_row(
-            "SELECT id,kind,title,body,source_url,content_hash,mime,filename,created_at,updated_at,pinned,pages
+            "SELECT id,kind,title,body,source_url,content_hash,mime,filename,created_at,updated_at,pinned,pages,
+             COALESCE(title_explicit, 0)
              FROM artifacts WHERE id = ?1",
             [id],
             |r| {
@@ -1509,6 +1510,7 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
                     "updated_at": r.get::<_, String>(9)?,
                     "pinned": r.get::<_, i64>(10)?,
                     "pages": r.get::<_, Option<i64>>(11)?,
+                    "title_explicit": r.get::<_, i64>(12)?,
                 }))
             },
         )

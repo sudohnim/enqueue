@@ -7,6 +7,7 @@ import android.os.Looper
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -121,6 +122,7 @@ class MainActivity : TauriActivity() {
     super.onWebViewCreate(webView)
     this.webView = webView
     webView.addJavascriptInterface(EnqueueBridge(), "EnqueueAndroid")
+    handleBackInThePage(webView)
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -146,6 +148,12 @@ class MainActivity : TauriActivity() {
    * still reports the cutout through `env(safe-area-inset-*)` (66px on a Pixel 10 Pro)
    * and every page rule that adds it double-counts the space this padding already
    * reserved - the library opened under ~86px of empty lavender.
+   *
+   * The on-screen keyboard is reserved the same way. Edge-to-edge turns off the
+   * window's own adjustResize, so without this the keyboard was drawn OVER the page -
+   * a note being written disappeared under it. Padding the bottom by the larger of the
+   * navigation bar and the keyboard shrinks the WebView to the space above the
+   * keyboard, so every screen (and its visual viewport) simply gets shorter.
    */
   private fun applySystemBarInsets() {
     val content = findViewById<View>(android.R.id.content) ?: return
@@ -153,10 +161,31 @@ class MainActivity : TauriActivity() {
       val safe = insets.getInsets(
         WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
       )
-      view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+      view.setPadding(safe.left, safe.top, safe.right, maxOf(safe.bottom, ime.bottom))
       WindowInsetsCompat.CONSUMED
     }
     ViewCompat.requestApplyInsets(content)
+  }
+
+  /**
+   * Back asks the page first. The generated WryActivity goes back only when the
+   * WebView has back history, and Chromium skips history entries a page pushes on its
+   * own, so Back closed the app from the reader and the writing page. The page's
+   * `window.__enqBack()` closes its innermost layer and answers whether it did; only
+   * when it had nothing to close does the app go to the background, as a root
+   * activity's Back does. Registered after WryActivity's callback, so it runs first.
+   */
+  private fun handleBackInThePage(webView: WebView) {
+    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+      override fun handleOnBackPressed() {
+        webView.evaluateJavascript(
+          "(window.__enqBack && window.__enqBack()) ? 'handled' : 'none'",
+        ) { answer ->
+          if (answer?.contains("handled") != true) moveTaskToBack(true)
+        }
+      }
+    })
   }
 
   override fun onActivityResult(

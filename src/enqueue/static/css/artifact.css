@@ -449,15 +449,33 @@
     color: var(--badge-danger-ink);
   }
 
-  /* The reading pane. Long-form sits on the faint-cool canvas rather than the
-     raised surface, so a full page of it does not glare against the white. */
+  /* The reading pane is an open page: no sheet, no outline. The words sit on the
+     violet ground in one reading column, the way the greeting does on home, with a
+     single soft rule between the header and the text. A white slab on the violet was
+     the hardest edge in the app, and a page of text is where that glare costs most. */
   .docpane {
-    background: var(--surface-doc);
+    position: relative;
+    padding: var(--sp-5) 0 0;
+    margin-top: var(--sp-5);
+    max-width: 68ch;
+    border-top: 1px solid var(--line);
+  }
+  /* The rule fills once, left to right, when a save lands: the page acknowledging
+     the words rather than a notification about them. */
+  .docpane.landed::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -1px;
+    height: 1px;
+    background: var(--accent);
+    transform-origin: left center;
+    animation: fill 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .docpane img.page {
+    border-radius: var(--r-xl);
     box-shadow: var(--hairline);
-    border-radius: var(--r-2xl);
-    padding: var(--sp-6);
-    margin-top: var(--sp-6);
-    max-width: 720px;
   }
   .docpane > *:first-child {
     margin-top: 0;
@@ -468,7 +486,7 @@
   .editor {
     min-height: 320px;
     outline: none;
-    caret-color: var(--text);
+    caret-color: var(--accent);
   }
   .editor:empty::before,
   /* An empty note mounts with a single seeded <p><br></p> (NOTE.1), which is not
@@ -488,27 +506,38 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  /* Under the page: only the quiet count of kept drafts. */
   .bar {
     display: flex;
     gap: var(--sp-3);
     align-items: center;
     margin-top: var(--sp-4);
-    padding-top: var(--sp-3);
-    border-top: 1px solid var(--line-soft);
-    position: relative;
   }
-  /* The rule under the editor fills once, left to right. The page acknowledging the
-     words, rather than a notification about them. */
-  .bar.landed::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: -1px;
-    height: 1px;
-    width: 100%;
-    background: var(--line-strong);
-    transform-origin: left center;
-    animation: fill 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  .bar:not(:has(#vers:not(:empty))) {
+    display: none;
+  }
+  /* The save whisper beside the date: a check and "Saved", fading after a moment. */
+  .saveword {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: var(--sp-2);
+    color: var(--text-mute);
+    opacity: 0;
+    transition: opacity 600ms var(--ease);
+  }
+  .saveword.on {
+    opacity: 1;
+    transition-duration: 150ms;
+  }
+  .saveword.err {
+    color: var(--danger);
+  }
+  .saveword svg {
+    width: 13px;
+    height: 13px;
+    stroke: var(--success);
+    stroke-width: 2.6;
   }
   @keyframes fill {
     from {

@@ -559,6 +559,9 @@
       (a.local_only
         ? '<span class="sep">&bull;</span><span class="badge neutral">local only</span>'
         : "") +
+      // "Saved" whispers here, beside the date, where the eye already is - not in a
+      // bar under a long note that has scrolled out of sight.
+      '<span id="state" class="saveword" role="status" aria-live="polite"></span>' +
       "</div>";
 
     if (a.source_url)
@@ -591,7 +594,7 @@
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
         'data-placeholder="Start writing. Markdown shorthand becomes formatting as you type."></div>' +
-        '<div class="bar"><span id="state" class="meta"></span>' +
+        '<div class="bar">' +
         '<span class="meta" style="margin-left:auto" id="vers" data-n="' +
         n +
         '">' +
@@ -638,8 +641,7 @@
         '<div class="docpane">' +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="Your notes here" ' +
-        'style="min-height:150px" data-placeholder="Your notes here"></div>' +
-        '<div class="bar"><span id="state" class="meta"></span></div></div>' +
+        'style="min-height:150px" data-placeholder="Your notes here"></div></div>' +
         notice;
       ctx = {
         id,
@@ -1815,14 +1817,33 @@
     }
     h.textContent = "";
     refreshTitleHeader();
+    markSaved("Saved");
+  }
+
+  // The save whisper beside the date: a check and a word that fade after a moment.
+  // Progress and errors use the same place, as plain words that stay until replaced.
+  let savedFade = 0;
+  let lastApproval = 0;
+  function markSaved(word) {
     const state = document.getElementById("state");
-    if (state) {
-      state.className = "saved";
-      state.textContent = "saved";
-      setTimeout(() => {
-        if (state.textContent === "saved") state.textContent = "";
-      }, 2200);
+    if (!state) return;
+    clearTimeout(savedFade);
+    state.className = "saveword on";
+    state.innerHTML = svg("check") + esc(word);
+    savedFade = setTimeout(() => state.classList.remove("on"), 2400);
+    // The pill eye approves, now and then - not on every pause in the typing.
+    const now = Date.now();
+    if (window.eyeMood && now - lastApproval > 30000) {
+      lastApproval = now;
+      eyeMood.play("approve");
     }
+  }
+  function markState(text, isError) {
+    const state = document.getElementById("state");
+    if (!state) return;
+    clearTimeout(savedFade);
+    state.className = "saveword on" + (isError ? " err" : "");
+    state.textContent = text;
   }
 
   // Embed a pasted image: upload it as a hidden (embedded) image artifact, then drop
@@ -1835,10 +1856,7 @@
     const state = document.getElementById("state");
     const sel = window.getSelection();
     const range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    if (state) {
-      state.className = "meta";
-      state.textContent = "adding image...";
-    }
+    if (state) markState("adding image...");
     let id;
     try {
       const fd = new FormData();
@@ -1848,10 +1866,7 @@
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
       id = (await r.json()).id;
     } catch (err) {
-      if (state) {
-        state.className = "meta";
-        state.textContent = "image failed: " + String((err && err.message) || err);
-      }
+      if (state) markState("image failed: " + String((err && err.message) || err), true);
       return;
     }
     const img = document.createElement("img");
@@ -1905,26 +1920,21 @@
         ctx.entryId = r.id;
       }
     } catch (err) {
-      state.className = "meta";
-      state.textContent = String(err);
+      markState(String(err), true);
       return;
     }
 
     ctx.saved = text;
-    state.className = "saved";
-    state.textContent = ctx.kind === "note" ? "saved" : "noted";
+    markSaved(ctx.kind === "note" ? "Saved" : "Noted");
 
-    // The rule under the editor fills once in the artifact's own colour. It reads as
-    // the page acknowledging the words rather than a toast arriving from elsewhere.
-    const bar = state.closest(".bar");
-    if (bar) {
-      bar.classList.remove("landed");
-      void bar.offsetWidth;
-      bar.classList.add("landed");
+    // The rule above the page fills once, left to right. It reads as the page
+    // acknowledging the words rather than a toast arriving from elsewhere.
+    const pane = ed.closest(".docpane");
+    if (pane) {
+      pane.classList.remove("landed");
+      void pane.offsetWidth;
+      pane.classList.add("landed");
     }
-    setTimeout(() => {
-      if (state.textContent === "saved") state.textContent = "";
-    }, 2200);
   }
 
   // The exhibit page (M.6): `showExhibit()` and its rename pencil were the

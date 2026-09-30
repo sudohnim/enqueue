@@ -41,6 +41,24 @@ def _no_query_lift(monkeypatch):
     monkeypatch.setattr(lift, "lift", lambda query: [])
 
 
+@pytest.fixture(autouse=True)
+def _drain_ingest(monkeypatch):
+    """Let this test's real ingest work finish inside this test.
+
+    The ingest worker is one process-wide thread. A test that submits to it for real
+    (no `quiet_queue`) used to leave items queued when it ended, and the worker then
+    ran them against the NEXT test's database - `config.DB_PATH` points wherever the
+    running test put it, and tests reuse ids like "a" and "b". That wrote rows into a
+    stranger's database mid-assertion (test_related's purge check failed about one run
+    in five). Requesting `monkeypatch` makes this teardown run before the paths are
+    restored, so the drain happens against the test's own database.
+    """
+    yield
+    from enqueue.ingest import queue as ingest_queue
+
+    ingest_queue._ingest.wait_idle(10)
+
+
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
