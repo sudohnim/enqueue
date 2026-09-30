@@ -9,7 +9,7 @@ from openai import BadRequestError, OpenAI
 from openai.types.chat import ChatCompletionContentPartParam, ChatCompletionMessageParam
 from pydantic import BaseModel
 
-from .. import config
+from .. import config, outbound
 from ..prompts import IMAGE_DESCRIBE
 from . import pause
 from .base import ProviderError, _check_go_model_shape, why
@@ -76,10 +76,14 @@ class OpenAICompatibleProvider:
         # A credential in the text (a note, a PDF, a page) never goes to a remote model:
         # blank it here, where every structured call passes (ingest/secrets.py).
         from .. import privacy
-        from ..ingest.secrets import redact
+        from ..ingest.secrets import REDACTION, redact
 
-        if privacy.is_remote(self):
+        remote = privacy.is_remote(self)
+        blanked = 0
+        if remote:
+            before = (system + user).count(REDACTION)
             system, user = redact(system), redact(user)
+            blanked = (system + user).count(REDACTION) - before
 
         # Some backends (Gemini) reject an empty user turn, so fold system into user.
         if user.strip():
@@ -92,6 +96,10 @@ class OpenAICompatibleProvider:
 
         _check_go_model_shape(self.base_url, self.model)
         pause.check()  # a usage limit is in effect: fail now, without a doomed request
+        if remote:  # what left the machine, for the Activity log (outbound.py)
+            outbound.record(
+                self.base_url, self.model, response_model.__name__, len(system) + len(user), blanked
+            )
         kwargs = {
             "model": self.model,
             "response_model": response_model,
@@ -110,6 +118,10 @@ class OpenAICompatibleProvider:
         # request parameters" for some notes, every time, while the same request without
         # it succeeds). A 400 is not transient, so retrying the same request would fail
         # forever; ask once more in MD_JSON mode, which carries no response_format.
+        if remote:  # a second request with the same text
+            outbound.record(
+                self.base_url, self.model, response_model.__name__, len(system) + len(user), blanked
+            )
         try:
             return cast(T, self._client_md.chat.completions.create(**kwargs))
         except Exception as exc:  # noqa: BLE001 - translated, not swallowed
@@ -136,6 +148,10 @@ class OpenAICompatibleProvider:
         messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": content}]
         _check_go_model_shape(self.base_url, self.model)
         pause.check()
+        from .. import privacy
+
+        if privacy.is_remote(self):
+            outbound.record(self.base_url, self.model, "image", len(data_url))
         try:
             reply = client.chat.completions.create(
                 model=self.model,

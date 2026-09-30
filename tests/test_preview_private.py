@@ -41,6 +41,7 @@ def local_site():
     thread.start()
     yield f"http://127.0.0.1:{server.server_address[1]}/"
     server.shutdown()
+    server.server_close()
 
 
 def test_a_saved_link_to_this_machine_is_never_fetched(store, quiet_queue, local_site):
