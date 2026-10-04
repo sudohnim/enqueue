@@ -608,10 +608,18 @@ def push_pivots() -> None:
         result = full.get("result")
         groups: list[dict] = []
         if result and result.get("groups"):
+            # A view arranged by hand keeps the person's order, header by header and
+            # card by card; a recipe view has no order of its own, so its ids are sorted
+            # to keep the payload stable.
+            by_hand = bool(result.get("manual"))
             for group in result["groups"]:
-                gids = sorted(group.get("artifact_ids") or [])
+                gids = list(group.get("artifact_ids") or [])
+                if not by_hand:
+                    gids = sorted(gids)
                 if gids:
                     groups.append({"key": group.get("key") or "", "ids": gids})
+        elif pivots_saved.is_manual(spec):
+            pass  # an empty hand-arranged view has nothing to show on the phone yet
         else:
             try:
                 base, _ = pivot.resolve_subset(spec.get("subset") or {"kind": "everything"})

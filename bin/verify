@@ -60,6 +60,7 @@ JS_ORDER = [
     "artifact.js",
     "search.js",
     "pivot.js",
+    "manual.js",
     "chat.js",
     "trash.js",
     "settings.js",

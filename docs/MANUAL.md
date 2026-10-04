@@ -160,9 +160,26 @@ Short notes, and anything holding what looks like a password or a key, get no su
 Tags are optional, and always added after the fact, in the drawer.
 
 A **view** is a saved way of looking at the library: "everything about the Lisbon trip", "recipes I have actually cooked".
+There are two ways to make one.
+
+**Arrange it yourself.** Open the **Custom** tab and click **New view**.
+
+- **Add a header** makes a shelf; click its name to rename it.
+- The **Add** tile at the end of a shelf opens your library: tick as many things as you want and add them together.
+- Drag a tile to reorder it, or onto another shelf to move it. Drag a header by its grip (the six dots that appear beside it) to reorder the shelves.
+- Without a mouse: the arrows button on a tile moves it to another header, Alt+Left/Right moves it along its shelf, and the up and down arrow keys move a focused grip.
+- The **x** on a tile takes it out of the view. The bin on a header deletes the shelf. Nothing leaves your library.
+
+Everything saves as you go, nothing here ever calls a model, and the view shows on your phone in the same order.
+
+**Let the assistant gather it.**
 Ask the eye to organise something ("gather everything about the Lisbon trip"), and it lays the matching artifacts out in groups; save that as a view.
 Saved views live under the **Custom** tab.
-You can add or remove artifacts by hand (an artifact's drawer has **add to a view**), rename a view, and come back to it; it re-runs against the library as it is now.
+An assistant view stays as it was gathered until you click **Rebuild**, which gathers it again from the library as it is now.
+Removing a tile from one puts it on a **Removed** shelf at the bottom, where **restore** brings it back.
+If you would rather take one over, **Arrange by hand** makes a copy that is yours to rearrange.
+
+Either kind can be renamed or forgotten from the Custom tab, and an artifact's drawer has **add to a view**.
 
 ## Trash
 

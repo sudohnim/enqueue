@@ -1282,3 +1282,323 @@ main {
 .filterlabel {
 	color: inherit;
 }
+
+/* ---- views arranged by hand (manual.js) ----------------------------------------
+   The same shelves-of-tiles as every other view, except that everything here can
+   be picked up: a header by its grip, a tile by its body. The page stays quiet at
+   rest - the grip and the tile controls only show on hover or focus - and says
+   what is happening while something is in hand (the lifted tile, the open slot). */
+.mvgroup {
+	margin-top: var(--sp-6);
+}
+.mvhead {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-1);
+	/* The grip hangs in the gutter so the header's first letter lines up with the
+	   tiles under it. */
+	margin-left: -30px;
+}
+.mvgrip {
+	flex: none;
+	width: 26px;
+	height: 34px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--r-md);
+	background: none;
+	color: var(--text-mute);
+	display: grid;
+	place-items: center;
+	cursor: grab;
+	touch-action: none;
+	opacity: 0;
+	transition:
+		opacity var(--dur-fast) var(--ease),
+		background var(--dur-fast) var(--ease);
+}
+.mvgrip svg {
+	width: 18px;
+	height: 18px;
+}
+.mvgrip svg circle {
+	fill: currentColor;
+	stroke: none;
+}
+.mvhead:hover .mvgrip,
+.mvgrip:focus-visible {
+	opacity: 1;
+}
+.mvgrip:hover {
+	background: var(--line-soft);
+}
+/* The header's name is a button that becomes a field where it stands; both share
+   the group-heading type, so renaming never shifts the line. */
+.mvname {
+	min-width: 0;
+	padding: 6px 8px;
+	margin-left: -8px;
+	border: 0;
+	border-radius: var(--r-md);
+	background: none;
+	font-family: var(--display);
+	font-size: 26px;
+	font-weight: 600;
+	line-height: 1.15;
+	letter-spacing: -0.035em;
+	color: var(--text);
+	text-align: left;
+	cursor: text;
+	/* A long name wraps rather than being cut off: it is the person's own words. */
+	overflow-wrap: anywhere;
+	text-wrap: balance;
+	transition: background var(--dur-fast) var(--ease);
+}
+button.mvname:hover {
+	background: var(--line-soft);
+}
+input.mvnameinput {
+	flex: 1;
+	max-width: 32ch;
+	background: var(--surface-2);
+	box-shadow:
+		0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
+		var(--shadow-field);
+	outline: none;
+	caret-color: var(--accent);
+}
+.mvcount {
+	font-size: 13px;
+	color: var(--text-mute);
+	margin-left: var(--sp-1);
+	font-variant-numeric: tabular-nums;
+}
+.mvhead .groupdel {
+	flex: none;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--r-full);
+	background: none;
+	color: var(--text-mute);
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+	margin-left: auto;
+	opacity: 0;
+	transition:
+		opacity var(--dur-fast) var(--ease),
+		background var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
+}
+.mvhead .groupdel svg {
+	width: 15px;
+	height: 15px;
+	stroke-width: 1.8;
+}
+.mvhead:hover .groupdel,
+.mvhead .groupdel:focus-visible {
+	opacity: 1;
+}
+.mvhead .groupdel:hover {
+	background: var(--surface);
+	color: var(--danger);
+}
+.mvwall {
+	margin-top: var(--sp-3);
+	/* An empty shelf is still a place to drop into. */
+	min-height: 132px;
+}
+.mvcard {
+	cursor: grab;
+	border-radius: 18px;
+}
+.mvcard .card {
+	height: 100%;
+}
+/* Keyboard focus on either tile control shows both, so the pair never appears as
+   one orphaned button. */
+.pivotcard:focus-within .movebtn,
+.pivotcard:focus-within .removebtn {
+	opacity: 1;
+}
+.mvcard img {
+	-webkit-user-drag: none;
+	user-select: none;
+}
+/* The Add tile closes every shelf: the same footprint as a tile, drawn as an open
+   outline so it reads as a place, not a thing. */
+.mvadd {
+	min-height: 132px;
+	border: 0;
+	border-radius: 18px;
+	background: none;
+	box-shadow: inset 0 0 0 1px var(--line);
+	color: var(--text-mute);
+	font: 500 14px var(--sans);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-2);
+	cursor: pointer;
+	transition:
+		background var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease),
+		box-shadow var(--dur-fast) var(--ease);
+}
+.mvadd svg {
+	width: 20px;
+	height: 20px;
+}
+.mvadd:hover,
+.mvadd:focus-visible {
+	background: var(--surface);
+	color: var(--accent-text);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.mvfoot {
+	margin-top: var(--sp-6);
+}
+.mvfoot .btn svg {
+	width: 16px;
+	height: 16px;
+}
+.mvempty {
+	margin-top: var(--sp-7);
+	max-width: 52ch;
+}
+.mvempty p {
+	margin: var(--sp-2) 0 var(--sp-5);
+	color: var(--text-dim);
+	font-size: 16px;
+	line-height: 1.5;
+}
+.mvempty em {
+	font-style: normal;
+	color: var(--text);
+	font-weight: 500;
+}
+/* In hand: the tile being moved leaves an open slot where it will land, and a copy
+   of it rides the pointer, lifted and a touch askew. */
+.mvlifted {
+	opacity: 0.28;
+}
+.mvcard.mvlifted .card {
+	box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.mvghost {
+	position: fixed;
+	left: 0;
+	top: 0;
+	z-index: 1000;
+	pointer-events: none;
+	will-change: transform;
+}
+.mvghost-card > .card {
+	height: 100%;
+	transform: rotate(1.6deg) scale(1.03);
+	box-shadow: var(--shadow-lifted);
+}
+.mvghost-header {
+	padding: 8px 16px;
+	border-radius: var(--r-full);
+	background: var(--accent);
+	color: #fff;
+	font: 600 15px var(--display);
+	letter-spacing: -0.01em;
+	box-shadow: var(--shadow-lifted);
+	white-space: nowrap;
+}
+body.mv-dragging,
+body.mv-dragging * {
+	cursor: grabbing !important;
+	user-select: none;
+}
+/* While a header is in hand every shelf folds to its header, so the page is a short
+   list to drop into rather than a long scroll. */
+.mvfolded .mvwall {
+	display: none;
+}
+.mvfolded .mvgroup {
+	margin-top: var(--sp-2);
+}
+.mvfolded .mvgroup:first-child {
+	margin-top: var(--sp-5);
+}
+.mvfolded .mvhead {
+	padding: 6px 10px 6px 0;
+	border-radius: var(--r-lg);
+	background: var(--surface);
+	box-shadow: var(--hairline);
+	margin-left: 0;
+}
+.mvfolded .mvgrip {
+	opacity: 1;
+}
+/* The picker that fills a shelf: rows toggle, and say so with a tick. */
+.mvpickrow {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	width: 100%;
+}
+.mvpickrow .mvtick {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 6px;
+	box-shadow: inset 0 0 0 1.5px var(--line-strong);
+	display: grid;
+	place-items: center;
+	color: transparent;
+}
+.mvpickrow .mvtick svg {
+	width: 12px;
+	height: 12px;
+	stroke-width: 3;
+}
+.mvpickrow[aria-pressed="true"] .mvtick {
+	background: var(--accent);
+	box-shadow: none;
+	color: #fff;
+}
+.mvpickrow .kindmark {
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--kind, var(--text-mute));
+}
+.mvpicktitle {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* Who arranged a saved view, on its row in the picker. */
+.pickgroups .customrow .rowhow {
+	flex: none;
+	font-size: 12px;
+	color: var(--text-mute);
+	padding: 0 var(--sp-2);
+}
+@media (max-width: 900px) {
+	.mvhead {
+		margin-left: 0;
+	}
+	.mvgrip {
+		opacity: 1;
+	}
+}
+/* Nothing to hover with (a touch screen): the controls that hover reveals are
+   simply there. */
+@media (hover: none), (max-width: 900px) {
+	.mvgrip,
+	.mvhead .groupdel,
+	.mvcard .movebtn,
+	.mvcard .removebtn {
+		opacity: 1;
+	}
+}

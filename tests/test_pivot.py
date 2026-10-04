@@ -742,3 +742,50 @@ class TestPlan:
 
         with pytest.raises(pivot.PivotError, match="first step"):
             pivot.plan("keep only my books")
+
+
+class TestPlaceFromCache:
+    """Putting one card into a locked view (restore, add) must never call a model."""
+
+    SPEC = {
+        "subset": {"kind": "everything"},
+        "steps": [
+            {"op": "field", "attribute": "title", "instruction": ""},
+            {"op": "enrich", "attribute": "fiction vs non-fiction", "instruction": "say which"},
+        ],
+        "group_by": "fiction vs non-fiction",
+    }
+
+    def test_a_value_the_grouping_has_seen_places_the_card(self, store, quiet_queue, monkeypatch):
+        aid = _note("# Dune\n\na long book about sand")
+        derive._write("value", "Dune", "fiction vs non-fiction", "fiction", False, "model", "m")
+        monkeypatch.setattr(
+            derive, "enrich", lambda *a, **k: pytest.fail("placement must not call the model")
+        )
+        assert pivot.place_from_cache(self.SPEC, aid) == "fiction"
+
+    def test_an_unseen_value_lands_in_not_determined(self, store, quiet_queue):
+        aid = _note("# A book nobody has classified\n\nwords")
+        assert pivot.place_from_cache(self.SPEC, aid) == ""
+
+    def test_a_plain_field_grouping_reads_the_row(self, store, quiet_queue):
+        aid = _note("just a note")
+        spec = {"subset": {"kind": "everything"}, "steps": [], "group_by": {"attribute": "kind"}}
+        assert pivot.place_from_cache(spec, aid) == "note"
+
+
+def test_groups_that_differ_only_in_case_or_spacing_are_one_group(store, quiet_queue, monkeypatch):
+    """A model answers "Non-fiction" for one book and "non-fiction " for the next; each
+    spelling used to become its own group."""
+    ids = [_note(f"# Book {i}\n\nwords about book {i}") for i in range(4)]
+    answers = dict(zip(ids, ["Non-fiction", "non-fiction", "non-fiction ", "Fiction"], strict=True))
+    monkeypatch.setattr(
+        derive, "extract", lambda aid, attr, instruction: {"value": answers[aid], "grounded": True}
+    )
+    spec = {
+        "subset": {"kind": "everything"},
+        "steps": [{"op": "extract", "attribute": "genre", "instruction": "say which"}],
+        "group_by": "genre",
+    }
+    groups = {g["key"]: len(g["artifact_ids"]) for g in pivot.run(spec)["groups"]}
+    assert groups == {"non-fiction": 3, "Fiction": 1}

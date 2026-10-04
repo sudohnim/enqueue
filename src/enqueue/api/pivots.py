@@ -132,8 +132,13 @@ def open_pivot(pivot_id: str) -> dict:
             "stale": stale,
             "result_at": result_at,
         }
-    result = pivot.run(saved["spec"])
-    pivots_saved.set_result(pivot_id, _strip_items(result))
+    if pivots_saved.is_manual(saved["spec"]):
+        # Arranged by hand: there is no recipe to run. A missing arrangement is an
+        # empty one.
+        result = {"manual": True, "truncated": False, "group_by": "", "groups": []}
+    else:
+        result = pivot.run(saved["spec"])
+        pivots_saved.set_result(pivot_id, _strip_items(result))
     return {
         "id": saved["id"],
         "name": saved["name"],
@@ -154,6 +159,10 @@ def refresh_pivot(pivot_id: str) -> dict:
         saved = pivots_saved.get(pivot_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such saved view") from None
+    if pivots_saved.is_manual(saved["spec"]):
+        raise HTTPException(
+            status_code=409, detail="a view arranged by hand has nothing to rebuild"
+        ) from None
     result = pivot.run(saved["spec"])
     pivots_saved.set_result(pivot_id, _strip_items(result))
     return {
@@ -164,6 +173,62 @@ def refresh_pivot(pivot_id: str) -> dict:
         "cached": False,
         "result_at": None,
     }
+
+
+class ManualViewRequest(BaseModel):
+    name: str
+    # Start from another view's arrangement (to take it over by hand).
+    from_id: str | None = None
+
+
+@router.post("/pivots/manual", status_code=201)
+def create_manual_view(req: ManualViewRequest) -> dict:
+    """Create a view arranged by hand: headers and artifacts in the person's own order.
+
+    No recipe and no model, ever. With `from_id`, it starts as a copy of that view's
+    current groups, which is how an assistant-made view is taken over by hand.
+    """
+    groups: list[dict] = []
+    if req.from_id:
+        try:
+            source = pivots_saved.get(req.from_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="no such saved view") from None
+        for group in (source.get("result") or {}).get("groups") or []:
+            groups.append(
+                {
+                    "key": group.get("key") or "Not determined",
+                    "artifact_ids": list(group.get("artifact_ids") or []),
+                }
+            )
+    try:
+        return {"id": pivots_saved.save_manual(req.name, groups)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+class LayoutGroup(BaseModel):
+    key: str = ""
+    artifact_ids: list[str] = []
+
+
+class LayoutRequest(BaseModel):
+    groups: list[LayoutGroup]
+
+
+@router.put("/pivots/{pivot_id}/layout")
+def set_layout(pivot_id: str, req: LayoutRequest) -> dict:
+    """Replace a hand-arranged view's whole layout: its headers in order, each with its
+    artifacts in order. The page sends this after every change (add, drag, rename,
+    delete), so there is one write path and the stored order is always what is shown.
+    """
+    try:
+        result = pivots_saved.set_layout(pivot_id, [g.model_dump() for g in req.groups])
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such saved view") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"result": _hydrate(result)}
 
 
 class PivotRemoveRequest(BaseModel):
@@ -188,11 +253,37 @@ def remove_from_pivot(pivot_id: str, req: PivotRemoveRequest) -> dict:
         raise HTTPException(
             status_code=409, detail="open the view once before editing it"
         ) from None
-    return {"result": _hydrate(result)}
+    # The spec comes back too: its excluded_ids is what the Removed shelf draws from.
+    return {"result": _hydrate(result), "spec": pivots_saved.get(pivot_id)["spec"]}
+
+
+@router.post("/pivots/{pivot_id}/restore")
+def restore_to_pivot(pivot_id: str, req: PivotRemoveRequest) -> dict:
+    """Put removed artifacts back into a locked view, in the groups they left.
+
+    No recompute and no model call: a card returns to the group recorded when it was
+    removed; an exclusion with no record is placed from the derive cache
+    (`pivot.place_from_cache`), or lands in "Not determined" until the next Rebuild.
+    """
+    try:
+        saved = pivots_saved.get(pivot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such saved view") from None
+    spec = saved["spec"]
+    result = pivots_saved.restore_to_result(
+        pivot_id, req.artifact_ids, place=lambda aid: pivot.place_from_cache(spec, aid)
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=409, detail="open the view once before editing it"
+        ) from None
+    return {"result": _hydrate(result), "spec": pivots_saved.get(pivot_id)["spec"]}
 
 
 class PivotAddRequest(BaseModel):
     artifact_id: str
+    # For a hand-arranged view: the header to add under (default: its first header).
+    group: str | None = None
 
 
 @router.post("/pivots/{pivot_id}/add")
@@ -208,16 +299,13 @@ def add_to_pivot(pivot_id: str, req: PivotAddRequest) -> dict:
         saved = pivots_saved.get(pivot_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such saved view") from None
-    spec = saved["spec"]
-    group_by = spec.get("group_by")
-    attr = group_by.get("attribute") if isinstance(group_by, dict) else None
-    steps = spec.get("steps") or []
-    key = ""
-    if attr and (not steps or steps[0].get("op") == "field"):
-        try:
-            key = derive.field(req.artifact_id, attr)["value"]
-        except Exception:  # noqa: BLE001 - a bad field read just lands it in "" (undetermined)
-            key = ""
+    # A field grouping reads the artifact's own row; a model grouping answers from the
+    # derive cache when it has seen this value before (no model call either way).
+    if pivots_saved.is_manual(saved["spec"]):
+        held = (saved.get("result") or {}).get("groups") or []
+        key = req.group if req.group is not None else (held[0].get("key") or "" if held else "")
+    else:
+        key = pivot.place_from_cache(saved["spec"], req.artifact_id)
     result = pivots_saved.add_to_result(pivot_id, req.artifact_id, key)
     if result is None:
         raise HTTPException(
@@ -228,6 +316,8 @@ def add_to_pivot(pivot_id: str, req: PivotAddRequest) -> dict:
 
 class PivotAddableRequest(BaseModel):
     spec: dict
+    # A hand-arranged view's membership is its arrangement, not its spec.
+    pivot_id: str | None = None
 
 
 @router.post("/pivot/addable")
@@ -253,18 +343,29 @@ def pivot_addable(req: PivotAddableRequest) -> dict:
     excluded = set(spec.get("excluded_ids") or [])
     included = set(spec.get("included_ids") or [])
     in_view = set(ids) - excluded | included
+    if pivots_saved.is_manual(spec):
+        in_view = set()
+        if req.pivot_id:
+            try:
+                held = (pivots_saved.get(req.pivot_id).get("result") or {}).get("groups") or []
+            except (KeyError, ValueError):
+                held = []
+            in_view = {aid for group in held for aid in group.get("artifact_ids") or []}
 
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, title FROM artifacts"
-            " WHERE kind != 'chat' ORDER BY updated_at DESC LIMIT 200"
+            "SELECT id, title, kind FROM artifacts"
+            " WHERE kind != 'chat' AND deleted_at IS NULL AND vaulted_at IS NULL"
+            " AND embedded_at IS NULL ORDER BY updated_at DESC LIMIT 500"
         ).fetchall()
     finally:
         conn.close()
     return {
         "items": [
-            {"id": row["id"], "title": row["title"]} for row in rows if row["id"] not in in_view
+            {"id": row["id"], "title": row["title"], "kind": row["kind"]}
+            for row in rows
+            if row["id"] not in in_view
         ]
     }
 

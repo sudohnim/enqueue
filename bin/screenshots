@@ -201,6 +201,16 @@ def seed(scratch: Path) -> dict:
         except httpx.HTTPError:
             pass
         time.sleep(0.5)
+    # Never write to an engine that is not this script's own. On 2026-10-01 the demo
+    # engine failed to bind (the port was held by a preview proxy to the REAL engine),
+    # this function carried on, and the demo library landed in the real one. The
+    # engine answering must be the one whose library is the throwaway folder.
+    where = api.get("/settings").json().get("storage", {}).get("data_dir", "")
+    if Path(where).resolve() != (scratch / "library").resolve():
+        raise SystemExit(
+            f"refusing to seed: the engine at {BASE} keeps its library at {where!r},"
+            " not in this run's scratch folder"
+        )
     ids: dict[str, str] = {}
     for url in LINKS:
         api.post("/capture/link", json={"url": url})

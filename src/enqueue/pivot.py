@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from pydantic import BaseModel
 
@@ -253,9 +253,21 @@ def run(spec: dict) -> dict:
         for artifact_id in kept:
             key_of[artifact_id] = mapping.get(key_of[artifact_id], key_of[artifact_id])
 
+    # A model answers the same thing in different dress ("Non-fiction", "non-fiction ",
+    # "NON-FICTION"), and each spelling used to become its own group. Keys that differ
+    # only in case or spacing are one group, shown in the spelling used most.
+    spellings: dict[str, Counter] = defaultdict(Counter)
+    for artifact_id in kept:
+        raw = key_of[artifact_id] or ""
+        spellings[" ".join(raw.split()).casefold()][" ".join(raw.split())] += 1
+    shown = {
+        folded: max(forms.items(), key=lambda kv: (kv[1], kv[0]))[0]
+        for folded, forms in spellings.items()
+    }
     grouped: dict[str, list[str]] = defaultdict(list)
     for artifact_id in kept:
-        grouped[key_of[artifact_id]].append(artifact_id)
+        raw = key_of[artifact_id] or ""
+        grouped[shown[" ".join(raw.split()).casefold()]].append(artifact_id)
 
     groups = [
         {"key": key, "artifact_ids": artifact_ids, "grounded": not any_inference}
@@ -264,6 +276,47 @@ def run(spec: dict) -> dict:
     groups.sort(key=lambda group: len(group["artifact_ids"]), reverse=True)
 
     return {"groups": groups, "truncated": truncated, "group_by": spec["group_by"]}
+
+
+def place_from_cache(spec: dict, artifact_id: str) -> str:
+    """Where one artifact falls in a view, from what is already known. No model call.
+
+    Walks the spec's steps the way `run` does, but reads only: a `field` step is a free
+    row read, and an `extract`/`enrich` step answers from the derive cache (a person's
+    correction first). Anything not cached yet stops the walk at "" - the "Not
+    determined" group - and the next Rebuild sorts it. This is what lets a card be put
+    back into (or added to) a locked view instantly, in the right group when the
+    grouping has seen its value before.
+    """
+    steps = spec.get("steps") or []
+    group_by = spec.get("group_by")
+    try:
+        if not steps:
+            attr = group_by.get("attribute") if isinstance(group_by, dict) else None
+            return derive.field(artifact_id, attr)["value"] if attr else ""
+        first = steps[0]
+        if first["op"] == "field":
+            value = derive.field(artifact_id, first["attribute"])["value"]
+        else:
+            hit = derive._read("artifact", artifact_id, first["attribute"].strip().lower())
+            if hit is None:
+                return ""
+            value = hit["value"]
+        for step in steps[1:]:
+            if step["op"] == "filter":
+                continue
+            attr = step["attribute"].strip().lower()
+            corrected = derive._read("artifact", artifact_id, attr)
+            if corrected is not None and corrected["source"] == "user":
+                value = corrected["value"]
+                continue
+            hit = derive._read("value", value, attr) if value else None
+            if hit is None:
+                return ""
+            value = hit["value"]
+        return value or ""
+    except Exception:  # noqa: BLE001 - an unreadable row or a hand-built spec lands in ""
+        return ""
 
 
 def plan(request: str) -> dict:

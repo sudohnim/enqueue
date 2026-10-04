@@ -258,7 +258,8 @@ async function setWallGroup(mode) {
 	// cancel or backdrop click leaves the wall untouched.
 	if (mode === "custom") {
 		const pick = await openCustomPicker();
-		if (pick) runSavedGrouping(pick.id, pick.name);
+		if (pick && pick.create) createManualView();
+		else if (pick) runSavedGrouping(pick.id, pick.name);
 		return;
 	}
 	wallGroup = mode;
@@ -320,7 +321,7 @@ function renderPickerRows(box, list, onRun) {
 			if (!pivots.length) {
 				const none = document.createElement("div");
 				none.className = "state";
-				none.textContent = "Nothing saved yet.";
+				none.textContent = "No views yet. Make one of your own below.";
 				list.appendChild(none);
 				return;
 			}
@@ -334,6 +335,13 @@ function renderPickerRows(box, list, onRun) {
 				run.textContent = p.name;
 				run.onclick = () => onRun(p);
 				row.appendChild(run);
+
+				// Who arranged it: you, or the assistant. Quiet, but it is the first thing
+				// that tells two views apart.
+				const how = document.createElement("span");
+				how.className = "rowhow";
+				how.textContent = p.manual ? "by hand" : "assistant";
+				row.appendChild(how);
 
 				const rename = document.createElement("button");
 				rename.className = "title-action";
@@ -372,11 +380,13 @@ function renderPickerRows(box, list, onRun) {
 function openCustomPicker() {
 	const box = modalShell(
 		'<h2 id="pickTitle">Saved views</h2>' +
-			'<p class="aside">Re-runs live as your library grows. Ask the eye to organize, then save any arrangement here.</p>' +
+			'<p class="aside">Arrange one yourself, with your own headers and order, or ask the eye to organize and save what it gathers.</p>' +
 			'<div class="pickgroups" id="customPickerList"></div>' +
-			'<div class="asked"><button class="btn secondary" value="no">Cancel</button></div>',
+			'<div class="asked"><button class="btn secondary" value="no">Cancel</button>' +
+			'<button class="btn primary" id="newManualView" type="button">New view</button></div>',
 		{ labelledBy: "pickTitle", backdrop: true },
 	);
+	box.querySelector("#newManualView").onclick = () => box.finish({ create: true });
 
 	// Render (or re-render) the row list. Called on open, and again by
 	// renameSavedGrouping / forgetSavedGrouping after they change a row.
@@ -529,31 +539,11 @@ async function refreshIfStale() {
 		}
 		return;
 	}
-	if (pivotState && pivotState.pivot_id) {
-		// A saved view is open: re-run it with the current spec so a
-		// capture elsewhere is reflected, keeping scroll position.
-		const scrollY = window.scrollY;
-		let next;
-		try {
-			next = await api("/pivot/run", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ spec: pivotState.spec }),
-			});
-		} catch (err) {
-			return;
-		}
-		if (pivotState && pivotState.pivot_id) {
-			renderPivot(
-				next,
-				pivotState.request,
-				pivotState.spec,
-				pivotState.pivot_id,
-			);
-			window.scrollTo(0, scrollY);
-		}
-		return;
-	}
+	// A saved view is LOCKED: it never recomputes on its own, so coming back to the
+	// window leaves it exactly as it is (Rebuild is the one way to re-run it). This
+	// used to re-run the whole spec on every focus - model judgments and all - and
+	// then draw the view over whichever page was open by the time it answered.
+	if (pivotState && pivotState.pivot_id) return;
 	if (scope.kind === "artifact" && scope.id) {
 		// Never rebuild an editor under the person's hands. Words not yet stored are
 		// saved first and the page stays as it is; a page is re-read only when the

@@ -179,7 +179,7 @@
     display: grid;
     /* The date spans the top; the raven and the greeting sit side by side under it,
        and the whole lockup is centred - the same composition as the desktop hero. */
-    grid-template-columns: auto auto;
+    grid-template-columns: auto minmax(0, auto);
     justify-content: center;
     align-items: center;
     column-gap: 0;
@@ -253,6 +253,16 @@
   .lib-hero h1 {
     grid-column: 2;
     grid-row: 2;
+  }
+  /* The greeting is a sentence, not a toolbar title: a long one wraps beside the
+     raven instead of taking the reader header's one-line ellipsis. The id outranks
+     that later `header h1` rule. */
+  #lib_greeting {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    text-wrap: balance;
+    min-width: 0;
   }
   #lib_greeting {
     font-family: var(--display);
@@ -329,6 +339,35 @@
   /* One shelf = label + its horizontal row, stacked; shelves stack vertically. */
   .shelf {
     margin-bottom: var(--sp-4);
+  }
+  /* Custom mode: a view's name stands once over its headers. The name carries the
+     shelf-heading size; the headers under it step down, so the two read as a title
+     and its parts rather than a flat list of equals. */
+  .viewtitle {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    padding: 10px 2px 2px;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+  .shelf + .viewtitle {
+    margin-top: var(--sp-5);
+  }
+  .shelf-sub .shelf-label {
+    font-size: 16.5px;
+    letter-spacing: -0.02em;
+    color: var(--text-dim);
+    padding-top: 6px;
+  }
+  .shelf-sub .shelf-label .shelf-chevron {
+    font-size: 20px;
+  }
+  .shelf-sub {
+    margin-bottom: var(--sp-3);
   }
   .shelf-label .shelf-count {
     font-family: var(--sans);
@@ -1928,6 +1967,9 @@
     line-height: 1.22;
     letter-spacing: -0.02em;
     color: var(--text);
+    /* An address used as a title has no spaces to wrap on; break it rather than
+       let it run out of the tile. */
+    overflow-wrap: anywhere;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
@@ -3474,10 +3516,18 @@
       for (const v of libraryPivots) {
         const groups =
           v.groups && v.groups.length ? v.groups : [{ key: "", ids: v.ids || [] }];
+        // A view with headers reads as the view's name once, then its headers as
+        // shelves under it. A view that is one unnamed group is just a shelf carrying
+        // the view's name.
+        const titled = groups.some((g) => g.key);
         for (const g of groups) {
           const cards = (g.ids || []).map((id) => byId[id]).filter(Boolean);
           if (!cards.length) continue;
-          out.push({ label: g.key ? v.name + " · " + g.key : v.name, arts: cards });
+          out.push(
+            titled
+              ? { view: v.name, label: g.key || "Unsorted", arts: cards }
+              : { label: v.name, arts: cards },
+          );
         }
       }
       return out;
@@ -3504,9 +3554,10 @@
 
   // `grid` renders the shelf body as a vertical infinite-scroll grid (for a big flat
   // group like "Everything else") instead of the default single horizontal rail.
-  function renderShelf(label, arts, container, grid) {
+  function renderShelf(label, arts, container, grid, view) {
     const shelf = document.createElement("div");
-    shelf.className = "shelf";
+    // Under a view's own title, a shelf is one of its headers: a step quieter.
+    shelf.className = view ? "shelf shelf-sub" : "shelf";
     const lbl = document.createElement("div");
     lbl.className = "shelf-label";
     lbl.appendChild(document.createTextNode(label));
@@ -3520,7 +3571,9 @@
     chev.setAttribute("aria-hidden", "true");
     lbl.appendChild(chev);
     // Tap the header -> open this shelf as its own page.
-    lbl.addEventListener("click", () => openShelfPage(label, arts));
+    lbl.addEventListener("click", () =>
+      openShelfPage(view ? view + " · " + label : label, arts),
+    );
     const ul = document.createElement("ul");
     // The capped grid (everything-grid) scrolls inside itself, 3 rows tall, so the
     // section is a compact window into a big clump rather than an endless page.
@@ -3616,9 +3669,17 @@
     // else" (Last touch) is a big flat clump - render it as a vertical infinite-scroll
     // grid instead of one endless horizontal rail.
     const frag = document.createDocumentFragment();
+    let lastView = null;
     for (const g of groups) {
       const grid = libraryMode === "touched" && g.label === "Everything else";
-      renderShelf(g.label, g.arts, frag, grid);
+      if (g.view && g.view !== lastView) {
+        const title = document.createElement("div");
+        title.className = "viewtitle";
+        title.textContent = g.view;
+        frag.appendChild(title);
+      }
+      lastView = g.view || null;
+      renderShelf(g.label, g.arts, frag, grid, g.view);
     }
     shelves.replaceChildren(frag);
   }

@@ -132,6 +132,9 @@
   }
 
   function renderPivot(d, request, spec, pivot_id) {
+    // A view arranged by hand has its own page (manual.js): everything on it moves.
+    if (spec && spec.manual && pivot_id)
+      return renderManualView(d, request, spec, pivot_id);
     pivotState = { d, request, spec, pivot_id: pivot_id || null };
 
     let html =
@@ -151,7 +154,12 @@
       (pivot_id
         ? ' &middot; <button class="pivot-rebuild linklike" type="button" onclick="pivotRebuild(\'' +
           esc(pivot_id) +
-          "')\">Rebuild</button>"
+          "')\">Rebuild</button>" +
+          // The way out of an arrangement the assistant made: take a copy and
+          // arrange it yourself.
+          ' &middot; <button class="pivot-rebuild linklike" type="button" onclick="createManualView(\'' +
+          esc(pivot_id) +
+          "', pivotState &amp;&amp; pivotState.request ? pivotState.request + ' (by hand)' : '')\">Arrange by hand</button>"
         : "") +
       "</div>";
 
@@ -178,8 +186,9 @@
     try {
       fresh = await api("/pivots/" + pivotId + "/refresh", { method: "POST" });
     } catch (err) {
-      return pivotFailed(err);
+      return onSavedView(pivotId) ? pivotFailed(err) : undefined;
     }
+    if (!onSavedView(pivotId)) return; // a rebuild can take a while; they moved on
     renderPivot(fresh.result, name || fresh.name, fresh.spec, fresh.id);
     if (typeof toast === "function") toast("View rebuilt.");
   }
@@ -266,17 +275,19 @@
   // synced BEFORE the run so the run actually filters them out. The artifact
   // itself is untouched - it still lives on the wall - it just stops matching
   // this grouping.
-  // Remove artifacts from a LOCKED view: edit the frozen materialized result in place
-  // (POST /remove) instead of excluding them from the spec and re-running. No recompute,
-  // no model call, no "Removed" shelf - the view just stops showing them, and a re-open
-  // shows exactly this. `undo` (restore) has no meaning for a locked view; re-adding is
-  // the add-to-view flow. `busy` flashes only for the brief server round trip.
+  // Remove artifacts from a LOCKED view, or (`undo`) put removed ones back: both edit
+  // the frozen materialized result in place (POST /remove, POST /restore). No recompute
+  // and no model call. The server records each removal (the spec's excluded_ids, and
+  // the group the card left), so the Removed shelf lists it, Restore returns it to its
+  // group, and a Rebuild keeps it out. The response carries the updated spec, which is
+  // what the shelf is drawn from. Restore used to return on its first line: the button
+  // was there and did nothing.
   async function excludeAndRerun(pivotId, ids, undo, busy, done) {
-    if (undo) return; // locked views keep no Removed shelf to restore from
+    const name = pivotState && pivotState.request;
     view.innerHTML = busy;
     let next;
     try {
-      next = await api("/pivots/" + pivotId + "/remove", {
+      next = await api("/pivots/" + pivotId + (undo ? "/restore" : "/remove"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifact_ids: ids }),
@@ -284,8 +295,16 @@
     } catch (err) {
       return pivotFailed(err);
     }
-    renderPivot(next.result, pivotState.request, pivotState.spec, pivotId);
+    if (!onSavedView(pivotId)) return; // the person moved on while it was saving
+    renderPivot(next.result, name, next.spec, pivotId);
     done();
+  }
+
+  // Whether this saved view is the page on screen right now. Every late re-render of a
+  // view (after a network round trip) checks it, so a view never draws itself over
+  // the page the person has since moved to.
+  function onSavedView(pivotId) {
+    return location.hash.replace(/^#/, "") === "g/" + pivotId;
   }
 
   async function pivotRemove(id) {
