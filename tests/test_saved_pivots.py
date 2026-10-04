@@ -291,3 +291,156 @@ def test_locked_edit_on_unmaterialized_view_returns_none(store):
     pid = pivots_saved.save("Never opened", _SPEC)
     assert pivots_saved.remove_from_result(pid, ["x"]) is None
     assert pivots_saved.add_to_result(pid, "x", "note") is None
+
+
+def _two_groups(pid):
+    pivots_saved.set_result(
+        pid,
+        {
+            "group_by": "fiction vs non-fiction",
+            "truncated": False,
+            "groups": [
+                {"key": "fiction", "artifact_ids": ["a", "b"]},
+                {"key": "non-fiction", "artifact_ids": ["c"]},
+            ],
+        },
+    )
+
+
+def test_a_removed_card_is_recorded_and_restores_to_the_group_it_left(store):
+    """Removing used to live only in the frozen groups: the Removed shelf could not show
+    it, Restore had nothing to undo, and a Rebuild brought the card back."""
+    pid = pivots_saved.save("Books", _SPEC)
+    _two_groups(pid)
+
+    pivots_saved.remove_from_result(pid, ["c"])
+    saved = pivots_saved.get(pid)
+    assert saved["spec"]["excluded_ids"] == ["c"]  # the shelf and a Rebuild see it
+    assert saved["result"]["removed"] == {"c": "non-fiction"}
+    assert [g["key"] for g in saved["result"]["groups"]] == ["fiction"]
+
+    res = pivots_saved.restore_to_result(pid, ["c"])
+    keys = {g["key"]: g["artifact_ids"] for g in res["groups"]}
+    assert keys == {"fiction": ["a", "b"], "non-fiction": ["c"]}
+    saved = pivots_saved.get(pid)
+    assert saved["spec"]["excluded_ids"] == [] and saved["result"]["removed"] == {}
+
+
+def test_an_exclusion_with_no_recorded_group_is_placed_by_the_caller(store):
+    # An exclusion made before removals were recorded: only the spec knows about it.
+    pid = pivots_saved.save("Books", {**_SPEC, "excluded_ids": ["z"]})
+    _two_groups(pid)
+
+    res = pivots_saved.restore_to_result(pid, ["z"], place=lambda aid: "fiction")
+    assert res["groups"][0]["artifact_ids"] == ["a", "b", "z"]
+    assert pivots_saved.get(pid)["spec"]["excluded_ids"] == []
+
+    # With nothing to place it by, it lands in "" (shown as Not determined).
+    pid2 = pivots_saved.save("Books 2", {**_SPEC, "excluded_ids": ["z"]})
+    _two_groups(pid2)
+    res = pivots_saved.restore_to_result(pid2, ["z"])
+    assert {"key": "", "artifact_ids": ["z"]} in res["groups"]
+
+
+def test_a_rebuild_keeps_where_removed_cards_came_from(store):
+    pid = pivots_saved.save("Books", _SPEC)
+    _two_groups(pid)
+    pivots_saved.remove_from_result(pid, ["c"])
+
+    # A Rebuild writes a fresh result (without the excluded card, and without a map).
+    pivots_saved.set_result(
+        pid,
+        {
+            "group_by": "x",
+            "truncated": False,
+            "groups": [{"key": "fiction", "artifact_ids": ["a", "b"]}],
+        },
+    )
+    assert pivots_saved.get(pid)["result"]["removed"] == {"c": "non-fiction"}
+    res = pivots_saved.restore_to_result(pid, ["c"])
+    assert {"key": "non-fiction", "artifact_ids": ["c"]} in res["groups"]
+
+
+def test_adding_a_removed_card_back_ends_its_exclusion(store):
+    pid = pivots_saved.save("Books", _SPEC)
+    _two_groups(pid)
+    pivots_saved.remove_from_result(pid, ["c"])
+
+    pivots_saved.add_to_result(pid, "c", "fiction")
+    saved = pivots_saved.get(pid)
+    assert saved["spec"]["excluded_ids"] == [] and saved["result"]["removed"] == {}
+
+
+def test_restore_on_an_unmaterialized_view_returns_none(store):
+    pid = pivots_saved.save("Never opened", _SPEC)
+    assert pivots_saved.restore_to_result(pid, ["x"]) is None
+
+
+class TestManualViews:
+    """A view arranged by hand: the person's headers and order, no recipe, no model."""
+
+    def test_a_layout_keeps_headers_and_order_as_given(self, store):
+        pid = pivots_saved.save_manual("Reading")
+        saved = pivots_saved.get(pid)
+        assert pivots_saved.is_manual(saved["spec"]) and saved["result"]["groups"] == []
+
+        pivots_saved.set_layout(
+            pid,
+            [
+                {"key": "  To read ", "artifact_ids": ["c", "a"]},
+                {"key": "Empty shelf", "artifact_ids": []},
+                {"key": "Done", "artifact_ids": ["b"]},
+            ],
+        )
+        groups = pivots_saved.get(pid)["result"]["groups"]
+        assert [(g["key"], g["artifact_ids"]) for g in groups] == [
+            ("To read", ["c", "a"]),  # trimmed, and c stays before a
+            ("Empty shelf", []),  # a header not filled yet is still a header
+            ("Done", ["b"]),
+        ]
+
+    def test_an_artifact_sits_under_one_header_only(self, store):
+        pid = pivots_saved.save_manual("Reading")
+        result = pivots_saved.set_layout(
+            pid,
+            [
+                {"key": "A", "artifact_ids": ["x", "y", "x"]},
+                {"key": "B", "artifact_ids": ["y", "z"]},
+            ],
+        )
+        assert [g["artifact_ids"] for g in result["groups"]] == [["x", "y"], ["z"]]
+
+    def test_two_headers_cannot_share_a_name(self, store):
+        pid = pivots_saved.save_manual("Reading")
+        with pytest.raises(ValueError, match="both called"):
+            pivots_saved.set_layout(
+                pid, [{"key": "Later", "artifact_ids": []}, {"key": "later ", "artifact_ids": []}]
+            )
+
+    def test_a_recipe_view_has_no_layout_to_set(self, store):
+        pid = pivots_saved.save("By the assistant", _SPEC)
+        with pytest.raises(ValueError, match="arranged by hand"):
+            pivots_saved.set_layout(pid, [])
+        with pytest.raises(KeyError):
+            pivots_saved.set_layout("ghost", [])
+
+    def test_it_can_start_from_another_views_groups(self, store):
+        pid = pivots_saved.save_manual(
+            "Books (by hand)", [{"key": "fiction", "artifact_ids": ["a", "b"]}]
+        )
+        assert pivots_saved.get(pid)["result"]["groups"] == [
+            {"key": "fiction", "artifact_ids": ["a", "b"]}
+        ]
+
+    def test_removing_the_last_card_keeps_the_header(self, store):
+        pid = pivots_saved.save_manual("Reading", [{"key": "To read", "artifact_ids": ["a"]}])
+        result = pivots_saved.remove_from_result(pid, ["a"])
+        assert [(g["key"], g["artifact_ids"]) for g in result["groups"]] == [("To read", [])]
+
+    def test_membership_and_the_listing_know_a_hand_arranged_view(self, store):
+        pid = pivots_saved.save_manual("Reading", [{"key": "To read", "artifact_ids": ["a"]}])
+        pivots_saved.save("By the assistant", _SPEC)
+        assert pivots_saved.manual_membership("a") == [{"id": pid, "name": "Reading"}]
+        assert pivots_saved.manual_membership("zzz") == []
+        kinds = {v["name"]: v["manual"] for v in pivots_saved.listing()}
+        assert kinds == {"Reading": True, "By the assistant": False}

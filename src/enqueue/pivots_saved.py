@@ -60,6 +60,102 @@ def save(name: str, spec: dict) -> str:
     return pivot_id
 
 
+# ---- views arranged by hand ---------------------------------------------------------
+# A manual view is the same saved view (one concept, one table), with no recipe: its
+# spec is just `{"manual": true}` and its frozen result IS the arrangement - headers in
+# the person's order, each with its artifacts in the person's order. Nothing ever
+# recomputes it and no model is involved; the page sends the whole layout back after
+# every change (`set_layout`), which keeps one write path for add, reorder, rename,
+# move and delete.
+
+MANUAL_SPEC = {"manual": True, "subset": {"kind": "ids", "value": ""}, "steps": []}
+MAX_HEADER = 120
+
+
+def is_manual(spec: dict | None) -> bool:
+    return bool(spec and spec.get("manual"))
+
+
+def _clean_layout(groups: list[dict]) -> list[dict]:
+    """A layout as stored: header names trimmed and unique, each artifact under one
+    header only (its first), order kept. An empty header is kept - it is a header the
+    person made and has not filled yet."""
+    out: list[dict] = []
+    names: set[str] = set()
+    placed: set[str] = set()
+    for group in groups or []:
+        key = " ".join(str(group.get("key") or "").split())[:MAX_HEADER]
+        if key.casefold() in names:
+            raise ValueError(f'two headers are both called "{key or "Unsorted"}"')
+        names.add(key.casefold())
+        ids = []
+        for aid in group.get("artifact_ids") or []:
+            if isinstance(aid, str) and aid and aid not in placed:
+                placed.add(aid)
+                ids.append(aid)
+        out.append({"key": key, "artifact_ids": ids})
+    return out
+
+
+def save_manual(name: str, groups: list[dict] | None = None) -> str:
+    """Create a view arranged by hand, optionally starting from an arrangement (the
+    groups of another view, to take it over by hand). Returns the new id."""
+    name = name.strip()
+    if not name:
+        raise ValueError("a saved view needs a name")
+    pivot_id = str(uuid.uuid4())
+    result = {
+        "manual": True,
+        "truncated": False,
+        "group_by": "",
+        "groups": _clean_layout(groups or []),
+    }
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO saved_pivots (id, name, spec_json, created_at, result_json, result_at)"
+            " VALUES (?,?,?,?,?,?)",
+            (pivot_id, name[:120], json.dumps(MANUAL_SPEC), db.now(), json.dumps(result), db.now()),
+        )
+    _resync_pivots()
+    return pivot_id
+
+
+def set_layout(pivot_id: str, groups: list[dict]) -> dict:
+    """Replace a manual view's whole arrangement. KeyError for an unknown view,
+    ValueError for a view that is not arranged by hand or a layout with two headers
+    of the same name."""
+    layout = _clean_layout(groups)
+    with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT spec_json FROM saved_pivots WHERE id = ?", (pivot_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(pivot_id)
+        try:
+            spec = json.loads(row["spec_json"])
+        except (TypeError, ValueError):
+            spec = {}
+        if not is_manual(spec):
+            raise ValueError("only a view arranged by hand has a layout to set")
+        result = {"manual": True, "truncated": False, "group_by": "", "groups": layout}
+        conn.execute(
+            "UPDATE saved_pivots SET result_json = ?, result_at = ? WHERE id = ?",
+            (json.dumps(result), db.now(), pivot_id),
+        )
+    _resync_pivots()
+    return result
+
+
+def manual_membership(artifact_id: str) -> list[dict]:
+    """The hand-arranged views holding this artifact, as `{id, name}` (for the
+    artifact page's Views row; recipe views answer that from their spec)."""
+    return [
+        {"id": saved["id"], "name": saved["name"]}
+        for saved in all_specs()
+        if artifact_id in saved.get("manual_ids", ())
+    ]
+
+
 def listing() -> list[dict]:
     """Every saved view, newest first, without the spec.
 
@@ -69,9 +165,11 @@ def listing() -> list[dict]:
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, created_at FROM saved_pivots ORDER BY created_at DESC"
+            "SELECT id, name, created_at,"
+            " COALESCE(json_extract(spec_json, '$.manual'), 0) AS manual"
+            " FROM saved_pivots ORDER BY created_at DESC"
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "manual": bool(row["manual"])} for row in rows]
     finally:
         conn.close()
 
@@ -119,8 +217,21 @@ def set_result(pivot_id: str, result: dict) -> None:
 
     Idempotent overwrite. A missing view is a no-op: the view may have been deleted
     between a run and this write, and a lost cache is never worth an error.
+
+    The `removed` map (which group each removed card came from) is carried over from
+    the previous result, so a Rebuild does not forget where a card goes back to.
     """
     with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT result_json FROM saved_pivots WHERE id = ?", (pivot_id,)
+        ).fetchone()
+        if row is not None and row["result_json"] and "removed" not in result:
+            try:
+                kept = json.loads(row["result_json"]).get("removed")
+            except (TypeError, ValueError):
+                kept = None
+            if kept:
+                result = {**result, "removed": kept}
         conn.execute(
             "UPDATE saved_pivots SET result_json = ?, result_at = ? WHERE id = ?",
             (json.dumps(result), db.now(), pivot_id),
@@ -140,15 +251,19 @@ def remove_from_result(pivot_id: str, artifact_ids: list[str]) -> dict | None:
 
     A saved view is locked: its groups are the frozen `result_json`, not a live re-run,
     so removing a card edits that stored structure directly (no recompute, no model
-    call) instead of adding to `excluded_ids` and re-running the spec. Empty groups are
-    pruned. Returns the updated structure, or None when the view has no cache yet (it
-    must be opened once to materialize before it can be edited). `result_at` is left as
-    it was - an edit is not a recompute.
+    call). The removal is also written down, in two places: the spec's `excluded_ids`
+    (so a Rebuild keeps the card out, and the view's Removed shelf lists it) and the
+    result's `removed` map of id -> the group it left (so `restore_to_result` can put
+    it back where it was). Before this a removal lived only in the frozen groups: the
+    shelf could not show it, Restore had nothing to undo, and a Rebuild brought every
+    removed card back. Empty groups are pruned. Returns the updated structure, or None
+    when the view has no cache yet (it must be opened once to materialize before it
+    can be edited). `result_at` is left as it was - an edit is not a recompute.
     """
     drop = set(artifact_ids)
     with db.transaction() as conn:
         row = conn.execute(
-            "SELECT result_json FROM saved_pivots WHERE id = ?", (pivot_id,)
+            "SELECT result_json, spec_json FROM saved_pivots WHERE id = ?", (pivot_id,)
         ).fetchone()
         if row is None:
             raise KeyError(pivot_id)
@@ -159,15 +274,83 @@ def remove_from_result(pivot_id: str, artifact_ids: list[str]) -> dict | None:
         except (TypeError, ValueError):
             return None
         groups = []
+        removed = dict(result.get("removed") or {})
+        # A header in a hand-arranged view is the person's, filled or not: emptying it
+        # does not delete it.
+        keep_empty = bool(result.get("manual"))
         for group in result.get("groups", []):
-            kept = [aid for aid in group.get("artifact_ids", []) if aid not in drop]
-            if kept:
+            kept = []
+            for aid in group.get("artifact_ids", []):
+                if aid in drop:
+                    removed[aid] = group.get("key") or ""
+                else:
+                    kept.append(aid)
+            if kept or keep_empty:
                 group["artifact_ids"] = kept
                 groups.append(group)
         result["groups"] = groups
+        result["removed"] = removed
+        try:
+            spec = json.loads(row["spec_json"])
+        except (TypeError, ValueError):
+            spec = {}
+        excluded = list(spec.get("excluded_ids") or [])
+        excluded.extend(aid for aid in artifact_ids if aid in removed and aid not in excluded)
+        spec["excluded_ids"] = excluded
         conn.execute(
-            "UPDATE saved_pivots SET result_json = ? WHERE id = ?",
-            (json.dumps(result), pivot_id),
+            "UPDATE saved_pivots SET result_json = ?, spec_json = ? WHERE id = ?",
+            (json.dumps(result), json.dumps(spec), pivot_id),
+        )
+    _resync_pivots()
+    return result
+
+
+def restore_to_result(pivot_id: str, artifact_ids: list[str], place=None) -> dict | None:
+    """Put removed artifacts back into a locked view, each in the group it left.
+
+    The reverse of `remove_from_result`, also without a recompute: the id leaves the
+    spec's `excluded_ids`, and joins the group recorded for it in the result's
+    `removed` map. An exclusion older than that map (or one whose group a Rebuild
+    dissolved) has no recorded group; `place(artifact_id)` supplies one - the caller
+    passes a cache-only placement, so nothing here ever calls a model - and "" (shown
+    as "Not determined") is the fallback. Returns the updated structure, or None when
+    the view has no cache yet.
+    """
+    with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT result_json, spec_json FROM saved_pivots WHERE id = ?", (pivot_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(pivot_id)
+        if not row["result_json"]:
+            return None
+        try:
+            result = json.loads(row["result_json"])
+            spec = json.loads(row["spec_json"])
+        except (TypeError, ValueError):
+            return None
+        groups = result.get("groups", [])
+        removed = dict(result.get("removed") or {})
+        present = {aid for g in groups for aid in (g.get("artifact_ids") or [])}
+        for aid in artifact_ids:
+            key = removed.pop(aid, None)
+            if aid in present:
+                continue
+            if key is None:
+                key = (place(aid) if place else "") or ""
+            target = next((g for g in groups if (g.get("key") or "") == key), None)
+            if target is None:
+                target = {"key": key, "artifact_ids": []}
+                groups.append(target)
+            target.setdefault("artifact_ids", []).append(aid)
+            present.add(aid)
+        back = set(artifact_ids)
+        spec["excluded_ids"] = [a for a in (spec.get("excluded_ids") or []) if a not in back]
+        result["groups"] = groups
+        result["removed"] = removed
+        conn.execute(
+            "UPDATE saved_pivots SET result_json = ?, spec_json = ? WHERE id = ?",
+            (json.dumps(result), json.dumps(spec), pivot_id),
         )
     _resync_pivots()
     return result
@@ -184,7 +367,7 @@ def add_to_result(pivot_id: str, artifact_id: str, group_key: str) -> dict | Non
     """
     with db.transaction() as conn:
         row = conn.execute(
-            "SELECT result_json FROM saved_pivots WHERE id = ?", (pivot_id,)
+            "SELECT result_json, spec_json FROM saved_pivots WHERE id = ?", (pivot_id,)
         ).fetchone()
         if row is None:
             raise KeyError(pivot_id)
@@ -197,6 +380,20 @@ def add_to_result(pivot_id: str, artifact_id: str, group_key: str) -> dict | Non
         groups = result.get("groups", [])
         if any(artifact_id in (g.get("artifact_ids") or []) for g in groups):
             return result  # already in the view
+        # Adding back something that was removed ends its exclusion, or the next
+        # Rebuild would drop it again.
+        try:
+            spec = json.loads(row["spec_json"])
+        except (TypeError, ValueError):
+            spec = None
+        if spec is not None and artifact_id in (spec.get("excluded_ids") or []):
+            spec["excluded_ids"] = [a for a in spec["excluded_ids"] if a != artifact_id]
+            conn.execute(
+                "UPDATE saved_pivots SET spec_json = ? WHERE id = ?",
+                (json.dumps(spec), pivot_id),
+            )
+        if artifact_id in (result.get("removed") or {}):
+            result["removed"].pop(artifact_id)
         target = next((g for g in groups if (g.get("key") or "") == (group_key or "")), None)
         if target is None:
             target = {"key": group_key or "", "artifact_ids": []}
@@ -222,7 +419,12 @@ def all_specs() -> list[dict]:
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, spec_json, created_at FROM saved_pivots" " ORDER BY created_at DESC"
+            "SELECT id, name, spec_json, created_at,"
+            # Only a hand-arranged view's arrangement is read here: it IS that view's
+            # membership, and reading it in the same query keeps this at one.
+            " CASE WHEN json_extract(spec_json, '$.manual') = 1 THEN result_json END"
+            "   AS layout_json"
+            " FROM saved_pivots ORDER BY created_at DESC"
         ).fetchall()
     finally:
         conn.close()
@@ -230,10 +432,17 @@ def all_specs() -> list[dict]:
     for row in rows:
         data = dict(row)
         raw = data.pop("spec_json")
+        layout = data.pop("layout_json")
         try:
             data["spec"] = json.loads(raw)
         except (TypeError, ValueError):
             continue
+        if is_manual(data["spec"]):
+            try:
+                groups = json.loads(layout).get("groups") or [] if layout else []
+            except (TypeError, ValueError):
+                groups = []
+            data["manual_ids"] = {aid for g in groups for aid in g.get("artifact_ids") or []}
         out.append(data)
     return out
 

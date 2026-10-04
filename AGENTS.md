@@ -309,7 +309,7 @@ One line per file, describing its job.
 | `bin/setup` | Make a fresh machine buildable: install/update Rust to a stable >= MSRV 1.88 (`rustup update stable --no-self-update`), install `uv` + pin Python 3.12, check Node. `--android` also checks SDK/NDK/JDK, installs tauri-cli, adds the aarch64-linux-android target. Idempotent, no sudo. Run it when `bin/launch` fails on toolchain (e.g. `rustc <ver> is not supported`). |
 | `bin/verify` | `--fast`: black, ruff, JS parse on the HTML pages and contrast (seconds; the pre-commit hook). Full: adds pytest (`-n auto`), desktop Rust unit tests (`cargo test --lib` on the host target when any `desktop/**/*.rs` changed - the Android check builds for the android target and cannot run tests), and an Android build check (auto-detects the NDK; runs a full `cargo tauri android build` when Rust/Kotlin/`gen/android` changed, else `cargo check --lib`). `--desktop-tests` and `--android` run just that one check, unconditionally, and fail rather than skip without a toolchain (what CI calls). `.githooks/pre-commit` runs `--fast` on every code commit; CI runs everything else. |
 | `bin/check-contrast` | WCAG contrast check on the palette tokens in `static/css/tokens.css`, including the night ground. |
-| `bin/screenshots` | Regenerate the README screenshots from a demo library: a second engine on its own port and a throwaway data folder (never the real library, Keychain key or relay), seeded, then shot with headless Chromium. |
+| `bin/screenshots` | Regenerate the README screenshots from a demo library: a second engine on its own port and a throwaway data folder (never the real library, Keychain key or relay), seeded, then shot with headless Chromium. Before writing anything it checks that the engine answering reports the scratch folder as its `data_dir` and refuses otherwise: on 2026-10-01 its engine failed to bind (the port was held by a preview proxy to the real engine), it carried on, and 15 demo items landed in the real library. Any script that seeds an engine must prove which engine it is talking to first. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
@@ -323,7 +323,7 @@ One line per file, describing its job.
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
 | `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`. |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | IBM Plex Sans woff2/ttf, served locally. No CDN. |
 
@@ -670,6 +670,12 @@ DELETE /pivots/{id}                   forget a saved view
 POST   /pivots/{id}/exclude           remove an artifact from a view
 POST   /pivots/{id}/exclude-many      remove (or, with undo, restore) several artifacts in one request (P.3b)
 POST   /pivots/{id}/include           add an artifact to a view
+POST   /pivots/manual                 create a view arranged by hand (optionally from another view's groups)
+PUT    /pivots/{id}/layout            replace a hand-arranged view's headers and order
+POST   /pivots/{id}/remove            remove artifacts from a locked view (recorded; no recompute)
+POST   /pivots/{id}/restore           put removed artifacts back in the groups they left
+POST   /pivots/{id}/refresh           Rebuild: re-run the spec and re-freeze the result
+GET    /pivots/{id}/open              the frozen view, cards hydrated fresh
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
 POST   /facets                       generate facets
@@ -1116,6 +1122,21 @@ Ingest skips a trashed, vaulted or embedded artifact instead of chunking it back
 `enq index` rebuilds every layer from the tables.
 `enq doctor` compares the chunk index with `indexable_chunk_count` (chunks of live artifacts), not every chunk.
 A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
+
+### A view can be arranged by hand (no recipe, no model)
+
+One view concept, two ways to make it. A manual view is a `saved_pivots` row whose spec is `{"manual": true, ...}` and whose frozen `result_json` IS the arrangement: headers in the person's order, each with its artifact ids in the person's order (`pivots_saved.save_manual` / `set_layout` / `is_manual`). An empty header is kept; an artifact sits under one header only; two headers cannot share a name (case-insensitive).
+`POST /pivots/manual {name, from_id?}` creates one (`from_id` copies another view's groups - "Arrange by hand" on an assistant view); `PUT /pivots/{id}/layout {groups}` replaces the WHOLE layout and is the only write the page makes, so add, drag, rename, move and delete share one path. `/open` never runs a recipe for it and `/refresh` is a 409. `GET /pivots` rows carry `manual`; `all_specs` carries `manual_ids` (membership for the artifact drawer, in the same single query).
+The page is `static/js/manual.js` (`renderPivot` hands over when `spec.manual`). It renders first and saves behind (`manualSave`, serialized; a failed save reloads the view), and reads the layout back from the DOM (`manualReadDom`), so a drag and the state cannot disagree. Dragging is pointer events, NOT HTML5 drag and drop (the desktop WebView handles that inconsistently and owns file drops): the real node moves as the pointer does, a clone rides the pointer, neighbours slide with a small FLIP, and a header drag folds every shelf to its header. Keyboard: arrow keys on a grip, Alt+Left/Right on a tile, and the move button's header chooser.
+`push_pivots` keeps a manual view's order (recipe views sort their ids), so the phone's Custom mode shows the same shelves in the same order. The phone does not arrange (desk work).
+
+### A saved view is locked; removing and restoring edit it in place
+
+Opening a saved view serves its frozen `result_json`; it never recomputes on its own (not on open, not on window focus). `Rebuild` (`POST /pivots/{id}/refresh`) is the one deliberate re-run, and the only path that pays for model judgments.
+Removing a card (`POST /pivots/{id}/remove`) edits the frozen groups AND records the removal twice: in the spec's `excluded_ids` (the Removed shelf draws from it, and a Rebuild honours it) and in the result's `removed` map of id -> the group it left. Restoring (`POST /pivots/{id}/restore`) puts the card back in that group and ends the exclusion; `set_result` carries the map across a Rebuild.
+A card with no recorded group (an old exclusion, or an add) is placed by `pivot.place_from_cache`, which walks the spec's steps reading only the row and the derive cache - never a model - and falls back to "" ("Not determined").
+`pivot.run` folds group keys that differ only in case or spacing ("Non-fiction" / "non-fiction") into one group, shown in the commonest spelling.
+On the page, `pivotState` is cleared in `teardown()` and every late re-render checks `onSavedView(id)`: a view left set used to redraw itself over whichever page was open when the window regained focus.
 
 ### A note must round-trip through md() and htmlToMd() unchanged
 

@@ -355,3 +355,80 @@ class TestPivotAddable:
         assert "note" in by_key
         assert by_key["note"]["artifact_ids"]
         assert all(group["grounded"] for group in groups)
+
+
+def test_a_hand_arranged_view_end_to_end(store, quiet_queue):
+    """Create, lay out, open, add: all without a recipe run or a model."""
+    from fastapi.testclient import TestClient
+
+    from enqueue import notes, pivot
+    from enqueue.api.app import create_app
+
+    a = notes.create(body="# First\n\nwords")["artifact"]["id"]
+    b = notes.create(body="# Second\n\nwords")["artifact"]["id"]
+    c = notes.create(body="# Third\n\nwords")["artifact"]["id"]
+    client = TestClient(create_app())
+
+    pid = client.post("/pivots/manual", json={"name": "Mine"}).json()["id"]
+    laid = client.put(
+        f"/pivots/{pid}/layout",
+        json={
+            "groups": [
+                {"key": "Later", "artifact_ids": [b, a]},
+                {"key": "Empty", "artifact_ids": []},
+            ]
+        },
+    )
+    assert laid.status_code == 200
+
+    def no_run(spec):
+        raise AssertionError("a hand-arranged view must never run a recipe")
+
+    pivot_run, pivot.run = pivot.run, no_run
+    try:
+        opened = client.get(f"/pivots/{pid}/open").json()
+        assert client.post(f"/pivots/{pid}/refresh").status_code == 409
+    finally:
+        pivot.run = pivot_run
+    assert opened["spec"]["manual"] is True
+    groups = opened["result"]["groups"]
+    assert [g["key"] for g in groups] == ["Later", "Empty"]
+    assert [i["id"] for i in groups[0]["items"]] == [b, a]  # the person's order
+
+    # Adding from an artifact's drawer lands under the first header, or a named one.
+    added = client.post(f"/pivots/{pid}/add", json={"artifact_id": c, "group": "Empty"}).json()
+    assert added["result"]["groups"][1]["artifact_ids"] == [c]
+    # The picker offers only what the view does not already hold.
+    offered = client.post("/pivot/addable", json={"spec": {"manual": True}, "pivot_id": pid}).json()
+    assert offered["items"] == []
+    assert [v["name"] for v in client.get(f"/artifacts/{a}").json()["views"]] == ["Mine"]
+
+    dup = client.put(
+        f"/pivots/{pid}/layout",
+        json={"groups": [{"key": "X", "artifact_ids": []}, {"key": "x", "artifact_ids": []}]},
+    )
+    assert dup.status_code == 400
+
+
+def test_an_assistant_view_can_be_taken_over_by_hand(store, quiet_queue):
+    from fastapi.testclient import TestClient
+
+    from enqueue import pivots_saved
+    from enqueue.api.app import create_app
+
+    src = pivots_saved.save(
+        "Books", {"subset": {"kind": "everything"}, "steps": [], "group_by": {"attribute": "kind"}}
+    )
+    pivots_saved.set_result(
+        src,
+        {"groups": [{"key": "fiction", "artifact_ids": ["a"]}, {"key": "", "artifact_ids": ["b"]}]},
+    )
+    client = TestClient(create_app())
+    pid = client.post("/pivots/manual", json={"name": "Books (by hand)", "from_id": src}).json()[
+        "id"
+    ]
+    groups = pivots_saved.get(pid)["result"]["groups"]
+    assert [(g["key"], g["artifact_ids"]) for g in groups] == [
+        ("fiction", ["a"]),
+        ("Not determined", ["b"]),
+    ]

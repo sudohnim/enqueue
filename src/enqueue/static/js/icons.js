@@ -1,6 +1,8 @@
 const ICONS = {
 	plus: '<path d="M12 5v14M5 12h14"/>',
 	check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+	// Six dots: the handle a header is dragged by.
+	grip: '<circle cx="9" cy="6" r="1.1"/><circle cx="15" cy="6" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="18" r="1.1"/><circle cx="15" cy="18" r="1.1"/>',
 	find: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
 	// The eye, not a question mark. Asking here is not a support request; it is looking
 	// at what you already own and seeing what is in it.

@@ -22,6 +22,9 @@ function teardown() {
 	// The greeting eye's timer and pointer listener live only while the home view
 	// is up; leaving any surface clears them.
 	tearDownEye();
+	// A saved view belongs to its own page. Left set, it made the view redraw itself
+	// over whatever page was open the next time the window regained focus.
+	pivotState = null;
 
 	// A poller watching this chat's pending turns dies with the surface: a stale
 	// timer must never re-render a view the person has left.
@@ -645,11 +648,15 @@ async function showSavedGroupings() {
 	restorePill("inside");
 	setRoute("g");
 	const list = await api("/pivots").catch(() => ({ items: [] }));
-	let html = '<div class="shelf">Saved views</div>';
+	let html =
+		'<div class="shelf">Saved views</div>' +
+		'<div class="actions"><button class="btn secondary" type="button" onclick="createManualView()">' +
+		svg("plus") +
+		"New view</button></div>";
 	if (!list.items.length) {
 		html +=
-			'<div class="aside">Nothing saved yet. Ask the eye to organize your ' +
-			"notes, then save the view you want to keep.</div>";
+			'<div class="aside">No views yet. Make one of your own, or ask the eye to ' +
+			"organize your notes and save what it gathers.</div>";
 	} else {
 		html +=
 			'<div class="wall">' +
@@ -702,8 +709,9 @@ async function runSavedGrouping(id, name) {
 	try {
 		opened = await api("/pivots/" + id + "/open");
 	} catch (err) {
-		return pivotFailed(err);
+		return onSavedView(id) ? pivotFailed(err) : undefined;
 	}
+	if (!onSavedView(id)) return; // they left while it was loading
 	// A saved view is LOCKED: once materialized it never auto-recomputes, so CRUD on the
 	// library (new captures, edits, deletes) never disturbs it and opening is always
 	// instant. New artifacts are pulled in only by an explicit Rebuild (the button in

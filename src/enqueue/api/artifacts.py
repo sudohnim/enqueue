@@ -350,7 +350,11 @@ def get_artifact(artifact_id: str) -> dict:
         # Mirror pivot.run's membership: an explicit exclusion beats an
         # inclusion, so a chip the user just X'd out of (which excludes the id)
         # must disappear on re-render.
-        if artifact_id in included and artifact_id not in excluded:
+        # A view arranged by hand has no recipe to read membership from; it is in the
+        # view when it is in the arrangement (`manual_ids`, read in the same query).
+        if artifact_id in saved.get("manual_ids", ()) or (
+            artifact_id in included and artifact_id not in excluded
+        ):
             views.append({"id": saved["id"], "name": saved["name"]})
     detail["views"] = sorted(views, key=lambda v: v["name"])
 
