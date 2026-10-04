@@ -646,8 +646,13 @@ mod mobile {
     /// link preview image, returning `{mime, base64}` for the reader and thumbnails
     /// (MOB.5). Accepts either an artifact id (UUID) or a content hash (64 hex chars).
     /// Optional `mime` parameter can be provided when fetching by content hash.
+    ///
+    /// `async` so it runs off the UI thread: a plain command runs on the main thread,
+    /// and this one reads, decrypts and base64-encodes a file - and downloads it from
+    /// the relay first when the phone does not have it yet. A wall of tiles asking for
+    /// pictures froze the app for as long as those took.
     #[tauri::command]
-    fn mobile_blob(app: AppHandle, id: String, mime: Option<String>) -> Result<String, String> {
+    async fn mobile_blob(app: AppHandle, id: String, mime: Option<String>) -> Result<String, String> {
         use base64::Engine as _;
         
         // Check if id is a content hash (64 hex chars) or an artifact id (UUID)
@@ -2639,7 +2644,7 @@ mod mobile {
     }
 
     #[tauri::command]
-    fn mobile_vault_blob(app: AppHandle, id: String) -> Result<String, String> {
+    async fn mobile_vault_blob(app: AppHandle, id: String) -> Result<String, String> {
         let key = vault_key_get().ok_or("vault is locked")?;
         let conn = open_lib(&app)?;
         let (ch, mime) = conn

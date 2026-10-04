@@ -684,19 +684,25 @@ async function renderSettingsFeatures() {
 async function renderSettingsStorage() {
 	const d = await api("/settings");
 	let html = '<div class="h2">Storage</div>';
+	// The privacy line must stay true: with a backup folder chosen, a copy does leave.
+	const backupOn = !!String((d.settings.backup_dir || {}).value || "").trim();
 
 	const s0 = d.storage;
 	html +=
 		// Q.6: the second sentence reveals portability - the data is the
 		// user's, in a standard format, at a known path (SQLite is the source
 		// of truth per db.py / config.DB_PATH).
-		'<div class="callout note"><p>Nothing you save here leaves this machine. ' +
+		'<div class="callout note"><p>' +
+		(backupOn
+			? "Your library lives on this machine, and a copy goes to the backup folder you chose. "
+			: "Nothing you save here leaves this machine. ") +
 		"Everything you capture lives in one SQLite file you can back up, move, or read with any tool.</p></div>" +
 		'<div class="group"><div class="field">' +
 		'<span class="rowlabel">Everything lives at</span>' +
 		'<div class="mono chip">' +
 		esc(s0.data_dir) +
 		"</div></div></div>";
+	html += await renderBackupSection();
 	html +=
 		'<div class="shelf">Usage</div><div class="group">' +
 		'<div class="field"><div class="facts">' +
@@ -718,6 +724,119 @@ async function renderSettingsStorage() {
 		'onclick="rebuildIndex(this)">Rebuild the index</button></div></div></div>';
 
 	return html;
+}
+
+// ---- Backup (Storage tab) -------------------------------------------------
+// Backups go into a cloud drive's folder - Proton Drive, so the copy is encrypted end
+// to end off this Mac. The live library never moves there (backup.py says why); this
+// only chooses the folder, shows the last backup, and starts one on demand.
+async function renderBackupSection() {
+	let b;
+	try {
+		b = await api("/backup");
+	} catch (err) {
+		return "";
+	}
+	const proton = (b.detected || [])[0];
+	let html = '<div class="shelf">Backup</div><div class="group">';
+	if (!b.dir) {
+		html +=
+			'<div class="field"><span class="rowlabel">Keep a copy in your cloud drive</span>' +
+			'<div class="aside">Once a day and when you quit, a copy of your library goes ' +
+			"into the folder you choose. In Proton Drive it is encrypted end to end. Your " +
+			"library itself stays on this Mac.</div>" +
+			(proton
+				? '<div class="actions"><button class="btn secondary" onclick="useBackupDir(' +
+					esc(JSON.stringify(proton)) +
+					')">Use Proton Drive</button></div>'
+				: "") +
+			"</div>" +
+			'<div class="field"><label for="backup_dir_input">Or another folder</label>' +
+			'<input id="backup_dir_input" placeholder="~/Library/CloudStorage/..." ' +
+			'onkeydown="if(event.key===\'Enter\')useBackupDir(this.value)">' +
+			'<div class="actions"><button class="btn tertiary" ' +
+			"onclick=\"useBackupDir(document.getElementById('backup_dir_input').value)\">" +
+			"Back up there</button></div></div>";
+		return html + "</div>";
+	}
+	const last = b.last && b.last.folder === b.folder ? b.last : null;
+	html +=
+		'<div class="field"><span class="rowlabel">Backing up to</span>' +
+		'<div class="mono chip">' +
+		esc(b.folder) +
+		"</div>" +
+		'<div class="aside" id="backupStatus">' +
+		(b.running
+			? "Backing up now..."
+			: last
+				? "Last backup " +
+					esc(since(last.at)) +
+					", " +
+					esc(bytes(last.bytes)) +
+					". Daily, and when you quit."
+				: "No backup yet.") +
+		"</div>" +
+		'<div class="actions">' +
+		'<button class="btn secondary" id="backupNowBtn" onclick="backupNow(this)"' +
+		(b.running ? " disabled" : "") +
+		">Back up now</button>" +
+		'<button class="btn tertiary" onclick="useBackupDir(\'\')">Turn off</button>' +
+		"</div></div>" +
+		'<div class="field"><span class="rowlabel">Restoring</span>' +
+		'<div class="aside">Quit Enqueue, then run <span class="mono">enq restore ' +
+		esc(b.dir) +
+		"</span>. Your current library is set aside, never deleted.</div></div>";
+	return html + "</div>";
+}
+
+async function useBackupDir(path) {
+	try {
+		await api("/settings", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ changes: { backup_dir: (path || "").trim() } }),
+		});
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	await renderSettingsTab("storage");
+	if (path) watchBackup();
+}
+
+async function backupNow(button) {
+	if (button) {
+		button.disabled = true;
+		button.textContent = "Backing up...";
+	}
+	try {
+		await api("/backup", { method: "POST" });
+	} catch (err) {
+		if (button) {
+			button.disabled = false;
+			button.textContent = "Back up now";
+		}
+		return toast(String(err.message || err), true);
+	}
+	watchBackup();
+}
+
+// Follow a running backup until it lands, then redraw the tab with its result.
+function watchBackup() {
+	let tries = 0;
+	const tick = async () => {
+		tries += 1;
+		let b;
+		try {
+			b = await api("/backup");
+		} catch (err) {
+			return;
+		}
+		if (currentSettingsTab !== "storage") return;
+		if (b.running && tries < 300) return setTimeout(tick, 1000);
+		await renderSettingsTab("storage");
+		if (b.last && !b.running) toast("Backed up.");
+	};
+	setTimeout(tick, 800);
 }
 
 // ---- Trash sub-page ------------------------------------------------------

@@ -283,6 +283,14 @@
      cards you swipe through, so a section never grows the page vertically. The
      row bleeds to the screen edges (negative margin + matching padding) so cards
      can scroll under the edge instead of stopping at the content gutter. */
+  /* The marker at the end of a rail or grid that brings the next batch of cards in
+     as it nears view. It needs a real box to be observed, and nothing to look at. */
+  .grid-sentinel {
+    flex: 0 0 1px;
+    min-height: 1px;
+    align-self: stretch;
+    list-style: none;
+  }
   .rows {
     list-style: none;
     margin: 0 calc(-1 * var(--sp-4));
@@ -2982,13 +2990,14 @@
   // session; caching the Promise also dedupes concurrent requests. A failed fetch is
   // evicted so a later render can retry.
   const _blobCache = new Map();
-  function fetchBlob(id, vaulted) {
+  function fetchBlob(id, vaulted, mime) {
     // A vaulted artifact's bytes are encrypted; fetch them through the vault
     // command (which decrypts while unlocked) instead of the normal blob path.
     const cacheKey = (vaulted ? "v:" : "") + id;
     let p = _blobCache.get(cacheKey);
     if (!p) {
-      p = invoke(vaulted ? "mobile_vault_blob" : "mobile_blob", { id }).then((raw) => parse(raw));
+      const args = mime ? { id, mime } : { id };
+      p = invoke(vaulted ? "mobile_vault_blob" : "mobile_blob", args).then((raw) => parse(raw));
       _blobCache.set(cacheKey, p);
       p.catch(() => _blobCache.delete(cacheKey));
     }
@@ -3009,12 +3018,44 @@
     return card;
   }
 
+  // A horizontal rail that grows as you swipe. It used to build EVERY card of the
+  // shelf up front, which is what froze Type and Tags: one shelf there is every link,
+  // or the whole Untagged group (hundreds of cards), each asking for its picture. Now
+  // it builds a screenful, and a sentinel at the end of the rail brings the next
+  // batch in as it nears view.
   function renderRows(arts, container) {
-    // Build every card into a fragment and attach once, so a big shelf costs a
-    // single reflow instead of one per card (was the view-toggle / sync jank).
-    const frag = document.createDocumentFragment();
-    for (const a of arts) frag.appendChild(buildCard(a));
-    container.replaceChildren(frag);
+    const BATCH = 8;
+    container.replaceChildren();
+    if (arts.length <= BATCH || typeof IntersectionObserver === "undefined") {
+      const frag = document.createDocumentFragment();
+      for (const a of arts) frag.appendChild(buildCard(a));
+      container.appendChild(frag);
+      return;
+    }
+    const sentinel = document.createElement("li");
+    sentinel.className = "grid-sentinel";
+    sentinel.setAttribute("aria-hidden", "true");
+    container.appendChild(sentinel);
+    let shown = 0;
+    let obs = null;
+    function loadMore() {
+      const frag = document.createDocumentFragment();
+      for (const a of arts.slice(shown, shown + BATCH)) frag.appendChild(buildCard(a));
+      container.insertBefore(frag, sentinel);
+      shown += Math.min(BATCH, arts.length - shown);
+      if (shown >= arts.length) {
+        if (obs) obs.disconnect();
+        sentinel.remove();
+      }
+    }
+    obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (e.isIntersecting) loadMore();
+      },
+      { root: container, rootMargin: "0px 600px" },
+    );
+    loadMore();
+    obs.observe(sentinel);
   }
 
   // A vertical grid that grows as you scroll instead of a single horizontal rail:
@@ -3120,15 +3161,19 @@
       thumb.className = "card-full-image";
       thumb.alt = "";
       content.appendChild(thumb);
-      invoke("mobile_blob", { id: a.preview_image_hash, mime: a.preview_image_mime || "image/jpeg" })
-        .then((raw) => {
-          const b = parse(raw);
-          thumb.src = "data:" + (b.mime || "image/jpeg") + ";base64," + b.base64;
-        })
-        .catch(() => {
-          thumb.remove();
-          li.classList.remove("card-image");
-        });
+      // Only when the tile nears view, and once a session per picture: a tile built
+      // off-screen asks for nothing, and switching Last touch / Type / Tags reuses
+      // the picture instead of fetching it again.
+      observeThumb(li, () => {
+        fetchBlob(a.preview_image_hash, false, a.preview_image_mime || "image/jpeg")
+          .then((b) => {
+            thumb.src = "data:" + (b.mime || "image/jpeg") + ";base64," + b.base64;
+          })
+          .catch(() => {
+            thumb.remove();
+            li.classList.remove("card-image");
+          });
+      });
     }
 
     const title = document.createElement("div");

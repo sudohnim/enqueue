@@ -72,6 +72,44 @@ def doctor() -> None:
 
 
 @app.command()
+def backup(wait: bool = typer.Option(True, help="Wait for the backup to land.")) -> None:
+    """Back the library up into the folder chosen in Settings (Proton Drive)."""
+    import time
+
+    before = (_call("GET", "/backup").get("last") or {}).get("at")
+    _call("POST", "/backup")
+    if not wait:
+        typer.echo("backup started")
+        return
+    for _ in range(600):
+        time.sleep(1)
+        state = _call("GET", "/backup")
+        latest = state.get("last") or {}
+        if not state.get("running") and latest.get("at") != before:
+            _echo(latest)
+            return
+    typer.echo("still running; check Settings > Storage")
+
+
+@app.command()
+def restore(source: str = typer.Argument(..., help="A backup folder, or one .db in it.")) -> None:
+    """Put a backup in place as the library. Quit Enqueue first.
+
+    The current library is moved aside (never deleted); the search index is rebuilt
+    on the next start. Like `migrate`, this works on the files directly, because the
+    engine must not be running.
+    """
+    from . import backup as backups
+
+    try:
+        _echo(backups.restore(source))
+    except backups.BackupError as exc:
+        typer.echo(f"not restored: {exc}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo("Restored. Start Enqueue; it rebuilds the search index on first start.")
+
+
+@app.command()
 def migrate() -> None:
     """Bring the database to the newest revision.
 

@@ -23,10 +23,14 @@
     const list = li.parentElement;
     const prev = li.previousElementSibling;
     if (!prev) return false; // first item: nothing to nest under
-    const nested = document.createElement(list.tagName);
+    // Join the sub-list the item above already has, rather than starting a second
+    // one beside it: two sibling sub-lists under one item is not a shape md() makes.
+    const last = prev.lastElementChild;
+    const nested =
+      last && last.tagName === list.tagName ? last : document.createElement(list.tagName);
     list.removeChild(li);
     nested.appendChild(li);
-    prev.appendChild(nested);
+    if (nested !== last) prev.appendChild(nested);
     return true;
   }
 
@@ -35,6 +39,18 @@
     if (!list) return false;
     const grand = list.parentElement;
     if (!grand || grand.tagName !== "LI") return false; // top level: no-op
+    // The items below this one in its sub-list become ITS children. Leaving them
+    // where they were put them above it once it moved out - outdenting the middle of
+    // a sub-list silently reordered the note.
+    const after = [];
+    for (let sib = li.nextElementSibling; sib; sib = sib.nextElementSibling) after.push(sib);
+    if (after.length) {
+      const last = li.lastElementChild;
+      const sub =
+        last && last.tagName === list.tagName ? last : document.createElement(list.tagName);
+      for (const it of after) sub.appendChild(it);
+      if (sub !== last) li.appendChild(sub);
+    }
     grand.parentElement.insertBefore(li, grand.nextSibling);
     if (!list.children.length) list.remove();
     return true;
@@ -1505,9 +1521,15 @@
     // by serialising the whole body to markdown, so debounce that expensive read to
     // fire once the typing pauses (UIUX.3).
     const refreshTitleHeaderSoon = debounce(refreshTitleHeader, 150);
+    // Saved as you type, once the typing pauses, not only on blur: switching to
+    // another app does not reliably blur a WebKit editor, and coming back re-read the
+    // page from the store - which did not have the words typed since the last blur, so
+    // they vanished and the retyped list came out different (the "spacing" bug).
+    const saveSoon = debounce(saveBody, 1500);
     ed.addEventListener("input", () => {
       applyInputRules(ed);
       refreshTitleHeaderSoon();
+      saveSoon();
     });
     ed.addEventListener("blur", saveBody);
     // Link clicks inside the note are owned by LinkPop (js/linkpop.js): it opens the
@@ -1612,8 +1634,26 @@
             probe.selectNodeContents(li);
             probe.setEnd(sel.anchorNode, sel.anchorOffset);
             if (probe.toString().replace(/​/g, "") === "") {
+              // One level at a time: a nested item (empty or not) moves out a level,
+              // the way Shift+Tab does; only a top-level item becomes a plain line.
+              // Jumping a nested bullet straight out to a paragraph split its parent
+              // list in two around a stray line (the "Lisbon" note).
               e.preventDefault();
-              liToParagraph(li);
+              const parentLi = li.parentElement && li.parentElement.parentElement;
+              if (parentLi && parentLi.tagName === "LI") {
+                const node = sel.anchorNode;
+                const off = sel.anchorOffset;
+                outdentItem(li);
+                try {
+                  const r = document.createRange();
+                  r.setStart(node, off);
+                  r.collapse(true);
+                  sel.removeAllRanges();
+                  sel.addRange(r);
+                } catch (err) {}
+              } else {
+                liToParagraph(li);
+              }
               return;
             }
           }
@@ -1888,7 +1928,33 @@
     saveBody();
   }
 
-  async function saveBody() {
+  // Saves run one at a time, in order: an out-of-order PATCH could land an older body
+  // after a newer one.
+  let saveChain = Promise.resolve();
+  function saveBody() {
+    saveChain = saveChain.then(saveBodyNow, saveBodyNow);
+    return saveChain;
+  }
+
+  // Whether the open editor holds words the store does not have yet.
+  function editorDirty() {
+    const ed = document.getElementById("body");
+    return !!(ctx && ed && htmlToMd(ed) !== ctx.saved);
+  }
+
+  // Leaving the window (another app, another tab, closing it) saves first, whatever
+  // the editor's own focus is doing.
+  window.addEventListener("blur", () => {
+    if (editorDirty()) saveBody();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && editorDirty()) saveBody();
+  });
+  window.addEventListener("pagehide", () => {
+    if (editorDirty()) saveBody();
+  });
+
+  async function saveBodyNow() {
     if (!ctx) return;
     const ed = document.getElementById("body"),
       state = document.getElementById("state");

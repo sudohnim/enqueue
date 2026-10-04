@@ -1,0 +1,324 @@
+#!/usr/bin/env -S uv run python
+"""Regenerate the README screenshots from a demo library.
+
+    bin/screenshots            # desktop shots into docs/screenshots/
+    bin/screenshots --keep     # leave the demo engine running on :8851 to look around
+
+The shots must never show a real library, so this starts a SECOND engine: its own
+throwaway data folder, its own port, the local Ollama as its model. It does not read
+`~/.enqueue-poc`, the Keychain API key, or the sync relay. It fills that engine with
+the demo library below (notes, links, a PDF), waits for the summaries, then drives
+headless Chromium (the one `bin/setup` installs for link previews) over the pages.
+
+Needs Ollama running with a small model for the summaries and the answer shot
+(`ENQ_DEMO_MODEL`, default qwen2.5-coder:7b). Without it the shots still come out,
+minus summaries and the answer.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+OUT = REPO / "docs" / "screenshots"
+PORT = 8851
+BASE = f"http://127.0.0.1:{PORT}"
+
+# The demo engine's model settings, fixed before anything from enqueue is imported
+# (config reads the environment at import). By default it is the local Ollama, with a
+# placeholder key that keeps the engine from ever reading the real one from the
+# Keychain. A small local model writes weak summaries slowly, so the search, ask and
+# summary shots are only worth keeping from a capable one: set ENQ_DEMO_BACKEND (and
+# ENQ_DEMO_MODEL, plus ENQ_LLM_API_KEY / ENQ_LLM_HEADERS for a hosted backend) to use it.
+os.environ["ENQ_LLM_BACKEND"] = os.environ.get("ENQ_DEMO_BACKEND", "ollama")
+os.environ["ENQ_LLM_MODEL"] = os.environ.get("ENQ_DEMO_MODEL", "qwen2.5-coder:7b")
+os.environ.setdefault("ENQ_LLM_API_KEY", "ollama")
+os.environ.pop("ENQ_SUMMARIZE_MODEL", None)
+os.environ["ENQ_SYNC_RELAY_URL"] = ""
+
+NOTES = [
+    """# Lisbon, four days
+
+- Thursday
+  - land 11am, drop bags in Alfama
+  - tram 28 before the queues
+- Friday
+  - Sintra by train, Pena Palace first
+  - pasteis at Manteigaria, not the long line
+- Saturday
+  - LX Factory, the bookshop with the bicycle
+  - sunset at Miradouro da Senhora do Monte
+- Sunday
+  - Feira da Ladra flea market, then fly
+
+Book the Sintra tickets the night before. Carry cash for the tram.""",
+    """# What survives
+
+Things that have lasted a long time tend to last longer. A book in print for a hundred years will probably be in print for another hundred; this year's bestseller probably will not. Old recipes, old tools, old advice from grandmothers.
+
+So when I do not know what to read, cook, or trust: pick the old one.""",
+    """# Sourdough, the version that finally worked
+
+- 500g bread flour, 375g water, 100g starter, 10g salt
+- mix, rest 30 min, then four folds half an hour apart
+- shape, overnight in the fridge
+- 250C in a covered pot: 25 min lid on, 20 off
+
+The fridge night is the whole trick. A neglected dough got better, not worse.""",
+    """# Lifting log
+
+Slow is fine. Add 2.5kg only when all five sets are clean.
+
+- squat 100 x 5
+- bench 70 x 5
+- deadlift 130 x 3
+
+Muscles grow from the stress and the rest after it, not from comfort. Skipping the rest week is how I got hurt in March.""",
+    """# Things my grandmother said
+
+- "Buy the good knife once."
+- "If you are tired, sleep. The problem will still be there, smaller."
+- "Never trust a recipe that has no mistakes written in the margin."
+""",
+    """# Ideas for the newsletter
+
+1. Why small restaurants outlast big ones
+2. The case for boring tools
+3. What a bad week taught me about backups
+
+Number 3 writes itself after last month.""",
+    """# Meeting with Ana, portfolio review
+
+She keeps most of it in dull, safe things and a small slice in wild bets. A crash cannot ruin her, and one of the bets paying off changes everything. No middle.
+
+Ask her which bets she closed and why.""",
+    """# Reading list
+
+- Antifragile, Taleb (rereading)
+- The Timeless Way of Building, Alexander
+- Meditations, Marcus Aurelius
+- How Buildings Learn, Brand""",
+    """Call the plumber about the upstairs tap before Friday.""",
+]
+
+LINKS = [
+    "https://en.wikipedia.org/wiki/Lindy_effect",
+    "https://en.wikipedia.org/wiki/Stoicism",
+    "https://en.wikipedia.org/wiki/Sintra",
+    "https://en.wikipedia.org/wiki/Sourdough",
+    "https://en.wikipedia.org/wiki/Hormesis",
+]
+
+PDF_PAGES = [
+    (
+        "Notes on Systems That Gain From Stress",
+        "Some systems break under stress. Some resist it. A few get better because of it. "
+        "Bones thicken under load. Immune systems learn from exposure. A city of many "
+        "small shops survives the failure of any one of them, and each failure teaches "
+        "the others something.\n\nThe mistake is to protect such systems from every "
+        "shock. Remove the small stresses and the large one, when it comes, finds "
+        "nothing ready for it.",
+    ),
+    (
+        "Three properties",
+        "1. Many small parts, each allowed to fail.\n2. Failures that are visible and "
+        "local, never hidden and shared.\n3. More to gain from a good surprise than to "
+        "lose from a bad one.\n\nForests have all three. So do old cuisines, and the "
+        "restaurant trade of any large city.",
+    ),
+]
+
+PINNED = ("Lisbon, four days", "What survives")
+TAGS = {
+    "Lisbon, four days": ["travel"],
+    "Sourdough, the version that finally worked": ["kitchen"],
+    "What survives": ["ideas"],
+    "Meeting with Ana, portfolio review": ["money", "ideas"],
+}
+WAIT_MINUTES = int(os.environ.get("ENQ_DEMO_WAIT", "6"))
+QUESTION = "What have I saved about things that get stronger from stress?"
+SEARCH = "old things that last"
+
+
+def start_engine(data: Path) -> None:
+    """The demo engine: the real app, pointed at a throwaway folder and its own port."""
+    import uvicorn
+
+    from enqueue import config, db
+
+    data.mkdir(parents=True, exist_ok=True)
+    config.DATA_DIR = data
+    config.DB_PATH = data / "enqueue.db"
+    config.BLOB_DIR = data / "blobs"
+    config.API_PORT = PORT
+    config.API_URL = BASE
+    config.ALLOWED_ORIGINS = frozenset({BASE, f"http://localhost:{PORT}", f"http://[::1]:{PORT}"})
+    db.migrate()
+    import importlib
+
+    # `enqueue.api.app` the module, not the FastAPI object the package re-exports.
+    engine = importlib.import_module("enqueue.api.app")
+
+    engine._warm_embeddings()
+    engine._bootstrap_index()
+    import socket
+
+    with socket.socket() as probe:
+        if probe.connect_ex(("127.0.0.1", PORT)) == 0:
+            raise SystemExit(f"port {PORT} is in use; stop whatever holds it and rerun")
+    server = uvicorn.Server(
+        uvicorn.Config(engine.app, host="127.0.0.1", port=PORT, log_level="warning")
+    )
+    threading.Thread(target=server.run, name="demo-engine", daemon=True).start()
+
+
+def make_pdf(path: Path) -> None:
+    import fitz
+
+    doc = fitz.open()
+    for title, body in PDF_PAGES:
+        page = doc.new_page()
+        page.insert_text((72, 96), title, fontsize=20)
+        page.insert_textbox(fitz.Rect(72, 130, 523, 760), body, fontsize=12.5, lineheight=1.5)
+    doc.save(path)
+
+
+def seed(scratch: Path) -> dict:
+    import httpx
+
+    api = httpx.Client(base_url=BASE, timeout=600)
+    for _ in range(120):
+        try:
+            if api.get("/health").status_code == 200:
+                break
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.5)
+    ids: dict[str, str] = {}
+    for url in LINKS:
+        api.post("/capture/link", json={"url": url})
+    pdf = scratch / "Systems that gain from stress.pdf"
+    make_pdf(pdf)
+    with pdf.open("rb") as fh:
+        api.post("/capture/upload", files={"file": (pdf.name, fh, "application/pdf")})
+    for body in reversed(NOTES):
+        made = api.post("/notes", json={"body": body}).json()
+        art = made.get("artifact", made)
+        ids[art["title"]] = art["id"]
+        time.sleep(0.05)  # distinct timestamps, so the wall order is the list order
+    for title, tags in TAGS.items():
+        for tag in tags:
+            api.post(f"/artifacts/{ids[title]}/tags", json={"name": tag})
+    for title in PINNED:
+        api.patch(f"/artifacts/{ids[title]}", json={"pinned": True})
+    # Summaries come from a small local model and can take minutes each (or never
+    # clear the quality gate). Give them a few minutes, then shoot with what exists.
+    print(f"seeded; giving the model {WAIT_MINUTES} min for summaries...", flush=True)
+    deadline = time.monotonic() + WAIT_MINUTES * 60
+    while time.monotonic() < deadline:
+        try:
+            done = api.get("/doctor", timeout=20).json().get("summaries", {})
+        except httpx.HTTPError:
+            done = {}
+        if done and not done.get("stale"):
+            break
+        time.sleep(10)
+    chat = api.post("/chats", json={"text": QUESTION}).json()
+    chat_id = (chat.get("chat") or chat).get("id")
+    for _ in range(180):
+        turns = api.get(f"/chats/{chat_id}", timeout=30).json().get("messages", [])
+        if turns and turns[-1].get("role") == "assistant" and turns[-1].get("status") != "pending":
+            break
+        time.sleep(1)
+    ids["__chat__"] = chat_id
+    return ids
+
+
+def shoot(ids: dict) -> None:
+    from playwright.sync_api import sync_playwright
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        ctx = browser.new_context(
+            viewport={"width": 1280, "height": 820}, device_scale_factor=2, reduced_motion="reduce"
+        )
+        page = ctx.new_page()
+
+        def go(route: str, wait: int = 1800) -> None:
+            page.goto(f"{BASE}/{route}")
+            page.reload()
+            page.wait_for_timeout(wait)
+
+        go("")
+        page.screenshot(path=OUT / "desktop-wall.png")
+
+        go(f"#a/{ids['Lisbon, four days']}")
+        page.screenshot(path=OUT / "desktop-note.png")
+
+        go(f"#a/{ids['What survives']}")
+        toggle = page.locator("#drawerToggle")
+        if toggle.count():
+            toggle.click()
+            page.wait_for_timeout(900)
+        page.screenshot(path=OUT / "desktop-summary.png")
+
+        go("")
+        box = page.locator("#homesearch")
+        box.fill(SEARCH)
+        box.press("Enter")
+        page.wait_for_timeout(4000)
+        page.screenshot(path=OUT / "desktop-search.png")
+
+        # The answer opens as a panel over the wall, the way asking the eye does.
+        go("")
+        page.evaluate("id => showChat(id)", ids["__chat__"])
+        page.wait_for_timeout(2500)
+        page.screenshot(path=OUT / "desktop-ask.png")
+
+        go("#settings")
+        page.screenshot(path=OUT / "desktop-settings.png")
+
+        cap = ctx.new_page()
+        cap.set_viewport_size({"width": 640, "height": 320})
+        cap.goto(f"{BASE}/capture")
+        cap.wait_for_timeout(1200)
+        cap.add_style_tag(content="html,body{background:#eee8f6 !important}")
+        cap.keyboard.type("https://en.wikipedia.org/wiki/Lindy_effect why old things last")
+        cap.wait_for_timeout(500)
+        cap.screenshot(path=OUT / "desktop-capture.png")
+        browser.close()
+    for f in sorted(OUT.glob("desktop-*.png")):
+        print("wrote", f.relative_to(REPO))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--keep", action="store_true", help="leave the demo engine running")
+    args = parser.parse_args()
+    scratch = Path(tempfile.mkdtemp(prefix="enqueue-demo-"))
+    try:
+        start_engine(scratch / "library")
+        ids = seed(scratch)
+        shoot(ids)
+        if args.keep:
+            print(f"demo engine at {BASE} (Ctrl-C to stop)")
+            while True:
+                time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if not args.keep:
+            shutil.rmtree(scratch, ignore_errors=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

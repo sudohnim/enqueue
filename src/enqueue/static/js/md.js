@@ -90,6 +90,22 @@
 
     const out = [];
     const items = [];
+    // Whether the line before the current one was blank. A block that follows the
+    // previous one with NO blank line between them is marked data-tight, so the
+    // serializer writes it back the same way: lines typed one under another (the
+    // phone's plain-text editor) used to come back from a desktop save with a blank
+    // line wedged between every pair, and the note grew gaps on each round trip.
+    let prevBlank = true;
+    const tight = () => (!prevBlank && out.length ? " data-tight" : "");
+    let listTight = "";
+    const quote = [];
+    let quoteTight = "";
+    const flushQuote = () => {
+      if (!quote.length) return;
+      // Consecutive quoted lines are ONE quote, its lines kept as line breaks.
+      out.push("<blockquote" + quoteTight + ">" + quote.join("<br>") + "</blockquote>");
+      quote.length = 0;
+    };
     const flushList = () => {
       if (!items.length) return;
       // Build the list tree from indented items, then render it. Two spaces of
@@ -122,52 +138,71 @@
         }
         const item = { content: it.content };
         list.items.push(item);
+        if (list.items.length === 1 && it.number && it.number !== 1) list.start = it.number;
       }
-      const renderList = (list) => {
-        let h = "<" + list.tag + ">";
+      const renderList = (list, top) => {
+        let h =
+          "<" +
+          list.tag +
+          (list.start ? ' start="' + list.start + '"' : "") +
+          (top ? listTight : "") +
+          ">";
         for (const it of list.items) {
-          h += "<li>" + it.content;
+          // An empty item is still an item (a bullet you have not filled in yet); the
+          // <br> gives the editor a line to put the caret on.
+          h += "<li>" + (it.content || "<br>");
           if (it.lists) for (const sub of it.lists) h += renderList(sub);
           h += "</li>";
         }
         return h + "</" + list.tag + ">";
       };
-      for (const list of root.lists) out.push(renderList(list));
+      root.lists.forEach((list, i) => out.push(renderList(list, i === 0)));
       items.length = 0;
     };
     for (const raw of t.split("\n")) {
-      const line = raw.trimEnd();
+      // A leading tab is one level, the same as two spaces (what the serializer and
+      // the phone's indent tool write), so a tab-indented item keeps its nesting.
+      const line = raw.trimEnd().replace(/^[ \t]+/, (lead) => lead.replace(/\t/g, "  "));
       const h = line.match(/^(#{1,3})\s+(.*)$/);
-      const li = line.match(/^(\s*)([-*+])\s+(.*)$/);
-      const ol = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+      // The content is optional: "- " (trimmed to "-") is an empty item, not text.
+      const li = line.match(/^(\s*)([-*+])(?:\s+(.*))?$/);
+      const ol = line.match(/^(\s*)(\d+)\.(?:\s+(.*))?$/);
       const bq = line.match(/^(?:&gt;|>)\s?(.*)$/);
+      if (!bq) flushQuote();
       if (h) {
         flushList();
-        out.push("<h" + h[1].length + ">" + h[2] + "</h" + h[1].length + ">");
+        out.push("<h" + h[1].length + tight() + ">" + h[2] + "</h" + h[1].length + ">");
       } else if (li || ol) {
+        if (!items.length) listTight = tight();
         items.push({
           depth: Math.min(Math.floor((li || ol)[1].length / 2), 8),
           tag: li ? "ul" : "ol",
-          content: (li || ol)[3],
+          content: (li || ol)[3] || "",
+          number: ol ? parseInt(ol[2], 10) : 0,
         });
       } else if (bq) {
         flushList();
-        out.push("<blockquote>" + bq[1] + "</blockquote>");
-      } else if (/^\ufffd\d+\ufffd$/.test(line)) {
+        if (!quote.length) quoteTight = tight();
+        quote.push(bq[1]);
+      } else if (/^\x00\d+\x00$/.test(line.trim())) {
         // A code-fence placeholder is the block itself, not prose: wrapping it in a
         // <p> would make the browser split the paragraph around the <pre>, leaving
-        // stray empty paragraphs above and below the block. The placeholder bytes
-        // reach the browser as U+FFFD: the raw NULs in this file are not valid
-        // UTF-8, and both sides of the round trip are corrupted identically.
+        // stray empty paragraphs above and below the block. The placeholder is the
+        // NUL-delimited index written above ("\x00" escapes, real U+0000 at run
+        // time). This test used to look for U+FFFD instead, never matched, and every
+        // code block was wrapped in a <p> that the browser's parser then split.
         flushList();
-        out.push(held[+line.slice(1, -1)]);
+        const fence = held[+line.trim().slice(1, -1)];
+        out.push(fence.replace("<pre>", "<pre" + tight() + ">"));
       } else if (!line.trim()) flushList();
       else {
         flushList();
-        out.push("<p>" + line + "</p>");
+        out.push("<p" + tight() + ">" + line + "</p>");
       }
+      prevBlank = !line.trim();
     }
     flushList();
+    flushQuote();
     return out.join("").replace(/\x00(\d+)\x00/g, (m, i) => held[+i]);
   }
 
@@ -257,7 +292,7 @@
     const listToMd = (node, depth) => {
       const pad = "  ".repeat(depth);
       const ordered = node.tagName === "OL";
-      let n = 1;
+      let n = ordered ? parseInt(node.getAttribute("start") || "1", 10) || 1 : 1;
       const out = [];
       for (const child of node.childNodes) {
         if (child.nodeType !== 1) continue;
@@ -278,7 +313,7 @@
           .join("")
           .replace(/\u00a0/g, " ")
           .trim();
-        out.push(pad + (ordered ? n++ + ". " : "- ") + text);
+        out.push((pad + (ordered ? n++ + ". " : "- ") + text).trimEnd());
         for (const sub of nested) out.push(...listToMd(sub, depth + 1));
       }
       return out;
@@ -292,6 +327,10 @@
         continue;
       }
       if (node.nodeType !== 1) continue;
+      // A block md() marked tight followed the one before it with no blank line;
+      // write it back that way (drop the separator the previous block left).
+      if (node.hasAttribute("data-tight") && lines.length && lines[lines.length - 1] === "")
+        lines.pop();
 
       switch (node.tagName) {
         case "H1":
@@ -318,7 +357,9 @@
           break;
         }
         case "BLOCKQUOTE":
-          lines.push("> " + inline(node).trim(), "");
+          // One quote, one "> " line per line of it.
+          for (const l of inline(node).trim().split("\n")) lines.push(("> " + l).trimEnd());
+          lines.push("");
           break;
         case "PRE": {
           // The <pre> may wrap its text in the <code> md() produces, and a line

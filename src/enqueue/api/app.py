@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .. import chats_worker, config, trash
-from . import admin, artifacts, chats, pivots, search, settings, static, vault, write
+from . import admin, artifacts, backup, chats, pivots, search, settings, static, vault, write
 from .guard import LocalOnlyGuard
 
 
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(pivots.router)
     app.include_router(vault.router)
+    app.include_router(backup.router)
     # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
     app.add_middleware(LocalOnlyGuard)
     return app
@@ -95,7 +96,16 @@ def serve() -> None:
 
     events.emit("start", "engine ready")
 
+    # Daily backups into the chosen folder (backup.py), when something changed.
+    from .. import backup as backups
+
+    backups.start_scheduler()
+
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
+
+    # A clean shutdown (quitting the app) takes one more backup if anything changed,
+    # so the day's work is in the drive before the laptop closes.
+    backups.run_quietly("shutdown")
 
 
 def _start_sync_worker() -> None:

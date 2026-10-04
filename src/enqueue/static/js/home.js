@@ -555,6 +555,24 @@ async function refreshIfStale() {
 		return;
 	}
 	if (scope.kind === "artifact" && scope.id) {
+		// Never rebuild an editor under the person's hands. Words not yet stored are
+		// saved first and the page stays as it is; a page is re-read only when the
+		// store has something this one does not show (an edit made on the phone, a
+		// preview or summary that landed while away).
+		if (editorDirty()) {
+			await saveBody();
+			return;
+		}
+		const fresh = await api("/artifacts/" + scope.id).catch(() => null);
+		if (!fresh || !ctx || ctx.id !== scope.id) return;
+		const editing = document.activeElement === document.getElementById("body");
+		if (ctx.kind === "note") {
+			const a = fresh.artifact;
+			if ((a.body || "") === ctx.saved && a.title === ctx.title) return;
+			if (editing || editorDirty()) return;
+		} else if (editing || editorDirty()) {
+			return;
+		}
 		showArtifact(scope.id, false, window.scrollY);
 	} else if (scope.kind === "chat" && scope.id) {
 		showChat(scope.id);

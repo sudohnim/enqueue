@@ -2,10 +2,12 @@
 
 Project-specific instructions for AI coding agents working in Enqueue.
 This file is engineering reference: architecture, module map, data flows, conventions, and gotchas.
-For product behaviour, see [docs/PRODUCT.md](docs/PRODUCT.md).
-For curation schemas and prompts, see [docs/CURATION.md](docs/CURATION.md).
-For eval methodology, see [docs/EVAL.md](docs/EVAL.md).
-For the current build status and task queue, see [docs/PROGRESS.md](docs/PROGRESS.md).
+For what the app does from a person's side, see [docs/MANUAL.md](docs/MANUAL.md).
+For building, running, and configuration, see [docs/DEVELOPING.md](docs/DEVELOPING.md).
+For the look and its rules, see [docs/DESIGN.md](docs/DESIGN.md); for sync, [docs/e2e/E2E.md](docs/e2e/E2E.md) and [docs/sync-relay.md](docs/sync-relay.md).
+For the current build status and task queue, see [docs/PROGRESS.md](docs/PROGRESS.md) and [docs/PLAN.md](docs/PLAN.md).
+The README is the public face (a marketing piece with screenshots from `bin/screenshots`); keep engineering detail out of it.
+There is no docs/PRODUCT.md, CURATION.md or EVAL.md: the prompts live in `prompts.py`, the eval gates in `bin/check-eval*`.
 
 If you are here to write code, your work queue is [docs/PROGRESS.md](docs/PROGRESS.md).
 Do one task per turn, in order, and verify each with the command in its "Done when" before checking the box.
@@ -89,7 +91,7 @@ Do not add SSE plumbing back unless asked.
 No browser extension code exists; document it as future, do not build against it.
 The Android app (Tauri v2 mobile, `desktop/gen/android`, crate builds as `enqueue_lib`) is built: it syncs the encrypted library through the relay into a local SQLite copy, captures, reads, does the light in-the-moment writes (edit note, delete, pin - tagging and annotating are deliberately desktop-only), and chats by calling the configured LLM backend directly with keyword-only (FTS) grounding.
 It never computes embeddings, facets, or entities; enrichment stays desktop-only. AI-derived data that has not synced down is absent quietly - never a placeholder or a fabricated summary.
-Mobile UI lives in `src/enqueue/static/mobile.html` (relative asset paths). Layout: a single-column list under SAVED / EVERYTHING ELSE shelf headers, newest first; rows open a read-only Reader (note markdown, image with pinch-zoom, link preview card, PDF via vendored pdf.js); a bottom pill (capture in `--purple-bold`, search, the living raven eye for ask, menu). The capture "raven moment" is the ANIM.4 flight, or a fade under reduced motion.
+Mobile UI lives in `src/enqueue/static/mobile.html` (relative asset paths). Layout: a single-column list under SAVED / EVERYTHING ELSE shelf headers, newest first; rows open a Reader (note markdown, where a tap on the text opens the writing page, image with pinch-zoom, link preview card, PDF via vendored pdf.js); a bottom pill (capture in `--purple-bold`, search, the living raven eye for ask, menu). The capture "raven moment" is the ANIM.4 flight, or a fade under reduced motion.
 Writing a note on the phone is one full-screen page (`#writer` in `mobile.html`), for a new note (the pill's "Note") and for an existing one (a tap anywhere in a note's text in the reader - there is no pencil; the caret lands where the finger did, via `rawOffsetAt`, and links keep their link bar).
 The page is sized to the VISUAL viewport (`fitWriter` sets `--writer-top`/`--writer-h` from `visualViewport`), so the keyboard shrinks it instead of covering it, and the tool bar (lists, heading, indent, Done) sits on the keyboard; `keepCaretVisible` scrolls the body to the caret with a mirror measurement when the box shrinks.
 It saves as you type (`saveWriter`, debounced, serialized): a new note is created on its first non-empty save through `mobile_capture` with `as_note: true` (so an address inside it never turns it into a link), then updated with `mobile_update_note`; a title is sent only when the person typed one (`null` keeps an explicit title). An empty new page leaves nothing behind. Closing lands on the note's reader (existing) or the library with the raven flight (new).
@@ -184,7 +186,7 @@ Two windows:
 
 The capture overlay is a transparent, undecorated, always-on-top window summoned by a global hotkey (default `Alt+Shift+E`).
 It is built once at startup and then only shown and hidden, so there is no webview boot between the keypress and the caret.
-In the overlay, a plain Enter saves (the same path as the Keep button), Shift+Enter inserts a newline, and Escape dismisses without discarding the draft (CAP2.1).
+In the overlay, a plain Enter saves (the same path as the Save button), Shift+Enter inserts a newline, and Escape dismisses without discarding the draft (CAP2.1).
 On a successful capture the raven flight plays INSIDE the capture overlay, then it dismisses (CAP2.2). A separate always-on-top flight window was tried and abandoned: a background app's window cannot reliably float above the frontmost app on macOS (`NSFloatingWindowLevel` is not enough, and Tauri's `.show()`/`.set_focus()` steals focus), but the capture overlay is already summoned over whatever app the person was in, so playing the flight there needs no window-level hacks.
 
 The shell uses `macOSPrivateApi: true` for the transparent capture window.
@@ -218,8 +220,9 @@ One line per file, describing its job.
 | `chats.py` | Conversations: submit (write pending turn + queue), scoped retrieval, grounded answers, topics, titles, chat sync push. |
 | `chats_worker.py` | The answer worker: a `Worker` thread that routes, answers, commits (retrying transient DB locks), logs `ask.answered`/`ask.failed`, and pushes. `sweep_orphaned_pending` at startup. |
 | `events.py` | The activity log: `emit()`/`recent()` over the persisted `events` table. Never raises. Backs the Settings Activity tab and the vault decoy. |
-| `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker. |
+| `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker; two lanes (the person's work before background upkeep). |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
+| `backup.py` | Backups into a cloud drive's folder (Proton Drive): daily + on clean shutdown + on demand, `VACUUM INTO` a temp file then atomic rename, search index emptied in the copy, blobs mirrored, 7 daily + 4 weekly kept; `restore()` sets the current library aside. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
 | `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
 | `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
@@ -263,7 +266,8 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `providers/base.py` | `Provider` protocol, `get_provider()`, error translation to sentences. |
-| `providers/ollama.py` | `OpenAICompatibleProvider`. One adapter for all OpenAI-protocol endpoints. |
+| `providers/ollama.py` | `OpenAICompatibleProvider`. One adapter for all OpenAI-protocol endpoints; falls back to `Mode.MD_JSON` on a 400. |
+| `providers/pause.py` | The engine-wide pause on model calls after a 429 usage limit (until `retry-after`); `lift()` on a key or model change. |
 
 ### Migrations
 
@@ -283,6 +287,7 @@ One line per file, describing its job.
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
 | `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
+| `migrations/versions/0009` .. `0037` | One revision per schema change, applied at startup (latest: `0037_related_via`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop
@@ -303,7 +308,8 @@ One line per file, describing its job.
 | --- | --- |
 | `bin/setup` | Make a fresh machine buildable: install/update Rust to a stable >= MSRV 1.88 (`rustup update stable --no-self-update`), install `uv` + pin Python 3.12, check Node. `--android` also checks SDK/NDK/JDK, installs tauri-cli, adds the aarch64-linux-android target. Idempotent, no sudo. Run it when `bin/launch` fails on toolchain (e.g. `rustc <ver> is not supported`). |
 | `bin/verify` | `--fast`: black, ruff, JS parse on the HTML pages and contrast (seconds; the pre-commit hook). Full: adds pytest (`-n auto`), desktop Rust unit tests (`cargo test --lib` on the host target when any `desktop/**/*.rs` changed - the Android check builds for the android target and cannot run tests), and an Android build check (auto-detects the NDK; runs a full `cargo tauri android build` when Rust/Kotlin/`gen/android` changed, else `cargo check --lib`). `--desktop-tests` and `--android` run just that one check, unconditionally, and fail rather than skip without a toolchain (what CI calls). `.githooks/pre-commit` runs `--fast` on every code commit; CI runs everything else. |
-| `bin/check-contrast` | WCAG contrast check on home.html palette tokens. |
+| `bin/check-contrast` | WCAG contrast check on the palette tokens in `static/css/tokens.css`, including the night ground. |
+| `bin/screenshots` | Regenerate the README screenshots from a demo library: a second engine on its own port and a throwaway data folder (never the real library, Keychain key or relay), seeded, then shot with headless Chromium. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
@@ -316,8 +322,8 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations). |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `md`, `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`. |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | IBM Plex Sans woff2/ttf, served locally. No CDN. |
 
@@ -472,7 +478,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 
 | Variable | Default | What it controls |
 | --- | --- | --- |
-| `ENQ_LLM_BACKEND` | `ollama` | Which backend to use: ollama, openrouter, opencode, custom |
+| `ENQ_LLM_BACKEND` | `ollama` | Which backend to use: ollama, openrouter, opencode-go |
 | `ENQ_LLM_MODEL` | `llama3.1:8b` | The interactive model id (chat, routing, gray-zone judge). Placeholder, known bad at structured output. |
 | `ENQ_SUMMARIZE_MODEL` | (empty) | The ingestion model (facets, entities), `role="ingest"`. Empty falls back to `llm_model`. See "Model roles". |
 | `ENQ_SEARCH_MODEL` | (empty) | The search model (gray-zone relevance judge), `role="search"`. Empty falls back to `llm_model`. |
@@ -480,7 +486,9 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_LLM_API_KEY` | `ollama` (ignored by Ollama) | API key for hosted backends |
 | `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
 | `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
-| `ENQ_MODEL_RETRIES` | `1` | Retries after first attempt (1 = two tries) |
+| `ENQ_MODEL_RETRIES` | `3` | TOTAL attempts per structured call (instructor's `max_retries`); 1 = one shot, no reprompt |
+| `ENQ_PREVIEW_BROWSER` | `off` | Open a refused or script-only link once in headless Chromium (crawl4ai) |
+| `ENQ_BACKUP_DIR` | (empty) | The cloud-drive folder backups go into; empty = backups off |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (...)` | User agent for preview fetches |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
@@ -501,9 +509,7 @@ The key is resolved per-call (not at import) so a key stored in Settings takes e
 | --- | --- | --- | --- |
 | ollama | `http://127.0.0.1:11434/v1` | yes | no |
 | openrouter | `https://openrouter.ai/api/v1` | no | yes |
-| opencode | `https://opencode.ai/zen/v1` | no | yes |
 | opencode-go | `https://opencode.ai/zen/go/v1` | no | yes + `x-opencode-session` header |
-| custom | (user-set) | no | yes |
 
 All backends speak the OpenAI-compatible protocol.
 One adapter (`OpenAICompatibleProvider`) covers all of them; it sends `ENQ_LLM_HEADERS` (the `llm_headers` setting) as extra headers.
@@ -589,6 +595,8 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq chats [--limit N]` | List conversations |
 | `enq chunk` | Rebuild chunks from note bodies |
 | `enq facet-gate` | Decide which artifacts never get facets |
+| `enq backup` | Back up now into the folder chosen in Settings, and wait for it |
+| `enq restore <dir or .db>` | Put a backup in place (engine must be stopped; works on the files directly, like `migrate`) |
 | `enq eval-embedders [--models a,b]` | Compare embedding models on both evals and suggest each one's floor bars |
 | `enq eval-real [--update-baseline]` | Score your real searches against your library; fails when a baseline query now fails |
 
@@ -631,6 +639,7 @@ GET    /secrets                     credential scan hits
 GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
 GET    /events?limit=N              the activity log, newest first, each with its full record
+GET    /backup                      backup folder, detected Proton Drive folders, last backup, the kept backups
 GET    /fonts/{name}                font files (cached 1 year)
 ```
 
@@ -676,6 +685,7 @@ POST   /eval/real                    run the real-search eval (?update_baseline=
 PUT    /settings/api-key             store key in Keychain
 DELETE /settings/api-key             remove key from Keychain
 PATCH  /settings                     update writable settings
+POST   /backup                       back up now (background; GET /backup shows it land)
 ```
 
 ---
@@ -848,7 +858,7 @@ The I5.1 coalescing counts only copies submitted AFTER the running one as "newer
 | --- | --- |
 | Web page (link) | save URL only. Preview is opt-in (one request). Text comes from preview metadata. |
 | PDF | pymupdf extracts text per page. Pages rendered as PNG on demand. |
-| Image | stored as blob. No OCR or captioning yet. |
+| Image | stored as blob; a vision model describes it at ingest (K.11) and the description is chunked. A failed describe marks it `failed` and shows in `/doctor`. |
 | Note | body is markdown, chunked directly. |
 | File (text) | decoded and chunked (txt, md, csv, json, html). |
 
@@ -905,6 +915,17 @@ Before this, the page name landed as the link's first note and read like somethi
 
 ---
 
+## Backups (Proton Drive)
+
+`backup.py`, decided 2026-09-30. The live library stays at `~/.enqueue-poc`; the cloud drive only ever holds backups.
+A live SQLite file in a File Provider folder is unsafe: WAL is three files a sync client can upload mid-write (a torn copy), the drive can evict a quiet file to a cloud-only placeholder under the engine, and the ~400 MB file (mostly the search index) would re-upload on every write.
+
+- `backup_dir` setting (empty = off; Settings > Storage offers the detected `~/Library/CloudStorage/ProtonDrive-*` folder). Backups go in `<backup_dir>/Enqueue Backup/`.
+- A run: `VACUUM INTO` a `.partial` file (one consistent snapshot while writers continue), empty every index table from `store_sqlite._DDL` and delete `index_meta.embed_version` in the copy, `VACUUM`, `PRAGMA integrity_check`, then `os.replace` into `library/enqueue-YYYY-MM-DD.db` - the drive never sees a half-written file. Blobs are mirrored by hash (copy only new ones); `settings.json` and `keyring.json` (DEK wrapped under the recovery phrase) are copied; `manifest.json` describes the latest. The API key stays in the Keychain, never backed up. Measured on a 410 MB library (332 items): a 5.7 MB copy in 2.4 s; a restore rebuilt the index in ~20 min, during which browsing works and search waits.
+- When: the scheduler thread checks hourly (first after 5 min) and runs once a day if the change stamp (counts + latest timestamps of what a person writes) moved; a clean engine shutdown runs one more; choosing a folder runs the first at once; `POST /backup` / `enq backup` on demand. Keeps 7 daily + the newest of 4 earlier weeks.
+- `restore()` (`enq restore`): refuses while the engine answers on 127.0.0.1:8787, quick-checks the file, moves the live `enqueue.db` (+ wal/shm) to `before-restore-<time>/` (never deleted), copies the backup in, fills missing blobs, and fills `settings.json`/`keyring.json` only when absent (a new Mac). The next start migrates and, with no recorded embed version, rebuilds the index (index/bootstrap.py).
+- Events: `backup` (with the record) and `backup.failed` in the Activity log.
+
 ## Trash
 
 Deleting is two steps and a window, never one keystroke.
@@ -940,7 +961,10 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 | `tests/test_settings.py` | API key never touches disk, keychain guards, extra headers parsing. |
 | `tests/test_migrations.py` | Fresh DB reaches head, pre-migration DB is adopted, capture can never hold a body. |
 | `tests/test_trash.py` | Delete is reversible, purge destroys, retention window, blob sharing guard. |
-| `tests/test_preview.py` | Parse, image URL resolution, fetch guards, preview indexing. |
+| `tests/test_preview.py` | Parse, image URL resolution, fetch guards, preview indexing, the browser fallback. |
+| `tests/test_model_pause.py` | The usage-limit pause: trip on 429, no call while paused, retries rescheduled, lifted by a new key. |
+| `tests/test_backup.py` | Backups: copy without the index, change stamp, retention, no partial files, restore sets the library aside. |
+| `tests/test_md_roundtrip.py` + `tests/js/md_roundtrip.js` | md() and htmlToMd() round-trip a note unchanged (run under node). |
 
 ### Conventions
 
@@ -1092,6 +1116,13 @@ Ingest skips a trashed, vaulted or embedded artifact instead of chunking it back
 `enq index` rebuilds every layer from the tables.
 `enq doctor` compares the chunk index with `indexable_chunk_count` (chunks of live artifacts), not every chunk.
 A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
+
+### A note must round-trip through md() and htmlToMd() unchanged
+
+`static/js/md.js` renders a note (desktop editor, phone reader) and `htmlToMd` writes the desktop editor back; a note opened and saved with no edits must come back byte for byte, or it changes shape on its own each time it is touched.
+`tests/js/md_roundtrip.js` (run by `tests/test_md_roundtrip.py`, needs node) pins it: nested and mixed lists, empty bullets (an item, not a list break), ordered lists keeping their start, multi-line quotes, code fences, and blocks written with NO blank line between them - md() marks those `data-tight` and the serializer writes them back tight, so lines typed on the phone do not grow blank lines after a desktop save.
+Add a case there for every rendering bug fixed.
+The desktop editor saves as you type (debounced) and on window blur, and `refreshIfStale` never rebuilds an editor holding unsaved words (it re-reads the page only when the store changed elsewhere): rebuilding it on window focus used to drop the words typed since the last blur.
 
 ### The title is prepended for indexing only
 

@@ -90,6 +90,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # page is empty until its scripts run, is opened once more in headless Chromium
     # through crawl4ai (preview.py). Off by default: a browser start per such link.
     "preview_browser": ("ENQ_PREVIEW_BROWSER", "off", True),
+    # The folder backups go into (backup.py) - a cloud drive's folder, Proton Drive by
+    # design. Empty means backups are off. The live library never moves there.
+    "backup_dir": ("ENQ_BACKUP_DIR", "", True),
     # Free text, sent as extra headers on every model call. Some endpoints want a
     # referer or an app name before they will answer; this is the escape hatch that
     # stops each one becoming a code change. One `Name: value` per line.
@@ -224,6 +227,12 @@ def update(changes: dict) -> dict:
     _resync_to_relay()
     # A usage limit belongs to the account or model it was hit on; a switch to
     # another one should not keep waiting it out (providers/pause.py).
+    # Choosing a backup folder makes the first backup right away, so the person sees
+    # it land instead of waiting a day for the schedule.
+    if (changes.get("backup_dir") or "").strip():
+        from . import backup
+
+        backup.run_soon("folder chosen")
     if set(changes) & _PROVIDER_FIELDS:
         from .providers import pause
 
