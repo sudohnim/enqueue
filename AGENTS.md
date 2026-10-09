@@ -1164,7 +1164,7 @@ The page's lock-on-hidden handlers skip while a prompt is open (`fingerprintProm
 **The switches and their dialogs** live in `mobile.html`.
 Each lock is one `.mswitch-row` (the whole row is a `role="switch"` button, the phone's version of the desktop `.toggle`): `#settings_app_lock` in Settings > Lock and `#vault_fingerprint` inside the vault.
 Turning one ON shows `mobileSheet` (a title, a few lines, two buttons, built from the confirm dialog's parts) explaining what it does before the system prompt; turning one OFF shows it as a confirmation.
-Each is also offered once: the app lock the first time the library is on screen on a phone that can use it (`maybeOfferAppLock`, never over another sheet, the writing page or a reader), and the vault's right after the code opens it (`maybeOfferVaultFingerprint`).
+Each is also offered once: the app lock the first time the library is on screen on a phone that can use it (`maybeOfferAppLock`, never over another sheet, the writing page or a reader), and the vault's right after the code opens it (`maybeOfferVaultFingerprint`), from EITHER door: Diagnostics, or locking an item away from its page (`vaultMobileArtifact`). It needs the vault open (the key in memory), not the vault page on screen; when only the Diagnostics door offered it, someone who only ever locked items away was asked for the code every time.
 The "already offered" marks are `localStorage` keys `enq.lockOffered` and `enq.diagOffered` (the second named for the decoy); a phone with no screen lock is not asked, and is not marked, so it is asked once it has one.
 The Back gesture closes an open `.mconfirm-backdrop` first (`window.__enqBack` sends it `enq-cancel`, which the plain `mobileConfirm` listens for too).
 

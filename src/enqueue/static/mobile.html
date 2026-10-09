@@ -3230,11 +3230,26 @@
     paintVaultFingerprint();
   }
   // Offer it once, right after the code opened the vault: the moment the ~7 second
-  // wait was just felt, and the only moment the vault is open to turn it on.
+  // wait was just felt, and the only moment the vault is open to turn it on. Both
+  // doors lead here - Diagnostics, and locking an item away from its page - so the
+  // person who only ever uses the second one is asked too. It needs the vault OPEN
+  // (the key in memory), not the vault page on screen.
   async function maybeOfferVaultFingerprint() {
     const st = lockStatus();
     if (!st || st.fingerprint !== "ready" || flag(VAULT_FINGER_OFFERED)) return;
-    if (document.getElementById("vault").hidden || (await vaultFingerprintIsOn())) return;
+    let vault;
+    try {
+      vault = parse(await invoke("mobile_vault_status"));
+    } catch (e) {
+      return;
+    }
+    if (!vault.unlocked || vault.fingerprint) return;
+    const busy =
+      document.hidden ||
+      writerOpen() ||
+      document.querySelector(".mconfirm-backdrop") ||
+      document.getElementById("mpin");
+    if (busy) return; // not marked as offered: the next code entry asks
     setFlag(VAULT_FINGER_OFFERED);
     await turnOnVaultFingerprint("Open the vault with your fingerprint next time?");
   }
@@ -7451,6 +7466,9 @@ return;
       armVaultIdleLock(); // key is live now; start the inactivity re-lock
       if (!document.getElementById("library").hidden) renderLibrary(); // it vanishes
       toast("Moved to the vault.");
+      // The code was just typed and the wait just felt: offer the fingerprint once,
+      // so the next item locks away with a touch instead.
+      maybeOfferVaultFingerprint();
     })();
   }
 
