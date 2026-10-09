@@ -24,7 +24,7 @@ def sqlite_store(store, monkeypatch):
     get_store.cache_clear()
 
 
-def _note(aid: str, statement: str, model: str | None = None) -> None:
+def _note(aid: str, statement: str, model: str | None = None, level: int = 1) -> None:
     with db.transaction() as conn:
         conn.execute(
             "INSERT INTO artifacts (id, kind, title, body, content_hash, status, created_at,"
@@ -33,8 +33,8 @@ def _note(aid: str, statement: str, model: str | None = None) -> None:
         )
         conn.execute(
             "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
-            " VALUES (?, ?, 3, ?, ?, 0.5)",
-            (f"f-{aid}", aid, statement, model or cand._get_model(False)),
+            " VALUES (?, ?, ?, ?, ?, 0.5)",
+            (f"f-{aid}", aid, level, statement, model or cand._get_model(False)),
         )
 
 
@@ -116,7 +116,7 @@ def test_artifact_detail_carries_related(sqlite_store):
     body = TestClient(create_app()).get("/artifacts/a").json()
 
     assert [r["id"] for r in body["related"]] == ["b"]
-    assert set(body["related"][0]) == {"id", "title", "kind", "score", "via"}
+    assert set(body["related"][0]) == {"id", "title", "kind", "score", "via", "point"}
 
 
 def _entity(aid: str, name: str, model: str | None = None) -> None:
@@ -164,3 +164,243 @@ def test_common_names_and_stale_entities_link_nothing(sqlite_store):
     finally:
         conn.close()
     assert [r["via"] for r in links if r["via"]] == []
+
+
+def _rows(aid: str) -> dict[str, dict]:
+    conn = db.get_conn()
+    try:
+        return {r["id"]: r for r in related.for_artifact(conn, aid)}
+    finally:
+        conn.close()
+
+
+def test_an_idea_link_keeps_the_line_that_matched(sqlite_store):
+    """Each direction names the line of the note it points at: that is the reason shown."""
+    theirs = "Structures endure by yielding under stress instead of resisting it."
+    _note("a", SHARED)
+    _note("b", theirs)
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    assert _rows("a")["b"]["point"] == theirs
+    assert _rows("b")["a"]["point"] == SHARED
+    assert _rows("a")["b"]["via"] is None
+
+
+def test_only_subject_lines_link(sqlite_store):
+    """A line above the subject level is written to leave the subject behind (and the
+    bridge lines borrow another field's words on purpose), so it never makes a link."""
+    _note("a", SHARED)
+    _note("abstract", SHARED, level=3)
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+    related.compute("abstract")
+
+    assert _links("a") == []
+    assert _links("abstract") == []
+
+
+def test_links_from_an_older_rule_are_recomputed_once(sqlite_store):
+    _note("a", SHARED)
+    _note("b", SHARED)
+    sqlite_store.upsert_facets()
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO related (artifact_id, related_id, score, model_version, created_at)"
+            " VALUES ('a', 'gone', 0.9, 'm', ?)",
+            (db.now(),),
+        )
+
+    assert related.refresh_if_outdated() == 2
+    assert _rows("a")["b"]["point"] == SHARED
+    conn = db.get_conn()
+    try:
+        assert not conn.execute("SELECT 1 FROM related WHERE related_id = 'gone'").fetchone()
+    finally:
+        conn.close()
+    assert related.refresh_if_outdated() == 0
+
+
+def _mention(aid: str, name: str) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
+            " VALUES (?, ?, ?, 'A fact.', ?, 0.5)",
+            (f"e-{aid}-{name}", aid, name, cand._get_model(False)),
+        )
+
+
+def test_a_links_own_site_is_not_a_shared_mention(sqlite_store):
+    """Two articles saved from the same site both "mention" it; that is not a link. A
+    note that names the site is about it, so a name shared between notes still links."""
+    subjects = {
+        "post1": "How sourdough starters are fed and kept alive over months.",
+        "post2": "The orbital mechanics of a satellite transfer between two planets.",
+        "note1": "A ledger of household repairs and what each one cost.",
+        "note2": "Rules for a card game played with two decks.",
+    }
+    for aid, subject in subjects.items():
+        _note(aid, subject)
+        _mention(aid, "Medium")
+    # The site refused the preview, so only the address says where each came from.
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE artifacts SET source_url = 'https://medium.com/@someone/' || id"
+            " WHERE id IN ('post1', 'post2')"
+        )
+    sqlite_store.upsert_facets()
+
+    related.compute("post1")
+    related.compute("note1")
+
+    assert _links("post1") == []
+    assert _links("note1") == ["note2"]
+
+
+# ---- idea links: similarity proposes, the model judges -----------------------------
+
+IDEA = "Reliability under pressure follows from incentives rather than from character."
+
+
+class _Judge:
+    """Stands in for the ingest model: answers every candidate the same way."""
+
+    model = "judge"
+
+    def __init__(self, same=True, why="Both say incentives predict behaviour.", error=None):
+        self.same, self.why, self.error, self.calls = same, why, error, []
+
+    def complete(self, system, user, response_model, **kwargs):
+        self.calls.append(user)
+        if self.error:
+            raise self.error
+        ids = [
+            line.split(": ", 1)[1] for line in user.splitlines() if line.startswith("candidate id")
+        ]
+        return response_model(verdicts=[{"id": i, "same": self.same, "why": self.why} for i in ids])
+
+
+@pytest.fixture
+def idea_pair(sqlite_store, monkeypatch):
+    """Two notes about different things whose idea lines (level 3) say the same."""
+    _note("prince", "A sixteenth-century manual on holding power in an Italian city.")
+    _note("war", "A catalogue of military campaigns and how each was won.")
+    for aid in ("prince", "war"):
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
+                " VALUES (?, ?, 3, ?, ?, 0.5)",
+                (f"idea-{aid}", aid, IDEA, cand._get_model(False)),
+            )
+    sqlite_store.upsert_facets()
+    model = cand._get_model(False)
+
+    def use(judge):
+        from enqueue.providers import base
+
+        judge.model = model  # facets are current only for the model that wrote them
+        monkeypatch.setattr(base, "get_provider", lambda *a, **k: judge)
+        return judge
+
+    return use
+
+
+def test_an_unjudged_pair_is_not_a_link(idea_pair):
+    judge = idea_pair(_Judge())
+
+    related.compute("prince")
+
+    assert _links("prince") == []
+    assert related.is_pending("prince")
+    assert judge.calls == []
+
+
+def test_the_judges_yes_links_both_ways_with_its_sentence(idea_pair):
+    judge = idea_pair(_Judge())
+
+    related.compute("prince", judge=True)
+
+    assert _rows("prince")["war"]["point"] == "Both say incentives predict behaviour."
+    assert _rows("war")["prince"]["point"] == "Both say incentives predict behaviour."
+    assert not related.is_pending("prince")
+    related.compute("war", judge=True)  # the pair is cached: the other side asks nothing
+    assert len(judge.calls) == 1
+    assert "prince" in _links("war")
+
+
+def test_the_judges_no_is_remembered_and_links_nothing(idea_pair):
+    judge = idea_pair(_Judge(same=False, why=""))
+
+    related.compute("prince", judge=True)
+    related.compute("prince", judge=True)
+
+    assert _links("prince") == []
+    assert not related.is_pending("prince")
+    assert len(judge.calls) == 1
+
+
+def test_a_rate_limited_judge_owes_the_artifact_and_invents_nothing(idea_pair):
+    from enqueue.providers.pause import ModelPaused
+
+    idea_pair(_Judge(error=ModelPaused("paused")))
+
+    with pytest.raises(related.JudgeOwed):
+        related.compute("prince", judge=True)
+
+    assert _links("prince") == []
+    assert related.is_pending("prince")
+    assert related.pending_ids() == ["prince"]
+
+
+def test_a_changed_subject_asks_again(idea_pair):
+    judge = idea_pair(_Judge(same=False, why=""))
+    related.compute("prince", judge=True)
+    with db.transaction() as conn:
+        conn.execute("UPDATE facets SET statement = 'A manual on ruling.' WHERE id = 'f-prince'")
+
+    related.compute("prince", judge=True)
+
+    assert len(judge.calls) == 2
+
+
+def test_a_private_pair_only_goes_to_the_local_model(idea_pair, monkeypatch):
+    from enqueue.providers import base
+
+    asked = []
+
+    judge = idea_pair(_Judge())
+
+    def provider(local_only=False, **kwargs):
+        if kwargs.get("role") == "ingest":
+            asked.append(local_only)
+        return judge
+
+    monkeypatch.setattr(base, "get_provider", provider)
+    with db.transaction() as conn:
+        conn.execute("UPDATE artifacts SET local_only = 1 WHERE id = 'war'")
+
+    related.compute("prince", judge=True)
+
+    assert asked == [True]
+
+
+def test_the_ingest_worker_owes_a_retry_when_the_judge_is_paused(idea_pair):
+    from enqueue.ingest import queue
+    from enqueue.providers.pause import ModelPaused
+
+    idea_pair(_Judge(error=ModelPaused("paused")))
+
+    queue._related_artifact("prince", changed=True)
+
+    conn = db.get_conn()
+    try:
+        assert conn.execute("SELECT 1 FROM facet_retry WHERE artifact_id = 'prince'").fetchone()
+    finally:
+        conn.close()
+    # A later run with nothing new to summarize still finishes the judging.
+    judge = idea_pair(_Judge())
+    queue._related_artifact("prince", changed=False)
+    assert len(judge.calls) == 1
+    assert "war" in _links("prince")

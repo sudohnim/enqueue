@@ -37,6 +37,8 @@ const ICONS = {
 	// into the content (the drawer lives off the right edge, so it invites you to
 	// pull it in); open, it points back out, inviting you to push it away. One
 	// button, two directions, read at a glance.
+	// The Details toggle: the same mark as the phone's (mobile.html).
+	info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
 	panelin:
 		'<path d="M13.5 6.5L8 12l5.5 5.5"/><path d="M19 6.5L13.5 12l5.5 5.5"/>',
 	panelout:

@@ -30,6 +30,7 @@ You capture a thing the moment you meet it, without choosing a folder, a tag, or
 Later, when a subject is on your mind, you search or ask, and Enqueue brings back everything that speaks to it, including things that never used your words.
 
 Everything you save is an **artifact**: a note, a link, a PDF, an image, or a file.
+The **?** at the top right of the home page (and of the phone's library) opens a seven-card tour of all this, with small demos you can try; nothing typed there is saved.
 Your library lives on your Mac, in one folder (`~/.enqueue-poc`).
 
 ## Capturing
@@ -128,7 +129,17 @@ Search looks in three ways at once:
 - **Your meaning.** A paraphrase finds a note that shares none of its words.
 - **The idea.** Each artifact carries a model-written summary of what it could be an example of, so "things that gain from stress" can find a note about lifting weights and a PDF about forests.
 
+Typing an artifact's name finds that artifact first, ahead of anything that only resembles it.
+Results never wait long on the model: when it is slow, the results it has not checked yet are shown last, under a line that says so, and the same search is exact the next time.
+
 If you never saved anything about a subject, the answer is **nothing found**, not a wall of loosely related things.
+
+### Finding a word inside one artifact
+
+With an artifact open, press **Cmd+F** (Ctrl+F) and type.
+Every match on the page is marked, **Enter** goes to the next one and **Shift+Enter** to the one before, and **Esc** closes it.
+Text you had selected is searched for straight away.
+It works in a note, in your notes on a link or image, in a text file, and across the pages of a PDF.
 
 ## Asking
 
@@ -145,7 +156,8 @@ It follows the pointer, blinks, and approves when something is saved.
 
 ## Summaries
 
-Open an artifact and click **«** to open its drawer.
+Open an artifact and click the **circled i** to open its Details panel: tags, views, the summary, and passages that connect to other artifacts.
+The page slides aside so the panel never covers what you are reading.
 The **Summary** is a handful of lines the model wrote about what the artifact says and what it is an example of.
 These lines are what let search find it by idea.
 
@@ -154,10 +166,28 @@ These lines are what let search find it by idea.
 - The round arrow writes the machine's lines again; the lines you wrote or edited are kept.
 
 Short notes, and anything holding what looks like a password or a key, get no summary.
+A long summary scrolls inside its own box, so the rest of the panel stays in reach.
+
+## Related
+
+Under an artifact, **Related** lists up to five others, each with the reason it is there.
+There are three kinds of link:
+
+- **The same subject.** The reason is the other artifact's own "what it is about" line.
+- **The same name.** Both mention the same person, place or thing: "Both mention Yosemite."
+- **The same point, from another field.** A book on statecraft beside one on war, because both say incentives predict behaviour better than character. The reason is one plain sentence beginning "Both".
+
+Nothing is invented to fill the list.
+A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.
+If the model is out of usage or unreachable, the other two kinds still work, and the waiting pairs are judged on their own once it is back.
+Each pair is judged once and remembered.
+An artifact marked local-only is only ever judged by the model on your computer.
+Click a related artifact to open it.
+Related is shown on the desktop only.
 
 ## Tags and views
 
-Tags are optional, and always added after the fact, in the drawer.
+Tags are optional, and always added after the fact, in the Details panel.
 
 A **view** is a saved way of looking at the library: "everything about the Lisbon trip", "recipes I have actually cooked".
 There are two ways to make one.
@@ -179,7 +209,7 @@ An assistant view stays as it was gathered until you click **Rebuild**, which ga
 Removing a tile from one puts it on a **Removed** shelf at the bottom, where **restore** brings it back.
 If you would rather take one over, **Arrange by hand** makes a copy that is yours to rearrange.
 
-Either kind can be renamed or forgotten from the Custom tab, and an artifact's drawer has **add to a view**.
+Either kind can be renamed or forgotten from the Custom tab, and an artifact's Details panel has **Add to a view**.
 
 ## Trash
 

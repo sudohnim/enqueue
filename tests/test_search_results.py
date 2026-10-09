@@ -1159,3 +1159,91 @@ class TestQ7FacetEntityDenseLegs:
         assert a1, f"partial-word keyword hit must bypass the floor, got {hits}"
         assert a1[0]["had_lexical_hit"], "the keyword prefix leg must mark the hit lexical"
         assert calls == [], "a keyword-leg hit must bypass the bars with no judge call"
+
+
+class TestTitleNamesTheNote:
+    """Typing a note's name finds that note first, whatever the summaries say."""
+
+    def test_a_title_that_is_the_query_comes_first(self, sqlite_store):
+        with db.transaction() as conn:
+            _note(conn, "named", "The Good Life", "Notes on wine, bread and long lunches.")
+            _note(
+                conn,
+                "about",
+                "yardsticks to measure a good life",
+                "The good life, the good life, the good life: how to measure a good life.",
+            )
+            _note(conn, "other", "Stoic practice", "A good life is lived according to nature.")
+            _chunk(conn, "c1", "named", 0, "Notes on wine, bread and long lunches.")
+            _chunk(conn, "c2", "about", 0, "The good life: how to measure a good life.")
+            _chunk(conn, "c3", "other", 0, "A good life is lived according to nature.")
+        sqlite_store.upsert_chunks()
+
+        rows = search_results("the good life")
+
+        assert [r["artifact_id"] for r in rows][:2] == ["named", "about"]
+        assert rows[0]["why"] == "title"
+
+    def test_one_common_word_does_not_pin_every_title_holding_it(self, sqlite_store):
+        with db.transaction() as conn:
+            _note(conn, "a", "Life in the canopy", _BODY)
+            _note(conn, "b", "Life", _UNRELATED)
+            _chunk(conn, "c1", "a", 0, _BODY)
+            _chunk(conn, "c2", "b", 0, _UNRELATED)
+        sqlite_store.upsert_chunks()
+
+        rows = search_results("life")
+
+        assert [r["why"] for r in rows].count("title") == 1
+        assert rows[0]["artifact_id"] == "b"
+
+
+class TestTheJudgeNeverHoldsASearch:
+    def test_a_slow_judge_is_not_waited_for(self, monkeypatch):
+        """The search answers after the wait, keeping the gray zone marked unjudged."""
+        import threading
+        import time
+
+        from enqueue.retrieve import candidates as cand
+
+        release = threading.Event()
+
+        def slow_judge(query, hits):
+            release.wait(10)
+            return set()
+
+        monkeypatch.setattr(cand, "judge_gray_zone", slow_judge)
+        monkeypatch.setattr(cand, "_judge_cache_read", lambda *a: None)
+        monkeypatch.setattr(config, "SEARCH_JUDGE_WAIT_S", 0.05)
+        gray = {"artifact_id": "g", "dense_similarity": (KEEP_ABOVE + DROP_BELOW) / 2}
+
+        started = time.monotonic()
+        try:
+            kept = _apply_floor("q", [gray])
+        finally:
+            release.set()
+
+        assert time.monotonic() - started < 2
+        assert kept == [{**gray, "loose": True}]
+
+    def test_a_cached_no_still_drops_when_the_judge_is_slow(self, monkeypatch):
+        import threading
+
+        from enqueue.retrieve import candidates as cand
+
+        release = threading.Event()
+        monkeypatch.setattr(cand, "judge_gray_zone", lambda q, hits: release.wait(10) or set())
+        monkeypatch.setattr(cand, "_judge_cache_read", lambda q, aid, model: aid == "yes")
+        monkeypatch.setattr(config, "SEARCH_JUDGE_WAIT_S", 0.05)
+        sim = (KEEP_ABOVE + DROP_BELOW) / 2
+        hits = [
+            {"artifact_id": "yes", "dense_similarity": sim},
+            {"artifact_id": "no", "dense_similarity": sim},
+        ]
+
+        try:
+            kept = _apply_floor("q", hits)
+        finally:
+            release.set()
+
+        assert kept == [hits[0]]

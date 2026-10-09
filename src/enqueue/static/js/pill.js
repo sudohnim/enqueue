@@ -25,6 +25,8 @@ let place = "wall";
 function restorePill(where) {
 	if (where) place = where;
 	closeMenu();
+	// The find field lives in the pill; leaving it by any road takes its marks along.
+	if (typeof clearFind === "function") clearFind();
 	pill.classList.remove("wide");
 	const inside = place === "inside";
 
@@ -299,6 +301,17 @@ LinkPop.attach({
 		bridge ? bridge("open_external", { url }) : window.open(url, "_blank", "noopener"),
 	notify: (message, bad) => toast(message, bad),
 });
+
+// The tour behind the ? on the home header (TOUR.1, js/tour.js) - the same deck the
+// phone shows. Its capture card names the hotkey as it is actually set, so ask Settings
+// for it; until that answers (or if it fails) the card shows the default.
+Tour.attach({ platform: "desktop", assets: "/static/" });
+api("/settings")
+	.then((d) => {
+		const key = d && d.settings && d.settings.hotkey && d.settings.hotkey.value;
+		if (key) Tour.set({ hotkey: key });
+	})
+	.catch(() => {});
 
 // Drag the window by the top strip. `-webkit-app-region` is inert in this WKWebView,
 // so the move is done by invoking the Rust `window_drag` on mousedown, the same path

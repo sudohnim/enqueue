@@ -345,7 +345,42 @@ def needs_fetch(artifact_id: str) -> bool:
         return True
     if row["status"] != "ok":
         return False
-    return not has_body(artifact_id)
+    return not has_body(artifact_id) and not _body_tried(artifact_id)
+
+
+# A page can be fetched perfectly and still have no article in it (an Instagram post,
+# an app shell). Such a link used to count as "needs a fetch" forever, and since a
+# fetch re-queues the artifact for ingest and ingest fetches whatever needs it, one
+# such link fetched its page, re-ingested and re-pushed itself to the relay every
+# second or two for as long as the engine ran (353 times in ten minutes, each one a
+# request to the site and a sync to every other device). A fetch that found no body
+# is now remembered, so the heal is tried once; "Try again" still forces a new one.
+def _body_tried(artifact_id: str) -> bool:
+    conn = db.get_conn()
+    try:
+        return bool(
+            conn.execute(
+                "SELECT 1 FROM derived_values WHERE scope = 'preview_body_tried'"
+                " AND subject = ?",
+                (artifact_id,),
+            ).fetchone()
+        )
+    finally:
+        conn.close()
+
+
+def _mark_body_tried(conn, artifact_id: str, tried: bool) -> None:
+    conn.execute(
+        "DELETE FROM derived_values WHERE scope = 'preview_body_tried' AND subject = ?",
+        (artifact_id,),
+    )
+    if tried:
+        conn.execute(
+            "INSERT INTO derived_values"
+            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
+            " VALUES ('preview_body_tried', ?, '', '1', 1, 'model', '', ?)",
+            (artifact_id, _now()),
+        )
 
 
 def get(artifact_id: str) -> dict | None:
@@ -533,6 +568,7 @@ def fetch(artifact_id: str) -> dict | None:
         # The article body is kept so the link is findable by what it says, not just
         # by its four preview fields. Page 0 is the convention page_text uses for
         # text without real pages; the extractor name separates it from PDF pages.
+        _mark_body_tried(conn, artifact_id, tried=not body_text)
         if body_text:
             conn.execute(
                 "DELETE FROM page_text WHERE artifact_id = ? AND page = 0 AND extractor = ?",

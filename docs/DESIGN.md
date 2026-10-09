@@ -27,7 +27,8 @@ Surfaces climb toward white from the canvas, and recessed wells sink below it.
 - **Canvas** `--bg` `#eee8f6`: the page, the frozen home header, the capture card, dialogs' page behind the scrim.
 - **Tile** `--surface` `#f8f5fb`: wall cards, settings groups, list rows, resting chips.
 - **Reading** `--surface-doc` `#fbf9fd`: menus, dialogs, drawers, toasts.
-- A note (and a capture's notes) is NOT on a surface: it is an open page on the canvas, one ~68ch column under a single `--line` rule. The rule fills once in the accent when a save lands, and "✓ Saved" whispers beside the date. The phone's writing page is the same open page, full screen, with a `--surface` tool bar on the keyboard. The caret is the accent everywhere you write.
+- A note (and a capture's notes) is a sheet lying on the canvas, the same raised page a PDF's leaves are: `--surface-doc` (the warm reading white, never pure white under a page of text), a 20px corner, hairline plus `--shadow-card`, 44/52px of padding (`.docpane:has(> .editor)` in `css/artifact.css`). A line fills across the sheet's top edge on a successful save (`.docpane.landed`) and "✓ Saved" whispers beside the date. A picture stays straight on the ground. The phone's writing page is still an open page, full screen, with a `--surface` tool bar on the keyboard. The caret is the accent everywhere you write.
+- A note's typography reads the shape already typed, with nothing for the writer to do (scoped to `.editor`): a line that leads into a list is that list's label (500, `--text`); an item with items under it heads them; markers step down by depth (accent dot, dash, small dot) beside a hairline guide; headings are in the display face; a quotation is a soft `--bg` block, never a striped margin; a line of three or more dashes is a short centred rule (`md.js` renders it as `<hr data-dashes>` and writes the same dashes back).
 - **Raised** `--surface-2` `#ffffff`: a hovered tile, search, inputs, the active settings section, secondary buttons.
 - **Recessed** `--surface-3` `#e3d9ef`: an OFF toggle track, pressed wells. The darkest ground any text sits on.
 
@@ -203,11 +204,33 @@ White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture field
 
 `--surface-doc` with `--shadow-lifted`, 16-20px radius, no border. Scrims are violet-black (`rgba(33, 10, 56, 0.34-0.4)`), never grey.
 
+**The Details panel** (an artifact's tags, views, summary and connecting passages; `.drawer` in `css/artifact.css`) is a floating white plate, not a slab welded to the window edge: `--surface-2`, `--r-xl`, hairline plus `--shadow-lifted`, 12px in from the right and bottom, under the drag strip.
+Its header ("Details" in the display face) stays put while the body scrolls.
+Each section (`.dsec`) is a label row in the display face at 13/600, with a count or a control when it has one, parted from the next by a `--line-soft` hairline; no tinted boxes inside the panel.
+Chips are 28px pills on `--surface` with a hairline; an "add" control is the same pill drawn with a dashed `--line-strong` edge, which turns solid accent with a ring on focus.
+The summary is a list of points on the panel's white, each led by a small dot (accent on a line the person rewrote), in a box that scrolls on its own with a fade at its foot.
+The open panel never covers the reading column: the column slides left by its overlap (`left`, not `transform`, because the PDF page count is `position: fixed` inside it), as far as the window allows.
+The toggle that opens it is the circled i, the same mark as the phone's, and stays lit (`--lavender-subtle`, accent ink) while it is open; the panel closes on its own x.
+The phone's Details panel (`.details-panel` in `mobile.html`) is the same plate at phone size: floating card, header with the raven and its line, sections parted by hairlines, pill chips with a dashed add, a dotted summary.
+
 ### Personality
 
 - **The ask eye has moods** (`js/eyemood.js`, shared by desktop and phone). It follows you anywhere (the cursor on desktop, your finger on the phone), blinks, and drifts into a lazy eye every 9 to 16 seconds. It approves a keep with one slow blink, squints and darts while search thinks then opens wide on results, startles when something new arrives, looks away and shuts while the vault is open, dozes after a minute of nothing and wakes with a start, and winces and looks away when poked three times. The iris is one flat violet disc, big enough to stare with white left around it. Reduced motion gets a still eye.
 - **The ground drifts with the day** (`js/ground.js`): night `#ddd1ec`, dawn `#f2e9f2`, day `#eee8f6`, dusk `#ebe0f0`, evening `#e4d9f0`, interpolated by the minute. Only the ground ladder moves (`--bg`, and `--surface`, `--surface-doc`, `--surface-3` derived from it); inks and the accent stay. `bin/check-contrast` re-checks every rule on the night ladder. On Android the status and navigation bar strips follow it through the `EnqueueAndroid.setGround` bridge.
+- **The loading raven flies** (`css/bird.css`, `.flybird`, shared with the phone). The one loading mark is the front-on raven with its wings out, cut into a body and two wings with clip-paths: each wing beats about its own shoulder and the body rides the beat, sinking on the upstroke and lifting on the downstroke, with a slow sway. It used to be the whole picture spinning like a wheel. Markup is `<span class="flybird"><i></i><i></i><i></i></span>`, sized where it is used; reduced motion holds it still.
+- **The raven that found them stands on Related** (`.related-raven`, `raven-scroll.png`): on the top edge of the first row of related artifacts, the scroll it carried at its feet, leaning in when you reach for one.
+- **The raven stands in the Details panel** (`.drawer-perch`, `ravenLine` and `ravenNod` in `js/artifact.js`). The panel is the raven showing what it made of the thing, so it stands on the header's rule with its head cocked (`raven-tilt.png`), facing the page, and the header says so in its voice ("I read it. Here's what stuck.", "My reading. Correct me.", "Still reading. One moment.", "I kept my eyes off this one." for a thing held out of every model call). Every line is true of the state it is shown in, and the "read it" line an artifact gets is fixed by its id. It lands once when the panel is opened (never on a re-render), bobs for exactly as long as a summary is being rewritten while the ask eye squints, and hops, with the eye's slow approving blink, when you rewrite or add a line; that line's dot takes the accent with a small pop. Reduced motion gets a still raven.
 - **The greetings have a voice**: the raven that keeps your things, cheeky and a little too observant ("Up before the worms", "I've been counting your tabs", "It's just us now"). `greeting.py` is the source; the phone mirrors the lists. The phrase's own ending ("Still up?") or a period is the accent mark.
+
+### The tour (the ? on the home header)
+
+- The `?` is an icon button (a `--line-soft` plate that turns white on hover), 32px on the desk and a 44px target on the phone, at the top right of the home header; an 8px accent bead marks it until the tour has been opened once.
+- The tour is a stage, not a dialog card: the whole window on the flat canvas, with no scrim.
+- It speaks in the greeting's voice: the headline is the display face at greeting size (40-58px on the desk, 34px on the phone), tight, with its last word and full stop in the accent.
+- Two columns on the desk (words, then a demo plate on `--surface` with a 22px radius); one column on the phone, words first.
+- Demos are built from miniature wall tiles (white `--surface-2` plates, kind dot and word, title in the display face) so they read as the real thing at a glance.
+- Progress is a row of short bars that fill in the accent; there are no step numbers.
+- Motion is one settle per card (the words slide in from the side they came from, the plate rises) plus the small answers inside the demos; reduced motion gets none of it.
 
 ## 8. Do's and Don'ts
 

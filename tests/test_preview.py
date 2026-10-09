@@ -183,6 +183,30 @@ class TestArticleBody:
         assert preview.has_body(made["id"]) is False
         assert preview.text_for_index(made["id"]) == "Landing\n\nA page that says nothing."
 
+    def test_a_page_with_no_article_is_fetched_once_not_forever(
+        self, store, quiet_queue, monkeypatch
+    ):
+        """A fetch re-queues the artifact and ingest fetches whatever needs it, so a
+        link whose page never yields a body used to fetch, re-ingest and re-push itself
+        without end."""
+        made = capture.link("https://a.co/post")
+        shell = "<html><head><title>A post</title></head><body><div id='root'></div></body></html>"
+        calls = []
+        monkeypatch.setattr(
+            preview, "_read_capped", lambda url: calls.append(url) or ("text/html", shell)
+        )
+        assert preview.needs_fetch(made["id"]) is True
+
+        preview.fetch(made["id"])
+
+        assert preview.has_body(made["id"]) is False
+        assert preview.needs_fetch(made["id"]) is False
+        # A later fetch that does find the article clears the mark.
+        monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", ARTICLE))
+        preview.fetch(made["id"])
+        assert preview.has_body(made["id"]) is True
+        assert preview.needs_fetch(made["id"]) is False
+
     def test_a_link_with_a_body_chunks_from_the_article(self, store, quiet_queue, monkeypatch):
         made = capture.link("https://proton.me/blog/lumo-2-design")
         monkeypatch.setattr(preview, "_read_capped", lambda url: ("text/html", ARTICLE))

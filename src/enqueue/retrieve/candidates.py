@@ -9,8 +9,9 @@ from __future__ import annotations
 import json
 import math
 import re
+import threading
 from collections import Counter, defaultdict
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -63,9 +64,7 @@ def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
     `loose` and moved behind every hit that passed on its own.
     """
     gray = [h for h in hits if _floor_verdict(h) == "gray"]
-    _UNJUDGED.set(frozenset())
-    kept_gray = judge_gray_zone(query, gray) if gray else None
-    unjudged = _UNJUDGED.get()
+    kept_gray, unjudged = _judge_in_time(query, gray) if gray else (None, frozenset())
     sure, loose = [], []
     for h in hits:
         verdict = _floor_verdict(h)
@@ -78,6 +77,60 @@ def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
         else:
             sure.append(h)
     return sure + loose
+
+
+# A search never waits on the model for long: a slow judge (a thinking model, a retry,
+# a provider having a bad minute) once held a search for an exact title for 94 seconds.
+# At most this many judges run on past their search; a search that finds them all busy
+# answers without one rather than queueing more model calls behind them.
+_JUDGES = threading.BoundedSemaphore(2)
+
+
+def _judge_in_time(query: str, gray: list[dict]) -> tuple[set[str], frozenset[str]]:
+    """The judge's verdict on the gray zone, waited for `SEARCH_JUDGE_WAIT_S` at most.
+
+    Returns (kept ids, the kept ids it could not rule on). When the judge is not back
+    in time it finishes in the background and caches its verdicts, so the same search
+    is exact the next time; this one keeps what a cached verdict keeps and marks the
+    rest unjudged (shown last, under a line that says so).
+    """
+    if not _JUDGES.acquire(blocking=False):
+        return _cached_verdicts(query, gray)
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            _UNJUDGED.set(frozenset())
+            box["kept"] = judge_gray_zone(query, gray)
+            box["unjudged"] = _UNJUDGED.get()
+        finally:
+            _JUDGES.release()
+
+    worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
+    worker.start()
+    worker.join(config.SEARCH_JUDGE_WAIT_S)
+    if "unjudged" in box:
+        return box["kept"], box["unjudged"]
+    return _cached_verdicts(query, gray)
+
+
+def _cached_verdicts(query: str, gray: list[dict]) -> tuple[set[str], frozenset[str]]:
+    """What is already known about the gray zone without a model call: a cached "no"
+    drops, a cached "yes" keeps, and anything never judged is kept as unjudged."""
+    try:
+        model_version = get_provider(role="search").model
+    except Exception:  # noqa: BLE001 - fail-open is the contract
+        ids = {h["artifact_id"] for h in gray}
+        return ids, frozenset(ids)
+    kept: set[str] = set()
+    unjudged: set[str] = set()
+    for hit in gray:
+        cached = _judge_cache_read(query, hit["artifact_id"], model_version)
+        if cached is None:
+            unjudged.add(hit["artifact_id"])
+        if cached is not False:
+            kept.add(hit["artifact_id"])
+    return kept, frozenset(unjudged)
 
 
 class _GrayZoneVerdict(BaseModel):
@@ -496,6 +549,52 @@ def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
         conn.close()
 
 
+def _title_hits(query: str, limit: int) -> list[dict]:
+    """Artifacts named by the search: a title that IS the query first, then titles that
+    contain it as a phrase (whole words, punctuation and case aside).
+
+    Typing a note's name is the plainest search there is, and fusion alone does not
+    honour it: "The good life" ranked the note called The Good Life second, behind one
+    whose summary happened to sit closer. A one-word query only matches a whole title,
+    since one common word inside many titles names none of them.
+    """
+    needle = _word_form(query)
+    if not needle:
+        return []
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, kind, updated_at FROM artifacts WHERE title IS NOT NULL"
+            " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+        ).fetchall()
+        whole, inside = [], []
+        for row in rows:
+            title = _word_form(row["title"])
+            if title == needle:
+                whole.append(row)
+            elif " " in needle and f" {needle} " in f" {title} ":
+                inside.append(row)
+        newest = lambda r: r["updated_at"] or ""  # noqa: E731
+        found = sorted(whole, key=newest, reverse=True) + sorted(inside, key=newest, reverse=True)
+        found = found[:limit]
+        texts = artifact_texts(conn, [r["id"] for r in found], max_words=40)
+        return [
+            {
+                "score": 1.0,
+                "artifact_id": r["id"],
+                "title": r["title"],
+                "kind": r["kind"],
+                "why": "title",
+                "snippet": " ".join(texts[r["id"]].split())[:200],
+                "dense_similarity": 0.0,
+                "had_lexical_hit": True,
+            }
+            for r in found
+        ]
+    finally:
+        conn.close()
+
+
 def _pin_exact(
     exact: list[dict], results: list[dict], limit: int, allowed: set[str] | None = None
 ) -> list[dict]:
@@ -750,6 +849,10 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         fused = _merge_fuzzy(hybrid, fuzzy, limit)
         ranked = _apply_floor(query_text, fused)
 
+    if phrase is None:
+        titled = _title_hits(query_text, limit)
+        if titled:
+            ranked = _pin_exact(titled, ranked, limit, allowed)
     if exact:
         ranked = _pin_exact(exact, ranked, limit, allowed)
     return ranked

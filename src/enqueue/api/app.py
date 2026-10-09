@@ -89,6 +89,10 @@ def serve() -> None:
         # Heal index rows orphaned by earlier builds: on the ingest worker, ahead of
         # the backfill and retries just queued, so it never races them.
         ingest_queue.run_exclusive(ingest_queue.prune_index, wait=False)
+        # Links chosen by an older rule are recomputed once (ingest/related.py).
+        from ..ingest import related
+
+        ingest_queue.run_exclusive(related.refresh_if_outdated, wait=False)
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 

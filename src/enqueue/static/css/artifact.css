@@ -178,50 +178,163 @@
   .bodycol > :first-child {
     margin-top: 0;
   }
-  /* The tags-and-summary drawer. Fixed to the right edge, over the content, never
-     beside it: it cannot push or reflow the reading column, only cover it. Hidden
-     off-screen when closed, so it is out of the tab order and the a11y tree until
-     the toggle brings it in. */
+  /* The details panel (tags, views, summary, connecting passages). A raised white
+     plate floating inside the window's right edge, not a slab welded to it: it sits
+     ON the lavender ground like every other raised thing here. Hidden when closed,
+     so it is out of the tab order and the a11y tree until the toggle brings it in.
+     Its header stays put while the body scrolls. */
   .drawer {
+    --drawer-w: 380px;
     position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(320px, 88vw);
+    /* Clears the 32px drag strip above. */
+    top: 44px;
+    right: var(--sp-3);
+    bottom: var(--sp-3);
+    width: min(var(--drawer-w), calc(100vw - 2 * var(--sp-3)));
     z-index: var(--z-drawer);
-    background: var(--surface-doc);
-    box-shadow: var(--shadow-lifted);
-    overflow-y: auto;
-    /* The same breathing room as main: clears the 32px drag strip above and the
-       pill below, so nothing scrolls under the chrome. */
-    padding: calc(32px + var(--sp-5)) var(--sp-5) 132px;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-2);
+    border-radius: var(--r-xl);
+    box-shadow: var(--hairline), var(--shadow-lifted);
     visibility: hidden;
-    transform: translateX(100%);
+    opacity: 0;
+    transform: translateX(20px);
     transition:
       transform var(--dur-slow) var(--ease),
+      opacity var(--dur-slow) var(--ease),
       visibility 0s linear var(--dur-slow);
   }
   .drawer.open {
     visibility: visible;
-    transform: translateX(0);
-    transition: transform var(--dur-slow) var(--ease);
+    opacity: 1;
+    transform: none;
+    transition:
+      transform 260ms var(--ease),
+      opacity 180ms var(--ease);
   }
-  .drawer .shelf {
-    margin-top: 0;
+  /* The page steps aside for the open panel instead of being read through a gap
+     beside it: the column slides left by exactly its overlap with the panel, as far
+     as the window has room. `left` on a relative box, not a transform, because the
+     PDF reader's page count is position:fixed inside the column and a transformed
+     ancestor would capture it. Nothing reflows; the measure is unchanged. */
+  #view > .pagecol {
+    position: relative;
+    left: 0;
+    transition: left 260ms var(--ease);
   }
-  /* Sections stacked straight in the drawer (Views, Related) need air above them;
-     the Tags header and the Summary panel carry their own. */
-  .drawer > .shelf {
-    margin-top: var(--sp-5);
+  #view:has(> .drawer.open) > .pagecol {
+    left: calc(-1 * clamp(0px, 780px - 50vw, 50vw - 376px));
   }
-  /* The drawer's own dismiss control. The header toggle is the primary affordance,
-     but at narrow widths the open drawer covers the header, so the drawer carries a
-     `>>` of its own in its top corner - Escape and this both close it. */
+  /* The raven that read the thing stands in the panel it filled in: feet on the
+     header's rule, facing the page. It lands when the panel opens, bobs for as long as
+     a summary is being rewritten, and hops when you correct a line. It is the one
+     piece of the brand's own art in this panel and takes no clicks. */
+  .drawer-perch {
+    position: absolute;
+    right: 60px;
+    bottom: 0;
+    /* raven-tilt.png: head cocked, looking up. 264 x 296. */
+    width: 41px;
+    height: 46px;
+    pointer-events: none;
+    user-select: none;
+    transform-origin: 50% 100%;
+    /* The art faces right; here it faces the page. */
+    scale: -1 1;
+  }
+  .drawer.arriving .drawer-perch {
+    animation: perch-land 720ms var(--ease) 140ms both;
+  }
+  .drawer-perch.hop {
+    animation: perch-hop 520ms var(--ease);
+  }
+  .drawer.thinking .drawer-perch {
+    animation: perch-think 900ms ease-in-out infinite;
+  }
+  @keyframes perch-land {
+    0% {
+      opacity: 0;
+      transform: translateY(-22px) rotate(10deg);
+    }
+    55% {
+      opacity: 1;
+      transform: translateY(0) rotate(0) scaleY(0.86);
+    }
+    78% {
+      transform: translateY(-4px) scaleY(1.04);
+    }
+    100% {
+      transform: none;
+    }
+  }
+  @keyframes perch-hop {
+    35% {
+      transform: translateY(-10px) rotate(8deg);
+    }
+    70% {
+      transform: translateY(0) scaleY(0.92);
+    }
+  }
+  @keyframes perch-think {
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    50% {
+      transform: rotate(-9deg) translateY(1px);
+    }
+  }
   .drawer-top {
+    flex: none;
+    position: relative;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: var(--sp-2);
+    padding: var(--sp-4) var(--sp-3) var(--sp-3) var(--sp-5);
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    /* The brand wash the home header wears, let down the top of the plate. */
+    background: linear-gradient(to bottom, var(--purple-bold-wash), transparent);
+    box-shadow: inset 0 -1px 0 var(--line-soft);
+  }
+  .drawer-heading {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .drawer-title {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 24px;
+    letter-spacing: -0.2px;
+    color: var(--text);
+  }
+  /* What the raven says about its own reading, under the title. */
+  .drawer-voice {
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--text-dim);
+  }
+  /* A real opening lets the sections settle in one after another, once. */
+  .drawer.arriving .dsec {
+    animation: dsec-in 420ms var(--ease) both;
+  }
+  .drawer.arriving .dsec:nth-child(2) {
+    animation-delay: 50ms;
+  }
+  .drawer.arriving .dsec:nth-child(3) {
+    animation-delay: 100ms;
+  }
+  .drawer.arriving .dsec:nth-child(4) {
+    animation-delay: 150ms;
+  }
+  @keyframes dsec-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
   }
   .drawer-close {
     display: inline-flex;
@@ -234,23 +347,74 @@
     background: none;
     cursor: pointer;
     color: var(--text-mute);
-    border-radius: var(--r-sm);
+    border-radius: var(--r);
     flex-shrink: 0;
+    transition:
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
   }
   .drawer-close:hover {
     color: var(--text);
-    background: color-mix(in srgb, var(--line) 20%, transparent);
+    background: var(--surface-3);
+  }
+  .drawer-close:focus-visible,
+  .viewadd:focus-visible,
+  .facet-add:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .drawer-close svg {
     width: 18px;
     height: 18px;
     stroke-width: 1.8;
   }
+  .drawer-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 var(--sp-5) var(--sp-5);
+    border-radius: 0 0 var(--r-xl) var(--r-xl);
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  /* One section per kind of thing, parted by a hairline: a label row (with a count
+     or a control when the section has one), then the content. */
+  .dsec {
+    padding: 18px 0;
+  }
+  .dsec + .dsec {
+    box-shadow: inset 0 1px 0 var(--line-soft);
+  }
+  .dsec:empty {
+    display: none;
+  }
+  .dsec-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-height: 28px;
+    margin-bottom: var(--sp-2);
+  }
+  .dsec-head .shelf {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--text);
+  }
+  .dsec-count {
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+  }
   .tagrow {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--sp-1);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
   }
   .tagrow .tagchip {
     max-width: 100%;
@@ -261,156 +425,258 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tagrow .tagadd {
-    width: 100%;
-    min-width: 0;
-  }
   @media (max-width: 768px) {
+    /* The pill sits bottom centre and the panel now spans the window: stop above it. */
     .drawer {
-      width: 88vw;
+      bottom: 104px;
     }
   }
-  .tagchip {
+  @media (prefers-reduced-motion: reduce) {
+    .drawer,
+    .drawer.open,
+    #view > .pagecol {
+      transition: none;
+      transform: none;
+    }
+    .drawer-perch,
+    .drawer .dsec,
+    .facet::before,
+    .facet-refresh svg {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+  /* Tag and view chips share one shape: a 28px pill on the tile ground with a
+     hairline, the name, and a small x. */
+  .tagchip,
+  .viewchip {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-2);
-    background: var(--surface-2);
+    gap: 2px;
+    height: 28px;
+    padding: 0 4px 0 12px;
+    background: var(--surface);
+    box-shadow: var(--hairline);
     border-radius: var(--r-full);
     border: 0;
     font: inherit;
-    /* Caption: tags are meta labels. */
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 400;
-    line-height: 17px;
+    line-height: 18px;
     color: var(--text);
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .tagchip:hover,
+  .viewchip:hover {
+    background: var(--bg);
   }
   .tagx {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     padding: 0;
     border: 0;
     border-radius: var(--r-full);
     background: none;
     color: var(--text-mute);
     cursor: pointer;
+    transition:
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease);
   }
   .tagx:hover {
     color: var(--text);
-    background: var(--line-soft);
+    background: var(--surface-3);
+  }
+  .tagx:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
   .tagx svg {
     width: 12px;
     height: 12px;
     stroke-width: 2;
   }
-  .tagadd {
-    min-width: 90px;
-    padding: var(--sp-1) 0;
-    border: 0;
-    border-bottom: 1.5px solid var(--line-strong);
-    border-radius: 0;
-    background: none;
+  /* Adding is a chip that is not there yet: the same pill, drawn with a dashed
+     edge. The tag one is a field you type in; it fills in when it has focus. */
+  .tagadd,
+  .viewadd {
+    height: 28px;
+    padding: 0 12px;
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--r-full);
+    background: transparent;
     font: inherit;
     font-size: 13px;
+    line-height: 18px;
     color: var(--text);
+    transition:
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease),
+      box-shadow var(--dur-fast) var(--ease);
+  }
+  .tagadd {
+    /* A chip's width at rest; it opens out to the row while it is being typed in. */
+    flex: 0 1 112px;
+    min-width: 96px;
+    max-width: 100%;
     outline: none;
   }
   .tagadd::placeholder {
-    color: var(--ink-faint);
+    color: var(--text-mute);
+  }
+  .tagadd:hover {
+    border-color: var(--text-dim);
   }
   .tagadd:focus {
+    flex-grow: 1;
+    border-style: solid;
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--lavender-subtle);
   }
 
   .viewsrow {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--sp-2);
-    margin-top: var(--sp-2);
-  }
-  .viewchip {
-    /* Same shape as a tag chip: pill, surface-1 fill, faint border, the
-       view name and an X. Inherits .tagx for the close button. */
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1);
-    padding: 4px 4px 4px 10px;
-    border-radius: var(--r-full);
-    background: var(--surface-2);
-    box-shadow: var(--hairline);
-    font-size: 13px;
-    color: var(--text);
-  }
-  .viewchip:hover {
-    border-color: var(--line-strong);
+    gap: 6px;
   }
   .relatedchip {
-    /* A related note: the view chip's shape, without the X, and a button. */
-    padding: 4px 10px;
-    border: 0;
-    font: inherit;
-    font-size: 13px;
+    /* A note a passage echoes: the chip's shape with no x, and a button. */
+    padding: 0 12px;
     cursor: pointer;
     text-align: left;
+    max-width: 100%;
+  }
+  .relatedchip .viewlabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .relatedchip:hover {
-    color: var(--accent);
+    color: var(--accent-text);
   }
-  /* Passage connections: each passage's opening words, then the notes it echoes. */
-  .drawer > .connections > .shelf {
-    margin-top: var(--sp-5);
+  .relatedchip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
+  /* Passages that connect: a passage's opening words set as a quotation, then the
+     notes it echoes as chips beneath it. */
   .connection + .connection {
-    margin-top: var(--sp-3);
+    margin-top: var(--sp-4);
   }
   .connection-excerpt {
-    margin-bottom: var(--sp-1);
-    padding-left: var(--sp-2);
-    border-left: 2px solid var(--line);
+    margin-bottom: var(--sp-2);
+    padding-left: var(--sp-3);
+    box-shadow: inset 1px 0 0 var(--line-strong);
     font-size: 13px;
-    line-height: 18px;
+    line-height: 19px;
     color: var(--text-dim);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  /* A mention link names what the two notes share on a quieter second line, so the
-     chip becomes a small card rather than a pill that wraps mid-phrase. */
-  .relatedchip.hasvia {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    border-radius: var(--r-lg);
+  /* Related, under the note: one row per note, its title and why it is here. */
+  .related {
+    margin-top: var(--sp-6);
   }
-  .relatedvia {
-    font-size: 12px;
-    color: var(--ink-faint);
+  /* The label, and at the far end the raven standing on the first row of what it
+     found, the scroll it carried at its feet. Its feet rest on the tiles' top edge. */
+  .related-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .related-head .shelf {
+    margin: 0 0 var(--sp-2);
+  }
+  .related-raven {
+    /* raven-scroll.png, 264 x 295. */
+    width: 50px;
+    height: 56px;
+    margin-right: var(--sp-4);
+    margin-bottom: -1px;
+    pointer-events: none;
+    user-select: none;
+    /* The art faces right; here it looks back along the row. */
+    scale: -1 1;
+    transform-origin: 50% 100%;
+    transition: transform 320ms var(--ease);
+  }
+  /* It leans in when you reach for what it found. */
+  .related:has(.relateditem:hover) .related-raven {
+    transform: rotate(7deg) translateY(-1px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .related-raven {
+      transition: none;
+    }
+  }
+  .relatedlist {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--sp-2);
+  }
+  .relateditem {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--sp-3);
+    border: 0;
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--hairline);
+    font: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    transition: background 140ms ease-out;
+  }
+  .relateditem:hover {
+    background: var(--surface-2);
+  }
+  .relateditem:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .relatedtitle {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+  }
+  .relateditem:hover .relatedtitle {
+    color: var(--accent-text);
+  }
+  .relatedwhy {
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--text-dim);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .viewadd {
-    /* A quiet ghost chip - same height as a view chip, no fill, lavender
-       ink on hover. The + signals "add" without competing with the
-       view-name chips. */
     display: inline-flex;
     align-items: center;
-    padding: 4px 10px;
-    border: 0;
-    background: none;
-    border-radius: var(--r-full);
-    font-size: 13px;
-    color: var(--text-mute);
+    gap: 4px;
+    color: var(--text-dim);
     cursor: pointer;
-    transition:
-      color var(--dur-fast) var(--ease),
-      background var(--dur-fast) var(--ease);
+  }
+  .viewadd svg {
+    width: 13px;
+    height: 13px;
+    stroke-width: 2;
   }
   .viewadd:hover {
-    color: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
     background: var(--lavender-subtle);
   }
 
@@ -449,26 +715,38 @@
     color: var(--badge-danger-ink);
   }
 
-  /* The reading pane is an open page: no sheet, no outline. The words sit on the
-     violet ground in one reading column, the way the greeting does on home, with a
-     single soft rule between the header and the text. A white slab on the violet was
-     the hardest edge in the app, and a page of text is where that glare costs most. */
+  /* The reading pane. A picture sits straight on the ground; anything you write in
+     (a note, your notes on a capture) is a sheet lying on it, the same raised page a
+     PDF's leaves are: the warm reading white (--surface-doc, not the pure white that
+     glares against the violet over a whole page of text), a 20px corner and the card
+     shadow. Words on the bare ground read as unfinished next to a document's pages. */
   .docpane {
     position: relative;
     padding: var(--sp-5) 0 0;
     margin-top: var(--sp-5);
-    max-width: 68ch;
-    border-top: 1px solid var(--line);
   }
-  /* The rule fills once, left to right, when a save lands: the page acknowledging
-     the words rather than a notification about them. */
+  .docpane:has(> .editor) {
+    padding: 44px 52px 40px;
+    background: var(--surface-doc);
+    border-radius: 20px;
+    box-shadow: var(--hairline), var(--shadow-card);
+    overflow: hidden;
+  }
+  @media (max-width: 760px) {
+    .docpane:has(> .editor) {
+      padding: var(--sp-5) var(--sp-5) var(--sp-5);
+      border-radius: var(--r-xl);
+    }
+  }
+  /* A line fills across the sheet's top edge, left to right, when a save lands: the
+     page acknowledging the words rather than a notification about them. */
   .docpane.landed::before {
     content: "";
     position: absolute;
     left: 0;
     right: 0;
-    top: -1px;
-    height: 1px;
+    top: 0;
+    height: 2px;
     background: var(--accent);
     transform-origin: left center;
     animation: fill 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -684,6 +962,135 @@
     font-style: italic;
   }
 
+  /* ---- a note's own typography ---------------------------------------------
+     Most notes are outlines typed fast: a line, then bullets under it, then bullets
+     under those. Set as flat grey text they read as a dump. The sheet reads the
+     shape that is already there and sets it, with nothing for the writer to do:
+     a line that leads into a list is that list's label; an item with items under
+     it is a heading for them; each depth has its own quiet marker and a hairline
+     guide down its side. Scoped to .editor, so chat answers and file text keep
+     the plain .md setting. */
+  .editor {
+    line-height: 26px;
+    font-variant-numeric: tabular-nums;
+  }
+  .editor h1,
+  .editor h2,
+  .editor h3 {
+    font-family: var(--display);
+    font-weight: 600;
+    margin: var(--sp-6) 0 var(--sp-2);
+    text-wrap: balance;
+  }
+  .editor h1 {
+    font-size: 28px;
+    line-height: 34px;
+  }
+  .editor h2 {
+    font-size: 22px;
+    line-height: 28px;
+  }
+  .editor h3 {
+    font-size: 18px;
+    line-height: 24px;
+    letter-spacing: -0.2px;
+  }
+  .editor p {
+    text-wrap: pretty;
+  }
+  /* The line that leads into a list names it. */
+  .editor > p:has(+ ul),
+  .editor > p:has(+ ol) {
+    margin-top: var(--sp-6);
+    font-weight: 500;
+    color: var(--text);
+  }
+  .editor > p:has(+ ul) + ul,
+  .editor > p:has(+ ol) + ol {
+    margin-top: var(--sp-2);
+  }
+  .editor ul,
+  .editor ol {
+    padding-left: 22px;
+  }
+  .editor li {
+    margin: 6px 0;
+    padding-left: 2px;
+    font-weight: 400;
+    color: var(--text-dim);
+  }
+  .editor li::marker {
+    color: var(--accent);
+    font-weight: 400;
+  }
+  .editor ol > li::marker {
+    color: var(--text-mute);
+    font-size: 14px;
+  }
+  /* An item with items under it heads them. */
+  .editor li:has(> ul),
+  .editor li:has(> ol) {
+    font-weight: 500;
+    color: var(--text);
+  }
+  /* Each depth steps in beside a hairline guide, with a quieter marker than the
+     one above it: a dot, then a dash, then a small dot. */
+  .editor li > ul,
+  .editor li > ol {
+    margin: 2px 0 var(--sp-2) 3px;
+    padding-left: 20px;
+    box-shadow: inset 1px 0 0 var(--line);
+  }
+  .editor li > ul {
+    list-style-type: "\2013\00a0\00a0";
+  }
+  .editor li li > ul {
+    list-style-type: "\00b7\00a0\00a0";
+  }
+  .editor li li::marker {
+    color: var(--text-mute);
+  }
+  .editor li li {
+    margin: 3px 0;
+  }
+  /* On the sheet, code and quotations sink into the ground colour instead of
+     vanishing white-on-white; a quotation is a soft block, not a striped margin. */
+  .editor code,
+  .editor pre {
+    background: var(--bg);
+  }
+  .editor blockquote {
+    margin: var(--sp-4) 0 0;
+    padding: var(--sp-3) var(--sp-4);
+    border-left: 0;
+    border-radius: var(--r-lg);
+    background: var(--bg);
+    color: var(--text);
+    font-style: italic;
+  }
+  .editor blockquote > :first-child {
+    margin-top: 0;
+  }
+  /* A divider: a short centred rule with air around it, not a full-width line. */
+  .md hr,
+  .editor hr {
+    width: 72px;
+    height: 0;
+    margin: var(--sp-6) auto;
+    border: 0;
+    border-top: 2px solid var(--line);
+    border-radius: 2px;
+  }
+  .editor ::selection {
+    background: var(--lavender-subtle);
+  }
+  /* The count of kept drafts closes the sheet, set off by a hairline. */
+  .docpane:has(> .editor) > .bar {
+    margin-top: var(--sp-6);
+    padding-top: var(--sp-3);
+    box-shadow: inset 0 1px 0 var(--line-soft);
+  }
+
   /* An image is its own proportion, so it is not cropped to a shape of ours. */
   .page,
   .shot {
@@ -817,25 +1224,22 @@
   }
 
 
-/* ---- editable summary panel -------------------------------------------------
-   The summary is the model's reading, made yours to shape: a regenerate control on
-   the shelf, a click-to-edit line for each facet, a remove on hover, and an add at
-   the foot. Hand-edited lines carry a quiet accent tick so you can see which are
-   yours. Built to sit inside the drawer's narrow column. */
-.summary .summary-shelf {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-}
+/* ---- editable summary ---------------------------------------------------------
+   The summary is the model's reading, made yours to shape: a regenerate control in
+   the section's label row, a click-to-edit line for each point, a remove on hover,
+   and an add at the foot. It sits on the panel's own white, as a list of points
+   rather than a tinted box: each line leads with a small dot, and a line you rewrote
+   wears the accent on its dot so you can see which are yours. */
 .facet-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  margin-right: -6px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r);
   background: transparent;
   color: var(--text-mute);
   cursor: pointer;
@@ -844,7 +1248,7 @@
     color 140ms ease-out;
 }
 .facet-refresh:hover {
-  background: var(--surface-2);
+  background: var(--surface-3);
   color: var(--accent-text);
 }
 .facet-refresh:focus-visible {
@@ -854,35 +1258,89 @@
 .facet-refresh svg {
   width: 15px;
   height: 15px;
+  transition: rotate 320ms var(--ease);
+}
+.facet-refresh:hover svg {
+  rotate: 90deg;
+}
+.drawer.thinking .facet-refresh svg {
+  animation: facet-turn 900ms linear infinite;
+}
+@keyframes facet-turn {
+  to {
+    rotate: 360deg;
+  }
 }
 
+/* The lines sit in a bounded box that scrolls on its own, so a long summary does not
+   push the rest of the panel out of reach. A fade pinned to the box's foot shows
+   there is more below; at the end it only covers the list's own bottom padding. */
 .facet-list {
-  margin-top: var(--sp-2);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  margin: 0 -8px;
+  padding-bottom: var(--sp-4);
+  /* What the window has left once the panel's header, tags and views are drawn, so
+     a panel with nothing below the summary does not itself need scrolling. */
+  max-height: max(220px, calc(100vh - 480px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.facet-list::after {
+  content: "";
+  flex: none;
+  position: sticky;
+  bottom: calc(-1 * var(--sp-4));
+  height: var(--sp-5);
+  margin-top: calc(-1 * var(--sp-5));
+  background: linear-gradient(to bottom, transparent, var(--surface-2));
+  pointer-events: none;
 }
 .facet {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--sp-1);
-  border-radius: var(--r-sm);
-  padding: 6px 6px 6px 8px;
+  border-radius: var(--r);
+  padding: 8px 6px 8px 26px;
   transition: background 120ms ease-out;
 }
-.facet:hover {
-  background: var(--surface-2);
+.facet::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 17px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  opacity: 0.55;
 }
-/* A line you rewrote wears a quiet accent tick on its left edge. */
-.facet[data-edited] {
-  box-shadow: inset 2px 0 0 var(--accent);
+.facet:hover {
+  background: var(--surface);
+}
+.facet[data-edited]::before {
+  background: var(--accent);
+  opacity: 1;
+}
+/* The moment a line becomes yours. */
+.facet.claimed::before {
+  animation: facet-claim 520ms var(--ease);
+}
+@keyframes facet-claim {
+  40% {
+    scale: 2.4;
+  }
 }
 .facet-text {
   flex: 1 1 auto;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 21px;
   color: var(--text-dim);
   cursor: text;
+  text-wrap: pretty;
 }
 .facet:hover .facet-text {
   color: var(--text);
@@ -890,45 +1348,58 @@
 .facet-del {
   flex: 0 0 auto;
   display: inline-flex;
+  margin-top: 1px;
   border: 0;
   background: transparent;
   color: var(--text-mute);
   border-radius: var(--r-sm);
-  padding: 2px;
+  padding: 3px;
   opacity: 0;
   cursor: pointer;
   transition:
     opacity 120ms ease-out,
-    color 120ms ease-out;
+    color 120ms ease-out,
+    background 120ms ease-out;
 }
 .facet:hover .facet-del,
 .facet:focus-within .facet-del {
   opacity: 1;
 }
 .facet-del:hover {
-  color: var(--danger, #c0392b);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.facet-del:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .facet-del svg {
   width: 13px;
   height: 13px;
 }
 .facet-empty {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 21px;
   color: var(--text-mute);
-  margin: var(--sp-1) 0;
+  margin: 0 8px;
+}
+.facet-list .spin,
+.facet-list .state {
+  margin: 0 8px;
 }
 
 .facet-edit {
   width: 100%;
   box-sizing: border-box;
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 21px;
   color: var(--text);
-  background: var(--bg);
+  background: var(--surface-2);
   border: 1px solid var(--accent);
-  border-radius: var(--r-sm);
-  padding: 6px 8px;
+  border-radius: var(--r);
+  padding: 7px 10px;
   margin: 2px 0;
   resize: vertical;
   outline: none;
@@ -938,21 +1409,33 @@
 .facet-add {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-top: var(--sp-2);
+  gap: 6px;
+  height: 28px;
+  margin: var(--sp-1) 0 0 -8px;
+  padding: 0 10px 0 8px;
   border: 0;
   background: transparent;
-  color: var(--text-mute);
-  font-size: 12px;
-  padding: 4px 6px;
-  border-radius: var(--r-sm);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  border-radius: var(--r-full);
   cursor: pointer;
-  transition: color 140ms ease-out;
+  transition:
+    color 140ms ease-out,
+    background 140ms ease-out;
 }
 .facet-add:hover {
   color: var(--accent-text);
+  background: var(--lavender-subtle);
 }
 .facet-add svg {
   width: 13px;
   height: 13px;
+  stroke-width: 2;
+}
+
+/* The toggle that opens the details panel stays lit while the panel is open. */
+#drawerToggle[aria-expanded="true"] {
+  color: var(--accent-text);
+  background: var(--lavender-subtle);
 }

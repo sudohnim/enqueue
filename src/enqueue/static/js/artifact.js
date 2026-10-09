@@ -257,7 +257,7 @@
             "</button></span>",
         )
         .join("") +
-      '<input class="tagadd" type="text" placeholder="add tag" autocomplete="off" ' +
+      '<input class="tagadd" type="text" placeholder="Add tag" autocomplete="off" ' +
       'aria-label="Add a tag" spellcheck="false" />' +
       "</div>"
     );
@@ -286,41 +286,51 @@
       )
       .join("");
     return (
-      '<div class="shelf">Views</div>' +
+      '<section class="dsec"><div class="dsec-head"><span class="shelf">Views</span></div>' +
       '<div class="viewsrow">' +
       chips +
       '<button class="viewadd" type="button" onclick="addArtifactToView(\'' +
       esc(artifactId) +
-      "')\">+ add to a view</button>" +
-      "</div>"
+      "')\">" +
+      svg("plus") +
+      "Add to a view</button>" +
+      "</div></section>"
     );
   }
 
-  // The drawer's Related section: notes whose summaries make the same point
-  // (ingest/related.py), closest first. Each chip opens that artifact. Hidden when
-  // there are none, so a new or summary-less note shows no empty shelf.
+  // Related, under the note: other notes about the same subject or naming the same
+  // thing (ingest/related.py), closest first, each with the reason it is here - the
+  // shared name, and the line of its summary that matched. Hidden when there are none.
+  function relatedWhy(r) {
+    const parts = [];
+    if (r.via) parts.push("Both mention " + r.via + ".");
+    if (r.point) parts.push(r.point);
+    return parts.join(" ");
+  }
+
   function relatedRowHtml(related) {
     if (!related || !related.length) return "";
     return (
-      '<div class="shelf">Related</div>' +
-      '<div class="viewsrow">' +
+      '<section class="related" aria-label="Related">' +
+      // The raven that went and found these, with what it brought back at its feet.
+      '<div class="related-head"><div class="shelf">Related</div>' +
+      '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>' +
+      '<div class="relatedlist">' +
       related
-        .map(
-          (r) =>
-            '<button class="viewchip relatedchip' +
-            (r.via ? " hasvia" : "") +
-            '" type="button" data-id="' +
+        .map((r) => {
+          const why = relatedWhy(r);
+          return (
+            '<button class="relateditem" type="button" data-id="' +
             esc(r.id) +
-            '" title="' +
-            esc(r.via ? "Both mention " + r.via : r.kind) +
-            '"><span class="viewlabel">' +
+            '"><span class="relatedtitle">' +
             esc(r.title || "(untitled)") +
             "</span>" +
-            (r.via ? '<span class="relatedvia">both mention ' + esc(r.via) + "</span>" : "") +
-            "</button>",
-        )
+            (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
+            "</button>"
+          );
+        })
         .join("") +
-      "</div>"
+      "</div></section>"
     );
   }
 
@@ -338,7 +348,7 @@
     }
     if (!r.passages.length || !document.body.contains(slot)) return;
     slot.innerHTML =
-      '<div class="shelf">Passages that connect</div>' +
+      '<div class="dsec-head"><span class="shelf">Passages that connect</span></div>' +
       r.passages
         .map(
           (p) =>
@@ -368,8 +378,8 @@
   }
 
   function mountRelatedRow() {
-    view.querySelectorAll(".relatedchip").forEach((chip) => {
-      chip.addEventListener("click", () => openArtifact(chip.dataset.id, "related"));
+    view.querySelectorAll(".relateditem").forEach((item) => {
+      item.addEventListener("click", () => openArtifact(item.dataset.id, "related"));
     });
   }
 
@@ -547,8 +557,8 @@
       ')">' +
       svg("star") +
       "</button>" +
-      '<button class="title-action" id="drawerToggle" aria-label="Tags and summary" aria-expanded="false" title="Tags and summary" onclick="toggleDrawer()">' +
-      svg("panelin") +
+      '<button class="title-action" id="drawerToggle" aria-label="Details" aria-expanded="false" title="Details: tags, views and summary" onclick="toggleDrawer()">' +
+      svg("info") +
       "</button></span>" +
       '<button class="title-action' +
       (a.vaulted_at ? " lit" : "") +
@@ -679,18 +689,26 @@
     html +=
       '<div class="bodygrid"><div class="bodycol">' +
       body +
+      relatedRowHtml(d.related) +
       "</div></div></div>" +
-      '<aside class="drawer" id="drawer" aria-label="Tags and summary">' +
-      '<div class="drawer-top"><span class="shelf">Tags</span>' +
-      '<button class="drawer-close" aria-label="Close tags and summary" title="Close tags and summary" onclick="toggleDrawer(false)">' +
-      svg("panelout") +
+      '<aside class="drawer" id="drawer" aria-label="Details">' +
+      '<div class="drawer-top">' +
+      '<img class="drawer-perch" src="/static/raven-tilt.png" alt="" aria-hidden="true">' +
+      '<div class="drawer-heading"><span class="drawer-title">Details</span>' +
+      '<span class="drawer-voice">' +
+      esc(ravenLine(d, id)) +
+      "</span></div>" +
+      '<button class="drawer-close" aria-label="Close details" title="Close details" onclick="toggleDrawer(false)">' +
+      svg("close") +
       "</button></div>" +
+      '<div class="drawer-body">' +
+      '<section class="dsec"><div class="dsec-head"><span class="shelf">Tags</span></div>' +
       tagRowHtml(d.tags) +
+      "</section>" +
       viewsRowHtml(d.views, id) +
       summaryHtml +
-      relatedRowHtml(d.related) +
-      '<div class="connections" id="connections"></div>' +
-      "</aside>";
+      '<section class="dsec connections" id="connections"></section>' +
+      "</div></aside>";
 
     view.innerHTML = html;
     mountTagRow(id);
@@ -719,17 +737,19 @@
     if (!drawer) return;
     const open =
       force !== undefined ? !!force : !drawer.classList.contains("open");
+    const was = drawer.classList.contains("open");
     drawer.classList.toggle("open", open);
+    // Only a real opening is an arrival: the raven lands and the sections settle in.
+    // A re-render that keeps the panel open (a tag added) replays nothing.
+    if (open && !was && force === undefined) {
+      drawer.classList.add("arriving");
+      setTimeout(() => drawer.classList.remove("arriving"), 900);
+    }
     if (toggle) {
       toggle.setAttribute("aria-expanded", String(open));
-      toggle.setAttribute(
-        "aria-label",
-        open ? "Close tags and summary" : "Tags and summary",
-      );
-      toggle.title = open
-        ? "Close the tags and summary drawer"
-        : "Tags and summary";
-      toggle.innerHTML = svg(open ? "panelout" : "panelin");
+      // One mark, open or closed (the phone's too): the lit state says which.
+      toggle.setAttribute("aria-label", open ? "Close details" : "Details");
+      toggle.title = open ? "Close details" : "Details: tags, views and summary";
     }
   }
 
@@ -774,10 +794,12 @@
     else if (d.facet_skip_reason)
       inner = '<p class="facet-empty">' + esc(whyNoFacets(d.facet_skip_reason)) + "</p>";
     else inner = '<p class="facet-empty">No summary yet.</p>';
+    const n = (d.facets || []).length;
     return (
-      '<div class="callout note summary" data-aid="' +
+      '<section class="dsec summary" data-aid="' +
       esc(id) +
-      '"><div class="shelf summary-shelf">Summary' +
+      '"><div class="dsec-head"><span class="shelf">Summary</span>' +
+      (n ? '<span class="dsec-count">' + n + (n === 1 ? " line" : " lines") + "</span>" : "") +
       refresh +
       '</div><div class="facet-list">' +
       inner +
@@ -785,7 +807,7 @@
       id +
       "')\">" +
       svg("plus") +
-      "Add a line</button></div>"
+      "Add a line</button></section>"
     );
   }
 
@@ -808,6 +830,38 @@
     );
   }
 
+  // The panel is the raven showing what it made of the thing, so its header says so in
+  // the raven's voice. Every line is true of the state it is shown in; which of the
+  // "read it" lines an artifact gets is fixed by its id, so it does not change between
+  // visits.
+  const RAVEN_READ = [
+    "I read it. Here's what stuck.",
+    "What I made of this one.",
+    "My reading. Correct me.",
+  ];
+  function ravenLine(d, id) {
+    if (d.facets && d.facets.length) {
+      let h = 0;
+      for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      return RAVEN_READ[h % RAVEN_READ.length];
+    }
+    if (d.summary_generating) return "Still reading. One moment.";
+    if (d.facet_skip_reason === "too_short") return "Short one. Not much to read into.";
+    if (d.facet_skip_reason === "text_only") return "I kept my eyes off this one.";
+    return "Haven't read this one yet.";
+  }
+
+  // You corrected the raven: it takes the note with a hop, and the eye approves.
+  function ravenNod() {
+    const perch = document.querySelector(".drawer-perch");
+    if (perch) {
+      perch.classList.remove("hop");
+      void perch.offsetWidth; // restart the hop if one is still playing
+      perch.classList.add("hop");
+    }
+    if (window.eyeMood) eyeMood.play("approve");
+  }
+
   // Re-fetch one artifact and swap its summary panel in place, so every mutation
   // (regenerate, edit, add, delete) shows the server's canonical result.
   async function refreshSummaryPanel(id) {
@@ -819,6 +873,8 @@
     }
     const el = document.querySelector('.summary[data-aid="' + id + '"]');
     if (el) el.outerHTML = summaryPanel(d, id);
+    const voice = document.querySelector(".drawer-voice");
+    if (voice && ctx && ctx.id === id) voice.textContent = ravenLine(d, id);
   }
 
   async function regenerateSummary(id) {
@@ -826,15 +882,24 @@
       '.summary[data-aid="' + id + '"] .facet-list',
     );
     if (list) list.innerHTML = spinner("sm", "Regenerating the summary…");
+    // While the model reads, the raven is visibly at it: the perch bobs and the eye
+    // squints, both for exactly as long as the request takes.
+    const drawer = document.getElementById("drawer");
+    if (drawer) drawer.classList.add("thinking");
+    if (window.eyeMood) eyeMood.hold("search");
+    let made = false;
     try {
       const r = await api("/artifacts/" + id + "/facets/regenerate", {
         method: "POST",
       });
       if (r && r.error && !r.count)
         toast("The model found nothing new to summarize.", false);
+      else made = true;
     } catch (err) {
       toast(String((err && err.message) || err), true);
     }
+    if (drawer) drawer.classList.remove("thinking");
+    if (window.eyeMood) eyeMood.drop("search", made ? "found" : null);
     refreshSummaryPanel(id);
   }
 
@@ -856,6 +921,7 @@
       if (settled) return;
       settled = true;
       const v = ta.value.trim();
+      let kept = false;
       if (save && v && v !== current) {
         try {
           await api("/facets/" + fid, {
@@ -863,11 +929,18 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ statement: v }),
           });
+          kept = true;
         } catch (err) {
           toast(String((err && err.message) || err), true);
         }
       }
-      refreshSummaryPanel(aid);
+      await refreshSummaryPanel(aid);
+      if (kept) {
+        // The line is yours now: its dot takes the accent with a small pop.
+        const mine = document.querySelector('.facet[data-fid="' + fid + '"]');
+        if (mine) mine.classList.add("claimed");
+        ravenNod();
+      }
     };
     ta.onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -906,6 +979,7 @@
       if (settled) return;
       settled = true;
       const v = ta.value.trim();
+      let kept = false;
       if (save && v) {
         try {
           await api("/artifacts/" + id + "/facets", {
@@ -913,11 +987,13 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ statement: v }),
           });
+          kept = true;
         } catch (err) {
           toast(String((err && err.message) || err), true);
         }
       }
-      refreshSummaryPanel(id);
+      await refreshSummaryPanel(id);
+      if (kept) ravenNod();
     };
     ta.onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -1176,17 +1252,14 @@
   }
 
   // ---- finding a phrase inside one thing -----------------------------------
-  // Only intercepted for PDFs. Their pages are rendered as images, so the browser has
-  // no text to search and its own find is genuinely useless. A note is real text in the
-  // DOM, where Cmd+F already works better than anything reimplemented here would, so it
-  // is left alone.
+  // Cmd/Ctrl+F on any artifact page. The window has no Edit menu, and without one the
+  // webview never binds a find of its own, so nothing in a note could be searched.
+  // A PDF's pages are pictures, so the engine says where the words are; everything
+  // else is real text on the page and is searched where it stands.
   let findState = null;
 
   async function openFind() {
-    // Notes are real text in the DOM, so the browser could search them - except this
-    // window has no Edit menu, and without one the webview never binds its own find.
-    // So the same field serves both, and only the drawing differs.
-    if (!ctx || !["pdf", "note", "file"].includes(ctx.kind)) return false;
+    if (!ctx) return false;
 
     if (!findState || findState.id !== ctx.id) {
       const d = await api("/artifacts/" + ctx.id + "/text").catch(() => null);
@@ -1196,7 +1269,7 @@
     pill.classList.add("wide");
     pill.innerHTML =
       '<input id="findField" placeholder="find in this ' +
-      (ctx.kind === "pdf" ? "document" : "note") +
+      ({ pdf: "document", note: "note" }[ctx.kind] || "page") +
       '" autocomplete="off">' +
       '<span class="scope" id="findCount"></span>' +
       '<button class="round" aria-label="Close" onclick="restorePill()">' +
@@ -1204,7 +1277,12 @@
       "</button>";
 
     const field = document.getElementById("findField");
+    // What is selected is what is being looked for, as in any editor.
+    const picked = String(window.getSelection() || "").trim();
+    if (picked && !picked.includes("\n") && picked.length <= 80) field.value = picked;
     field.focus();
+    field.select();
+    if (field.value) runFind(field.value);
     field.oninput = () => runFind(field.value);
     field.onkeydown = (e) => {
       if (e.key === "Escape") {
@@ -1273,8 +1351,9 @@
   // the editor serialises back to markdown, and the next save would write them into
   // the note.
   function markInNote(term) {
-    const root =
-      document.getElementById("body") || document.getElementById("plain");
+    // The whole reading column: the note or your notes on a capture, a text file's
+    // contents, a link's title and description.
+    const root = document.querySelector(".bodycol");
     if (!root || !window.CSS || !CSS.highlights) return [];
 
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -1345,15 +1424,10 @@
   }
 
   document.addEventListener("keydown", (e) => {
-    if (
-      (e.metaKey || e.ctrlKey) &&
-      e.key === "f" &&
-      ctx &&
-      ctx.kind === "pdf"
-    ) {
-      e.preventDefault();
-      openFind();
-    }
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== "f") return;
+    if (!ctx || !document.querySelector(".bodycol")) return;
+    e.preventDefault();
+    openFind();
   });
 
   // ---- the reader ----------------------------------------------------------

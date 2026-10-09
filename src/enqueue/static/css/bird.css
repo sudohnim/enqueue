@@ -1,0 +1,103 @@
+/* The flying raven: the one loading mark, shared by the desktop and the phone.
+
+   It used to be the whole picture spinning like a wheel, which no bird does. The same
+   picture (loading.png, wings spread, seen from the front) is now cut into three with
+   clip-paths - a body and two wings - and each wing beats about its own shoulder while
+   the body rides the beat: it sinks as the wings come up and lifts on the downstroke,
+   the way a hovering bird does. The body keeps a little of each wing's root, so the
+   beat never opens a gap at the shoulder.
+
+   Markup: <span class="flybird" aria-hidden="true"><i></i><i></i><i></i></span>
+   (left wing, body, right wing). Size it with width and height where it is used.
+   Reduced motion gets the bird holding still, wings out. */
+.flybird {
+  position: relative;
+  display: block;
+  flex: none;
+  animation:
+    flybird-ride 0.68s ease-in-out infinite,
+    flybird-sway 2.9s ease-in-out infinite;
+  animation-composition: add;
+  will-change: transform;
+}
+.flybird i {
+  position: absolute;
+  inset: 0;
+  background: url("../loading.png") center / 100% 100% no-repeat;
+}
+.flybird i:nth-child(1) {
+  clip-path: polygon(0 0, 40% 0, 46% 38%, 42% 50%, 39% 59%, 0 59%);
+  transform-origin: 45% 41%;
+  animation: flybird-left 0.34s ease-in-out infinite alternate;
+}
+.flybird i:nth-child(2) {
+  clip-path: polygon(
+    evenodd,
+    0 0,
+    100% 0,
+    100% 100%,
+    0 100%,
+    0 0,
+    34% 0,
+    39% 36%,
+    34% 59%,
+    0 59%,
+    0 0,
+    71% 28%,
+    76% 0,
+    100% 0,
+    100% 36%,
+    78% 36%,
+    73% 33%,
+    71% 28%,
+    0 0
+  );
+}
+.flybird i:nth-child(3) {
+  clip-path: polygon(65.5% 29%, 72% 0, 100% 0, 100% 37%, 74% 37%, 68% 35%);
+  transform-origin: 66% 33%;
+  animation: flybird-right 0.34s ease-in-out infinite alternate;
+}
+@keyframes flybird-left {
+  from {
+    transform: rotate(13deg);
+  }
+  to {
+    transform: rotate(-24deg) scaleY(0.9);
+  }
+}
+@keyframes flybird-right {
+  from {
+    transform: rotate(-13deg);
+  }
+  to {
+    transform: rotate(24deg) scaleY(0.9);
+  }
+}
+/* One beat is up then down (two wing strokes): low at the top of the upstroke, high
+   at the bottom of the downstroke. */
+@keyframes flybird-ride {
+  0%,
+  100% {
+    transform: translateY(4%);
+  }
+  50% {
+    transform: translateY(-6%);
+  }
+}
+@keyframes flybird-sway {
+  0%,
+  100% {
+    transform: rotate(-3deg) translateX(-2%);
+  }
+  50% {
+    transform: rotate(3deg) translateX(2%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flybird,
+  .flybird i {
+    animation: none;
+    will-change: auto;
+  }
+}

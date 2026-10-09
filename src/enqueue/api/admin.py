@@ -13,6 +13,7 @@ from .. import config, db
 from ..index import bootstrap
 from ..index.store import get_store
 from ..ingest import queue as ingest_queue
+from ..ingest import related
 
 router = APIRouter()
 
@@ -118,6 +119,8 @@ def doctor() -> dict:
         "images_without_body": images_without_body,
         "facet_count": db.count("facets"),
         "summaries": summaries,
+        # Artifacts with cross-field pairs the model has not judged yet (ingest/related.py).
+        "related_pending": len(related.pending_ids()),
         "model_pause": model_pause.status(),
         "index_counts": index_counts,
         "embed_version": embed_version,

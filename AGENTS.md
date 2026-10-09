@@ -237,7 +237,7 @@ One line per file, describing its job.
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
 | `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), plus current annotations marked "(your note)". A document over `FACET_INPUT_CHARS` is map-reduced: split into sections of up to 10k characters on paragraph boundaries (at most 24), each summarized by the ingest model (cached in `derived_values`, scope `section_summary`, per section hash and model), and read as ordered summaries. The summaries are also written to `sections` (stamped with ingest model and body version; left untouched when unchanged, since facets, entities and contexts each read through here) and indexed as their own search layer by the ingest queue. A section that fails for a reason that will pass (rate limit, outage; `providers.base.is_transient`) raises `SummariesOwed` so the artifact is retried instead of written from its opening; any other failure falls back to the capped opening; `text_only` text is never mapped. Facets, entities and chunk contexts all read through it. |
 | `ingest/context.py` | Contextual chunks: for an artifact with 2+ chunks, the ingest model writes one or two sentences per chunk placing it in the document (batches of 30). Stored in `chunks.context`, embedded and keyword-indexed with the chunk (not in the trigram table). Skips `text_only` artifacts. |
-| `ingest/related.py` | Related artifacts: each facet statement searches the facet index; another artifact's closeness is its best similarity to any of them. Mention links join them: another artifact whose current entities name the same person, place or thing (case-insensitive) scores 0.7 and stores that name in `related.via`; a name more than 8 artifacts share is too common to link. The top 5 at or above 0.7 are stored in `related` in both directions. Stale facets and entities never count. Recomputed after ingest writes facets or entities and after any facet edit/regenerate (`facets._reindex`); no model call. `GET /artifacts/{id}` returns `related` (each with `via`), shown as a Related section in the artifact drawer; a mention link's chip adds "both mention <name>" on a second line. |
+| `ingest/related.py` | Related artifacts, precision first: a missing link costs nothing, an invented one costs trust. Three kinds. **Subject links:** each of an artifact's subject lines (facet level 1, `SUBJECT_LEVEL`) searches the facet index and only another artifact's subject lines count; kept at or above `RELATED_MIN` 0.66, with `related.point` = the related artifact's subject line that matched (each direction holds the line of the artifact it points at). **Mention links:** another artifact whose current entities name the same person, place or thing (case-insensitive) scores 0.7 and stores the name in `related.via`; a name more than 8 artifacts share never links, nor does a link's own site name ("Medium" on an article saved from medium.com, read from its preview or its address). **Idea links** (cross-field): similarity between lines ABOVE the subject level only proposes pairs (`IDEA_MIN` 0.72, the closest `IDEA_CANDIDATES` 8), and the ingest model judges each with `prompts.RELATED_JUDGE` (one call per artifact); only a yes links, and its `point` is the model's plain "Both ..." sentence. Similarity alone cannot do this: the prompt's "bridge" lines borrow another field's words on purpose (a piano essay gets a line about codebases) and abstract sentences match on shape ("X beats Y"), which linked a data-modeling note to a piano essay and a tax letter. The judge FAILS CLOSED (an unjudged pair is not a link), the opposite of search's gray-zone judge. Verdicts are cached in `derived_values` (scope `related_judge`, subject `a|b` ids in order, attribute = a stamp of both items' level 0-1 lines, so a changed subject asks again). `compute(id)` never calls a model: cached verdicts only, and it marks the artifact pending (scope `related_pending`). `compute(id, judge=True)` is called by the ingest worker (`queue._related_artifact`, when facets or entities were just written or the artifact is pending); a transient failure raises `JudgeOwed` after writing every link that needs no judge, and the worker records a `facet_retry` so the pause/backoff machinery finishes it later. A facet edit (`facets._reindex`, a request thread) computes without the judge and hands a pending artifact to the background lane. A pair with a local-only item goes to the local model only. `VERSION` (kept in `index_meta.related_version`) makes `refresh_if_outdated()` recompute every artifact once at startup on the ingest worker (no model), and at every startup it queues the pending ones in the background lane. `enq doctor` reports `related_pending`. The top 5 are stored in `related` in both directions; stale facets and entities never count. `GET /artifacts/{id}` returns `related` (each with `via` and `point`), shown as a Related section under the note (`relatedRowHtml` in `static/js/artifact.js`). The phone has no related data (it does not ride the snapshot). |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve
@@ -282,6 +282,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0038_related_point.py` | `related.point`: the related artifact's summary line behind an idea link (NULL for a name-only link). |
 | `migrations/versions/0037_related_via.py` | `related.via`: the shared name behind a "both mention" link (NULL for an idea link). |
 | `migrations/versions/0036_sections.py` | `sections` (artifact_id, ordinal, summary, model_version, body_version): section summaries of long documents, a search layer. Purge deletes an artifact's rows. |
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
@@ -322,8 +323,8 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`. |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone). |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | IBM Plex Sans woff2/ttf, served locally. No CDN. |
 
@@ -422,7 +423,7 @@ Migrations run automatically at startup via Alembic.
 | `chat_messages` | one turn | append-only. grounded flag. |
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
-| `related` | links between artifacts whose facets make the same point, or that name the same thing (`via`) | derived at ingest, both directions, filtered to live artifacts on read |
+| `related` | links between artifacts about the same subject, naming the same thing (`via`), or judged to make the same point; `point` is the reason shown | derived at ingest, both directions, filtered to live artifacts on read |
 | `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
 | `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
 
@@ -494,6 +495,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
 | `ENQ_SEARCH_MODEL_RANK` | `off` | The `search_model_rank` setting: the search model re-orders the top 20 results of `/search` (`retrieve/model_rank.py`). |
+| `ENQ_SEARCH_JUDGE_WAIT` | `2.5` | Seconds `/search` waits for the gray-zone judge before answering without it. |
 | `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
 
 ### Where secrets live
@@ -789,6 +791,16 @@ RRF reads ranks only, so the 10x bm25 title weight (R.5) acts through keyword or
 FTS5 bm25 weights map to every column including UNINDEXED ones, hence `bm25(fts_chunks, 1.0, 10.0, 1.0)` on `(chunk_id, title, text)`.
 The fts text drops a leading `# {title}` heading so the title term counts only in the title column.
 Trigram hits are appended after the fused list with score 0: fusing them regressed the R.5 title test, and substring noise ("grow" in "growing") would outrank real hits.
+
+**Title pin.**
+An unquoted search that IS an artifact's title (case, punctuation and spacing aside) puts that artifact first, then titles containing the query as a whole-word phrase (two or more words only), newest first, ahead of the fused list (`_title_hits`, `why: "title"`).
+Fusion alone does not honour a typed name: "The good life" ranked the note called The Good Life second, behind one whose summary sat closer.
+
+**The judge never holds a search.**
+`_apply_floor` waits `config.SEARCH_JUDGE_WAIT_S` (2.5s, `ENQ_SEARCH_JUDGE_WAIT`) for the gray-zone judge (`_judge_in_time`); past that the search answers from cached verdicts, keeps what was never judged as `loose` (shown last, under the page's line that says so), and the judge finishes in the background and caches, so the same search is exact next time.
+At most two judges run on past their search (`_JUDGES`); a search that finds both busy answers without one.
+A thinking model with reprompts once held a search for an exact title for 94 seconds.
+Chat's passages still wait for the judge: an answer is computed off the request anyway.
 
 **Fuzzy leg (R.7).**
 `FUZZY_BASE_SCORE = 0.02` sits between a single-leg rank-1 RRF hit (~0.016) and a dual-leg one (~0.033), so a typo match wins only when the hybrid was weak.
@@ -1123,6 +1135,13 @@ Ingest skips a trashed, vaulted or embedded artifact instead of chunking it back
 `enq doctor` compares the chunk index with `indexable_chunk_count` (chunks of live artifacts), not every chunk.
 A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
 
+### Find inside an artifact is ours, not the webview's
+
+The shell window has no Edit menu, so the webview never binds a find of its own.
+Cmd/Ctrl+F on any artifact page opens the find field in the pill (`openFind` in `static/js/artifact.js`): a PDF asks the engine where the words are (`GET /artifacts/{id}/find`) and draws boxes over the page pictures; everything else is searched in `.bodycol` and marked with the CSS Custom Highlight API (`::highlight(enqueue-find)`), never `<mark>` elements, which the editor would serialise into the note on the next save.
+`restorePill` clears the marks, so closing the field by any road removes them.
+A match cannot span two text nodes (a phrase half in bold is not found).
+
 ### A view can be arranged by hand (no recipe, no model)
 
 One view concept, two ways to make it. A manual view is a `saved_pivots` row whose spec is `{"manual": true, ...}` and whose frozen `result_json` IS the arrangement: headers in the person's order, each with its artifact ids in the person's order (`pivots_saved.save_manual` / `set_layout` / `is_manual`). An empty header is kept; an artifact sits under one header only; two headers cannot share a name (case-insensitive).
@@ -1172,10 +1191,21 @@ Tested on the emulator without hardware: `adb shell locksettings set-pin 1111`, 
 System prompts are black in `screencap`; read them with `uiautomator dump`.
 `locksettings clear --old 1111` puts the emulator back.
 
+### The tour behind the ? is one deck for both apps (TOUR.1)
+
+`static/js/tour.js` + `static/css/tour.css` are loaded by the desktop home and by `mobile.html`, the way `linkpop` is, so the words, the order and the examples exist once (Dequeue's lesson: its two clients had drifted to different tours).
+A card only changes the words that are true of one device (`opts.platform`: click or tap, the hotkey or the + menu); the desktop passes the capture hotkey as it is actually set (`Tour.set({hotkey})` once `/settings` answers).
+It opens only from the `?` (`[data-tour-open]`, top right of `.homehead` and of the phone's `.lib-hero`), never by itself; an accent bead sits on the `?` until it has been opened once (`localStorage` `enq.tourSeen.v1`, `VERSION` in tour.js: bump it to bring the bead back after a real change).
+Seven cards, each with a working demo on made-up artifacts (type into the capture box, pick a search, ask, rewrite a summary line, gather a view); nothing in it reads or writes the library.
+The vault is left out on purpose: its door is unmarked, and a tour anyone holding the device can open must not mark it.
+While open, everything else in `<body>` is `inert` and `html.tour-on` stops the page scrolling; Esc, the close button, the last card's button and the Android Back gesture (`window.__enqBack`) close it, arrow keys and a sideways swipe turn the card (`.tour-body` needs `touch-action: pan-y` or the browser cancels the touch before the swipe lands).
+Icons inside it are sized per place: keep the shared `.tour-ico` rule at one-class specificity or it outranks them.
+Adding a feature worth showing means editing `cards()` and its demo, not adding an eighth card by reflex: seven is already the ceiling.
+
 ### A note must round-trip through md() and htmlToMd() unchanged
 
 `static/js/md.js` renders a note (desktop editor, phone reader) and `htmlToMd` writes the desktop editor back; a note opened and saved with no edits must come back byte for byte, or it changes shape on its own each time it is touched.
-`tests/js/md_roundtrip.js` (run by `tests/test_md_roundtrip.py`, needs node) pins it: nested and mixed lists, empty bullets (an item, not a list break), ordered lists keeping their start, multi-line quotes, code fences, and blocks written with NO blank line between them - md() marks those `data-tight` and the serializer writes them back tight, so lines typed on the phone do not grow blank lines after a desktop save.
+`tests/js/md_roundtrip.js` (run by `tests/test_md_roundtrip.py`, needs node) pins it: nested and mixed lists, empty bullets (an item, not a list break), dividers (a line of three or more dashes renders as `<hr data-dashes=N>` and is written back with the same count), ordered lists keeping their start, multi-line quotes, code fences, and blocks written with NO blank line between them - md() marks those `data-tight` and the serializer writes them back tight, so lines typed on the phone do not grow blank lines after a desktop save.
 Add a case there for every rendering bug fixed.
 The desktop editor saves as you type (debounced) and on window blur, and `refreshIfStale` never rebuilds an editor holding unsaved words (it re-reads the page only when the store changed elsewhere): rebuilding it on window focus used to drop the words typed since the last blur.
 

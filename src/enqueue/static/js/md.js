@@ -169,7 +169,13 @@
       const ol = line.match(/^(\s*)(\d+)\.(?:\s+(.*))?$/);
       const bq = line.match(/^(?:&gt;|>)\s?(.*)$/);
       if (!bq) flushQuote();
-      if (h) {
+      // A line of three or more dashes is a divider. It used to show as the dashes
+      // themselves. The count is kept so the note is written back as it was typed.
+      const rule = line.match(/^-{3,}$/);
+      if (rule) {
+        flushList();
+        out.push('<hr data-dashes="' + line.length + '"' + tight() + ">");
+      } else if (h) {
         flushList();
         out.push("<h" + h[1].length + tight() + ">" + h[2] + "</h" + h[1].length + ">");
       } else if (li || ol) {
@@ -356,6 +362,9 @@
             lines.push("");
           break;
         }
+        case "HR":
+          lines.push("-".repeat(Math.max(3, +node.getAttribute("data-dashes") || 3)), "");
+          break;
         case "BLOCKQUOTE":
           // One quote, one "> " line per line of it.
           for (const l of inline(node).trim().split("\n")) lines.push(("> " + l).trimEnd());

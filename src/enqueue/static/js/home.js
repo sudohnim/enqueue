@@ -717,6 +717,8 @@ async function home(opts) {
 		view.innerHTML =
 			'<div class="homehead">' +
 			greetDateHtml() +
+			// The ? that opens the tour (js/tour.js), top right of the header.
+			Tour.triggerHtml() +
 			'<div class="greetline">' +
 			'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
 			'<h1 class="display greeting">' +
@@ -738,6 +740,8 @@ async function home(opts) {
 	let html =
 		'<div class="homehead">' +
 		greetDateHtml() +
+		// The ? that opens the tour (js/tour.js), top right of the header.
+		Tour.triggerHtml() +
 		'<div class="greetline">' +
 		// O.3: the eyeball PNG is split into a frame (the socket: outline, lashes,
 		// ground) and a small pupil image (only the purple iris, transparent

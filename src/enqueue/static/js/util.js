@@ -167,7 +167,7 @@ function bytes(n) {
 function spinner(size, caption) {
 	const cls = size === "lg" ? "loader loader-lg" : "loader loader-sm";
 	const bird =
-		'<img class="loader-bird" src="/static/loading.png" alt="" aria-hidden="true">';
+		'<span class="loader-bird flybird" aria-hidden="true"><i></i><i></i><i></i></span>';
 	const cap = caption
 		? '<span class="loader-caption">' + esc(caption) + "</span>"
 		: "";

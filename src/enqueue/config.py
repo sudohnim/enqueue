@@ -202,3 +202,7 @@ FACET_INPUT_CHARS = 12000
 # ENQ_SEARCH_RERANK; any of 1/true/yes/on flips it.
 _SEARCH_RERANK = os.getenv("ENQ_SEARCH_RERANK", "").strip().lower()
 SEARCH_RERANK = _SEARCH_RERANK in ("1", "true", "yes", "on")
+
+# How long /search waits for the gray-zone judge before answering without it. The
+# judge keeps running and caches its verdicts, so the same search is exact next time.
+SEARCH_JUDGE_WAIT_S = float(os.getenv("ENQ_SEARCH_JUDGE_WAIT", "2.5"))

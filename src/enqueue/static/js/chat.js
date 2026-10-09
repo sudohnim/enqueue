@@ -43,7 +43,7 @@ function teardown() {
 function eyeLoader() {
 	return (
 		'<div class="loader loader-sm" role="status">' +
-		'<img class="loader-bird" src="/static/loading.png" alt="" aria-hidden="true">' +
+		'<span class="loader-bird flybird" aria-hidden="true"><i></i><i></i><i></i></span>' +
 		'<span class="eye-loading">Loading&hellip;</span>' +
 		"</div>"
 	);

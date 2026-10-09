@@ -22,7 +22,7 @@ const src = fs.readFileSync(path.join(__dirname, "../../src/enqueue/static/js/md
 const { md, htmlToMd } = new Function("esc", src + "\nreturn { md, htmlToMd };")(esc);
 
 // ---- a DOM just big enough for md()'s output ----------------------------------
-const VOID = new Set(["BR", "IMG"]);
+const VOID = new Set(["BR", "IMG", "HR"]);
 const decode = (s) =>
   s
     .replace(/&lt;/g, "<")
@@ -105,6 +105,10 @@ const exact = {
   checkboxes: "- [ ] todo\n- [x] done",
   "raw html is text": "<b>hi</b> & <script>",
   "a lone dash": "-",
+  "a divider": "above\n\n---\n\nbelow",
+  "a divider typed tight": "above\n---\nbelow",
+  "a long divider": "a\n\n------\n\nb",
+  "two dashes are text": "--",
   "a negative number": "-5 degrees",
 };
 
