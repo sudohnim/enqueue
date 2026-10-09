@@ -769,6 +769,14 @@ The bars live per model in `config.EMBED_MODELS` (`keep_above`, `drop_below`) an
 The bars are start values for the Phase Q.4 eval (all 42 real-match queries passing, Nothing-OK toward 8/8), not final answers.
 Lexical legs that bypass the floor: chunk FTS5 keyword (with prefix recall), fuzzy, exact phrase, and the FTS5 keyword branch of a facet or entity.
 The trigram leg is recall only, not lexical (Minh's decision): a 3-character overlap like "pie" in "pieces" is noise, and partial words are already covered by the keyword prefix query.
+That holds for chat too: `chats._library_passages` once counted a trigram hit as lexical, so a question's filler words ("what", "the", "about") carried unrelated passages past the floor, filled the 8 slots, and left room for one judged passage.
+It now judges the gray zone first and fills in ranked order.
+
+**Keyword queries use content words (`store_sqlite._content_terms`).**
+A search longer than `_NAME_WORDS` (3) is a question: filler words (`_FILLER`, the same list as `query_terms` in `desktop/src/sync.rs`) are dropped before the FTS5 and trigram queries are built, because every remaining word must match and "what did I save about X" never matched anything.
+A search of up to three words is a name or a phrase and keeps every word ("the good life" is not "good life").
+Bare punctuation is never a word.
+Ranking rows that hold only SOME of a question's words (an OR fallback) was tried and dropped: it lifted the lexical decoys and took the cross-domain eval from 7/12 to 4/12.
 A dense-only facet/entity hit is a semantic neighbor and faces the gate like a chunk (Q.7 fixed a leak where "pecan pie recipes" surfaced an unrelated note through an entity vector at 0.409).
 The gray-zone judge (`judge_gray_zone`) is fail-open (a raising or malformed call keeps what it did not clearly judge), is cached in `derived_values` (scope `gray_judge`) per (query, artifact_id, model_version), and is shown each item's facets because they state its subject better than one snippet.
 Floor survivors keep their order: the floor removes, it never reorders.
@@ -1143,8 +1151,8 @@ An index row (vec0 or FTS5) carries only its chunk/facet/entity/section id, so t
 Anything that replaces or deletes rows must drop their entries while the rows still exist: `ingest/queue.py` drops an artifact's chunk entries before re-chunking it, and trash delete/purge and vaulting drop an artifact's entries before deleting its chunks.
 Before that fix every reprocess, edit and retry left a full set of orphans behind (one library reached 52,891 orphaned chunk rows for 1,071 chunks), and orphans still take slots in a search's shortlist; a vaulted note's text also stayed in `fts_chunks`.
 Ingest skips a trashed, vaulted or embedded artifact instead of chunking it back.
-`queue.prune_index` runs each time the ingest queue drains (the `Worker` `on_idle` hook) and once at engine startup: it deletes chunks of trashed or vaulted artifacts, removes any entry whose row is gone (`store.prune_orphans()`; regenerated facets, entities and sections take new ids), and indexes any row with no entry (`store.index_missing()`, e.g. after an interrupted rebuild).
-`enq index` rebuilds every layer from the tables.
+`queue.prune_index` runs each time the ingest queue drains (the `Worker` `on_idle` hook) and once at engine startup: it deletes chunks of trashed or vaulted artifacts, removes any entry whose row is gone or belongs to an artifact that is not live (`store.prune_orphans()`; regenerated facets, entities and sections take new ids, and a trashed or vaulted artifact keeps its summary rows), and indexes any row with no entry (`store.index_missing()`, e.g. after an interrupted rebuild).
+`enq index` rebuilds every layer from the tables, live artifacts only: the facet, entity and section rebuilds once had no such filter, and one library's summary index was 57% rows of trashed artifacts, which took a third to a half of every search's facet shortlist.
 `enq doctor` compares the chunk index with `indexable_chunk_count` (chunks of live artifacts), not every chunk.
 A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
 

@@ -86,6 +86,10 @@ _COLLECTION_TABLES = {
     "sections": ("vec_sections", "fts_sections"),
 }
 
+# Only live artifacts are searched: a trashed, vaulted or embedded one keeps its
+# summary rows (a restore reuses them) but has no entry in the index.
+_LIVE = "a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+
 # Literal SQL per collection; values always bound, never interpolated.
 # bm25 weights map to every column, UNINDEXED included: (chunk_id, title, text) = (1, 10, 1).
 _SQL = {
@@ -93,7 +97,7 @@ _SQL = {
         "select_all": (
             "SELECT c.id, c.text, c.context, a.title"
             " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
-            " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+            f" WHERE {_LIVE}"
         ),
         "clear_vec": "DELETE FROM vec_chunks",
         "clear_fts": "DELETE FROM fts_chunks",
@@ -115,7 +119,10 @@ _SQL = {
         ),
     },
     "facets": {
-        "select_all": "SELECT id, statement FROM facets",
+        "select_all": (
+            "SELECT t.id, t.statement FROM facets t JOIN artifacts a ON a.id = t.artifact_id"
+            f" WHERE {_LIVE}"
+        ),
         "select_artifact": (
             "SELECT id, statement AS text FROM facets WHERE artifact_id = ? ORDER BY level"
         ),
@@ -141,7 +148,10 @@ _SQL = {
         ),
     },
     "entities": {
-        "select_all": "SELECT id, fact FROM entities",
+        "select_all": (
+            "SELECT t.id, t.fact FROM entities t JOIN artifacts a ON a.id = t.artifact_id"
+            f" WHERE {_LIVE}"
+        ),
         "select_artifact": (
             "SELECT id, fact AS text FROM entities WHERE artifact_id = ? ORDER BY entity"
         ),
@@ -167,7 +177,10 @@ _SQL = {
         ),
     },
     "sections": {
-        "select_all": "SELECT id, summary FROM sections",
+        "select_all": (
+            "SELECT t.id, t.summary FROM sections t JOIN artifacts a ON a.id = t.artifact_id"
+            f" WHERE {_LIVE}"
+        ),
         "select_artifact": (
             "SELECT id, summary AS text FROM sections WHERE artifact_id = ? ORDER BY ordinal"
         ),
@@ -243,16 +256,50 @@ def _chunk_entries(row) -> tuple[str, tuple[str, str], str]:
     )
 
 
+# Words that carry no subject. A question in plain language is mostly these, and a
+# keyword query that requires them finds nothing ("what did I save about X" has to
+# match a passage containing "what", "did", "save" and "about"). Keep in step with
+# `query_terms` in desktop/src/sync.rs, the phone's copy.
+_FILLER = frozenset(
+    "the a an and or of to in on for is are was do did does i you my me any have has had"
+    " what which that this with about from it be can could would should there here get got"
+    " some all how when where who note notes saved save".split()
+)
+
+# A search this short is a name or a phrase, not a question.
+_NAME_WORDS = 3
+
+
+def _content_terms(text: str) -> list[str]:
+    """The words of a search that name its subject, as typed.
+
+    Bare punctuation is never a word. Filler is dropped only from a search longer than
+    `_NAME_WORDS`: up to there it is a name or a phrase and every word counts ("the
+    good life" is not "good life"). A search made only of filler keeps its words.
+    """
+    words = [t for t in text.split() if any(ch.isalnum() for ch in t)]
+    if len(words) <= _NAME_WORDS:
+        return words
+    content = [t for t in words if "".join(ch for ch in t.lower() if ch.isalnum()) not in _FILLER]
+    return content or words
+
+
+def _quoted(token: str) -> str:
+    return '"' + token.replace('"', '""') + '"'
+
+
 def _fts_query(text: str) -> str:
-    """User text as a literal FTS5 prefix query: each token quoted, then `*`."""
-    tokens = text.split()
-    return " ".join('"' + token.replace('"', '""') + '"*' for token in tokens)
+    """The content words of a search as a literal FTS5 prefix query: each quoted, then
+    `*`. Every one must match. Ranking rows that hold only some of the words was tried
+    and dropped: it lifted notes that share a question's words but not its idea
+    (cross-domain eval 7/12 -> 4/12)."""
+    return " ".join(_quoted(t) + "*" for t in _content_terms(text))
 
 
 def _trigram_query(text: str) -> str:
-    """User text as an OR of quoted trigram tokens (3+ chars). Empty means skip."""
-    tokens = [t for t in text.split() if len(t) >= 3]
-    return " OR ".join('"' + token.replace('"', '""') + '"' for token in tokens)
+    """The content words of a search as an OR of quoted trigram tokens (3+ chars).
+    Empty means skip."""
+    return " OR ".join(_quoted(t) for t in _content_terms(text) if len(t) >= 3)
 
 
 class SqliteVecStore(VectorStore):
@@ -514,11 +561,15 @@ class SqliteVecStore(VectorStore):
         return {name: len(ids) for name, ids in missing.items()}
 
     def prune_orphans(self) -> dict[str, int]:
-        """Remove index rows whose chunk, facet, entity or section no longer exists.
+        """Remove index rows whose chunk, facet, entity or section no longer exists, or
+        belongs to an artifact that is not live.
 
         Regenerating a layer replaces its rows under new ids, and a row's index entry
         can only be found through the row, so an entry whose row is already gone is
-        left behind. Returns how many were removed per collection.
+        left behind. A trashed or vaulted artifact keeps its summary rows, and its
+        entries would otherwise take slots in every search's shortlist (one library
+        had 57% of its summary index pointing at the trash). Returns how many were
+        removed per collection.
         """
         self.ensure()
         removed: dict[str, int] = {}
@@ -533,7 +584,8 @@ class SqliteVecStore(VectorStore):
                     # Table and column names come only from the _ORPHANS literal above.
                     rows = conn.execute(
                         f"SELECT {key} FROM {index_table}"
-                        f" WHERE {col} NOT IN (SELECT id FROM {table})"
+                        f" WHERE {col} NOT IN (SELECT t.id FROM {table} t"
+                        f" JOIN artifacts a ON a.id = t.artifact_id WHERE {_LIVE})"
                     ).fetchall()
                     if rows:
                         conn.executemany(

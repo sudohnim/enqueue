@@ -276,41 +276,28 @@ def _library_passages(question: str) -> list[dict]:
         window = PASSAGES * 4
         chunk_legs = store.search_legs(store.CHUNKS, question, limit=window)
         dense_sims: dict[str, float] = {}
-        lexical_chunks: set[str] = set()
         for hit in chunk_legs["dense"][:window]:
             cid = hit["chunk_id"]
             if hit["score"] > dense_sims.get(cid, 0.0):
                 dense_sims[cid] = hit["score"]
-        for leg in ("keyword", "trigram"):
-            for hit in chunk_legs[leg][:window]:
-                lexical_chunks.add(hit["chunk_id"])
-        per_artifact: dict[str, int] = {}
-        # Gray-zone chunks are collected, then judged in one batched call below.
-        gray_chunks: list[str] = []
-        gray_scores: dict[str, float] = {}
-        gray_artifacts: dict[str, str] = {}
-        for hit in chunk_legs["fused"]:
-            aid = hit["artifact_id"]
-            verdict = _floor_verdict(
+        # Lexical proof is a keyword hit: a chunk holding every content word of the
+        # question. A trigram (substring) hit is recall only, as in /search: counted as
+        # proof, a question's filler words ("what", "the", "about") carried unrelated
+        # passages past the floor and crowded out the ones that matched.
+        lexical_chunks = {hit["chunk_id"] for hit in chunk_legs["keyword"][:window]}
+        verdicts = {
+            hit["chunk_id"]: _floor_verdict(
                 {
                     "dense_similarity": dense_sims.get(hit["chunk_id"], 0.0),
                     "had_lexical_hit": hit["chunk_id"] in lexical_chunks,
                 }
             )
-            if verdict == "drop":
-                continue
-            if verdict == "gray":
-                gray_chunks.append(hit["chunk_id"])
-                gray_scores[hit["chunk_id"]] = hit["score"]
-                gray_artifacts[hit["chunk_id"]] = aid
-                continue
-            if per_artifact.get(aid, 0) >= CHUNKS_PER_ARTIFACT:
-                continue
-            found[hit["chunk_id"]] = {"score": hit["score"], "why": "passage"}
-            per_artifact[aid] = per_artifact.get(aid, 0) + 1
-            if len(found) >= PASSAGES:
-                break
+            for hit in chunk_legs["fused"]
+        }
 
+        # Gray-zone chunks are judged per artifact in one batched call.
+        kept_gray: set[str] = set()
+        gray_chunks = [cid for cid, verdict in verdicts.items() if verdict == "gray"]
         if gray_chunks:
             gray_rows = conn.execute(
                 "SELECT c.id, c.artifact_id, c.text, a.title, a.kind FROM chunks c"
@@ -328,20 +315,25 @@ def _library_passages(question: str) -> list[dict]:
                         "snippet": " ".join(r["text"].split())[:400],
                     },
                 )
-            kept = judge_gray_zone(
+            kept_gray = judge_gray_zone(
                 question,
                 [{"artifact_id": aid, **info} for aid, info in by_aid.items()],
             )
-            for cid in gray_chunks:
-                aid = gray_artifacts[cid]
-                if aid not in kept:
-                    continue
-                if per_artifact.get(aid, 0) >= CHUNKS_PER_ARTIFACT:
-                    continue
-                found[cid] = {"score": gray_scores[cid], "why": "passage"}
-                per_artifact[aid] = per_artifact.get(aid, 0) + 1
-                if len(found) >= PASSAGES:
-                    break
+
+        # One pass in ranked order, so a judged passage takes the place its rank earned
+        # rather than whatever is left after the sure ones.
+        per_artifact: dict[str, int] = {}
+        for hit in chunk_legs["fused"]:
+            aid = hit["artifact_id"]
+            verdict = verdicts[hit["chunk_id"]]
+            if verdict == "drop" or (verdict == "gray" and aid not in kept_gray):
+                continue
+            if per_artifact.get(aid, 0) >= CHUNKS_PER_ARTIFACT:
+                continue
+            found[hit["chunk_id"]] = {"score": hit["score"], "why": "passage"}
+            per_artifact[aid] = per_artifact.get(aid, 0) + 1
+            if len(found) >= PASSAGES:
+                break
 
         # Facet/entity hits face the same floor: keyword leg = lexical, dense leg = similarity.
         facet_entity_dense: dict[str, float] = {}
