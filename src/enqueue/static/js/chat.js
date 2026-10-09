@@ -648,9 +648,27 @@ async function showSavedGroupings() {
 	restorePill("inside");
 	setRoute("g");
 	const list = await api("/pivots").catch(() => ({ items: [] }));
+	// What a card says under the name: how big the view is and who arranged it, so
+	// two views are told apart before either is opened.
+	const sized = (p) => {
+		const how = p.manual ? "Arranged by hand" : "Gathered by the eye";
+		if (p.groups == null) return how;
+		return (
+			p.groups +
+			(p.manual ? " header" : " group") +
+			(p.groups === 1 ? "" : "s") +
+			" &middot; " +
+			p.items +
+			" item" +
+			(p.items === 1 ? "" : "s") +
+			"<br>" +
+			how
+		);
+	};
 	let html =
-		'<div class="shelf">Saved views</div>' +
-		'<div class="actions"><button class="btn secondary" type="button" onclick="createManualView()">' +
+		back() +
+		'<div class="h1">Views</div>' +
+		'<div class="actions viewsbar"><button class="btn secondary" type="button" onclick="createManualView()">' +
 		svg("plus") +
 		"New view</button></div>";
 	if (!list.items.length) {
@@ -670,9 +688,12 @@ async function showSavedGroupings() {
 						"','" +
 						esc(p.name).replace(/'/g, "\\'") +
 						"')\">" +
-						'<div style="padding:24px 16px">' +
+						'<div class="viewcard">' +
 						'<div class="title">' +
 						esc(p.name) +
+						"</div>" +
+						'<div class="preview">' +
+						sized(p) +
 						"</div>" +
 						'<button class="title-action" aria-label="Rename ' +
 						esc(p.name) +

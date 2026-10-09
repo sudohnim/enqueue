@@ -1138,6 +1138,40 @@ A card with no recorded group (an old exclusion, or an add) is placed by `pivot.
 `pivot.run` folds group keys that differ only in case or spacing ("Non-fiction" / "non-fiction") into one group, shown in the commonest spelling.
 On the page, `pivotState` is cleared in `teardown()` and every late re-render checks `onSavedView(id)`: a view left set used to redraw itself over whichever page was open when the window regained focus.
 
+### The phone's fingerprint lock is two separate locks (BIO.1)
+
+Both are checked by the Android shell (`MainActivity.kt` + `Biometrics.kt`, `androidx.biometric`), reached from the page through the `EnqueueAndroid` bridge.
+A prompt answers later, so `setAppLock` / `vaultSecretCreate` / `vaultSecretRead` take a request id and answer through `window.__enqLockReply(id, {ok, reason, secret?})`; `lockStatus()` is the one synchronous call.
+
+**The app lock** (Settings > Lock, a `SharedPreferences` flag) is a gate, not encryption: the phone's `library.db` is still plain SQLite.
+It is a NATIVE cover (`res/layout/view_app_lock.xml`) added to the decor view in `onCreate`, so the library never paints first and nothing depends on the page booting.
+It accepts a fingerprint or the phone's screen lock (`BIOMETRIC_WEAK | DEVICE_CREDENTIAL`, the one fallback combination every supported Android version accepts), so a sensor lockout cannot shut the owner out.
+It asks once per trip to the front and locks again after `LOCK_GRACE_MS` (60s) in the background, so the camera, the file picker or a link opened in the browser do not ask again on the way back.
+If the phone has no fingerprint and no screen lock left, the lock switches itself off instead of trapping the owner.
+While it is on, the recents thumbnail is hidden (`setRecentsScreenshotEnabled(false)` on Android 13+, `FLAG_SECURE` below).
+`QuickCaptureActivity` is not locked: it can only add a thought.
+The lock button is an `AppCompatButton` by name, because under the Material theme a plain `<Button>` becomes a `MaterialButton` that ignores `android:background`.
+
+**Vault fingerprint unlock** (the "Open with fingerprint" switch INSIDE the vault, never in open Settings, so nothing outside says a vault exists) does not hand the vault key to Kotlin or the page.
+The Android Keystore holds an AES-GCM key that needs a strong fingerprint for every use and dies when a new fingerprint is enrolled; it guards a random 32-byte secret.
+The Rust side keeps the vault key sealed under that secret in the app-data file `vault_bio` (`sync::vault_bio_seal` / `vault_bio_open`, commands `mobile_vault_bio_enroll` / `_unlock` / `_clear`), bound to the PIN's own wrap by `vault_meta_tag`.
+So a PIN changed on ANOTHER device turns fingerprint unlock off here ("changed"), while a PIN changed on this phone re-points the record (`vault_bio_retag`); a newly enrolled fingerprint answers "invalidated" and both halves are cleared.
+The PIN always still works, and enrolling needs an unlocked vault.
+The prompt's words come from the page, because the vault's door is the "Diagnostics" decoy and the prompt must not name it.
+The two locks are deliberately not merged: the touch that opens the app does not open the vault, which keeps locking itself whenever the app leaves the screen.
+The page's lock-on-hidden handlers skip while a prompt is open (`fingerprintPromptOpen()`), since the prompt itself can report the page hidden.
+
+**The switches and their dialogs** live in `mobile.html`.
+Each lock is one `.mswitch-row` (the whole row is a `role="switch"` button, the phone's version of the desktop `.toggle`): `#settings_app_lock` in Settings > Lock and `#vault_fingerprint` inside the vault.
+Turning one ON shows `mobileSheet` (a title, a few lines, two buttons, built from the confirm dialog's parts) explaining what it does before the system prompt; turning one OFF shows it as a confirmation.
+Each is also offered once: the app lock the first time the library is on screen on a phone that can use it (`maybeOfferAppLock`, never over another sheet, the writing page or a reader), and the vault's right after the code opens it (`maybeOfferVaultFingerprint`).
+The "already offered" marks are `localStorage` keys `enq.lockOffered` and `enq.diagOffered` (the second named for the decoy); a phone with no screen lock is not asked, and is not marked, so it is asked once it has one.
+The Back gesture closes an open `.mconfirm-backdrop` first (`window.__enqBack` sends it `enq-cancel`, which the plain `mobileConfirm` listens for too).
+
+Tested on the emulator without hardware: `adb shell locksettings set-pin 1111`, enroll through `am start -a android.settings.FINGERPRINT_ENROLL` with `adb emu finger touch 1` repeated, then `adb emu finger touch <n>` answers any prompt (a different `n` is a wrong finger).
+System prompts are black in `screencap`; read them with `uiautomator dump`.
+`locksettings clear --old 1111` puts the emulator back.
+
 ### A note must round-trip through md() and htmlToMd() unchanged
 
 `static/js/md.js` renders a note (desktop editor, phone reader) and `htmlToMd` writes the desktop editor back; a note opened and saved with no edits must come back byte for byte, or it changes shape on its own each time it is touched.

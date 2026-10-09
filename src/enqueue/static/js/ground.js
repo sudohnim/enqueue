@@ -37,13 +37,18 @@
 	}
 
 	let last = "";
+	// A scrim over the page (a menu, a sheet, a dialog) dims the page but not the
+	// shell's bar strips, which left two bright bands above and below it. The page
+	// names the scrim's colour here and the strips are painted with the same dim.
+	let shade = null;
 	function apply() {
 		const bg = groundAt(new Date());
 		const key = hex(bg);
 		// The shell strip is re-sent every tick (cheap), in case the bridge was not
 		// ready at first paint; the page's own tokens only change when the colour does.
 		const bridge = window.EnqueueAndroid;
-		if (bridge && typeof bridge.setGround === "function") bridge.setGround(key);
+		if (bridge && typeof bridge.setGround === "function")
+			bridge.setGround(shade ? hex(mix(bg, shade.slice(0, 3), shade[3])) : key);
 		if (key === last) return;
 		last = key;
 		const root = document.documentElement.style;
@@ -55,6 +60,16 @@
 		root.setProperty("--surface-doc", hex(mix(bg, WHITE, 0.78)));
 		root.setProperty("--surface-3", hex(mix(bg, DEEP, 0.06)));
 	}
+
+	window.enqGround = {
+		// rgba as [r, g, b, alpha], or null when nothing covers the page.
+		shade(rgba) {
+			const next = rgba && rgba[3] > 0 ? rgba : null;
+			if (String(next) === String(shade)) return;
+			shade = next;
+			apply();
+		},
+	};
 
 	apply();
 	setInterval(apply, 60000);

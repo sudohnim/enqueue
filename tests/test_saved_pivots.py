@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from enqueue import pivots_saved
+from enqueue import notes, pivots_saved, trash
 
 _SPEC = {
     "subset": {"kind": "ids", "value": "a b"},
@@ -35,6 +35,28 @@ def test_listing_is_newest_first_and_spec_free(store):
     rows = pivots_saved.listing()
     assert [row["id"] for row in rows[:2]] == [second, first]
     assert "spec" not in rows[0] and "spec_json" not in rows[0]
+    assert "result_json" not in rows[0]
+    # Never built: no size to show yet.
+    assert rows[0]["groups"] is None and rows[0]["items"] is None
+
+
+def test_listing_sizes_a_built_view_without_its_trashed_artifacts(store, quiet_queue):
+    kept = notes.create("a note that stays in the view, long enough to keep")["artifact"]["id"]
+    binned = notes.create("a note that is trashed after the view was built")["artifact"]["id"]
+    pivot_id = pivots_saved.save("sized", _SPEC)
+    pivots_saved.set_result(
+        pivot_id,
+        {
+            "groups": [
+                {"key": "a", "artifact_ids": [kept, binned]},
+                {"key": "b", "artifact_ids": [kept]},
+            ]
+        },
+    )
+    trash.delete(binned)
+
+    row = next(r for r in pivots_saved.listing() if r["id"] == pivot_id)
+    assert (row["groups"], row["items"]) == (2, 1)
 
 
 def test_delete_removes_it(store):

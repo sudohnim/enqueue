@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-vault-bio-clear"
+description = "Enables the mobile_vault_bio_clear command without any pre-configured scope."
+commands.allow = ["mobile_vault_bio_clear"]
+
+[[permission]]
+identifier = "deny-mobile-vault-bio-clear"
+description = "Denies the mobile_vault_bio_clear command without any pre-configured scope."
+commands.deny = ["mobile_vault_bio_clear"]

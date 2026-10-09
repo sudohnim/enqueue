@@ -175,6 +175,15 @@ mod mobile {
         }
     }
 
+    fn secure_store_del(app: &AppHandle, key: &str) -> Result<(), String> {
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        match std::fs::remove_file(dir.join(key)) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Persist the sync config + the unlocked DEK in the secure store (MOB.3b), so a
     /// relaunch syncs without re-entering the phrase.
     fn save_config(
@@ -2373,7 +2382,9 @@ mod mobile {
     fn mobile_vault_status(app: AppHandle) -> Result<String, String> {
         let setup = vault_meta_get(&app)?.is_some();
         let unlocked = vault_key_get().is_some();
-        Ok(serde_json::json!({ "setup": setup, "unlocked": unlocked }).to_string())
+        let fingerprint = setup && secure_store_get(&app, VAULT_BIO)?.is_some();
+        Ok(serde_json::json!({ "setup": setup, "unlocked": unlocked, "fingerprint": fingerprint })
+            .to_string())
     }
 
     #[tauri::command]
@@ -2396,6 +2407,7 @@ mod mobile {
         let wrapped = crate::sync::secretbox_encrypt(&kek, &key)?;
         let meta = serde_json::json!({ "salt": hex::encode(salt), "wrap": hex::encode(wrapped) });
         secure_store_set(&app, "vault_meta", &meta.to_string())?;
+        secure_store_del(&app, VAULT_BIO)?; // a new vault has a new key
         *VAULT_KEY.lock().unwrap() = Some(key);
         // Sync the wrap so other devices unlock with the same PIN (VAULT.2b).
         let _ = vault_push_meta(&app);
@@ -2452,8 +2464,18 @@ mod mobile {
             .await
             .map_err(|e| e.to_string())??;
         let new_wrap = crate::sync::secretbox_encrypt(&new_kek, &key)?;
-        let meta = serde_json::json!({ "salt": hex::encode(new_salt), "wrap": hex::encode(new_wrap) });
+        let meta = serde_json::json!({ "salt": hex::encode(new_salt), "wrap": hex::encode(&new_wrap) });
         secure_store_set(&app, "vault_meta", &meta.to_string())?;
+        // The key is unchanged, so fingerprint unlock keeps working: re-point its record
+        // at the new wrap. (A code changed on ANOTHER device is not re-pointed, and that
+        // is the point - see sync::vault_bio_open.)
+        if let Some(record) = secure_store_get(&app, VAULT_BIO)? {
+            let tag = crate::sync::vault_meta_tag(&hex::encode(new_salt), &hex::encode(&new_wrap));
+            match crate::sync::vault_bio_retag(&record, &tag) {
+                Ok(r) => secure_store_set(&app, VAULT_BIO, &r)?,
+                Err(_) => secure_store_del(&app, VAULT_BIO)?,
+            }
+        }
         // Keep the session key (unwrapped) in memory.
         if key.len() == 32 {
             let mut k = [0u8; 32];
@@ -2462,6 +2484,55 @@ mod mobile {
         }
         let _ = vault_push_meta(&app);
         Ok(serde_json::json!({ "changed": true }).to_string())
+    }
+
+    // ---- Fingerprint unlock (BIO.1) --------------------------------------------
+    // The Android Keystore (reached from Kotlin, MainActivity's bridge) guards a random
+    // secret it releases only after a fingerprint. The vault key stays in this process,
+    // sealed under that secret in `vault_bio`; these commands never hand the key out.
+    // None of them does network or key derivation, so plain (main-thread) commands are fine.
+    const VAULT_BIO: &str = "vault_bio";
+
+    fn vault_tag(app: &AppHandle) -> Result<String, String> {
+        let (salt, wrap) = vault_meta_get(app)?.ok_or("vault is not set up")?;
+        Ok(crate::sync::vault_meta_tag(&salt, &wrap))
+    }
+
+    /// Turn fingerprint unlock on. Only from an unlocked vault: the key must already be
+    /// in memory, which means the person just proved they know the code.
+    #[tauri::command]
+    fn mobile_vault_bio_enroll(app: AppHandle, secret: String) -> Result<String, String> {
+        let key = vault_key_get().ok_or("vault is locked")?;
+        let secret = crate::sync::key_from_hex(&secret)?;
+        let record = crate::sync::vault_bio_seal(&key, &secret, &vault_tag(&app)?)?;
+        secure_store_set(&app, VAULT_BIO, &record)?;
+        Ok(serde_json::json!({ "fingerprint": true }).to_string())
+    }
+
+    /// Open the vault with the secret the Keystore released. "changed" means the code
+    /// was changed on another device: the record is dropped and the code is needed.
+    #[tauri::command]
+    fn mobile_vault_bio_unlock(app: AppHandle, secret: String) -> Result<String, String> {
+        let record = secure_store_get(&app, VAULT_BIO)?.ok_or("not enrolled")?;
+        let secret = crate::sync::key_from_hex(&secret)?;
+        match crate::sync::vault_bio_open(&record, &secret, &vault_tag(&app)?) {
+            Ok(key) => {
+                *VAULT_KEY.lock().unwrap() = Some(key);
+                Ok(serde_json::json!({ "unlocked": true }).to_string())
+            }
+            Err(e) => {
+                if e == "changed" {
+                    secure_store_del(&app, VAULT_BIO)?;
+                }
+                Err(e)
+            }
+        }
+    }
+
+    #[tauri::command]
+    fn mobile_vault_bio_clear(app: AppHandle) -> Result<String, String> {
+        secure_store_del(&app, VAULT_BIO)?;
+        Ok(serde_json::json!({ "fingerprint": false }).to_string())
     }
 
     // Encrypt/decrypt one artifact's content at rest, mirroring the desktop vaultops.
@@ -2769,6 +2840,9 @@ mod mobile {
                 mobile_vault_unlock,
                 mobile_vault_lock,
                 mobile_vault_change_pin,
+                mobile_vault_bio_enroll,
+                mobile_vault_bio_unlock,
+                mobile_vault_bio_clear,
                 mobile_set_vault,
                 mobile_vault_list,
                 mobile_vault_get,

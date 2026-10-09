@@ -25,7 +25,7 @@
   // from, not a thin search-result list.
   function filteredWallView(titleHtml, items, emptyMsg) {
     view.innerHTML =
-      '<div class="back" onclick="home()">&larr; everything</div>' +
+      back() +
       '<div class="shelf center">' +
       titleHtml +
       " &middot; " +
@@ -63,7 +63,9 @@
   function snippetWithoutTitle(h) {
     const s = h.snippet || "";
     const heading = "# " + (h.title || "");
-    return h.title && s.startsWith(heading) ? s.slice(heading.length).trim() : s;
+    const rest = h.title && s.startsWith(heading) ? s.slice(heading.length).trim() : s;
+    // A snippet is a cut of the raw text: read as words, not as "## **JUDO**".
+    return mdText(rest).replace(/(^|\s)#{1,6}\s+/g, "$1").replace(/\*\*|__/g, "").trim();
   }
 
   // The query whose results are on screen, so opening one can report which search
@@ -109,12 +111,21 @@
     }
     if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
     lastQuery = q;
+    // Hits the relevance check could not rule on (the model was unreachable) come
+    // last from the engine, marked `loose`. They are shown, under a line that says
+    // what they are, and are not counted as results.
+    const firstLoose = r.hits.findIndex((h) => h.loose);
+    const sure = firstLoose < 0 ? r.hits.length : firstLoose;
+    const looseNote =
+      '<div class="shelf center loosenote">' +
+      (sure ? "These might be related too." : "Nothing matched for sure. These might be related.") +
+      " Search could not check them just now.</div>";
     view.innerHTML =
-      '<div class="back" onclick="home()">&larr; everything</div>' +
+      back() +
       '<div class="shelf center">' +
-      r.hits.length +
+      sure +
       " result" +
-      (r.hits.length === 1 ? "" : "s") +
+      (sure === 1 ? "" : "s") +
       " for &ldquo;" +
       esc(q) +
       "&rdquo;" +
@@ -124,6 +135,7 @@
         ? r.hits
             .map(
               (h, i) =>
+                (i === firstLoose ? looseNote : "") +
                 '<div class="item" tabindex="0" role="button"' +
                 " onclick=\"openHit('" +
                 h.artifact_id +
@@ -141,9 +153,7 @@
                 '<div class="excerpt">' +
                 esc(snippetWithoutTitle(h)) +
                 "</div>" +
-                '<div class="meta">' +
-                h.score.toFixed(3) +
-                "</div></div></div>",
+                "</div></div>",
             )
             .join("")
         : '<div class="state">Nothing matched those words.<br><br>Search finds things you can ' +

@@ -8,4 +8,10 @@
     <string name="quick_capture_save">"Save"</string>
     <string name="quick_capture_saved">"Saved to Enqueue"</string>
     <string name="quick_capture_failed">"Couldn't save. Try again."</string>
+    <string name="app_lock_title">"Enqueue is locked"</string>
+    <string name="app_lock_unlock">"Unlock"</string>
+    <string name="app_lock_prompt_title">"Unlock Enqueue"</string>
+    <string name="app_lock_prompt_on">"Turn on the fingerprint lock"</string>
+    <string name="app_lock_prompt_off">"Turn off the fingerprint lock"</string>
+    <string name="app_lock_prompt_subtitle">"Confirm it's you"</string>
 </resources>

@@ -251,6 +251,7 @@ fn put_object_with_retry(url: &str, secret: &str, body: &[u8], label: &str) -> R
     Err(format!("push transport error after {ATTEMPTS} attempts: {last}"))
 }
 
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn push_snapshot(
     relay_url: &str,
     secret: &str,
@@ -751,6 +752,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
 /// Apply a conversation snapshot: the mirror of the engine's apply_chat_snapshot.
 /// Same (updated_at, _device_id) LWW and terminal-tombstone rules as apply_snapshot,
 /// then the chat row upserts and its messages/citations/topics are replaced wholesale.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 fn apply_chat_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let chat = &snapshot["chat"];
     let id = chat["id"].as_str().ok_or("chat snapshot: missing id")?;
@@ -973,6 +975,7 @@ fn fetch_snapshots_parallel(
     out
 }
 
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn sync_library(
     relay_url: &str,
     sync_secret: &str,
@@ -1591,6 +1594,7 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
 
 /// Rewrite one facet from the phone: mark it edited + full-trust, and bump the artifact's
 /// updated_at so the edit wins LWW and reaches the desktop when the artifact is pushed.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn edit_facet_local(conn: &Connection, facet_id: &str, statement: &str) -> Result<String, String> {
     let aid: Option<String> = conn
         .query_row("SELECT artifact_id FROM facets WHERE id = ?1", [facet_id], |r| r.get(0))
@@ -1606,6 +1610,7 @@ pub fn edit_facet_local(conn: &Connection, facet_id: &str, statement: &str) -> R
 }
 
 /// Remove one facet from the phone. Returns its artifact id for the caller to push.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn delete_facet_local(conn: &Connection, facet_id: &str) -> Result<String, String> {
     let aid: Option<String> = conn
         .query_row("SELECT artifact_id FROM facets WHERE id = ?1", [facet_id], |r| r.get(0))
@@ -1620,6 +1625,7 @@ pub fn delete_facet_local(conn: &Connection, facet_id: &str) -> Result<String, S
 /// Record one activity-log event (persisted, mirrors the engine's events table). The
 /// `data` blob is opened on demand in the Activity view; `duration_ms` is the action's
 /// wall time when known. Best effort: a logging failure never fails the real action.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn log_event(
     conn: &Connection,
     kind: &str,
@@ -1648,6 +1654,7 @@ pub fn log_event(
 }
 
 /// The most recent events, newest first, each with its parsed `data`.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn read_events(conn: &Connection, limit: i64) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
@@ -1701,6 +1708,7 @@ pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, St
 /// What the phone's chat may send to the model: the keyword matches minus anything
 /// marked local-only. The phone has no local model, so a local-only note's text is
 /// never put in a prompt (the desktop keeps the same promise in privacy.py).
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn chat_sources(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
     let mut private = conn
         .prepare("SELECT 1 FROM artifacts WHERE id = ?1 AND local_only = 1")
@@ -1718,6 +1726,7 @@ pub fn chat_sources(conn: &Connection, query: &str) -> Result<Vec<Value>, String
 /// A prompt with every credential blanked, the phone's twin of the desktop's
 /// `ingest/secrets.py::redact`: the same shapes, replaced by `***` before the text
 /// goes to the model, so a key in a note never leaves the phone.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn redact_secrets(text: &str) -> String {
     use std::sync::OnceLock;
     static PATTERNS: OnceLock<Vec<regex::Regex>> = OnceLock::new();
@@ -1890,6 +1899,7 @@ pub fn blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
 /// phone - notes and links carry no blob, but an image/pdf/file needs its bytes on
 /// the relay for any other device to fetch them (MOB.5). Idempotent: a re-push of
 /// the same content-addressed name returns 409, which is accepted.
+#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn push_blob(
     relay_url: &str,
     secret: &str,
@@ -1959,8 +1969,127 @@ pub fn resolve_vaulted_blob<F: Fn() -> Result<Vec<u8>, String>>(
     }
 }
 
+// ---- Fingerprint unlock for the vault (BIO.1) ---------------------------------
+// The phone can open the vault with a fingerprint instead of the 6-digit code. The
+// vault key never leaves this process for that: the Android Keystore guards a random
+// 32-byte SECRET that it only releases after a fingerprint, and the vault key is kept
+// here sealed under that secret. The record is bound to the code's own wrap (`tag`),
+// so a code changed on another device - a security event - switches fingerprint
+// unlock off until the new code is entered on this phone.
+
+/// What ties a fingerprint record to the current code: a digest of the code's wrap.
+#[allow(dead_code)]
+pub fn vault_meta_tag(salt_hex: &str, wrap_hex: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(salt_hex.as_bytes());
+    h.update(b":");
+    h.update(wrap_hex.as_bytes());
+    hex::encode(h.finalize())
+}
+
+/// Seal the vault key under the Keystore-held secret. Returns the record to store.
+#[allow(dead_code)]
+pub fn vault_bio_seal(
+    vault_key: &[u8; DEK_LEN],
+    secret: &[u8; DEK_LEN],
+    tag: &str,
+) -> Result<String, String> {
+    let wrap = secretbox_encrypt(secret, vault_key)?;
+    Ok(serde_json::json!({ "wrap": hex::encode(wrap), "tag": tag }).to_string())
+}
+
+/// Open a fingerprint record. Errors are the two things the page tells apart:
+/// "changed" (the code was changed since this record was made) and "incorrect".
+#[allow(dead_code)]
+pub fn vault_bio_open(
+    record: &str,
+    secret: &[u8; DEK_LEN],
+    tag: &str,
+) -> Result<[u8; DEK_LEN], String> {
+    let v: Value = serde_json::from_str(record).map_err(|_| "incorrect".to_string())?;
+    if v.get("tag").and_then(Value::as_str) != Some(tag) {
+        return Err("changed".into());
+    }
+    let wrap = v
+        .get("wrap")
+        .and_then(Value::as_str)
+        .and_then(|w| hex::decode(w).ok())
+        .ok_or("incorrect")?;
+    let key = unwrap(&wrap, secret).map_err(|_| "incorrect".to_string())?;
+    if key.len() != DEK_LEN {
+        return Err("incorrect".into());
+    }
+    let mut out = [0u8; DEK_LEN];
+    out.copy_from_slice(&key);
+    Ok(out)
+}
+
+/// Point an existing record at a new code wrap. Used when the code is changed ON this
+/// phone: the vault key is the same, so the fingerprint keeps working.
+#[allow(dead_code)]
+pub fn vault_bio_retag(record: &str, tag: &str) -> Result<String, String> {
+    let mut v: Value = serde_json::from_str(record).map_err(|e| e.to_string())?;
+    v["tag"] = Value::String(tag.to_string());
+    Ok(v.to_string())
+}
+
+/// A 32-byte value handed over as 64 hex characters.
+#[allow(dead_code)]
+pub fn key_from_hex(s: &str) -> Result<[u8; DEK_LEN], String> {
+    let bytes = hex::decode(s.trim()).map_err(|_| "bad secret".to_string())?;
+    if bytes.len() != DEK_LEN {
+        return Err("bad secret".into());
+    }
+    let mut out = [0u8; DEK_LEN];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
+    mod vault_fingerprint {
+        use super::super::*;
+
+        #[test]
+        fn record_round_trips_without_holding_the_key_in_the_clear() {
+            let key = [5u8; DEK_LEN];
+            let secret = [9u8; DEK_LEN];
+            let tag = vault_meta_tag("aa", "bb");
+            let record = vault_bio_seal(&key, &secret, &tag).unwrap();
+            assert_eq!(vault_bio_open(&record, &secret, &tag).unwrap(), key);
+            assert!(!record.contains(&hex::encode(key)));
+        }
+
+        #[test]
+        fn record_rejects_the_wrong_secret() {
+            let tag = vault_meta_tag("aa", "bb");
+            let record = vault_bio_seal(&[5u8; DEK_LEN], &[9u8; DEK_LEN], &tag).unwrap();
+            assert_eq!(vault_bio_open(&record, &[8u8; DEK_LEN], &tag).unwrap_err(), "incorrect");
+        }
+
+        #[test]
+        fn record_dies_when_the_code_changes_elsewhere() {
+            // A code changed on another device arrives as a different wrap: the record
+            // no longer matches, and the phone must ask for the new code.
+            let secret = [9u8; DEK_LEN];
+            let record =
+                vault_bio_seal(&[5u8; DEK_LEN], &secret, &vault_meta_tag("aa", "bb")).unwrap();
+            let moved = vault_meta_tag("cc", "dd");
+            assert_eq!(vault_bio_open(&record, &secret, &moved).unwrap_err(), "changed");
+            // Changed on THIS phone, the record is re-pointed and keeps working.
+            let kept = vault_bio_retag(&record, &moved).unwrap();
+            assert_eq!(vault_bio_open(&kept, &secret, &moved).unwrap(), [5u8; DEK_LEN]);
+        }
+
+        #[test]
+        fn key_from_hex_wants_exactly_32_bytes() {
+            assert!(key_from_hex(&"ab".repeat(32)).is_ok());
+            assert!(key_from_hex(&"ab".repeat(31)).is_err());
+            assert!(key_from_hex("not hex").is_err());
+        }
+    }
+
     #[test]
     fn a_shared_link_names_its_page() {
         let is_link = |w: &str| w.starts_with("https://");

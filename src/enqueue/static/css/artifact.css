@@ -61,9 +61,9 @@
   .titlerow .h2 {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* A long title wraps under itself; the page is where the whole name is read. */
+    overflow-wrap: anywhere;
+    text-wrap: balance;
     margin-top: 0;
   }
   /* NOTE.3: on a note the title is a rename target. The text cursor promises

@@ -53,6 +53,12 @@
     padding-top: calc(20px + env(safe-area-inset-top));
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
   }
+  /* An author `display` (flex, grid) outranks the browser's own `[hidden]` rule, which
+     left "hidden" loaders on screen (the chat raven spun over an empty list). One rule
+     for every element, so the attribute always means gone. */
+  [hidden] {
+    display: none !important;
+  }
   section[hidden] {
     /* !important so a hidden section always collapses: the body-class fallback
        rules below (body.view-library #library { display: flex }) have higher
@@ -280,13 +286,47 @@
   header h1 .greet-mark {
     color: var(--purple-bold);
   }
+  /* Sync could not reach the relay: a quiet line over the library, in the same plate
+     as a tile, that stays until a sync succeeds. Never a bar that flashes in and out
+     (it shoved the whole wall down every retry). */
+  .syncnote {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 4px 6px 4px 14px;
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: var(--hairline);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .syncnote span {
+    flex: 1;
+    min-width: 0;
+  }
+  .syncnote button {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 0 10px;
+    background: transparent;
+    color: var(--purple-bold);
+    font-size: 13px;
+    font-weight: 600;
+  }
   .back {
+    /* A round 44px target: the 32px pill it replaced was easy to miss with a thumb. */
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    min-width: 44px;
+    height: 44px;
     background: var(--surface-2);
     border: 0;
     box-shadow: var(--hairline);
     border-radius: var(--r-full);
-    padding: 8px 12px;
-    font-size: 14px;
+    padding: 0 12px;
+    font-size: 16px;
     color: var(--text-dim);
   }
   /* Sections scroll HORIZONTALLY: each shelf is a single row of fixed-width
@@ -619,9 +659,16 @@
     overflow-x: auto;
     max-width: 100%;
   }
+  /* The title of the thing you opened: two lines before it is cut, not the toolbar's
+     one-line ellipsis (a link's title was "https://exampl..."). */
   #reader_title {
     overflow-wrap: anywhere;
     word-break: break-word;
+    white-space: normal;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
   #reader_body h1,
   #reader_body h2,
@@ -716,8 +763,11 @@
        intrinsic main-size collapses to 0 width in the Android WebView. */
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    /* The generic button padding (12px 18px) left a 12px content box, so the 22px
+       glyph hung below the title's line. No padding: the glyph centres in the box. */
+    padding: 0;
+    width: 40px;
+    height: 40px;
     border: none;
     background: transparent;
     border-radius: var(--r-md);
@@ -1110,6 +1160,108 @@
     color: #fff;
   }
 
+  /* A dialog that explains before it asks (the fingerprint lock's introduction and
+     its turn-off confirmation): a title and a few short lines above the same button
+     row the plain confirm uses. */
+  .mconfirm-title {
+    margin: 0 0 10px;
+    font-family: var(--display);
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    text-wrap: balance;
+  }
+  .mconfirm-points {
+    margin: 0 0 20px;
+    display: grid;
+    gap: 10px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-dim);
+  }
+  .mconfirm-points p {
+    margin: 0;
+  }
+
+  /* An on/off setting: the whole row is the switch (one 44px-tall target, the words
+     and the track together), the same track-and-bead as the desktop's .toggle. */
+  .mswitch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    min-height: 44px;
+    padding: 4px 0;
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    box-shadow: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mswitch-row[hidden] {
+    display: none;
+  }
+  .mswitch-row:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+    outline-offset: 4px;
+  }
+  .mswitch-text {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .mswitch-label {
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .mswitch-sub {
+    font-size: 13.5px;
+    line-height: 1.4;
+    color: var(--text-mute);
+  }
+  .mswitch {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    width: 48px;
+    height: 28px;
+    border-radius: var(--r-full);
+    background: var(--surface-3);
+    box-shadow: inset 0 0 0 1.5px var(--line-strong);
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .mswitch-knob {
+    width: 22px;
+    height: 22px;
+    margin-left: 3px;
+    border-radius: var(--r-full);
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(43, 11, 74, 0.3);
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .mswitch-row[aria-checked="true"] .mswitch {
+    background: var(--accent);
+    box-shadow: none;
+  }
+  .mswitch-row[aria-checked="true"] .mswitch-knob {
+    transform: translateX(20px);
+  }
+  .mswitch-row[aria-disabled="true"] .mswitch {
+    opacity: 0.55;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mswitch,
+    .mswitch-knob {
+      transition: none;
+    }
+  }
+
   /* Settings (read-only on the phone): a column of titled tiles, the same
      plate-plus-hairline groups as the desktop settings pane. */
   .mset-body {
@@ -1182,6 +1334,12 @@
     box-shadow: var(--hairline);
     padding: 11px 16px;
     font-size: 14px;
+  }
+  /* A switch that cannot be used yet (no fingerprint on the phone) still shows, so the
+     line above it can say what to do; it just reads as unavailable. */
+  .mset-secondary:disabled {
+    color: var(--text-mute);
+    opacity: 0.7;
   }
   .mset-danger {
     width: 100%;
@@ -2028,7 +2186,9 @@
 
   /* Link card */
   .card-link {
-    flex-direction: row;
+    /* The kind dot sits over the title, as on a note tile; beside it the title and
+       the time were indented and the two tiles never lined up. */
+    flex-direction: column;
   }
   .card-link .card-content {
     flex: 1;
@@ -2272,10 +2432,11 @@
         fill="none"
         stroke="currentColor"
         stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
       >
-        <path
-          d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-8.3a1 1 0 0 1 .58-.9l4.6-3.8a1 1 0 0 1 1.24 0l5 4.1a1 1 0 0 1 .6.9V19z"
-        />
+        <path d="M4 8h3.2l1.6-2.6h6.4L16.8 8H20a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+        <circle cx="12" cy="13.4" r="3.4" />
       </svg>
       <span>Camera</span>
     </button>
@@ -2357,37 +2518,9 @@
     <img src="loading.png" alt="" />
     <span>Syncing&#8230;</span>
   </div>
-  <div
-    id="offline_banner"
-    hidden
-    style="
-      position: sticky;
-      top: 0;
-      background: var(--surface);
-      border-bottom: 1px solid var(--line);
-      padding: 8px 16px;
-      font-size: 12px;
-      color: var(--text-subtle);
-      z-index: 10;
-    "
-  >
-    <span id="offline_banner_text">Offline - showing cached library</span>
-    <button
-      id="offline_relink"
-      style="
-        float: right;
-        background: var(--accent);
-        color: var(--bg);
-        border: none;
-        border-radius: var(--r-sm);
-        padding: 4px 10px;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-      "
-    >
-      Re-link
-    </button>
+  <div id="offline_banner" class="syncnote" role="status" hidden>
+    <span id="offline_banner_text">You're offline. Changes sync later.</span>
+    <button id="offline_relink" type="button">Try again</button>
   </div>
   <div id="shelves"></div>
   <div class="empty" id="empty" hidden>Nothing synced yet.</div>
@@ -2422,9 +2555,8 @@
       placeholder="Add a note…"
       autocomplete="off"
     ></textarea>
-    <div class="annotation-actions">
-      <button id="annotation_save" class="keep">Save</button>
-      <button id="annotation_cancel">Cancel</button>
+    <div class="annotation-actions" id="annotation_actions" hidden>
+      <button id="annotation_save" class="keep">Save note</button>
     </div>
   </div>
 </section>
@@ -2655,6 +2787,19 @@
       </div>
     </div>
 
+    <!-- Lock (BIO.1): this phone only. Hidden until the shell says it can check a
+         fingerprint; the words and the button are painted by paintAppLock(). -->
+    <div id="settings_lock" class="mset-group" hidden>
+      <h2 class="mset-title">Lock</h2>
+      <button id="settings_app_lock" type="button" class="mswitch-row" role="switch" aria-checked="false">
+        <span class="mswitch-text">
+          <span class="mswitch-label">Fingerprint lock</span>
+          <span id="settings_lock_sub" class="mswitch-sub"></span>
+        </span>
+        <span class="mswitch" aria-hidden="true"><span class="mswitch-knob"></span></span>
+      </button>
+    </div>
+
     <!-- AI Section (read-only; the desktop is the source of truth) -->
     <div id="settings_ai" class="mset-group">
       <h2 class="mset-title">AI</h2>
@@ -2688,8 +2833,17 @@
     <img class="lib-raven" src="raven-mark.png" alt="" aria-hidden="true" />
     <h1>Vault</h1>
   </header>
-  <div style="display: flex; gap: 10px; justify-content: center; padding: 0 16px 12px">
+  <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 0 16px 12px">
     <button id="vault_change_pin" type="button" class="mset-secondary">Change code</button>
+  </div>
+  <div id="vault_fingerprint_box" class="mset-group" style="margin: 0 16px 12px" hidden>
+    <button id="vault_fingerprint" type="button" class="mswitch-row" role="switch" aria-checked="false">
+      <span class="mswitch-text">
+        <span class="mswitch-label">Open with fingerprint</span>
+        <span id="vault_fingerprint_sub" class="mswitch-sub"></span>
+      </span>
+      <span class="mswitch" aria-hidden="true"><span class="mswitch-knob"></span></span>
+    </button>
   </div>
   <div id="shelves_vault"></div>
   <div id="vault_scroll" style="padding: 0 16px 24px"></div>
@@ -2785,6 +2939,333 @@
     LinkPop.attach({ open: openExternal, copy: copyText, notify: toast });
   }
 
+  // ---- Fingerprint lock (BIO.1) --------------------------------------------------
+  // Two separate locks, both checked by the Android shell (MainActivity + Biometrics.kt):
+  // the APP LOCK covers the whole app natively and needs nothing from this page but the
+  // switch in Settings; the VAULT can be opened with a fingerprint instead of its code.
+  // They stay separate on purpose - one touch on opening the app does NOT open the
+  // vault, which keeps locking itself whenever the app leaves the screen.
+  //
+  // A prompt answers later, so each call carries an id and the shell answers through
+  // window.__enqLockReply(id, {ok, reason, secret?}).
+  const lockBridge =
+    window.EnqueueAndroid && typeof window.EnqueueAndroid.lockStatus === "function"
+      ? window.EnqueueAndroid
+      : null;
+  const _lockWaiting = new Map();
+  let _lockSeq = 0;
+  // While a fingerprint prompt is up the page can report itself hidden; the vault's
+  // lock-on-hidden must not fire in the middle of the check it is waiting on.
+  function fingerprintPromptOpen() {
+    return _lockWaiting.size > 0;
+  }
+  window.__enqLockReply = (id, payload) => {
+    const resolve = _lockWaiting.get(id);
+    if (!resolve) return;
+    _lockWaiting.delete(id);
+    resolve(payload || { ok: false, reason: "error" });
+    // If the person actually left during the prompt, the skipped lock happens now.
+    setTimeout(() => {
+      if (document.hidden && !fingerprintPromptOpen()) invoke("mobile_vault_lock").catch(() => {});
+    }, 1500);
+  };
+  function lockAsk(method, ...args) {
+    return new Promise((resolve) => {
+      if (!lockBridge) return resolve({ ok: false, reason: "unavailable" });
+      const id = "lock" + ++_lockSeq;
+      _lockWaiting.set(id, resolve);
+      try {
+        lockBridge[method](id, ...args);
+      } catch (e) {
+        _lockWaiting.delete(id);
+        resolve({ ok: false, reason: "error" });
+      }
+    });
+  }
+  function lockStatus() {
+    if (!lockBridge) return null;
+    try {
+      return JSON.parse(lockBridge.lockStatus());
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // A dialog that explains before it asks: a title, a few short lines, two buttons.
+  // Resolves true on the primary button. Built from the confirm dialog's own parts.
+  function mobileSheet({ title, points, ok, cancel, danger }) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "mconfirm-backdrop";
+      const card = document.createElement("div");
+      card.className = "mconfirm-card";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      card.setAttribute("aria-labelledby", "msheet_title");
+      const heading = document.createElement("h2");
+      heading.className = "mconfirm-title";
+      heading.id = "msheet_title";
+      heading.textContent = title;
+      const body = document.createElement("div");
+      body.className = "mconfirm-points";
+      for (const line of points || []) {
+        const para = document.createElement("p");
+        para.textContent = line;
+        body.appendChild(para);
+      }
+      const row = document.createElement("div");
+      row.className = "mconfirm-row";
+      const no = document.createElement("button");
+      no.type = "button";
+      no.textContent = cancel || "Not now";
+      const yes = document.createElement("button");
+      yes.type = "button";
+      yes.className = "mconfirm-ok" + (danger ? " danger" : "");
+      yes.textContent = ok;
+      const done = (v) => {
+        backdrop.remove();
+        resolve(v);
+      };
+      no.addEventListener("click", () => done(false));
+      yes.addEventListener("click", () => done(true));
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) done(false);
+      });
+      backdrop.addEventListener("enq-cancel", () => done(false)); // the Back gesture
+      row.append(no, yes);
+      card.append(heading, body, row);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+      yes.focus();
+    });
+  }
+  function flag(name) {
+    try {
+      return !!localStorage.getItem(name);
+    } catch (e) {
+      return true; // no storage: behave as if already offered, never nag
+    }
+  }
+  function setFlag(name) {
+    try {
+      localStorage.setItem(name, "1");
+    } catch (e) {
+      /* the offer may show again; harmless */
+    }
+  }
+
+  // ---- the app lock: Settings > Lock ----
+  const NEEDS_PHONE_LOCK = "Add a fingerprint or a screen lock in your phone's settings first.";
+  const APP_LOCK_POINTS = [
+    "Enqueue asks for your fingerprint when it opens, and again after a minute away.",
+    "If the sensor can't read your finger, your phone's screen lock works too.",
+    "Quick capture from the home screen stays open, so you can still jot a thought.",
+  ];
+  const APP_LOCK_OFFERED = "enq.lockOffered";
+
+  function paintAppLock() {
+    const group = document.getElementById("settings_lock");
+    const row = document.getElementById("settings_app_lock");
+    const sub = document.getElementById("settings_lock_sub");
+    const st = lockStatus();
+    if (!group || !row || !sub || !st || st.deviceLock === "unavailable") return;
+    const blocked = !st.appLock && st.deviceLock === "none";
+    group.hidden = false;
+    row.setAttribute("aria-checked", String(!!st.appLock));
+    row.setAttribute("aria-disabled", String(blocked));
+    sub.textContent = st.appLock
+      ? "On. Enqueue asks when it opens, and again after a minute away."
+      : blocked
+        ? NEEDS_PHONE_LOCK
+        : "Off. Anyone holding your unlocked phone can open Enqueue.";
+  }
+  // Explain what the lock does, then let the phone confirm it is the owner.
+  async function turnOnAppLock(title) {
+    const yes = await mobileSheet({ title, points: APP_LOCK_POINTS, ok: "Turn on", cancel: "Not now" });
+    if (!yes) return false;
+    const r = await lockAsk("setAppLock", true);
+    if (r.ok) {
+      setFlag(APP_LOCK_OFFERED); // on by choice: never offer it again
+      toast("Fingerprint lock is on.");
+    } else if (r.reason === "none") {
+      toast(NEEDS_PHONE_LOCK, true);
+    }
+    paintAppLock();
+    return !!r.ok;
+  }
+  async function toggleAppLock() {
+    const st = lockStatus();
+    if (!st) return;
+    if (!st.appLock) {
+      if (st.deviceLock === "none") return toast(NEEDS_PHONE_LOCK, true);
+      await turnOnAppLock("Lock Enqueue with your fingerprint");
+      return;
+    }
+    const yes = await mobileSheet({
+      title: "Turn off fingerprint lock?",
+      points: ["Anyone holding your unlocked phone will be able to open Enqueue and read your library."],
+      ok: "Turn off",
+      cancel: "Keep it on",
+      danger: true,
+    });
+    if (!yes) return;
+    const r = await lockAsk("setAppLock", false);
+    if (r.ok) toast("Fingerprint lock is off.");
+    paintAppLock();
+  }
+  // Offer the lock once, the first time the library is on screen on a phone that can
+  // use it. Never over another sheet, the writing page or a reader, and never again
+  // after an answer either way.
+  let _appLockOfferQueued = false;
+  function maybeOfferAppLock() {
+    if (_appLockOfferQueued || !lockBridge || flag(APP_LOCK_OFFERED)) return;
+    _appLockOfferQueued = true;
+    setTimeout(async () => {
+      _appLockOfferQueued = false;
+      const st = lockStatus();
+      if (!st || st.appLock || st.deviceLock !== "ready") return; // ask when it can work
+      const busy =
+        document.hidden ||
+        document.getElementById("library").hidden ||
+        writerOpen() ||
+        pillMenu ||
+        document.querySelector(".mconfirm-backdrop") ||
+        document.getElementById("mpin");
+      if (busy) return;
+      setFlag(APP_LOCK_OFFERED);
+      const on = await turnOnAppLock("Lock Enqueue with your fingerprint?");
+      if (!on) toast("You can turn it on any time in Settings > Lock.");
+    }, 1500);
+  }
+
+  // ---- the vault's fingerprint switch (inside the vault only) ----
+  const VAULT_FINGER_POINTS = [
+    "Your fingerprint opens the vault instead of the 6-digit code.",
+    "The code still works, and you still need to remember it. There is no recovery.",
+    "Adding a fingerprint to this phone turns this off until you enter the code again.",
+  ];
+  const VAULT_FINGER_OFFERED = "enq.diagOffered"; // named for the decoy, not the vault
+
+  async function vaultFingerprintIsOn() {
+    try {
+      return !!parse(await invoke("mobile_vault_status")).fingerprint;
+    } catch (e) {
+      return false;
+    }
+  }
+  async function paintVaultFingerprint() {
+    const box = document.getElementById("vault_fingerprint_box");
+    const row = document.getElementById("vault_fingerprint");
+    const sub = document.getElementById("vault_fingerprint_sub");
+    const st = lockStatus();
+    if (!box || !row || !sub) return;
+    if (!st || st.fingerprint === "unavailable") {
+      box.hidden = true; // no sensor on this phone
+      return;
+    }
+    const on = await vaultFingerprintIsOn();
+    const blocked = !on && st.fingerprint === "none";
+    box.hidden = false;
+    row.setAttribute("aria-checked", String(on));
+    row.setAttribute("aria-disabled", String(blocked));
+    sub.textContent = on
+      ? "On. Your code still works."
+      : blocked
+        ? "Add a fingerprint in your phone's settings first."
+        : "Off. The vault opens with your code.";
+  }
+  async function forgetVaultFingerprint() {
+    try {
+      if (lockBridge) lockBridge.vaultSecretClear();
+    } catch (e) {
+      /* the record below is what unlock reads */
+    }
+    await invoke("mobile_vault_bio_clear").catch(() => {});
+  }
+  async function turnOnVaultFingerprint(title) {
+    const yes = await mobileSheet({ title, points: VAULT_FINGER_POINTS, ok: "Turn on", cancel: "Not now" });
+    if (!yes) return false;
+    const r = await lockAsk(
+      "vaultSecretCreate",
+      "Use your fingerprint",
+      "Touch the sensor to turn it on",
+      "Cancel",
+    );
+    if (!r.ok || !r.secret) {
+      if (r.reason === "lockout") toast("Too many tries. Wait a moment and try again.", true);
+      else if (r.reason !== "cancelled") toast("Couldn't turn on fingerprint. Try again.", true);
+      return false;
+    }
+    try {
+      await invoke("mobile_vault_bio_enroll", { secret: r.secret });
+    } catch (e) {
+      await forgetVaultFingerprint();
+      toast("Couldn't turn on fingerprint. Open the vault with your code and try again.", true);
+      return false;
+    }
+    setFlag(VAULT_FINGER_OFFERED);
+    toast("Fingerprint is on. Your code still works.");
+    paintVaultFingerprint();
+    return true;
+  }
+  async function toggleVaultFingerprint() {
+    const st = lockStatus();
+    if (!st) return;
+    if (!(await vaultFingerprintIsOn())) {
+      if (st.fingerprint === "none") {
+        return toast("Add a fingerprint in your phone's settings first.", true);
+      }
+      await turnOnVaultFingerprint("Open the vault with your fingerprint");
+      return;
+    }
+    const yes = await mobileSheet({
+      title: "Stop using your fingerprint?",
+      points: ["The vault will open with your 6-digit code only."],
+      ok: "Turn off",
+      cancel: "Keep it on",
+    });
+    if (!yes) return;
+    await forgetVaultFingerprint();
+    toast("Fingerprint is off. The vault opens with your code.");
+    paintVaultFingerprint();
+  }
+  // Offer it once, right after the code opened the vault: the moment the ~7 second
+  // wait was just felt, and the only moment the vault is open to turn it on.
+  async function maybeOfferVaultFingerprint() {
+    const st = lockStatus();
+    if (!st || st.fingerprint !== "ready" || flag(VAULT_FINGER_OFFERED)) return;
+    if (document.getElementById("vault").hidden || (await vaultFingerprintIsOn())) return;
+    setFlag(VAULT_FINGER_OFFERED);
+    await turnOnVaultFingerprint("Open the vault with your fingerprint next time?");
+  }
+
+  // Try to open the vault with a fingerprint. Resolves true when the key is live;
+  // false means "ask for the code" (not switched on, cancelled, or no longer valid).
+  // `title` is the prompt's heading: the vault's door is a decoy, so the caller names it.
+  async function tryVaultFingerprint(status, title) {
+    if (!lockBridge || !status || !status.setup || !status.fingerprint) return false;
+    const r = await lockAsk("vaultSecretRead", title, "Confirm it's you", "Use code");
+    if (r.ok && r.secret) {
+      try {
+        await invoke("mobile_vault_bio_unlock", { secret: r.secret });
+        return true;
+      } catch (e) {
+        // "changed": the code was changed on another device. Either way the record
+        // can no longer open the vault.
+        await forgetVaultFingerprint();
+        toast("Fingerprint was turned off because the code changed. Enter your code.", true);
+        return false;
+      }
+    }
+    if (r.reason === "invalidated") {
+      await forgetVaultFingerprint();
+      toast("Your phone's fingerprints changed. Enter your code, then turn fingerprint on again.", true);
+    } else if (r.reason === "lockout") {
+      toast("Too many tries. Enter your code.", true);
+    }
+    return false;
+  }
+
   const KIND_COLORS = {
     note: "var(--kind-note)",
     link: "var(--kind-link)",
@@ -2855,6 +3336,7 @@
     // idle-lock manager), which is the password-manager model.
     show("settings");
     loadSettings();
+    paintAppLock();
     renderMobileEvents();
   }
 
@@ -2898,17 +3380,41 @@
   // runs (SYNC_RUNNING), so an extra call is a cheap no-op when nothing changed or a
   // sync is already in flight; when unconfigured it rejects fast and is swallowed.
   const BG_SYNC_MS = 20000; // gentle foreground poll; SSE is the live path
+  const BG_SYNC_MAX_MS = 5 * 60000;
+  // A relay that cannot be reached is asked again less and less often: 20s, 40s,
+  // 80s ... up to five minutes. Polling a dead connection every 20s forever was a
+  // radio wake-up three times a minute for nothing. One success, coming back to the
+  // app, or the network returning starts over at 20s.
+  let syncFails = 0;
+  let syncPollTimer = 0;
   function pullSyncSoon() {
     if (document.hidden) return; // never poll a backgrounded app - save battery/data
     invoke("mobile_sync", { config: "{}" }).catch(() => {});
   }
-  // Only poll while foreground. setInterval keeps firing when hidden, so the guard
-  // above skips those ticks; the resume handler below covers coming back.
-  setInterval(pullSyncSoon, BG_SYNC_MS);
+  function scheduleSyncPoll() {
+    clearTimeout(syncPollTimer);
+    const wait = Math.min(BG_SYNC_MS * 2 ** syncFails, BG_SYNC_MAX_MS);
+    syncPollTimer = setTimeout(() => {
+      // A phone that knows it is offline does not ask at all; the `online` event
+      // brings the sync back.
+      if (navigator.onLine !== false) pullSyncSoon();
+      scheduleSyncPoll();
+    }, wait);
+  }
+  function syncSettled(ok) {
+    syncFails = ok ? 0 : Math.min(syncFails + 1, 8);
+    scheduleSyncPoll();
+  }
+  function syncRetryNow() {
+    syncFails = 0;
+    scheduleSyncPoll();
+  }
+  scheduleSyncPoll();
 
   document.addEventListener("visibilitychange", () => {
     // Backgrounded / screen off: lock immediately so a re-open needs the PIN.
     if (document.hidden) {
+      if (fingerprintPromptOpen()) return; // the prompt itself, not the person leaving
       cancelVaultIdleLock();
       invoke("mobile_vault_lock").catch(() => {});
       return;
@@ -2916,6 +3422,7 @@
     // Resumed: pull now so returning to the app shows the latest without waiting for
     // the next SSE event or timer tick (the case behind "it didn't sync until I
     // reopened"). The SSE thread reconnects on its own; this covers the window.
+    syncRetryNow();
     pullSyncSoon();
   });
   ["pointerdown", "keydown"].forEach((ev) =>
@@ -2947,6 +3454,15 @@
     } catch (_) {
       return String(e);
     }
+  }
+
+  // A link nobody has titled yet is named by its address. Shown without the scheme
+  // and "www.", so the tile reads "example.com/page" and not "https://exampl...".
+  function shownTitle(a) {
+    const t = (a && a.title) || "";
+    if (!t) return "Untitled";
+    if (!/^https?:\/\/\S+$/i.test(t)) return t;
+    return t.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
   }
 
   function relativeTime(iso) {
@@ -3152,7 +3668,7 @@
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = a.title || "Untitled";
+    title.textContent = shownTitle(a);
 
     const excerpt = document.createElement("div");
     excerpt.className = "card-excerpt";
@@ -3220,7 +3736,7 @@
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = a.title || "Untitled";
+    title.textContent = shownTitle(a);
 
     // What the page is about: the note on the link if there is one, else the
     // preview's description.
@@ -3288,7 +3804,7 @@
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = a.title || "Untitled";
+    title.textContent = shownTitle(a);
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -3357,7 +3873,7 @@
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = a.title || "Untitled";
+    title.textContent = shownTitle(a);
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -3401,7 +3917,7 @@
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = a.title || "Untitled";
+    title.textContent = shownTitle(a);
 
     const snippet = document.createElement("div");
     snippet.className = "card-snippet";
@@ -3602,6 +4118,10 @@
     const names = [...counts.keys()].sort(
       (x, y) => counts.get(y) - counts.get(x) || x.localeCompare(y),
     );
+    // With no tags at all there is nothing to filter by: the lone "untagged" chip only
+    // repeated the one shelf under it.
+    bar.hidden = !names.length;
+    if (!names.length && mobileTagFilter) mobileTagFilter = null;
     track.replaceChildren();
     for (const name of names) {
       const b = document.createElement("button");
@@ -3665,6 +4185,7 @@
     // Once there is content on screen, the first-load "Syncing..." raven has done
     // its job - hide it even if a (possibly slow) sync is still in flight.
     document.getElementById("loading").hidden = true;
+    maybeOfferAppLock(); // once, on a phone that can use it
     // Assemble all shelves off-DOM, then swap them in with one reflow. "Everything
     // else" (Last touch) is a big flat clump - render it as a vertical infinite-scroll
     // grid instead of one endless horizontal rail.
@@ -4062,7 +4583,7 @@
   let readerVaulted = false;
   function renderReader(a, data) {
     readerVaulted = !!a.vaulted_at;
-    document.getElementById("reader_title").textContent = a.title || "Untitled";
+    document.getElementById("reader_title").textContent = shownTitle(a);
     document.getElementById("reader_kind").textContent = a.kind;
     const body = document.getElementById("reader_body");
     const ann = document.getElementById("reader_ann");
@@ -4497,6 +5018,7 @@
       backdrop.addEventListener("click", (e) => {
         if (e.target === backdrop) done(false);
       });
+      backdrop.addEventListener("enq-cancel", () => done(false)); // the Back gesture
       row.append(cancel, ok);
       card.append(msg, row);
       backdrop.appendChild(card);
@@ -4575,19 +5097,25 @@
 
   function setupAnnotationInput(artifactId) {
     const saveBtn = document.getElementById("annotation_save");
-    const cancelBtn = document.getElementById("annotation_cancel");
+    const actions = document.getElementById("annotation_actions");
     const textArea = document.getElementById("annotation_text");
 
     // Remove old listeners by cloning
     const newSave = saveBtn.cloneNode(true);
-    const newCancel = cancelBtn.cloneNode(true);
     saveBtn.parentNode.replaceChild(newSave, saveBtn);
-    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+    // The button belongs to something written: an empty box is just the box. (A
+    // note on a capture is appended, never edited, so it is kept on purpose rather
+    // than as you type.)
+    actions.hidden = !textArea.value.trim();
+    textArea.oninput = () => {
+      actions.hidden = !textArea.value.trim();
+    };
 
     newSave.addEventListener("click", async () => {
       const text = textArea.value.trim();
       if (!text) return;
       textArea.value = "";
+      actions.hidden = true;
       try {
         await invoke("mobile_add_annotation", { id: artifactId, text });
         invoke("mobile_outbox_push").catch(() => {}); // propagate to desktop now
@@ -4598,11 +5126,6 @@
       } catch (e) {
         toast("Add note failed: " + e, true);
       }
-    });
-
-    newCancel.addEventListener("click", () => {
-      textArea.value = "";
-      document.getElementById("reader_annotation_input").hidden = true;
     });
   }
 
@@ -4739,6 +5262,11 @@
   // page. Innermost first: the writing page, the pill menu, the details panel, then any
   // screen other than the library.
   window.__enqBack = () => {
+    const dialog = document.querySelector(".mconfirm-backdrop");
+    if (dialog) {
+      dialog.dispatchEvent(new Event("enq-cancel")); // same as its Cancel button
+      return true;
+    }
     if (writerOpen()) {
       closeWriter(true);
       return true;
@@ -5569,9 +6097,8 @@ return;
       // just appears via the incremental re-render instead.
       const hasCards = !!document.querySelector("#shelves .card");
       if (!hasCards) document.getElementById("loading").hidden = false;
-      // Hide any stale offline banner while syncing
-      const banner = document.getElementById("offline_banner");
-      if (banner) banner.hidden = true;
+      // The offline line stays up through a retry and leaves only when a sync
+      // succeeds; hiding it here made it blink (and the wall jump) on every attempt.
     });
     __TAURI__.event.listen("sync-done", (e) => {
       _mobileSyncing = false;
@@ -5596,6 +6123,7 @@ return;
       // Hide offline banner on successful sync
       const banner = document.getElementById("offline_banner");
       if (banner) banner.hidden = true;
+      syncSettled(true);
       // Only re-render when the pull actually applied something. The live SSE
       // listener fires a sync on every relay event (including our own pushes),
       // so re-rendering the whole library on every no-op sync was pure jank.
@@ -5627,18 +6155,26 @@ return;
       const err = payload.error || "unknown error";
       // LINKSTAY.2(b): never alert on sync error - show banner + log instead
       console.log("sync-error:", err);
-      // Render the cached library so the "showing cached library" banner is true
-      // (a failed sync must never leave the library blank).
-      if (!document.getElementById("library").hidden) renderLibrary();
+      syncSettled(false);
       const banner = document.getElementById("offline_banner");
       const bannerText = document.getElementById("offline_banner_text");
-      if (banner && bannerText) {
-        bannerText.textContent = "Sync failed - showing cached library";
+      const act = document.getElementById("offline_relink");
+      // Render the phone's own copy so the line is true (a failed sync must never
+      // leave the library blank) - once, when the trouble starts, not on every retry.
+      const first = !banner || banner.hidden;
+      if (first && !document.getElementById("library").hidden) renderLibrary();
+      if (banner && bannerText && act) {
+        // The relay turning this phone away is the one failure a re-link fixes;
+        // anything else is a connection that will come back.
+        const refused = /\b(401|403)\b|unauthori[sz]ed|forbidden/i.test(String(err));
+        bannerText.textContent = refused
+          ? "This phone is no longer linked to your Mac."
+          : navigator.onLine === false
+            ? "You're offline. Changes sync later."
+            : "Can't reach sync right now.";
+        act.textContent = refused ? "Re-link" : "Try again";
+        act.dataset.act = refused ? "relink" : "retry";
         banner.hidden = false;
-        // Hide after 3 seconds of inactivity
-        window.__offline_banner_timeout = setTimeout(() => {
-          if (banner) banner.hidden = true;
-        }, 3000);
       }
     });
     syncListenersWired = true;
@@ -6168,11 +6704,16 @@ return;
     startCamera();
   });
   // LINKSTAY.2(c): re-link action from the offline banner
-  document.getElementById("offline_relink").addEventListener("click", () => {
-    const banner = document.getElementById("offline_banner");
-    if (banner) banner.hidden = true;
-    show("setup");
-    startCamera();
+  document.getElementById("offline_relink").addEventListener("click", (e) => {
+    if (e.currentTarget.dataset.act === "relink") {
+      const banner = document.getElementById("offline_banner");
+      if (banner) banner.hidden = true;
+      show("setup");
+      startCamera();
+      return;
+    }
+    syncRetryNow();
+    if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
   });
 
   // Clear cache (Storage section removed from mobile Settings; guard the wiring)
@@ -6746,6 +7287,7 @@ return;
       return;
     }
     if (status.unlocked) return openMobileVault();
+    if (await tryVaultFingerprint(status, "Diagnostics")) return openMobileVault();
     const first = !status.setup;
     const pin = first
       ? await mobilePinModalConfirm(
@@ -6762,7 +7304,8 @@ return;
       vaultBusy(false);
       return toast("Incorrect code.", true);
     }
-    openMobileVault(); // clears the spinner when the list is up
+    await openMobileVault(); // clears the spinner when the list is up
+    maybeOfferVaultFingerprint(); // the code just opened it: offer the fingerprint once
   }
 
   // Toggle the full-screen vault spinner (KDF unlock + decrypt are the delay).
@@ -6806,6 +7349,7 @@ return;
       const ok = await renderVaultList();
       if (!ok) return; // locked
       show("vault");
+      paintVaultFingerprint();
       armVaultIdleLock(); // start the inactivity re-lock while inside the vault
       // Pull first so an item vaulted on desktop shows up here; the sync-done
       // listener refreshes the list in place when the pull lands.
@@ -6861,9 +7405,9 @@ return;
       return toast("Vault unavailable.", true);
     }
 
-    // Fast path: the key is already derived this session, so vaulting is a ~15ms
-    // encrypt. Do it inline and go home.
-    if (status.unlocked) {
+    // Fast path: the key is already derived this session (or a fingerprint just
+    // released it), so vaulting is a ~15ms encrypt. Do it inline and go home.
+    if (status.unlocked || (await tryVaultFingerprint(status, "Unlock the vault"))) {
       try {
         await invoke("mobile_set_vault", { id, on: true });
         invoke("mobile_outbox_push").catch(() => {});
@@ -6923,14 +7467,46 @@ return;
     if (vlock) vlock.addEventListener("click", mobileVaultLock);
     const vchg = document.getElementById("vault_change_pin");
     if (vchg) vchg.addEventListener("click", mobileChangePin);
+    document.getElementById("vault_fingerprint")?.addEventListener("click", toggleVaultFingerprint);
+    document.getElementById("settings_app_lock")?.addEventListener("click", toggleAppLock);
   }
 
   // Auto-lock: drop the vault key whenever the app is backgrounded.
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) invoke("mobile_vault_lock").catch(() => {});
+    if (document.hidden && !fingerprintPromptOpen()) invoke("mobile_vault_lock").catch(() => {});
   });
 
   bootstrap();
+
+  // The shell paints the status and navigation bar strips; when a scrim covers the
+  // page they take the same dim (js/ground.js), so a menu or a sheet darkens the
+  // whole screen and not a window with two bright bands.
+  (function watchScrims() {
+    const SCRIMS = "#pill_menu_overlay, .details-backdrop.open, .mconfirm-backdrop";
+    let queued = false;
+    function update() {
+      queued = false;
+      if (!window.enqGround) return;
+      let rgba = null;
+      for (const el of document.querySelectorAll(SCRIMS)) {
+        const m = getComputedStyle(el).backgroundColor.match(/[\d.]+/g);
+        if (!m || m.length < 3) continue;
+        const alpha = m.length > 3 ? Number(m[3]) : 1;
+        if (alpha > 0) rgba = [Number(m[0]), Number(m[1]), Number(m[2]), alpha];
+      }
+      window.enqGround.shade(rgba);
+    }
+    new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(update);
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  })();
 
   // Local-first: every write lands in the phone's library at once and waits in the
   // outbox; this is what carries it (and pulls the desktop's changes) once there is a
@@ -6954,6 +7530,7 @@ return;
   });
   window.addEventListener("online", () => {
     console.log("[resume] online event - triggering sync");
+    syncRetryNow();
     if (window.mobileSyncAndReconcile) window.mobileSyncAndReconcile();
   });
 </script>

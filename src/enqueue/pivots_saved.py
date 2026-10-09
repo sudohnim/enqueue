@@ -159,19 +159,44 @@ def manual_membership(artifact_id: str) -> list[dict]:
 def listing() -> list[dict]:
     """Every saved view, newest first, without the spec.
 
-    The list is for choosing, so it carries only what a row shows - name and
-    when it was saved. The spec is fetched by `get` when a view is opened.
+    The list is for choosing, so it carries only what a row shows - name, when it
+    was saved, whether it is arranged by hand, and how big it is (`groups`, `items`,
+    counted from the kept arrangement; None for a view that has never been built).
+    The spec is fetched by `get` when a view is opened.
     """
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, created_at,"
+            "SELECT id, name, created_at, result_json,"
             " COALESCE(json_extract(spec_json, '$.manual'), 0) AS manual"
             " FROM saved_pivots ORDER BY created_at DESC"
         ).fetchall()
-        return [{**dict(row), "manual": bool(row["manual"])} for row in rows]
+        # A kept arrangement still names artifacts trashed since; the count is of
+        # what the view will show.
+        gone = {
+            r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE deleted_at IS NOT NULL")
+        }
     finally:
         conn.close()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["manual"] = bool(item["manual"])
+        item["groups"], item["items"] = _size(item.pop("result_json"), gone)
+        out.append(item)
+    return out
+
+
+def _size(result_json: str | None, gone: set[str]) -> tuple[int | None, int | None]:
+    """How many sections and distinct live artifacts a kept arrangement holds."""
+    if not result_json:
+        return None, None
+    try:
+        groups = json.loads(result_json).get("groups") or []
+    except (ValueError, AttributeError):
+        return None, None
+    ids = {aid for group in groups for aid in group.get("artifact_ids") or []}
+    return len(groups), len(ids - gone)
 
 
 def get(pivot_id: str) -> dict:

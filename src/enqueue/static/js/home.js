@@ -599,7 +599,9 @@ function restoreRoute() {
 	const [kind, ...rest] = raw.split("/");
 	const id = rest.join("/");
 	if (kind === "a" && id) return showArtifact(id);
-	if (kind === "c" && id) return showChat(id);
+	// The conversation is a panel over the wall, so the wall is drawn first; opened
+	// alone it sat over a page that said "opening..." for good.
+	if (kind === "c" && id) return home().then(() => showChat(id));
 	if (kind === "g" && !id) return showSavedGroupings();
 	if (kind === "g" && id) return runSavedGrouping(id);
 	if (kind === "s" && id) {

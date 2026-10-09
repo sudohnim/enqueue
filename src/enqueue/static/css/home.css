@@ -1602,3 +1602,34 @@ body.mv-dragging * {
 		opacity: 1;
 	}
 }
+
+/* The saved-views page: each card is a name over its size and who arranged it,
+   with rename tucked in the corner the way the wall's card controls are. */
+.viewsbar {
+	margin: var(--sp-4) 0 var(--sp-5);
+}
+.viewcard {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: var(--sp-4);
+}
+.viewcard .title {
+	margin-top: 0;
+	padding-right: var(--sp-6);
+}
+.viewcard .preview {
+	flex: 0 0 auto;
+	margin-top: auto;
+	color: var(--text-dim);
+}
+.viewcard .title-action {
+	position: absolute;
+	top: var(--sp-3);
+	right: var(--sp-3);
+}
+
+/* Under the sure results: hits search kept but could not check. */
+.loosenote {
+	margin-top: var(--sp-5);
+}

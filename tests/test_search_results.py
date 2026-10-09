@@ -875,6 +875,33 @@ class TestQ3bGrayZoneJudge:
             "a2",
         ]
 
+    def test_unjudged_gray_hits_are_marked_loose_and_rank_last(self, store, monkeypatch):
+        """Kept, but behind what passed on its own, and marked so the page can say so."""
+        from enqueue.retrieve import candidates as cand
+
+        def _boom(*a, **k):
+            raise RuntimeError("provider down")
+
+        monkeypatch.setattr(cand, "get_provider", _boom)
+        gray_first = self._hits("g1", sim=0.5)
+        sure = self._hits("s1", sim=0.9)
+        out = _apply_floor("quantum flux capacitor", gray_first + sure)
+        assert [h["artifact_id"] for h in out] == ["s1", "g1"]
+        assert [bool(h.get("loose")) for h in out] == [False, True]
+
+    def test_a_judged_gray_hit_is_not_loose(self, store, monkeypatch):
+        from enqueue.retrieve import candidates as cand
+
+        class _Judge:
+            model = "test-model"
+
+            def complete(self, system, user, response_model, context=None, max_retries=3):
+                return response_model(verdicts=[{"id": "a1", "relevant": True}])
+
+        monkeypatch.setattr(cand, "get_provider", lambda *a, **k: _Judge())
+        out = _apply_floor("quantum flux capacitor", self._hits("a1"))
+        assert out and not out[0].get("loose")
+
     def test_second_identical_search_makes_no_new_call(self, store, monkeypatch):
         from enqueue.retrieve import candidates as cand
 

@@ -197,6 +197,7 @@ For the few things you want hidden even from someone holding your unlocked Mac.
 - In the vault it is encrypted with a key made from a 6-digit PIN that only you know. It stays encrypted when it syncs: your other device holds it, and still cannot read it without the PIN.
 - The door is deliberately unmarked: **Settings > Events > Diagnostics**. The first time, you choose the PIN. A wrong PIN looks like a diagnostic that failed.
 - The vault locks itself again after a few idle minutes, and whenever you leave it.
+- On the phone, the **Open with fingerprint** switch inside the vault lets a fingerprint open it instead of the PIN. The vault offers it once, right after the PIN opens it. The PIN always still works. Adding a new fingerprint to the phone, or changing the PIN on another device, turns this off until you enter the PIN again.
 
 There is no way to recover a forgotten vault PIN.
 
@@ -209,6 +210,7 @@ The Android app is your library in your pocket: read, capture, write, ask.
 - **Asking.** The eye answers from the copy on the phone.
 - **Small edits.** Star, delete, restore, and rewrite a summary line. Tagging and views are for the desk.
 - **Offline.** Everything is on the phone and saves there first. What you did reaches your Mac when there is a connection again.
+- **Fingerprint lock.** The switch in **Settings > Lock** makes Enqueue ask for your fingerprint when it opens, and again after a minute away. Your phone's own screen lock works too. Enqueue offers it once the first time you open the library; turning it off asks you to confirm. Quick capture from the home screen still works without it, since it can only add a thought.
 
 The phone does not write summaries or build the search index itself; those come from the Mac through sync.
 

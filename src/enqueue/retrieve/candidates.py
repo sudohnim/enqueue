@@ -10,6 +10,7 @@ import json
 import math
 import re
 from collections import Counter, defaultdict
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -48,19 +49,35 @@ def _floor_verdict(hit: dict) -> str:
     return "gray"
 
 
+# The gray-zone artifacts the judge could not rule on in the current search (the
+# model was down, paused, or refused). They are kept - fail-open never hides a real
+# note - but the caller is told, so they rank after what search is sure of and the
+# page can say so instead of presenting twenty guesses as twenty results.
+_UNJUDGED: ContextVar[frozenset[str]] = ContextVar("gray_unjudged", default=frozenset())
+
+
 def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
-    """Drop floor failures, judge the gray zone in one call. Order is preserved."""
+    """Drop floor failures, judge the gray zone in one call.
+
+    Order is preserved, except that a gray hit the judge could not rule on is marked
+    `loose` and moved behind every hit that passed on its own.
+    """
     gray = [h for h in hits if _floor_verdict(h) == "gray"]
+    _UNJUDGED.set(frozenset())
     kept_gray = judge_gray_zone(query, gray) if gray else None
-    out = []
+    unjudged = _UNJUDGED.get()
+    sure, loose = [], []
     for h in hits:
         verdict = _floor_verdict(h)
         if verdict == "drop":
             continue
         if verdict == "gray" and kept_gray is not None and h["artifact_id"] not in kept_gray:
             continue
-        out.append(h)
-    return out
+        if verdict == "gray" and h["artifact_id"] in unjudged:
+            loose.append({**h, "loose": True})
+        else:
+            sure.append(h)
+    return sure + loose
 
 
 class _GrayZoneVerdict(BaseModel):
@@ -158,6 +175,7 @@ def judge_gray_zone(query: str, candidates: list[dict]) -> set[str]:
         provider = get_provider(role="search")
         model_version = provider.model
     except Exception:  # noqa: BLE001 - fail-open is the contract
+        _UNJUDGED.set(frozenset(h["artifact_id"] for h in candidates))
         return {h["artifact_id"] for h in candidates}
 
     kept: set[str] = set()
@@ -211,6 +229,7 @@ def judge_gray_zone(query: str, candidates: list[dict]) -> set[str]:
         kept.update(aid for aid in by_aid if aid not in covered)
     except Exception:  # noqa: BLE001 - fail-open is the contract
         kept.update(h["artifact_id"] for h in unjudged)
+        _UNJUDGED.set(frozenset(h["artifact_id"] for h in unjudged))
     return kept
 
 
