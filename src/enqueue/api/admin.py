@@ -121,6 +121,7 @@ def doctor() -> dict:
         "summaries": summaries,
         # Artifacts with cross-field pairs the model has not judged yet (ingest/related.py).
         "related_pending": len(related.pending_ids()),
+        "related_judged_today": f"{related.judged_today()} of {related.JUDGE_DAILY}",
         "model_pause": model_pause.status(),
         "index_counts": index_counts,
         "embed_version": embed_version,

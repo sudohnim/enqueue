@@ -29,11 +29,17 @@ point, or not. Only a yes becomes a link, and its `point` is the model's one pla
 sentence. A pair nobody has judged yet is not a link: this fails closed, unlike search's
 gray-zone judge, because a missing link costs nothing and an invented one misleads.
 Verdicts are cached per pair, model and the two items' subject lines
-(`derived_values`, scope `related_judge`). `compute(judge=False)` never calls a model:
-it uses cached verdicts and marks the artifact pending (scope `related_pending`);
-the ingest worker calls `compute(judge=True)`, and a rate limit or outage raises
-`JudgeOwed` so the artifact is retried when the model is back. A pair with a
-local-only item is judged by the local model only.
+(`derived_values`, scope `related_judge`).
+
+Judging has its own small worker (`start_judge`, one daemon thread) and nothing else
+calls the model here. `compute()` uses cached verdicts only and marks an artifact with
+unjudged pairs pending (the `related_pending` table); the worker takes pending
+artifacts one at a time (`judge_next`), each one model call, and stops for the day at
+`JUDGE_DAILY` calls so a library-wide pass cannot spend a provider's allowance (the
+first version had no ceiling, sent every note back through the whole ingest pipeline
+to make one call, and ran a weekly usage limit dry). A usage limit or outage leaves
+the artifact pending and the worker waits it out. A pair with a local-only item is
+judged by the local model only.
 """
 
 from __future__ import annotations
@@ -41,6 +47,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import threading
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, field_validator
 
@@ -65,6 +74,9 @@ IDEA_MIN = 0.72
 IDEA_CANDIDATES = 8
 # Bump when the way links are chosen changes: every artifact is recomputed once.
 VERSION = "6"
+# The most model calls the judge makes in a day (UTC). Each call judges one artifact's
+# candidates. 0 turns the judge off: cached verdicts still link, nothing new is asked.
+JUDGE_DAILY = int(os.getenv("ENQ_RELATED_JUDGE_DAILY", "40"))
 
 
 class JudgeOwed(RuntimeError):
@@ -93,10 +105,11 @@ class _Verdicts(BaseModel):
 def compute(artifact_id: str, judge: bool = False) -> int:
     """Recompute one artifact's links. Returns how many were written.
 
-    With `judge`, idea candidates with no cached verdict are put to the ingest model
-    (one call; raises `JudgeOwed` after writing what it could when the model is
-    unavailable for now). Without it no model is called and such an artifact is left
-    marked pending for the ingest worker.
+    No model is called: idea candidates link only on a cached verdict, and an artifact
+    with unjudged ones is marked pending for the judge worker. `judge=True` is the
+    worker's own call: it puts the unjudged candidates to the ingest model (one call)
+    and raises `JudgeOwed`, after writing what it could, when the model is unavailable
+    for now.
     """
     from ..index.store import get_store
     from ..providers.base import is_transient, model_for
@@ -197,6 +210,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 )
         _set_pending(conn, artifact_id, bool(missing))
         conn.commit()
+        if missing and not judge:
+            kick()
         if owed is not None:
             raise JudgeOwed(f"{type(owed).__name__}: {owed}"[:300]) from owed
         return len(top)
@@ -248,29 +263,25 @@ def _verdict_write(conn, key: tuple[str, str], model: str, why: str) -> None:
 
 
 def _set_pending(conn, artifact_id: str, pending: bool) -> None:
-    conn.execute(
-        "DELETE FROM derived_values WHERE scope = 'related_pending' AND subject = ?",
-        (artifact_id,),
-    )
     if pending:
         conn.execute(
-            "INSERT INTO derived_values"
-            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
-            " VALUES ('related_pending', ?, '', '1', 1, 'model', '', ?)",
+            "INSERT OR IGNORE INTO related_pending (artifact_id, since) VALUES (?, ?)",
             (artifact_id, db.now()),
         )
+    else:
+        conn.execute("DELETE FROM related_pending WHERE artifact_id = ?", (artifact_id,))
 
 
 def pending_ids() -> list[str]:
-    """Live artifacts with idea candidates nobody has judged yet."""
+    """Live artifacts with idea candidates nobody has judged yet, longest waiting first."""
     conn = db.get_conn()
     try:
         return [
-            r["subject"]
+            r["artifact_id"]
             for r in conn.execute(
-                "SELECT d.subject FROM derived_values d JOIN artifacts a ON a.id = d.subject"
-                " WHERE d.scope = 'related_pending' AND a.deleted_at IS NULL"
-                " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+                "SELECT p.artifact_id FROM related_pending p JOIN artifacts a"
+                " ON a.id = p.artifact_id WHERE a.deleted_at IS NULL"
+                " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY p.since"
             )
         ]
     finally:
@@ -282,12 +293,102 @@ def is_pending(artifact_id: str) -> bool:
     try:
         return bool(
             conn.execute(
-                "SELECT 1 FROM derived_values WHERE scope = 'related_pending' AND subject = ?",
-                (artifact_id,),
+                "SELECT 1 FROM related_pending WHERE artifact_id = ?", (artifact_id,)
             ).fetchone()
         )
     finally:
         conn.close()
+
+
+def _state_get(key: str) -> str | None:
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT value FROM related_state WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+    finally:
+        conn.close()
+
+
+def _state_set(key: str, value: str) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO related_state (key, value) VALUES (?, ?)", (key, value)
+        )
+
+
+# ---- the judge worker ---------------------------------------------------------------
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def judged_today() -> int:
+    """Model calls the judge has made today (UTC)."""
+    day, _, count = (_state_get("judge_day") or "").partition(":")
+    return int(count or 0) if day == _today() else 0
+
+
+def judge_next() -> str:
+    """Judge the longest-waiting pending artifact. One model call at most.
+
+    Returns what happened, which is what the worker paces itself by:
+    "idle" (nothing pending), "budget" (today's calls are spent, or the judge is off),
+    "paused" (a usage limit is in effect), "owed" (the model could not be reached),
+    "judged".
+    """
+    from ..providers import pause
+
+    waiting = pending_ids()
+    if not waiting:
+        return "idle"
+    if judged_today() >= JUDGE_DAILY:
+        return "budget"
+    if pause.active():
+        return "paused"
+    # Counted before the call: a call that fails still spent a request.
+    _state_set("judge_day", f"{_today()}:{judged_today() + 1}")
+    try:
+        compute(waiting[0], judge=True)
+    except JudgeOwed:
+        return "owed"
+    return "judged"
+
+
+_wake = threading.Event()
+_judge_thread: threading.Thread | None = None
+# How long the worker waits after each outcome before looking again. A kick (a new
+# pending artifact) ends an idle wait early; nothing ends the others early.
+_WAITS = {"idle": 3600.0, "budget": 1800.0, "paused": 300.0, "owed": 600.0, "judged": 2.0}
+
+
+def kick() -> None:
+    """Tell the judge worker there may be something new to judge."""
+    _wake.set()
+
+
+def _judge_loop() -> None:
+    while True:
+        try:
+            outcome = judge_next()
+        except Exception:  # noqa: BLE001 - the worker must outlive one bad artifact
+            log.exception("related judge worker")
+            outcome = "owed"
+        if outcome == "idle":
+            _wake.clear()
+            # Pending may have been marked between the look and the clear.
+            if not pending_ids():
+                _wake.wait(_WAITS["idle"])
+        else:
+            threading.Event().wait(_WAITS[outcome])
+
+
+def start_judge() -> None:
+    """Start the judge worker (once). Called at engine startup."""
+    global _judge_thread
+    if _judge_thread is None or not _judge_thread.is_alive():
+        _judge_thread = threading.Thread(target=_judge_loop, name="related-judge", daemon=True)
+        _judge_thread.start()
 
 
 def _judge(
@@ -363,40 +464,27 @@ def _statements(conn, facet_ids: list[str]) -> dict[str, str]:
 
 def refresh_if_outdated() -> int:
     """Recompute every artifact's links once after the way they are chosen changed
-    (`VERSION`), so old links do not linger beside new ones, then hand every artifact
-    still waiting on the judge to the ingest worker's background lane (also what picks
-    the judging back up after a restart, since the queue is in memory). No model is
-    called here. Returns how many artifacts were recomputed."""
+    (`VERSION`), so old links do not linger beside new ones. No model is called;
+    artifacts left with unjudged pairs wait for the judge worker. Returns how many
+    artifacts were recomputed."""
+    if _state_get("version") == VERSION:
+        return 0
     conn = db.get_conn()
     try:
-        row = conn.execute("SELECT value FROM index_meta WHERE key = 'related_version'").fetchone()
-        current = bool(row and row["value"] == VERSION)
-        ids = (
-            []
-            if current
-            else [
-                r["id"]
-                for r in conn.execute(
-                    "SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL"
-                    " AND embedded_at IS NULL AND (id IN (SELECT artifact_id FROM facets)"
-                    " OR id IN (SELECT artifact_id FROM related))"
-                )
-            ]
-        )
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL"
+                " AND embedded_at IS NULL AND (id IN (SELECT artifact_id FROM facets)"
+                " OR id IN (SELECT artifact_id FROM related))"
+            )
+        ]
     finally:
         conn.close()
     for artifact_id in ids:
         compute(artifact_id)
-    if not current:
-        with db.transaction() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('related_version', ?)",
-                (VERSION,),
-            )
-    from . import queue
-
-    for artifact_id in pending_ids():
-        queue.submit_background(artifact_id)
+    _state_set("version", VERSION)
+    kick()
     return len(ids)
 
 

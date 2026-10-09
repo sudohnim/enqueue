@@ -40,3 +40,22 @@ def search(q: str, limit: int = 20) -> dict:
     except Exception:  # noqa: BLE001
         pass
     return {"query": q, "hits": hits, "filters": understood}
+
+
+@router.get("/titles")
+def titles() -> dict:
+    """Every live artifact's id, title and kind, newest touch first: what the search
+    bar matches typed names against in the page (static/js/suggest.js), so naming a
+    thing costs no search. No index, no embedding, no model."""
+    from .. import db
+
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, kind FROM artifacts WHERE title IS NOT NULL AND title != ''"
+            " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+            " ORDER BY updated_at DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"titles": [dict(r) for r in rows]}

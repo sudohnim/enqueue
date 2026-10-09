@@ -53,6 +53,130 @@
 	font-size: 15px;
 	color: var(--text);
 }
+/* The candidates: what the typed words could be naming, let down from the field.
+   The same white plate as the field with the lifted shadow, one row per artifact
+   (its kind's dot, its title with the typed part in ink, the kind in words), and
+   the full search as the last row. The row Enter will act on is filled. */
+.searchbar {
+	position: relative;
+}
+.suggest {
+	position: absolute;
+	top: calc(100% + 8px);
+	left: 0;
+	right: 0;
+	z-index: 1;
+	padding: 6px;
+	background: var(--surface-2);
+	border-radius: var(--r-xl);
+	box-shadow: var(--hairline), var(--shadow-lifted);
+	text-align: left;
+	transform-origin: 50% 0;
+	animation: suggest-in 160ms var(--ease);
+}
+.suggest[hidden] {
+	display: none;
+}
+@keyframes suggest-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px) scaleY(0.98);
+	}
+}
+.suggest-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 40px;
+	padding: 0 12px;
+	border-radius: var(--r);
+	color: var(--text-dim);
+	font-size: 15px;
+	line-height: 20px;
+	cursor: pointer;
+}
+.suggest-row[aria-selected="true"] {
+	background: var(--bg);
+	color: var(--text);
+}
+.suggest-row .kindmark {
+	flex: none;
+}
+.suggest-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* The typed part of the name, in ink. */
+.suggest-title b {
+	font-weight: 600;
+	color: var(--text);
+}
+.suggest-kind {
+	flex: none;
+	font-size: 12px;
+	color: var(--text-mute);
+}
+/* The full search: always last, parted from the names by a hairline. */
+.suggest-all {
+	margin-top: 6px;
+	box-shadow: 0 -1px 0 var(--line-soft);
+	border-radius: 0 0 var(--r) var(--r);
+	padding-top: 2px;
+	min-height: 42px;
+}
+.suggest-row:only-child {
+	margin-top: 0;
+	box-shadow: none;
+	padding-top: 0;
+	border-radius: var(--r);
+}
+.suggest-all svg {
+	width: 14px;
+	height: 14px;
+	flex: none;
+	stroke: currentColor;
+	fill: none;
+	stroke-width: 2;
+	stroke-linecap: round;
+}
+.suggest-all q {
+	quotes: "\201c" "\201d";
+	color: var(--text);
+	font-weight: 500;
+}
+.suggest-all kbd {
+	flex: none;
+	font-family: var(--mono);
+	font-size: 12px;
+	color: var(--text-mute);
+	opacity: 0;
+}
+.suggest-row[aria-selected="true"] kbd {
+	opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+	.suggest {
+		animation: none;
+	}
+}
+/* The browser's own clear control is a system-blue cross; this is the same control
+   in the page's ink. */
+.searchbar input::-webkit-search-cancel-button {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 16px;
+	height: 16px;
+	margin-left: var(--sp-2);
+	background: var(--text-mute);
+	-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E")
+		center / contain no-repeat;
+	mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E")
+		center / contain no-repeat;
+	cursor: pointer;
+}
 .searchbar input::placeholder {
 	/* The faintest ink that still clears 4.5:1 on the input's surface-1 ground. */
 	color: var(--ink-faint);

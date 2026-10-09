@@ -386,21 +386,64 @@ def test_a_private_pair_only_goes_to_the_local_model(idea_pair, monkeypatch):
     assert asked == [True]
 
 
-def test_the_ingest_worker_owes_a_retry_when_the_judge_is_paused(idea_pair):
-    from enqueue.ingest import queue
+# ---- the judge worker: one artifact at a time, inside a daily budget -----------------
+
+
+def test_the_worker_judges_what_is_pending_and_then_idles(idea_pair):
+    judge = idea_pair(_Judge())
+    related.compute("prince")  # marks it pending; no model call
+
+    assert related.judge_next() == "judged"
+
+    assert "war" in _links("prince")
+    assert len(judge.calls) == 1
+    assert related.judged_today() == 1
+    assert related.judge_next() == "idle"
+
+
+def test_the_worker_stops_at_the_days_budget(idea_pair, monkeypatch):
+    judge = idea_pair(_Judge())
+    related.compute("prince")
+    monkeypatch.setattr(related, "JUDGE_DAILY", 0)
+
+    assert related.judge_next() == "budget"
+
+    assert judge.calls == []
+    assert related.is_pending("prince")
+
+
+def test_the_worker_waits_out_a_usage_limit_without_spending_a_call(idea_pair, monkeypatch):
+    from enqueue.providers import pause
+
+    judge = idea_pair(_Judge())
+    related.compute("prince")
+    monkeypatch.setattr(pause, "active", lambda: True)
+
+    assert related.judge_next() == "paused"
+
+    assert judge.calls == []
+    assert related.judged_today() == 0
+
+
+def test_an_unreachable_model_leaves_the_artifact_pending(idea_pair):
     from enqueue.providers.pause import ModelPaused
 
-    idea_pair(_Judge(error=ModelPaused("paused")))
+    idea_pair(_Judge(error=ModelPaused("limit")))
+    related.compute("prince")
 
-    queue._related_artifact("prince", changed=True)
+    assert related.judge_next() == "owed"
 
-    conn = db.get_conn()
-    try:
-        assert conn.execute("SELECT 1 FROM facet_retry WHERE artifact_id = 'prince'").fetchone()
-    finally:
-        conn.close()
-    # A later run with nothing new to summarize still finishes the judging.
+    assert _links("prince") == []
+    assert related.is_pending("prince")
+
+
+def test_ingest_never_calls_the_judge(idea_pair):
+    """Ingest recomputes links from what is cached; the model is the worker's alone."""
+    from enqueue.ingest import facets
+
     judge = idea_pair(_Judge())
-    queue._related_artifact("prince", changed=False)
-    assert len(judge.calls) == 1
-    assert "war" in _links("prince")
+
+    facets._reindex("prince")
+
+    assert judge.calls == []
+    assert related.is_pending("prince")

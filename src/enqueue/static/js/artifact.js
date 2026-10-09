@@ -286,7 +286,7 @@
       )
       .join("");
     return (
-      '<section class="dsec"><div class="dsec-head"><span class="shelf">Views</span></div>' +
+      '<section class="dsec"><div class="dsec-head"><span class="dsec-label">Views</span></div>' +
       '<div class="viewsrow">' +
       chips +
       '<button class="viewadd" type="button" onclick="addArtifactToView(\'' +
@@ -348,7 +348,7 @@
     }
     if (!r.passages.length || !document.body.contains(slot)) return;
     slot.innerHTML =
-      '<div class="dsec-head"><span class="shelf">Passages that connect</span></div>' +
+      '<div class="dsec-head"><span class="dsec-label">Passages that connect</span></div>' +
       r.passages
         .map(
           (p) =>
@@ -691,18 +691,18 @@
       body +
       relatedRowHtml(d.related) +
       "</div></div></div>" +
-      '<aside class="drawer" id="drawer" aria-label="Details">' +
-      '<div class="drawer-top">' +
-      '<img class="drawer-perch" src="/static/raven-tilt.png" alt="" aria-hidden="true">' +
-      '<div class="drawer-heading"><span class="drawer-title">Details</span>' +
-      '<span class="drawer-voice">' +
+      '<aside class="drawer dpanel" id="drawer" aria-label="Details">' +
+      '<div class="dpanel-top">' +
+      '<img class="dpanel-perch" src="/static/raven-tilt.png" alt="" aria-hidden="true">' +
+      '<div class="dpanel-heading"><span class="dpanel-title">Details</span>' +
+      '<span class="dpanel-voice">' +
       esc(ravenLine(d, id)) +
       "</span></div>" +
-      '<button class="drawer-close" aria-label="Close details" title="Close details" onclick="toggleDrawer(false)">' +
+      '<button class="dpanel-close" aria-label="Close details" title="Close details" onclick="toggleDrawer(false)">' +
       svg("close") +
       "</button></div>" +
-      '<div class="drawer-body">' +
-      '<section class="dsec"><div class="dsec-head"><span class="shelf">Tags</span></div>' +
+      '<div class="dpanel-body">' +
+      '<section class="dsec"><div class="dsec-head"><span class="dsec-label">Tags</span></div>' +
       tagRowHtml(d.tags) +
       "</section>" +
       viewsRowHtml(d.views, id) +
@@ -741,10 +741,7 @@
     drawer.classList.toggle("open", open);
     // Only a real opening is an arrival: the raven lands and the sections settle in.
     // A re-render that keeps the panel open (a tag added) replays nothing.
-    if (open && !was && force === undefined) {
-      drawer.classList.add("arriving");
-      setTimeout(() => drawer.classList.remove("arriving"), 900);
-    }
+    if (open && !was && force === undefined) Details.arrive(drawer);
     if (toggle) {
       toggle.setAttribute("aria-expanded", String(open));
       // One mark, open or closed (the phone's too): the lit state says which.
@@ -798,7 +795,7 @@
     return (
       '<section class="dsec summary" data-aid="' +
       esc(id) +
-      '"><div class="dsec-head"><span class="shelf">Summary</span>' +
+      '"><div class="dsec-head"><span class="dsec-label">Summary</span>' +
       (n ? '<span class="dsec-count">' + n + (n === 1 ? " line" : " lines") + "</span>" : "") +
       refresh +
       '</div><div class="facet-list">' +
@@ -830,36 +827,20 @@
     );
   }
 
-  // The panel is the raven showing what it made of the thing, so its header says so in
-  // the raven's voice. Every line is true of the state it is shown in; which of the
-  // "read it" lines an artifact gets is fixed by its id, so it does not change between
-  // visits.
-  const RAVEN_READ = [
-    "I read it. Here's what stuck.",
-    "What I made of this one.",
-    "My reading. Correct me.",
-  ];
+  // The header's line and the raven's reactions are js/details.js, shared with the
+  // phone; this only says what state this artifact's summary is in.
   function ravenLine(d, id) {
-    if (d.facets && d.facets.length) {
-      let h = 0;
-      for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-      return RAVEN_READ[h % RAVEN_READ.length];
-    }
-    if (d.summary_generating) return "Still reading. One moment.";
-    if (d.facet_skip_reason === "too_short") return "Short one. Not much to read into.";
-    if (d.facet_skip_reason === "text_only") return "I kept my eyes off this one.";
-    return "Haven't read this one yet.";
+    return Details.voice(
+      {
+        lines: (d.facets || []).length,
+        generating: d.summary_generating,
+        skip: d.facet_skip_reason,
+      },
+      id,
+    );
   }
-
-  // You corrected the raven: it takes the note with a hop, and the eye approves.
   function ravenNod() {
-    const perch = document.querySelector(".drawer-perch");
-    if (perch) {
-      perch.classList.remove("hop");
-      void perch.offsetWidth; // restart the hop if one is still playing
-      perch.classList.add("hop");
-    }
-    if (window.eyeMood) eyeMood.play("approve");
+    Details.nod(document.getElementById("drawer"));
   }
 
   // Re-fetch one artifact and swap its summary panel in place, so every mutation
@@ -873,7 +854,7 @@
     }
     const el = document.querySelector('.summary[data-aid="' + id + '"]');
     if (el) el.outerHTML = summaryPanel(d, id);
-    const voice = document.querySelector(".drawer-voice");
+    const voice = document.querySelector("#drawer .dpanel-voice");
     if (voice && ctx && ctx.id === id) voice.textContent = ravenLine(d, id);
   }
 
@@ -937,8 +918,7 @@
       await refreshSummaryPanel(aid);
       if (kept) {
         // The line is yours now: its dot takes the accent with a small pop.
-        const mine = document.querySelector('.facet[data-fid="' + fid + '"]');
-        if (mine) mine.classList.add("claimed");
+        Details.claim(document.querySelector('.facet[data-fid="' + fid + '"]'));
         ravenNod();
       }
     };

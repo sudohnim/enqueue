@@ -195,6 +195,7 @@ def purge(artifact_id: str) -> dict:
             "artifact_tags",
             "artifact_versions",
             "related",
+            "related_pending",
             "opens",
             "sections",
         ):

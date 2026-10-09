@@ -129,6 +129,11 @@ Search looks in three ways at once:
 - **Your meaning.** A paraphrase finds a note that shares none of its words.
 - **The idea.** Each artifact carries a model-written summary of what it could be an example of, so "things that gain from stress" can find a note about lifting weights and a PDF about forests.
 
+As you type, the artifacts your words could be naming drop down under the search box, straight away and without running a search.
+Press **Enter** on one to open it; the arrow keys move between them, and the last row runs the full search instead.
+A small slip in the spelling still finds the name ("mesopotamai"); it is offered in the list, and Enter stays on the full search until you pick it.
+When your words clearly name one thing it is already picked, so typing part of a name and pressing Enter opens it.
+On the phone the same name matches lead the results as you type.
 Typing an artifact's name finds that artifact first, ahead of anything that only resembles it.
 Results never wait long on the model: when it is slow, the results it has not checked yet are shown last, under a line that says so, and the same search is exact the next time.
 
@@ -181,6 +186,7 @@ Nothing is invented to fill the list.
 A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.
 If the model is out of usage or unreachable, the other two kinds still work, and the waiting pairs are judged on their own once it is back.
 Each pair is judged once and remembered.
+Judging runs quietly in the background, at most 40 notes a day, so it can never use up your model allowance; a whole library is worked through over several days.
 An artifact marked local-only is only ever judged by the model on your computer.
 Click a related artifact to open it.
 Related is shown on the desktop only.

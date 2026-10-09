@@ -42,6 +42,17 @@ def _no_query_lift(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_judge_worker(monkeypatch):
+    """The related judge is a process-wide thread that calls the ingest model for
+    whatever is pending in whichever database `config.DB_PATH` names at that moment.
+    Started by one test's app, it would judge the next test's rows behind its back.
+    tests/test_related.py drives `judge_next` directly."""
+    from enqueue.ingest import related
+
+    monkeypatch.setattr(related, "start_judge", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _drain_ingest(monkeypatch):
     """Let this test's real ingest work finish inside this test.
 

@@ -298,12 +298,17 @@ def _process(artifact_id: str) -> dict:
     # by its own words regardless.
     entities_made = _entities_artifact(artifact_id) if chunks else 0
 
-    # Related artifacts (ingest/related.py): links to notes about the same thing, naming
-    # the same things, or - once the ingest model has judged the pair - making the same
-    # point. It runs when facets or entities were just written, and when an earlier run
-    # left pairs waiting on the judge (a usage limit, a facet edit made off this thread).
-    if chunks:
-        _related_artifact(artifact_id, changed=bool(facets_made or entities_made))
+    # Related artifacts (ingest/related.py): links to notes about the same thing or
+    # naming the same things. Local and cheap, so it runs whenever facets or entities
+    # were just written. Cross-field pairs that need the model's verdict are left
+    # pending for the judge worker; nothing here calls a model.
+    if facets_made or entities_made:
+        try:
+            from . import related
+
+            related.compute(artifact_id)
+        except Exception:  # noqa: BLE001 - derived; never blocks capture
+            log.exception("related artifacts failed for %s", artifact_id)
 
     # Chunk context (ingest/context.py): for a multi-chunk document, the ingest model
     # places each chunk in it, and the artifact is re-indexed with those lines. It
@@ -580,26 +585,6 @@ def _context_artifact(artifact_id: str) -> int:
     if error:
         log.warning("chunk context for %s: %s", artifact_id, error)
     return count
-
-
-def _related_artifact(artifact_id: str, changed: bool) -> None:
-    """Recompute an artifact's links, asking the judge about new idea pairs. Best
-    effort; a judge that is rate-limited or down owes the artifact a retry, and the
-    links that need no judge are written either way."""
-    from .. import db
-    from . import related
-
-    try:
-        if not (changed or related.is_pending(artifact_id)):
-            return
-        if _pending(artifact_id) > 0:
-            return  # a newer copy is queued and will do this for the newer state
-        related.compute(artifact_id, judge=True)
-    except related.JudgeOwed as exc:
-        with db.transaction() as conn:
-            _record_facet_retry(conn, artifact_id, Owed(str(exc)))
-    except Exception:  # noqa: BLE001 - derived; never blocks capture
-        log.exception("related artifacts failed for %s", artifact_id)
 
 
 def _entities_artifact(artifact_id: str) -> int:

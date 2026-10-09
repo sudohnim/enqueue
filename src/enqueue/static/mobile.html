@@ -17,8 +17,11 @@
 <link rel="stylesheet" href="css/linkpop.css" />
 <link rel="stylesheet" href="css/tour.css" />
 <link rel="stylesheet" href="css/bird.css" />
+<link rel="stylesheet" href="css/details.css" />
 <script src="js/md.js"></script>
 <script src="js/linkpop.js"></script>
+<script src="js/suggest.js"></script>
+<script src="js/details.js"></script>
 <script src="js/tour.js"></script>
 <script src="js/eyemood.js"></script>
 <script src="js/ground.js"></script>
@@ -803,67 +806,6 @@
     color: var(--danger);
   }
 
-  /* Tag row in reader */
-  .tag-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--line-soft);
-  }
-  .tag-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    background: var(--surface-2);
-    border: 0;
-    box-shadow: var(--hairline);
-    border-radius: var(--r-full);
-    font-size: 13px;
-    color: var(--text);
-  }
-  .tag-chip .tag-x {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border: none;
-    background: transparent;
-    border-radius: 50%;
-    color: var(--text-mute);
-    cursor: pointer;
-  }
-  .tag-chip .tag-x:hover {
-    background: var(--surface-3);
-    color: var(--danger);
-  }
-  .tag-add {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border: 1px dashed var(--line);
-    background: transparent;
-    border-radius: var(--r-full);
-    font-size: 13px;
-    color: var(--text-mute);
-    cursor: pointer;
-  }
-  .tag-add:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .tag-add input {
-    border: none;
-    background: transparent;
-    outline: none;
-    font: inherit;
-    color: var(--text);
-    width: 100px;
-  }
-
   /* Annotation input */
   /* The note field sits on the page, not in a tinted slab: the white field and its
      hairline are enough of an edge. */
@@ -1393,9 +1335,9 @@
     opacity: 1;
     pointer-events: auto;
   }
-  /* The same Details plate as the desktop's (css/artifact.css .drawer): a raised white
-     card floating inside the screen's edge, a header that stays put with the raven
-     standing on its rule, and one section per kind of thing parted by hairlines. */
+  /* The Details panel. What it looks like, and everything inside it, is
+     css/details.css (.dpanel, shared with the desktop). This is only where the phone
+     puts it: a card floating inside the screen's edges, sliding in from the right. */
   .details-panel {
     position: fixed;
     top: calc(env(safe-area-inset-top) + 10px);
@@ -1403,17 +1345,12 @@
     bottom: calc(env(safe-area-inset-bottom) + 10px);
     z-index: 61;
     width: min(calc(100% - 20px), 400px);
-    background: var(--surface-2);
-    border-radius: 20px;
-    box-shadow: var(--hairline), var(--shadow-lifted);
     opacity: 0;
     transform: translateX(calc(100% + 12px));
     pointer-events: none;
     transition:
       transform 280ms cubic-bezier(0.16, 1, 0.3, 1),
       opacity 180ms ease;
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
   }
   .details-panel.open {
@@ -1421,260 +1358,9 @@
     transform: none;
     pointer-events: auto;
   }
-  .details-head {
-    flex: none;
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 16px 8px 12px 20px;
-    /* The brand wash the library header wears, let down the top of the plate. */
-    background: linear-gradient(to bottom, var(--purple-bold-wash), transparent);
-    box-shadow: inset 0 -1px 0 var(--line-soft);
-  }
-  .details-heading {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .details-head h2 {
-    margin: 0;
-    font-family: var(--display);
-    font-size: 19px;
-    font-weight: 600;
-    line-height: 26px;
-    letter-spacing: -0.02em;
-  }
-  /* What the raven says about its own reading. */
-  .details-voice {
-    font-size: 14px;
-    line-height: 20px;
-    color: var(--text-dim);
-  }
-  /* The raven that read it, head cocked, standing on the header's rule and facing the
-     page. It lands when the panel opens and hops when you correct a line. */
-  .details-perch {
-    position: absolute;
-    right: 62px;
-    bottom: 0;
-    width: 43px;
-    height: 48px;
-    pointer-events: none;
-    user-select: none;
-    transform-origin: 50% 100%;
-    scale: -1 1;
-  }
-  .details-panel.arriving .details-perch {
-    animation: perch-land 720ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
-  }
-  .details-perch.hop {
-    animation: perch-hop 520ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  @keyframes perch-land {
-    0% {
-      opacity: 0;
-      transform: translateY(-22px) rotate(10deg);
-    }
-    55% {
-      opacity: 1;
-      transform: translateY(0) rotate(0) scaleY(0.86);
-    }
-    78% {
-      transform: translateY(-4px) scaleY(1.04);
-    }
-    100% {
-      transform: none;
-    }
-  }
-  @keyframes perch-hop {
-    35% {
-      transform: translateY(-10px) rotate(8deg);
-    }
-    70% {
-      transform: translateY(0) scaleY(0.92);
-    }
-  }
-  .details-close {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    margin-top: -6px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-full);
-    background: transparent;
-    color: var(--text-mute);
-  }
-  .details-close:active {
-    background: var(--surface-3);
-    color: var(--text);
-  }
-  .details-close svg {
-    width: 20px;
-    height: 20px;
-  }
-  .details-body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 0 20px 20px;
-  }
-  /* A <section> is a full-height screen everywhere else in this page; in here it is
-     an ordinary block. */
-  .details-body > .details-block {
-    display: block;
-    height: auto;
-    min-height: 0;
-    padding: 20px 0;
-  }
-  .details-body > .details-block[hidden] {
-    display: none;
-  }
-  .details-block + .details-block {
-    box-shadow: inset 0 1px 0 var(--line-soft);
-  }
-  .details-panel.arriving .details-block {
-    animation: dsec-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-  .details-panel.arriving .details-block:nth-child(2) {
-    animation-delay: 60ms;
-  }
-  @keyframes dsec-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-  }
-  .details-label {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin: 0 0 12px;
-  }
-  .details-block h3 {
-    margin: 0;
-    font-family: var(--display);
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 20px;
-    letter-spacing: -0.01em;
-    color: var(--text);
-  }
-  .details-count {
-    font-size: 13px;
-    color: var(--text-mute);
-    font-variant-numeric: tabular-nums;
-  }
-  /* The tag row inside the plate: no rule of its own, no side padding. */
-  #details_tags.tag-row {
-    padding: 0;
-    border-bottom: 0;
-    gap: 8px;
-  }
-  #details_summary {
-    margin: 0 -8px;
-  }
-  /* One point of the summary: a dot, the line (tap to rewrite), and a remove. A line
-     you rewrote wears the accent on its dot. */
-  .dfacet {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    gap: 4px;
-    padding: 9px 0 9px 28px;
-  }
-  .dfacet::before {
-    content: "";
-    position: absolute;
-    left: 12px;
-    top: 19px;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--line-strong);
-    opacity: 0.55;
-  }
-  .dfacet[data-edited]::before {
-    background: var(--purple-bold);
-    opacity: 1;
-  }
-  .dfacet.claimed::before {
-    animation: facet-claim 520ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  @keyframes facet-claim {
-    40% {
-      scale: 2.4;
-    }
-  }
-  .dfacet-text {
-    flex: 1;
-    font-size: 15px;
-    line-height: 23px;
-    color: var(--text-dim);
-    text-wrap: pretty;
-  }
-  /* A 44px target for a small mark: it sits right beside tap-to-edit text, and a
-     mis-tap here deletes a line. The negative margin keeps the row's rhythm. */
-  .dfacet-del {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    margin: -10px 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-mute);
-  }
-  .dfacet-del svg {
-    width: 15px;
-    height: 15px;
-  }
-  .dfacet-edit {
-    flex: 1;
-    box-sizing: border-box;
-    font-family: var(--sans);
-    font-size: 16px; /* >=16px so the WebView never zooms on focus */
-    line-height: 23px;
-    color: var(--text);
-    background: var(--surface-2);
-    border: 1px solid var(--purple-bold);
-    border-radius: var(--r);
-    padding: 7px 10px;
-    resize: vertical;
-    outline: none;
-    box-shadow: 0 0 0 3px var(--lavender-subtle);
-  }
-  .details-foot {
-    margin: 10px 8px 0;
-    font-size: 13px;
-    line-height: 18px;
-    color: var(--text-mute);
-  }
-  .details-notes {
-    font-size: 15px;
-    line-height: 23px;
-    color: var(--text-dim);
-    white-space: pre-wrap;
-  }
-  .details-empty {
-    display: block;
-    margin: 0 8px;
-    font-size: 15px;
-    line-height: 22px;
-    color: var(--text-mute);
-  }
   @media (prefers-reduced-motion: reduce) {
-    .details-panel,
-    .details-perch,
-    .details-block,
-    .dfacet::before {
-      animation: none !important;
-      transition: none !important;
+    .details-panel {
+      transition: none;
     }
   }
   /* Trash list: a contained, scrollable area so a big trash does not stretch the whole
@@ -1692,67 +1378,6 @@
   }
   #settings_trash_list > div:last-child {
     border-bottom: none;
-  }
-
-  /* Adding a tag is a chip that is not there yet: the same pill, drawn dashed. */
-  #details_tags .tag-add {
-    flex: 1 1 120px;
-    display: flex;
-    padding: 0;
-    border: 0;
-  }
-  #details_tags .tag-chip .tag-x svg {
-    width: 13px;
-    height: 13px;
-  }
-  #details_tags .tag-add input {
-    width: 100%;
-    min-width: 0;
-    height: 36px;
-    box-sizing: border-box;
-    padding: 0 14px;
-    font: inherit;
-    font-size: 16px; /* >=16px so the WebView never zooms on focus */
-    border: 1px dashed var(--line-strong);
-    border-radius: var(--r-full);
-    background: transparent;
-    color: var(--text);
-    outline: none;
-  }
-  #details_tags .tag-add input::placeholder {
-    color: var(--text-mute);
-  }
-  #details_tags .tag-add input:focus {
-    border-style: solid;
-    border-color: var(--purple-bold);
-    box-shadow: 0 0 0 3px var(--lavender-subtle);
-  }
-  /* Editable tag chip: label + a small remove control. */
-  #details_tags .tag-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 36px;
-    padding: 0 8px 0 14px;
-    background: var(--surface);
-    font-size: 15px;
-  }
-  #details_tags .tag-chip button {
-    display: grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--r-full);
-    background: transparent;
-    color: var(--text-mute);
-    font-size: 15px;
-    line-height: 1;
-    cursor: pointer;
-  }
-  #details_tags .tag-chip button:hover {
-    color: var(--text);
   }
 
   /* Mobile Pill (MOB2.3): three equal 46px circles on tinted glass. Capture is
@@ -2802,33 +2427,35 @@
 
 <!-- Details side panel: read-only tags + AI summary for the open artifact. -->
 <div id="details_backdrop" class="details-backdrop"></div>
-<aside id="details_panel" class="details-panel" aria-label="Details">
-  <header class="details-head">
-    <img class="details-perch" src="raven-tilt.png" alt="" aria-hidden="true" />
-    <div class="details-heading">
-      <h2>Details</h2>
-      <span id="details_voice" class="details-voice"></span>
+<aside id="details_panel" class="details-panel dpanel" data-touch aria-label="Details">
+  <header class="dpanel-top">
+    <img class="dpanel-perch" src="raven-tilt.png" alt="" aria-hidden="true" />
+    <div class="dpanel-heading">
+      <h2 class="dpanel-title">Details</h2>
+      <span id="details_voice" class="dpanel-voice"></span>
     </div>
-    <button id="details_close" class="details-close" aria-label="Close details">
+    <button id="details_close" class="dpanel-close" aria-label="Close details">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
     </button>
   </header>
-  <div class="details-body">
-    <section class="details-block">
-      <div class="details-label"><h3>Tags</h3></div>
-      <div id="details_tags" class="tag-row"></div>
-    </section>
-    <section class="details-block">
-      <div class="details-label">
-        <h3>Summary</h3>
-        <span id="details_count" class="details-count"></span>
+  <!-- divs, not sections: a <section> is a full-height screen in this page. -->
+  <div class="dpanel-body">
+    <div class="dsec">
+      <div class="dsec-head"><h3 class="dsec-label">Tags</h3></div>
+      <div id="details_tags" class="tagrow"></div>
+    </div>
+    <div class="dsec">
+      <div class="dsec-head">
+        <h3 class="dsec-label">Summary</h3>
+        <span id="details_count" class="dsec-count"></span>
       </div>
-      <div id="details_summary"></div>
-    </section>
-    <section class="details-block" id="details_notes_block" hidden>
-      <div class="details-label"><h3>Your notes</h3></div>
-      <div id="details_notes" class="details-notes"></div>
-    </section>
+      <div id="details_summary" class="facet-list"></div>
+      <div id="details_foot" class="dfoot" hidden>Regenerate the summary on desktop.</div>
+    </div>
+    <div class="dsec" id="details_notes_block" hidden>
+      <div class="dsec-head"><h3 class="dsec-label">Your notes</h3></div>
+      <div id="details_notes" class="dnotes"></div>
+    </div>
   </div>
 </aside>
 
@@ -4229,6 +3856,9 @@
   // pull applied something: other devices re-send things all day (a new summary, a
   // refetched preview), and startling at each one left the eye wide open most of the
   // time. Never on the first listing, and at most once a minute.
+  // The whole library as last listed (libraryArts becomes a search's hits while one
+  // is on screen): what a typed name is matched against (js/suggest.js).
+  let everyArt = [];
   let lastLibraryCount = null;
   let lastStartle = 0;
   function noteLibrarySize(count) {
@@ -4611,8 +4241,12 @@
     invoke("mobile_list")
       .then((raw) => {
         const all = parse(raw);
-        // The whole library, not a search's hits: the only count that means "new".
-        if (Array.isArray(all)) noteLibrarySize(all.length);
+        // The whole library, not a search's hits: the only count that means "new",
+        // and the list typed names are matched against.
+        if (Array.isArray(all)) {
+          noteLibrarySize(all.length);
+          everyArt = all;
+        }
         renderSections(all);
       })
       .catch((e) => {
@@ -5169,22 +4803,22 @@
     detailsData = data || {};
     sumEl.replaceChildren();
     const facets = (data && data.facets) || [];
-    document.getElementById("details_voice").textContent = ravenLine(facets, a.id);
+    document.getElementById("details_voice").textContent = Details.voice(
+      { lines: facets.length },
+      a.id,
+    );
     document.getElementById("details_count").textContent = facets.length
       ? facets.length + (facets.length === 1 ? " line" : " lines")
       : "";
+    document.getElementById("details_foot").hidden = !facets.length;
     if (!facets.length) {
-      const e = document.createElement("span");
-      e.className = "details-empty";
+      const e = document.createElement("p");
+      e.className = "facet-empty";
       e.textContent =
         "No summary yet. Summaries are generated on the desktop and sync here.";
       sumEl.appendChild(e);
     } else {
       for (const f of facets) renderMobileFacet(sumEl, f, a);
-      const hint = document.createElement("div");
-      hint.className = "details-foot";
-      hint.textContent = "Regenerate the summary on desktop.";
-      sumEl.appendChild(hint);
     }
     const anns = (data && data.annotations) || [];
     document.getElementById("details_notes_block").hidden = !anns.length;
@@ -5195,10 +4829,7 @@
     const panel = document.getElementById("details_panel");
     // Only a real opening is an arrival: the raven lands and the sections settle in.
     // A re-render of the open panel (a line edited, a tag added) replays nothing.
-    if (!panel.classList.contains("open")) {
-      panel.classList.add("arriving");
-      setTimeout(() => panel.classList.remove("arriving"), 950);
-    }
+    if (!panel.classList.contains("open")) Details.arrive(panel);
     document.getElementById("details_backdrop").classList.add("open");
     panel.classList.add("open");
   }
@@ -5206,43 +4837,19 @@
   // What the open panel was last drawn from, so cancelling an edit redraws all of it.
   let detailsData = {};
 
-  // The panel is the raven showing what it made of the thing, so its header says so in
-  // the raven's voice (the same lines as the desktop's, js/artifact.js ravenLine).
-  // Which "read it" line an artifact gets is fixed by its id.
-  const RAVEN_READ = [
-    "I read it. Here's what stuck.",
-    "What I made of this one.",
-    "My reading. Correct me.",
-  ];
-  function ravenLine(facets, id) {
-    if (!facets.length) return "Haven't read this one yet.";
-    let h = 0;
-    for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return RAVEN_READ[h % RAVEN_READ.length];
-  }
-
-  // You corrected the raven: it takes the note with a hop.
-  function ravenNod() {
-    const perch = document.querySelector(".details-perch");
-    if (!perch) return;
-    perch.classList.remove("hop");
-    void perch.offsetWidth; // restart the hop if one is still playing
-    perch.classList.add("hop");
-  }
-
   // One point of the summary: tap the line to rewrite it, the trailing mark removes
   // it. A line you rewrote wears the accent on its dot, like the desktop panel.
   function renderMobileFacet(sumEl, f, a) {
     const row = document.createElement("div");
-    row.className = "dfacet";
+    row.className = "facet";
     row.dataset.fid = f.id;
     if (f.edited) row.dataset.edited = "1";
     const span = document.createElement("span");
-    span.className = "dfacet-text";
+    span.className = "facet-text";
     span.textContent = f.statement || "";
     span.onclick = () => editMobileFacet(sumEl, f, a, span, row);
     const del = document.createElement("button");
-    del.className = "dfacet-del";
+    del.className = "facet-del";
     del.setAttribute("aria-label", "Remove this line");
     del.appendChild(createIcon("close"));
     del.onclick = async (ev) => {
@@ -5262,7 +4869,7 @@
   function editMobileFacet(sumEl, f, a, span, row) {
     if (row.querySelector("textarea")) return;
     const ta = document.createElement("textarea");
-    ta.className = "dfacet-edit";
+    ta.className = "facet-edit";
     ta.value = f.statement || "";
     ta.rows = 3;
     span.replaceWith(ta);
@@ -5279,9 +4886,8 @@
           );
           openDetails(d.artifact || a, d);
           // The line is yours now: its dot pops, and the raven takes the note.
-          const mine = sumEl.querySelector('.dfacet[data-fid="' + f.id + '"]');
-          if (mine) mine.classList.add("claimed");
-          return ravenNod();
+          Details.claim(sumEl.querySelector('.facet[data-fid="' + f.id + '"]'));
+          return Details.nod(document.getElementById("details_panel"));
         } catch (e) {
           toast("Could not save: " + errString(e), true);
         }
@@ -5351,13 +4957,13 @@
     container.replaceChildren();
     for (const tag of tags) {
       const chip = document.createElement("span");
-      chip.className = "tag-chip";
+      chip.className = "tagchip";
       chip.dataset.tag = tag;
       const label = document.createElement("span");
       label.className = "taglabel";
       label.textContent = tag;
       const removeBtn = document.createElement("button");
-      removeBtn.className = "tag-x";
+      removeBtn.className = "tagx";
       removeBtn.ariaLabel = "Remove tag " + tag;
       removeBtn.appendChild(createIcon("close"));
       removeBtn.addEventListener("click", async () => {
@@ -5377,9 +4983,9 @@
       container.appendChild(chip);
     }
     // Add tag input
-    const addChip = document.createElement("span");
-    addChip.className = "tag-add";
     const input = document.createElement("input");
+    input.className = "tagadd";
+    input.setAttribute("aria-label", "Add a tag");
     input.type = "text";
     input.placeholder = "Add tag";
     input.autocomplete = "off";
@@ -5403,8 +5009,7 @@
         input.blur();
       }
     });
-    addChip.appendChild(input);
-    container.appendChild(addChip);
+    container.appendChild(input);
     container.hidden = false;
   }
 
@@ -5636,15 +5241,27 @@
       }
       // The eye squints while it looks, and opens wide when something turns up.
       if (window.eyeMood) eyeMood.hold("search");
+      // What the words could be naming comes first, matched here against the titles
+      // (a slip in the spelling still finds it); then what the keyword search found.
+      // No list of its own on the phone: the results below ARE the candidates, and a
+      // second list between the field and them would only be more to read.
+      const named = window.Suggest
+        ? Suggest.rank(q, everyArt, 5).map((f) => f.item)
+        : [];
+      if (named.length) renderSections(named, "Nothing matches.");
       invoke("mobile_search", { query: q })
         .then((raw) => {
-          const hits = parse(raw);
+          const found = parse(raw);
+          const seen = new Set(named.map((a) => a.id));
+          const hits = named.concat(
+            (Array.isArray(found) ? found : []).filter((a) => !seen.has(a.id)),
+          );
           renderSections(hits, "Nothing matches.");
           if (window.eyeMood)
             eyeMood.drop("search", Array.isArray(hits) && hits.length ? "found" : null);
         })
         .catch(() => {
-          renderSections([], "Nothing matches.");
+          renderSections(named, "Nothing matches.");
           if (window.eyeMood) eyeMood.drop("search");
         });
     }, 140);

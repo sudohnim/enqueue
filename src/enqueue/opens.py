@@ -15,7 +15,8 @@ from . import db
 
 log = logging.getLogger(__name__)
 
-SOURCES = ("search", "wall", "related", "resurface", "chat", "other")
+# "suggest": opened by name, from the candidates under the search bar.
+SOURCES = ("search", "suggest", "wall", "related", "resurface", "chat", "other")
 
 
 def record(artifact_id: str, source: str, query: str | None = None, rank: int | None = None):

@@ -663,6 +663,159 @@ function tagBarHtml(tags) {
 	return html;
 }
 
+// ---- search candidates ----------------------------------------------------
+// Typing a thing's name should not cost a search. As you type, the artifacts the
+// words could be naming drop down under the field (js/suggest.js, matched in the
+// page against the list of titles: no request, no index, no model), and Enter on
+// one opens it. The last row is always the full search, for when it is not a name
+// you are typing. A confident name match is preselected, so "mesop" + Enter opens
+// Mesopotamia; anything looser, a misspelling included, is offered in the list but
+// leaves Enter on the full search, as before.
+let suggestTitles = null;
+let suggestFetched = 0;
+async function loadSuggestTitles() {
+	if (suggestTitles && Date.now() - suggestFetched < 20000) return;
+	try {
+		suggestTitles = (await api("/titles")).titles || [];
+		suggestFetched = Date.now();
+	} catch (_) {
+		if (!suggestTitles) suggestTitles = [];
+	}
+}
+
+function suggestMarked(title, marks) {
+	let out = "";
+	let at = 0;
+	for (const [a, b] of marks) {
+		out += esc(title.slice(at, a)) + "<b>" + esc(title.slice(a, b)) + "</b>";
+		at = b;
+	}
+	return out + esc(title.slice(at));
+}
+
+function mountSuggest(hs, list) {
+	let rows = []; // candidates, then the full-search row last
+	let sel = -1;
+	const close = () => {
+		list.hidden = true;
+		list.innerHTML = "";
+		rows = [];
+		sel = -1;
+		hs.setAttribute("aria-expanded", "false");
+		hs.removeAttribute("aria-activedescendant");
+	};
+	const paintSel = () => {
+		list.querySelectorAll("[role=option]").forEach((el, i) => {
+			el.setAttribute("aria-selected", String(i === sel));
+			if (i === sel) {
+				hs.setAttribute("aria-activedescendant", el.id);
+				el.scrollIntoView({ block: "nearest" });
+			}
+		});
+	};
+	const act = (i) => {
+		const row = rows[i];
+		const q = hs.value.trim();
+		if (!row || !q) return;
+		close();
+		if (row.id) {
+			hs.blur();
+			openArtifact(row.id, "suggest");
+		} else doSearch(q);
+	};
+	const draw = () => {
+		const q = hs.value.trim();
+		// A tag filter or a quoted phrase is an instruction to the search, not a name.
+		if (q.length < 2 || !suggestTitles || /^["#]/.test(q) || /^tag:/.test(q)) return close();
+		const found = Suggest.rank(q, suggestTitles, 6);
+		rows = found.map((f) => ({ id: f.item.id }));
+		rows.push({ id: null });
+		// Enter opens only what was actually named: a confident match. A guess from a
+		// misspelling is offered in the list, never taken ("monkey" must not open the
+		// note on money), so Enter stays on the search there.
+		sel = found.length && found[0].score >= Suggest.STRONG ? 0 : rows.length - 1;
+		list.innerHTML =
+			found
+				.map(
+					(f, i) =>
+						'<div class="suggest-row" role="option" id="sg' +
+						i +
+						'" data-i="' +
+						i +
+						'" data-kind="' +
+						esc(f.item.kind) +
+						'"><span class="kindmark" aria-hidden="true"></span>' +
+						'<span class="suggest-title">' +
+						suggestMarked(f.item.title, f.marks) +
+						'</span><span class="suggest-kind">' +
+						esc(f.item.kind) +
+						"</span></div>",
+				)
+				.join("") +
+			'<div class="suggest-row suggest-all" role="option" id="sg' +
+			found.length +
+			'" data-i="' +
+			found.length +
+			'">' +
+			'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
+			'<span class="suggest-title">Search everything for <q>' +
+			esc(q) +
+			"</q></span>" +
+			'<kbd aria-hidden="true">&#8629;</kbd></div>';
+		list.hidden = false;
+		hs.setAttribute("aria-expanded", "true");
+		paintSel();
+	};
+
+	hs.setAttribute("role", "combobox");
+	hs.setAttribute("aria-autocomplete", "list");
+	hs.setAttribute("aria-controls", "suggestList");
+	hs.setAttribute("aria-expanded", "false");
+	hs.addEventListener("focus", async () => {
+		await loadSuggestTitles();
+		if (document.activeElement === hs) draw();
+	});
+	hs.addEventListener("input", draw);
+	// Leaving the field puts the list away. Clicks inside it never take the focus
+	// (mousedown below), so this only fires on a real leave.
+	hs.addEventListener("blur", close);
+	list.addEventListener("mousedown", (e) => e.preventDefault());
+	list.addEventListener("click", (e) => {
+		const row = e.target.closest("[data-i]");
+		if (row) act(+row.dataset.i);
+	});
+	list.addEventListener("mousemove", (e) => {
+		const row = e.target.closest("[data-i]");
+		if (row && +row.dataset.i !== sel) {
+			sel = +row.dataset.i;
+			paintSel();
+		}
+	});
+	hs.addEventListener("keydown", (e) => {
+		const open = !list.hidden;
+		if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+			if (!open) return;
+			e.preventDefault();
+			sel = (sel + (e.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length;
+			paintSel();
+		} else if (e.key === "Enter") {
+			const q = hs.value.trim();
+			if (!q) return;
+			if (open && sel >= 0) act(sel);
+			else {
+				close();
+				doSearch(q);
+			}
+		} else if (e.key === "Escape") {
+			// First Escape puts the candidates away; the next clears the field, so an
+			// emptied field is still a way back to the wall.
+			if (open) return close();
+			hs.value = "";
+			hs.blur();
+		}
+	});
+}
+
 // Bind the tag chips to the same search the searchbar runs: the input shows
 // the `#name` query and results come back filtered. The trailing "untagged"
 // chip is the complement - a listing of artifacts with no tag, not a search.
@@ -761,6 +914,7 @@ async function home(opts) {
 		'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
 		'<input id="homesearch" type="search" placeholder="Search your artifacts" aria-label="Search your artifacts" autocomplete="off" spellcheck="false" />' +
 		'<kbd class="hint" aria-hidden="true">&#8984;K</kbd>' +
+		'<div class="suggest" id="suggestList" role="listbox" aria-label="Artifacts by name" hidden></div>' +
 		"</div>" +
 		groupBarHtml();
 	// The tag bar is a set of exact filters, secondary to the searchbar: the
@@ -797,17 +951,7 @@ async function home(opts) {
 	// home render, so its keys are bound here, not once at startup. Enter searches;
 	// Escape clears so an emptied field is a way back to the wall.
 	const hs = view.querySelector(".homehead input");
-	if (hs) {
-		hs.addEventListener("keydown", (e) => {
-			if (e.key === "Escape") {
-				hs.value = "";
-				hs.blur();
-			} else if (e.key === "Enter") {
-				const q = hs.value.trim();
-				if (q) doSearch(q);
-			}
-		});
-	}
+	if (hs) mountSuggest(hs, view.querySelector("#suggestList"));
 	// A tag chip runs the same search the searchbar runs: the input shows the
 	// `#name` query and the results come back filtered. The all-tags chip
 	// reveals whatever the top eight did not cover.

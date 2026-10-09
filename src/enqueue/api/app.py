@@ -93,6 +93,7 @@ def serve() -> None:
         from ..ingest import related
 
         ingest_queue.run_exclusive(related.refresh_if_outdated, wait=False)
+        related.start_judge()
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 

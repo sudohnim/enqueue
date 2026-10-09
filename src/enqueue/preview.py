@@ -356,31 +356,15 @@ def needs_fetch(artifact_id: str) -> bool:
 # request to the site and a sync to every other device). A fetch that found no body
 # is now remembered, so the heal is tried once; "Try again" still forces a new one.
 def _body_tried(artifact_id: str) -> bool:
-    conn = db.get_conn()
-    try:
-        return bool(
-            conn.execute(
-                "SELECT 1 FROM derived_values WHERE scope = 'preview_body_tried'"
-                " AND subject = ?",
-                (artifact_id,),
-            ).fetchone()
-        )
-    finally:
-        conn.close()
+    row = get(artifact_id)
+    return bool(row and row.get("body_tried"))
 
 
 def _mark_body_tried(conn, artifact_id: str, tried: bool) -> None:
     conn.execute(
-        "DELETE FROM derived_values WHERE scope = 'preview_body_tried' AND subject = ?",
-        (artifact_id,),
+        "UPDATE link_previews SET body_tried = ? WHERE artifact_id = ?",
+        (1 if tried else 0, artifact_id),
     )
-    if tried:
-        conn.execute(
-            "INSERT INTO derived_values"
-            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
-            " VALUES ('preview_body_tried', ?, '', '1', 1, 'model', '', ?)",
-            (artifact_id, _now()),
-        )
 
 
 def get(artifact_id: str) -> dict | None:

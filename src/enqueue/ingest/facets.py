@@ -237,13 +237,9 @@ def _reindex(artifact_id: str) -> None:
         get_store().index_facets_artifact(artifact_id)
         from . import related
 
-        # The links follow the facets they come from. No model call on this thread: a
-        # new idea pair is left pending and judged on the ingest worker's back lane.
+        # The links follow the facets they come from. No model call here: a new
+        # cross-field pair is left pending for the judge worker.
         related.compute(artifact_id)
-        if related.is_pending(artifact_id):
-            from . import queue
-
-            queue.submit_background(artifact_id)
     except Exception:  # noqa: BLE001 - the DB rows are the truth; a reindex hiccup is not fatal
         pass
 

@@ -1,0 +1,643 @@
+/* The Details panel: an artifact's tags, views, summary and connecting passages.
+
+   One panel for both apps, the way the tour and the loading raven are: the desktop
+   (js/artifact.js) and the phone (mobile.html) emit the same markup and class names
+   and load this file, so the look cannot drift between them (it had: the phone's
+   copy was rewritten by hand to match the desktop's, in its own stylesheet). Only
+   WHERE the panel sits belongs to each app (.drawer in css/artifact.css,
+   .details-panel in mobile.html). A touch screen is the same panel with bigger type
+   and targets: `data-touch` on the root swaps the sizes below and shows the controls
+   a pointer would reveal on hover.
+
+   It is a raised white plate, not a slab welded to an edge. Its header stays put
+   while the body scrolls, and the raven that read the thing stands on the header's
+   rule, facing the page. */
+.dpanel {
+  --d-pad: var(--sp-5);
+  --d-title: 17px;
+  --d-voice: 13px;
+  --d-label: 13px;
+  --d-text: 14px;
+  --d-line: 21px;
+  --d-chip-h: 28px;
+  --d-chip-text: 13px;
+  --d-perch-w: 41px;
+  --d-perch-h: 46px;
+  --d-close: 32px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border-radius: var(--r-xl);
+  box-shadow: var(--hairline), var(--shadow-lifted);
+}
+.dpanel[data-touch] {
+  --d-pad: 20px;
+  --d-title: 19px;
+  --d-voice: 14px;
+  --d-label: 15px;
+  --d-text: 15px;
+  --d-line: 23px;
+  --d-chip-h: 36px;
+  --d-chip-text: 15px;
+  --d-perch-w: 43px;
+  --d-perch-h: 48px;
+  --d-close: 44px;
+  border-radius: 20px;
+}
+
+/* ---- header ------------------------------------------------------------------- */
+.dpanel-top {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-3) var(--sp-3) var(--d-pad);
+  border-radius: inherit;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  /* The brand wash the home header wears, let down the top of the plate. */
+  background: linear-gradient(to bottom, var(--purple-bold-wash), transparent);
+  box-shadow: inset 0 -1px 0 var(--line-soft);
+}
+.dpanel-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dpanel-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--d-title);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+/* What the raven says about its own reading (js/details.js). */
+.dpanel-voice {
+  font-size: var(--d-voice);
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+/* The raven, head cocked: feet on the header's rule, facing the page. It lands when
+   the panel opens, bobs for as long as a summary is being rewritten, and hops when
+   you correct a line. It takes no clicks. */
+.dpanel-perch {
+  position: absolute;
+  right: calc(var(--d-close) + 28px);
+  bottom: 0;
+  width: var(--d-perch-w);
+  height: var(--d-perch-h);
+  pointer-events: none;
+  user-select: none;
+  transform-origin: 50% 100%;
+  /* The art faces right; here it faces the page. */
+  scale: -1 1;
+}
+.dpanel.arriving .dpanel-perch {
+  animation: dperch-land 720ms var(--ease) 140ms both;
+}
+.dpanel-perch.hop {
+  animation: dperch-hop 520ms var(--ease);
+}
+.dpanel.thinking .dpanel-perch {
+  animation: dperch-think 900ms ease-in-out infinite;
+}
+@keyframes dperch-land {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px) rotate(10deg);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(0) rotate(0) scaleY(0.86);
+  }
+  78% {
+    transform: translateY(-4px) scaleY(1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes dperch-hop {
+  35% {
+    transform: translateY(-10px) rotate(8deg);
+  }
+  70% {
+    transform: translateY(0) scaleY(0.92);
+  }
+}
+@keyframes dperch-think {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  50% {
+    transform: rotate(-9deg) translateY(1px);
+  }
+}
+.dpanel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--d-close);
+  height: var(--d-close);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.dpanel[data-touch] .dpanel-close {
+  margin-top: -6px;
+  border-radius: var(--r-full);
+}
+.dpanel-close:hover,
+.dpanel-close:active {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.dpanel-close svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+}
+.dpanel-close:focus-visible,
+.dpanel .viewadd:focus-visible,
+.dpanel .facet-add:focus-visible,
+.dpanel .facet-refresh:focus-visible,
+.dpanel .relatedchip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- body and sections -------------------------------------------------------- */
+.dpanel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--d-pad) var(--d-pad);
+  border-radius: inherit;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+/* One section per kind of thing, parted by a hairline: a label row (with a count or
+   a control when the section has one), then the content. */
+.dsec {
+  display: block;
+  height: auto;
+  min-height: 0;
+  padding: 18px 0;
+}
+.dsec + .dsec {
+  box-shadow: inset 0 1px 0 var(--line-soft);
+}
+.dsec:empty,
+.dsec[hidden] {
+  display: none;
+}
+/* A real opening lets the sections settle in one after another, once. */
+.dpanel.arriving .dsec {
+  animation: dsec-in 420ms var(--ease) both;
+}
+.dpanel.arriving .dsec:nth-child(2) {
+  animation-delay: 50ms;
+}
+.dpanel.arriving .dsec:nth-child(3) {
+  animation-delay: 100ms;
+}
+.dpanel.arriving .dsec:nth-child(4) {
+  animation-delay: 150ms;
+}
+@keyframes dsec-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.dsec-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 28px;
+  margin-bottom: var(--sp-2);
+}
+.dsec-label {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--d-label);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+.dsec-count {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- chips: tags and views ---------------------------------------------------- */
+.dpanel .tagrow,
+.dpanel .viewsrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+/* A pill on the tile ground with a hairline: the name and a small x. */
+.dpanel .tagchip,
+.dpanel .viewchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  height: var(--d-chip-h);
+  padding: 0 4px 0 12px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: var(--hairline);
+  font: inherit;
+  font-size: var(--d-chip-text);
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--text);
+}
+.dpanel .taglabel,
+.dpanel .viewlabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dpanel .tagx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: calc(var(--d-chip-h) - 8px);
+  height: calc(var(--d-chip-h) - 8px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: none;
+  color: var(--text-mute);
+  cursor: pointer;
+}
+.dpanel .tagx:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.dpanel .tagx svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+/* Adding is a chip that is not there yet: the same pill, drawn with a dashed edge.
+   The tag one is a field you type in; it fills in and opens out when it has focus. */
+.dpanel .tagadd,
+.dpanel .viewadd {
+  height: var(--d-chip-h);
+  padding: 0 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-full);
+  background: transparent;
+  font: inherit;
+  font-size: var(--d-chip-text);
+  line-height: 18px;
+  color: var(--text);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+.dpanel .tagadd {
+  flex: 0 1 112px;
+  min-width: 96px;
+  max-width: 100%;
+  outline: none;
+}
+.dpanel[data-touch] .tagadd {
+  flex: 1 1 120px;
+  /* 16px or the phone's browser zooms the page when the field takes focus. */
+  font-size: 16px;
+}
+.dpanel .tagadd::placeholder {
+  color: var(--text-mute);
+}
+.dpanel .tagadd:hover {
+  border-color: var(--text-dim);
+}
+.dpanel .tagadd:focus {
+  flex-grow: 1;
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--lavender-subtle);
+}
+.dpanel .viewadd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.dpanel .viewadd svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+}
+.dpanel .viewadd:hover {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  background: var(--lavender-subtle);
+}
+
+/* ---- the summary -------------------------------------------------------------
+   The model's reading, made yours to shape: a regenerate control in the label row
+   (where the app can regenerate), a line you rewrite by clicking or tapping it, a
+   remove, and an add at the foot. A list of points on the plate's own white: each
+   leads with a small dot, and a line you rewrote wears the accent on its dot. */
+.dpanel .facet-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  margin-right: -6px;
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    background 140ms ease-out,
+    color 140ms ease-out;
+}
+.dpanel .facet-refresh:hover {
+  background: var(--surface-3);
+  color: var(--accent-text);
+}
+.dpanel .facet-refresh svg {
+  width: 15px;
+  height: 15px;
+  transition: rotate 320ms var(--ease);
+}
+.dpanel .facet-refresh:hover svg {
+  rotate: 90deg;
+}
+.dpanel.thinking .facet-refresh svg {
+  animation: dfacet-turn 900ms linear infinite;
+}
+@keyframes dfacet-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+/* The lines sit in a bounded box that scrolls on its own, so a long summary does not
+   push the rest of the panel out of reach. A fade pinned to the box's foot shows
+   there is more below; at the end it only covers the list's own bottom padding. */
+.dpanel .facet-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -8px;
+  padding-bottom: var(--sp-4);
+  /* What the window has left once the header, tags and views are drawn. */
+  max-height: max(220px, calc(100vh - 480px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.dpanel .facet-list::after {
+  content: "";
+  flex: none;
+  position: sticky;
+  bottom: calc(-1 * var(--sp-4));
+  height: var(--sp-5);
+  margin-top: calc(-1 * var(--sp-5));
+  background: linear-gradient(to bottom, transparent, var(--surface-2));
+  pointer-events: none;
+}
+/* On a phone the whole panel scrolls under the thumb; a second scroller inside it
+   would only catch the gesture. */
+.dpanel[data-touch] .facet-list {
+  max-height: none;
+  overflow: visible;
+  padding-bottom: 0;
+}
+.dpanel[data-touch] .facet-list::after {
+  display: none;
+}
+.dpanel .facet {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  border-radius: var(--r);
+  padding: 8px 6px 8px 26px;
+  transition: background 120ms ease-out;
+}
+.dpanel .facet::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: calc(8px + var(--d-line) / 2 - 2.5px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  opacity: 0.55;
+}
+.dpanel .facet[data-edited]::before {
+  background: var(--accent);
+  opacity: 1;
+}
+/* The moment a line becomes yours. */
+.dpanel .facet.claimed::before {
+  animation: dfacet-claim 520ms var(--ease);
+}
+@keyframes dfacet-claim {
+  40% {
+    scale: 2.4;
+  }
+}
+.dpanel:not([data-touch]) .facet:hover {
+  background: var(--surface);
+}
+.dpanel .facet-text {
+  flex: 1 1 auto;
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text-dim);
+  cursor: text;
+  text-wrap: pretty;
+}
+.dpanel .facet:hover .facet-text {
+  color: var(--text);
+}
+/* With a pointer the remove shows on hover. On a touch screen it is always there,
+   in a 44px target: it sits right beside tap-to-edit text, and a mis-tap deletes a
+   line. The negative margin keeps the row's rhythm. */
+.dpanel .facet-del {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-mute);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease-out,
+    color 120ms ease-out,
+    background 120ms ease-out;
+}
+.dpanel .facet:hover .facet-del,
+.dpanel .facet:focus-within .facet-del,
+.dpanel .facet-del:focus-visible {
+  opacity: 1;
+}
+.dpanel .facet-del:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.dpanel .facet-del svg {
+  width: 13px;
+  height: 13px;
+}
+.dpanel[data-touch] .facet-del {
+  width: 44px;
+  height: 44px;
+  margin: -10px -6px -10px 0;
+  padding: 0;
+  opacity: 1;
+}
+.dpanel[data-touch] .facet-del svg {
+  width: 15px;
+  height: 15px;
+}
+.dpanel .facet-empty {
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text-mute);
+  margin: 0 8px;
+}
+.dpanel .facet-list .loader,
+.dpanel .facet-list .state {
+  margin: 0 8px;
+}
+.dpanel .facet-edit {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--sans);
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--r);
+  padding: 7px 10px;
+  margin: 2px 0;
+  resize: vertical;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--lavender-subtle);
+}
+.dpanel[data-touch] .facet-edit {
+  font-size: 16px;
+}
+.dpanel .facet-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: var(--sp-1) 0 0 -8px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    color 140ms ease-out,
+    background 140ms ease-out;
+}
+.dpanel .facet-add:hover {
+  color: var(--accent-text);
+  background: var(--lavender-subtle);
+}
+.dpanel .facet-add svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+}
+/* A quiet line under a section (where the summary can be regenerated, say). */
+.dpanel .dfoot {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-mute);
+}
+/* Your own notes on a capture, as written. */
+.dpanel .dnotes {
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+/* ---- passages that connect ----------------------------------------------------
+   A passage's opening words set as a quotation, then the notes it echoes as chips. */
+.dpanel .connection + .connection {
+  margin-top: var(--sp-4);
+}
+.dpanel .connection-excerpt {
+  margin-bottom: var(--sp-2);
+  padding-left: var(--sp-3);
+  box-shadow: inset 1px 0 0 var(--line-strong);
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dpanel .relatedchip {
+  /* A note a passage echoes: the chip's shape with no x, and a button. */
+  padding: 0 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.dpanel .relatedchip:hover {
+  color: var(--accent-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dpanel-perch,
+  .dpanel .dsec,
+  .dpanel .facet::before,
+  .dpanel .facet-refresh svg {
+    animation: none !important;
+    transition: none !important;
+  }
+}
