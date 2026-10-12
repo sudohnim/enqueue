@@ -32,7 +32,7 @@
     border: 0;
     border-radius: var(--r) var(--r) var(--r-sm) var(--r);
     padding: var(--sp-3) var(--sp-4);
-    font-weight: 600;
+    font-weight: var(--w-strong);
     color: var(--text);
   }
   /* Where the answer came from. This is what separates an answer from an assertion, so
@@ -50,9 +50,9 @@
     gap: var(--sp-1);
     font-family: var(--sans);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 14px;
-    letter-spacing: -0.42px;
+    letter-spacing: -0.25px;
     color: var(--text);
     background: var(--surface-2);
     border: 0;
@@ -75,7 +75,7 @@
     margin-top: var(--sp-4);
     padding-top: var(--sp-3);
     border-top: 1px solid var(--line-soft);
-    font-weight: 600;
+    font-weight: var(--w-strong);
     color: var(--text);
   }
 

@@ -7,12 +7,10 @@
   content="width=device-width, initial-scale=1, viewport-fit=cover"
 />
 <title>Enqueue</title>
-<!-- Preload the branded cuts so the first paint is IBM Plex, not the swap
-     fallback (tokens.css declares font-display: swap). The files are bundled in
-     the apk under assets/fonts, so these resolve offline. -->
-<link rel="preload" href="fonts/IBM-Plex-Sans-400.woff2" as="font" type="font/woff2" crossorigin />
-<link rel="preload" href="fonts/IBM-Plex-Sans-500.woff2" as="font" type="font/woff2" crossorigin />
-<link rel="preload" href="fonts/IBM-Plex-Sans-600.woff2" as="font" type="font/woff2" crossorigin />
+<!-- Preload the face so the first paint is Hanken Grotesk, not the swap fallback
+     (tokens.css declares font-display: swap). The file is bundled in the apk, so
+     this resolves offline. -->
+<link rel="preload" href="fonts/HankenGrotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="css/tokens.css" />
 <link rel="stylesheet" href="css/linkpop.css" />
 <link rel="stylesheet" href="css/tour.css" />
@@ -81,7 +79,7 @@
   body:not(.view-setup) #library { display: flex; }
   .title {
     font-size: 22px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     margin: 0 0 4px;
   }
   .sub {
@@ -92,7 +90,7 @@
   label {
     display: block;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     letter-spacing: 0.3px;
     color: var(--text-mute);
     margin-bottom: 14px;
@@ -127,7 +125,7 @@
   button {
     font-family: var(--sans);
     font-size: 15px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     padding: 12px 18px;
     border: 0;
     border-radius: var(--r-lg);
@@ -164,7 +162,7 @@
     height: 48px;
     padding: 0 16px 0 44px;
     font-size: 16px;
-    border-radius: var(--r-xl);
+    border-radius: var(--r-full);
     box-shadow: var(--shadow-field);
     background:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a546e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m20 20-4.2-4.2'/%3E%3C/svg%3E")
@@ -173,10 +171,10 @@
   }
   header h1 {
     font-size: 20px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     margin: 0;
     flex: 1;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.012em;
   }
   /* The library greeting is the hero: bigger and centered across the header (the
      back button is hidden on the library screen, so it fills the width). Other
@@ -279,9 +277,9 @@
   #lib_greeting {
     font-family: var(--display);
     font-size: 29px;
-    font-weight: 600;
+    font-weight: var(--w-display);
     line-height: 1.05;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.024em;
   }
   #lib_greeting .greet-last {
     color: var(--purple-bold);
@@ -318,7 +316,7 @@
     background: transparent;
     color: var(--purple-bold);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
   }
   .back {
     /* A round 44px target: the 32px pill it replaced was easy to miss with a thumb. */
@@ -373,9 +371,9 @@
     align-items: center;
     gap: 8px;
     font-family: var(--display);
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: -0.03em;
+    font-size: 19px;
+    font-weight: var(--w-medium);
+    letter-spacing: -0.012em;
     color: var(--text);
     padding: 10px 2px 8px;
     cursor: pointer;
@@ -391,10 +389,10 @@
      and its parts rather than a flat list of equals. */
   .viewtitle {
     font-family: var(--display);
-    font-size: 22px;
-    font-weight: 600;
-    line-height: 1.15;
-    letter-spacing: -0.03em;
+    font-size: 19px;
+    font-weight: var(--w-medium);
+    line-height: 1.2;
+    letter-spacing: -0.012em;
     color: var(--text);
     padding: 10px 2px 2px;
     overflow-wrap: anywhere;
@@ -405,7 +403,7 @@
   }
   .shelf-sub .shelf-label {
     font-size: 16.5px;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.012em;
     color: var(--text-dim);
     padding-top: 6px;
   }
@@ -479,7 +477,7 @@
     color: var(--text-mute);
     font-family: var(--sans);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     padding: 7px 14px;
     border-radius: var(--r-full);
     cursor: pointer;
@@ -493,10 +491,10 @@
     border-color: var(--purple-bold);
     color: var(--on-purple-bold);
   }
-  /* The view modes read as text tabs, not filled pills: the chosen one in ink with
-     a short accent bar under it, the same header grammar as the desktop. */
+  /* The view modes are quiet chips: the chosen one wears the accent as a tint
+     (violet words on a violet wash), the same header grammar as the desktop. */
   .viewchips {
-    gap: var(--sp-5);
+    gap: var(--sp-1);
     /* Centred under the centred hero; auto margins fall back to scrolling from the
        start if the tabs ever outgrow the width. */
     justify-content: safe center;
@@ -506,27 +504,14 @@
     border: 0;
     box-shadow: none;
     background: none;
-    padding: 6px 0 10px;
-    border-radius: 0;
-    font-size: 14px;
+    padding: 8px 14px;
+    font-size: 14.5px;
     font-weight: 400;
     color: var(--text-mute);
   }
   .viewchips .chip[aria-pressed="true"] {
-    background: none;
-    color: var(--text);
-    font-weight: 500;
-  }
-  .viewchips .chip[aria-pressed="true"]::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 2px;
-    width: 16px;
-    height: 2px;
-    border-radius: 2px;
-    background: var(--accent);
+    background: var(--lavender-subtle);
+    color: var(--accent-text);
   }
   /* Tag filter bar (Tags mode), copying the desktop: a flex row whose left part is
      the scrolling chip strip and whose right part is the pinned "untagged" chip,
@@ -618,7 +603,7 @@
   }
   .row-title {
     font-size: 15px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -679,7 +664,7 @@
   #reader_body h1,
   #reader_body h2,
   #reader_body h3 {
-    font-weight: 600;
+    font-weight: var(--w-strong);
     line-height: 1.3;
     margin: 0.6em 0 0.3em;
   }
@@ -724,7 +709,7 @@
   }
   .ann h2 {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     letter-spacing: 0.3px;
     color: var(--text-mute);
     margin: 0 0 10px;
@@ -761,8 +746,8 @@
     flex: 1;
     font-family: var(--display);
     font-size: 19px;
-    font-weight: 600;
-    letter-spacing: -0.025em;
+    font-weight: var(--w-strong);
+    letter-spacing: -0.015em;
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -945,10 +930,10 @@
     background: none;
     padding: 0;
     font-family: var(--display);
-    font-weight: 600;
+    font-weight: var(--w-display);
     font-size: 25px;
     line-height: 1.15;
-    letter-spacing: -0.035em;
+    letter-spacing: -0.021em;
     color: var(--text);
     caret-color: var(--accent);
   }
@@ -1027,7 +1012,7 @@
     border-radius: 999px;
     background: var(--purple-bold);
     color: #fff;
-    font: 600 15px var(--sans);
+    font: var(--w-strong) 15px var(--sans);
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -1121,9 +1106,9 @@
     margin: 0 0 10px;
     font-family: var(--display);
     font-size: 19px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     line-height: 1.25;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.012em;
     color: var(--text);
     text-wrap: balance;
   }
@@ -1172,7 +1157,7 @@
   }
   .mswitch-label {
     font-size: 15px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
   }
   .mswitch-sub {
     font-size: 13.5px;
@@ -1227,7 +1212,7 @@
   .mset-managed {
     align-self: flex-start;
     font-size: 12.5px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     padding: 5px 11px;
     border-radius: var(--r-full);
     background: var(--lavender-subtle);
@@ -1243,8 +1228,8 @@
     margin: 0 0 6px;
     font-family: var(--display);
     font-size: 19px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    font-weight: var(--w-strong);
+    letter-spacing: -0.012em;
     color: var(--text);
   }
   .mset-sub {
@@ -1300,7 +1285,7 @@
     margin-top: 12px;
     padding: 12px;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     color: var(--danger);
     background: var(--surface-2);
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--danger) 45%, transparent);
@@ -1387,6 +1372,18 @@
      glass is lavender-tinted with a violet hairline so its edge still holds where
      it floats over the white tiles. */
   .pill {
+    /* The pill keeps the deeper lavender it has always floated in. The page around
+       it was lightened (soft lavender ground, white tiles); the pill was not, so the
+       glass, the rim and the bold eye hold the contrast they were drawn with. The
+       grounds come from js/ground.js (the earlier ladder, still drifting with the
+       day); everything inside the pill reads these instead of the page's tokens. */
+    --bg: var(--pill-ground, #eee8f6);
+    --surface: var(--pill-tile, #f8f5fb);
+    --surface-3: var(--pill-well, #e3d9ef);
+    --line: rgba(58, 13, 99, 0.12);
+    --text: #120f19;
+    --text-dim: #433e57;
+    --text-mute: #5a546e;
     position: fixed;
     left: 50%;
     bottom: calc(var(--sp-5) + env(safe-area-inset-bottom));
@@ -1600,7 +1597,7 @@
     border-radius: var(--r-md);
     font-family: var(--sans);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
     text-align: left;
     cursor: pointer;
@@ -1884,7 +1881,7 @@
     color: var(--text);
   }
   .link-card:active {
-    background: var(--surface-2);
+    background: var(--surface-hover);
   }
   .link-card-image {
     width: 64px;
@@ -1903,7 +1900,7 @@
   }
   .link-card-title {
     font-size: 15px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1935,7 +1932,7 @@
     background: var(--surface);
     border: 0;
     box-shadow: var(--hairline);
-    border-radius: 18px;
+    border-radius: var(--r-lg);
     cursor: pointer;
     transition:
       background var(--dur-fast) var(--ease),
@@ -1943,10 +1940,10 @@
       transform var(--dur-fast) var(--ease);
   }
   .card:hover {
-    background: var(--surface-2);
+    background: var(--surface-hover);
   }
   .card:active {
-    background: var(--surface-2);
+    background: var(--surface-hover);
     box-shadow: var(--shadow-card);
   }
   .card-unsynced {
@@ -1980,10 +1977,10 @@
   }
   .card-title {
     font-family: var(--display);
-    font-size: 16.5px;
-    font-weight: 600;
-    line-height: 1.22;
-    letter-spacing: -0.02em;
+    font-size: 16px;
+    font-weight: var(--w-strong);
+    line-height: 1.28;
+    letter-spacing: -0.012em;
     color: var(--text);
     /* An address used as a title has no spaces to wrap on; break it rather than
        let it run out of the tile. */
@@ -1996,7 +1993,8 @@
   }
   .card-excerpt,
   .card-snippet {
-    font-size: 13px;
+    font-size: 13.5px;
+    line-height: 20px;
     color: var(--text-mute);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2126,7 +2124,7 @@
     box-shadow: var(--shadow-card);
   }
   .card-pdf .card-pages {
-    font-weight: 500;
+    font-weight: var(--w-medium);
   }
 
   /* Generic card */
@@ -2188,7 +2186,7 @@
     height: 260px;
     transform: translate(-50%, -50%);
     border: 3px solid #fff;
-    border-radius: 18px;
+    border-radius: var(--r-lg);
   }
   #scan_overlay .hint {
     position: absolute;
@@ -2210,7 +2208,7 @@
     border: none;
     background: #fff;
     color: #000;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     font-size: 15px;
   }
 </style>
@@ -6731,7 +6729,7 @@ return;
         const restoreBtn = document.createElement("button");
         restoreBtn.textContent = "Restore";
         restoreBtn.style.cssText =
-          "background: var(--purple-bold); color: var(--on-purple-bold); border: none; border-radius: var(--r-md); padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;";
+          "background: var(--purple-bold); color: var(--on-purple-bold); border: none; border-radius: var(--r-md); padding: 8px 14px; font-size: 13px; font-weight: var(--w-strong); cursor: pointer; white-space: nowrap;";
         restoreBtn.addEventListener("click", async () => {
           restoreBtn.disabled = true;
           try {
@@ -6819,7 +6817,7 @@ return;
     newBtn.style.cssText =
       "display: flex; align-items: center; gap: 8px; width: 100%; border: 0; " +
       "background: transparent; text-align: left; padding: 15px 4px; " +
-      "border-bottom: 1px solid var(--line-soft); font-size: 15px; font-weight: 600; " +
+      "border-bottom: 1px solid var(--line-soft); font-size: 15px; font-weight: var(--w-strong); " +
       "color: var(--purple-bold); cursor: pointer;";
     newBtn.textContent = "+  New conversation";
     newBtn.onclick = () => newMobileConversation();
@@ -7089,7 +7087,7 @@ return;
           "s</span>"
         : "";
     head.innerHTML =
-      '<span style="font-weight:600;color:' +
+      '<span style="font-weight: var(--w-strong);color:' +
       mobileKindColor(e.kind) +
       ';min-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
       escapeHtml(e.kind || "") +
@@ -7136,7 +7134,7 @@ return;
     const d = e.data || {};
     // field(label, htmlValue) - value is pre-built HTML (already escaped by the caller).
     const field = (label, html) =>
-      '<div><div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-mute);margin-bottom:2px">' +
+      '<div><div style="font-size:11px;font-weight: var(--w-strong);letter-spacing:.04em;text-transform:uppercase;color:var(--text-mute);margin-bottom:2px">' +
       escapeHtml(label) +
       '</div><div style="white-space:pre-wrap;line-height:1.5">' +
       html +
@@ -7190,7 +7188,7 @@ return;
         "position:fixed;inset:0;z-index:100;background:var(--scrim,rgba(0,0,0,.4));display:flex;align-items:center;justify-content:center;padding:24px";
       back.innerHTML =
         '<div style="background:var(--surface,#fff);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center">' +
-        '<div style="font-size:18px;font-weight:600;margin-bottom:8px">' +
+        '<div style="font-size:18px;font-weight: var(--w-strong);margin-bottom:8px">' +
         escapeHtml(title) +
         "</div>" +
         (sub
@@ -7202,7 +7200,7 @@ return;
         'autocomplete="off" style="width:100%;font-size:22px;letter-spacing:8px;text-align:center;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:16px" />' +
         '<div style="display:flex;gap:10px">' +
         '<button id="mpinCancel" style="flex:1;padding:12px;border:1px solid var(--line);background:var(--surface);border-radius:12px">Cancel</button>' +
-        '<button id="mpinOk" style="flex:1;padding:12px;border:none;background:var(--purple-bold);color:var(--on-purple-bold);border-radius:12px;font-weight:600">Enter</button>' +
+        '<button id="mpinOk" style="flex:1;padding:12px;border:none;background:var(--purple-bold);color:var(--on-purple-bold);border-radius:12px;font-weight: var(--w-strong)">Enter</button>' +
         "</div></div>";
       document.body.appendChild(back);
       const input = back.querySelector("#mpin");

@@ -60,8 +60,8 @@
   flex: 1 1 auto;
   min-width: 0;
   font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: var(--w-strong);
+  letter-spacing: -0.006em;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -88,7 +88,7 @@
     color 140ms ease-out;
 }
 .eye-icon:hover {
-  background: var(--surface-2);
+  background: var(--surface-hover);
   color: var(--text);
 }
 .eye-icon:focus-visible {
@@ -168,7 +168,7 @@
 .eye-loading {
   display: inline-block;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--w-strong);
   letter-spacing: 0.01em;
   background: linear-gradient(
     90deg,
@@ -228,7 +228,7 @@
 }
 .eye-body .src:hover {
   border-color: var(--line-strong);
-  background: var(--surface-2);
+  background: var(--surface-hover);
 }
 .eye-body .unsourced {
   margin-top: var(--sp-2);
@@ -302,7 +302,7 @@
 .eye-list .eye-list-head {
   padding: var(--sp-2) var(--sp-2) var(--sp-1);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: var(--w-strong);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-mute);
@@ -321,7 +321,7 @@
   transition: background 140ms ease-out;
 }
 .eye-thread:hover {
-  background: var(--surface-2);
+  background: var(--surface-hover);
 }
 .eye-thread[aria-current="true"] {
   background: var(--lavender-subtle);

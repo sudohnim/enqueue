@@ -2,6 +2,18 @@
      The app's signature object, present on every page. It floats, so it is one of the
      four things in the whole system allowed a shadow. */
 .pill {
+	/* The pill keeps the deeper lavender it has always floated in. The page around
+	   it was lightened (soft lavender ground, white tiles); the pill was not, so the
+	   glass, the rim and the bold eye hold the contrast they were drawn with. The
+	   grounds come from js/ground.js (the earlier ladder, still drifting with the
+	   day); everything inside the pill reads these instead of the page's tokens. */
+	--bg: var(--pill-ground, #eee8f6);
+	--surface: var(--pill-tile, #f8f5fb);
+	--surface-3: var(--pill-well, #e3d9ef);
+	--line: rgba(58, 13, 99, 0.12);
+	--text: #120f19;
+	--text-dim: #433e57;
+	--text-mute: #5a546e;
 	position: fixed;
 	left: 50%;
 	bottom: var(--sp-5);
@@ -63,7 +75,7 @@
 	font-family: var(--sans);
 	/* Button: 14px / 500 / 1.20, zero tracking. */
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: var(--w-medium);
 	line-height: 17px;
 	letter-spacing: 0;
 	color: var(--text);
@@ -388,7 +400,7 @@ dialog.ask::backdrop {
 dialog.ask h2 {
 	margin: 0;
 	font-size: 24px;
-	font-weight: 500;
+	font-weight: var(--w-medium);
 	line-height: 29px;
 	letter-spacing: -0.48px;
 	color: var(--text);
@@ -552,7 +564,7 @@ dialog.ask.name .namefield:focus {
 .dropcard .title {
 	/* Headline: the drop card is a CTA, so its line is a headline. */
 	font-size: 24px;
-	font-weight: 600;
+	font-weight: var(--w-strong);
 	line-height: 29px;
 	letter-spacing: -0.5px;
 	color: var(--text);

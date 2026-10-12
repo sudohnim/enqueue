@@ -69,7 +69,7 @@
     bottom: var(--sp-5);
     z-index: var(--z-pill);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text-mute);
     background: var(--surface-2);
     /* AU.3: the folio is a contained badge: a white plate with a hairline. */

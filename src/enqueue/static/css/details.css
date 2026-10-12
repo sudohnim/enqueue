@@ -70,9 +70,9 @@
   margin: 0;
   font-family: var(--display);
   font-size: var(--d-title);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   line-height: 1.4;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.12px;
   color: var(--text);
 }
 /* What the raven says about its own reading (js/details.js). */
@@ -236,7 +236,7 @@
   margin: 0;
   font-family: var(--display);
   font-size: var(--d-label);
-  font-weight: 600;
+  font-weight: var(--w-strong);
   line-height: 1.4;
   color: var(--text);
 }

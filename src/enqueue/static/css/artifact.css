@@ -344,7 +344,7 @@
     transition: background 140ms ease-out;
   }
   .relateditem:hover {
-    background: var(--surface-2);
+    background: var(--surface-hover);
   }
   .relateditem:focus-visible {
     outline: 2px solid var(--accent);
@@ -352,7 +352,7 @@
   }
   .relatedtitle {
     font-size: 14px;
-    font-weight: 600;
+    font-weight: var(--w-strong);
     line-height: 20px;
     overflow-wrap: anywhere;
   }
@@ -380,7 +380,7 @@
     border-radius: var(--r-pill);
     font: inherit;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 17px;
     letter-spacing: 0;
     white-space: nowrap;
@@ -532,7 +532,7 @@
   .editor h1,
   .editor h2,
   .editor h3 {
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
     margin: var(--sp-4) 0 var(--sp-2);
   }
@@ -540,19 +540,19 @@
   .editor h1 {
     font-size: 32px;
     line-height: 38px;
-    letter-spacing: -0.64px;
+    letter-spacing: -0.38px;
   }
   .md h2,
   .editor h2 {
     font-size: 24px;
     line-height: 29px;
-    letter-spacing: -0.48px;
+    letter-spacing: -0.29px;
   }
   .md h3,
   .editor h3 {
     font-size: 20px;
     line-height: 26px;
-    letter-spacing: -0.4px;
+    letter-spacing: -0.24px;
   }
   .md p,
   .editor p {
@@ -642,6 +642,8 @@
   }
   .md strong,
   .editor strong {
+    /* Bold a person typed has to read as bold beside 400 text, so it is the one
+       weight above the scale's ceiling. */
     font-weight: 600;
     color: var(--text);
   }
@@ -666,7 +668,7 @@
   .editor h2,
   .editor h3 {
     font-family: var(--display);
-    font-weight: 600;
+    font-weight: var(--w-strong);
     margin: var(--sp-6) 0 var(--sp-2);
     text-wrap: balance;
   }
@@ -681,7 +683,7 @@
   .editor h3 {
     font-size: 18px;
     line-height: 24px;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.12px;
   }
   .editor p {
     text-wrap: pretty;
@@ -690,7 +692,7 @@
   .editor > p:has(+ ul),
   .editor > p:has(+ ol) {
     margin-top: var(--sp-6);
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
   }
   .editor > p:has(+ ul) + ul,
@@ -718,7 +720,7 @@
   /* An item with items under it heads them. */
   .editor li:has(> ul),
   .editor li:has(> ol) {
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
   }
   /* Each depth steps in beside a hairline guide, with a quieter marker than the

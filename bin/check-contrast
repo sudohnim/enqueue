@@ -173,12 +173,18 @@ GROUND_JS = os.path.join(HERE, "src", "enqueue", "static", "js", "ground.js")
 
 
 def _darkest_ground():
-    """The darkest keyframe colour in js/ground.js's KEYS, or None if absent."""
+    """The darkest keyframe colour in js/ground.js's KEYS, or None if absent.
+
+    Only the page's own ladder (`const KEYS`): the file also holds PILL_KEYS, the
+    deeper ground the pill floats in, which carries icons, never text.
+    """
     try:
         with open(GROUND_JS) as f:
-            hexes = re.findall(r'\[\s*\d+\s*,\s*"(#[0-9a-fA-F]{6})"\s*\]', f.read())
+            src = f.read()
     except OSError:
         return None
+    block = re.search(r"const KEYS = \[(.*?)\];", src, re.S)
+    hexes = re.findall(r'\[\s*\d+\s*,\s*"(#[0-9a-fA-F]{6})"\s*\]', block.group(1) if block else "")
     return min(hexes, key=luminance) if hexes else None
 
 
@@ -289,7 +295,8 @@ def main():
         )
         night = {
             "--bg": luminance(night_hex),
-            "--surface": luminance(mixc(nb, (255, 255, 255), 0.6)),
+            # Tiles are white at every hour; only the ground and the well drift.
+            "--surface": grounds["--surface"],
             "--surface-2": grounds["--surface-2"],
             "--surface-3": luminance(mixc(nb, (58, 13, 99), 0.06)),
         }

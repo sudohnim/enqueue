@@ -1,6 +1,6 @@
 // ---- the ground drifts with the day ------------------------------------------------
-// The lavender canvas shifts slowly through the day: rosier and lighter at dawn, the
-// usual lavender by day, warmer at dusk, deep violet-grey at night. It moves a few
+// The soft lavender canvas shifts slowly through the day: rosier at dawn, the usual
+// lavender by day, warmer at dusk, a deeper violet-grey at night. It moves a few
 // percent an hour, so you never see it change, but opening the app at 7am and at
 // midnight feels different. Only the ground ladder moves (--bg and the surfaces
 // derived from it); inks, lines and the accent stay put, and every ink still clears
@@ -13,11 +13,22 @@
 (function () {
 	// Keyframes by hour (0-24), interpolated linearly between neighbours.
 	const KEYS = [
-		[0, "#ddd1ec"], // night: deep violet-grey
-		[6, "#f2e9f2"], // dawn: a rosy, lighter lavender
-		[11, "#eee8f6"], // day: the tokens.css default
-		[18, "#ebe0f0"], // dusk: warmer, a touch of mauve
-		[21, "#e4d9f0"], // evening: cooling toward night
+		[0, "#e9e1f3"], // night: a deeper violet-grey
+		[6, "#f8f1f6"], // dawn: a rosy lavender
+		[11, "#f6f2fb"], // day: the tokens.css default
+		[18, "#f5edf6"], // dusk: warmer, a touch of mauve
+		[21, "#efe8f6"], // evening: cooling toward night
+		[24, "#e9e1f3"],
+	];
+	// The pill keeps the deeper lavender it has always floated in (the ground before
+	// the canvas was lightened), so its glass and the bold eye hold their contrast
+	// against the white tiles. Same hours, the earlier ladder.
+	const PILL_KEYS = [
+		[0, "#ddd1ec"],
+		[6, "#f2e9f2"],
+		[11, "#eee8f6"],
+		[18, "#ebe0f0"],
+		[21, "#e4d9f0"],
 		[24, "#ddd1ec"],
 	];
 	const WHITE = [255, 255, 255];
@@ -27,12 +38,12 @@
 	const mix = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t));
 	const hex = (c) => "#" + c.map((x) => x.toString(16).padStart(2, "0")).join("");
 
-	function groundAt(date) {
+	function groundAt(date, keys = KEYS) {
 		const h = date.getHours() + date.getMinutes() / 60;
 		let i = 0;
-		while (KEYS[i + 1][0] <= h) i++;
-		const [h0, c0] = KEYS[i];
-		const [h1, c1] = KEYS[i + 1];
+		while (keys[i + 1][0] <= h) i++;
+		const [h0, c0] = keys[i];
+		const [h1, c1] = keys[i + 1];
 		return mix(rgb(c0), rgb(c1), (h - h0) / (h1 - h0));
 	}
 
@@ -52,13 +63,16 @@
 		if (key === last) return;
 		last = key;
 		const root = document.documentElement.style;
-		// The ladder climbs toward white from the ground and the well sinks below it,
-		// at the same steps as the tokens.css defaults (#eee8f6 -> #f8f5fb, #fbf9fd,
-		// #e3d9ef).
+		// Tiles and reading surfaces are white at every hour (tokens.css), so only the
+		// ground, the hover tint just under white and the recessed well move with it,
+		// at the same steps as the tokens.css defaults (#f6f2fb -> #faf7fd, #ece5f4).
 		root.setProperty("--bg", key);
-		root.setProperty("--surface", hex(mix(bg, WHITE, 0.6)));
-		root.setProperty("--surface-doc", hex(mix(bg, WHITE, 0.78)));
+		root.setProperty("--surface-hover", hex(mix(bg, WHITE, 0.45)));
 		root.setProperty("--surface-3", hex(mix(bg, DEEP, 0.06)));
+		const pill = groundAt(new Date(), PILL_KEYS);
+		root.setProperty("--pill-ground", hex(pill));
+		root.setProperty("--pill-tile", hex(mix(pill, WHITE, 0.6)));
+		root.setProperty("--pill-well", hex(mix(pill, DEEP, 0.06)));
 	}
 
 	window.enqGround = {

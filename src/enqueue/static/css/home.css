@@ -21,11 +21,11 @@
 	align-items: center;
 	gap: var(--sp-2);
 	height: 48px;
-	/* The search floats on the violet ground as a white field with a violet
-	   under-glow: no border, the shadow is the edge. */
-	padding: 0 var(--sp-4);
+	/* The search is the white field on the lavender ground, fully round, edged by
+	   the violet hairline (--shadow-field) rather than lifted on a shadow. */
+	padding: 0 var(--sp-5) 0 var(--sp-4);
 	background: var(--surface-2);
-	border-radius: var(--r-xl);
+	border-radius: var(--r-full);
 	box-shadow: var(--shadow-field);
 	transition: box-shadow var(--dur-fast) var(--ease);
 }
@@ -111,7 +111,7 @@
 }
 /* The typed part of the name, in ink. */
 .suggest-title b {
-	font-weight: 600;
+	font-weight: var(--w-strong);
 	color: var(--text);
 }
 .suggest-kind {
@@ -145,7 +145,7 @@
 .suggest-all q {
 	quotes: "\201c" "\201d";
 	color: var(--text);
-	font-weight: 500;
+	font-weight: var(--w-medium);
 }
 .suggest-all kbd {
 	flex: none;
@@ -220,13 +220,13 @@
 .homehead .display {
 	margin: 0;
 	color: var(--text);
-	/* LY.7: the greeting is the hero, in the display face at its largest rung.
-	   Tight tracking is what makes Instrument Sans read modern at this size. */
+	/* LY.7: the greeting is the hero: the largest thing on the page and one of
+	   the lightest. Size and the violet last word carry it, not weight. */
 	font-family: var(--display);
-	font-size: 54px;
-	font-weight: 600;
+	font-size: 44px;
+	font-weight: var(--w-display);
 	line-height: 1.02;
-	letter-spacing: -0.045em;
+	letter-spacing: -0.027em;
 }
 .greet-last {
 	color: var(--purple-bold);
@@ -466,10 +466,10 @@ main {
 	border: 0;
 	background: none;
 	font-family: var(--display);
-	font-size: 26px;
-	font-weight: 600;
+	font-size: 20px;
+	font-weight: var(--w-medium);
 	line-height: 1.15;
-	letter-spacing: -0.035em;
+	letter-spacing: -0.021em;
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
@@ -566,10 +566,10 @@ main {
 	border: 0;
 	background: none;
 	font-family: var(--display);
-	font-size: 26px;
-	font-weight: 600;
+	font-size: 20px;
+	font-weight: var(--w-medium);
 	line-height: 1.15;
-	letter-spacing: -0.035em;
+	letter-spacing: -0.021em;
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
@@ -731,7 +731,7 @@ main {
 	font-family: var(--sans);
 	font-size: 14px;
 	line-height: 17px;
-	font-weight: 500;
+	font-weight: var(--w-medium);
 	letter-spacing: 0;
 	cursor: pointer;
 	opacity: 0;
@@ -848,7 +848,7 @@ main {
 }
 .pickgroups .customrow .forgetbtn:hover {
 	color: var(--danger);
-	background: var(--surface-2);
+	background: var(--surface-hover);
 }
 .aside {
 	/* Body: helper and supporting text. */
@@ -860,20 +860,20 @@ main {
 }
 .aside.dirty {
 	color: var(--accent-text);
-	font-weight: 500;
+	font-weight: var(--w-medium);
 }
 /* Why something failed carries more than what it will cost, so it is not the same
      grey. It is still ink, never the accent: the accent is an instruction. */
 .aside.caution,
 .strongtext {
 	color: var(--text);
-	font-weight: 600;
+	font-weight: var(--w-strong);
 }
 .state {
 	/* Body LG: the empty state is a lead paragraph. */
 	font-size: 18px;
 	line-height: 27px;
-	letter-spacing: -0.1px;
+	letter-spacing: -0.06px;
 	color: var(--text-dim);
 	padding: var(--sp-5) 0;
 	max-width: 62ch;
@@ -931,8 +931,8 @@ main {
        padding at the 5-up default (O.2b), back to 16px below 1280px. */
 	background: var(--surface);
 	box-shadow: var(--hairline);
-	border-radius: 18px;
-	padding: 14px 16px;
+	border-radius: var(--r-lg);
+	padding: 16px 18px;
 	/* The wall never sheds a card: scrolling appends, and a collection meant to grow
        forever means the grid keeps everything ever scrolled past. Measured at 2,000
        cards, one style change cost 152 ms of forced layout - nine dropped frames for a
@@ -950,11 +950,11 @@ main {
 		transform 260ms var(--ease);
 }
 .card:hover {
-	/* Lift: the hovered tile turns white and rises 2px on a violet shadow. A 2px
-	   translate is a lift, not a scale, so neighbours never shift under the eye. */
-	background: var(--surface-2);
-	box-shadow: var(--shadow-card);
-	transform: translateY(-2px);
+	/* A white tile cannot rise any further toward white, and nothing on the wall
+	   casts a shadow, so a hovered tile takes a breath of the accent and a firmer
+	   edge. Nothing moves, so neighbours never shift under the eye. */
+	background: var(--surface-hover);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
 	.card:hover {
@@ -1022,12 +1022,12 @@ main {
 
 .card .title {
 	margin-top: var(--sp-2);
-	/* Title: the display face at the card step, tight and bold. */
+	/* Title: one step above the body, at the strongest weight the scale has. */
 	font-family: var(--display);
-	font-size: 19px;
-	font-weight: 600;
-	line-height: 1.22;
-	letter-spacing: -0.025em;
+	font-size: 16px;
+	font-weight: var(--w-strong);
+	line-height: 1.3;
+	letter-spacing: -0.015em;
 	display: -webkit-box;
 	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;
@@ -1195,7 +1195,7 @@ main {
 	.homehead .display {
 		font-size: 30px;
 		line-height: 35px;
-		letter-spacing: -1px;
+		letter-spacing: -0.6px;
 	}
 }
 @media (max-width: 480px) {
@@ -1256,7 +1256,7 @@ main {
 }
 .tagbar .tagchip:hover {
 	color: var(--text);
-	background: var(--surface-2);
+	background: var(--surface-hover);
 }
 /* The complement filter, pinned after every tag: still a pill, but set off with
    a hairline divider and italic so it reads as a mode of its own, not one more
@@ -1283,40 +1283,32 @@ main {
 .groupbar {
 	display: inline-flex;
 	align-items: center;
-	gap: var(--sp-5);
+	gap: var(--sp-1);
 	margin-top: var(--sp-4);
 }
 .groupbar button {
 	border: 0;
 	background: none;
 	position: relative;
-	padding: 4px 0 8px;
+	padding: 6px 14px;
+	border-radius: var(--r-full);
 	font: inherit;
 	font-size: 14px;
-	line-height: 1.3;
+	line-height: 20px;
 	color: var(--text-mute);
 	cursor: pointer;
-	transition: color var(--dur-fast) var(--ease);
+	transition:
+		color var(--dur-fast) var(--ease),
+		background var(--dur-fast) var(--ease);
 }
 .groupbar button:hover:not([aria-pressed="true"]) {
 	color: var(--text);
 }
+/* The chosen mode wears the accent as a tint: violet words on a violet wash, the
+   same weight as its neighbours. Colour marks it, not an underline and not bold. */
 .groupbar button[aria-pressed="true"] {
-	color: var(--text);
-	font-weight: 500;
-}
-/* The chosen mode is marked by a short accent bar under its label - text tabs,
-   not a boxed segmented control, so the header stays open. */
-.groupbar button[aria-pressed="true"]::after {
-	content: "";
-	position: absolute;
-	left: 50%;
-	bottom: 0;
-	width: 16px;
-	height: 2px;
-	border-radius: 2px;
-	background: var(--accent);
-	transform: translateX(-50%);
+	color: var(--accent-text);
+	background: var(--lavender-subtle);
 }
 
 /* The clear control on a Tagged header: a quiet text button, not an action. */
@@ -1327,12 +1319,12 @@ main {
 	border-radius: var(--r-full);
 	font: inherit;
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: var(--w-medium);
 	color: var(--text-mute);
 	cursor: pointer;
 }
 .tagclear:hover {
-	background: var(--surface-2);
+	background: var(--surface-hover);
 	box-shadow: var(--shadow-micro);
 	color: var(--text);
 }
@@ -1350,7 +1342,7 @@ main {
 	padding: 14px 16px;
 	background: var(--surface);
 	box-shadow: var(--hairline);
-	border-radius: 18px;
+	border-radius: var(--r-lg);
 	cursor: pointer;
 	text-align: left;
 	transition:
@@ -1358,8 +1350,8 @@ main {
 		box-shadow 260ms var(--ease);
 }
 .resurface-card:hover {
-	background: var(--surface-2);
-	box-shadow: var(--shadow-card);
+	background: var(--surface-hover);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 .resurface-text {
 	flex: 1;
@@ -1372,7 +1364,7 @@ main {
 }
 .resurface-title {
 	margin-top: 2px;
-	font-weight: 600;
+	font-weight: var(--w-strong);
 	color: var(--text);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1466,10 +1458,10 @@ main {
 	border-radius: var(--r-md);
 	background: none;
 	font-family: var(--display);
-	font-size: 26px;
-	font-weight: 600;
+	font-size: 20px;
+	font-weight: var(--w-medium);
 	line-height: 1.15;
-	letter-spacing: -0.035em;
+	letter-spacing: -0.021em;
 	color: var(--text);
 	text-align: left;
 	cursor: text;
@@ -1536,7 +1528,7 @@ input.mvnameinput {
 }
 .mvcard {
 	cursor: grab;
-	border-radius: 18px;
+	border-radius: var(--r-lg);
 }
 .mvcard .card {
 	height: 100%;
@@ -1556,11 +1548,11 @@ input.mvnameinput {
 .mvadd {
 	min-height: 132px;
 	border: 0;
-	border-radius: 18px;
+	border-radius: var(--r-lg);
 	background: none;
 	box-shadow: inset 0 0 0 1px var(--line);
 	color: var(--text-mute);
-	font: 500 14px var(--sans);
+	font: var(--w-medium) 14px var(--sans);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -1602,7 +1594,7 @@ input.mvnameinput {
 .mvempty em {
 	font-style: normal;
 	color: var(--text);
-	font-weight: 500;
+	font-weight: var(--w-medium);
 }
 /* In hand: the tile being moved leaves an open slot where it will land, and a copy
    of it rides the pointer, lifted and a touch askew. */
@@ -1630,8 +1622,8 @@ input.mvnameinput {
 	border-radius: var(--r-full);
 	background: var(--accent);
 	color: #fff;
-	font: 600 15px var(--display);
-	letter-spacing: -0.01em;
+	font: var(--w-strong) 15px var(--display);
+	letter-spacing: -0.006em;
 	box-shadow: var(--shadow-lifted);
 	white-space: nowrap;
 }

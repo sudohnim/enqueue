@@ -21,14 +21,21 @@
     background: var(--bg);
     color: var(--text-dim);
     font-family: var(--sans);
-    /* Body SM is the app's default body: this is a reference wall of kept things,
-       not a page of prose, so the reading size is one step down from Body. Weight
-       holds at 400 and tracking at zero (DESIGN.md section 3). */
-    font-size: 14px;
+    /* The app's default body: 15px on a 24px line, weight 400, zero tracking
+       (DESIGN.md section 3). The face is light, so the reading size carries a
+       pixel more than a heavier one would need. */
+    font-size: 15px;
     font-weight: 400;
-    line-height: 1.5;
+    line-height: 1.6;
     letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Emphasis a person wrote (and the app's own <b>) sits at 600: the scale's ceiling
+     is 480, too close to 400 for bold to be seen as bold. */
+  b,
+  strong {
+    font-weight: 600;
   }
 
   /* Selection is part of the design too. Left alone it paints the OS blue, which is
@@ -60,11 +67,10 @@
   .h2,
   .h3 {
     color: var(--text);
-    /* Headings speak in the display face; body copy stays Plex. */
     font-family: var(--display);
-    /* Display holds at 600, never 700; the ladder below steps down through 500 and
-       400. The heading steps override this weight where their rung is lighter. */
-    font-weight: 600;
+    /* Headings thin out as they grow: the two largest rungs sit at the display
+       weight (400), the smaller ones step up to hold their place beside body text. */
+    font-weight: var(--w-display);
     margin: 0;
   }
   .display {
@@ -73,30 +79,30 @@
        display signature - aggressive, scaling down with size, never zero. */
     font-size: 34px;
     line-height: 1.08;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.024em;
   }
   .h1 {
     /* Headline: panel titles and section openers. */
     font-size: 26px;
     line-height: 1.15;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.018em;
     /* A long unbroken title (a token, a URL, a pasted string) must wrap instead of
        overflowing the reader/vault header. */
     overflow-wrap: anywhere;
   }
   .h2 {
-    /* Title: the scale's 20px step, at its own 500 weight rather than the shared 600. */
+    /* Title: the scale's 20px step. */
     font-size: 20px;
-    font-weight: 600;
+    font-weight: var(--w-medium);
     line-height: 1.25;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.015em;
   }
   .h3 {
     /* Subhead: lead paragraphs, back at body weight. */
     font-size: 18px;
     font-weight: 400;
     line-height: 25px;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.12px;
   }
 
   /* The section-category signal. The leading accent dot is the identity of the label,
@@ -111,7 +117,7 @@
        tracked eyebrow are gone - DESIGN.md section 8 keeps the accent for brand,
        CTA, focus and links, and the impeccable eyebrow ban applies here. */
     font-size: 12px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 16px;
     letter-spacing: 0;
     text-transform: none;
@@ -126,9 +132,9 @@
   .title {
     /* Title: the 20px / 500 card-title step. */
     font-size: 20px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 25px;
-    letter-spacing: -0.3px;
+    letter-spacing: -0.18px;
     color: var(--text);
   }
   .excerpt {
@@ -202,7 +208,7 @@
     font-family: var(--sans);
     /* Button: 14px / 500 / 1.20 with zero tracking - the scale's button step. */
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 17px;
     letter-spacing: 0;
     color: var(--text);
@@ -242,7 +248,7 @@
     color: var(--text);
   }
   .btn.secondary:hover {
-    background: var(--surface-2);
+    background: var(--surface-hover);
     box-shadow: var(--hairline), var(--shadow-card);
   }
   .btn.secondary:active {
@@ -255,7 +261,7 @@
     background: var(--line-soft);
   }
   .btn.tertiary:active {
-    background: var(--surface-2);
+    background: var(--surface-hover);
   }
   /* The compact text button: same ghost treatment as tertiary, tighter padding. */
   .btn.ghost {
@@ -266,7 +272,7 @@
     background: var(--line-soft);
   }
   .btn.ghost:active {
-    background: var(--surface-2);
+    background: var(--surface-hover);
   }
   /* Subtle: a lavender wash for a secondary brand action. The wash carries the
      lavender idea without shouting. Its text is the deep lavender that clears 4.5:1
@@ -303,7 +309,7 @@
     color: var(--text);
   }
   .btn.icon:hover {
-    background: var(--surface-2);
+    background: var(--surface-hover);
     box-shadow: var(--shadow-micro);
   }
   /* Disabled is never colour alone: fill, opacity, cursor and aria-disabled together. */
@@ -381,7 +387,7 @@
   }
   .item:hover {
     /* The same lift as the wall tiles, minus the rise: rows are read in a column. */
-    background: var(--surface-2);
+    background: var(--surface-hover);
     box-shadow: var(--shadow-card);
   }
   .item-body {
@@ -549,7 +555,7 @@
 	background: var(--line-soft, #eceef2);
 }
 .event-kind {
-	font-weight: 600;
+	font-weight: var(--w-strong);
 	color: var(--accent-text, #60079f);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -603,7 +609,7 @@
 .event-field b {
 	display: block;
 	font-size: 11px;
-	font-weight: 700;
+	font-weight: var(--w-strong);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: var(--ink-faint, #9497a9);
@@ -661,7 +667,7 @@
 	gap: var(--sp-4);
 }
 .vault-card {
-	border-radius: 18px;
+	border-radius: var(--r-lg);
 	padding: var(--sp-4);
 	background: var(--surface);
 	box-shadow: var(--hairline);
@@ -680,7 +686,7 @@
 	color: var(--ink-subtle, #686b82);
 }
 .vault-card-title {
-	font-weight: 600;
+	font-weight: var(--w-strong);
 	color: var(--ink, #101114);
 }
 .vault-unvault {

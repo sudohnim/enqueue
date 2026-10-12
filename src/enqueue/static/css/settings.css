@@ -15,7 +15,7 @@
   .settings-title .display {
     font-size: 44px;
     line-height: 1.02;
-    letter-spacing: -0.045em;
+    letter-spacing: -0.027em;
   }
   .settings-eye .eye-frame {
     width: 72px;
@@ -85,7 +85,7 @@
      same "you are here" as a raised tile. */
   .settings-tabs button.active {
     color: var(--text);
-    font-weight: 500;
+    font-weight: var(--w-medium);
     background: var(--surface-2);
     box-shadow: var(--hairline), var(--shadow-micro);
   }
@@ -115,7 +115,7 @@
     cursor: pointer;
     user-select: none;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text);
     padding: var(--sp-2) var(--sp-3);
   }
@@ -168,7 +168,7 @@
     /* Body SM at 500: labels have no rung of their own in the scale; they sit
        between Caption and Body and carry the strongest weight in a form. */
     font-size: 14px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 18px;
     color: var(--text);
     margin-bottom: var(--sp-2);
@@ -290,9 +290,9 @@
     text-align: left;
     font-family: var(--sans);
     font-size: 16px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     line-height: 16px;
-    letter-spacing: -0.48px;
+    letter-spacing: -0.29px;
     min-height: 40px;
     padding: 6px 24px;
     border-radius: var(--r-lg);
@@ -328,7 +328,7 @@
      overridden by an environment variable is worse than no field. */
   .pinned {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: var(--w-medium);
     color: var(--text-mute);
     margin-top: var(--sp-2);
   }
@@ -340,7 +340,7 @@
   }
   .facts b {
     color: var(--text);
-    font-weight: 600;
+    font-weight: var(--w-strong);
     margin-right: var(--sp-2);
   }
 
@@ -365,7 +365,7 @@
   #settingsActions .dirty {
     margin-right: auto;
     color: var(--accent-text);
-    font-weight: 500;
+    font-weight: var(--w-medium);
   }
 
 
@@ -378,8 +378,8 @@
   .settings-layout .shelf {
     font-family: var(--display);
     font-size: 18px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    font-weight: var(--w-strong);
+    letter-spacing: -0.012em;
     color: var(--text);
     margin-top: var(--sp-6);
   }

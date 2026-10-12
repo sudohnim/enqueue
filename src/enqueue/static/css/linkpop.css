@@ -74,12 +74,12 @@
   cursor: pointer;
 }
 .linkpop-text:hover {
-  background: var(--surface-2);
+  background: var(--surface-hover);
   color: var(--text);
 }
 .linkpop-text[data-act="apply"] {
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 .linkpop-text:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
@@ -116,7 +116,7 @@
     color var(--dur-fast, 140ms) ease;
 }
 .linkpop-btn:hover {
-  background: var(--surface-2);
+  background: var(--surface-hover);
   color: var(--text);
 }
 .linkpop-btn:focus-visible {

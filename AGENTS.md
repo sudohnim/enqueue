@@ -324,10 +324,10 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone). |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone). |
 | `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
-| `static/fonts/` | IBM Plex Sans woff2/ttf, served locally. No CDN. |
+| `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
 
 ---
 
@@ -1207,6 +1207,13 @@ A page can be fetched perfectly and still have no article in it (an Instagram po
 Since `fetch` re-queues the artifact and ingest fetches whatever needs it, one such link fetched its page, re-ingested and re-pushed itself to the relay every second or two for as long as the engine ran (353 times in ten minutes), which also startled the phone's eye at every pull.
 `link_previews.body_tried` records a fetch that found no body, so the heal is tried once; "Try again" still forces a fetch.
 Anything that re-queues an artifact from inside ingest needs a condition that ingest itself makes false.
+
+### The pill keeps its own ground
+
+The page was lightened in October 2026 (soft lavender ground, white tiles, light type; docs/DESIGN.md) and the capture pill deliberately was not: its deeper lavender glass and bold eye are what hold it over white tiles.
+`.pill` (in `css/pill.css` and again in `mobile.html`) redefines `--bg`, `--surface`, `--surface-3`, `--line` and the inks for everything inside it, reading `--pill-ground` / `--pill-tile` / `--pill-well`, which `js/ground.js` sets from `PILL_KEYS` (the earlier day ladder) beside the page's own `KEYS`.
+A token change on `:root` therefore does not reach the pill; change the pill on `.pill`, and only on purpose.
+`bin/check-contrast` reads the night ground from `KEYS` only, and `capture.html` still carries its own copy of the tokens, which the same script checks against `tokens.css`.
 
 ### The Details panel is one component for both apps
 
