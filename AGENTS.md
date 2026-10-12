@@ -72,7 +72,7 @@ marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
 6. **API version string and package version are two different things.**
-`pyproject.toml version = "0.2.0"` is the package release version (with `desktop/Cargo.toml` and `desktop/tauri.conf.json`, bumped together for a release).
+`pyproject.toml version = "0.3.0"` is the package release version (with `desktop/Cargo.toml` and `desktop/tauri.conf.json`, bumped together for a release).
 `api.py FastAPI(version="0.2.0")` is just the string the OpenAPI docs page shows.
 They are allowed to differ.
 If you bump one for a release, bump the other to match, but a mismatch is not a bug.
