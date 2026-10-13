@@ -363,9 +363,24 @@ def start_scheduler() -> None:
 # ---- restoring -------------------------------------------------------------------
 
 
+def _live_port() -> int:
+    """The port a running engine is on: the one it recorded, else the default.
+
+    A restore must refuse while the engine runs, so it checks the recorded port, not
+    only 8787, or it could overwrite a live library.
+    """
+    try:
+        recorded = (config.DATA_DIR / "port").read_text().strip()
+        if recorded.isdigit():
+            return int(recorded)
+    except OSError:
+        pass
+    return config.API_PORT
+
+
 def _engine_running() -> bool:
     try:
-        with socket.create_connection((config.API_HOST, config.API_PORT), timeout=0.5):
+        with socket.create_connection((config.API_HOST, _live_port()), timeout=0.5):
             return True
     except OSError:
         return False
@@ -379,7 +394,9 @@ def restore(source: str | os.PathLike) -> dict:
     The search index is rebuilt by the engine on its next start.
     """
     if _engine_running():
-        raise BackupError("stop Enqueue first (the engine is running on 127.0.0.1:8787)")
+        raise BackupError(
+            f"stop Enqueue first (the engine is running on {config.API_HOST}:{_live_port()})"
+        )
     src = Path(source).expanduser()
     if src.is_dir():
         folder = src / FOLDER if (src / FOLDER).is_dir() else src
