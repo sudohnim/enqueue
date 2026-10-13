@@ -77,6 +77,75 @@ def _record_facet_retry(conn, artifact_id: str, error: str) -> None:
     )
 
 
+# What a facet_retry row says while nothing has failed: the note is still being
+# written, and the model steps are due once it has been left alone.
+WAITING = "waiting for the note to be left alone"
+
+
+def _summary_off(artifact_id: str) -> bool:
+    from .. import db
+    from . import facets as facets_mod
+
+    conn = db.get_conn()
+    try:
+        return facets_mod.summary_off(conn, artifact_id)
+    finally:
+        conn.close()
+
+
+def _wait_for_quiet(artifact_id: str) -> bool:
+    """Whether this run should leave the model steps for later, because the note was
+    edited less than config.SUMMARY_QUIET_S ago. If so the artifact is owed a run at
+    the moment it will have been quiet that long.
+
+    The editor saves whenever the typing pauses and every save comes through here, so
+    without this each pause re-summarized the note: one note being written spent 56
+    model calls in ten minutes. Chunking and indexing are not model steps and are not
+    held back, so the words are searchable at once. The owed run is a facet_retry row
+    like any other (the sweeper submits it when due); an edit in the meantime comes
+    back through here and moves it. A summary someone asked for ("Regenerate") is
+    never made to wait.
+    """
+    from .. import config, db
+    from . import facets as facets_mod
+
+    quiet = config.SUMMARY_QUIET_S
+    if quiet <= 0 or artifact_id in facets_mod._forced:
+        return False
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT kind, (SELECT MAX(created_at) FROM artifact_versions v"
+            "  WHERE v.artifact_id = artifacts.id) AS edited FROM artifacts WHERE id = ?",
+            (artifact_id,),
+        ).fetchone()
+        if row is None or row["kind"] != "note" or not row["edited"]:
+            return False
+        try:
+            edited = datetime.fromisoformat(row["edited"].replace(" ", "T"))
+        except ValueError:
+            return False
+        if edited.tzinfo is None:
+            edited = edited.replace(tzinfo=timezone.utc)
+        due = edited + timedelta(seconds=quiet)
+        if datetime.now(timezone.utc) >= due:
+            return False
+        _owed_in_run.add(artifact_id)
+        had = conn.execute(
+            "SELECT attempts FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO facet_retry (artifact_id, attempts, next_at, last_error)"
+            " VALUES (?,?,?,?) ON CONFLICT(artifact_id) DO UPDATE SET"
+            " next_at=excluded.next_at, last_error=excluded.last_error",
+            (artifact_id, had["attempts"] if had else 0, due.isoformat(), WAITING),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
 def _clear_facet_retry(conn, artifact_id: str) -> None:
     conn.execute("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,))
 
@@ -348,9 +417,13 @@ def _process(artifact_id: str) -> dict:
     # Section summaries (ingest/source.py) for a document too long to read in one
     # pass: made first, so every later step reads them, and owed on a rate limit
     # rather than silently replaced by the document's opening.
-    if chunks:
+    # None of the model steps below run on a note that is still being written
+    # (_wait_for_quiet): they are owed for when it has been left alone.
+    # Nor on an artifact whose AI summary the person switched off (facets.set_summary).
+    ready = bool(chunks) and not _summary_off(artifact_id) and not _wait_for_quiet(artifact_id)
+    if ready:
         _sections_artifact(artifact_id)
-    facets_made = _facet_artifact(artifact_id) if chunks else 0
+    facets_made = _facet_artifact(artifact_id) if ready else 0
 
     # Entities are the named things in the body, each enriched with a one-line
     # world-knowledge fact. They close the same gap from the other side: a
@@ -358,7 +431,7 @@ def _process(artifact_id: str) -> dict:
     # biography that never says it. Same discipline as facets - best effort,
     # one bad entity never fails the artifact, and the artifact stays findable
     # by its own words regardless.
-    entities_made = _entities_artifact(artifact_id) if chunks else 0
+    entities_made = _entities_artifact(artifact_id) if ready else 0
 
     # Related artifacts (ingest/related.py): links to notes about the same thing or
     # naming the same things. Local and cheap, so it runs whenever facets or entities
@@ -375,7 +448,7 @@ def _process(artifact_id: str) -> dict:
     # Chunk context (ingest/context.py): for a multi-chunk document, the ingest model
     # places each chunk in it, and the artifact is re-indexed with those lines. It
     # runs after the first index so the capture is searchable without waiting on it.
-    contexts_made = _context_artifact(artifact_id) if chunks > 1 else 0
+    contexts_made = _context_artifact(artifact_id) if ready and chunks > 1 else 0
     if contexts_made:
         indexed = store.index_artifact(artifact_id)
 

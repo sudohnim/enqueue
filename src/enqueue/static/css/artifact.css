@@ -426,6 +426,113 @@
       border-radius: var(--r-xl);
     }
   }
+  /* A note's sheet is as tall as the window allows and no taller: the bar of
+     formatting stays at its top, the count of drafts at its foot, and the note
+     scrolls between them. It used to grow with the note, so a long one pushed its
+     own end (and the caret) further down the page with every line. --sheet-top is
+     where the sheet starts on the page (js/artifact.js mountEdbar). The sheet ends
+     10px above the pill (24px off the bottom, 54px tall, so 88px in all), and a
+     page holding one trims its bottom padding to the same 88px, so a note alone on
+     its page leaves the window nothing to scroll. */
+  .docpane.notesheet {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    max-height: max(420px, calc(100vh - var(--sheet-top, 200px) - 88px));
+  }
+  main#view:has(.notesheet) {
+    padding-bottom: 88px;
+  }
+  .notesheet > .editor {
+    flex: 1 1 auto;
+    min-height: 240px;
+    overflow-y: auto;
+    padding: var(--sp-6) 52px var(--sp-5);
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--accent) 22%, transparent) transparent;
+  }
+  .notesheet > .editor::-webkit-scrollbar {
+    width: 10px;
+  }
+  .notesheet > .editor::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: var(--r-full);
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    background-clip: content-box;
+  }
+  .notesheet > .editor::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+    background-clip: content-box;
+  }
+  .docpane.notesheet > .bar {
+    flex: none;
+    margin: 0;
+    padding: var(--sp-3) 52px var(--sp-4);
+  }
+  /* The formatting bar: quiet line icons in a row, set off from the page by a
+     hairline. What the caret is in wears the accent tint, like the chosen tab. */
+  .edbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: var(--sp-2) 44px;
+    box-shadow: inset 0 -1px 0 var(--line-soft);
+  }
+  .edbtn {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text-mute);
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease);
+  }
+  .edbtn svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 1.7;
+  }
+  .edbtn:hover:not([aria-disabled="true"]) {
+    background: var(--line-soft);
+    color: var(--text);
+  }
+  .edbtn[aria-pressed="true"] {
+    background: var(--lavender-subtle);
+    color: var(--accent-text);
+  }
+  .edbtn[aria-disabled="true"] {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .edbtn:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+    outline-offset: 1px;
+  }
+  .edsep {
+    width: 1px;
+    height: 18px;
+    margin: 0 var(--sp-2);
+    background: var(--line);
+  }
+  @media (max-width: 760px) {
+    .notesheet > .editor {
+      padding: var(--sp-5);
+    }
+    .edbar {
+      padding: var(--sp-2) var(--sp-4);
+    }
+    .docpane.notesheet > .bar {
+      padding: var(--sp-3) var(--sp-5) var(--sp-4);
+    }
+  }
   /* A line fills across the sheet's top edge, left to right, when a save lands: the
      page acknowledging the words rather than a notification about them. */
   .docpane.landed::before {

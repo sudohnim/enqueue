@@ -410,12 +410,12 @@ Migrations run automatically at startup via Alembic.
 | Table | Purpose | Notes |
 | --- | --- | --- |
 | `artifacts` | the primary model | `kind` is note/link/pdf/image/file. `content_hash` UNIQUE for dedupe. Captures have `body IS NULL` (CHECK constraint). Notes have editable body. |
-| `artifact_versions` | every saved state of a note's body | append-only, before each update |
+| `artifact_versions` | the drafts kept of a note's body | one per 5 minutes of writing, plus each stretch's start and the latest; the newest is rewritten in place until then |
 | `annotations` | commentary on a captured artifact | append-only, superseding by id |
 | `chunks` | literal layer for search | text, ordinal, chunker name; `context` + `context_model` (model-written placement line, multi-chunk artifacts only) |
 | `facets` | conceptual layer for search | level 0-4, statement, model_version, trust (default 0.5), `edited` (1 = hand-written/edited, protected from regeneration; migration 0031) |
-| `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only |
-| `facet_retry` | an artifact owed a retry after a transient model failure in any ingest step (sections, facets, entities, contexts) | attempts, next_at, last_error; retried with backoff (30s doubling to 24h) by the sweeper, which re-runs the whole artifact; cleared only by a run in which no step owed |
+| `facet_skips` | artifacts excluded from facet generation | reason: too_short/kind/text_only/gate, or `off` (the person's switch; only `facets.set_summary` clears it) |
+| `facet_retry` | an artifact owed a run of the model steps: after a transient failure in any of them (sections, facets, entities, contexts), or while a note is still being written (`last_error` = `queue.WAITING`) | attempts, next_at, last_error; retried with backoff (30s doubling to 24h) by the sweeper, which re-runs the whole artifact; cleared only by a run in which no step owed |
 | `events` | the activity log (migration 0032) | ts, kind, detail, JSON `data`, duration_ms. Local-only, never synced. Bounded/trimmed. |
 | `secret_hits` | credential patterns found in artifact text | redacted excerpts only |
 | `page_text` | extracted text per PDF page | derived, rebuildable |
@@ -440,7 +440,7 @@ Unlike the old Qdrant directory there is no second unencrypted store to leak: th
 index lives inside `enqueue.db`, the same file as the library. Text is fetched by id
 after retrieval.
 2. **A capture's body is NULL.** Enforced by a CHECK constraint: `kind = 'note' OR body IS NULL`. Captures are frozen because fidelity to the source is why they were saved.
-3. **No user-authored text is ever destroyed.** Editing a note appends to `artifact_versions` before updating `artifacts.body`. Annotations are append-only. Purge is the only destructive operation, and only on trashed artifacts.
+3. **What a person wrote can be gone back to.** Editing a note keeps a draft in `artifact_versions` before updating `artifacts.body`: the state at the start of every stretch of writing, one for each `config.DRAFT_EVERY_S` (5 minutes) of it, and the latest (see "A note being written keeps a slower clock"). It is not one row per save; the saves in between were seconds apart and are rewritten in place. Annotations are append-only. Purge is the only destructive operation, and only on trashed artifacts.
 4. **Every vector is stamped with its embedding model version.** A model change means re-embedding, and stamping makes that incremental.
 5. **Derived rows carry the model or tool version that produced them.** Anything derived can be regenerated.
 6. **Schema changes are Alembic revisions.** Never a `CREATE TABLE` in application code, never a hand edit. A pre-migration database is stamped at baseline and upgraded, never rebuilt.
@@ -499,6 +499,8 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
 | `ENQ_SEARCH_MODEL_RANK` | `off` | The `search_model_rank` setting: the search model re-orders the top 20 results of `/search` (`retrieve/model_rank.py`). |
 | `ENQ_SEARCH_JUDGE_WAIT` | `2.5` | Seconds `/search` waits for the gray-zone judge before answering without it. |
+| `ENQ_DRAFT_EVERY` | `300` | Seconds between the drafts kept of a note while it is being written. 0 keeps one per save. |
+| `ENQ_SUMMARY_QUIET` | `300` | Seconds a note must be left alone before the model reads it again. 0 summarizes at every save. |
 | `ENQ_CHAT_PREP_WAIT` | `8` | Seconds an answer waits for the search model to restate a follow-up or lift a question before retrieving without it. |
 | `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
 
@@ -686,6 +688,7 @@ GET    /pivots/{id}/open              the frozen view, cards hydrated fresh
 POST   /chunk                        rebuild all chunks
 POST   /facet-gate                   re-evaluate facet eligibility
 POST   /facets                       generate facets
+PUT    /artifacts/{id}/summary      switch the AI summary for one artifact ({on})
 POST   /artifacts/{id}/facets/regenerate  regenerate an artifact's summary (keeps edited lines)
 POST   /artifacts/{id}/facets        add a hand-written summary line
 PATCH  /facets/{fid}                 edit one summary line (marks edited, reindexes)
@@ -1189,6 +1192,46 @@ Ingest skips a trashed, vaulted or embedded artifact instead of chunking it back
 `enq doctor` compares the chunk index with `indexable_chunk_count` (chunks of live artifacts), not every chunk.
 A full rebuild and the prune run on the ingest worker's thread between two artifacts (`Worker.run_exclusive`, ahead of anything queued): run beside ingest they fought it for SQLite's single writer, failed with "database is locked", and left the index half-built with search blocked.
 
+### A note being written keeps a slower clock
+
+The editor saves 1.5 seconds after the typing pauses, on blur and on Cmd+S, and every save used to do two expensive things at once.
+
+**Drafts (`notes._append_version`, `config.DRAFT_EVERY_S`, 300s).**
+A draft per save made 149 near-identical drafts of one note, and the whole list rides every sync snapshot.
+Now the newest draft follows the writing (rewritten in place, `created_at` moved) until `DRAFT_EVERY_S` has passed since the draft before it; then it stands and a new one starts.
+So an accidental deletion is never more than five minutes from a draft that still has the text, and a note written in one sitting keeps its start, one draft per five minutes, and its end.
+`MAX(created_at)` of a note's drafts is still its body version (what facets, entities and sections are stamped with), and it still moves on every save.
+The phone follows the same clock (`append_version` / `DRAFT_EVERY_S` in `desktop/src/sync.rs`, called by `update_note_body`), and like the desktop it keeps the NEW body as the draft; it used to keep the body before the edit, one per save.
+A note first written on the phone has no draft until its first edit, so that edit also keeps the text as it was (stamped with the note's `created_at`).
+Keep the two rules in step: drafts replace each other wholesale when a snapshot is applied, so whichever device wrote last decides the list.
+
+**The model (`queue._wait_for_quiet`, `config.SUMMARY_QUIET_S`, 300s).**
+Every save comes through ingest, and each pause re-summarized the note: 56 model calls in ten minutes of writing one note, which is what ran the weekly limit dry.
+Chunking and indexing still happen at every save, so the words are searchable at once.
+The model steps (sections, facets, entities, contexts) are skipped while the note's newest draft is younger than `SUMMARY_QUIET_S`, and the artifact is owed a run at the moment it will have been quiet that long: a `facet_retry` row whose `last_error` is `queue.WAITING`, which the sweeper submits when due.
+An edit in the meantime comes back through ingest and moves the row.
+Only notes wait; a capture has no body being typed. "Regenerate" (`facets.force`) never waits.
+`GET /artifacts/{id}` reports `summary_waiting`, the Details panel says so, and `enq doctor` counts these under `summaries.waiting`, apart from `retrying`.
+Tests run with both clocks at 0 (`conftest._every_save_counts`); `tests/test_writing_pace.py` turns them on.
+
+### The AI summary can be switched off for one artifact
+
+The Summary section of the Details panel carries a switch (`setSummary` in `js/artifact.js`, `PUT /artifacts/{id}/summary`, `facets.set_summary`), for a scratch pad or a log that needs no reading.
+Off is a `facet_skips` row with reason `off`, so everything that already honours a skip does (the facet and entity steps, the backfill, "Rebuild concepts", the doctor's counts), and `queue._process` also holds back sections and chunk contexts: no model call is made for the artifact at all.
+Switching off removes what the model wrote (machine summary lines, entities, section summaries), because it would go stale at the next edit and then sit in the panel without counting in search.
+Lines the person wrote (`edited`) stay and are never stale, so "off, plus one line of my own" is how to keep a log findable by what it is.
+It is the person's decision: `apply_eligibility_gate` keeps `off` rows, `regenerate` refuses, and only the switch turns it back on (which sends the artifact through ingest).
+An artifact held out for a credential (`text_only`) shows no switch.
+The switch is desktop-only and does not sync; the phone never generates summaries.
+`tests/test_summary_switch.py` pins it.
+
+### Adding a tag offers the tags already in use
+
+The "Add tag" field in the Details panel drops a list under it (`mountTagSuggest` in `js/artifact.js`, `.tagsuggest` in `css/details.css`): every tag from `GET /tags`, most used first, without the ones the artifact already carries, at most 8.
+Typing narrows it to names starting with what was typed, then names containing it.
+Arrow keys light a row; Enter adds the lit row, or what was typed when none is lit, so a new tag is still a word and Enter.
+After an add the field keeps the focus for the next tag.
+
 ### A retry run settles its row, and unchanged chunks are kept
 
 `queue.process` ends every run with the artifact's `facet_retry` row either deleted (no step owed, no newer copy queued) or due in the future (`_settle_retry`, in a `finally`, so a run that raised is covered too).
@@ -1232,6 +1275,19 @@ Arriving on the wall starts the trail over; going back never adds to it (`navRet
 It lives in `sessionStorage` (`enqueue.navTrail`), so a reclaimed webview still knows the way back.
 Browser history is still not used (`replaceState`): the app has no `popstate` handling.
 A vaulted artifact's back still goes to the vault, which keeps it unlocked.
+
+### A note scrolls inside its sheet, under a formatting bar
+
+A note's sheet (`.docpane.notesheet`, desktop) is as tall as the window allows and no taller: `max-height` is the viewport minus where the sheet starts (`--sheet-top`, set by `mountEdbar` and on resize) minus 88px (it ends 10px above the pill; a page holding a note trims its bottom padding to match), and the `.editor` inside it is the scroller.
+It used to grow with the note, pushing its own end down the page.
+Anything that scrolled the window to a place in a note must scroll the editor instead: find-in-note does (`showFindHit`), and `showArtifact` carries the editor's `scrollTop` across a re-render of the same note.
+Your notes on a capture (the second `.docpane`) are short and still grow.
+The bar (`edbarHtml`, `EDBAR` in `js/artifact.js`): bold, italic, heading (h2), subheading (h3), bulleted and numbered list, out and in a level, quotation, code block (`toggleCode`: the selected blocks become one bare `<pre>`, a line each, formatting dropped; pressed again, its lines come back out as plain lines).
+The first heading of a note is its title, so the bar offers h2 and h3, not h1.
+Every command builds the DOM the typing shorthand and `md()` already build (`toggleList`, `shiftItem`, `formatBlock`), so `htmlToMd` meets no new shape; list commands act on every block a selection touches and join a neighbouring list of the same kind.
+`keepingCaret` restores the selection after a move, twice (Chrome re-anchors it a tick later); Tab and Shift+Tab go through the same `shiftItem`.
+Buttons carry `aria-pressed` for what the caret is in and `aria-disabled` (never `disabled`, which swallows the press) for what cannot apply; the state is re-read at each press, and a press never takes the selection (`mousedown` is prevented).
+The phone's writing page has its own tool bar and is unchanged.
 
 ### Find inside an artifact is ours, not the webview's
 

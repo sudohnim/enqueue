@@ -11,6 +11,18 @@ const ICONS = {
 	// Search narrows, ask converses, organize rearranges.
 	grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
 	back: '<path d="M14.5 6.5L9 12l5.5 5.5"/>',
+	// The note editor's formatting bar (js/artifact.js edbarHtml), in the same line
+	// grammar as everything else: no filled glyphs, no letterforms borrowed from a font.
+	bold: '<path d="M7.5 5h5.6a3.4 3.4 0 0 1 0 6.8H7.5z"/><path d="M7.5 11.8h6.6a3.6 3.6 0 0 1 0 7.2H7.5z"/>',
+	italic: '<path d="M10.5 5h7"/><path d="M6.5 19h7"/><path d="M14 5l-4 14"/>',
+	heading: '<path d="M5 5.5v13"/><path d="M15 5.5v13"/><path d="M5 12h10"/><path d="M19 9v9.5"/>',
+	subheading: '<path d="M6 9v9.5"/><path d="M13.5 9v9.5"/><path d="M6 13.8h7.5"/><path d="M17.5 12.5v6"/>',
+	bullets: '<circle cx="5" cy="7" r="1.1"/><circle cx="5" cy="12" r="1.1"/><circle cx="5" cy="17" r="1.1"/><path d="M10 7h10"/><path d="M10 12h10"/><path d="M10 17h10"/>',
+	numbers: '<path d="M10.5 7h9.5"/><path d="M10.5 12h9.5"/><path d="M10.5 17h9.5"/><path d="M4.3 6l1.5-.9v4.4"/><path d="M4.1 14.6c.5-1 2.4-.9 2.4.4 0 1.1-2.4 1.7-2.4 3.2h2.6"/>',
+	indent: '<path d="M4 6h16"/><path d="M11 12h9"/><path d="M4 18h16"/><path d="M4 9.8l3 2.2-3 2.2"/>',
+	outdent: '<path d="M4 6h16"/><path d="M11 12h9"/><path d="M4 18h16"/><path d="M7.2 9.8l-3 2.2 3 2.2"/>',
+	quote: '<path d="M5 6v12"/><path d="M10 8h10"/><path d="M10 12h10"/><path d="M10 16h6"/>',
+	code: '<path d="M8.5 7.5L4 12l4.5 4.5"/><path d="M15.5 7.5L20 12l-4.5 4.5"/><path d="M13.4 5.5l-2.8 13"/>',
 	chev: '<path d="M6.5 14.5L12 9l5.5 5.5"/>',
 	down: '<path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/>',
 	home: '<path d="M4 10.5L12 4l8 6.5"/><path d="M6 9.6V20h12V9.6"/>',

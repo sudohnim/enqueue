@@ -203,6 +203,20 @@ FACET_INPUT_CHARS = 12000
 _SEARCH_RERANK = os.getenv("ENQ_SEARCH_RERANK", "").strip().lower()
 SEARCH_RERANK = _SEARCH_RERANK in ("1", "true", "yes", "on")
 
+# A note being written is saved every time the typing pauses. Two things used to
+# happen at every one of those saves and now happen on a slower clock.
+#
+# DRAFT_EVERY_S: how far apart the drafts kept of a note are while it is being
+# written. Every save still lands in the note; a draft is the state kept to go back
+# to, and one per pause made 149 near-identical drafts of a single note.
+#
+# SUMMARY_QUIET_S: how long a note must be left alone before the model reads it again
+# (summary lines, named things, passage context). Indexing for search still happens
+# at every save. Summarizing at every pause spent 56 model calls in ten minutes of
+# writing one note. 0 turns either off (every save, the old behaviour).
+DRAFT_EVERY_S = int(os.getenv("ENQ_DRAFT_EVERY", "300"))
+SUMMARY_QUIET_S = int(os.getenv("ENQ_SUMMARY_QUIET", "300"))
+
 # How long /search waits for the gray-zone judge before answering without it. The
 # judge keeps running and caches its verdicts, so the same search is exact next time.
 SEARCH_JUDGE_WAIT_S = float(os.getenv("ENQ_SEARCH_JUDGE_WAIT", "2.5"))

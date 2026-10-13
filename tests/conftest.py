@@ -33,6 +33,15 @@ def _test_host(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _every_save_counts(monkeypatch):
+    """Tests edit a note and look at once: every save keeps its own draft and is
+    summarized in the same pass, as before the slower clocks (config.DRAFT_EVERY_S,
+    config.SUMMARY_QUIET_S). tests/test_writing_pace.py turns them back on."""
+    monkeypatch.setattr(config, "DRAFT_EVERY_S", 0)
+    monkeypatch.setattr(config, "SUMMARY_QUIET_S", 0)
+
+
+@pytest.fixture(autouse=True)
 def _no_query_lift(monkeypatch):
     """Query lifting calls the search model; no test reaches a network by accident.
     tests/test_query_lift.py exercises the real function directly."""

@@ -323,11 +323,55 @@
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease);
 }
-.dpanel .tagadd {
+/* The field and the list of tags already in use, which drops under it. */
+.dpanel .tagpick {
+  position: relative;
+  display: flex;
   flex: 0 1 112px;
   min-width: 96px;
   max-width: 100%;
+}
+.dpanel .tagpick:focus-within {
+  flex-grow: 1;
+}
+.dpanel .tagadd {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   outline: none;
+}
+.dpanel .tagsuggest {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  max-width: 260px;
+  max-height: 232px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(43, 11, 74, 0.12);
+}
+.dpanel .tagsuggest li {
+  padding: 5px 10px;
+  border-radius: calc(var(--r) - 2px);
+  font-size: var(--d-chip-text);
+  line-height: 18px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.dpanel .tagsuggest li:hover,
+.dpanel .tagsuggest li[aria-selected="true"] {
+  background: var(--surface-3);
+  color: var(--accent-text);
 }
 .dpanel[data-touch] .tagadd {
   flex: 1 1 120px;
@@ -369,14 +413,35 @@
    (where the app can regenerate), a line you rewrite by clicking or tapping it, a
    remove, and an add at the foot. A list of points on the plate's own white: each
    leads with a small dot, and a line you rewrote wears the accent on its dot. */
+/* The head's controls sit together at its far end: regenerate, then the switch. */
+.dsec-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+/* The settings switch, a size down so it sits in a 28px section head. */
+.dpanel .summary-switch {
+  width: 36px;
+  height: 22px;
+}
+.dpanel .summary-switch .knob {
+  width: 16px;
+  height: 16px;
+}
+.dpanel .summary-switch[aria-checked="true"] .knob {
+  transform: translateX(14px);
+}
+.dpanel .summary-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .dpanel .facet-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  margin-left: auto;
-  margin-right: -6px;
   border: 0;
   border-radius: var(--r);
   background: transparent;

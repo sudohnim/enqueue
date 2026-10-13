@@ -25,6 +25,7 @@
     if (state.generating) return "Still reading. One moment.";
     if (state.skip === "too_short") return "Short one. Not much to read into.";
     if (state.skip === "text_only") return "I kept my eyes off this one.";
+    if (state.skip === "off") return "Not mine to read. You said so.";
     return "Haven't read this one yet.";
   }
 

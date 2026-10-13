@@ -56,6 +56,7 @@ def _summary_progress(conn) -> dict:
     summary model from their current body. `stale`: the rest - never summarized, or
     written by another model or an older body - which the startup backfill (and
     "Rebuild concepts") queue. `retrying`: owed a retry after a transient failure.
+    `waiting`: a note edited in the last few minutes, summarized once it is left alone.
     Search only uses a facet from the active model, so `stale` is how much of the
     conceptual layer is missing from search right now.
     """
@@ -72,12 +73,18 @@ def _summary_progress(conn) -> dict:
         )
     ]
     current = sum(1 for aid in ids if facets_mod.is_current(conn, aid))
-    retrying = conn.execute("SELECT COUNT(*) n FROM facet_retry").fetchone()["n"]
+    from ..ingest.queue import WAITING
+
+    owed = [r["last_error"] or "" for r in conn.execute("SELECT last_error FROM facet_retry")]
+    waiting = sum(1 for e in owed if e.startswith(WAITING))
+    retrying = len(owed) - waiting
     return {
         "model": get_provider(summarize=True).model,
         "current": current,
         "stale": len(ids) - current,
         "retrying": retrying,
+        # Notes still being written: summarized once left alone (config.SUMMARY_QUIET_S).
+        "waiting": waiting,
     }
 
 

@@ -598,6 +598,22 @@ class FacetAdd(BaseModel):
     level: int = 2
 
 
+class SummarySwitch(BaseModel):
+    on: bool
+
+
+@router.put("/artifacts/{artifact_id}/summary")
+def set_summary(artifact_id: str, req: SummarySwitch) -> dict:
+    """Switch the AI summary for one artifact. Off, no model reads it again."""
+    from ..ingest import facets as facets_mod
+
+    try:
+        facets_mod.set_summary(artifact_id, req.on)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such artifact") from None
+    return notes.get(artifact_id)
+
+
 @router.post("/artifacts/{artifact_id}/facets/regenerate")
 def regenerate_facets(artifact_id: str) -> dict:
     from ..ingest import facets as facets_mod

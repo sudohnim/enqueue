@@ -267,15 +267,80 @@ def sync_facets(artifact_id: str, bump: bool = False) -> None:
         pass
 
 
+# The person switched the AI summary off for this artifact (the Details panel). Unlike
+# the other skip reasons it is a decision, not a measurement: nothing recomputes it and
+# nothing but `set_summary` clears it.
+OFF = "off"
+
+
+def summary_off(conn, artifact_id: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM facet_skips WHERE artifact_id = ? AND reason = ?", (artifact_id, OFF)
+        ).fetchone()
+    )
+
+
+def set_summary(artifact_id: str, on: bool) -> None:
+    """Switch the AI summary for one artifact.
+
+    Off: no model reads it again (sections, summary lines, named things, chunk
+    contexts), and what the model had written is removed, since it would go stale at
+    the next edit anyway. Lines the person wrote stay and keep counting in search; so
+    do the artifact's own words. On: the artifact goes back through ingest.
+    """
+    from . import queue as ingest_queue
+
+    with db.transaction() as conn:
+        if conn.execute("SELECT 1 FROM artifacts WHERE id = ?", (artifact_id,)).fetchone() is None:
+            raise KeyError(artifact_id)
+        was_off = summary_off(conn, artifact_id)
+        if on:
+            conn.execute(
+                "DELETE FROM facet_skips WHERE artifact_id = ? AND reason = ?", (artifact_id, OFF)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO facet_skips (artifact_id, reason) VALUES (?, ?)"
+                " ON CONFLICT(artifact_id) DO UPDATE SET reason = excluded.reason",
+                (artifact_id, OFF),
+            )
+            conn.execute("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,))
+            conn.execute("DELETE FROM facets WHERE artifact_id = ? AND edited = 0", (artifact_id,))
+            conn.execute("DELETE FROM entities WHERE artifact_id = ?", (artifact_id,))
+            conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
+    if on:
+        if was_off:
+            ingest_queue.submit(artifact_id)
+        return
+    _forced.discard(artifact_id)
+    _reindex(artifact_id)
+    try:
+        from ..index.store import get_store
+
+        store = get_store()
+        store.index_entities_artifact(artifact_id)
+        store.index_sections_artifact(artifact_id)
+        # The removed rows' index entries are found only through the rows, which are
+        # gone: the prune drops them, on the ingest worker like every prune.
+        ingest_queue.run_exclusive(ingest_queue.prune_index, wait=False)
+    except Exception:  # noqa: BLE001 - the tables are the truth; the next prune catches up
+        pass
+    sync_facets(artifact_id, bump=False)
+
+
 def regenerate(artifact_id: str) -> dict:
     """Regenerate one artifact's machine facets on demand (the refresh button).
 
     Clears any skip/retry marker first so a manual press is never blocked by an earlier
     gate decision, keeps hand-edited facets, and reindexes. Returns {count, error}.
+    An artifact whose AI summary is switched off is left alone.
     """
     from .. import db
 
     with db.transaction() as conn:
+        if summary_off(conn, artifact_id):
+            return {"count": 0, "error": "the AI summary is off for this one"}
         conn.execute("DELETE FROM facet_skips WHERE artifact_id = ?", (artifact_id,))
         conn.execute("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,))
         count, error = generate_for_artifact(conn, artifact_id)
@@ -499,7 +564,12 @@ def apply_eligibility_gate() -> dict[str, int]:
     counts = {"too_short": 0, "kind": 0, "text_only": 0, "eligible": 0}
 
     with db.transaction() as conn:
-        conn.execute("DELETE FROM facet_skips")
+        # A summary the person switched off is their decision, not the gate's.
+        conn.execute("DELETE FROM facet_skips WHERE reason != ?", (OFF,))
+        off = {
+            r["artifact_id"]
+            for r in conn.execute("SELECT artifact_id FROM facet_skips WHERE reason = ?", (OFF,))
+        }
         rows = conn.execute(
             "SELECT a.id, a.kind, a.status, a.body,"
             " (SELECT COALESCE(SUM(LENGTH(p.text) - LENGTH(REPLACE(p.text, ' ', ''))"
@@ -508,6 +578,8 @@ def apply_eligibility_gate() -> dict[str, int]:
         ).fetchall()
 
         for row in rows:
+            if row["id"] in off:
+                continue
             reason = None
             words = _word_count(row["body"] or "") + row["page_words"]
 

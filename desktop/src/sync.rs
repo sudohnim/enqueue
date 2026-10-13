@@ -2367,7 +2367,56 @@ mod tests {
     }
 }
 
-/// Update a note's body, appending a version and respecting title_explicit (MOB2.4).
+/// Seconds between the drafts kept of a note while it is being written. The same
+/// clock as the desktop's config.DRAFT_EVERY_S.
+pub const DRAFT_EVERY_S: i64 = 300;
+
+fn seconds_between(earlier: &str, later: &str) -> Option<i64> {
+    let a = chrono::DateTime::parse_from_rfc3339(earlier).ok()?;
+    let b = chrono::DateTime::parse_from_rfc3339(later).ok()?;
+    Some((b - a).num_seconds())
+}
+
+/// Keep this state of a note's body as a draft. The page saves as the person types,
+/// and a draft per save buried the ones worth going back to, and every one of them
+/// rides each sync snapshot. So the newest draft follows the writing (rewritten in
+/// place) until DRAFT_EVERY_S has passed since the draft before it; then it stands and
+/// a new one starts. Kept: the start of every stretch of writing, one draft for each
+/// DRAFT_EVERY_S of it, and the latest. A timestamp that cannot be read keeps a draft.
+pub fn append_version(conn: &Connection, artifact_id: &str, body: &str, when: &str) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, created_at FROM artifact_versions WHERE artifact_id = ?
+             ORDER BY created_at DESC, id DESC LIMIT 2",
+        )
+        .map_err(|e| e.to_string())?;
+    let last_two: Vec<(String, String)> = stmt
+        .query_map([artifact_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    if let [newest, before] = last_two.as_slice() {
+        let still_writing = |later: &str| {
+            seconds_between(&before.1, later).is_some_and(|s| s < DRAFT_EVERY_S)
+        };
+        if still_writing(&newest.1) && still_writing(when) {
+            conn.execute(
+                "UPDATE artifact_versions SET body = ?, created_at = ? WHERE id = ?",
+                rusqlite::params![body, when, newest.0],
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
+    conn.execute(
+        "INSERT INTO artifact_versions (id, artifact_id, body, created_at) VALUES (?,?,?,?)",
+        rusqlite::params![uuid::Uuid::new_v4().to_string(), artifact_id, body, when],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Update a note's body, keeping a draft and respecting title_explicit (MOB2.4).
 /// Returns the updated artifact.
 #[allow(dead_code)]
 pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, new_title: Option<&str>) -> Result<Value, String> {
@@ -2410,13 +2459,26 @@ pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, ne
         (crate::sync::title_hint(new_body), 0)
     };
     
-    // Append version with old body
+    // Keep a draft, on the same clock as the desktop (notes._append_version). A note
+    // first written on this phone has no draft yet: its text before this edit is kept
+    // as the first one, so the start of the writing can always be gone back to.
     let old_body = artifact["body"].as_str().unwrap_or("");
-    if !old_body.is_empty() {
-        conn.execute(
-            "INSERT INTO artifact_versions (id, artifact_id, body, created_at) VALUES (?,?,?,?)",
-            rusqlite::params![uuid::Uuid::new_v4().to_string(), artifact_id, old_body, now],
-        ).map_err(|e| e.to_string())?;
+    if old_body != new_body {
+        let drafts: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM artifact_versions WHERE artifact_id = ?",
+                [artifact_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if drafts == 0 && !old_body.is_empty() {
+            let since = artifact["created_at"].as_str().unwrap_or(&now).to_string();
+            conn.execute(
+                "INSERT INTO artifact_versions (id, artifact_id, body, created_at) VALUES (?,?,?,?)",
+                rusqlite::params![uuid::Uuid::new_v4().to_string(), artifact_id, old_body, since],
+            ).map_err(|e| e.to_string())?;
+        }
+        append_version(conn, artifact_id, new_body, &now)?;
     }
     
     // Update artifact
@@ -2539,3 +2601,74 @@ pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
     Ok(out)
 }
 
+
+#[cfg(test)]
+mod draft_tests {
+    use super::*;
+
+    fn note(conn: &Connection, body: &str) {
+        let snap = serde_json::json!({
+            "artifact": {"id":"n1","kind":"note","title":"t","body":body,"source_url":null,
+                "content_hash":"h","mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00.000000+00:00",
+                "updated_at":"2026-01-01T00:00:00.000000+00:00","local_only":0,"status":"ok",
+                "pinned":0,"deleted_at":null,"pages":null,"title_explicit":0,"_device_id":"d1"},
+            "annotations": [], "page_text": [], "versions": []
+        });
+        apply_snapshot(conn, &snap).unwrap();
+    }
+
+    fn drafts(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT body FROM artifact_versions WHERE artifact_id = 'n1' ORDER BY created_at, id")
+            .unwrap();
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0)).unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    fn at(seconds: i64) -> String {
+        let base = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").unwrap();
+        (base + chrono::Duration::seconds(seconds))
+            .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
+            .to_string()
+    }
+
+    #[test]
+    fn a_stretch_of_writing_keeps_its_start_one_per_interval_and_its_latest() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        note(&conn, "a");
+        // A save every 10 seconds for 12 minutes.
+        for i in 0..=72 {
+            append_version(&conn, "n1", &format!("s{}", i * 10), &at(i * 10)).unwrap();
+        }
+        assert_eq!(drafts(&conn), vec!["s0", "s290", "s580", "s720"]);
+    }
+
+    #[test]
+    fn coming_back_later_starts_a_new_draft() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        note(&conn, "a");
+        append_version(&conn, "n1", "one", &at(0)).unwrap();
+        append_version(&conn, "n1", "two", &at(5)).unwrap();
+        append_version(&conn, "n1", "three", &at(4000)).unwrap();
+        append_version(&conn, "n1", "four", &at(4005)).unwrap();
+        assert_eq!(drafts(&conn), vec!["one", "two", "three", "four"]);
+    }
+
+    #[test]
+    fn editing_a_note_first_written_here_keeps_how_it_began() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        note(&conn, "as first written");
+        update_note_body(&conn, "n1", "second", None).unwrap();
+        update_note_body(&conn, "n1", "third", None).unwrap();
+        update_note_body(&conn, "n1", "fourth", None).unwrap();
+        // The original stands; the rest of one sitting is its start and its latest.
+        assert_eq!(drafts(&conn), vec!["as first written", "second", "fourth"]);
+        // Saving the same words again keeps nothing new.
+        update_note_body(&conn, "n1", "fourth", None).unwrap();
+        assert_eq!(drafts(&conn).len(), 3);
+    }
+}

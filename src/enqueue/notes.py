@@ -85,7 +85,51 @@ def create(body: str = "", title: str | None = None, local_only: bool = False) -
     return get(artifact_id)
 
 
+def _seconds_between(earlier: str, later: str) -> float:
+    """Seconds from one stored timestamp to another; a huge number when either is
+    unreadable, so an odd row is treated as old rather than merged into."""
+    from datetime import datetime, timezone
+
+    def parse(stamp: str) -> datetime:
+        at = datetime.fromisoformat(stamp.replace(" ", "T"))
+        return at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+
+    try:
+        return (parse(later) - parse(earlier)).total_seconds()
+    except (TypeError, ValueError, AttributeError):
+        return float("inf")
+
+
 def _append_version(conn, artifact_id: str, body: str, when: str) -> str:
+    """Keep this state of the body as a draft to go back to.
+
+    The editor saves whenever the typing pauses, and a draft per save buried the ones
+    worth going back to under hundreds a few words apart. So while a note is being
+    written, the newest draft follows the writing (it is rewritten in place) until
+    config.DRAFT_EVERY_S has passed since the draft before it; then it is left as it
+    stands and a new one starts. What is kept: the state at the start of every
+    stretch of writing, one state for each DRAFT_EVERY_S of it, and the latest. An
+    accidental deletion is therefore never more than DRAFT_EVERY_S from a draft that
+    still has the text.
+    """
+    every = config.DRAFT_EVERY_S
+    if every > 0:
+        last_two = conn.execute(
+            "SELECT id, created_at FROM artifact_versions WHERE artifact_id = ?"
+            " ORDER BY created_at DESC, id DESC LIMIT 2",
+            (artifact_id,),
+        ).fetchall()
+        if len(last_two) == 2:
+            newest, before = last_two
+            if (
+                _seconds_between(before["created_at"], newest["created_at"]) < every
+                and _seconds_between(before["created_at"], when) < every
+            ):
+                conn.execute(
+                    "UPDATE artifact_versions SET body = ?, created_at = ? WHERE id = ?",
+                    (body, when, newest["id"]),
+                )
+                return newest["id"]
     version_id = str(uuid.uuid4())
     conn.execute(
         "INSERT INTO artifact_versions (id, artifact_id, body, created_at) VALUES (?,?,?,?)",
@@ -291,7 +335,7 @@ def get(artifact_id: str) -> dict:
         # true when the artifact has enough text to earn a summary, has none, and is not
         # permanently skipped (facet_skips) - which also covers the whole startup backfill.
         owed = conn.execute(
-            "SELECT 1 FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
+            "SELECT last_error FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
         ).fetchone()
         page_words = conn.execute(
             "SELECT COALESCE(SUM(LENGTH(text) - LENGTH(REPLACE(text, ' ', '')) + 1), 0) AS n"
@@ -310,7 +354,13 @@ def get(artifact_id: str) -> dict:
             "annotations": [dict(e) | {"current": e["id"] not in superseded} for e in entries],
             "facets": [dict(f) for f in facets],
             "facet_skip_reason": skip["reason"] if skip else None,
+            # Switched off by the person in the Details panel (facets.set_summary).
+            "summary_off": bool(skip) and skip["reason"] == "off",
             "summary_generating": (not facets) and (skip is None) and (bool(owed) or eligible),
+            # The note is still being written: the model reads it once it has been
+            # left alone (ingest/queue.py _wait_for_quiet).
+            "summary_waiting": bool(owed)
+            and (owed["last_error"] or "").startswith(ingest_queue.WAITING),
             "secrets": [dict(h) for h in hits],
         }
     finally:

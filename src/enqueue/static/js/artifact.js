@@ -107,6 +107,296 @@
     return true;
   }
 
+  // ---- the formatting bar ------------------------------------------------------
+  // The note's sheet carries a bar of the things markdown shorthand already does, for
+  // the times you would rather point than remember "## ". Every command produces the
+  // same DOM the shorthand rules and md() produce, so the serializer never meets a
+  // shape it does not know. A command acts on the caret's block, or on every block a
+  // selection touches.
+  const EDBAR = [
+    ["bold", "Bold", "\u2318B"],
+    ["italic", "Italic", "\u2318I"],
+    null,
+    ["h2", "Heading", ""],
+    ["h3", "Subheading", ""],
+    null,
+    ["ul", "Bulleted list", ""],
+    ["ol", "Numbered list", ""],
+    ["outdent", "Move out a level", "\u21e7Tab"],
+    ["indent", "Move in a level", "Tab"],
+    null,
+    ["blockquote", "Quotation", ""],
+    ["pre", "Code block", "```"],
+  ];
+  const EDBAR_ICON = {
+    h2: "heading",
+    h3: "subheading",
+    ul: "bullets",
+    ol: "numbers",
+    blockquote: "quote",
+    pre: "code",
+  };
+
+  function edbarHtml() {
+    return (
+      '<div class="edbar" role="toolbar" aria-label="Formatting" aria-controls="body">' +
+      EDBAR.map((b) =>
+        b
+          ? '<button type="button" class="edbtn" data-cmd="' +
+            b[0] +
+            '" aria-pressed="false" aria-label="' +
+            b[1] +
+            '" title="' +
+            b[1] +
+            (b[2] ? " (" + b[2] + ")" : "") +
+            '">' +
+            svg(EDBAR_ICON[b[0]] || b[0]) +
+            "</button>"
+          : '<span class="edsep" aria-hidden="true"></span>',
+      ).join("") +
+      "</div>"
+    );
+  }
+
+  // The top-level block of the editor a node sits in, and the list item, if any.
+  function edBlock(ed, node) {
+    while (node && node.parentNode !== ed) node = node.parentNode;
+    return node && node.nodeType === 1 ? node : null;
+  }
+  function edItem(ed, node) {
+    const el = node && node.nodeType === 1 ? node : node && node.parentElement;
+    const li = el && el.closest ? el.closest("li") : null;
+    return li && ed.contains(li) ? li : null;
+  }
+
+  // Run `change` and put the selection back on the same text afterwards. The moves
+  // below reparent nodes without recreating them, so the saved nodes stay valid.
+  function keepingCaret(change) {
+    const sel = window.getSelection();
+    const r = sel.rangeCount ? sel.getRangeAt(0) : null;
+    const saved = r && [r.startContainer, r.startOffset, r.endContainer, r.endOffset];
+    const done = change();
+    const restore = () => {
+      if (!saved || !saved[0].isConnected || !saved[2].isConnected) return;
+      try {
+        const range = document.createRange();
+        const cap = (n, o) => Math.min(o, n.nodeType === 3 ? n.length : n.childNodes.length);
+        range.setStart(saved[0], cap(saved[0], saved[1]));
+        range.setEnd(saved[2], cap(saved[2], saved[3]));
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch {
+        /* the anchor went away with the change; the browser's own caret stands */
+      }
+    };
+    restore();
+    // Chrome re-anchors the selection on the list container a tick later.
+    setTimeout(restore, 0);
+    return done;
+  }
+
+  // Move a list item in or out a level (Tab, Shift+Tab, and the bar).
+  function shiftItem(li, out) {
+    return keepingCaret(() =>
+      out ? outdentItem(li) : li.parentElement.firstElementChild !== li && indentItem(li),
+    );
+  }
+
+  // Turn the blocks a selection touches into one list, or, inside a list, switch its
+  // kind or (same kind) take the item back out to a paragraph.
+  function toggleList(ed, tag) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const li = edItem(ed, range.startContainer);
+    if (li) {
+      const list = li.parentElement;
+      if (list.tagName.toLowerCase() === tag) return void liToParagraph(li);
+      keepingCaret(() => {
+        const swapped = document.createElement(tag);
+        while (list.firstChild) swapped.appendChild(list.firstChild);
+        list.replaceWith(swapped);
+      });
+      return;
+    }
+    const first = edBlock(ed, range.startContainer);
+    const last = edBlock(ed, range.endContainer) || first;
+    if (!first) return;
+    const blocks = [];
+    for (let b = first; b; b = b.nextElementSibling) {
+      blocks.push(b);
+      if (b === last) break;
+    }
+    if (blocks.some((b) => !/^(P|DIV|H1|H2|H3|BLOCKQUOTE)$/.test(b.tagName))) return;
+    keepingCaret(() => {
+      const list = document.createElement(tag);
+      first.before(list);
+      for (const b of blocks) {
+        const item = document.createElement("li");
+        while (b.firstChild) item.appendChild(b.firstChild);
+        if (!item.firstChild) item.appendChild(document.createElement("br"));
+        list.appendChild(item);
+        b.remove();
+      }
+      // One list, not two side by side: join a list of the same kind on either side.
+      const before = list.previousElementSibling;
+      if (before && before.tagName === list.tagName) {
+        while (list.firstChild) before.appendChild(list.firstChild);
+        list.remove();
+      }
+      const joined = before && before.tagName === list.tagName ? before : list;
+      const after = joined.nextElementSibling;
+      if (after && after.tagName === joined.tagName) {
+        while (after.firstChild) joined.appendChild(after.firstChild);
+        after.remove();
+      }
+    });
+  }
+
+  // Turn the blocks a selection touches into one code block, a line each, or take
+  // a code block back out to plain lines. The block is a bare <pre>, the shape the
+  // ``` shorthand makes (an empty <pre><code> loses its text node in Chrome), and
+  // code is literal, so any formatting inside the blocks is dropped with the tags.
+  function toggleCode(ed) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const first = edBlock(ed, range.startContainer);
+    const last = edBlock(ed, range.endContainer) || first;
+    if (!first) return;
+    const caretAtEndOf = (node) => {
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    };
+    if (first.tagName === "PRE") {
+      const lines = first.textContent.replace(/\u200b/g, "").replace(/\n$/, "").split("\n");
+      let at = first;
+      lines.forEach((line, i) => {
+        const p = document.createElement("p");
+        // Lines of one block stay together: md() marks blocks with no blank line
+        // between them, and the serializer writes them back the same way.
+        if (i) p.setAttribute("data-tight", "");
+        if (line) p.textContent = line;
+        else p.appendChild(document.createElement("br"));
+        at.after(p);
+        at = p;
+      });
+      first.remove();
+      caretAtEndOf(at);
+      return;
+    }
+    const blocks = [];
+    for (let b = first; b; b = b.nextElementSibling) {
+      blocks.push(b);
+      if (b === last) break;
+    }
+    if (blocks.some((b) => !/^(P|DIV|H1|H2|H3|BLOCKQUOTE)$/.test(b.tagName))) return;
+    const pre = document.createElement("pre");
+    const text = blocks.map((b) => b.textContent.replace(/\u200b/g, "")).join("\n");
+    if (text) pre.textContent = text;
+    first.before(pre);
+    for (const b of blocks) b.remove();
+    caretAtEndOf(pre);
+  }
+
+  function edCommand(ed, cmd) {
+    ed.focus();
+    const sel = window.getSelection();
+    if (!sel.rangeCount || !ed.contains(sel.anchorNode)) return;
+    const li = edItem(ed, sel.anchorNode);
+    if (cmd === "bold" || cmd === "italic") document.execCommand(cmd);
+    else if (cmd === "ul" || cmd === "ol") toggleList(ed, cmd);
+    else if (cmd === "pre") {
+      if (!li) toggleCode(ed);
+    }
+    else if (cmd === "indent" || cmd === "outdent") {
+      if (li) shiftItem(li, cmd === "outdent");
+    } else if (!li) {
+      // A heading or a quotation; asking for the one it already is takes it back to
+      // plain text. A list item is not a block these apply to.
+      const block = edBlock(ed, sel.anchorNode);
+      const same = block && block.tagName.toLowerCase() === cmd;
+      document.execCommand("formatBlock", false, same ? "p" : cmd);
+    }
+    ed.dispatchEvent(new Event("input", { bubbles: true }));
+    syncEdbar(ed);
+  }
+
+  // The bar shows what the caret is in, and greys out what cannot apply there.
+  function syncEdbar(ed) {
+    const bar = ed.parentElement && ed.parentElement.querySelector(".edbar");
+    if (!bar) return;
+    const sel = window.getSelection();
+    const inside = sel.rangeCount && ed.contains(sel.anchorNode);
+    const li = inside ? edItem(ed, sel.anchorNode) : null;
+    const block = inside ? edBlock(ed, sel.anchorNode) : null;
+    const tag = block ? block.tagName.toLowerCase() : "";
+    const on = {
+      bold: inside && document.queryCommandState("bold"),
+      italic: inside && document.queryCommandState("italic"),
+      h2: tag === "h2",
+      h3: tag === "h3",
+      blockquote: tag === "blockquote",
+      pre: tag === "pre",
+      ul: !!li && li.parentElement.tagName === "UL",
+      ol: !!li && li.parentElement.tagName === "OL",
+    };
+    const off = {
+      h2: !!li || tag === "pre",
+      h3: !!li || tag === "pre",
+      blockquote: !!li || tag === "pre",
+      pre: !!li,
+      bold: tag === "pre",
+      italic: tag === "pre",
+      ul: tag === "pre",
+      ol: tag === "pre",
+      indent: !li || li.parentElement.firstElementChild === li,
+      outdent: !li || li.parentElement.parentElement.tagName !== "LI",
+    };
+    for (const b of bar.querySelectorAll(".edbtn")) {
+      b.setAttribute("aria-pressed", String(!!on[b.dataset.cmd]));
+      // aria-disabled, not disabled: a disabled button swallows the press, and the
+      // state is re-read at the press anyway (mountEdbar), so it can never be stale.
+      b.setAttribute("aria-disabled", String(!!off[b.dataset.cmd]));
+    }
+  }
+
+  function mountEdbar(ed) {
+    const bar = ed.parentElement && ed.parentElement.querySelector(".edbar");
+    if (!bar) return;
+    // A press on the bar must not take the selection out of the note.
+    bar.addEventListener("mousedown", (e) => e.preventDefault());
+    bar.addEventListener("click", (e) => {
+      const b = e.target.closest(".edbtn");
+      if (!b) return;
+      syncEdbar(ed);
+      if (b.getAttribute("aria-disabled") !== "true") edCommand(ed, b.dataset.cmd);
+    });
+    const sync = () => {
+      if (ed.isConnected) syncEdbar(ed);
+      else document.removeEventListener("selectionchange", sync);
+    };
+    document.addEventListener("selectionchange", sync);
+    syncEdbar(ed);
+    // The sheet stops above the pill: it is as tall as the window allows from where
+    // it starts, and the note scrolls inside it (css/artifact.css .notesheet).
+    const pane = ed.closest(".notesheet");
+    const fit = () => {
+      if (!pane.isConnected) return window.removeEventListener("resize", fit);
+      pane.style.setProperty(
+        "--sheet-top",
+        Math.round(pane.getBoundingClientRect().top + window.scrollY) + "px",
+      );
+    };
+    if (pane) {
+      fit();
+      window.addEventListener("resize", fit);
+    }
+  }
+
   function applyInputRules(ed) {
     const sel = window.getSelection();
     if (!sel.rangeCount) return;
@@ -257,9 +547,11 @@
             "</button></span>",
         )
         .join("") +
-      '<input class="tagadd" type="text" placeholder="Add tag" autocomplete="off" ' +
-      'aria-label="Add a tag" spellcheck="false" />' +
-      "</div>"
+      '<span class="tagpick"><input class="tagadd" type="text" placeholder="Add tag" ' +
+      'autocomplete="off" aria-label="Add a tag" spellcheck="false" role="combobox" ' +
+      'aria-autocomplete="list" aria-expanded="false" aria-controls="tagsuggest" />' +
+      '<ul class="tagsuggest" id="tagsuggest" role="listbox" aria-label="Your tags" hidden></ul>' +
+      "</span></div>"
     );
   }
 
@@ -394,15 +686,105 @@
       });
     });
     const input = row.querySelector(".tagadd");
-    if (input) {
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") addTag(id, input.value);
-        else if (e.key === "Escape") {
+    if (input) mountTagSuggest(id, row, input);
+  }
+
+  // The tags already in use, offered under the field so a second "books" is picked,
+  // not retyped as "book". Most used first; the ones this artifact carries are left
+  // out. Typing narrows the list (names starting with it, then names holding it).
+  // Enter adds the lit row, or what was typed when none is lit: a new tag is still
+  // one word and Enter.
+  let tagCloud = null;
+  let tagCloudAt = 0;
+  async function loadTagCloud() {
+    if (tagCloud && Date.now() - tagCloudAt < 20000) return tagCloud;
+    try {
+      tagCloud = ((await api("/tags")).tags || []).map((t) => t.name);
+      tagCloudAt = Date.now();
+    } catch (err) {
+      tagCloud = tagCloud || [];
+    }
+    return tagCloud;
+  }
+  const TAG_SUGGEST_MAX = 8;
+
+  function mountTagSuggest(id, row, input) {
+    const list = row.querySelector(".tagsuggest");
+    let names = [];
+    let lit = -1;
+    const has = () =>
+      new Set([...row.querySelectorAll(".tagchip")].map((c) => c.dataset.tag));
+    const close = () => {
+      list.hidden = true;
+      list.innerHTML = "";
+      names = [];
+      lit = -1;
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    };
+    const paint = () => {
+      list.querySelectorAll("li").forEach((li, i) => {
+        li.setAttribute("aria-selected", String(i === lit));
+        if (i === lit) li.scrollIntoView({ block: "nearest" });
+      });
+      if (lit >= 0) input.setAttribute("aria-activedescendant", "tagopt" + lit);
+      else input.removeAttribute("aria-activedescendant");
+    };
+    const show = async () => {
+      const all = await loadTagCloud();
+      if (document.activeElement !== input) return;
+      const typed = input.value.replace(/\s+/g, "").toLowerCase().replace(/^#/, "");
+      const mine = has();
+      const free = all.filter((t) => !mine.has(t));
+      names = (
+        typed
+          ? free
+              .filter((t) => t.startsWith(typed))
+              .concat(free.filter((t) => !t.startsWith(typed) && t.includes(typed)))
+          : free
+      ).slice(0, TAG_SUGGEST_MAX);
+      lit = -1;
+      if (!names.length) return close();
+      list.innerHTML = names
+        .map(
+          (t, i) =>
+            '<li id="tagopt' + i + '" role="option" aria-selected="false" data-tag="' +
+            esc(t) + '">' + esc(t) + "</li>",
+        )
+        .join("");
+      list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+    };
+    input.addEventListener("focus", show);
+    input.addEventListener("input", show);
+    input.addEventListener("blur", close);
+    // A press on a row must not take the focus from the field (that would close the
+    // list before the click lands).
+    list.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const li = e.target.closest("li");
+      if (li) addTag(id, li.dataset.tag);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        if (!names.length) return;
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        // One step past either end is "nothing lit": Enter adds what was typed.
+        lit = ((lit + 1 + step + names.length + 1) % (names.length + 1)) - 1;
+        paint();
+      } else if (e.key === "Enter") {
+        addTag(id, lit >= 0 ? names[lit] : input.value);
+      } else if (e.key === "Escape") {
+        // Stays in the panel: first press closes the list, the next clears the field.
+        e.stopPropagation();
+        if (!list.hidden) close();
+        else {
           input.value = "";
           input.blur();
         }
-      });
-    }
+      }
+    });
   }
 
   // The drawer's view chips bind here, not in inline onclick: the pivot id
@@ -432,9 +814,15 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
+      tagCloudAt = 0;
       const keep = drawerOpen();
       await showArtifact(id);
-      if (keep) toggleDrawer(true);
+      if (keep) {
+        toggleDrawer(true);
+        // Tags come in runs: the field is ready for the next one.
+        const again = view.querySelector(".tagadd");
+        if (again) again.focus({ preventScroll: true });
+      }
     } catch (err) {
       toast(String((err && err.message) || err), true);
     }
@@ -497,6 +885,9 @@
 
   async function showArtifact(id, focus, scrollY) {
     const arriving = !ctx || ctx.id !== id;
+    // The note scrolls inside its sheet; a re-render of the same note keeps its place.
+    const was = document.getElementById("body");
+    const noteScroll = !arriving && was ? was.scrollTop : 0;
     teardown();
     if (arriving) faceTries = 0;
     const d = await api("/artifacts/" + id);
@@ -615,7 +1006,8 @@
       // Long-form sits on the warm reading white rather than the raised white, so a
       // whole page of it does not glare against the cream.
       body +=
-        '<div class="docpane">' +
+        '<div class="docpane notesheet">' +
+        edbarHtml() +
         '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
         'data-placeholder="Start writing. Markdown shorthand becomes formatting as you type."></div>' +
@@ -720,6 +1112,8 @@
     if (a.kind === "file") mountPlain(a.id);
     if (scrollY !== undefined) window.scrollTo(0, scrollY);
     else window.scrollTo(0, 0);
+    const now = document.getElementById("body");
+    if (now && noteScroll) now.scrollTop = noteScroll;
   }
 
   function drawerOpen() {
@@ -761,6 +1155,7 @@
       "Still searchable.",
     kind: "Nothing here to read yet. Still searchable.",
     gate: "The model read it but found nothing general worth keeping. Still searchable.",
+    off: "Off for this one: no model reads it. Lines you add here still count in search.",
   };
 
   function whyNoFacets(reason) {
@@ -776,15 +1171,35 @@
   // control adds one of your own. Every change reindexes on the server, so it lands
   // in search too. An edited line is marked so you can see which are yours.
   function summaryPanel(d, id) {
-    const refresh =
-      '<button class="facet-refresh" title="Regenerate the summary" ' +
-      'aria-label="Regenerate the summary" onclick="regenerateSummary(\'' +
-      id +
-      "')\">" +
-      svg("refresh") +
-      "</button>";
+    const off = !!d.summary_off;
+    // Off, nothing can be regenerated, so the button leaves with it.
+    const refresh = off
+      ? ""
+      : '<button class="facet-refresh" title="Regenerate the summary" ' +
+        'aria-label="Regenerate the summary" onclick="regenerateSummary(\'' +
+        id +
+        "')\">" +
+        svg("refresh") +
+        "</button>";
+    // The switch is the last thing in the head. A credential keeps the model out
+    // whatever it says, so there it is not offered.
+    const sw =
+      d.facet_skip_reason === "text_only"
+        ? ""
+        : '<button class="toggle summary-switch" role="switch" aria-checked="' +
+          String(!off) +
+          '" aria-label="AI summary" title="' +
+          (off ? "AI summary is off for this one" : "AI summary is on") +
+          '" onclick="setSummary(\'' +
+          id +
+          "'," +
+          String(off) +
+          ')"><span class="knob"></span></button>';
     let inner;
     if (d.facets && d.facets.length) inner = d.facets.map(facetRow).join("");
+    else if (d.summary_waiting)
+      inner =
+        '<p class="facet-empty">Written once you have left this note alone for five minutes.</p>';
     else if (d.summary_generating)
       inner = spinner("sm", "Generating in the background…");
     else if (d.facet_skip_reason)
@@ -796,8 +1211,10 @@
       esc(id) +
       '"><div class="dsec-head"><span class="dsec-label">Summary</span>' +
       (n ? '<span class="dsec-count">' + n + (n === 1 ? " line" : " lines") + "</span>" : "") +
+      '<span class="dsec-tools">' +
       refresh +
-      '</div><div class="facet-list">' +
+      sw +
+      '</span></div><div class="facet-list">' +
       inner +
       '</div><button class="facet-add" onclick="addFacet(\'' +
       id +
@@ -855,6 +1272,23 @@
     if (el) el.outerHTML = summaryPanel(d, id);
     const voice = document.querySelector("#drawer .dpanel-voice");
     if (voice && ctx && ctx.id === id) voice.textContent = ravenLine(d, id);
+  }
+
+  // Switch the AI summary for this artifact. Off removes what the model wrote (kept
+  // lines are the person's own) and no model reads it again; on sends it back to be read.
+  async function setSummary(id, on) {
+    try {
+      await api("/artifacts/" + id + "/summary", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on }),
+      });
+    } catch (err) {
+      toast(String((err && err.message) || err), true);
+    }
+    await refreshSummaryPanel(id);
+    const sw = document.querySelector('.summary[data-aid="' + id + '"] .summary-switch');
+    if (sw) sw.focus({ preventScroll: true });
   }
 
   async function regenerateSummary(id) {
@@ -1387,10 +1821,23 @@
     // A Range has no scrollIntoView of its own, so its rectangle is measured and the
     // window moved to it.
     const box = hit.range.getBoundingClientRect();
-    window.scrollTo({
-      top: window.scrollY + box.top - window.innerHeight / 2,
-      behavior: "smooth",
-    });
+    // A note scrolls inside its sheet, so the match is brought to the middle of the
+    // sheet first; the window follows only as far as the sheet itself needs.
+    const at = hit.range.startContainer;
+    const sheet = (at.nodeType === 1 ? at : at.parentElement).closest(".notesheet > .editor");
+    if (sheet && sheet.scrollHeight > sheet.clientHeight) {
+      const inner = sheet.getBoundingClientRect();
+      sheet.scrollTo({
+        top: sheet.scrollTop + box.top - inner.top - sheet.clientHeight / 2,
+        behavior: "smooth",
+      });
+      sheet.closest(".notesheet").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else {
+      window.scrollTo({
+        top: window.scrollY + box.top - window.innerHeight / 2,
+        behavior: "smooth",
+      });
+    }
     CSS.highlights.set("enqueue-find-current", new Highlight(hit.range));
   }
 
@@ -1585,6 +2032,7 @@
       saveSoon();
     });
     ed.addEventListener("blur", saveBody);
+    mountEdbar(ed);
     // Link clicks inside the note are owned by LinkPop (js/linkpop.js): it opens the
     // copy / open-in-browser bar instead of navigating. An editor-level open handler
     // used to live here and double-opened alongside pill.js's global bridge.
@@ -1724,39 +2172,9 @@
         if (li) {
           e.preventDefault();
           // Indenting the first item of a list has nothing to nest under (matching
-          // Word/Notion); outdent at the top level is likewise a no-op. The moves
-          // keep the caret's text node alive; Chrome still re-anchors the selection
-          // on the list container, so put the caret back where it was afterwards.
-          const sel = window.getSelection();
-          const saved =
-            sel.rangeCount && sel.getRangeAt(0)
-              ? {
-                  node: sel.getRangeAt(0).startContainer,
-                  offset: sel.getRangeAt(0).startOffset,
-                }
-              : null;
-          const moved = e.shiftKey
-            ? outdentItem(li)
-            : li.parentElement.firstElementChild !== li && indentItem(li);
-          if (moved) {
-            const restoreCaret = () => {
-              if (!saved || !saved.node || !saved.node.parentNode) return;
-              try {
-                const range = document.createRange();
-                range.setStart(
-                  saved.node,
-                  Math.min(saved.offset, saved.node.length || 0),
-                );
-                range.collapse(true);
-                sel.removeAllRanges();
-                sel.addRange(range);
-              } catch {
-                /* anchor node detached; nothing to restore */
-              }
-            };
-            restoreCaret();
-            setTimeout(restoreCaret, 0);
-          }
+          // Word/Notion); outdent at the top level is likewise a no-op.
+          shiftItem(li, e.shiftKey);
+          syncEdbar(ed);
         } else if (!e.shiftKey) {
           e.preventDefault();
           document.execCommand("insertText", false, "\t");
