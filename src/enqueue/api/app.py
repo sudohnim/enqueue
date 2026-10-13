@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .. import chats_worker, config, trash
-from . import admin, artifacts, backup, chats, pivots, search, settings, static, vault, write
+from . import admin, artifacts, backup, chats, pivots, search, settings, setup, static, vault, write
 from .guard import LocalOnlyGuard
 
 
@@ -29,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(pivots.router)
     app.include_router(vault.router)
     app.include_router(backup.router)
+    app.include_router(setup.router)
     # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
     app.add_middleware(LocalOnlyGuard)
     return app

@@ -1,0 +1,606 @@
+/* The guides in Settings: the ? mark beside a heading, what a guide looks like inside
+   its plate, the "left to set up" cards, and the eye's answers about settings.
+   Shared by the desktop and the phone, like details.css: both emit this markup, so the
+   two cannot drift. The plate itself is the Details panel (.dpanel, css/details.css);
+   only WHERE it sits belongs to each app (.drawer on the desktop). The words are
+   js/guides.js. */
+
+/* ---- the mark ------------------------------------------------------------------- */
+/* A heading that carries a mark lays it out on its own line, beside the words. */
+.shelf:has(> .gmark),
+.settings-card-label:has(> .gmark) {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.gmark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  /* The heading is a 16px line; the mark must not push the card below it down. */
+  margin: -3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+.gmark svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gmark:hover {
+  background: var(--purple-bold-wash);
+  color: var(--accent-text);
+}
+.gmark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Its guide is open: the mark is filled, with the same soft ring the lit setting has. */
+.gmark[aria-expanded="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 0 0 4px var(--purple-bold-wash);
+}
+[data-touch] .gmark,
+.gmark[data-touch] {
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px -10px -6px;
+}
+[data-touch] .gmark svg,
+.gmark[data-touch] svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* The setting a guide is about stays in view and is lit while its guide is open. */
+.guide-lit {
+  box-shadow:
+    inset 0 0 0 1.5px var(--accent),
+    0 0 0 5px var(--purple-bold-wash) !important;
+  transition: box-shadow 220ms var(--ease);
+}
+
+/* The settings column makes room for the open guide instead of running under it:
+   it keeps to the left and narrows to what the plate leaves. A narrow window has no
+   room to give, so there the plate simply covers the page, like any drawer. */
+@media (min-width: 900px) {
+  /* 416px: the plate (380) with its 12px gap to the window and 24px to the column. */
+  main#view:has(> .guide.open) {
+    max-width: none;
+    margin: 0;
+  }
+  #view:has(> .guide.open) > .pagecol.settings-page {
+    left: 0;
+    max-width: min(1000px, calc(100vw - 416px - var(--sp-5)));
+    /* Where it was (centred), or as far left as it must go to clear the plate. */
+    margin: 0 auto 0
+      max(0px, min(calc((100vw - 1000px) / 2 - var(--sp-5)), calc(100vw - 1416px - var(--sp-5))));
+  }
+}
+
+/* ---- inside the plate ----------------------------------------------------------- */
+.guide .dsec-label {
+  text-transform: none;
+}
+.guide .gtext {
+  margin: 0;
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+.guide .gtext + .gtext {
+  margin-top: var(--sp-2);
+}
+/* Where this installation stands on it. */
+.gstand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-lg);
+  font-size: 13px;
+  line-height: 19px;
+  background: var(--tint-warn);
+  color: #6b4208;
+}
+.gstand::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  translate: 0 -1px;
+}
+.gstand[data-level="done"] {
+  background: var(--tint-ok);
+  color: var(--badge-success-ink);
+}
+.gstand[data-level="done"]::before {
+  background: var(--success);
+}
+.gstand[data-level="note"] {
+  background: var(--surface-3);
+  color: var(--text-dim);
+}
+.gstand[data-level="note"]::before {
+  background: var(--text-mute);
+}
+.gsteps,
+.gknow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.gsteps {
+  counter-reset: gstep;
+}
+.gsteps li {
+  position: relative;
+  counter-increment: gstep;
+  padding-left: 34px;
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+.gsteps li + li {
+  margin-top: var(--sp-3);
+}
+.gsteps li::before {
+  content: counter(gstep);
+  position: absolute;
+  left: 0;
+  top: -1px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: var(--w-strong);
+  font-variant-numeric: tabular-nums;
+}
+.gknow li {
+  position: relative;
+  padding-left: 16px;
+  font-size: var(--d-text);
+  line-height: var(--d-line);
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+.gknow li + li {
+  margin-top: var(--sp-2);
+}
+.gknow li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: calc(var(--d-line) / 2 - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.galso {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gchip {
+  display: inline-flex;
+  align-items: center;
+  height: var(--d-chip-h, 28px);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font: inherit;
+  font-size: var(--d-chip-text, 13px);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.gchip:hover {
+  background: var(--purple-bold-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-text);
+}
+.gchip:focus-visible,
+.gask:focus-visible,
+.setup-go:focus-visible,
+.sask-row:focus-visible,
+.sask-go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The plate's foot: the same question, taken to the eye. */
+.gask {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 2 * var(--sp-4));
+  min-height: 44px;
+  margin: 0 var(--sp-4) var(--sp-4);
+  padding: 0 var(--sp-4) 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-dim);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.gask:hover {
+  background: var(--purple-bold-wash-strong);
+  color: var(--text);
+}
+.gask-eye {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.gask-eye svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.gask-eye svg circle {
+  fill: var(--purple-bold);
+  stroke: none;
+}
+
+/* The setup cards and the tab's pane share the column beside the tabs. */
+.settings-main {
+  min-width: 0;
+}
+
+/* ---- left to set up ------------------------------------------------------------- */
+.setup-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+.setup-strip:empty {
+  display: none;
+}
+@media (max-width: 980px) {
+  .setup-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.setup-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: 14px var(--sp-4);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--hairline);
+}
+.setup-dot {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.setup-card[data-state="warn"] .setup-dot {
+  box-shadow: inset 0 0 0 1.5px var(--warning);
+  background: var(--tint-warn);
+}
+.setup-card[data-state="done"] .setup-dot {
+  display: grid;
+  place-items: center;
+  box-shadow: none;
+  background: var(--success);
+  color: #ffffff;
+}
+.setup-dot svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.setup-words {
+  min-width: 0;
+}
+.setup-title {
+  display: block;
+  font-size: 14px;
+  font-weight: var(--w-medium);
+  line-height: 20px;
+  color: var(--text);
+}
+.setup-detail {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-mute);
+}
+.setup-go {
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: var(--w-medium);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.setup-go:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* Settings that need a look: something set that no longer does anything, or something
+   that changed under what was set. One quiet list, never a banner. */
+.setup-alerts {
+  list-style: none;
+  margin: 0 0 var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--hairline);
+}
+.setup-alerts:empty {
+  display: none;
+}
+.setup-alerts li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: 10px 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-dim);
+}
+.setup-alerts li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.setup-alerts li::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  translate: 0 -1px;
+}
+.setup-alerts li[data-level="warn"]::before {
+  background: var(--warning);
+}
+.setup-alerts li span {
+  flex: 1;
+  min-width: 0;
+  text-wrap: pretty;
+}
+.setup-alerts .setup-go {
+  flex: none;
+  margin: 0;
+}
+/* A tab with something left on it says so, at the far end of its row. */
+.settings-tabs .tab-todo {
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  font-size: 12px;
+  font-weight: var(--w-regular);
+  color: var(--warning);
+}
+
+/* ---- the eye, in settings ------------------------------------------------------- */
+.sask {
+  position: fixed;
+  left: 50%;
+  bottom: 100px;
+  z-index: var(--z-menu);
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  translate: -50% 0;
+  padding: var(--sp-2);
+  border-radius: var(--r-2xl);
+  background: var(--surface);
+  box-shadow: var(--hairline), var(--shadow-lifted);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  animation: sask-rise 220ms var(--ease) both;
+}
+@keyframes sask-rise {
+  from {
+    opacity: 0;
+    translate: -50% 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sask {
+    animation: none;
+  }
+}
+.sask-head {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3) 6px;
+  font-size: 12px;
+  font-weight: var(--w-regular);
+  color: var(--text-mute);
+}
+.sask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sask-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 10px var(--sp-3);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sask-row b {
+  font-size: 15px;
+  font-weight: var(--w-medium);
+  line-height: 21px;
+  color: var(--text);
+}
+.sask-row small {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-mute);
+}
+.sask-row:hover,
+.sask-row[aria-selected="true"] {
+  background: var(--purple-bold-wash);
+}
+.sask-row[aria-selected="true"] b {
+  color: var(--accent-text);
+}
+.sask-row.ask b {
+  font-weight: var(--w-regular);
+  color: var(--text-dim);
+}
+.sask-answer {
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.sask-q {
+  margin: 0 0 var(--sp-2);
+  font-size: 15px;
+  font-weight: var(--w-medium);
+  line-height: 21px;
+  color: var(--text);
+}
+.sask-a {
+  margin: 0;
+  font-size: 15px;
+  line-height: 23px;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+.sask-from {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--text-mute);
+}
+.sask-go {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: var(--w-medium);
+  cursor: pointer;
+}
+.sask-go:hover {
+  background: var(--purple-bold-hover);
+}
+.sask-wait {
+  padding: var(--sp-3);
+}
+
+/* ---- the eye in Settings, on the phone ------------------------------------------ */
+/* There the question is typed inside the guide plate, at its top, where the keyboard
+   cannot cover it; the rows and the answer are the same as the desktop's. */
+.sask-form {
+  margin: var(--sp-4) 0 var(--sp-2);
+}
+.sask-field {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 48px;
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  color: var(--text);
+  font: inherit;
+  /* 16px or the phone's browser zooms the page when the field takes focus. */
+  font-size: 16px;
+  outline: none;
+}
+.sask-field::placeholder {
+  color: var(--ink-faint);
+}
+.sask-field:focus {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.sask-field::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+[data-touch] .sask-head {
+  padding-left: 0;
+  font-size: 13px;
+}
+[data-touch] .sask-row {
+  padding: 12px var(--sp-3);
+  margin: 0 calc(-1 * var(--sp-3));
+  width: calc(100% + 2 * var(--sp-3));
+}
+[data-touch] .sask-row b {
+  font-size: 16px;
+  line-height: 22px;
+}
+[data-touch] .sask-row small {
+  font-size: 14px;
+  line-height: 20px;
+}
+[data-touch] .sask-answer {
+  padding: var(--sp-2) 0;
+}
+[data-touch] .sask-go {
+  height: 40px;
+}

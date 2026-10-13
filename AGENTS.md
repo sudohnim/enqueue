@@ -224,6 +224,7 @@ One line per file, describing its job.
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
 | `backup.py` | Backups into a cloud drive's folder (Proton Drive): daily + on clean shutdown + on demand, `VACUUM INTO` a temp file then atomic rename, search index emptied in the copy, blobs mirrored, 7 daily + 4 weekly kept; `restore()` sets the current library aside. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `setup.py` | Where this installation stands: the three steps left to set up, the settings that need a look, and the one model answer about settings (`GET /setup`, `POST /setup/ask`). See "Settings explain themselves" under Gotchas. |
 | `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
 | `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
 | `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
@@ -648,6 +649,7 @@ GET    /secrets                     credential scan hits
 GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
 GET    /events?limit=N              the activity log, newest first, each with its full record
+GET    /setup                       what is connected, what is left to set up, settings that need a look
 GET    /backup                      backup folder, detected Proton Drive folders, last backup, the kept backups
 GET    /fonts/{name}                font files (cached 1 year)
 ```
@@ -701,6 +703,7 @@ POST   /eval/real                    run the real-search eval (?update_baseline=
 PUT    /settings/api-key             store key in Keychain
 DELETE /settings/api-key             remove key from Keychain
 PATCH  /settings                     update writable settings
+POST   /setup/ask                    answer a question about settings from the page's matched guides
 POST   /backup                       back up now (background; GET /backup shows it land)
 ```
 
@@ -1250,6 +1253,45 @@ A page can be fetched perfectly and still have no article in it (an Instagram po
 Since `fetch` re-queues the artifact and ingest fetches whatever needs it, one such link fetched its page, re-ingested and re-pushed itself to the relay every second or two for as long as the engine ran (353 times in ten minutes), which also startled the phone's eye at every pull.
 `link_previews.body_tried` records a fetch that found no body, so the heal is tried once; "Try again" still forces a fetch.
 Anything that re-queues an artifact from inside ingest needs a condition that ingest itself makes false.
+
+### Settings explain themselves: the marks, the guides, the eye (2026-10-13)
+
+Three pieces, one source of words.
+
+**The guides (`static/js/guides.js`, shared by the desktop and the phone like `tour.js`).**
+Plain data: `what` it is, whether you `need` it, the `steps`, what is good to `know`, the guides it goes `also` with, and `words` (how people ask for it; matcher only, never shown).
+`on` says which app a guide belongs to (desktop unless it says `["phone"]`), because a guide's steps name what is on that app's screen; the phone has its own five (`tab: "phone"`).
+The same file draws the `?` (`Guides.mark`) and a guide's body (`Guides.html`), so neither app can drift from the other; `css/guide.css` styles both.
+There is no guide for the vault, and `tests/js/guides.js` fails if one names it: its door is unmarked.
+
+**The mark and the plate.**
+A `?` sits beside a section heading only where the one-line note under a setting cannot do the job.
+On the desktop nothing in `settings.js` knows about guides: `settings_guide.js` finds the headings after each tab renders (`SHELF_GUIDES`, heading text -> guide, per tab) and re-applies them whenever the pane changes (a `MutationObserver`, since the sync walk and the backup section re-render themselves).
+So a new section gets its mark by adding one line to `SHELF_GUIDES`, and a renamed heading silently loses its mark: keep the two in step.
+The guide opens in the Details plate (`.drawer.dpanel.guide`, appended to `#view`), the card it is about is lit (`.guide-lit`, found by `data-guide-for`), and the settings column narrows to clear the plate instead of running under it (`css/guide.css`, the `416px` rule).
+A guide on another tab switches to that tab first.
+`settings_guide.js` is loaded BEFORE `settings.js`, whose last line boots the app and may open Settings at once.
+On the phone the marks are on the `.mset-title` of each `[data-guide-for]` group in `mobile.html`, and the plate is a second `.details-panel` (`#guide_panel`); the Back gesture closes it (`window.__enqBack`).
+`const Guides` is not a property of `window`: test for it with `typeof Guides`, not `window.Guides` (that check made the phone's marks silently not appear).
+
+**Where the installation stands (`setup.py`, `GET /setup`).**
+Three steps (a model connected, a backup made, sync ready for a phone), each `done`/`todo`/`warn` with one line of detail and the guide that explains it; and `alerts`, settings that need a look because they stopped doing anything or something changed under them: a stored key or extra headers while answers come from this Mac, a model the service does not answer for, summaries waiting on a newly chosen model, images with no description, a relay only the home network reaches, a paused model service, the old password keyring.
+Settings shows the steps as cards above the pane until all three are done, the alerts as one quiet list, and "to do" on the tabs concerned; each "Show me" opens the guide.
+A guide's "Do you need it" section carries the line for this installation (`Guides.stand`).
+No model call and no network request; `facts` (what the eye may be told) carries no secret: a key is present or absent, a relay is `hosted` or `local`, never the address.
+Add a new check to `_alerts` with the guide that explains it, and a test in `tests/test_setup.py`.
+
+**The eye in settings (desktop).**
+`restorePill("settings")` gives the eye `openSettingsAsk()` instead of the library chat.
+Typing ranks the guides in the page (`Guides.match`: no request, no index, no model) and Enter opens the closest one.
+The model is asked only on purpose (the "Ask: ..." row, offered when a model is connected) or when no guide matched at all: `POST /setup/ask` sends the question, the few closest guides and `facts` to the chat model (`prompts.SETTINGS_ANSWER`, `schemas.SettingsAnswer`), never the library, and the answer names the guide to go to.
+A failed call falls back to the closest guides.
+**The eye in settings (phone).**
+While Settings is on screen the pill's eye opens the ask sheet instead of conversations (`pillEyePressed` in `mobile.html`).
+The sheet is the guide plate in a second mode (`openSettingsAsk`): a field at its top, where the keyboard cannot cover it, the matched guides under it, and the same "Ask: ..." row; Enter opens the closest guide, and each guide's foot ("Ask about ...") leads back to the sheet.
+The model call is `mobile_settings_ask` (`desktop/src/lib.rs`, async so the request stays off the main thread; registered in `build.rs`, `tauri.conf.json` and `generate_handler!`): the page sends the question plus a `context` of the closest guides and where the phone stands (`settingsFacts`: the sync line, the lock, the service and model, whether a key is present), and the command adds the instructions (`SETTINGS_ANSWER`, the same rules as the desktop's prompt).
+There is no schema on this path, so the model names its guide on a last line, `GUIDE: <id>`, which the page parses and strips.
+A failed call falls back to the closest guides.
 
 ### The pill keeps its own ground
 

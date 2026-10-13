@@ -55,6 +55,7 @@ JS_ORDER = [
     "linkpop.js",
     "suggest.js",
     "details.js",
+    "guides.js",
     "tour.js",
     "dialogs.js",
     "pill.js",
@@ -66,11 +67,12 @@ JS_ORDER = [
     "manual.js",
     "chat.js",
     "trash.js",
+    "settings_guide.js",
     "settings.js",
 ]
 # The mobile shell (MOB.2) loads md.js for markdown; MOB.4+ adds the mobile UI's
 # scripts here, checked the same way the home page's are.
-MOBILE_JS_ORDER = ["md.js", "linkpop.js", "suggest.js", "details.js", "tour.js", "eyemood.js", "ground.js"]
+MOBILE_JS_ORDER = ["md.js", "linkpop.js", "suggest.js", "details.js", "guides.js", "tour.js", "eyemood.js", "ground.js"]
 
 def extract_script_blocks(path):
     with open(path, encoding="utf-8") as f:

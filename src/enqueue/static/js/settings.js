@@ -182,6 +182,9 @@ async function renderSettingsTab(name) {
 	pane.innerHTML = html;
 	refreshDirtyBar();
 	window.scrollTo(0, 0);
+	// The ? marks, and where the installation stands (js/settings_guide.js).
+	decorateSettingsGuides();
+	refreshSetup();
 }
 
 // The tab bar's onclick target: swap only the pane below it.
@@ -193,7 +196,8 @@ async function showSettings() {
 	// Entering settings from the vault locks it, so Diagnostics always re-prompts.
 	maybeLockVault();
 	teardown();
-	restorePill("inside");
+	// The eye answers about settings here, not about the library (js/settings_guide.js).
+	restorePill("settings");
 	// Route to settings so a reload/reconnect restores THIS view - without it the hash
 	// stayed on whatever was open before (e.g. a saved view `g/<id>`), and every reinit
 	// re-ran that route, popping the custom view back over settings.
@@ -213,11 +217,15 @@ async function showSettings() {
 		"</p>" +
 		'<div class="settings-layout">' +
 		settingsTabBar() +
-		'<div id="settingsTabPane"></div>' +
+		// Above the pane: what is left to set up, and the settings that need a look.
+		'<div class="settings-main"><div id="settingsSetup"></div>' +
+		'<div id="settingsTabPane"></div></div>' +
 		"</div>" +
 		"</div>";
 	makeEye(document.getElementById("settingsEye"));
 	window.scrollTo(0, 0);
+	guideOpenId = null;
+	watchSettingsPane();
 	await renderSettingsTab(currentSettingsTab);
 }
 

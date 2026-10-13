@@ -107,6 +107,7 @@
             "allow-mobile-vault-get",
             "allow-mobile-vault-blob",
             "allow-mobile-events",
+            "allow-mobile-settings-ask",
             "allow-start-sync-foreground-service",
             "allow-stop-sync-foreground-service",
             "core:event:allow-listen",

@@ -28,7 +28,11 @@ function restorePill(where) {
 	// The find field lives in the pill; leaving it by any road takes its marks along.
 	if (typeof clearFind === "function") clearFind();
 	pill.classList.remove("wide");
-	const inside = place === "inside";
+	// The eye's settings panel hangs off the pill's field; it leaves with the field.
+	const sask = document.getElementById("settingsAsk");
+	if (sask) sask.remove();
+	const settings = place === "settings";
+	const inside = place === "inside" || settings;
 
 	// Wall: Plus + Eye (chat) + Settings. Search lives in the home header (and
 	// on Cmd+K), so the pill does not repeat it. Saved groupings moved into the
@@ -45,8 +49,10 @@ function restorePill(where) {
 			svg("home") +
 			"</span></button>" +
 			'<button class="round" aria-label="' +
-			(scope.kind === "chat" ? "Continue chat" : "Ask about this") +
-			'" onclick="chatOrAsk()">' +
+			(settings ? "Ask about settings" : scope.kind === "chat" ? "Continue chat" : "Ask about this") +
+			'" onclick="' +
+			(settings ? "openSettingsAsk()" : "chatOrAsk()") +
+			'">' +
 			'<span class="pill-eye eye" id="pillEye"></span>' +
 			"</button>";
 	} else {
