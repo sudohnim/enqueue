@@ -135,6 +135,10 @@
     ],
     "category": "Productivity",
     "copyright": "",
-    "shortDescription": "Capture anything, organise it later."
+    "shortDescription": "Capture anything, organise it later.",
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "developmentTeam": "572NMYL3ZG"
+    }
   }
 }

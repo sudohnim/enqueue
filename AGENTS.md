@@ -314,6 +314,7 @@ One line per file, describing its job.
 | `bin/screenshots` | Regenerate the README screenshots from a demo library: a second engine on its own port and a throwaway data folder (never the real library, Keychain key or relay), seeded, then shot with headless Chromium. Before writing anything it checks that the engine answering reports the scratch folder as its `data_dir` and refuses otherwise: on 2026-10-01 its engine failed to bind (the port was held by a preview proxy to the real engine), it carried on, and 15 demo items landed in the real library. Any script that seeds an engine must prove which engine it is talking to first. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
+| `bin/launch simulator` / `bin/launch ios` | One-shot build + install + launch in the iOS Simulator, or on a plugged-in iPhone, then exit. See "The iOS app" under Gotchas. |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
 | `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
@@ -1250,6 +1251,22 @@ A page can be fetched perfectly and still have no article in it (an Instagram po
 Since `fetch` re-queues the artifact and ingest fetches whatever needs it, one such link fetched its page, re-ingested and re-pushed itself to the relay every second or two for as long as the engine ran (353 times in ten minutes), which also startled the phone's eye at every pull.
 `link_previews.body_tried` records a fetch that found no body, so the heal is tried once; "Try again" still forces a fetch.
 Anything that re-queues an artifact from inside ingest needs a condition that ingest itself makes false.
+
+### The iOS app (started 2026-10-13, simulator only so far)
+
+The same Tauri mobile shell and the same `mobile.html` as Android, built for iOS: `bin/setup --ios` readies the toolchain, `bin/launch simulator` builds, installs and opens it in the iOS Simulator, `bin/launch ios` does the same on a plugged-in iPhone (written, not yet run on a device).
+The Xcode project is `desktop/gen/apple` (from `cargo tauri ios init`; its own `.gitignore` drops `build/` and `Externals/`); the signing team is `bundle.iOS.developmentTeam` in `tauri.conf.json` (Sudohnim, LLC), the minimum is iOS 16.
+What it took, each of which breaks the build or the screen if undone:
+
+- **`desktop/vendor/swift-rs` is a patched copy** (`[patch.crates-io]` in `desktop/Cargo.toml`). Xcode 27 made the Swift Build engine SwiftPM's default; it prelinks each static library into one object, which turns Tauri's `@_cdecl` entry points (`_register_plugin`, `_init_plugin_*`, `_on_webview_created`) into local symbols, and the app fails to link with "Undefined symbols". The patch is one argument, `--build-system native`, under Xcode 27. Drop the copy when swift-rs or Tauri handles it. swift-rs below 1.0.9 does not build under Xcode 27 at all.
+- **Tauri refuses to build without the simulator runtime matching the SDK** ("Xcode Simulator SDK 27.0 is not installed"): `xcodebuild -downloadPlatform iOS`.
+- **`jni` and `ndk-context` are Android-only dependencies**, and the foreground sync service has no-op twins off Android (`jni_start_sync_foreground_service`). Anything new that touches JNI must be `#[cfg(target_os = "android")]`, not `#[cfg(mobile)]`.
+- **The web view must not inset the page.** WKWebView insets its content by the safe area on its own, which left a black band under the page and made `env(safe-area-inset-*)` read 0. The mobile `setup` sets the scroll view's `contentInsetAdjustmentBehavior` to never and has the web view recompute its insets (`objc2`, iOS only); the page then pads itself as it does on Android.
+- **`cargo tauri ios build` fails with "Directory not empty"** when the last build's `gen/apple/build/<arch>/Enqueue.app` is still there; `bin/launch` removes it first.
+- `Info.plist` carries `NSCameraUsageDescription` (the QR scanner crashes on a device without it); it is also in `project.yml`, which regenerates the plist. The icons in `Assets.xcassets` are cut from `assets/logo.png` (full bleed, no alpha) with `cargo tauri icon`.
+
+Not there yet: linking is untested (the simulator has no camera, so the QR needs a real iPhone); the page's `EnqueueAndroid` bridge has no iOS twin, so quick capture from the home screen, the app lock, vault fingerprint unlock and a back gesture do not exist there (every call to the bridge is guarded, so the page runs without it); a sync runs only while the app is open; there is no CI job and `bin/verify` does not build iOS.
+There is no CDP on iOS: verify by screenshot (`xcrun simctl io booted screenshot`), or Safari's Web Inspector by hand.
 
 ### The pill keeps its own ground
 

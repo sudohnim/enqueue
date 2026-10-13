@@ -71,8 +71,19 @@ mod mobile {
     #[cfg(target_os = "android")]
     use ndk_context::android_context;
 
+    /// iOS has no foreground service: a sync runs while the app is in front, and the
+    /// page starts one again whenever the app comes back.
+    #[cfg(not(target_os = "android"))]
+    fn jni_start_sync_foreground_service() -> Result<(), String> {
+        Ok(())
+    }
+    #[cfg(not(target_os = "android"))]
+    fn jni_stop_sync_foreground_service() -> Result<(), String> {
+        Ok(())
+    }
+
     /// Start the Android foreground sync service via JNI.
-    #[cfg(mobile)]
+    #[cfg(target_os = "android")]
     fn jni_start_sync_foreground_service() -> Result<(), String> {
         let ctx = android_context();
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -93,7 +104,7 @@ mod mobile {
     }
 
     /// Stop the Android foreground sync service via JNI.
-    #[cfg(mobile)]
+    #[cfg(target_os = "android")]
     fn jni_stop_sync_foreground_service() -> Result<(), String> {
         let ctx = android_context();
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -2865,6 +2876,37 @@ mod mobile {
                 // except during a scan.
                 .transparent(true)
                 .build()?;
+                #[cfg(target_os = "ios")]
+                {
+                    use tauri::Manager;
+                    // WKWebView insets its content by the safe area on its own, which
+                    // left the page a status bar and a home indicator short of the
+                    // screen with a black band under it. The page already pads itself
+                    // with env(safe-area-inset-*), so the scroll view is told not to.
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.with_webview(|webview| unsafe {
+                            use objc2::msg_send;
+                            use objc2::runtime::AnyObject;
+                            let wk = webview.inner() as *mut AnyObject;
+                            if wk.is_null() {
+                                return;
+                            }
+                            let scroll: *mut AnyObject = msg_send![wk, scrollView];
+                            if scroll.is_null() {
+                                return;
+                            }
+                            // UIScrollViewContentInsetAdjustmentNever
+                            let _: () = msg_send![scroll, setContentInsetAdjustmentBehavior: 2isize];
+                            // No rubber-band on the page itself: its own boxes scroll.
+                            let _: () = msg_send![scroll, setBounces: false];
+                            // The web view worked out its insets under the old setting;
+                            // have it work them out again, or env(safe-area-inset-*)
+                            // stays 0 in the page.
+                            let _: () = msg_send![wk, safeAreaInsetsDidChange];
+                            let _: () = msg_send![wk, setNeedsLayout];
+                        });
+                    }
+                }
                 // Initialize outbox schema
                 let conn = open_lib(app.handle())?;
                 init_outbox_schema(&conn).map_err(|e| e.to_string())?;
