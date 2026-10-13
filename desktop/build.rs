@@ -100,6 +100,7 @@ fn main() {
                 "mobile_vault_get",
                 "mobile_vault_blob",
                 "mobile_events",
+                "mobile_settings_ask",
                 "start_sync_foreground_service",
                 "stop_sync_foreground_service",
             ]),

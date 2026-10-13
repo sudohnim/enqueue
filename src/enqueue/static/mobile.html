@@ -16,10 +16,12 @@
 <link rel="stylesheet" href="css/tour.css" />
 <link rel="stylesheet" href="css/bird.css" />
 <link rel="stylesheet" href="css/details.css" />
+<link rel="stylesheet" href="css/guide.css" />
 <script src="js/md.js"></script>
 <script src="js/linkpop.js"></script>
 <script src="js/suggest.js"></script>
 <script src="js/details.js"></script>
+<script src="js/guides.js"></script>
 <script src="js/tour.js"></script>
 <script src="js/eyemood.js"></script>
 <script src="js/ground.js"></script>
@@ -1232,6 +1234,11 @@
     letter-spacing: -0.012em;
     color: var(--text);
   }
+  .mset-title:has(> .gmark) {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
   .mset-sub {
     margin: 0 0 12px;
     font-size: 13.5px;
@@ -2253,7 +2260,7 @@
     class="round"
     id="pill_ask"
     aria-label="Chat with AI"
-    onclick="openChat()"
+    onclick="pillEyePressed()"
   >
     <span class="pill-eye eye" id="pillEye"></span>
   </button>
@@ -2442,6 +2449,26 @@
 </section>
 
 <!-- Details side panel: read-only tags + AI summary for the open artifact. -->
+<!-- The guide behind a ? in Settings (js/guides.js, css/guide.css): the same plate as
+     Details, and the same words the desktop shows. -->
+<div id="guide_backdrop" class="details-backdrop"></div>
+<aside id="guide_panel" class="details-panel dpanel guide" data-touch aria-label="Guide">
+  <header class="dpanel-top">
+    <img class="dpanel-perch" src="raven-tilt.png" alt="" aria-hidden="true" />
+    <div class="dpanel-heading">
+      <h2 id="guide_title" class="dpanel-title"></h2>
+      <span id="guide_voice" class="dpanel-voice"></span>
+    </div>
+    <button id="guide_close" class="dpanel-close" aria-label="Close guide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+    </button>
+  </header>
+  <div id="guide_body" class="dpanel-body"></div>
+  <button id="guide_ask" type="button" class="gask">
+    <span class="gask-eye"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" /><circle cx="12" cy="12" r="3" /></svg></span>
+    <span id="guide_ask_words"></span>
+  </button>
+</aside>
 <div id="details_backdrop" class="details-backdrop"></div>
 <aside id="details_panel" class="details-panel dpanel" data-touch aria-label="Details">
   <header class="dpanel-top">
@@ -2673,7 +2700,7 @@
   <div class="mset-body">
     <span class="mset-managed">Managed by your desktop</span>
     <!-- Sync Section -->
-    <div class="mset-group">
+    <div class="mset-group" data-guide-for="phone-sync">
       <h2 class="mset-title">Sync</h2>
       <div id="settings_sync_status" class="mset-sub"></div>
       <div class="mset-stack">
@@ -2684,7 +2711,7 @@
 
     <!-- Lock (BIO.1): this phone only. Hidden until the shell says it can check a
          fingerprint; the words and the button are painted by paintAppLock(). -->
-    <div id="settings_lock" class="mset-group" hidden>
+    <div id="settings_lock" class="mset-group" data-guide-for="app-lock" hidden>
       <h2 class="mset-title">Lock</h2>
       <button id="settings_app_lock" type="button" class="mswitch-row" role="switch" aria-checked="false">
         <span class="mswitch-text">
@@ -2696,21 +2723,21 @@
     </div>
 
     <!-- AI Section (read-only; the desktop is the source of truth) -->
-    <div id="settings_ai" class="mset-group">
+    <div id="settings_ai" class="mset-group" data-guide-for="phone-ai">
       <h2 class="mset-title">AI</h2>
       <dl id="settings_ai_rows" class="mset-rows"></dl>
       <p class="mset-note">Managed on the desktop. Change the model or key there and it syncs here.</p>
     </div>
 
     <!-- Trash: deleted artifacts, restorable. Delete moves here; Restore brings it back. -->
-    <div id="settings_trash" class="mset-group">
+    <div id="settings_trash" class="mset-group" data-guide-for="phone-trash">
       <h2 class="mset-title">Trash</h2>
       <div id="settings_trash_empty" class="mset-sub" style="display: none">Trash is empty.</div>
       <div id="settings_trash_list"></div>
       <button id="settings_empty_trash" type="button" class="mset-danger" style="display: none">Empty trash</button>
     </div>
     <!-- Events Section (VAULT.6): real session diagnostics + the vault door -->
-    <div class="mset-group">
+    <div class="mset-group" data-guide-for="phone-activity">
       <h2 class="mset-title">Activity</h2>
       <p class="mset-sub">Questions, captures, facet edits, and syncs. Tap a row for the full record.</p>
       <div id="settings_events_list" class="mset-events"></div>
@@ -2835,6 +2862,253 @@
   }
   // The tour behind the ? on the library header (TOUR.1, js/tour.js).
   if (window.Tour) Tour.attach({ platform: "mobile", assets: "" });
+
+  // ---- Guides: the ? beside each Settings section (js/guides.js) -----------------
+  // The words, the marks and the body markup are the desktop's; only the plate's place
+  // is this page's (.details-panel). Where this phone stands comes from what the page
+  // already knows: the sync line and the lock's state.
+  let guideOpen = null;
+  function guideStanding() {
+    const steps = [];
+    const sync = document.getElementById("settings_sync_status");
+    const line = sync ? sync.textContent.trim() : "";
+    if (line)
+      steps.push({ id: "phone-sync", state: /^Last synced/.test(line) ? "done" : "todo", detail: line });
+    const lock = typeof lockStatus === "function" ? lockStatus() : null;
+    if (lock && lock.deviceLock !== "unavailable")
+      steps.push({
+        id: "app-lock",
+        state: lock.appLock ? "done" : "todo",
+        detail: lock.appLock ? "On" : lock.deviceLock === "none" ? "Your phone has no screen lock yet" : "Off",
+      });
+    return { steps, alerts: [] };
+  }
+  function paintGuideMarks() {
+    if (typeof Guides === "undefined") return;
+    document.querySelectorAll("#settings [data-guide-for]").forEach((group) => {
+      const id = group.dataset.guideFor;
+      const title = group.querySelector(".mset-title");
+      if (!title || !Guides.get(id)) return;
+      const had = title.querySelector(".gmark");
+      if (had) had.setAttribute("aria-expanded", String(guideOpen === id));
+      else title.insertAdjacentHTML("beforeend", Guides.mark(id, guideOpen === id));
+      group.classList.toggle("guide-lit", guideOpen === id);
+    });
+  }
+  function openGuide(id) {
+    const g = typeof Guides !== "undefined" && Guides.get(id);
+    if (!g) return;
+    guideOpen = id;
+    settingsAsking = false;
+    saskSeq++;
+    document.getElementById("guide_title").textContent = g.title;
+    document.getElementById("guide_voice").textContent = g.voice;
+    const foot = document.getElementById("guide_ask");
+    foot.hidden = false;
+    document.getElementById("guide_ask_words").textContent =
+      "Ask about " + g.title.replace(/^The /, "the ");
+    const body = document.getElementById("guide_body");
+    body.innerHTML = Guides.html(g, Guides.stand(id, guideStanding()));
+    body.scrollTop = 0;
+    const panel = document.getElementById("guide_panel");
+    const arriving = !panel.classList.contains("open");
+    document.getElementById("guide_backdrop").classList.add("open");
+    panel.classList.add("open");
+    if (arriving && typeof Details !== "undefined") Details.arrive(panel);
+    paintGuideMarks();
+  }
+  function closeGuide() {
+    const shown = document.getElementById("guide_panel").classList.contains("open");
+    if (!shown) return false;
+    guideOpen = null;
+    settingsAsking = false;
+    saskSeq++;
+    if (document.activeElement && document.activeElement.id === "sask_field") document.activeElement.blur();
+    document.getElementById("guide_backdrop").classList.remove("open");
+    document.getElementById("guide_panel").classList.remove("open");
+    paintGuideMarks();
+    return true;
+  }
+  document.getElementById("guide_close")?.addEventListener("click", closeGuide);
+  document.getElementById("guide_backdrop")?.addEventListener("click", closeGuide);
+  document.addEventListener("click", (e) => {
+    const el =
+      e.target.closest &&
+      e.target.closest("#settings .gmark, #guide_panel .gchip, #guide_panel .sask-row, #guide_panel .sask-go");
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (el.dataset.ask !== undefined) askSettingsModel(document.getElementById("sask_field").value);
+    else if (el.classList.contains("gmark") && guideOpen === el.dataset.guide) closeGuide();
+    else openGuide(el.dataset.guide);
+  });
+  document.getElementById("guide_ask")?.addEventListener("click", () => {
+    const about = guideOpen && Guides.get(guideOpen);
+    openSettingsAsk(about ? about.title.replace(/^The /, "") + ": " : "");
+  });
+  paintGuideMarks();
+
+  // ---- The eye, in Settings ------------------------------------------------------
+  // In Settings the eye answers about the app, not the library. What is typed is
+  // matched against the guides in the page (Guides.match: no request, no model), and
+  // the closest guide opens. The model is asked only on purpose (the "Ask" row) or
+  // when no guide matched, with the closest guides and where this phone stands, never
+  // the library (mobile_settings_ask).
+  let settingsAsking = false;
+  let saskSeq = 0;
+  function pillEyePressed() {
+    const settings = document.getElementById("settings");
+    if (settings && !settings.hidden && typeof Guides !== "undefined") openSettingsAsk("");
+    else openChat();
+  }
+  function settingsCanAsk() {
+    const c = typeof settingsCache !== "undefined" ? settingsCache : null;
+    return !!(c && c.llm_backend && (c.llm_api_key_present || c.llm_backend === "ollama"));
+  }
+  // Where this phone stands, as the model is told it. Nothing secret.
+  function settingsFacts() {
+    const c = (typeof settingsCache !== "undefined" && settingsCache) || {};
+    const stand = guideStanding();
+    const line = (id) => (stand.steps.find((x) => x.id === id) || {}).detail || "unknown";
+    return [
+      "sync: " + line("phone-sync"),
+      "fingerprint lock: " + line("app-lock"),
+      "answers come from: " + (c.llm_backend || "not set") + ", model " + (c.llm_model || "not set"),
+      "api key on this phone: " + (c.llm_api_key_present ? "present" : "absent"),
+      "changes waiting to sync: " + (c.outbox_count || 0),
+    ].join("\n");
+  }
+  function saskRow(g) {
+    return (
+      '<li role="none"><button type="button" class="sask-row" data-guide="' +
+      esc(g.id) +
+      '"><b>' +
+      esc(g.title) +
+      "</b><small>" +
+      esc(g.voice) +
+      "</small></button></li>"
+    );
+  }
+  function settingsGuidesFor(text) {
+    const matches = Guides.match(text, { platform: "phone" });
+    if (!matches.length) return { matches, guides: Guides.all("phone") };
+    const floor = matches[0].score * 0.45;
+    return { matches, guides: matches.filter((m) => m.score >= floor).slice(0, 4).map((m) => m.guide) };
+  }
+  function renderSettingsMatches() {
+    const out = document.getElementById("sask_out");
+    const field = document.getElementById("sask_field");
+    if (!out || !field) return;
+    saskSeq++;
+    const text = field.value.trim();
+    const { matches, guides } = settingsGuidesFor(text);
+    const head = !text ? "On this page" : matches.length ? "Guides" : "No guide by that name. These are on this page";
+    const canAsk = text.length > 2 && settingsCanAsk();
+    out.innerHTML =
+      '<p class="sask-head">' +
+      esc(head) +
+      '</p><ul class="sask-list">' +
+      guides.map(saskRow).join("") +
+      (canAsk
+        ? '<li role="none"><button type="button" class="sask-row ask" data-ask><b>Ask: ' +
+          esc(text) +
+          "</b><small>Reads these guides and where this phone stands. Not your notes.</small></button></li>"
+        : "") +
+      "</ul>";
+  }
+  function openSettingsAsk(prefill) {
+    guideOpen = null;
+    settingsAsking = true;
+    paintGuideMarks();
+    document.getElementById("guide_title").textContent = "Ask about settings";
+    document.getElementById("guide_voice").textContent = "Say it your way. I will find the page.";
+    document.getElementById("guide_ask").hidden = true;
+    const body = document.getElementById("guide_body");
+    body.innerHTML =
+      '<form id="sask_form" class="sask-form"><input id="sask_field" class="sask-field" type="search" ' +
+      'enterkeyhint="search" autocomplete="off" autocapitalize="off" aria-label="Ask about settings" ' +
+      'placeholder="why is it not syncing"></form><div id="sask_out"></div>';
+    body.scrollTop = 0;
+    const field = document.getElementById("sask_field");
+    field.value = prefill || "";
+    field.addEventListener("input", renderSettingsMatches);
+    document.getElementById("sask_form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = field.value.trim();
+      if (!text) return;
+      // Enter opens the closest guide: it costs nothing and says where this phone
+      // stands. The model is the "Ask" row, or the fallback when nothing matched.
+      const { matches } = settingsGuidesFor(text);
+      if (matches.length) openGuide(matches[0].guide.id);
+      else if (settingsCanAsk()) askSettingsModel(text);
+    });
+    const panel = document.getElementById("guide_panel");
+    const arriving = !panel.classList.contains("open");
+    document.getElementById("guide_backdrop").classList.add("open");
+    panel.classList.add("open");
+    if (arriving && typeof Details !== "undefined") Details.arrive(panel);
+    renderSettingsMatches();
+    // After the slide in, or the keyboard opens over a panel that is still moving.
+    setTimeout(() => settingsAsking && field.focus({ preventScroll: true }), arriving ? 300 : 0);
+  }
+  async function askSettingsModel(question) {
+    const q = (question || "").trim();
+    const out = document.getElementById("sask_out");
+    if (!q || !out) return;
+    const mine = ++saskSeq;
+    const { guides } = settingsGuidesFor(q);
+    const offered = guides.slice(0, 5);
+    out.innerHTML =
+      '<div class="sask-answer"><p class="sask-q">' + esc(q) + '</p><p class="sask-head">Reading the guides…</p></div>';
+    document.getElementById("sask_field")?.blur();
+    let raw = "";
+    let failed = "";
+    try {
+      raw = await invoke("mobile_settings_ask", {
+        question: q,
+        context:
+          "Guides:\n\n" +
+          offered.map((g) => "[" + g.id + "] " + g.title + "\n" + Guides.text(g)).join("\n\n") +
+          "\n\nThis phone:\n" +
+          settingsFacts(),
+      });
+    } catch (e) {
+      failed = String((e && e.message) || e);
+    }
+    if (mine !== saskSeq || !settingsAsking) return;
+    if (!raw) {
+      // No answer: the closest guides are still worth more than an error.
+      out.innerHTML =
+        '<p class="sask-head">No answer from the model' +
+        (failed ? " (" + esc(failed.slice(0, 120)) + ")" : "") +
+        '. The closest guides</p><ul class="sask-list">' +
+        offered.slice(0, 4).map(saskRow).join("") +
+        "</ul>";
+      return;
+    }
+    // The model names its guide on a last line of its own; anything else is the answer.
+    const named = raw.match(/^\s*GUIDE:\s*\[?([a-z-]+)\]?\s*$/im);
+    const answer = raw.replace(/^\s*GUIDE:.*$/gim, "").trim();
+    const go = named && offered.find((g) => g.id === named[1]);
+    out.innerHTML =
+      '<div class="sask-answer" role="status"><p class="sask-q">' +
+      esc(q) +
+      '</p><p class="sask-a">' +
+      esc(answer) +
+      '</p><div class="sask-from"><span>From</span>' +
+      offered
+        .slice(0, 3)
+        .map((g) => '<button type="button" class="gchip" data-guide="' + esc(g.id) + '">' + esc(g.title) + "</button>")
+        .join("") +
+      (go
+        ? '<button type="button" class="sask-go" data-guide="' +
+          esc(go.id) +
+          '">Open ' +
+          esc(go.title.replace(/^The /, "the ")) +
+          "</button>"
+        : "") +
+      "</div></div>";
+  }
 
   // ---- Fingerprint lock (BIO.1) --------------------------------------------------
   // Two separate locks, both checked by the Android shell (MainActivity + Biometrics.kt):
@@ -3219,6 +3493,7 @@
     }
     // Any view switch closes the details side panel so it never lingers over a
     // different screen (this also makes the Android back gesture dismiss it).
+    if (typeof closeGuide === "function") closeGuide();
     const dp = document.getElementById("details_panel");
     const db = document.getElementById("details_backdrop");
     if (dp) dp.classList.remove("open");
@@ -5240,6 +5515,7 @@
       pillCloseMenu(false);
       return true;
     }
+    if (typeof closeGuide === "function" && closeGuide()) return true; // the guide sheet
     const dp = document.getElementById("details_panel");
     if (dp && dp.classList.contains("open")) {
       dp.classList.remove("open");

@@ -318,6 +318,15 @@ class Standalone(BaseModel):
     )
 
 
+class SettingsAnswer(BaseModel):
+    """An answer to a question about the app's settings (setup.answer)."""
+
+    answer: str = Field(min_length=1, description="Two to four plain sentences.")
+    guide: str | None = Field(
+        default=None, description="The id of the one guide that covers it, or null."
+    )
+
+
 class ChatTitle(BaseModel):
     """What a conversation gets called in the list of conversations."""
 
