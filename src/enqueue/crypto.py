@@ -1,7 +1,7 @@
 """Crypto building blocks (E2E.md Phase E1).
 
 PyNaCl (libsodium) only - no hand-rolled primitives, no other crypto library.
-XChaCha20-Poly1305 (SecretBox) for the box, Argon2id (MODERATE) for the key
+XSalsa20-Poly1305 (libsodium's SecretBox) for the box, Argon2id (MODERATE) for the key
 derivation, and a keyed HMAC for the content-addressed blob name. DEC-D5: the
 Argon2id preset is MODERATE, recorded here, not chosen elsewhere.
 """

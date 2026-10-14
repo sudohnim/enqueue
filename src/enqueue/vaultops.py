@@ -9,9 +9,13 @@ the PIN, even though they have the library DEK. Un-vaulting reverses both: decry
 in place, then re-index.
 
 Protected at rest: `artifacts.body`, `artifacts.title`, every `annotations.text`,
-every `page_text.text`, and the blob file (image/pdf/file bytes). Left in clear so
-sync + LWW + dedupe still work: `id`, `content_hash`, timestamps, `kind`, and
-`vaulted_at` itself.
+every `page_text.text`, every draft, the blob file (image/pdf/file bytes), and what
+was derived from them (`_seal_derived`): a link's preview words and picture and the
+summary lines the person wrote are sealed, and everything a model wrote about the
+artifact (summary lines, entities, section summaries, cached judgments, the links to
+related notes) is removed, since it says in plain words what the sealed text is about
+and can be written again. Left in clear so sync + LWW + dedupe still work: `id`,
+`content_hash`, timestamps, `kind`, and `vaulted_at` itself.
 
 The vault must be UNLOCKED (`vault.key()`); callers gate the UI on that and the
 API returns 409 when it is locked.
@@ -63,6 +67,162 @@ def _blob_file(content_hash: str | None):
         return None
     path = config.BLOB_DIR / content_hash
     return path if path.exists() else None
+
+
+def _remove_model_rows(conn, artifact_id: str) -> int:
+    """Remove everything a model wrote about an artifact. Needs no key, so it also
+    runs at startup for items vaulted by a build that left these behind. Returns the
+    number of rows removed."""
+    removed = 0
+    for sql, args in (
+        ("DELETE FROM facets WHERE artifact_id = ? AND edited = 0", (artifact_id,)),
+        ("DELETE FROM entities WHERE artifact_id = ?", (artifact_id,)),
+        ("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,)),
+        ("DELETE FROM related WHERE artifact_id = ? OR related_id = ?", (artifact_id,) * 2),
+        ("DELETE FROM related_pending WHERE artifact_id = ?", (artifact_id,)),
+        ("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,)),
+        # Cached model output is keyed by the artifact: section summaries and pivot
+        # attributes under `subject`, search and related verdicts under either column.
+        (
+            "DELETE FROM derived_values WHERE instr(subject, ?) > 0 OR instr(attribute, ?) > 0",
+            (artifact_id,) * 2,
+        ),
+    ):
+        removed += conn.execute(sql, args).rowcount
+    return removed
+
+
+def _preview_file(conn, artifact_id: str):
+    row = conn.execute(
+        "SELECT image_hash FROM link_previews WHERE artifact_id = ?", (artifact_id,)
+    ).fetchone()
+    return (_blob_file(row["image_hash"]), row["image_hash"]) if row else (None, None)
+
+
+def _seal_derived(conn, artifact_id: str, key: bytes) -> int:
+    """Seal what the person or the page said about the artifact and remove what a
+    model said. Safe to run again: a field already sealed is left as it is. Returns
+    the number of rows it changed or removed."""
+    changed = _remove_model_rows(conn, artifact_id)
+
+    def seal(value):
+        nonlocal changed
+        if not value or try_open(key, value) is not None:
+            return value  # nothing there, or sealed already
+        changed += 1
+        return _seal(key, value)
+
+    for f in conn.execute(
+        "SELECT id, statement FROM facets WHERE artifact_id = ?", (artifact_id,)
+    ).fetchall():
+        conn.execute(
+            "UPDATE facets SET statement = ? WHERE id = ?", (seal(f["statement"]), f["id"])
+        )
+    preview = conn.execute(
+        "SELECT title, description, site_name FROM link_previews WHERE artifact_id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if preview:
+        conn.execute(
+            "UPDATE link_previews SET title = ?, description = ?, site_name = ?"
+            " WHERE artifact_id = ?",
+            (
+                seal(preview["title"]),
+                seal(preview["description"]),
+                seal(preview["site_name"]),
+                artifact_id,
+            ),
+        )
+        # The preview's picture, by its plaintext hash like the artifact's own blob.
+        picture, image_hash = _preview_file(conn, artifact_id)
+        if picture is not None:
+            raw = picture.read_bytes()
+            if hashlib.sha256(raw).hexdigest() == image_hash:
+                picture.write_bytes(crypto.encrypt(raw, key))
+                changed += 1
+    return changed
+
+
+def _open_derived(conn, artifact_id: str, key: bytes) -> bool:
+    """Undo `_seal_derived` for the sealed fields. What a model wrote was removed and
+    is written again when the artifact goes back through ingest."""
+    touched = False
+
+    def dec(value):
+        nonlocal touched
+        opened = try_open(key, value)
+        if opened is None:
+            return value
+        touched = True
+        return opened
+
+    for f in conn.execute(
+        "SELECT id, statement FROM facets WHERE artifact_id = ?", (artifact_id,)
+    ).fetchall():
+        conn.execute("UPDATE facets SET statement = ? WHERE id = ?", (dec(f["statement"]), f["id"]))
+    preview = conn.execute(
+        "SELECT title, description, site_name FROM link_previews WHERE artifact_id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if preview:
+        conn.execute(
+            "UPDATE link_previews SET title = ?, description = ?, site_name = ?"
+            " WHERE artifact_id = ?",
+            (
+                dec(preview["title"]),
+                dec(preview["description"]),
+                dec(preview["site_name"]),
+                artifact_id,
+            ),
+        )
+        picture, image_hash = _preview_file(conn, artifact_id)
+        if picture is not None:
+            raw = picture.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != image_hash:
+                try:
+                    plain = crypto.decrypt(raw, key)
+                except Exception:  # noqa: BLE001 - not sealed with this key: leave it
+                    plain = None
+                if plain is not None and hashlib.sha256(plain).hexdigest() == image_hash:
+                    picture.write_bytes(plain)
+                    touched = True
+    return touched
+
+
+def _vaulted_ids(conn) -> list[str]:
+    return [r["id"] for r in conn.execute("SELECT id FROM artifacts WHERE vaulted_at IS NOT NULL")]
+
+
+def scrub() -> int:
+    """Bring items vaulted by an earlier build up to what vaulting now protects.
+
+    Until 2026-10 vaulting sealed an artifact's own text and left what was derived
+    from it readable: its summary lines, a link's preview, cached model output. This
+    removes what a model wrote (no key needed, so it runs at every startup) and, when
+    the vault is unlocked, seals the rest. Returns the number of rows it touched; the
+    freed pages are purged from the file and each cleaned item is pushed again, so the
+    readable copy leaves the other devices too.
+    """
+    key = vault.key() if vault.is_unlocked() else None
+    touched: dict[str, int] = {}
+    with db.transaction() as conn:
+        for artifact_id in _vaulted_ids(conn):
+            n = (
+                _seal_derived(conn, artifact_id, key)
+                if key
+                else _remove_model_rows(conn, artifact_id)
+            )
+            if n:
+                touched[artifact_id] = n
+    if not touched:
+        return 0
+    for artifact_id in touched:
+        _drop_from_index(artifact_id)
+    _vacuum()
+    for artifact_id in touched:
+        with contextlib.suppress(Exception):  # noqa: BLE001 - sync is best-effort
+            push_artifact(artifact_id)
+    return sum(touched.values())
 
 
 def _vacuum() -> None:
@@ -142,6 +302,9 @@ def vault_artifact(artifact_id: str) -> dict:
             blob.write_bytes(crypto.encrypt(blob.read_bytes(), key))
         # Drop the rebuildable chunks so retrieval can never cite a vaulted note.
         conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
+        # What was derived from the text says what the text is about: seal the
+        # person's summary lines and the link preview, remove what a model wrote.
+        _seal_derived(conn, artifact_id, key)
         # The activity log records an artifact's title/counts in plaintext (capture,
         # ingest, facet events). Vaulting must reach it too, or the title - which for a
         # short note is the whole body - lingers in `events` and on disk. These rows are
@@ -206,6 +369,8 @@ def decrypt_in_place(conn, artifact_id: str, key: bytes) -> bool:
         conn.execute(
             "UPDATE artifact_versions SET body = ? WHERE id = ?", (dec(v["body"]), v["id"])
         )
+    if _open_derived(conn, artifact_id, key):
+        touched = True
     # The blob: recover the plaintext image, VERIFIED against the content hash
     # (sha256 of the plaintext) so we never write garbage back. A blob is content-
     # addressed, so the correct plaintext is exactly the bytes whose sha256 equals the
@@ -276,6 +441,7 @@ def unvault_artifact(artifact_id: str) -> dict:
         blob = _blob_file(row["content_hash"])
         if blob is not None:
             blob.write_bytes(crypto.decrypt(blob.read_bytes(), key))
+        _open_derived(conn, artifact_id, key)
 
     ingest_queue.submit(artifact_id)  # rebuild chunks/facets/entities
     push_artifact(artifact_id)

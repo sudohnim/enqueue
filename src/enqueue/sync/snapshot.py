@@ -165,7 +165,11 @@ def _apply_snapshot_children(
     # device that generates its own summaries keeps them, while the phone (which cannot)
     # receives them whenever a snapshot brings them along.
     incoming_facets = snapshot.get("facets") or []
-    if incoming_facets:
+    # A vaulted artifact is the exception: its snapshot carries only sealed lines
+    # (often none), and the readable summary a device made before it was vaulted must
+    # not stay behind (vaultops._seal_derived).
+    vaulted = bool((snapshot.get("artifact") or {}).get("vaulted_at"))
+    if incoming_facets or vaulted:
         conn.execute("DELETE FROM facets WHERE artifact_id = ?", (artifact_id,))
         for f in incoming_facets:
             conn.execute(

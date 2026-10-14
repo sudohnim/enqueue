@@ -98,6 +98,26 @@ def serve() -> None:
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 
+    # The library is its owner's only: close the folder and the files in it (db.py).
+    try:
+        from .. import db
+
+        closed = db.restrict_permissions()
+        if closed:
+            print(f"[engine] closed {closed} library paths to other accounts")
+    except Exception as exc:  # noqa: BLE001 - never block startup on this
+        print(f"[engine] could not restrict the library's permissions: {exc}")
+
+    # Items vaulted by an earlier build left their summaries readable (vaultops.scrub).
+    try:
+        from .. import vaultops
+
+        scrubbed = vaultops.scrub()
+        if scrubbed:
+            print(f"[engine] removed {scrubbed} readable rows about vaulted items")
+    except Exception as exc:  # noqa: BLE001 - never block startup on this
+        print(f"[engine] could not scrub vaulted items: {exc}")
+
     # Links an older build titled by their address get the clean title (capture.py).
     try:
         from .. import capture

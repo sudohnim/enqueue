@@ -71,6 +71,36 @@ def _migrate_unlocked() -> None:
     command.upgrade(cfg, "head")
 
 
+def restrict_permissions() -> int:
+    """Make the library readable by its owner only. Returns how many paths changed.
+
+    The data folder, the database and the blobs were created with the default mode,
+    which lets every other account on the machine read every note. The folder is the
+    gate (0700: nobody else can reach anything inside it); the files in it are closed
+    too (0600), so a copy of one made elsewhere does not start out world-readable.
+    SQLite gives its -wal and -shm files the database's mode, so they follow.
+    """
+    import contextlib
+    import stat
+
+    changed = 0
+
+    def close(path, mode: int) -> None:
+        nonlocal changed
+        with contextlib.suppress(OSError):
+            if stat.S_IMODE(path.stat().st_mode) != mode:
+                path.chmod(mode)
+                changed += 1
+
+    root = config.DATA_DIR
+    if not root.is_dir():
+        return 0
+    close(root, 0o700)
+    for entry in root.iterdir():
+        close(entry, 0o700 if entry.is_dir() else 0o600)
+    return changed
+
+
 def migrate() -> None:
     """Bring the database to head. Safe to call repeatedly and from either client.
 

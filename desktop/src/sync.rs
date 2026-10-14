@@ -467,6 +467,15 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN purged_at TEXT", []);
     // Migration: vaulted_at (secret-vault membership marker), same duplicate-safe pattern.
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN vaulted_at TEXT", []);
+    // Heal, every launch (cheap and idempotent): builds before 2026-10 left a vaulted
+    // artifact's model-written summary readable beside its sealed text. Those lines say
+    // what the sealed text is about, so they go; the Mac writes them again if the item
+    // ever leaves the vault.
+    let _ = conn.execute(
+        "DELETE FROM facets WHERE edited = 0 AND artifact_id IN \
+         (SELECT id FROM artifacts WHERE vaulted_at IS NOT NULL)",
+        [],
+    );
     // Migration: embedded_at (an image pasted inside a note - note content, not a
     // standalone card), same duplicate-safe pattern. The library/list queries filter
     // `embedded_at IS NULL` so it never shows as its own artifact on the phone.
@@ -694,8 +703,14 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     // Facets replace only when the snapshot actually carries them (mirrors the engine):
     // a facet-less snapshot must not wipe facets already here, since the equal-key
     // re-apply would otherwise delete them.
-    if let Some(facets) = snapshot.get("facets").and_then(|v| v.as_array()) {
-        if !facets.is_empty() {
+    // A vaulted artifact is the exception: its snapshot carries only sealed lines (often
+    // none), and the readable summary this phone held before it was vaulted must not
+    // stay behind.
+    let vaulted = snapshot["artifact"]["vaulted_at"].as_str().is_some_and(|s| !s.is_empty());
+    let no_facets: Vec<Value> = Vec::new();
+    {
+        let facets = snapshot.get("facets").and_then(|v| v.as_array()).unwrap_or(&no_facets);
+        if !facets.is_empty() || vaulted {
             conn.execute("DELETE FROM facets WHERE artifact_id = ?1", [id])
                 .map_err(|e| e.to_string())?;
             for f in facets {
@@ -2670,5 +2685,73 @@ mod draft_tests {
         // Saving the same words again keeps nothing new.
         update_note_body(&conn, "n1", "fourth", None).unwrap();
         assert_eq!(drafts(&conn).len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod vault_summary_tests {
+    use super::*;
+
+    fn snap(updated: &str, vaulted: Option<&str>, facets: Value) -> Value {
+        serde_json::json!({
+            "artifact": {"id":"v1","kind":"note","title":"t","body":"b","source_url":null,
+                "content_hash":"h","mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00.000000+00:00","updated_at":updated,
+                "local_only":0,"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                "title_explicit":0,"_device_id":"d1","vaulted_at":vaulted},
+            "annotations": [], "page_text": [], "versions": [], "facets": facets
+        })
+    }
+
+    fn lines(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM facets WHERE artifact_id = 'v1'", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn a_vaulted_snapshot_takes_the_readable_summary_with_it() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let line = serde_json::json!([{"id":"f1","level":1,"statement":"About an offshore account.",
+            "model_version":"m","body_version":"x","trust":0.5,"edited":0}]);
+        apply_snapshot(&conn, &snap("2026-01-01T00:00:00.000000+00:00", None, line)).unwrap();
+        assert_eq!(lines(&conn), 1);
+
+        // An ordinary snapshot with no summary lines leaves the ones here alone...
+        apply_snapshot(&conn, &snap("2026-01-02T00:00:00.000000+00:00", None, serde_json::json!([]))).unwrap();
+        assert_eq!(lines(&conn), 1);
+
+        // ...a vaulted one does not: the readable summary must not outlive the vaulting.
+        apply_snapshot(
+            &conn,
+            &snap("2026-01-03T00:00:00.000000+00:00", Some("2026-01-03T00:00:00.000000+00:00"), serde_json::json!([])),
+        )
+        .unwrap();
+        assert_eq!(lines(&conn), 0);
+    }
+
+    #[test]
+    fn opening_the_library_removes_summaries_left_beside_vaulted_items() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        apply_snapshot(&conn, &snap("2026-01-01T00:00:00.000000+00:00", None, serde_json::json!([]))).unwrap();
+        // What an older build left: a vaulted item with a model's line and the person's.
+        conn.execute("UPDATE artifacts SET vaulted_at = '2026-01-02' WHERE id = 'v1'", []).unwrap();
+        for (id, edited) in [("m1", 0), ("e1", 1)] {
+            conn.execute(
+                "INSERT INTO facets (id,artifact_id,level,statement,model_version,body_version,trust,edited) \
+                 VALUES (?1,'v1',1,'line','m','x',0.5,?2)",
+                rusqlite::params![id, edited],
+            )
+            .unwrap();
+        }
+        init_schema(&conn).unwrap(); // the next launch
+        let left: Vec<String> = conn
+            .prepare("SELECT id FROM facets WHERE artifact_id = 'v1'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(left, vec!["e1"], "the person's own line is kept; the Mac seals it");
     }
 }

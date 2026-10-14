@@ -1293,6 +1293,36 @@ The model call is `mobile_settings_ask` (`desktop/src/lib.rs`, async so the requ
 There is no schema on this path, so the model names its guide on a last line, `GUIDE: <id>`, which the page parses and strips.
 A failed call falls back to the closest guides.
 
+### What vaulting covers, who can read the library, and what is never backed up (2026-10-13)
+
+A security review found three holes; this is what closes them and what is still open.
+
+**Vaulting reaches what was derived from the text (`vaultops._seal_derived`).**
+It used to seal an artifact's own words (body, title, annotations, page text, drafts, blob) and leave everything derived from them readable: the summary lines, a link's preview, cached model output.
+A summary says in plain words what the sealed text is about, so that was the vault leaking.
+Now what a model wrote is REMOVED (machine summary lines, entities, section summaries, `related` rows, `derived_values` keyed by the artifact, its retry and pending rows), since it can be written again, and what the person or the page said is SEALED (hand-written summary lines, the preview's title, description, site and picture) and opened again on the way out (`_open_derived`).
+Anything new that stores text about an artifact must be added to one of those two lists, and to `tests/test_vaultops.py`, whose test reads the database file for the words.
+`vaultops.scrub()` brings items vaulted by an older build up to this: at startup it removes the model's rows (no key needed), and when the vault is unlocked (`POST /vault/unlock`) it seals the rest; it vacuums and pushes each cleaned item so the readable copy leaves the other devices.
+A vaulted snapshot replaces a device's summary lines even when it carries none (`sync/snapshot.py` and `apply_snapshot` in `desktop/src/sync.rs`); every other snapshot still leaves local lines alone when it has none.
+The phone does the same when it vaults (`vault_apply` in `desktop/src/lib.rs`) and removes leftover model lines beside vaulted items at each launch (`init_schema`).
+Still readable about a vaulted item: its tags, its kind and dates, and any conversation that quoted it before it was vaulted.
+
+**The library is its owner's only (`db.restrict_permissions`, at engine startup).**
+The data folder is 0700 and the files in it 0600; they were 0755 and 0644, readable by every account on the Mac.
+The folder is the gate; blob files inside `blobs/` keep their mode and are unreachable through it.
+The phone's key file (`secure_store_set`) is written 0600.
+
+**Nothing of the phone app's is backed up by the system.**
+Android: `allowBackup="false"` and `res/xml/data_extraction_rules.xml` (which also stops the phone-to-phone transfer on Android 12+, which `allowBackup` alone does not).
+iOS (on the iOS branch): the app data folder carries `NSURLIsExcludedFromBackupKey`, set in the mobile `setup`.
+The files hold the sync key and a readable copy of the library; a new phone is linked by scanning the code on the Mac, so a backup of them buys nothing.
+
+**Not built: encryption at rest.** The database, the blobs and the backups are still plain files (Resolved decision 1), and the phone's key is in a file, not the Keystore or Keychain.
+The search index holds every word, so field-level encryption would be theatre; it has to be the whole database.
+The sync key must not be the disk key: it exists only once sync is set up, "Reset sync" discards it, and the phone holds a copy.
+The shape that fits is one library key born at first run, with separate keys for the disk, the relay and the backups derived from or wrapped under it.
+Other findings left open: the vault PIN is 6 digits (a million guesses against the wrapped key), one key both encrypts relay objects and names them, and the relay sees counts, sizes and timing.
+
 ### The pill keeps its own ground
 
 The page was lightened in October 2026 (soft lavender ground, white tiles, light type; docs/DESIGN.md) and the capture pill deliberately was not: its deeper lavender glass and bold eye are what hold it over white tiles.

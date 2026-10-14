@@ -7,7 +7,13 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- No backup: the app's files hold the sync key and a readable copy of the
+         library. allowBackup covers Android 11 and below, dataExtractionRules covers
+         12+ (where allowBackup alone still lets a phone-to-phone transfer copy them). -->
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.enqueue"
