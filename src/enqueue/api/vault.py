@@ -78,6 +78,11 @@ def vault_unlock(body: PinBody) -> dict:
         # Deliberately vague: never reveal whether a vault even exists.
         raise HTTPException(status_code=403, detail="incorrect") from None
     _fail_count = 0
+    # Items vaulted by an earlier build left their summary readable; with the key in
+    # hand the rest of that is sealed now (vaultops.scrub). Off the request.
+    import threading
+
+    threading.Thread(target=vaultops.scrub, name="vault-scrub", daemon=True).start()
     _next_allowed = 0.0
     return {"unlocked": True}
 

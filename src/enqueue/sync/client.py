@@ -515,9 +515,9 @@ def pull_settings() -> None:
 def push_keyring() -> None:
     """PUT the keyring.json to the relay as lib/keyring.enc (MOB2.10).
 
-    The keyring.json already contains the DEK wrapped twice (password-KEK and
-    recovery-KEK). It does NOT contain the plaintext DEK, so it's safe to
-    store on the relay without additional encryption.
+    The keyring.json holds the DEK wrapped under the recovery-phrase KEK only. It
+    does NOT contain the plaintext DEK, so it is stored on the relay without
+    additional encryption: opening it takes the 160-bit recovery phrase.
     """
     url = _relay_url()
     if not url:
