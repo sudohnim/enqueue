@@ -31,7 +31,7 @@ Later, when a subject is on your mind, you search or ask, and Enqueue brings bac
 
 Everything you save is an **artifact**: a note, a link, a PDF, an image, or a file.
 The **?** at the top right of the home page (and of the phone's library) opens a seven-card tour of all this, with small demos you can try; nothing typed there is saved.
-Your library lives on your Mac, in one folder (`~/.enqueue-poc`).
+Your library lives on your Mac, in one folder (`~/Library/Application Support/Enqueue`).
 
 ## Capturing
 
@@ -103,6 +103,29 @@ Pasting an image into a note puts the image in the note.
 
 On the phone, tap anywhere in a note to write there.
 The toolbar above the keyboard makes bullets, numbered lists and headings, and indents.
+
+### Tabs
+
+A note can be split into named tabs, for a note with parts: the steps, the prompt, the candidates.
+The last button on the formatting bar adds one; the first press turns what you had into a tab called "Notes" and opens a new one, its name ready to type.
+- Click a tab to open it. Double-click it to rename it. Drag it to move it.
+- On the open tab, two small buttons appear: make it its own note, and delete (its text stays in the note's drafts).
+- Deleting down to one tab makes it a plain note again.
+- A search that matches words in a tab opens the note on that tab.
+
+On the phone, tap a tab or swipe the text sideways.
+In the writing page, the tool bar adds a tab, and a long press on a tab renames it, makes it its own note or deletes it. Tabs are moved on the Mac.
+
+### Drafts
+
+Enqueue keeps drafts of a note as you write: how it began, one for each five minutes of writing, and the latest.
+- **"12 drafts"** under the note opens the list, each with what it changed.
+- Choose one to see the note with what was added since in green and what was removed struck in red, or **As it was**.
+- **Restore** puts it back. The text it replaces is kept as a draft, so going back loses nothing.
+- **Keep drafts of this note**, in the list and in Details, turns drafts off for one note (a scratch pad, a log). Off removes its earlier drafts.
+- **Settings > Storage > Drafts** decides how many are kept as they age: thinned (everything from today, then one an hour for a week, one a day for 90 days, one a week after), the last 30 days, or none.
+
+On the phone, Details shows the drafts and the switch; the list and the comparison work the same way.
 
 ## Links, PDFs, images and files
 
@@ -243,6 +266,7 @@ The Android app is your library in your pocket: read, capture, write, ask.
 
 - **Reading.** Rows open to the note, the image (pinch to zoom), the link's preview, or the PDF.
 - **Writing.** Tap a note to write in it. **+ > Note** starts a new one. Both save as you type.
+- **Tabs and drafts.** A note's tabs show one at a time; its drafts are in Details. See [Notes](#notes).
 - **Asking.** The eye answers from the copy on the phone.
 - **Small edits.** Star, delete, restore, and rewrite a summary line. Tagging and views are for the desk.
 - **Offline.** Everything is on the phone and saves there first. What you did reaches your Mac when there is a connection again.

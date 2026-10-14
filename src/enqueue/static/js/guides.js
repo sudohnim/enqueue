@@ -177,9 +177,9 @@ const Guides = (() => {
       need:
         "Yes, unless you are happy to lose everything with this Mac. Your library lives in one folder on this machine and nowhere else.",
       steps: [
-        "Under Backup, press Use Proton Drive, or type another folder that a cloud drive syncs.",
+        "Under Backup, press Choose a folder and pick one your cloud drive keeps: iCloud Drive, Dropbox, a USB disk all work. Use Proton Drive appears when Enqueue finds it.",
         "The first copy is made at once.",
-        "After that it happens by itself. Back up now makes one on demand.",
+        "After that it happens by itself. Back up now, beside the time of the last copy, makes one whenever you like.",
       ],
       know: [
         "Your phone is not a backup. It holds a copy for reading, and only once sync is set up.",
@@ -189,6 +189,29 @@ const Guides = (() => {
       also: ["relay", "index", "trash"],
       words:
         "backup backups back up copy proton drive folder restore lose lost everything mac dies broken stolen new mac safe recover icloud dropbox",
+    },
+    {
+      id: "drafts",
+      tab: "storage",
+      title: "Drafts",
+      voice: "Every version, still here.",
+      what:
+        "Earlier versions of each note, kept as you write: one for each few minutes of writing, and how the note began. A note's drafts open from the line under it, where any one can be compared with now or put back.",
+      need:
+        "Nothing to set. This chooses how many are kept as they age; one note can also be switched off in its Details.",
+      steps: [
+        "Choose how many are kept, then press Save.",
+        "Apply now removes what the choice no longer keeps at once; otherwise it happens in tonight's pass.",
+        "Under a note, press its drafts to see them, compare one with now, or restore it.",
+      ],
+      know: [
+        "Restoring a draft keeps the text it replaced as a draft, so going back never loses anything.",
+        "The thinned history keeps every draft from the last day, one an hour for a week, one a day for three months, and one a week after that.",
+        "Drafts travel to your phone with the note. Fewer drafts mean smaller syncs.",
+      ],
+      also: ["backups", "trash"],
+      words:
+        "drafts draft versions version history undo earlier previous restore go back older revert compare changes thin keep",
     },
     {
       id: "index",

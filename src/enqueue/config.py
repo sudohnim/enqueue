@@ -7,7 +7,16 @@ different model or endpoint never needs a code change.
 import os
 from pathlib import Path
 
-DATA_DIR = Path.home() / ".enqueue-poc"
+# Where the library lives (datadir.py): the place a Mac app keeps what it owns, or the
+# XDG data folder elsewhere. ENQ_DATA_DIR points it anywhere else.
+DATA_DIR = Path(
+    os.getenv("ENQ_DATA_DIR")
+    or (
+        Path.home() / "Library" / "Application Support" / "Enqueue"
+        if os.uname().sysname == "Darwin"
+        else Path(os.getenv("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "enqueue"
+    )
+)
 DB_PATH = DATA_DIR / "enqueue.db"
 BLOB_DIR = DATA_DIR / "blobs"
 

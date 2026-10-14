@@ -707,13 +707,20 @@
     border-radius: var(--r-sm);
     padding: 1px 6px;
   }
+  /* A code block keeps every newline and space it was given, and wraps a long line
+     instead of running it off the right edge: a note's code block is as often a
+     prompt or a long command as a program, and a line of 500 characters behind a
+     sideways scroll read as one clipped blob. A wrapped line continues from the
+     left edge; the indentation of every real line is kept. */
   .md pre,
   .editor pre {
     background: var(--surface-2);
     border-radius: var(--r);
     padding: var(--sp-4);
     margin: var(--sp-4) 0 0;
-    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
   }
   .md pre code {
     background: none;
@@ -759,115 +766,8 @@
     font-style: italic;
   }
 
-  /* ---- a note's own typography ---------------------------------------------
-     Most notes are outlines typed fast: a line, then bullets under it, then bullets
-     under those. Set as flat grey text they read as a dump. The sheet reads the
-     shape that is already there and sets it, with nothing for the writer to do:
-     a line that leads into a list is that list's label; an item with items under
-     it is a heading for them; each depth has its own quiet marker and a hairline
-     guide down its side. Scoped to .editor, so chat answers and file text keep
-     the plain .md setting. */
-  .editor {
-    line-height: 26px;
-    font-variant-numeric: tabular-nums;
-  }
-  .editor h1,
-  .editor h2,
-  .editor h3 {
-    font-family: var(--display);
-    font-weight: var(--w-strong);
-    margin: var(--sp-6) 0 var(--sp-2);
-    text-wrap: balance;
-  }
-  .editor h1 {
-    font-size: 28px;
-    line-height: 34px;
-  }
-  .editor h2 {
-    font-size: 22px;
-    line-height: 28px;
-  }
-  .editor h3 {
-    font-size: 18px;
-    line-height: 24px;
-    letter-spacing: -0.12px;
-  }
-  .editor p {
-    text-wrap: pretty;
-  }
-  /* The line that leads into a list names it. */
-  .editor > p:has(+ ul),
-  .editor > p:has(+ ol) {
-    margin-top: var(--sp-6);
-    font-weight: var(--w-medium);
-    color: var(--text);
-  }
-  .editor > p:has(+ ul) + ul,
-  .editor > p:has(+ ol) + ol {
-    margin-top: var(--sp-2);
-  }
-  .editor ul,
-  .editor ol {
-    padding-left: 22px;
-  }
-  .editor li {
-    margin: 6px 0;
-    padding-left: 2px;
-    font-weight: 400;
-    color: var(--text-dim);
-  }
-  .editor li::marker {
-    color: var(--accent);
-    font-weight: 400;
-  }
-  .editor ol > li::marker {
-    color: var(--text-mute);
-    font-size: 14px;
-  }
-  /* An item with items under it heads them. */
-  .editor li:has(> ul),
-  .editor li:has(> ol) {
-    font-weight: var(--w-medium);
-    color: var(--text);
-  }
-  /* Each depth steps in beside a hairline guide, with a quieter marker than the
-     one above it: a dot, then a dash, then a small dot. */
-  .editor li > ul,
-  .editor li > ol {
-    margin: 2px 0 var(--sp-2) 3px;
-    padding-left: 20px;
-    box-shadow: inset 1px 0 0 var(--line);
-  }
-  .editor li > ul {
-    list-style-type: "\2013\00a0\00a0";
-  }
-  .editor li li > ul {
-    list-style-type: "\00b7\00a0\00a0";
-  }
-  .editor li li::marker {
-    color: var(--text-mute);
-  }
-  .editor li li {
-    margin: 3px 0;
-  }
-  /* On the sheet, code and quotations sink into the ground colour instead of
-     vanishing white-on-white; a quotation is a soft block, not a striped margin. */
-  .editor code,
-  .editor pre {
-    background: var(--bg);
-  }
-  .editor blockquote {
-    margin: var(--sp-4) 0 0;
-    padding: var(--sp-3) var(--sp-4);
-    border-left: 0;
-    border-radius: var(--r-lg);
-    background: var(--bg);
-    color: var(--text);
-    font-style: italic;
-  }
-  .editor blockquote > :first-child {
-    margin-top: 0;
-  }
+  /* A note's own typography (the sheet's outline-reading setting) is css/notetype.css,
+     shared with the phone's reader and the drafts comparison. */
   /* A divider: a short centred rule with air around it, not a full-width line. */
   .md hr,
   .editor hr {
@@ -1027,3 +927,192 @@
   color: var(--accent-text);
   background: var(--lavender-subtle);
 }
+
+  /* ---- Tabs on a note's sheet (js/notetabs.js) ---------------------------------- */
+  /* Folder tabs on the sheet's top edge: the chosen one is the sheet's own white and
+     runs into it; the others sit back, a shade of the ground. They read as parts of
+     one note, not as navigation. */
+  .notetabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    margin-top: var(--sp-5);
+    padding: 0 22px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .notetabs::-webkit-scrollbar {
+    display: none;
+  }
+  .notetabs + .docpane.notesheet {
+    margin-top: 0;
+  }
+  .docpane.notesheet.tabbed {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .ntab {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 240px;
+    padding: 9px 16px 10px;
+    border-radius: 12px 12px 0 0;
+    background: color-mix(in srgb, var(--surface-doc) 45%, transparent);
+    box-shadow: inset 0 0 0 1px var(--line-soft);
+    font-size: 14px;
+    color: var(--text-mute);
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+    transition:
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease),
+      transform 160ms var(--ease);
+  }
+  .ntab:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface-doc) 75%, transparent);
+  }
+  .ntab[aria-selected="true"] {
+    z-index: 2;
+    margin-bottom: -1px;
+    padding-bottom: 11px;
+    background: var(--surface-doc);
+    box-shadow:
+      inset 1px 1px 0 var(--line),
+      inset -1px 0 0 var(--line);
+    color: var(--text);
+    font-weight: var(--w-medium);
+    cursor: grab;
+  }
+  .ntab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .ntab.dragging {
+    z-index: 3;
+    cursor: grabbing;
+    transition: none;
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      0 10px 24px -12px rgba(43, 11, 74, 0.45);
+  }
+  .ntab-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .ntab-input {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: var(--text);
+    outline: none;
+  }
+  .ntab.editing {
+    box-shadow:
+      inset 0 0 0 1.5px var(--accent),
+      0 0 0 4px var(--purple-bold-wash);
+  }
+  /* On the chosen tab, on hover: make it its own note, delete it. */
+  .ntab-tools {
+    display: inline-flex;
+    gap: 2px;
+    margin-right: -8px;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .ntab:hover .ntab-tools,
+  .ntab:focus-within .ntab-tools {
+    opacity: 1;
+  }
+  .ntab.editing .ntab-tools {
+    display: none;
+  }
+  .ntab-tool {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .ntab-tool svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ntab-tool:hover {
+    background: var(--purple-bold-wash);
+    color: var(--accent-text);
+  }
+  .ntab-tool[data-act="close"]:hover {
+    background: var(--badge-danger-fill);
+    color: var(--badge-danger-ink);
+  }
+  .ntab-add {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin: 0 0 4px 2px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .ntab-add svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .ntab-add:hover {
+    background: var(--purple-bold-wash);
+    color: var(--accent-text);
+  }
+  .ntab-add:focus-visible,
+  .ntab-tool:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  /* Where tabs are shown stacked (a draft compared, a reader that is not the editor),
+     a tab's name stands as a small label over its part. */
+  .md .md-tab {
+    margin: var(--sp-6) 0 var(--sp-2);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 12px;
+    font-weight: var(--w-medium);
+    color: var(--text-mute);
+  }
+  .md .md-tab:first-child {
+    margin-top: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ntab {
+      transition: none;
+    }
+  }
+  .notetabs[hidden] {
+    display: none;
+  }

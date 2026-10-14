@@ -1,6 +1,6 @@
 """Backups into a folder a cloud drive syncs (Proton Drive, by design).
 
-The live library stays where it is (`~/.enqueue-poc`). A SQLite database in WAL mode
+The live library stays where it is (`config.DATA_DIR`). A SQLite database in WAL mode
 is three files written together, and a sync client that uploads whichever it sees
 mid-write keeps a torn copy; a File Provider drive may also turn a quiet file into a
 cloud-only placeholder under the engine. So the drive never holds the live files.
@@ -355,6 +355,14 @@ def start_scheduler() -> None:
                     due = True
             if due:
                 run_quietly("daily")
+                # Drafts are thinned on the same daily beat (drafts.py), after the
+                # copy, so a backup holds them as they were before thinning.
+                try:
+                    from . import drafts
+
+                    drafts.thin()
+                except Exception:  # noqa: BLE001 - never stop the scheduler
+                    pass
             time.sleep(3600)
 
     threading.Thread(target=loop, name="enqueue-backup-schedule", daemon=True).start()

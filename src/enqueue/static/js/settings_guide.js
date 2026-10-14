@@ -24,7 +24,7 @@ const SHELF_GUIDES = {
 		"Search concepts": "concepts",
 	},
 	features: { Capture: "hotkey", Links: "link-previews", Search: "search-options" },
-	storage: { Backup: "backups" },
+	storage: { Backup: "backups", Drafts: "drafts" },
 	trash: { Retention: "trash" },
 	sync: {
 		"Join a library": "join-library",

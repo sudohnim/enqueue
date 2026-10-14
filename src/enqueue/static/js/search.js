@@ -61,7 +61,7 @@
   // A note's text usually opens with its own "# Title" heading, which the row already
   // shows as its title.
   function snippetWithoutTitle(h) {
-    const s = h.snippet || "";
+    const s = Tabs.plain(h.snippet || "");
     const heading = "# " + (h.title || "");
     const rest = h.title && s.startsWith(heading) ? s.slice(heading.length).trim() : s;
     // A snippet is a cut of the raw text: read as words, not as "## **JUDO**".
@@ -71,9 +71,13 @@
   // The query whose results are on screen, so opening one can report which search
   // found it and at what rank.
   let lastQuery = "";
+  let lastHits = [];
 
   function openHit(id, rank) {
     reportOpen(id, "search", lastQuery, rank);
+    // A note with tabs opens on the tab the hit came from (Tabs.find).
+    const hit = lastHits[rank - 1];
+    if (hit && hit.artifact_id === id) NoteTabs.hint(id, lastQuery, hit.snippet);
     showArtifact(id);
   }
 
@@ -111,6 +115,7 @@
     }
     if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
     lastQuery = q;
+    lastHits = r.hits;
     // Hits the relevance check could not rule on (the model was unreachable) come
     // last from the engine, marked `loose`. They are shown, under a line that says
     // what they are, and are not counted as results.

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-draft-restore"
+description = "Enables the mobile_draft_restore command without any pre-configured scope."
+commands.allow = ["mobile_draft_restore"]
+
+[[permission]]
+identifier = "deny-mobile-draft-restore"
+description = "Denies the mobile_draft_restore command without any pre-configured scope."
+commands.deny = ["mobile_draft_restore"]

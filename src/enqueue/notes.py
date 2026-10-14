@@ -100,7 +100,7 @@ def _seconds_between(earlier: str, later: str) -> float:
         return float("inf")
 
 
-def _append_version(conn, artifact_id: str, body: str, when: str) -> str:
+def _append_version(conn, artifact_id: str, body: str, when: str, fresh: bool = False) -> str:
     """Keep this state of the body as a draft to go back to.
 
     The editor saves whenever the typing pauses, and a draft per save buried the ones
@@ -113,7 +113,26 @@ def _append_version(conn, artifact_id: str, body: str, when: str) -> str:
     still has the text.
     """
     every = config.DRAFT_EVERY_S
-    if every > 0:
+    from . import drafts
+
+    keeps = conn.execute(
+        "SELECT keep_drafts FROM artifacts WHERE id = ?", (artifact_id,)
+    ).fetchone()
+    if not fresh and ((keeps is not None and not keeps["keep_drafts"]) or drafts.policy() == "off"):
+        # Drafts are off, for this note or the library: one draft is still kept, the
+        # latest, because it is the note's body version.
+        newest = conn.execute(
+            "SELECT id FROM artifact_versions WHERE artifact_id = ?"
+            " ORDER BY created_at DESC, id DESC LIMIT 1",
+            (artifact_id,),
+        ).fetchone()
+        if newest is not None:
+            conn.execute(
+                "UPDATE artifact_versions SET body = ?, created_at = ? WHERE id = ?",
+                (body, when, newest["id"]),
+            )
+            return newest["id"]
+    if every > 0 and not fresh:
         last_two = conn.execute(
             "SELECT id, created_at FROM artifact_versions WHERE artifact_id = ?"
             " ORDER BY created_at DESC, id DESC LIMIT 2",
@@ -154,7 +173,7 @@ def _record_secrets(conn, artifact_id: str, text: str) -> list[str]:
     return [h.kind for h in hits]
 
 
-def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
+def edit(artifact_id: str, body: str, title: str | None = None, keep_current: bool = False) -> dict:
     """Rewrite a note's body. Rejects captures.
 
     Appends the new body to the version log *before* updating the artifact, so a
@@ -227,7 +246,9 @@ def edit(artifact_id: str, body: str, title: str | None = None) -> dict:
         stored_title = vaultops._seal(key, resolved) if vaulted else resolved
 
         if body_changed:
-            _append_version(conn, artifact_id, stored_body, now)
+            # `keep_current` (restoring a draft): the newest draft holds the text as it
+            # was a moment ago, and must stand rather than be rewritten by this edit.
+            _append_version(conn, artifact_id, stored_body, now, fresh=keep_current)
         conn.execute(
             "UPDATE artifacts SET body = ?, title = ?, title_explicit = ?, updated_at = ?"
             " WHERE id = ?",

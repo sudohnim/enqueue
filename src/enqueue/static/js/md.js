@@ -185,7 +185,16 @@
       // A line of three or more dashes is a divider. It used to show as the dashes
       // themselves. The count is kept so the note is written back as it was typed.
       const rule = line.match(/^-{3,}$/);
-      if (rule) {
+      // A tab's marker (js/tabs.js), escaped like every line by now. The desktop
+      // editor never holds one (it shows one tab at a time); anywhere else - the phone's
+      // reader, a draft compared - the tab's name stands as a small label over it.
+      const tabMark = line.match(/^&lt;!--\s*tab:\s*(.*?)\s*--&gt;$/);
+      if (tabMark) {
+        flushList();
+        out.push(
+          '<div class="md-tab" data-tab="' + tabMark[1] + '">' + (tabMark[1] || "Untitled") + "</div>",
+        );
+      } else if (rule) {
         flushList();
         out.push('<hr data-dashes="' + line.length + '"' + tight() + ">");
       } else if (h) {
@@ -352,6 +361,11 @@
       if (node.hasAttribute("data-tight") && lines.length && lines[lines.length - 1] === "")
         lines.pop();
 
+      // A tab's label is its marker again (md() above).
+      if (/(^|\s)md-tab(\s|$)/.test(node.getAttribute("class") || "")) {
+        lines.push("<!-- tab: " + (node.getAttribute("data-tab") || "") + " -->", "");
+        continue;
+      }
       switch (node.tagName) {
         case "H1":
           lines.push("# " + inline(node).trim(), "");

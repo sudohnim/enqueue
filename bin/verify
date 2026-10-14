@@ -52,6 +52,8 @@ JS_ORDER = [
     "eyemood.js",
     "ground.js",
     "md.js",
+    "diff.js",
+    "tabs.js",
     "linkpop.js",
     "suggest.js",
     "details.js",
@@ -67,6 +69,8 @@ JS_ORDER = [
     "manual.js",
     "chat.js",
     "trash.js",
+    "drafts.js",
+    "notetabs.js",
     "settings_guide.js",
     "settings.js",
 ]

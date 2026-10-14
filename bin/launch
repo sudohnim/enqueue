@@ -67,7 +67,7 @@ js_gate() {
   for page in $1; do
     JS="$(mktemp -t enqueue-js).js"
     if [[ "$page" == "home" ]]; then
-      cat "$REPO"/src/enqueue/static/js/{util,icons,md,linkpop,suggest,details,guides,tour,dialogs,pill,morph,home,artifact,search,pivot,chat,trash,settings_guide,settings}.js > "$JS"
+      cat "$REPO"/src/enqueue/static/js/{util,icons,md,diff,tabs,linkpop,suggest,details,guides,tour,dialogs,pill,morph,home,artifact,search,pivot,chat,trash,drafts,notetabs,settings_guide,settings}.js > "$JS"
     elif [[ "$page" == "mobile" ]]; then
       cat "$REPO"/src/enqueue/static/js/{md,linkpop,suggest,details,guides,tour}.js > "$JS"
       python3 - "$REPO/src/enqueue/static/mobile.html" "$JS" <<'PY'
@@ -118,7 +118,10 @@ launch_desktop() {
 
   js_gate "home capture"
 
-  echo "/Users/minhmai/enqueue" > "$HOME/.enqueue-poc/repo" 2>/dev/null || true
+  # Where the shell finds the engine: a pointer in the library's folder (Application
+  # Support; the engine moves an old ~/.enqueue-poc there on its first start, datadir.py).
+  DATA_DIR="${ENQ_DATA_DIR:-$HOME/Library/Application Support/Enqueue}"
+  mkdir -p "$DATA_DIR" && echo "$REPO" > "$DATA_DIR/repo" 2>/dev/null || true
 
   # Link-preview fetches identify as a real browser so publishers that refuse the
   # default bot user-agent (ipostal1, Instagram, Medium...) return the page. Respect

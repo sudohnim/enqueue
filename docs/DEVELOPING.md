@@ -230,7 +230,7 @@ Every command takes `--help` for full argument details.
 uv run pytest -q
 ```
 
-Tests live in `tests/` and never touch the network, a model, or your real `~/.enqueue-poc` data: each runs against a temporary database, and model calls are scripted.
+Tests live in `tests/` and never touch the network, a model, or your real `~/Library/Application Support/Enqueue` data: each runs against a temporary database, and model calls are scripted.
 `tests/test_md_roundtrip.py` runs the markdown round-trip cases in `tests/js/md_roundtrip.js` under Node (skipped when `node` is missing).
 `uv run pytest -q -n auto` runs them in parallel, as CI does.
 
@@ -315,9 +315,9 @@ The precedence is: environment variable > `settings.json` > built-in default.
 | `ENQ_BACKUP_DIR` | (empty) | The folder backups go into (a cloud drive's folder). Empty means backups are off. |
 | `ENQ_LLM_HEADERS` | (empty) | Extra headers for model calls, one `Name: value` per line. Required for `opencode-go`, which rejects a request without an `x-opencode-session: <uuid>` header (400 `MissingSessionID`). These headers sync to the phone so mobile chat can call the same endpoint. |
 | `ENQ_TRASH_DAYS` | `30` | Days before a trashed artifact is permanently destroyed. Minimum 1. |
-| `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/.enqueue-poc/repo` by `bin/launch desktop`. |
+| `ENQUEUE_REPO` | (detected) | Path to the repo, used by the desktop shell to find `uv run enq serve`. Written to `~/Library/Application Support/Enqueue/repo` by `bin/launch desktop`. |
 
-Settings are also writable through the API (`PATCH /settings`) and stored in `~/.enqueue-poc/settings.json` with `0600` permissions.
+Settings are also writable through the API (`PATCH /settings`) and stored in `~/Library/Application Support/Enqueue/settings.json` with `0600` permissions.
 No secret is ever written to that file; the API key lives in the macOS Keychain (via `/usr/bin/security`).
 
 ---
@@ -403,7 +403,7 @@ Search runs entirely on your Mac, over the one SQLite file. The dense search is 
 
 ## Where your data lives
 
-Everything is stored under `~/.enqueue-poc`:
+Everything is stored under `~/Library/Application Support/Enqueue`:
 
 | Path | Contents |
 | --- | --- |

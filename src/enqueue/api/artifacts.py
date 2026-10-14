@@ -369,6 +369,75 @@ def get_artifact(artifact_id: str) -> dict:
     return detail
 
 
+@router.get("/artifacts/{artifact_id}/drafts")
+def list_drafts(artifact_id: str) -> dict:
+    """A note's drafts, newest first, each with what it changed."""
+    from .. import drafts
+
+    try:
+        return drafts.listing(artifact_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such note") from None
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/artifacts/{artifact_id}/drafts/{version_id}")
+def read_draft(artifact_id: str, version_id: str) -> dict:
+    from .. import drafts
+
+    try:
+        return {"id": version_id, "body": drafts.body(artifact_id, version_id)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such draft") from None
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post("/artifacts/{artifact_id}/drafts/{version_id}/restore")
+def restore_draft(artifact_id: str, version_id: str) -> dict:
+    """Put a draft back. Today's text is kept as a draft first."""
+    from .. import drafts
+
+    try:
+        return drafts.restore(artifact_id, version_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such draft") from None
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+class KeepDrafts(BaseModel):
+    on: bool
+
+
+@router.put("/artifacts/{artifact_id}/drafts/keep")
+def keep_drafts(artifact_id: str, req: KeepDrafts) -> dict:
+    """Keep drafts of this note, or only its latest."""
+    from .. import drafts
+
+    try:
+        return drafts.set_keep(artifact_id, req.on)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such note") from None
+
+
+@router.get("/drafts")
+def drafts_stats() -> dict:
+    """How many drafts the library keeps, by which policy."""
+    from .. import drafts
+
+    return drafts.stats()
+
+
+@router.post("/drafts/thin")
+def drafts_thin() -> dict:
+    """Apply the drafts policy now, instead of at the next daily pass."""
+    from .. import drafts
+
+    return {"removed": drafts.thin(), **drafts.stats()}
+
+
 @router.get("/artifacts/{artifact_id}/versions/{version_id}")
 def get_version(artifact_id: str, version_id: str) -> dict:
     body = notes.version_body(artifact_id, version_id)

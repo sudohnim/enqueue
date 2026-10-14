@@ -6,9 +6,18 @@ that actually runs rather than a hand-rolled schema that could drift from it.
 
 from __future__ import annotations
 
-import pytest
+import os
+import tempfile
 
-from enqueue import config, db
+# No test process may touch the real library. Fixtures repoint config per test, but
+# anything outside a test (outbound.py's atexit flush, a stray get_conn) reads the
+# folder config was imported with: on 2026-10-14 that flush created the real data
+# folder, which then blocked moving the library into it. Set before enqueue imports.
+os.environ["ENQ_DATA_DIR"] = tempfile.mkdtemp(prefix="enqueue-tests-")
+
+import pytest  # noqa: E402
+
+from enqueue import config, db  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

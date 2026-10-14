@@ -711,6 +711,7 @@ async function renderSettingsStorage() {
 		esc(s0.data_dir) +
 		"</div></div></div>";
 	html += await renderBackupSection();
+	html += await renderDraftsSection(d);
 	html +=
 		'<div class="shelf">Usage</div><div class="group">' +
 		'<div class="field"><div class="facts">' +
@@ -738,6 +739,87 @@ async function renderSettingsStorage() {
 // Backups go into a cloud drive's folder - Proton Drive, so the copy is encrypted end
 // to end off this Mac. The live library never moves there (backup.py says why); this
 // only chooses the folder, shows the last backup, and starts one on demand.
+// How many drafts of each note are kept (drafts.py). A choice of three, staged with
+// Save like the other settings; "Apply now" thins at once instead of at the next
+// daily pass, after saying what it removes.
+const DRAFT_POLICIES = [
+	["thinned", "Keep a thinned history", "Close together while recent, further apart as they age."],
+	["30d", "Keep the last 30 days", "Everything older is removed, except how each note began."],
+	["off", "Don't keep drafts", "Edits replace the text. Each note keeps only its latest."],
+];
+
+async function renderDraftsSection(d) {
+	let st;
+	try {
+		st = await api("/drafts");
+	} catch (err) {
+		return "";
+	}
+	const f = d.settings.drafts_keep || {};
+	const chosen =
+		pendingSettings && pendingSettings.drafts_keep !== undefined
+			? pendingSettings.drafts_keep
+			: f.value || "thinned";
+	return (
+		'<div class="shelf">Drafts</div><div class="group">' +
+		'<div class="field" role="radiogroup" aria-label="Drafts kept">' +
+		DRAFT_POLICIES.map(
+			([value, label, help]) =>
+				'<button type="button" class="choice" role="radio" aria-checked="' +
+				String(chosen === value) +
+				'"' +
+				(f.locked ? " disabled" : "") +
+				" onclick=\"stageDraftPolicy('" +
+				value +
+				"')\"><span class=\"choice-dot\" aria-hidden=\"true\"></span><span><b>" +
+				esc(label) +
+				"</b><small>" +
+				esc(help) +
+				"</small></span></button>",
+		).join("") +
+		(f.locked ? '<div class="pinned">pinned by ' + esc(f.env_var) + " in the environment</div>" : "") +
+		"</div>" +
+		'<div class="field drafts-foot"><span class="aside"><b>' +
+		st.drafts +
+		"</b> drafts across " +
+		st.notes +
+		" notes, " +
+		esc(bytes(st.bytes)) +
+		'.</span><button class="btn tertiary sm" onclick="applyDraftPolicy(this)">Apply now</button></div>' +
+		"</div>"
+	);
+}
+
+function stageDraftPolicy(value) {
+	stageSetting("drafts_keep", value);
+	document.querySelectorAll('[role="radiogroup"][aria-label="Drafts kept"] .choice').forEach((b) => {
+		b.setAttribute("aria-checked", String(b.getAttribute("onclick").includes("'" + value + "'")));
+	});
+}
+
+async function applyDraftPolicy(button) {
+	if (isDirty()) return toast("Save your changes first, then apply.", true);
+	const yes = await ask(
+		"Apply the drafts setting now?",
+		"Drafts it no longer keeps are removed now rather than at tonight's pass. This cannot be undone.",
+		"Apply now",
+	);
+	if (!yes) return;
+	button.disabled = true;
+	try {
+		const r = await api("/drafts/thin", { method: "POST" });
+		toast(r.removed ? "Removed " + r.removed + " drafts." : "Nothing to remove.");
+	} catch (err) {
+		toast(String((err && err.message) || err), true);
+	}
+	renderSettingsTab("storage");
+}
+
+// Backup (backup.py): leads with the one fact that matters, when the last copy was
+// made, with Back up now beside it. Any folder works: a cloud drive's folder is what
+// carries the copy off this Mac (Proton Drive, iCloud Drive, Dropbox), and Enqueue
+// only offers a Proton Drive folder it finds as a shortcut. The folder is chosen with
+// the Mac's own picker when the window has one, else typed.
 async function renderBackupSection() {
 	let b;
 	try {
@@ -746,55 +828,123 @@ async function renderBackupSection() {
 		return "";
 	}
 	const proton = (b.detected || [])[0];
-	let html = '<div class="shelf">Backup</div><div class="group">';
+	const picker = !!(window.__TAURI__ && window.__TAURI__.core);
+	const choose =
+		(proton
+			? '<button class="btn primary" onclick="useBackupDir(' +
+				esc(JSON.stringify(proton)) +
+				')">Use Proton Drive</button>'
+			: "") +
+		(picker
+			? '<button class="btn ' +
+				(proton ? "tertiary" : "primary") +
+				'" onclick="chooseBackupDir()">Choose a folder…</button>'
+			: "");
+	let html = '<div class="shelf">Backup</div><div class="group backup">';
 	if (!b.dir) {
 		html +=
-			'<div class="field"><span class="rowlabel">Keep a copy in your cloud drive</span>' +
-			'<div class="aside">Once a day and when you quit, a copy of your library goes ' +
-			"into the folder you choose. In Proton Drive it is encrypted end to end. Your " +
-			"library itself stays on this Mac.</div>" +
-			(proton
-				? '<div class="actions"><button class="btn secondary" onclick="useBackupDir(' +
-					esc(JSON.stringify(proton)) +
-					')">Use Proton Drive</button></div>'
-				: "") +
+			'<div class="backup-status" data-state="none"><span class="backup-dot" aria-hidden="true"></span>' +
+			'<div class="backup-words"><div class="backup-head">Not backed up yet</div>' +
+			'<div class="backup-sub">Your library lives only on this Mac. Choose a folder your cloud ' +
+			"drive keeps, and a copy goes there every day and each time you quit.</div></div></div>" +
+			'<div class="actions backup-actions">' +
+			choose +
 			"</div>" +
-			'<div class="field"><label for="backup_dir_input">Or another folder</label>' +
-			'<input id="backup_dir_input" placeholder="~/Library/CloudStorage/..." ' +
-			'onkeydown="if(event.key===\'Enter\')useBackupDir(this.value)">' +
-			'<div class="actions"><button class="btn tertiary" ' +
-			"onclick=\"useBackupDir(document.getElementById('backup_dir_input').value)\">" +
-			"Back up there</button></div></div>";
+			(picker
+				? ""
+				: '<div class="field"><label for="backup_dir_input">Folder</label>' +
+					'<input id="backup_dir_input" placeholder="~/Library/CloudStorage/..." ' +
+					'onkeydown="if(event.key===\'Enter\')useBackupDir(this.value)">' +
+					'<div class="actions"><button class="btn tertiary" ' +
+					"onclick=\"useBackupDir(document.getElementById('backup_dir_input').value)\">" +
+					"Back up there</button></div></div>");
 		return html + "</div>";
 	}
 	const last = b.last && b.last.folder === b.folder ? b.last : null;
+	const stale = last && Date.now() - new Date(last.at).getTime() > 3 * 86400000;
+	const state = b.running ? "running" : !last ? "none" : stale ? "stale" : "ok";
+	const head = b.running
+		? "Backing up…"
+		: last
+			? "Backed up " + since(last.at)
+			: "Not backed up yet";
+	const sub = b.running
+		? "Copying the library. Keep working."
+		: last
+			? "Every day, and each time you quit. " + bytes(last.bytes) + " a copy."
+			: "The first copy is on its way.";
+	// What is kept, oldest on the left: the weekly copies paler than the daily ones.
+	const kept = (b.backups || []).map((x) => x.file).sort();
+	const today = new Date();
+	const bars = kept
+		.map((file, i) => {
+			const m = file.match(/(\d{4}-\d{2}-\d{2})/);
+			const age = m ? (today - new Date(m[1] + "T12:00:00")) / 86400000 : 0;
+			const cls = i === kept.length - 1 ? "latest" : age > 7 ? "weekly" : "daily";
+			return '<i class="' + cls + '" title="' + esc(m ? m[1] : file) + '"></i>';
+		})
+		.join("");
+	const daily = kept.filter((f) => {
+		const m = f.match(/(\d{4}-\d{2}-\d{2})/);
+		return !m || (today - new Date(m[1] + "T12:00:00")) / 86400000 <= 7;
+	}).length;
 	html +=
-		'<div class="field"><span class="rowlabel">Backing up to</span>' +
-		'<div class="mono chip">' +
-		esc(b.folder) +
-		"</div>" +
-		'<div class="aside" id="backupStatus">' +
-		(b.running
-			? "Backing up now..."
-			: last
-				? "Last backup " +
-					esc(since(last.at)) +
-					", " +
-					esc(bytes(last.bytes)) +
-					". Daily, and when you quit."
-				: "No backup yet.") +
-		"</div>" +
-		'<div class="actions">' +
-		'<button class="btn secondary" id="backupNowBtn" onclick="backupNow(this)"' +
-		(b.running ? " disabled" : "") +
-		">Back up now</button>" +
-		'<button class="btn tertiary" onclick="useBackupDir(\'\')">Turn off</button>' +
+		'<div class="backup-status" data-state="' +
+		state +
+		'"><span class="backup-dot" aria-hidden="true"></span>' +
+		'<div class="backup-words"><div class="backup-head" id="backupStatus">' +
+		esc(head) +
+		'</div><div class="backup-sub">' +
+		esc(sub) +
 		"</div></div>" +
-		'<div class="field"><span class="rowlabel">Restoring</span>' +
-		'<div class="aside">Quit Enqueue, then run <span class="mono">enq restore ' +
+		'<button class="btn primary" id="backupNowBtn" onclick="backupNow(this)"' +
+		(b.running ? " disabled" : "") +
+		">Back up now</button></div>" +
+		(b.running ? '<div class="backup-run" aria-hidden="true"><i></i></div>' : "") +
+		'<div class="backup-grid">' +
+		'<div><div class="backup-label">Kept</div>' +
+		(kept.length
+			? '<div class="backup-bars">' +
+				bars +
+				'</div><div class="backup-legend"><span>' +
+				daily +
+				" daily" +
+				(kept.length > daily ? ", " + (kept.length - daily) + " weekly" : "") +
+				"</span><span>today</span></div>"
+			: '<div class="backup-sub">None yet.</div>') +
+		"</div>" +
+		'<div><div class="backup-label">Where</div>' +
+		'<div class="backup-where"><span class="mono chip" title="' +
+		esc(b.folder) +
+		'">' +
+		esc(b.folder.replace(/^.*\/CloudStorage\/([^/]+)/, (_m, d) => d.replace(/-.*$/, "")).replace(/^\/Users\/[^/]+/, "~")) +
+		"</span>" +
+		(picker ? '<button class="btn tertiary sm" onclick="chooseBackupDir()">Change</button>' : "") +
+		"</div>" +
+		'<div class="backup-sub">' +
+		(/ProtonDrive/.test(b.folder)
+			? "Proton encrypts the copies. Enqueue does not yet."
+			: "Enqueue does not encrypt the copies yet, so this folder holds them as plain files.") +
+		"</div></div></div>" +
+		'<div class="backup-foot"><span class="backup-sub"><b>Restoring</b>, on this Mac or a new one: ' +
+		'quit Enqueue, then run <span class="mono chip" title="enq restore ' +
 		esc(b.dir) +
-		"</span>. Your current library is set aside, never deleted.</div></div>";
+		'">enq restore</span> with this folder. Your current library is set aside, never deleted.</span>' +
+		'<button class="btn tertiary sm" onclick="useBackupDir(\'\')">Turn off</button></div>';
 	return html + "</div>";
+}
+
+// The Mac's folder picker (tauri-plugin-dialog). Cancelling picks nothing.
+async function chooseBackupDir() {
+	let picked = null;
+	try {
+		picked = await window.__TAURI__.core.invoke("plugin:dialog|open", {
+			options: { directory: true, multiple: false, title: "Choose where backups go" },
+		});
+	} catch (err) {
+		return toast("Could not open the folder picker: " + String(err.message || err), true);
+	}
+	if (typeof picked === "string" && picked) useBackupDir(picked);
 }
 
 async function useBackupDir(path) {

@@ -18,7 +18,7 @@ These came up while surveying the code against the old AGENTS.md, then confirmed
 They are recorded here so the next agent does not re-litigate them.
 
 1. **Encryption at rest (the local DB) is planned, not built.**
-The local database `~/.enqueue-poc/enqueue.db` is plain `sqlite3` today; encryption at rest for it is still a planned milestone and no scheme is chosen.
+The local database `~/Library/Application Support/Enqueue/enqueue.db` is plain `sqlite3` today; encryption at rest for it is still a planned milestone and no scheme is chosen.
 Treat the local store as plaintext and keep secret material out of the search index.
 (Distinct from the SYNC payload, which IS end-to-end encrypted - see decision 2. The DEK/keyring crypto in `crypto.py`/`keyring_file.py` protects what goes to the relay, not the DB on disk.)
 
@@ -28,7 +28,7 @@ What exists in code:
 
 - Relay: `src/enqueue/relay/app.py` (`create_relay(data_dir, secret=...)`, Bearer-secret auth, stores opaque bytes only). `enq relay` command in `src/enqueue/cli.py` wraps this with uvicorn (flags: `--host`, `--port`, `--data-dir`, `--secret`; env: `RELAY_HOST`, `RELAY_PORT`, `RELAY_DATA_DIR`, `RELAY_SECRET`).
 - Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
-- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/.enqueue-poc/enqueue.db` at rest is still plain sqlite (see decision 1).
+- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/Library/Application Support/Enqueue/enqueue.db` at rest is still plain sqlite (see decision 1).
 - Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
 **Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow) is superseded - do not extend it.
 **QR wire format (pinned - both sides parse exactly this):** compact UTF-8 JSON `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}`, where `dek` is RFC 4648 base64 (with padding) of the raw 32-byte DEK, and `v` is the format version (a parser seeing any other `v` refuses with a clear message). CAMERA-ONLY: there is no copyable/pasteable form of the payload anywhere, by decision - the raw DEK must never touch the clipboard or clipboard history. A Rust round-trip test (`rqrr` decode) pins the format.
@@ -36,9 +36,11 @@ What exists in code:
 **Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600 (`sync_config` in the app data dir, DEK as hex), NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
 **What remains open (see `docs/PLAN.md`):** the code is built and the sync/decrypt/apply/render path is device-verified end to end; the open items are the hosted-relay deploy (Railway, RELAYHOST.1), the scanner camera-box containment (SCANUI.1), the cold-launch bootstrap race (MOBBOOT.1), the CAP2.2 capture-flight over-app pivot, and a handful of pending human device-verifies on already-committed work.
 
-1. **The data directory is `~/.enqueue-poc` on purpose.**
-The `-poc` suffix is intentional for the current phase.
-Do not rename it without an explicit migration of user data.
+1. **The library lives in `~/Library/Application Support/Enqueue` (moved 2026-10-14).**
+It was `~/.enqueue-poc` for the proof of concept; a product keeps its data where a Mac app does (`config.DATA_DIR`; the XDG data folder off macOS; `ENQ_DATA_DIR` overrides).
+`datadir.move_legacy()` moves an old folder there at the engine's first start (`serve()`, and `enq migrate`/`enq restore`, which work on the files directly), before anything opens a file: one rename on one disk, never a copy, and never over a folder that already holds a library.
+`~/.enqueue-poc` is left as a link to the new folder. The desktop shell reads its pointers (`repo`, `capture-position`) from the new folder and falls back to the old (`data_dir`/`library_file` in `desktop/src/lib.rs`); `bin/launch` writes them to the new one.
+The path has a space in it: quote it in every script.
 
 2. **`instructor.Mode.JSON` is used for every adapter.**
 All providers pass `mode=instructor.Mode.JSON` unconditionally.
@@ -140,9 +142,9 @@ Tauri shell (desktop/)          native window, global hotkey, capture overlay
     v
 Engine (src/enqueue/)           FastAPI + background ingest worker, one process
     |
-    +-- SQLite (~/.enqueue-poc/enqueue.db)    artifacts, text, chats
+    +-- SQLite (~/Library/Application Support/Enqueue/enqueue.db)    artifacts, text, chats
     +-- SQLite search index (vec0 + FTS5 tables inside enqueue.db)  vectors + text + ids
-    +-- Blobs (~/.enqueue-poc/blobs/)         original files, content-addressed
+    +-- Blobs (~/Library/Application Support/Enqueue/blobs/)         original files, content-addressed
 ```
 
 Everything binds to loopback.
@@ -326,7 +328,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone). |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is white paper on both apps and its code and quotations sink into the lavender `--bg`; on the phone the whole screen turns white for a note's reader, drafts and writing page, `paperScreen` in `mobile.html`). |
 | `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
@@ -403,7 +405,7 @@ New Tauri commands need registration in THREE places: `build.rs`'s `commands(&[.
 
 ## Database schema
 
-SQLite at `~/.enqueue-poc/enqueue.db`.
+SQLite at `~/Library/Application Support/Enqueue/enqueue.db`.
 WAL mode, foreign keys on.
 Migrations run automatically at startup via Alembic.
 
@@ -477,7 +479,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 ### Three layers (falling precedence)
 
 1. **Environment variable** - explicit intent, always wins, locks the field in the UI.
-2. **settings.json** (`~/.enqueue-poc/settings.json`) - what was chosen in the interface. Plaintext, chmod 0600.
+2. **settings.json** (`~/Library/Application Support/Enqueue/settings.json`) - what was chosen in the interface. Plaintext, chmod 0600.
 3. **config.py default** - the built-in default.
 
 ### Key config values
@@ -501,6 +503,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
 | `ENQ_SEARCH_MODEL_RANK` | `off` | The `search_model_rank` setting: the search model re-orders the top 20 results of `/search` (`retrieve/model_rank.py`). |
 | `ENQ_SEARCH_JUDGE_WAIT` | `2.5` | Seconds `/search` waits for the gray-zone judge before answering without it. |
+| `ENQ_DRAFTS_KEEP` | `thinned` | How many drafts are kept as they age (`drafts.py`): thinned, 30d or off. |
 | `ENQ_DRAFT_EVERY` | `300` | Seconds between the drafts kept of a note while it is being written. 0 keeps one per save. |
 | `ENQ_SUMMARY_QUIET` | `300` | Seconds a note must be left alone before the model reads it again. 0 summarizes at every save. |
 | `ENQ_CHAT_PREP_WAIT` | `8` | Seconds an answer waits for the search model to restate a follow-up or lift a question before retrieving without it. |
@@ -893,7 +896,7 @@ The two committed evals use made-up queries; this one uses the person's own.
 Every time a search result is opened, the interface records the query and the result's rank (`opens`, source `search`).
 Each distinct query (case- and space-insensitive) becomes a case expecting any live artifact opened from it, and passes when one of them ranks in the top 3 of the live `/search` rollup (`eval_real.py`, same `PASS_RANK`/`score` as the cross-domain eval).
 It runs inside the engine against the real library (`POST /eval/real`, `enq eval-real`), because the cases are private: they never leave the machine and are never committed.
-The baseline is stored at `~/.enqueue-poc/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
+The baseline is stored at `~/Library/Application Support/Enqueue/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
 Run it on the laptop before and after any retrieval change (model swap, re-rank, ranking signals).
 Its blind spot: a person only opens what search already showed, so it measures ranking among surfaced results, not recall of notes search never surfaced; the cross-domain eval covers that.
 
@@ -996,7 +999,7 @@ Before this, the page name landed as the link's first note and read like somethi
 
 ## Backups (Proton Drive)
 
-`backup.py`, decided 2026-09-30. The live library stays at `~/.enqueue-poc`; the cloud drive only ever holds backups.
+`backup.py`, decided 2026-09-30. The live library stays at `~/Library/Application Support/Enqueue`; the cloud drive only ever holds backups.
 A live SQLite file in a File Provider folder is unsafe: WAL is three files a sync client can upload mid-write (a torn copy), the drive can evict a quiet file to a cloud-only placeholder under the engine, and the ~400 MB file (mostly the search index) would re-upload on every write.
 
 - `backup_dir` setting (empty = off; Settings > Storage offers the detected `~/Library/CloudStorage/ProtonDrive-*` folder). Backups go in `<backup_dir>/Enqueue Backup/`.
@@ -1004,6 +1007,7 @@ A live SQLite file in a File Provider folder is unsafe: WAL is three files a syn
 - When: the scheduler thread checks hourly (first after 5 min) and runs once a day if the change stamp (counts + latest timestamps of what a person writes) moved; a clean engine shutdown runs one more; choosing a folder runs the first at once; `POST /backup` / `enq backup` on demand. Keeps 7 daily + the newest of 4 earlier weeks.
 - `restore()` (`enq restore`): refuses while the engine answers on 127.0.0.1:8787, quick-checks the file, moves the live `enqueue.db` (+ wal/shm) to `before-restore-<time>/` (never deleted), copies the backup in, fills missing blobs, and fills `settings.json`/`keyring.json` only when absent (a new Mac). The next start migrates and, with no recorded embed version, rebuilds the index (index/bootstrap.py).
 - Events: `backup` (with the record) and `backup.failed` in the Activity log.
+- Settings > Storage > Backup (`renderBackupSection` in `static/js/settings.js`) leads with when the last copy was made (a dot: green, amber when none or older than three days, pulsing while one runs) and Back up now; then what is kept (a bar per copy, weekly ones paler), where, and how to restore. Any folder works; a detected Proton Drive folder is only a shortcut. The folder is chosen with the Mac's own picker (`tauri-plugin-dialog`, registered on the desktop shell and allowed for the home window as `dialog:allow-open`); a plain browser gets a text field instead.
 
 ## Trash
 
@@ -1101,12 +1105,12 @@ bin/launch desktop
 bin/launch mobile
 ```
 
-`bin/launch desktop` always rebuilds the shell with `cargo build` first (incremental, near-instant when unchanged; a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to `~/.enqueue-poc/repo`, launches the shell, waits for the engine health check, and brings the window to front. `bin/launch mobile` requires a real phone on USB (USB debugging on) - an emulator is rejected on purpose - then does a one-shot build + `adb install` + launch and EXITS (no `cargo tauri android dev`, so no held Gradle lock).
+`bin/launch desktop` always rebuilds the shell with `cargo build` first (incremental, near-instant when unchanged; a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to `~/Library/Application Support/Enqueue/repo`, launches the shell, waits for the engine health check, and brings the window to front. `bin/launch mobile` requires a real phone on USB (USB debugging on) - an emulator is rejected on purpose - then does a one-shot build + `adb install` + launch and EXITS (no `cargo tauri android dev`, so no held Gradle lock).
 
 The shell finds the engine repo via (in order):
 
 1. `ENQUEUE_REPO` env var
-2. `~/.enqueue-poc/repo` file
+2. `~/Library/Application Support/Enqueue/repo` file
 3. Parent of the current directory (works when run from `desktop/`)
 
 ### Tauri build notes
@@ -1205,7 +1209,7 @@ A draft per save made 149 near-identical drafts of one note, and the whole list 
 Now the newest draft follows the writing (rewritten in place, `created_at` moved) until `DRAFT_EVERY_S` has passed since the draft before it; then it stands and a new one starts.
 So an accidental deletion is never more than five minutes from a draft that still has the text, and a note written in one sitting keeps its start, one draft per five minutes, and its end.
 `MAX(created_at)` of a note's drafts is still its body version (what facets, entities and sections are stamped with), and it still moves on every save.
-The phone follows the same clock (`append_version` / `DRAFT_EVERY_S` in `desktop/src/sync.rs`, called by `update_note_body`), and like the desktop it keeps the NEW body as the draft; it used to keep the body before the edit, one per save.
+The phone follows the same clock (`keep_draft` / `DRAFT_EVERY_S` in `desktop/src/sync.rs`, called by `update_note_body`), and like the desktop it keeps the NEW body as the draft; it used to keep the body before the edit, one per save.
 A note first written on the phone has no draft until its first edit, so that edit also keeps the text as it was (stamped with the note's `created_at`).
 Keep the two rules in step: drafts replace each other wholesale when a snapshot is applied, so whichever device wrote last decides the list.
 
@@ -1340,6 +1344,63 @@ The sync key must not be the disk key: it exists only once sync is set up, "Rese
 The shape that fits is one library key born at first run, with separate keys for the disk, the relay and the backups derived from or wrapped under it.
 Other findings left open: the vault PIN is 6 digits (a million guesses against the wrapped key), one key both encrypts relay objects and names them, and the relay sees counts, sizes and timing.
 
+### What vaulting covers, who can read the library, and what is never backed up (2026-10-13)
+
+A security review found three holes; this is what closes them and what is still open.
+
+**Vaulting reaches what was derived from the text (`vaultops._seal_derived`).**
+It used to seal an artifact's own words (body, title, annotations, page text, drafts, blob) and leave everything derived from them readable: the summary lines, a link's preview, cached model output.
+A summary says in plain words what the sealed text is about, so that was the vault leaking.
+Now what a model wrote is REMOVED (machine summary lines, entities, section summaries, `related` rows, `derived_values` keyed by the artifact, its retry and pending rows), since it can be written again, and what the person or the page said is SEALED (hand-written summary lines, the preview's title, description, site and picture) and opened again on the way out (`_open_derived`).
+Anything new that stores text about an artifact must be added to one of those two lists, and to `tests/test_vaultops.py`, whose test reads the database file for the words.
+`vaultops.scrub()` brings items vaulted by an older build up to this: at startup it removes the model's rows (no key needed), and when the vault is unlocked (`POST /vault/unlock`) it seals the rest; it vacuums and pushes each cleaned item so the readable copy leaves the other devices.
+A vaulted snapshot replaces a device's summary lines even when it carries none (`sync/snapshot.py` and `apply_snapshot` in `desktop/src/sync.rs`); every other snapshot still leaves local lines alone when it has none.
+The phone does the same when it vaults (`vault_apply` in `desktop/src/lib.rs`) and removes leftover model lines beside vaulted items at each launch (`init_schema`).
+Still readable about a vaulted item: its tags, its kind and dates, and any conversation that quoted it before it was vaulted.
+
+**The library is its owner's only (`db.restrict_permissions`, at engine startup).**
+The data folder is 0700 and the files in it 0600; they were 0755 and 0644, readable by every account on the Mac.
+The folder is the gate; blob files inside `blobs/` keep their mode and are unreachable through it.
+The phone's key file (`secure_store_set`) is written 0600.
+
+**Nothing of the phone app's is backed up by the system.**
+Android: `allowBackup="false"` and `res/xml/data_extraction_rules.xml` (which also stops the phone-to-phone transfer on Android 12+, which `allowBackup` alone does not).
+iOS (on the iOS branch): the app data folder carries `NSURLIsExcludedFromBackupKey`, set in the mobile `setup`.
+The files hold the sync key and a readable copy of the library; a new phone is linked by scanning the code on the Mac, so a backup of them buys nothing.
+
+**Not built: encryption at rest.** The database, the blobs and the backups are still plain files (Resolved decision 1), and the phone's key is in a file, not the Keystore or Keychain.
+The search index holds every word, so field-level encryption would be theatre; it has to be the whole database.
+The sync key must not be the disk key: it exists only once sync is set up, "Reset sync" discards it, and the phone holds a copy.
+The shape that fits is one library key born at first run, with separate keys for the disk, the relay and the backups derived from or wrapped under it.
+Other findings left open: the vault PIN is 6 digits (a million guesses against the wrapped key), one key both encrypts relay objects and names them, and the relay sees counts, sizes and timing.
+
+### A note's drafts: kept by a policy, compared, restored (2026-10-14)
+
+Drafts are `artifact_versions` rows (written by `notes._append_version`, see "A note being written keeps a slower clock"); `drafts.py` decides which are kept, lists them and restores one.
+**What is kept** is the `drafts_keep` setting (Settings > Storage > Drafts): `thinned` (default: every draft from the last day, the latest per hour for a week, per day for 90 days, per week after; `drafts.LADDER`), `30d`, or `off`.
+A note always keeps its latest draft, which is its body version (summaries and search are stamped with it), and, unless drafts are off, its first.
+A note's own switch (`artifacts.keep_drafts`, migration 0040; Details panel and the drafts list) turns it off for that note: only the latest is kept and rewritten in place, and switching off removes the rest after a confirmation.
+Thinning (`drafts.thin`) runs on the backup scheduler's daily beat, after the backup, and on demand (`POST /drafts/thin`, "Apply now"). Changing the policy removes nothing until then.
+**Restoring** (`POST /artifacts/{id}/drafts/{vid}/restore`) goes through `notes.edit(..., keep_current=True)`: the next draft is forced to stand on its own instead of rewriting the newest, so the text the restore replaces stays a draft. Going back can never lose anything.
+**The screens** are `js/drafts.js` + `css/drafts.css` (desktop): "N drafts" under the sheet opens the list in a second `.drawer.dpanel` (one plate at a time with Details), each row with the first words it changed and `+added −removed` (word counts against the draft before, `drafts._changed`). Choosing one turns the sheet into a comparison: the editor, its bar and foot are hidden, never rebuilt, so nothing is typed into or saved from a draft.
+**The diff** is `js/diff.js` (shared, no page or engine; `tests/js/diff.js`): lines are aligned first, then a removed line looks ahead for the line it became (alike in words, else the same kind of list item) and its words are diffed; marks are private-use characters until `md()` has run, then `<ins>`/`<del>`, and never cross a line or wrap a line's markdown prefix or a code fence, so the marked note renders in its own shape.
+A vaulted note's drafts are sealed: the list opens only while the vault is unlocked (409 otherwise).
+**On the phone** (`mobile.html`, the `#drafts` screen; `mobile_drafts`, `mobile_draft_restore`, `mobile_drafts_keep` in `desktop/src/lib.rs` over `list_drafts`/`restore_draft`/`set_keep_drafts` in `sync.rs`): Details shows the count and the note's switch, the drafts screen lists them (word counts and first words computed in the page from the drafts' text) and compares one with the note through the same `diff.js`, with Restore (a fresh draft, as on the desktop). The library policy is the Mac's alone; the phone follows the list the Mac sends.
+**Keeping the two lists in step.** Drafts replace each other wholesale when a snapshot is applied, so a device that removes drafts must push: `drafts.thin` pushes every note it removed drafts from, and `set_keep` pushes the switch, without moving the note's date (an equal key is applied); unpushed, the phone's next edit carried every removed draft back. `keep_drafts` rides the snapshot both ways (the phone's `build_snapshot` sends it, its apply takes it when present, and the desktop's apply leaves a column a snapshot omits alone), and the phone's draft clock honours it (`keep_draft` in `sync.rs`, the desktop's `_append_version` rule).
+A tab's marker line is never marked in a diff (`diff.js` `TAB`): marked, md() no longer read it as a tab and showed the comment itself.
+
+### Tabs inside a note (2026-10-14)
+
+A note can be split into named tabs (the travel note: steps, prompt, candidates). One title, one set of tags, one summary, one set of drafts; the tabs are parts of it.
+**Kept in the note's own markdown** (`static/js/tabs.js`, shared; `tests/js/tabs.js`): each tab starts at a marker line `<!-- tab: Name -->`, an HTML comment, so another markdown app shows nothing and an exported note still reads. What comes before the first marker (the title heading) is the preamble every tab shares. A marker inside a code fence is code. A note with one tab is a plain note again (`Tabs.join` drops the markers), which is how deleting or popping out the second-to-last tab ends tabs.
+Search, summaries, sync and drafts see one note with marker lines in it; nothing on the engine knows about tabs.
+`md()` renders a marker as a small label (`.md-tab`) and `htmlToMd` writes it back, so a draft compared, the phone's reader, or anything else that renders the whole note shows the tabs one after another under their names.
+**On the desktop** (`static/js/notetabs.js`, styles in `css/artifact.css`): the editor holds ONE tab's text; `ctx.tabs` keeps the others and `ctx.tabAt` which is open (remembered per note in `sessionStorage`). Everything that reads the note's text goes through `noteText(ed)`, which puts the note back together: the save, the dirty check, the live title, the title edit, the drafts comparison. Reading `htmlToMd(ed)` directly on a note now reads one tab only.
+Folder tabs on the sheet's top edge; click switches, double-click (or Enter/F2) renames inline, dragging reorders (pointer events, neighbours slide aside), and on the open tab two tools show on hover: make it its own note (a new note titled by the tab, holding its text) and delete (asks when the tab has text; the text stays in the note's drafts). The formatting bar's last button adds a tab; the first press turns the note so far into a tab named "Notes" and opens a new one with its name ready to type.
+Changes to the tabs themselves are saved at once; typing inside one is saved like any note.
+A search hit opens on the tab it came from: the search page keeps each hit's snippet, and `NoteTabs.hint` hands it to the next opening, where `Tabs.find` picks the tab a marker in the snippet names, else the tab holding the snippet's opening words, else the one holding most of the query's words, else the tab last open. A snippet is read with `Tabs.plain`, which shows a marker as its tab's name.
+**On the phone** (`mobile.html`: `renderNoteBody`, `writerText`, `tabSheet`): the reader shows one tab under a strip of their names (tap, or a sideways swipe over the text), and a tap in the text opens the writing page on that tab with the caret where the finger landed. The writing page edits one tab's text; `writerText()` puts the note back together for every save, so anything that reads the writing page's text must go through it. Its tool bar has "Add a tab" (the first press turns the note into a "Notes" tab, as on the desktop), the strip has a +, and a long press on a tab opens a bottom sheet sized to the visual viewport (so the keyboard does not cover it): its name (kept as typed when the sheet closes), make it its own note, delete. Reordering stays on the desktop. The strip stops its own taps (`stopPropagation`): it redraws itself, and a tap bubbling on to the note found a detached button and opened the writing page.
+
 ### The pill keeps its own ground
 
 The page was lightened in October 2026 (soft lavender ground, white tiles, light type; docs/DESIGN.md) and the capture pill deliberately was not: its deeper lavender glass and bold eye are what hold it over white tiles.
@@ -1373,6 +1434,10 @@ Anything that scrolled the window to a place in a note must scroll the editor in
 Your notes on a capture (the second `.docpane`) are short and still grow.
 The bar (`edbarHtml`, `EDBAR` in `js/artifact.js`): bold, italic, heading (h2), subheading (h3), bulleted and numbered list, out and in a level, quotation, code block (`toggleCode`: the selected blocks become one bare `<pre>`, a line each, formatting dropped; pressed again, its lines come back out as plain lines).
 The first heading of a note is its title, so the bar offers h2 and h3, not h1.
+Text put into a code block, by Enter or by paste, goes through `insertIntoCode`, which rebuilds the block's text with the insertion at the caret's offset.
+Never `execCommand("insertText")` there: WebKit (the desktop window) reads each newline in it as a new paragraph, so a pasted snippet became one code block per line, and Chrome emits a `<br>` the serializer drops.
+A block rendered from markdown ends in one newline the browser does not show as a line; a caret after it counts as the end of the last line, or every insert there grows an empty line.
+A code block keeps every newline and space and wraps a long line (`white-space: pre-wrap`, desktop `.md pre`/`.editor pre` and the phone's `#reader_body pre`): it is as often a prompt as a program, and a 500-character line behind a sideways scroll read as one clipped blob.
 Every command builds the DOM the typing shorthand and `md()` already build (`toggleList`, `shiftItem`, `formatBlock`), so `htmlToMd` meets no new shape; list commands act on every block a selection touches and join a neighbouring list of the same kind.
 `keepingCaret` restores the selection after a move, twice (Chrome re-anchors it a tick later); Tab and Shift+Tab go through the same `shiftItem`.
 Buttons carry `aria-pressed` for what the caret is in and `aria-disabled` (never `disabled`, which swallows the press) for what cannot apply; the state is re-read at each press, and a press never takes the selection (`mousedown` is prevented).

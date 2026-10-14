@@ -105,7 +105,8 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     let artifact: Option<Value> = conn
         .query_row(
             "SELECT id,kind,title,body,source_url,content_hash,mime,filename,created_at,
-                    updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at,vaulted_at
+                    updated_at,local_only,status,pinned,deleted_at,pages,title_explicit,_device_id,purged_at,vaulted_at,
+                    keep_drafts
              FROM artifacts WHERE id = ?1",
             [artifact_id],
             |r| {
@@ -129,6 +130,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
                     "_device_id": r.get::<_, Option<String>>(16)?,
                     "purged_at": r.get::<_, Option<String>>(17)?,
                     "vaulted_at": r.get::<_, Option<String>>(18)?,
+                    "keep_drafts": r.get::<_, i64>(19)?,
                 }))
             },
         )
@@ -480,6 +482,12 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     // standalone card), same duplicate-safe pattern. The library/list queries filter
     // `embedded_at IS NULL` so it never shows as its own artifact on the phone.
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN embedded_at TEXT", []);
+    // Migration: keep_drafts (the person's per-note switch, set on either device; the
+    // desktop's migration 0040), same duplicate-safe pattern.
+    let _ = conn.execute(
+        "ALTER TABLE artifacts ADD COLUMN keep_drafts INTEGER NOT NULL DEFAULT 1",
+        [],
+    );
     // One-time heal: builds before `vaulted_at` existed here applied vaulted
     // snapshots without the column, dropping the flag and leaving vault-ciphertext
     // visible in the wall. Force a single full re-pull (cursor -> 0); the strictly-
@@ -635,6 +643,15 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
         ],
     )
     .map_err(|e| format!("insert artifact: {e}"))?;
+    // The per-note drafts switch, when the snapshot carries it (one from an older build
+    // does not, and leaves the switch as it was here).
+    if let Some(keep) = int_at(g("keep_drafts")) {
+        conn.execute(
+            "UPDATE artifacts SET keep_drafts = ?1 WHERE id = ?2",
+            rusqlite::params![keep, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
     // Tags ride on the snapshot as a string array; store them as JSON for the
     // library's Tags view mode. Absent -> empty array.
@@ -2398,7 +2415,39 @@ fn seconds_between(earlier: &str, later: &str) -> Option<i64> {
 /// place) until DRAFT_EVERY_S has passed since the draft before it; then it stands and
 /// a new one starts. Kept: the start of every stretch of writing, one draft for each
 /// DRAFT_EVERY_S of it, and the latest. A timestamp that cannot be read keeps a draft.
-pub fn append_version(conn: &Connection, artifact_id: &str, body: &str, when: &str) -> Result<(), String> {
+/// As in the desktop's `notes._append_version`, with drafts off for the
+/// note only the latest is kept, rewritten in place (it is the note's body version);
+/// `fresh` makes this draft stand on its own whatever the clock or the switch says
+/// (a restore, so the text it replaces stays a draft).
+fn keep_draft(conn: &Connection, artifact_id: &str, body: &str, when: &str, fresh: bool) -> Result<(), String> {
+    let keeps: i64 = conn
+        .query_row(
+            "SELECT keep_drafts FROM artifacts WHERE id = ?1",
+            [artifact_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or(1);
+    if keeps == 0 && !fresh {
+        let newest: Option<String> = conn
+            .query_row(
+                "SELECT id FROM artifact_versions WHERE artifact_id = ?1
+                 ORDER BY created_at DESC, id DESC LIMIT 1",
+                [artifact_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(newest) = newest {
+            conn.execute(
+                "UPDATE artifact_versions SET body = ?, created_at = ? WHERE id = ?",
+                rusqlite::params![body, when, newest],
+            )
+            .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
     let mut stmt = conn
         .prepare(
             "SELECT id, created_at FROM artifact_versions WHERE artifact_id = ?
@@ -2410,7 +2459,7 @@ pub fn append_version(conn: &Connection, artifact_id: &str, body: &str, when: &s
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
         .collect();
-    if let [newest, before] = last_two.as_slice() {
+    if let (false, [newest, before]) = (fresh, last_two.as_slice()) {
         let still_writing = |later: &str| {
             seconds_between(&before.1, later).is_some_and(|s| s < DRAFT_EVERY_S)
         };
@@ -2435,6 +2484,16 @@ pub fn append_version(conn: &Connection, artifact_id: &str, body: &str, when: &s
 /// Returns the updated artifact.
 #[allow(dead_code)]
 pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, new_title: Option<&str>) -> Result<Value, String> {
+    update_note_body_with(conn, artifact_id, new_body, new_title, false)
+}
+
+fn update_note_body_with(
+    conn: &Connection,
+    artifact_id: &str,
+    new_body: &str,
+    new_title: Option<&str>,
+    fresh: bool,
+) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
     // Check if artifact exists and is a note
@@ -2493,7 +2552,7 @@ pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, ne
                 rusqlite::params![uuid::Uuid::new_v4().to_string(), artifact_id, old_body, since],
             ).map_err(|e| e.to_string())?;
         }
-        append_version(conn, artifact_id, new_body, &now)?;
+        keep_draft(conn, artifact_id, new_body, &now, fresh)?;
     }
     
     // Update artifact
@@ -2503,6 +2562,81 @@ pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, ne
     ).map_err(|e| e.to_string())?;
     
     get_artifact(conn, artifact_id)
+}
+
+/// A note's drafts, newest first, each with its whole text (the page compares them),
+/// and whether the note keeps drafts. A vaulted note's drafts are sealed: not listed.
+pub fn list_drafts(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
+    let row: Option<(i64, Option<String>)> = conn
+        .query_row(
+            "SELECT keep_drafts, vaulted_at FROM artifacts WHERE id = ?1 AND kind = 'note'",
+            [artifact_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((keep, vaulted)) = row else {
+        return Err("note not found".into());
+    };
+    if vaulted.is_some() {
+        return Err("vaulted".into());
+    }
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, body, created_at FROM artifact_versions WHERE artifact_id = ?1
+             ORDER BY created_at DESC, id DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let drafts: Vec<Value> = stmt
+        .query_map([artifact_id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>(0)?,
+                "body": r.get::<_, String>(1)?,
+                "at": r.get::<_, String>(2)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(serde_json::json!({ "keep": keep != 0, "drafts": drafts }))
+}
+
+/// Put a draft back as the note's text. Today's text was already kept as the newest
+/// draft (every save keeps it), and the restored text is kept as a new draft standing
+/// on its own, so going back never loses anything.
+pub fn restore_draft(conn: &Connection, artifact_id: &str, version_id: &str) -> Result<Value, String> {
+    let body: String = conn
+        .query_row(
+            "SELECT body FROM artifact_versions WHERE id = ?1 AND artifact_id = ?2",
+            rusqlite::params![version_id, artifact_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or("draft not found")?;
+    update_note_body_with(conn, artifact_id, &body, None, true)
+}
+
+/// The per-note drafts switch. Off keeps only the latest draft (the body version).
+/// Returns how many drafts were removed.
+pub fn set_keep_drafts(conn: &Connection, artifact_id: &str, on: bool) -> Result<i64, String> {
+    conn.execute(
+        "UPDATE artifacts SET keep_drafts = ?1 WHERE id = ?2 AND kind = 'note'",
+        rusqlite::params![on as i64, artifact_id],
+    )
+    .map_err(|e| e.to_string())?;
+    if on {
+        return Ok(0);
+    }
+    let removed = conn
+        .execute(
+            "DELETE FROM artifact_versions WHERE artifact_id = ?1 AND id <> (
+               SELECT id FROM artifact_versions WHERE artifact_id = ?1
+               ORDER BY created_at DESC, id DESC LIMIT 1)",
+            [artifact_id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(removed as i64)
 }
 
 /// Add an annotation to an artifact (MOB2.4).
@@ -2655,7 +2789,7 @@ mod draft_tests {
         note(&conn, "a");
         // A save every 10 seconds for 12 minutes.
         for i in 0..=72 {
-            append_version(&conn, "n1", &format!("s{}", i * 10), &at(i * 10)).unwrap();
+            keep_draft(&conn, "n1", &format!("s{}", i * 10), &at(i * 10), false).unwrap();
         }
         assert_eq!(drafts(&conn), vec!["s0", "s290", "s580", "s720"]);
     }
@@ -2665,11 +2799,35 @@ mod draft_tests {
         let conn = Connection::open_in_memory().unwrap();
         init_schema(&conn).unwrap();
         note(&conn, "a");
-        append_version(&conn, "n1", "one", &at(0)).unwrap();
-        append_version(&conn, "n1", "two", &at(5)).unwrap();
-        append_version(&conn, "n1", "three", &at(4000)).unwrap();
-        append_version(&conn, "n1", "four", &at(4005)).unwrap();
+        keep_draft(&conn, "n1", "one", &at(0), false).unwrap();
+        keep_draft(&conn, "n1", "two", &at(5), false).unwrap();
+        keep_draft(&conn, "n1", "three", &at(4000), false).unwrap();
+        keep_draft(&conn, "n1", "four", &at(4005), false).unwrap();
         assert_eq!(drafts(&conn), vec!["one", "two", "three", "four"]);
+    }
+
+    #[test]
+    fn drafts_off_keeps_only_the_latest_and_a_restore_still_stands() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        note(&conn, "a");
+        keep_draft(&conn, "n1", "one", &at(0), false).unwrap();
+        keep_draft(&conn, "n1", "two", &at(4000), false).unwrap();
+        keep_draft(&conn, "n1", "three", &at(8000), false).unwrap();
+        assert_eq!(set_keep_drafts(&conn, "n1", false).unwrap(), 2);
+        assert_eq!(drafts(&conn), vec!["three"]);
+        keep_draft(&conn, "n1", "four", &at(12000), false).unwrap();
+        assert_eq!(drafts(&conn), vec!["four"], "the latest follows the writing");
+        // The switch rides the snapshot.
+        assert_eq!(build_snapshot(&conn, "n1").unwrap().unwrap()["artifact"]["keep_drafts"], 0);
+        set_keep_drafts(&conn, "n1", true).unwrap();
+        keep_draft(&conn, "n1", "five", &at(16000), false).unwrap();
+        let listed = list_drafts(&conn, "n1").unwrap();
+        assert_eq!(listed["keep"], true);
+        let first = listed["drafts"][1]["id"].as_str().unwrap().to_string();
+        restore_draft(&conn, "n1", &first).unwrap();
+        assert_eq!(get_artifact(&conn, "n1").unwrap()["artifact"]["body"], "four");
+        assert_eq!(drafts(&conn), vec!["four", "five", "four"], "five stays a draft");
     }
 
     #[test]

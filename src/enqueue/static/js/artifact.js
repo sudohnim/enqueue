@@ -127,6 +127,8 @@
     null,
     ["blockquote", "Quotation", ""],
     ["pre", "Code block", "```"],
+    null,
+    ["tab", "Add a tab", ""],
   ];
   const EDBAR_ICON = {
     h2: "heading",
@@ -303,6 +305,7 @@
   }
 
   function edCommand(ed, cmd) {
+    if (cmd === "tab") return NoteTabs.add(); // js/notetabs.js
     ed.focus();
     const sel = window.getSelection();
     if (!sel.rangeCount || !ed.contains(sel.anchorNode)) return;
@@ -524,6 +527,60 @@
   let faceWatch = null;
   let faceTries = 0;
   const FACE_LIMIT = 8;
+
+  // Put text into the code block holding the selection, replacing what is selected,
+  // as code: newlines stay newlines inside the one block. Returns false when the
+  // selection is not inside a single code block, and the caller does its usual thing.
+  //
+  // The code text is rebuilt rather than inserted with execCommand: its insertText
+  // emits a <br> for a newline in Chrome (invisible to the serializer's text read, so
+  // lost on save) and a whole new paragraph in WebKit (which split a pasted snippet
+  // into one code block per line), and splicing a text node by hand parks the caret
+  // on the element, where the next keystroke lands wrong. A rebuild keeps the caret
+  // inside a text node at the exact offset.
+  function insertIntoCode(text) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    const within = (n) => {
+      const el = n && (n.nodeType === 1 ? n : n.parentElement);
+      return el && el.closest ? el.closest("pre") : null;
+    };
+    const pre = within(range.startContainer);
+    if (!pre || within(range.endContainer) !== pre) return false;
+    // Each end of the selection as an offset into the block's text, whatever text
+    // nodes the code is split across: the length of the text from the block's start.
+    const offsetOf = (node, offset) => {
+      const before = document.createRange();
+      before.setStart(pre, 0);
+      before.setEnd(node, offset);
+      return before.toString().length;
+    };
+    const old = pre.textContent;
+    // A block rendered from markdown ends in one newline that the browser does not
+    // show as a line. A caret after it is, to the eye, at the end of the last line,
+    // so it counts as there; inserting after it added an empty line.
+    const end = old.endsWith("\n") ? old.length - 1 : old.length;
+    const from = Math.min(offsetOf(range.startContainer, range.startOffset), end);
+    const to = range.collapsed
+      ? from
+      : Math.max(from, Math.min(offsetOf(range.endContainer, range.endOffset), end));
+    let add = String(text).replace(/\r\n?/g, "\n");
+    // A newline at the very end gets a zero-width space after it: Chrome reads a caret
+    // after a trailing newline as the end of the previous line and would put the next
+    // keystroke on the line above. The marker is invisible, stripped by the
+    // serializer, and marks the line as Enter-made, which is what lets a second Enter
+    // leave the block.
+    if (to === old.length && add.endsWith("\n")) add += "\u200b";
+    const codeEl = pre.querySelector("code") || pre;
+    codeEl.textContent = old.slice(0, from) + add + old.slice(to);
+    const r = document.createRange();
+    r.setStart(codeEl.firstChild, from + add.length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return true;
+  }
 
   // ---- tags ---------------------------------------------------------------
   // A tag is an optional, later act on an artifact that already exists. It is
@@ -1005,26 +1062,36 @@
       const n = d.versions.length;
       // Long-form sits on the warm reading white rather than the raised white, so a
       // whole page of it does not glare against the cream.
+      // The note's tabs, when it has any (js/notetabs.js), sit on the sheet's top edge.
       body +=
+        '<div class="notetabs" id="notetabs" role="tablist" aria-label="Tabs of this note" hidden></div>' +
         '<div class="docpane notesheet">' +
         edbarHtml() +
-        '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
+        '<div class="editor md notetype" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
         'data-placeholder="Start writing. Markdown shorthand becomes formatting as you type."></div>' +
+        // "12 drafts" opens the list of them (js/drafts.js). A row count would say
+        // nothing; what it means is that every version is still here.
         '<div class="bar">' +
-        '<span class="meta" style="margin-left:auto" id="vers" data-n="' +
+        '<button type="button" class="drafts-link" id="vers" aria-expanded="false" ' +
+        'aria-label="Drafts of this note" onclick="openDrafts()" data-n="' +
         n +
         '">' +
-        (n > 1 ? n + " drafts saved" : "") +
-        "</span></div></div>";
+        draftsCountLabel(n) +
+        "</button></div></div>";
+      // A note with tabs shows one of them in the editor (js/tabs.js, js/notetabs.js).
+      const tabs = Tabs.parse(a.body || "");
+      const tabAt = tabs ? NoteTabs.recalled(id, tabs.tabs.length, tabs) : 0;
       ctx = {
         id,
         kind: "note",
         title: a.title,
         titleExplicit: a.title_explicit,
         saved: a.body || "",
-        html: md(a.body || ""),
+        html: md(tabs ? tabs.tabs[tabAt].text : a.body || ""),
         vaulted: !!a.vaulted_at,
+        tabs,
+        tabAt,
       };
     } else {
       if (a.kind === "pdf") {
@@ -1056,7 +1123,7 @@
       const last = current.length ? current[current.length - 1] : null;
       body +=
         '<div class="docpane">' +
-        '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
+        '<div class="editor md notetype" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="Your notes here" ' +
         'style="min-height:150px" data-placeholder="Your notes here"></div></div>' +
         notice;
@@ -1098,6 +1165,7 @@
       "</section>" +
       viewsRowHtml(d.views, id) +
       summaryHtml +
+      (a.kind === "note" ? draftsSectionHtml(a, d.versions.length) : "") +
       '<section class="dsec connections" id="connections"></section>' +
       "</div></aside>";
 
@@ -1130,6 +1198,8 @@
     if (!drawer) return;
     const open =
       force !== undefined ? !!force : !drawer.classList.contains("open");
+    // One plate at a time: the drafts list steps aside for Details.
+    if (open && typeof draftsOpen === "function" && draftsOpen()) closeDrafts();
     const was = drawer.classList.contains("open");
     drawer.classList.toggle("open", open);
     // Only a real opening is an arrival: the raven lands and the sections settle in.
@@ -1170,6 +1240,57 @@
   // regenerate button; each line is click-to-edit and can be removed; a trailing
   // control adds one of your own. Every change reindexes on the server, so it lands
   // in search too. An edited line is marked so you can see which are yours.
+  // The Details panel's drafts section: how many, a way to the list, and the switch
+  // that stops keeping them for this note (js/drafts.js has the list itself).
+  function draftsSectionHtml(a, n) {
+    const on = a.keep_drafts !== 0;
+    return (
+      '<section class="dsec draftsec"><div class="dsec-head"><span class="dsec-label">Drafts</span>' +
+      (n > 1 ? '<span class="dsec-count">' + n + "</span>" : "") +
+      '<span class="dsec-tools">' +
+      '<button class="toggle summary-switch" role="switch" aria-checked="' +
+      String(on) +
+      '" aria-label="Keep drafts of this note" title="' +
+      (on ? "Keeping drafts of this note" : "Drafts are off for this note") +
+      '" onclick="detailsKeepDrafts(' +
+      String(!on) +
+      ')"><span class="knob"></span></button></span></div>' +
+      '<p class="facet-empty">' +
+      (on
+        ? n > 1
+          ? 'Every version is still here. <button type="button" class="linkish" onclick="openDrafts()">See them</button>'
+          : "Kept as you write: one for each few minutes of writing, and how the note began."
+        : "Off: edits replace the text, no history.") +
+      "</p></section>"
+    );
+  }
+
+  async function detailsKeepDrafts(on) {
+    if (!ctx || ctx.kind !== "note") return;
+    const id = ctx.id;
+    const n = Number(document.getElementById("vers")?.dataset.n || 0);
+    if (!on && n > 1) {
+      const yes = await ask(
+        "Stop keeping drafts of this note?",
+        "Its " + (n - 1) + " earlier drafts are removed. Only the note as it is now stays.",
+        "Stop and remove them",
+      );
+      if (!yes) return;
+    }
+    try {
+      await api("/artifacts/" + id + "/drafts/keep", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on }),
+      });
+    } catch (err) {
+      return toast(String((err && err.message) || err), true);
+    }
+    const keep = drawerOpen();
+    await showArtifact(id);
+    if (keep) toggleDrawer(true);
+  }
+
   function summaryPanel(d, id) {
     const off = !!d.summary_off;
     // Off, nothing can be regenerated, so the button leaves with it.
@@ -2033,6 +2154,7 @@
     });
     ed.addEventListener("blur", saveBody);
     mountEdbar(ed);
+    if (ctx.kind === "note") NoteTabs.mount();
     // Link clicks inside the note are owned by LinkPop (js/linkpop.js): it opens the
     // copy / open-in-browser bar instead of navigating. An editor-level open handler
     // used to live here and double-opened alongside pill.js's global bridge.
@@ -2101,25 +2223,7 @@
             sel.removeAllRanges();
             sel.addRange(r);
           } else {
-            // The newline is written by rebuilding the code text. execCommand's
-            // insertText would emit a <br> (invisible to textContent, lost on
-            // save), and splicing a text node by hand parks the caret on the
-            // element, where the next keystroke lands wrong. A rebuild keeps the
-            // caret inside a text node at the exact offset.
-            if (abs < 0) abs = text.length;
-            const codeEl = pre.querySelector("code") || pre;
-            // A newline at the very end gets a zero-width space after it: Chrome
-            // reads a caret after a trailing newline as the end of the previous
-            // line and would put the next keystroke on the line above. The marker
-            // is invisible, stripped by the serializer, and marks the line as
-            // Enter-made, which is what lets a second Enter leave the block.
-            const nl = abs === text.length ? "\n\u200b" : "\n";
-            codeEl.textContent = text.slice(0, abs) + nl + text.slice(abs);
-            const r = document.createRange();
-            r.setStart(codeEl.firstChild, abs + nl.length);
-            r.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(r);
+            insertIntoCode("\n");
           }
           return;
         }
@@ -2205,11 +2309,15 @@
       const text = (cd && cd.getData("text")) || "";
       // An address pasted over selected words links the words (md.js linkSelection).
       if (linkSelection(ed, text)) return;
+      // Into a code block, the text goes in as it is, as code. Not through the
+      // browser's insertText: WebKit (the desktop window) reads each newline in it as
+      // "new paragraph" and split the block into one code block per pasted line.
+      if (insertIntoCode(text)) {
+        ed.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
       const clip = clipToMd(text, (cd && cd.getData("text/html")) || "");
-      const at = window.getSelection().anchorNode;
-      const inCode = at && (at.nodeType === 1 ? at : at.parentElement).closest("pre");
-      if (inCode || !clip.blocks || !pasteMd(ed, clip.src))
-        document.execCommand("insertText", false, inCode ? text : clip.src);
+      if (!clip.blocks || !pasteMd(ed, clip.src)) document.execCommand("insertText", false, clip.src);
     });
 
     if (focus) {
@@ -2244,7 +2352,7 @@
       h.textContent = ctx.title || "Untitled";
     } else {
       const ed = document.getElementById("body");
-      h.textContent = titleFromBody(htmlToMd(ed));
+      h.textContent = titleFromBody(noteText(ed));
     }
   }
 
@@ -2295,7 +2403,7 @@
     const ed = document.getElementById("body");
     return ctx.titleExplicit
       ? ctx.title || "Untitled"
-      : titleFromBody(htmlToMd(ed));
+      : titleFromBody(noteText(ed));
   }
 
   function cancelTitleEdit(h) {
@@ -2310,7 +2418,7 @@
     if (!input || !ctx) return;
     const value = input.value.trim();
     const ed = document.getElementById("body");
-    const currentBody = ed ? htmlToMd(ed) : ctx.saved || "";
+    const currentBody = ed ? noteText(ed) : ctx.saved || "";
     // An unchanged commit is a no-op: it must not freeze a derived title by
     // accident (a click followed by a click elsewhere is not an edit). Only a
     // changed or cleared title sends a PATCH.
@@ -2420,7 +2528,7 @@
   // Whether the open editor holds words the store does not have yet.
   function editorDirty() {
     const ed = document.getElementById("body");
-    return !!(ctx && ed && htmlToMd(ed) !== ctx.saved);
+    return !!(ctx && ed && noteText(ed) !== ctx.saved);
   }
 
   // Leaving the window (another app, another tab, closing it) saves first, whatever
@@ -2440,22 +2548,22 @@
     const ed = document.getElementById("body"),
       state = document.getElementById("state");
     if (!ed || !state) return;
-    const text = htmlToMd(ed);
+    const text = noteText(ed);
     if (text === ctx.saved) return;
 
     try {
       if (ctx.kind === "note") {
-        await api("/artifacts/" + ctx.id + "/body", {
+        const saved = await api("/artifacts/" + ctx.id + "/body", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ body: text }),
         });
+        // The engine says how many drafts there are now: a save a few minutes after the
+        // last one rewrites the newest draft rather than adding one (notes.py).
         const v = document.getElementById("vers");
-        if (v) {
-          const n = Number(v.dataset.n || 0) + 1;
-          v.dataset.n = n;
-          // "3 versions" is a row count. What it means is that nothing you wrote is gone.
-          v.textContent = n > 1 ? n + " drafts saved" : "";
+        if (v && saved && saved.versions) {
+          v.dataset.n = saved.versions.length;
+          v.textContent = draftsCountLabel(saved.versions.length);
         }
       } else {
         if (!text.trim()) return;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-drafts-keep"
+description = "Enables the mobile_drafts_keep command without any pre-configured scope."
+commands.allow = ["mobile_drafts_keep"]
+
+[[permission]]
+identifier = "deny-mobile-drafts-keep"
+description = "Denies the mobile_drafts_keep command without any pre-configured scope."
+commands.deny = ["mobile_drafts_keep"]
