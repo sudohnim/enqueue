@@ -707,13 +707,20 @@
     border-radius: var(--r-sm);
     padding: 1px 6px;
   }
+  /* A code block keeps every newline and space it was given, and wraps a long line
+     instead of running it off the right edge: a note's code block is as often a
+     prompt or a long command as a program, and a line of 500 characters behind a
+     sideways scroll read as one clipped blob. A wrapped line continues from the
+     left edge; the indentation of every real line is kept. */
   .md pre,
   .editor pre {
     background: var(--surface-2);
     border-radius: var(--r);
     padding: var(--sp-4);
     margin: var(--sp-4) 0 0;
-    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
   }
   .md pre code {
     background: none;

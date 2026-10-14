@@ -525,6 +525,60 @@
   let faceTries = 0;
   const FACE_LIMIT = 8;
 
+  // Put text into the code block holding the selection, replacing what is selected,
+  // as code: newlines stay newlines inside the one block. Returns false when the
+  // selection is not inside a single code block, and the caller does its usual thing.
+  //
+  // The code text is rebuilt rather than inserted with execCommand: its insertText
+  // emits a <br> for a newline in Chrome (invisible to the serializer's text read, so
+  // lost on save) and a whole new paragraph in WebKit (which split a pasted snippet
+  // into one code block per line), and splicing a text node by hand parks the caret
+  // on the element, where the next keystroke lands wrong. A rebuild keeps the caret
+  // inside a text node at the exact offset.
+  function insertIntoCode(text) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    const within = (n) => {
+      const el = n && (n.nodeType === 1 ? n : n.parentElement);
+      return el && el.closest ? el.closest("pre") : null;
+    };
+    const pre = within(range.startContainer);
+    if (!pre || within(range.endContainer) !== pre) return false;
+    // Each end of the selection as an offset into the block's text, whatever text
+    // nodes the code is split across: the length of the text from the block's start.
+    const offsetOf = (node, offset) => {
+      const before = document.createRange();
+      before.setStart(pre, 0);
+      before.setEnd(node, offset);
+      return before.toString().length;
+    };
+    const old = pre.textContent;
+    // A block rendered from markdown ends in one newline that the browser does not
+    // show as a line. A caret after it is, to the eye, at the end of the last line,
+    // so it counts as there; inserting after it added an empty line.
+    const end = old.endsWith("\n") ? old.length - 1 : old.length;
+    const from = Math.min(offsetOf(range.startContainer, range.startOffset), end);
+    const to = range.collapsed
+      ? from
+      : Math.max(from, Math.min(offsetOf(range.endContainer, range.endOffset), end));
+    let add = String(text).replace(/\r\n?/g, "\n");
+    // A newline at the very end gets a zero-width space after it: Chrome reads a caret
+    // after a trailing newline as the end of the previous line and would put the next
+    // keystroke on the line above. The marker is invisible, stripped by the
+    // serializer, and marks the line as Enter-made, which is what lets a second Enter
+    // leave the block.
+    if (to === old.length && add.endsWith("\n")) add += "\u200b";
+    const codeEl = pre.querySelector("code") || pre;
+    codeEl.textContent = old.slice(0, from) + add + old.slice(to);
+    const r = document.createRange();
+    r.setStart(codeEl.firstChild, from + add.length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return true;
+  }
+
   // ---- tags ---------------------------------------------------------------
   // A tag is an optional, later act on an artifact that already exists. It is
   // added here, on the artifact page, never at capture time and never required.
@@ -2101,25 +2155,7 @@
             sel.removeAllRanges();
             sel.addRange(r);
           } else {
-            // The newline is written by rebuilding the code text. execCommand's
-            // insertText would emit a <br> (invisible to textContent, lost on
-            // save), and splicing a text node by hand parks the caret on the
-            // element, where the next keystroke lands wrong. A rebuild keeps the
-            // caret inside a text node at the exact offset.
-            if (abs < 0) abs = text.length;
-            const codeEl = pre.querySelector("code") || pre;
-            // A newline at the very end gets a zero-width space after it: Chrome
-            // reads a caret after a trailing newline as the end of the previous
-            // line and would put the next keystroke on the line above. The marker
-            // is invisible, stripped by the serializer, and marks the line as
-            // Enter-made, which is what lets a second Enter leave the block.
-            const nl = abs === text.length ? "\n\u200b" : "\n";
-            codeEl.textContent = text.slice(0, abs) + nl + text.slice(abs);
-            const r = document.createRange();
-            r.setStart(codeEl.firstChild, abs + nl.length);
-            r.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(r);
+            insertIntoCode("\n");
           }
           return;
         }
@@ -2205,11 +2241,15 @@
       const text = (cd && cd.getData("text")) || "";
       // An address pasted over selected words links the words (md.js linkSelection).
       if (linkSelection(ed, text)) return;
+      // Into a code block, the text goes in as it is, as code. Not through the
+      // browser's insertText: WebKit (the desktop window) reads each newline in it as
+      // "new paragraph" and split the block into one code block per pasted line.
+      if (insertIntoCode(text)) {
+        ed.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
       const clip = clipToMd(text, (cd && cd.getData("text/html")) || "");
-      const at = window.getSelection().anchorNode;
-      const inCode = at && (at.nodeType === 1 ? at : at.parentElement).closest("pre");
-      if (inCode || !clip.blocks || !pasteMd(ed, clip.src))
-        document.execCommand("insertText", false, inCode ? text : clip.src);
+      if (!clip.blocks || !pasteMd(ed, clip.src)) document.execCommand("insertText", false, clip.src);
     });
 
     if (focus) {

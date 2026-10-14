@@ -647,10 +647,14 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
-  /* Code fences scroll inside their own box rather than widening the page. */
+  /* A code block keeps its newlines and spacing and wraps a long line, the way the
+     desktop's does (css/artifact.css): a prompt kept in a code block is mostly long
+     lines, and a sideways scroll on a phone hid nearly all of it. */
   #reader_body pre {
-    overflow-x: auto;
     max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
   }
   /* The title of the thing you opened: two lines before it is cut, not the toolbar's
      one-line ellipsis (a link's title was "https://exampl..."). */

@@ -1356,6 +1356,10 @@ Anything that scrolled the window to a place in a note must scroll the editor in
 Your notes on a capture (the second `.docpane`) are short and still grow.
 The bar (`edbarHtml`, `EDBAR` in `js/artifact.js`): bold, italic, heading (h2), subheading (h3), bulleted and numbered list, out and in a level, quotation, code block (`toggleCode`: the selected blocks become one bare `<pre>`, a line each, formatting dropped; pressed again, its lines come back out as plain lines).
 The first heading of a note is its title, so the bar offers h2 and h3, not h1.
+Text put into a code block, by Enter or by paste, goes through `insertIntoCode`, which rebuilds the block's text with the insertion at the caret's offset.
+Never `execCommand("insertText")` there: WebKit (the desktop window) reads each newline in it as a new paragraph, so a pasted snippet became one code block per line, and Chrome emits a `<br>` the serializer drops.
+A block rendered from markdown ends in one newline the browser does not show as a line; a caret after it counts as the end of the last line, or every insert there grows an empty line.
+A code block keeps every newline and space and wraps a long line (`white-space: pre-wrap`, desktop `.md pre`/`.editor pre` and the phone's `#reader_body pre`): it is as often a prompt as a program, and a 500-character line behind a sideways scroll read as one clipped blob.
 Every command builds the DOM the typing shorthand and `md()` already build (`toggleList`, `shiftItem`, `formatBlock`), so `htmlToMd` meets no new shape; list commands act on every block a selection touches and join a neighbouring list of the same kind.
 `keepingCaret` restores the selection after a move, twice (Chrome re-anchors it a tick later); Tab and Shift+Tab go through the same `shiftItem`.
 Buttons carry `aria-pressed` for what the caret is in and `aria-disabled` (never `disabled`, which swallows the press) for what cannot apply; the state is re-read at each press, and a press never takes the selection (`mousedown` is prevented).
