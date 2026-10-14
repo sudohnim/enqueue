@@ -48,6 +48,7 @@
             "allow-open-external",
             "allow-window-drag",
             "allow-desktop-link-code",
+            "dialog:allow-open",
             "core:event:allow-listen",
             "core:event:allow-unlisten"
           ]

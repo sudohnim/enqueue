@@ -6,7 +6,7 @@
 
 The shots must never show a real library, so this starts a SECOND engine: its own
 throwaway data folder, its own port, the local Ollama as its model. It does not read
-`~/.enqueue-poc`, the Keychain API key, or the sync relay. It fills that engine with
+the library's folder (Application Support), the Keychain API key, or the sync relay. It fills that engine with
 the demo library below (notes, links, a PDF), waits for the summaries, then drives
 headless Chromium (the one `bin/setup` installs for link previews) over the pages.
 

@@ -647,6 +647,19 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+  /* A note with tabs (js/tabs.js) reads on the phone as its parts one after another,
+     each under its tab's name. The phone has no tab strip yet. */
+  #reader_body .md-tab {
+    margin: 28px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 13px;
+    font-weight: var(--w-medium);
+    color: var(--text-mute);
+  }
+  #reader_body .md-tab:first-child {
+    margin-top: 0;
+  }
   /* A code block keeps its newlines and spacing and wraps a long line, the way the
      desktop's does (css/artifact.css): a prompt kept in a code block is mostly long
      lines, and a sideways scroll on a phone hid nearly all of it. */

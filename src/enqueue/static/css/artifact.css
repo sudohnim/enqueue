@@ -1034,3 +1034,192 @@
   color: var(--accent-text);
   background: var(--lavender-subtle);
 }
+
+  /* ---- Tabs on a note's sheet (js/notetabs.js) ---------------------------------- */
+  /* Folder tabs on the sheet's top edge: the chosen one is the sheet's own white and
+     runs into it; the others sit back, a shade of the ground. They read as parts of
+     one note, not as navigation. */
+  .notetabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    margin-top: var(--sp-5);
+    padding: 0 22px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .notetabs::-webkit-scrollbar {
+    display: none;
+  }
+  .notetabs + .docpane.notesheet {
+    margin-top: 0;
+  }
+  .docpane.notesheet.tabbed {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .ntab {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 240px;
+    padding: 9px 16px 10px;
+    border-radius: 12px 12px 0 0;
+    background: color-mix(in srgb, var(--surface-doc) 45%, transparent);
+    box-shadow: inset 0 0 0 1px var(--line-soft);
+    font-size: 14px;
+    color: var(--text-mute);
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+    transition:
+      color var(--dur-fast) var(--ease),
+      background var(--dur-fast) var(--ease),
+      transform 160ms var(--ease);
+  }
+  .ntab:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface-doc) 75%, transparent);
+  }
+  .ntab[aria-selected="true"] {
+    z-index: 2;
+    margin-bottom: -1px;
+    padding-bottom: 11px;
+    background: var(--surface-doc);
+    box-shadow:
+      inset 1px 1px 0 var(--line),
+      inset -1px 0 0 var(--line);
+    color: var(--text);
+    font-weight: var(--w-medium);
+    cursor: grab;
+  }
+  .ntab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .ntab.dragging {
+    z-index: 3;
+    cursor: grabbing;
+    transition: none;
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      0 10px 24px -12px rgba(43, 11, 74, 0.45);
+  }
+  .ntab-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .ntab-input {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    color: var(--text);
+    outline: none;
+  }
+  .ntab.editing {
+    box-shadow:
+      inset 0 0 0 1.5px var(--accent),
+      0 0 0 4px var(--purple-bold-wash);
+  }
+  /* On the chosen tab, on hover: make it its own note, delete it. */
+  .ntab-tools {
+    display: inline-flex;
+    gap: 2px;
+    margin-right: -8px;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  .ntab:hover .ntab-tools,
+  .ntab:focus-within .ntab-tools {
+    opacity: 1;
+  }
+  .ntab.editing .ntab-tools {
+    display: none;
+  }
+  .ntab-tool {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .ntab-tool svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ntab-tool:hover {
+    background: var(--purple-bold-wash);
+    color: var(--accent-text);
+  }
+  .ntab-tool[data-act="close"]:hover {
+    background: var(--badge-danger-fill);
+    color: var(--badge-danger-ink);
+  }
+  .ntab-add {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin: 0 0 4px 2px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--text-mute);
+    cursor: pointer;
+  }
+  .ntab-add svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .ntab-add:hover {
+    background: var(--purple-bold-wash);
+    color: var(--accent-text);
+  }
+  .ntab-add:focus-visible,
+  .ntab-tool:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  /* Where tabs are shown stacked (a draft compared, a reader that is not the editor),
+     a tab's name stands as a small label over its part. */
+  .md .md-tab {
+    margin: var(--sp-6) 0 var(--sp-2);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 12px;
+    font-weight: var(--w-medium);
+    color: var(--text-mute);
+  }
+  .md .md-tab:first-child {
+    margin-top: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ntab {
+      transition: none;
+    }
+  }
+  .notetabs[hidden] {
+    display: none;
+  }

@@ -1,0 +1,357 @@
+/* A note's drafts (js/drafts.js): the "N drafts" under the sheet, the list in the
+   Details plate, and the sheet turned into a comparison. Desktop. The marks for what
+   changed (<ins>, <del>) come from js/diff.js. */
+
+/* ---- the way in ------------------------------------------------------------------- */
+.drafts-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.drafts-link:empty {
+  display: none;
+}
+.drafts-link::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+.drafts-link:hover,
+.drafts-link[aria-expanded="true"] {
+  background: var(--purple-bold-wash);
+  color: var(--accent-text);
+}
+.drafts-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- the list --------------------------------------------------------------------- */
+.drafts .dpanel-body {
+  padding-top: var(--sp-2);
+}
+.draft-day {
+  margin: var(--sp-4) 0 var(--sp-1);
+  font-size: 12px;
+  color: var(--text-mute);
+}
+.draft-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  width: calc(100% + 2 * 10px);
+  margin: 0 -10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.draft-row:hover {
+  background: var(--surface-hover);
+}
+.draft-row[aria-pressed="true"] {
+  background: var(--purple-bold-wash);
+}
+.draft-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.draft-row.now {
+  cursor: default;
+  margin-top: var(--sp-2);
+}
+.draft-row.now:hover {
+  background: transparent;
+}
+.draft-time {
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.draft-words {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.draft-row.now .draft-words,
+.draft-row[aria-pressed="true"] .draft-words {
+  color: var(--text);
+}
+.draft-row.now .draft-time {
+  color: var(--text);
+  font-weight: var(--w-medium);
+}
+.draft-delta {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.draft-delta .plus {
+  color: var(--badge-success-ink);
+}
+.draft-delta .minus {
+  color: var(--badge-danger-ink);
+}
+.draft-empty {
+  margin: var(--sp-3) 0 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--text-mute);
+}
+.draft-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+}
+.draft-switch b {
+  display: block;
+  font-size: 14px;
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+.draft-switch small {
+  display: block;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--text-mute);
+}
+
+/* ---- the sheet, comparing --------------------------------------------------------- */
+/* The editor and its bars stay in the page, hidden, so nothing typed is lost and
+   nothing is saved from a draft. */
+.notesheet.comparing > .edbar,
+.notesheet.comparing > #body,
+.notesheet.comparing > .bar {
+  display: none;
+}
+.compare {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) 52px;
+  border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(to bottom, var(--purple-bold-wash), transparent);
+}
+.compare-what {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.compare-what b {
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+.compare-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+}
+.compare-seg button {
+  padding: 4px 11px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-mute);
+  cursor: pointer;
+}
+.compare-seg button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-micro);
+}
+.compare-seg button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (max-width: 760px) {
+  .compare {
+    flex-wrap: wrap;
+    padding-left: var(--sp-5);
+  }
+  .compare-what {
+    flex-basis: 100%;
+  }
+}
+.diffview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5) 52px var(--sp-6);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.diff-none {
+  margin: 0 0 var(--sp-4);
+  font-size: 13px;
+  color: var(--text-mute);
+}
+
+/* What changed: added in green, removed struck in red, and a mark in the margin of
+   every block that holds a change, so a long note can be scanned for them. */
+.diffview ins {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--tint-ok);
+  color: var(--badge-success-ink);
+  text-decoration: none;
+}
+.diffview del {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--badge-danger-fill);
+  color: var(--badge-danger-ink);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--badge-danger-ink) 50%, transparent);
+}
+.diffview :is(p, li, h1, h2, h3, blockquote, pre):has(> ins, > del, > code > ins, > code > del) {
+  position: relative;
+}
+.diffview :is(p, li, h1, h2, h3, blockquote, pre):has(> ins, > del, > code > ins, > code > del)::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--success);
+}
+.diffview li:has(> ins, > del)::before {
+  left: -40px;
+}
+.diffview :is(p, li, h1, h2, h3, blockquote):has(> del):not(:has(> ins))::before {
+  background: var(--danger);
+}
+
+/* A way to the list from the Details panel's drafts line: a link in the sentence. */
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
+  cursor: pointer;
+}
+.linkish:hover {
+  text-decoration-color: currentColor;
+}
+.linkish:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ---- Settings, Storage: how many are kept ---------------------------------------- */
+/* Three choices as cards, the chosen one ringed: a radio group, read top to bottom. */
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    box-shadow var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.choice + .choice {
+  margin-top: var(--sp-2);
+}
+.choice:hover {
+  background: var(--surface-hover);
+}
+.choice[aria-checked="true"] {
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.choice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.choice[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.choice-dot {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+.choice[aria-checked="true"] .choice-dot {
+  box-shadow: inset 0 0 0 5px var(--accent);
+}
+.choice b {
+  display: block;
+  font-size: 14px;
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+.choice small {
+  display: block;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--text-mute);
+}
+.drafts-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.drafts-foot .aside {
+  margin: 0;
+}
+.drafts-foot b {
+  font-weight: var(--w-medium);
+  color: var(--text-dim);
+}

@@ -86,7 +86,7 @@ No account, no password.
 
 ## Yours, and only yours
 
-- **On your machine.** The library is a single SQLite file in `~/.enqueue-poc`, with your original files beside it, untouched. Any tool can read it. If Enqueue vanished tomorrow, you would still have everything.
+- **On your machine.** The library is a single SQLite file in `~/Library/Application Support/Enqueue`, with your original files beside it, untouched. Any tool can read it. If Enqueue vanished tomorrow, you would still have everything.
 - **Your choice of model.** Run the AI on your own Mac with Ollama and nothing leaves it. Or point it at a hosted model and decide, per item, what may never be sent.
 - **Sync that cannot be read.** Mac and phone sync through a relay that only ever holds scrambled data. The key never leaves your devices.
 - **Backups in your own cloud.** A daily copy goes into your Proton Drive, encrypted end to end. A 400 MB library backs up as about 6 MB.

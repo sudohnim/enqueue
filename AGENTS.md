@@ -18,7 +18,7 @@ These came up while surveying the code against the old AGENTS.md, then confirmed
 They are recorded here so the next agent does not re-litigate them.
 
 1. **Encryption at rest (the local DB) is planned, not built.**
-The local database `~/.enqueue-poc/enqueue.db` is plain `sqlite3` today; encryption at rest for it is still a planned milestone and no scheme is chosen.
+The local database `~/Library/Application Support/Enqueue/enqueue.db` is plain `sqlite3` today; encryption at rest for it is still a planned milestone and no scheme is chosen.
 Treat the local store as plaintext and keep secret material out of the search index.
 (Distinct from the SYNC payload, which IS end-to-end encrypted - see decision 2. The DEK/keyring crypto in `crypto.py`/`keyring_file.py` protects what goes to the relay, not the DB on disk.)
 
@@ -28,7 +28,7 @@ What exists in code:
 
 - Relay: `src/enqueue/relay/app.py` (`create_relay(data_dir, secret=...)`, Bearer-secret auth, stores opaque bytes only). `enq relay` command in `src/enqueue/cli.py` wraps this with uvicorn (flags: `--host`, `--port`, `--data-dir`, `--secret`; env: `RELAY_HOST`, `RELAY_PORT`, `RELAY_DATA_DIR`, `RELAY_SECRET`).
 - Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
-- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/.enqueue-poc/enqueue.db` at rest is still plain sqlite (see decision 1).
+- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/Library/Application Support/Enqueue/enqueue.db` at rest is still plain sqlite (see decision 1).
 - Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
 **Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow) is superseded - do not extend it.
 **QR wire format (pinned - both sides parse exactly this):** compact UTF-8 JSON `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}`, where `dek` is RFC 4648 base64 (with padding) of the raw 32-byte DEK, and `v` is the format version (a parser seeing any other `v` refuses with a clear message). CAMERA-ONLY: there is no copyable/pasteable form of the payload anywhere, by decision - the raw DEK must never touch the clipboard or clipboard history. A Rust round-trip test (`rqrr` decode) pins the format.
@@ -36,9 +36,11 @@ What exists in code:
 **Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600 (`sync_config` in the app data dir, DEK as hex), NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
 **What remains open (see `docs/PLAN.md`):** the code is built and the sync/decrypt/apply/render path is device-verified end to end; the open items are the hosted-relay deploy (Railway, RELAYHOST.1), the scanner camera-box containment (SCANUI.1), the cold-launch bootstrap race (MOBBOOT.1), the CAP2.2 capture-flight over-app pivot, and a handful of pending human device-verifies on already-committed work.
 
-1. **The data directory is `~/.enqueue-poc` on purpose.**
-The `-poc` suffix is intentional for the current phase.
-Do not rename it without an explicit migration of user data.
+1. **The library lives in `~/Library/Application Support/Enqueue` (moved 2026-10-14).**
+It was `~/.enqueue-poc` for the proof of concept; a product keeps its data where a Mac app does (`config.DATA_DIR`; the XDG data folder off macOS; `ENQ_DATA_DIR` overrides).
+`datadir.move_legacy()` moves an old folder there at the engine's first start (`serve()`, and `enq migrate`/`enq restore`, which work on the files directly), before anything opens a file: one rename on one disk, never a copy, and never over a folder that already holds a library.
+`~/.enqueue-poc` is left as a link to the new folder. The desktop shell reads its pointers (`repo`, `capture-position`) from the new folder and falls back to the old (`data_dir`/`library_file` in `desktop/src/lib.rs`); `bin/launch` writes them to the new one.
+The path has a space in it: quote it in every script.
 
 2. **`instructor.Mode.JSON` is used for every adapter.**
 All providers pass `mode=instructor.Mode.JSON` unconditionally.
@@ -140,9 +142,9 @@ Tauri shell (desktop/)          native window, global hotkey, capture overlay
     v
 Engine (src/enqueue/)           FastAPI + background ingest worker, one process
     |
-    +-- SQLite (~/.enqueue-poc/enqueue.db)    artifacts, text, chats
+    +-- SQLite (~/Library/Application Support/Enqueue/enqueue.db)    artifacts, text, chats
     +-- SQLite search index (vec0 + FTS5 tables inside enqueue.db)  vectors + text + ids
-    +-- Blobs (~/.enqueue-poc/blobs/)         original files, content-addressed
+    +-- Blobs (~/Library/Application Support/Enqueue/blobs/)         original files, content-addressed
 ```
 
 Everything binds to loopback.
@@ -402,7 +404,7 @@ New Tauri commands need registration in THREE places: `build.rs`'s `commands(&[.
 
 ## Database schema
 
-SQLite at `~/.enqueue-poc/enqueue.db`.
+SQLite at `~/Library/Application Support/Enqueue/enqueue.db`.
 WAL mode, foreign keys on.
 Migrations run automatically at startup via Alembic.
 
@@ -476,7 +478,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 ### Three layers (falling precedence)
 
 1. **Environment variable** - explicit intent, always wins, locks the field in the UI.
-2. **settings.json** (`~/.enqueue-poc/settings.json`) - what was chosen in the interface. Plaintext, chmod 0600.
+2. **settings.json** (`~/Library/Application Support/Enqueue/settings.json`) - what was chosen in the interface. Plaintext, chmod 0600.
 3. **config.py default** - the built-in default.
 
 ### Key config values
@@ -500,6 +502,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_TRASH_DAYS` | `30` | Trash retention window in days |
 | `ENQ_SEARCH_MODEL_RANK` | `off` | The `search_model_rank` setting: the search model re-orders the top 20 results of `/search` (`retrieve/model_rank.py`). |
 | `ENQ_SEARCH_JUDGE_WAIT` | `2.5` | Seconds `/search` waits for the gray-zone judge before answering without it. |
+| `ENQ_DRAFTS_KEEP` | `thinned` | How many drafts are kept as they age (`drafts.py`): thinned, 30d or off. |
 | `ENQ_DRAFT_EVERY` | `300` | Seconds between the drafts kept of a note while it is being written. 0 keeps one per save. |
 | `ENQ_SUMMARY_QUIET` | `300` | Seconds a note must be left alone before the model reads it again. 0 summarizes at every save. |
 | `ENQ_CHAT_PREP_WAIT` | `8` | Seconds an answer waits for the search model to restate a follow-up or lift a question before retrieving without it. |
@@ -892,7 +895,7 @@ The two committed evals use made-up queries; this one uses the person's own.
 Every time a search result is opened, the interface records the query and the result's rank (`opens`, source `search`).
 Each distinct query (case- and space-insensitive) becomes a case expecting any live artifact opened from it, and passes when one of them ranks in the top 3 of the live `/search` rollup (`eval_real.py`, same `PASS_RANK`/`score` as the cross-domain eval).
 It runs inside the engine against the real library (`POST /eval/real`, `enq eval-real`), because the cases are private: they never leave the machine and are never committed.
-The baseline is stored at `~/.enqueue-poc/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
+The baseline is stored at `~/Library/Application Support/Enqueue/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
 Run it on the laptop before and after any retrieval change (model swap, re-rank, ranking signals).
 Its blind spot: a person only opens what search already showed, so it measures ranking among surfaced results, not recall of notes search never surfaced; the cross-domain eval covers that.
 
@@ -995,7 +998,7 @@ Before this, the page name landed as the link's first note and read like somethi
 
 ## Backups (Proton Drive)
 
-`backup.py`, decided 2026-09-30. The live library stays at `~/.enqueue-poc`; the cloud drive only ever holds backups.
+`backup.py`, decided 2026-09-30. The live library stays at `~/Library/Application Support/Enqueue`; the cloud drive only ever holds backups.
 A live SQLite file in a File Provider folder is unsafe: WAL is three files a sync client can upload mid-write (a torn copy), the drive can evict a quiet file to a cloud-only placeholder under the engine, and the ~400 MB file (mostly the search index) would re-upload on every write.
 
 - `backup_dir` setting (empty = off; Settings > Storage offers the detected `~/Library/CloudStorage/ProtonDrive-*` folder). Backups go in `<backup_dir>/Enqueue Backup/`.
@@ -1003,6 +1006,7 @@ A live SQLite file in a File Provider folder is unsafe: WAL is three files a syn
 - When: the scheduler thread checks hourly (first after 5 min) and runs once a day if the change stamp (counts + latest timestamps of what a person writes) moved; a clean engine shutdown runs one more; choosing a folder runs the first at once; `POST /backup` / `enq backup` on demand. Keeps 7 daily + the newest of 4 earlier weeks.
 - `restore()` (`enq restore`): refuses while the engine answers on 127.0.0.1:8787, quick-checks the file, moves the live `enqueue.db` (+ wal/shm) to `before-restore-<time>/` (never deleted), copies the backup in, fills missing blobs, and fills `settings.json`/`keyring.json` only when absent (a new Mac). The next start migrates and, with no recorded embed version, rebuilds the index (index/bootstrap.py).
 - Events: `backup` (with the record) and `backup.failed` in the Activity log.
+- Settings > Storage > Backup (`renderBackupSection` in `static/js/settings.js`) leads with when the last copy was made (a dot: green, amber when none or older than three days, pulsing while one runs) and Back up now; then what is kept (a bar per copy, weekly ones paler), where, and how to restore. Any folder works; a detected Proton Drive folder is only a shortcut. The folder is chosen with the Mac's own picker (`tauri-plugin-dialog`, registered on the desktop shell and allowed for the home window as `dialog:allow-open`); a plain browser gets a text field instead.
 
 ## Trash
 
@@ -1100,12 +1104,12 @@ bin/launch desktop
 bin/launch mobile
 ```
 
-`bin/launch desktop` always rebuilds the shell with `cargo build` first (incremental, near-instant when unchanged; a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to `~/.enqueue-poc/repo`, launches the shell, waits for the engine health check, and brings the window to front. `bin/launch mobile` requires a real phone on USB (USB debugging on) - an emulator is rejected on purpose - then does a one-shot build + `adb install` + launch and EXITS (no `cargo tauri android dev`, so no held Gradle lock).
+`bin/launch desktop` always rebuilds the shell with `cargo build` first (incremental, near-instant when unchanged; a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to `~/Library/Application Support/Enqueue/repo`, launches the shell, waits for the engine health check, and brings the window to front. `bin/launch mobile` requires a real phone on USB (USB debugging on) - an emulator is rejected on purpose - then does a one-shot build + `adb install` + launch and EXITS (no `cargo tauri android dev`, so no held Gradle lock).
 
 The shell finds the engine repo via (in order):
 
 1. `ENQUEUE_REPO` env var
-2. `~/.enqueue-poc/repo` file
+2. `~/Library/Application Support/Enqueue/repo` file
 3. Parent of the current directory (works when run from `desktop/`)
 
 ### Tauri build notes
@@ -1322,6 +1326,30 @@ The search index holds every word, so field-level encryption would be theatre; i
 The sync key must not be the disk key: it exists only once sync is set up, "Reset sync" discards it, and the phone holds a copy.
 The shape that fits is one library key born at first run, with separate keys for the disk, the relay and the backups derived from or wrapped under it.
 Other findings left open: the vault PIN is 6 digits (a million guesses against the wrapped key), one key both encrypts relay objects and names them, and the relay sees counts, sizes and timing.
+
+### A note's drafts: kept by a policy, compared, restored (2026-10-14)
+
+Drafts are `artifact_versions` rows (written by `notes._append_version`, see "A note being written keeps a slower clock"); `drafts.py` decides which are kept, lists them and restores one.
+**What is kept** is the `drafts_keep` setting (Settings > Storage > Drafts): `thinned` (default: every draft from the last day, the latest per hour for a week, per day for 90 days, per week after; `drafts.LADDER`), `30d`, or `off`.
+A note always keeps its latest draft, which is its body version (summaries and search are stamped with it), and, unless drafts are off, its first.
+A note's own switch (`artifacts.keep_drafts`, migration 0040; Details panel and the drafts list) turns it off for that note: only the latest is kept and rewritten in place, and switching off removes the rest after a confirmation.
+Thinning (`drafts.thin`) runs on the backup scheduler's daily beat, after the backup, and on demand (`POST /drafts/thin`, "Apply now"). Changing the policy removes nothing until then.
+**Restoring** (`POST /artifacts/{id}/drafts/{vid}/restore`) goes through `notes.edit(..., keep_current=True)`: the next draft is forced to stand on its own instead of rewriting the newest, so the text the restore replaces stays a draft. Going back can never lose anything.
+**The screens** are `js/drafts.js` + `css/drafts.css` (desktop): "N drafts" under the sheet opens the list in a second `.drawer.dpanel` (one plate at a time with Details), each row with the first words it changed and `+added −removed` (word counts against the draft before, `drafts._changed`). Choosing one turns the sheet into a comparison: the editor, its bar and foot are hidden, never rebuilt, so nothing is typed into or saved from a draft.
+**The diff** is `js/diff.js` (shared, no page or engine; `tests/js/diff.js`): lines are aligned first, then a removed line looks ahead for the line it became (alike in words, else the same kind of list item) and its words are diffed; marks are private-use characters until `md()` has run, then `<ins>`/`<del>`, and never cross a line or wrap a line's markdown prefix or a code fence, so the marked note renders in its own shape.
+A vaulted note's drafts are sealed: the list opens only while the vault is unlocked (409 otherwise).
+The phone has no drafts screen.
+
+### Tabs inside a note (2026-10-14)
+
+A note can be split into named tabs (the travel note: steps, prompt, candidates). One title, one set of tags, one summary, one set of drafts; the tabs are parts of it.
+**Kept in the note's own markdown** (`static/js/tabs.js`, shared; `tests/js/tabs.js`): each tab starts at a marker line `<!-- tab: Name -->`, an HTML comment, so another markdown app shows nothing and an exported note still reads. What comes before the first marker (the title heading) is the preamble every tab shares. A marker inside a code fence is code. A note with one tab is a plain note again (`Tabs.join` drops the markers), which is how deleting or popping out the second-to-last tab ends tabs.
+Search, summaries, sync and drafts see one note with marker lines in it; nothing on the engine knows about tabs.
+`md()` renders a marker as a small label (`.md-tab`) and `htmlToMd` writes it back, so a draft compared, the phone's reader, or anything else that renders the whole note shows the tabs one after another under their names.
+**On the desktop** (`static/js/notetabs.js`, styles in `css/artifact.css`): the editor holds ONE tab's text; `ctx.tabs` keeps the others and `ctx.tabAt` which is open (remembered per note in `sessionStorage`). Everything that reads the note's text goes through `noteText(ed)`, which puts the note back together: the save, the dirty check, the live title, the title edit, the drafts comparison. Reading `htmlToMd(ed)` directly on a note now reads one tab only.
+Folder tabs on the sheet's top edge; click switches, double-click (or Enter/F2) renames inline, dragging reorders (pointer events, neighbours slide aside), and on the open tab two tools show on hover: make it its own note (a new note titled by the tab, holding its text) and delete (asks when the tab has text; the text stays in the note's drafts). The formatting bar's last button adds a tab; the first press turns the note so far into a tab named "Notes" and opens a new one with its name ready to type.
+Changes to the tabs themselves are saved at once; typing inside one is saved like any note.
+Not built: a tab strip on the phone (it shows the tabs stacked in its reader; its writing page shows the marker lines as text), and a search hit opening on the tab it came from.
 
 ### The pill keeps its own ground
 

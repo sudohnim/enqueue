@@ -31,7 +31,7 @@ Later, when a subject is on your mind, you search or ask, and Enqueue brings bac
 
 Everything you save is an **artifact**: a note, a link, a PDF, an image, or a file.
 The **?** at the top right of the home page (and of the phone's library) opens a seven-card tour of all this, with small demos you can try; nothing typed there is saved.
-Your library lives on your Mac, in one folder (`~/.enqueue-poc`).
+Your library lives on your Mac, in one folder (`~/Library/Application Support/Enqueue`).
 
 ## Capturing
 

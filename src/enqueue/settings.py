@@ -97,6 +97,8 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # referer or an app name before they will answer; this is the escape hatch that
     # stops each one becoming a code change. One `Name: value` per line.
     "llm_headers": ("ENQ_LLM_HEADERS", "", True),
+    # How many drafts of a note are kept (drafts.py): thinned, 30d or off.
+    "drafts_keep": ("ENQ_DRAFTS_KEEP", "thinned", True),
     # Days a deleted artifact survives before it is destroyed for good.
     "trash_days": ("ENQ_TRASH_DAYS", 30, True),
     # BACKFILL.2: one-shot flag so auto-backfill runs only once on sync-enable.
@@ -205,6 +207,15 @@ def update(changes: dict) -> dict:
             f"{sorted(locked)} is pinned by the environment "
             f"({', '.join(FIELDS[n][0] for n in locked)}); unset it to change it here"
         )
+
+    if "drafts_keep" in changes and changes["drafts_keep"] not in (
+        None,
+        "",
+        "thinned",
+        "30d",
+        "off",
+    ):
+        raise ValueError("drafts_keep is one of: thinned, 30d, off")
 
     stored = _stored()
     for name, value in changes.items():

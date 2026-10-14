@@ -25,6 +25,8 @@ function teardown() {
 	// A saved view belongs to its own page. Left set, it made the view redraw itself
 	// over whatever page was open the next time the window regained focus.
 	pivotState = null;
+	// A note's drafts list and comparison belong to that note (js/drafts.js).
+	draftsState = null;
 
 	// A poller watching this chat's pending turns dies with the surface: a stale
 	// timer must never re-render a view the person has left.

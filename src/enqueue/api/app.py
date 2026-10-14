@@ -41,6 +41,21 @@ app = create_app()
 def serve() -> None:
     import uvicorn
 
+    # The library's folder moved (datadir.py). Before anything opens a file in it. When
+    # the move cannot be made, the engine does not start: starting would make a new,
+    # empty library in the new folder, and sync would begin filling it.
+    from .. import datadir
+
+    try:
+        moved = datadir.move_legacy()
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 - any failure here means the library is not where it should be
+        print(f"[engine] not starting: could not move the library folder: {exc}", flush=True)
+        raise SystemExit(1) from None
+    if moved:
+        print(f"[engine] {moved}")
+
     # QR.1: load the DEK from the Keychain/file so sync is unlocked with no
     # prompt after a restart. A missing DEK just means sync stays paused until
     # the recovery phrase is used or the keyring is re-initialized.

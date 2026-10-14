@@ -100,7 +100,9 @@ def restore(source: str = typer.Argument(..., help="A backup folder, or one .db 
     engine must not be running.
     """
     from . import backup as backups
+    from . import datadir
 
+    datadir.move_legacy()  # restore into the library's current home, not the old one
     try:
         _echo(backups.restore(source))
     except backups.BackupError as exc:
@@ -116,8 +118,11 @@ def migrate() -> None:
     The engine does this at startup, so this is for inspecting or repairing a
     database without one running.
     """
-    from . import db
+    from . import datadir, db
 
+    moved = datadir.move_legacy()
+    if moved:
+        typer.echo(moved)
     db.migrate()
     typer.echo(f"migrated {config.DB_PATH}")
 

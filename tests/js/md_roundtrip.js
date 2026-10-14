@@ -81,6 +81,8 @@ const roundTrip = (text) => htmlToMd(parse(md(text)));
 
 // ---- cases: each must come back exactly as written ----------------------------
 const exact = {
+  // A tab's marker (js/tabs.js) comes back as written, between the tabs' text.
+  "tab markers": "# Trip\n\n<!-- tab: Steps -->\n\n- book hotels\n\n<!-- tab: The prompt -->\n\nGOAL: rest",
   "nested bullets": "- a\n  - b\n    - c\n- d",
   "a trip plan": "- 24 - Th\n  - depart EWR at 11\n- 25 - Fr\n  - arrive 11am\n  - find drag show?",
   "an empty nested bullet": "- a\n  -\n- b",

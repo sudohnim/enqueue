@@ -3113,16 +3113,40 @@ mod desktop {
         }
     }
 
+    /// The library's folder (the engine's `config.DATA_DIR`): Application Support on a
+    /// Mac. Before the engine's first start after the move it may still be the old
+    /// `~/.enqueue-poc`, which the engine then leaves as a link to the new one
+    /// (datadir.py), so reading falls back to it and writing always goes to the new.
+    fn data_dir() -> Option<PathBuf> {
+        if let Some(dir) = std::env::var_os("ENQ_DATA_DIR") {
+            return Some(PathBuf::from(dir));
+        }
+        let home = PathBuf::from(std::env::var_os("HOME")?);
+        Some(home.join("Library/Application Support/Enqueue"))
+    }
+
+    fn legacy_dir() -> Option<PathBuf> {
+        std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".enqueue-poc"))
+    }
+
+    /// A file of the library's folder to read: the new place first, then the old.
+    fn library_file(name: &str) -> Option<PathBuf> {
+        let new = data_dir()?.join(name);
+        if new.exists() {
+            return Some(new);
+        }
+        legacy_dir().map(|old| old.join(name)).filter(|p| p.exists()).or(Some(new))
+    }
+
     /// Where the overlay was last left. Kept next to the repo pointer rather than in the
     /// engine's database, because it describes this machine's screen and not the
     /// collection, and because it has to be readable before the engine is up.
     fn position_file() -> Option<PathBuf> {
-        std::env::var_os("HOME")
-            .map(|home| PathBuf::from(home).join(".enqueue-poc/capture-position"))
+        data_dir().map(|dir| dir.join("capture-position"))
     }
 
     fn saved_position() -> Option<(i32, i32)> {
-        let text = std::fs::read_to_string(position_file()?).ok()?;
+        let text = std::fs::read_to_string(library_file("capture-position")?).ok()?;
         let (x, y) = text.trim().split_once(',')?;
         Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
     }
@@ -3149,8 +3173,7 @@ mod desktop {
             return from_env;
         }
 
-        if let Some(home) = std::env::var_os("HOME") {
-            let pointer = std::path::Path::new(&home).join(".enqueue-poc/repo");
+        if let Some(pointer) = library_file("repo") {
             if let Ok(contents) = std::fs::read_to_string(&pointer) {
                 let path = contents.trim();
                 if !path.is_empty() {
@@ -3405,7 +3428,7 @@ mod desktop {
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default()
         } else {
-            let dek_path = std::path::Path::new(".enqueue-poc/sync-dek.bin");
+            let dek_path = library_file("sync-dek.bin").unwrap_or_default();
             if dek_path.exists() {
                 let dek = std::fs::read(dek_path).unwrap_or_default();
                 base64::engine::general_purpose::STANDARD.encode(&dek)
@@ -3535,6 +3558,9 @@ mod desktop {
             .manage(Engine(Mutex::new(child)))
             .manage(CameFromHome(AtomicBool::new(false)))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            // The Mac's own folder picker, for choosing where backups go (Settings,
+            // Storage). Allowed for the home window only (tauri.conf.json, home-links).
+            .plugin(tauri_plugin_dialog::init())
             .invoke_handler(tauri::generate_handler![
                 capture_dismiss,
                 capture_drag,
