@@ -35,7 +35,21 @@ const NoteTabs = (() => {
 		}
 	}
 
-	function recalled(id, count) {
+	// Where the next opening of a note should land, from the search hit that opened it.
+	// Used once.
+	let pending = null;
+
+	function hint(id, query, snippet) {
+		pending = { id, query, snippet };
+	}
+
+	function recalled(id, count, parsed) {
+		const h = pending && pending.id === id ? pending : null;
+		pending = null;
+		if (h && parsed) {
+			const found = Tabs.find(parsed, h.query, h.snippet);
+			if (found >= 0) return found;
+		}
 		let at = 0;
 		try {
 			at = parseInt(sessionStorage.getItem("enqueue.tab." + id) || "0", 10) || 0;
@@ -355,5 +369,5 @@ const NoteTabs = (() => {
 		render();
 	}
 
-	return { mount, render, add, show, recalled };
+	return { mount, render, add, show, recalled, hint };
 })();

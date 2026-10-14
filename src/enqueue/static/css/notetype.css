@@ -1,0 +1,199 @@
+/* A note's own typography, shared by the desktop's note sheet (the editor), the phone's
+   reader and the drafts comparison on both, so a note reads the same everywhere.
+
+   Most notes are outlines typed fast: a line, then bullets under it, then bullets under
+   those. Set as flat grey text they read as a dump. This reads the shape that is
+   already there and sets it, with nothing for the writer to do: a line that leads into
+   a list is that list's label; an item with items under it is a heading for them; each
+   depth has its own quiet marker and a hairline guide down its side.
+
+   Apply `.notetype` to the element whose children are the note's blocks. Chat answers
+   and file text keep the plain `.md` setting. A note is white paper on both apps (a
+   sheet on the desktop, the whole screen on the phone), and its code and quotations
+   sink into the lavender ground. Loaded after css/artifact.css on the desktop. */
+.notetype {
+  font-size: 16px;
+  line-height: 26px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.notetype > :first-child {
+  margin-top: 0;
+}
+.notetype h1,
+.notetype h2,
+.notetype h3 {
+  margin: var(--sp-6) 0 var(--sp-2);
+  font-family: var(--display);
+  font-weight: var(--w-strong);
+  color: var(--text);
+  text-wrap: balance;
+}
+.notetype h1 {
+  font-size: 28px;
+  line-height: 34px;
+}
+.notetype h2 {
+  font-size: 22px;
+  line-height: 28px;
+}
+.notetype h3 {
+  font-size: 18px;
+  line-height: 24px;
+  letter-spacing: -0.12px;
+}
+.notetype p {
+  margin: var(--sp-4) 0 0;
+  text-wrap: pretty;
+}
+/* The line that leads into a list names it. */
+.notetype > p:has(+ ul),
+.notetype > p:has(+ ol) {
+  margin-top: var(--sp-6);
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+.notetype > p:has(+ ul) + ul,
+.notetype > p:has(+ ol) + ol {
+  margin-top: var(--sp-2);
+}
+.notetype > :first-child:is(p:has(+ ul), p:has(+ ol)) {
+  margin-top: 0;
+}
+.notetype ul,
+.notetype ol {
+  margin: var(--sp-4) 0 0;
+  padding-left: 22px;
+}
+.notetype li {
+  margin: 6px 0;
+  padding-left: 2px;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+.notetype li::marker {
+  color: var(--accent);
+  font-weight: 400;
+}
+.notetype ol > li::marker {
+  color: var(--text-mute);
+  font-size: 14px;
+}
+/* An item with items under it heads them. */
+.notetype li:has(> ul),
+.notetype li:has(> ol) {
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+/* Each depth steps in beside a hairline guide, with a quieter marker than the one
+   above it: a dot, then a dash, then a small dot. A nested list continues the line
+   above it, so it takes no list gap of its own. */
+.notetype li > ul,
+.notetype li > ol {
+  margin: 2px 0 var(--sp-2) 3px;
+  padding-left: 20px;
+  box-shadow: inset 1px 0 0 var(--line);
+}
+.notetype li > ul {
+  list-style-type: "\2013\00a0\00a0";
+}
+.notetype li li > ul {
+  list-style-type: "\00b7\00a0\00a0";
+}
+.notetype li li::marker {
+  color: var(--text-mute);
+}
+.notetype li li {
+  margin: 3px 0;
+}
+.notetype img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--sp-4) 0 0;
+  border-radius: var(--r-md);
+}
+.notetype code {
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text);
+}
+/* A code block keeps every newline and space and wraps a long line: it is as often a
+   prompt as a program. Its ink is the note's own, not the code teal chat answers use:
+   a whole prompt in teal read as a green wall. The face and the well mark it as code. */
+.notetype pre {
+  margin: var(--sp-4) 0 0;
+  padding: var(--sp-4);
+  border-radius: var(--r);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.notetype pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+/* A quotation is a soft block, not a striped margin. */
+.notetype blockquote {
+  margin: var(--sp-4) 0 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 0;
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  color: var(--text);
+  font-style: italic;
+}
+.notetype blockquote > :first-child {
+  margin-top: 0;
+}
+.notetype a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.notetype strong {
+  /* Bold a person typed reads as bold beside 400 text: the one weight above the
+     scale's ceiling. */
+  font-weight: 600;
+  color: var(--text);
+}
+.notetype em {
+  font-style: italic;
+}
+/* A divider: a short centred rule with air around it. */
+.notetype hr {
+  width: 72px;
+  height: 0;
+  margin: var(--sp-6) auto;
+  border: 0;
+  border-top: 2px solid var(--line);
+  border-radius: 2px;
+}
+/* A tab's name where the whole note is shown at once (js/tabs.js). */
+.notetype .md-tab {
+  margin: var(--sp-6) 0 var(--sp-2);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: var(--w-medium);
+  color: var(--text-mute);
+}
+.notetype > .md-tab:first-child {
+  margin-top: 0;
+}

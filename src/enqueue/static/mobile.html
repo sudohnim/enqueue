@@ -16,8 +16,11 @@
 <link rel="stylesheet" href="css/tour.css" />
 <link rel="stylesheet" href="css/bird.css" />
 <link rel="stylesheet" href="css/details.css" />
+<link rel="stylesheet" href="css/notetype.css" />
 <link rel="stylesheet" href="css/guide.css" />
 <script src="js/md.js"></script>
+<script src="js/tabs.js"></script>
+<script src="js/diff.js"></script>
 <script src="js/linkpop.js"></script>
 <script src="js/suggest.js"></script>
 <script src="js/details.js"></script>
@@ -636,7 +639,7 @@
   }
 
   /* Reader */
-  #reader_body {
+  :is(#reader_body, #drafts_diff) {
     font-size: 16px;
     /* A long unbroken string (base64, a long URL, a token) has no space to wrap
        on, so it overflows the device width. Android WebView's wide-viewport mode
@@ -647,23 +650,10 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
-  /* A note with tabs (js/tabs.js) reads on the phone as its parts one after another,
-     each under its tab's name. The phone has no tab strip yet. */
-  #reader_body .md-tab {
-    margin: 28px 0 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--line-soft);
-    font-size: 13px;
-    font-weight: var(--w-medium);
-    color: var(--text-mute);
-  }
-  #reader_body .md-tab:first-child {
-    margin-top: 0;
-  }
   /* A code block keeps its newlines and spacing and wraps a long line, the way the
      desktop's does (css/artifact.css): a prompt kept in a code block is mostly long
      lines, and a sideways scroll on a phone hid nearly all of it. */
-  #reader_body pre {
+  :is(#reader_body, #drafts_diff) pre {
     max-width: 100%;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -680,41 +670,377 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
-  #reader_body h1,
-  #reader_body h2,
-  #reader_body h3 {
-    font-weight: var(--w-strong);
-    line-height: 1.3;
-    margin: 0.6em 0 0.3em;
+  /* Tabs inside a note (js/tabs.js): a strip of their names, one tab's text under it.
+     The reader switches by a tap or a sideways swipe; the writing page edits one tab,
+     and a long press on a tab opens a sheet (rename, make it its own note, delete).
+     Reordering stays on the desktop. */
+  .mtabs {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--line-soft);
   }
-  #reader_body p {
-    margin: 0 0 0.8em;
+  .mtabs::-webkit-scrollbar {
+    display: none;
   }
-  #reader_body ul,
-  #reader_body ol {
-    margin: 0 0 0.8em;
-    padding-left: 1.4em;
+  .mtabs[hidden] {
+    display: none;
   }
-  /* A divider in a note (md.js renders a line of dashes as one). */
-  #reader_body hr {
-    width: 64px;
-    height: 0;
-    margin: 24px auto;
+  .reader-tabs {
+    margin: 4px -16px 18px;
+    padding: 0 4px;
+  }
+  .writer-tabs {
+    flex: none;
+    margin-top: 6px;
+    padding: 0 8px;
+  }
+  .mtab {
+    flex: none;
+    position: relative;
+    min-height: 44px;
+    padding: 0 12px;
     border: 0;
-    border-top: 2px solid var(--line);
-    border-radius: 2px;
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text-mute);
+    white-space: nowrap;
+    -webkit-touch-callout: none;
+    user-select: none;
+    cursor: pointer;
   }
-  #reader_body blockquote {
-    margin: 0 0 0.8em;
-    padding-left: 0.8em;
-    border-left: 2px solid var(--line-strong);
+  .mtab[aria-selected="true"] {
+    color: var(--text);
+    font-weight: var(--w-medium);
+  }
+  .mtab[aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: -1px;
+    height: 2.5px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .mtab.held {
+    background: var(--surface-hover);
+    border-radius: var(--r-md) var(--r-md) 0 0;
+  }
+  .mtab:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+    outline-offset: -4px;
+  }
+  .mtab-add {
+    width: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+  .mtab-add svg {
+    width: 20px;
+    height: 20px;
+  }
+  .mtab-part {
+    min-height: 40vh; /* room to swipe a short tab */
+  }
+  .mtab-empty {
     color: var(--text-mute);
   }
-  #reader_body a {
-    color: var(--link);
-    text-decoration: underline;
-    text-underline-offset: 2px;
+  .mconfirm-backdrop.mtabsheet-back {
+    align-items: flex-end;
+    padding: 0;
   }
+  .mtabsheet {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 20px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+    background: var(--surface-doc);
+    box-shadow: var(--shadow-lifted);
+  }
+  .mtabsheet-grab {
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 14px;
+    border-radius: 2px;
+    background: var(--line-strong);
+  }
+  .mtabsheet-label {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  .mtabsheet-name {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: var(--r-md);
+    background: var(--bg);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+    font: inherit;
+    font-size: 18px;
+    color: var(--text);
+    outline: none;
+  }
+  .mtabsheet-ok {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    font: inherit;
+    font-size: 16px;
+    font-weight: var(--w-medium);
+  }
+  .mtabsheet-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 4px;
+    border: 0;
+    border-top: 1px solid var(--line-soft);
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    font: inherit;
+    font-size: 16px;
+    color: var(--text);
+    text-align: left;
+  }
+  .mtabsheet-row svg {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    color: var(--text-dim);
+  }
+  .mtabsheet-row.danger,
+  .mtabsheet-row.danger svg {
+    color: var(--danger);
+  }
+  .mtabsheet-row small {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+
+  /* A note's drafts: the way in from Details, the list, and one compared with now
+     (js/diff.js marks what changed). The Mac decides how many are kept. */
+  .ddrafts-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    text-align: left;
+  }
+  .ddrafts-link[hidden] {
+    display: none;
+  }
+  .ddrafts-link svg {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    color: var(--text-mute);
+  }
+  .ddrafts-link small {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  #drafts_sub {
+    text-transform: none;
+  }
+  .drafts-day {
+    margin: 20px 0 2px;
+    font-size: 12.5px;
+    color: var(--text-mute);
+  }
+  .drafts-day:first-child {
+    margin-top: 4px;
+  }
+  .drow {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: baseline;
+    width: 100%;
+    min-height: 52px;
+    padding: 14px 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-soft);
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    font: inherit;
+    color: var(--text);
+    text-align: left;
+  }
+  .drow:active:not([disabled]) {
+    background: var(--surface-hover);
+  }
+  .drow[disabled] {
+    opacity: 1;
+  }
+  .drow-time {
+    min-width: 46px;
+    white-space: nowrap;
+    font-size: 14px;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .drow-words {
+    overflow: hidden;
+    font-size: 15px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .drow-delta {
+    display: inline-flex;
+    gap: 6px;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .drow-delta .plus {
+    color: var(--badge-success-ink);
+  }
+  .drow-delta .minus {
+    color: var(--badge-danger-ink);
+  }
+  .drow.now .drow-time {
+    color: var(--text);
+    font-weight: var(--w-medium);
+  }
+  .drow.now .drow-words {
+    color: var(--text-dim);
+  }
+  .drafts-empty {
+    margin: 14px 0 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-mute);
+  }
+  .drafts-keep {
+    margin-top: 24px;
+  }
+  .dseg {
+    display: flex;
+    margin: 4px 0 10px;
+    padding: 3px;
+    border-radius: var(--r-full);
+    background: var(--surface-3);
+  }
+  .dseg button {
+    flex: 1;
+    min-height: 38px;
+    border: 0;
+    border-radius: var(--r-full);
+    box-shadow: none;
+    background: none;
+    font: inherit;
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  .dseg button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-micro);
+  }
+  .dlegend {
+    display: flex;
+    gap: 12px;
+    margin: 0 0 16px;
+    font-size: 12.5px;
+  }
+  .dlegend[hidden] {
+    display: none;
+  }
+  #drafts_diff ins,
+  .dlegend ins {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: var(--tint-ok);
+    color: var(--badge-success-ink);
+    text-decoration: none;
+  }
+  #drafts_diff del,
+  .dlegend del {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: var(--badge-danger-fill);
+    color: var(--badge-danger-ink);
+    text-decoration: line-through;
+  }
+  .ddiff-none {
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  #drafts_compare {
+    padding-bottom: 110px;
+  }
+  .dbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    gap: 10px;
+    padding: 14px 16px calc(18px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--bg) 72%, transparent);
+  }
+  .dbar button {
+    flex: 1;
+    min-height: 50px;
+    border: 0;
+    border-radius: var(--r-full);
+    font: inherit;
+    font-size: 16px;
+    font-weight: var(--w-medium);
+  }
+  .dbar .ghost {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .dbar .primary {
+    flex: 1.4;
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+  }
+
+  /* A note is white paper (docs/DESIGN.md). On the desktop it is a sheet lying on the
+     lavender ground; here the whole screen is the paper whenever what it shows is a
+     note's text: the reader on a note, its drafts, and the writing page (which paints
+     its own). Its code and quotations sink into the ground, as on the desktop
+     (css/notetype.css). `paperScreen` in the script sets the class. */
+  html.paper,
+  html.paper body {
+    background: var(--surface-doc);
+  }
+  /* The frosted toolbar is frosted paper there, not a band of the ground. */
+  html.paper header {
+    background: color-mix(in srgb, var(--surface-doc) 88%, transparent);
+  }
+
   .kind-hint {
     font-size: 12px;
     color: var(--text-mute);
@@ -873,7 +1199,7 @@
     z-index: 60;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
+    background: var(--surface-doc); /* a note is white paper */
     animation: writer-in 220ms var(--ease) both;
   }
   .writer[hidden] {
@@ -2447,6 +2773,28 @@
   </div>
 </section>
 
+<!-- A note's drafts: the list, then one compared with the note as it is now. -->
+<section id="drafts" hidden>
+  <header>
+    <button class="back" id="drafts_back" aria-label="Back">&larr;</button>
+    <h1 id="drafts_title">Drafts</h1>
+  </header>
+  <div class="kind-hint" id="drafts_sub"></div>
+  <div id="drafts_list"></div>
+  <div id="drafts_compare" hidden>
+    <div class="dseg" role="group" aria-label="Show">
+      <button type="button" data-mode="changes" aria-pressed="true">Changes</button>
+      <button type="button" data-mode="was" aria-pressed="false">As it was</button>
+    </div>
+    <div class="dlegend" id="drafts_legend"><ins>added since</ins><del>removed since</del></div>
+    <div id="drafts_diff" class="notetype"></div>
+    <div class="dbar">
+      <button type="button" class="ghost" id="drafts_done">Done</button>
+      <button type="button" class="primary" id="drafts_restore">Restore this draft</button>
+    </div>
+  </div>
+</section>
+
 <!-- Details side panel: read-only tags + AI summary for the open artifact. -->
 <!-- The guide behind a ? in Settings (js/guides.js, css/guide.css): the same plate as
      Details, and the same words the desktop shows. -->
@@ -2494,6 +2842,17 @@
       <div id="details_summary" class="facet-list"></div>
       <div id="details_foot" class="dfoot" hidden>Regenerate the summary on desktop.</div>
     </div>
+    <div class="dsec" id="details_drafts" hidden>
+      <div class="dsec-head"><h3 class="dsec-label">Drafts</h3></div>
+      <button id="details_drafts_open" type="button" class="ddrafts-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="details_drafts_count"></span><small id="details_drafts_last"></small></button>
+      <button id="details_drafts_keep" type="button" class="mswitch-row" role="switch" aria-checked="true">
+        <span class="mswitch-text">
+          <span class="mswitch-label">Keep drafts of this note</span>
+          <span class="mswitch-sub">Off: edits replace the text, no history.</span>
+        </span>
+        <span class="mswitch" aria-hidden="true"><span class="mswitch-knob"></span></span>
+      </button>
+    </div>
     <div class="dsec" id="details_notes_block" hidden>
       <div class="dsec-head"><h3 class="dsec-label">Your notes</h3></div>
       <div id="details_notes" class="dnotes"></div>
@@ -2510,6 +2869,7 @@
     <div class="writer-date" id="writer_date"><img src="raven-mark.png" alt="" aria-hidden="true" /><span id="writer_date_text"></span></div>
     <input id="writer_title" class="writer-title" type="text" placeholder="Title" autocomplete="off" enterkeyhint="next" aria-label="Title" />
   </div>
+  <div id="writer_tabs" class="mtabs writer-tabs" role="tablist" aria-label="Tabs" hidden></div>
   <textarea id="writer_body" class="writer-body" placeholder="Start writing." aria-label="The note"></textarea>
   <div class="writer-acc" id="writer_acc">
       <button class="tool" type="button" data-tool="bullet" aria-label="Bulleted list" title="Bulleted list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.6" cy="6.5" r="1.1" fill="currentColor"/><circle cx="4.6" cy="12" r="1.1" fill="currentColor"/><circle cx="4.6" cy="17.5" r="1.1" fill="currentColor"/></svg></button>
@@ -2517,6 +2877,7 @@
       <button class="tool" type="button" data-tool="heading" aria-label="Heading" title="Heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5v14M14 5v14M5 12h9M17.5 19v-7l-2 1.5"/></svg></button>
       <button class="tool" type="button" data-tool="indent" aria-label="Indent" title="Indent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M11 12h9M11 18h9M4 10l3.5 2.5L4 15"/></svg></button>
       <button class="tool" type="button" data-tool="outdent" aria-label="Outdent" title="Outdent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M11 12h9M11 18h9M7.5 10 4 12.5 7.5 15"/></svg></button>
+      <button class="tool" type="button" data-tool="tab" aria-label="Add a tab" title="Add a tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V6a1 1 0 0 1 1-1h5l2 3h7a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M4 9h16"/></svg></button>
       <span class="grow"></span>
       <button class="writer-done" id="writer_done" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Done</button>
   </div>
@@ -3478,15 +3839,28 @@
     "settings",
     "shelf_page",
     "vault",
+    "drafts",
   ];
 
+  // Whether the reader is showing a note: then the screen is white paper (paperScreen).
+  let readerOnNote = false;
+
+  function paperScreen(id) {
+    document.documentElement.classList.toggle(
+      "paper",
+      id === "drafts" || (id === "reader" && readerOnNote),
+    );
+  }
+
   function show(id) {
+    paperScreen(id);
     if (id === "reader") {
       const from = SCREENS.find((s) => {
         const el = document.getElementById(s);
         return el && !el.hidden;
       });
-      if (from !== "reader")
+      // Back from a note's drafts is back to the note, which still knows where it came from.
+      if (from !== "reader" && from !== "drafts")
         readerFrom =
           from === "shelf_page" || from === "chat" ? { screen: from, y: window.scrollY } : null;
     }
@@ -3508,7 +3882,8 @@
     // The floating pill is chrome for the library; on the crop-confirm and settings
     // screens it sits over the screen's own Save/Cancel controls, so hide it there.
     const pillEl = document.getElementById("pill");
-    if (pillEl) pillEl.hidden = id === "crop" || id === "settings" || id === "vault";
+    if (pillEl)
+      pillEl.hidden = id === "crop" || id === "settings" || id === "vault" || id === "drafts";
     // Sections are siblings in one scroll container, so switching from a
     // scrolled library would land the new section mid-page (Settings appeared
     // "at the bottom"). Reset scroll to the top on every switch.
@@ -4811,6 +5186,7 @@
   let readerVaulted = false;
   function renderReader(a, data) {
     readerVaulted = !!a.vaulted_at;
+    readerOnNote = a.kind === "note";
     document.getElementById("reader_title").textContent = shownTitle(a);
     document.getElementById("reader_kind").textContent = a.kind;
     const body = document.getElementById("reader_body");
@@ -4825,6 +5201,7 @@
     }
     ann.hidden = true;
     body.removeAttribute("contenteditable");
+    body.classList.remove("notetype");
     body.removeAttribute("data-placeholder");
     body.classList.remove("note-tappable");
     body.onclick = null;
@@ -4910,20 +5287,7 @@
 
     // Render body based on kind
     if (isNote) {
-      renderMd(body, a.body || "");
-      // The note is the page: a tap anywhere in its text opens the writing page with
-      // the caret where the finger landed. Links keep their link bar (LinkPop takes
-      // those taps first), a text selection is left alone, and a vaulted note stays
-      // read-only (writing it would put plaintext back on disk).
-      if (!a.vaulted_at) {
-        body.classList.add("note-tappable");
-        body.onclick = (e) => {
-          if (e.target.closest("a, .mdlink, img")) return;
-          const sel = window.getSelection();
-          if (sel && !sel.isCollapsed) return;
-          openWriter(a, rawOffsetAt(body, a.body || "", e.clientX, e.clientY));
-        };
-      }
+      renderNoteBody(body, a);
     } else if (a.kind === "link") {
       // Render stored preview card if available, else fall back to plain link
       const preview = data.preview;
@@ -5131,6 +5495,7 @@
     document.getElementById("details_notes").textContent = anns
       .map((an) => an.text)
       .join("\n\n");
+    paintDetailsDrafts(a);
 
     const panel = document.getElementById("details_panel");
     // Only a real opening is an arrival: the raven lands and the sections settle in.
@@ -5522,6 +5887,10 @@
       if (db) db.classList.remove("open");
       return true;
     }
+    if (!document.getElementById("drafts").hidden) {
+      draftsBack();
+      return true;
+    }
     if (!document.getElementById("reader").hidden) {
       leaveReader();
       return true;
@@ -5719,7 +6088,7 @@
   // first line, which the placeholder says. A title that is not the first line is the
   // note's own even when the flag says otherwise (a synced copy can lose the flag),
   // and it is always sent back, so saving never renames a note after its first line.
-  function openWriter(art, caretAt) {
+  function openWriter(art, caretAt, tabAt) {
     const el = document.getElementById("writer");
     const title = document.getElementById("writer_title");
     const ta = document.getElementById("writer_body");
@@ -5733,7 +6102,19 @@
     title.value = explicit;
     title.placeholder = "Title";
     ta.value = art ? art.body || "" : "";
-    writer.saved = { title: explicit, body: ta.value };
+    // A note with tabs is written one tab at a time; writerText() puts it back together.
+    writer.tabs = art ? Tabs.parse(ta.value) : null;
+    if (writer.tabs) {
+      const count = writer.tabs.tabs.length;
+      writer.tabAt =
+        tabAt === undefined ? tabRemembered(art.id, count) : Math.min(tabAt, count - 1);
+      ta.value = writer.tabs.tabs[writer.tabAt].text;
+    }
+    renderWriterTabs();
+    // The title heading sits above the tabs, out of the text being written: the empty
+    // title field shows it, and typing there gives the note a title of its own.
+    if (writer.tabs && writer.tabs.pre) title.placeholder = titleHint(writer.tabs.pre);
+    writer.saved = { title: explicit, body: writerText() };
     writer.titleTouched = false;
     const date = document.getElementById("writer_date");
     date.hidden = !!art; // a new note opens with today's date and the raven
@@ -5781,7 +6162,7 @@
     clearTimeout(writer.timer);
     writer.chain = writer.chain.then(async () => {
       const title = document.getElementById("writer_title").value.trim();
-      const body = document.getElementById("writer_body").value;
+      const body = writerText();
       if (title === writer.saved.title && body === writer.saved.body) return;
       if (!writer.art && !title && !body.trim()) return; // nothing yet; nothing kept
       setWriterSaved("Saving");
@@ -5855,6 +6236,7 @@
 
   // Line-level markdown tools. Each acts on every line the selection touches.
   function writerTool(name) {
+    if (name === "tab") return writerAddTab();
     const ta = document.getElementById("writer_body");
     const v = ta.value;
     const s0 = ta.selectionStart;
@@ -5892,6 +6274,654 @@
     ta.setSelectionRange(s0 === e0 ? caret : start, caret);
     ta.dispatchEvent(new Event("input"));
   }
+
+  // ---- tabs inside a note (js/tabs.js) --------------------------------------------
+  // The reader shows one tab at a time under a strip of their names (a tap, or a
+  // sideways swipe over the text, turns to another). The writing page edits one tab's
+  // text and puts the note back together on every save (writerText). A long press on a
+  // tab there opens a sheet: its name, make it its own note, delete. Reordering is desk
+  // work. The open tab is remembered per note for the session, like the desktop's.
+  function tabRemembered(id, count) {
+    let at = 0;
+    try {
+      at = parseInt(sessionStorage.getItem("enqueue.tab." + id) || "0", 10) || 0;
+    } catch (e) {
+      at = 0;
+    }
+    return Math.max(0, Math.min(at, count - 1));
+  }
+
+  function rememberTab(id, at) {
+    try {
+      sessionStorage.setItem("enqueue.tab." + id, String(at));
+    } catch (e) {
+      /* storage may be unavailable */
+    }
+  }
+
+  function tabStripFill(strip, tabs, at, withAdd) {
+    strip.replaceChildren();
+    tabs.forEach((t, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "mtab";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(i === at));
+      b.dataset.at = String(i);
+      b.textContent = t.name;
+      strip.appendChild(b);
+    });
+    if (withAdd) {
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "mtab mtab-add";
+      add.setAttribute("aria-label", "Add a tab");
+      add.title = "Add a tab";
+      add.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+      strip.appendChild(add);
+    }
+    const on = strip.children[at];
+    if (
+      on &&
+      (on.offsetLeft < strip.scrollLeft ||
+        on.offsetLeft + on.offsetWidth > strip.scrollLeft + strip.clientWidth)
+    )
+      strip.scrollLeft = Math.max(0, on.offsetLeft - 16);
+  }
+
+  // A note in the reader. The note is the page: a tap anywhere in its text opens the
+  // writing page with the caret where the finger landed (on the tab it is on). Links
+  // keep their link bar (LinkPop takes those taps first), a text selection is left
+  // alone, and a vaulted note stays read-only (writing it would put plaintext back on
+  // disk).
+  function renderNoteBody(body, a) {
+    const src = a.body || "";
+    const parsed = Tabs.parse(src);
+    const editable = !a.vaulted_at;
+    if (!parsed) {
+      renderMd(body, src);
+      body.classList.add("notetype");
+      if (!editable) return;
+      body.classList.add("note-tappable");
+      body.onclick = (e) => {
+        if (e.target.closest("a, .mdlink, img")) return;
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) return;
+        openWriter(a, rawOffsetAt(body, src, e.clientX, e.clientY));
+      };
+      return;
+    }
+    let at = tabRemembered(a.id, parsed.tabs.length);
+    const pre = document.createElement("div");
+    pre.className = "notetype";
+    if (parsed.pre) renderMd(pre, parsed.pre);
+    const strip = document.createElement("div");
+    strip.className = "mtabs reader-tabs";
+    strip.setAttribute("role", "tablist");
+    strip.setAttribute("aria-label", "Tabs");
+    const part = document.createElement("div");
+    part.className = "mtab-part notetype";
+    part.setAttribute("role", "tabpanel");
+    body.replaceChildren(pre, strip, part);
+    const showTab = (i) => {
+      at = Math.max(0, Math.min(i, parsed.tabs.length - 1));
+      rememberTab(a.id, at);
+      tabStripFill(strip, parsed.tabs, at, false);
+      const text = parsed.tabs[at].text;
+      if (text.trim()) renderMd(part, text);
+      else part.innerHTML = '<p class="mtab-empty">Nothing in this tab yet.</p>';
+    };
+    showTab(at);
+    strip.addEventListener("click", (e) => {
+      // A tap on the strip stays there: it redraws the strip, and bubbling on to the
+      // note it would find a button no longer in the page and open the writing page.
+      e.stopPropagation();
+      const t = e.target.closest(".mtab");
+      if (t) showTab(+t.dataset.at);
+    });
+    // A sideways swipe over the text turns to the next or the previous tab.
+    let x0 = null;
+    let y0 = 0;
+    let swiped = false;
+    part.addEventListener(
+      "touchstart",
+      (e) => {
+        x0 = e.touches[0].clientX;
+        y0 = e.touches[0].clientY;
+        swiped = false;
+      },
+      { passive: true },
+    );
+    part.addEventListener("touchend", (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+      const next = at + (dx < 0 ? 1 : -1);
+      if (next < 0 || next >= parsed.tabs.length) return;
+      swiped = true;
+      showTab(next);
+    });
+    if (!editable) return;
+    body.classList.add("note-tappable");
+    body.onclick = (e) => {
+      if (swiped) {
+        swiped = false;
+        return;
+      }
+      if (e.target.closest(".mtabs, a, .mdlink, img")) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      const text = parsed.tabs[at].text;
+      const caret = part.contains(e.target) ? rawOffsetAt(part, text, e.clientX, e.clientY) : 0;
+      openWriter(a, caret, at);
+    };
+  }
+
+  // The writing page's text as the whole note: the open tab's words put back in their
+  // place among the others.
+  function writerText() {
+    const ta = document.getElementById("writer_body");
+    if (!writer.tabs) return ta.value;
+    writer.tabs.tabs[writer.tabAt].text = ta.value;
+    return Tabs.join(writer.tabs.pre, writer.tabs.tabs);
+  }
+
+  function writerChanged() {
+    setWriterSaved("");
+    saveWriter();
+  }
+
+  function renderWriterTabs() {
+    const strip = document.getElementById("writer_tabs");
+    if (!strip) return;
+    strip.hidden = !writer.tabs;
+    if (writer.tabs) tabStripFill(strip, writer.tabs.tabs, writer.tabAt, true);
+  }
+
+  function writerShowTab(i) {
+    const ta = document.getElementById("writer_body");
+    writerText(); // what the open tab holds stays with it
+    writer.tabAt = i;
+    if (writer.art) rememberTab(writer.art.id, i);
+    ta.value = writer.tabs.tabs[i].text;
+    ta.scrollTop = 0;
+    renderWriterTabs();
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+
+  // The first tab added turns the note so far into a tab called "Notes" (its title
+  // heading stays above the tabs), as on the desktop.
+  async function writerAddTab() {
+    const out = await tabSheet({ heading: "New tab", value: "", ok: "Add tab" });
+    if (!out || !out.name) return;
+    const ta = document.getElementById("writer_body");
+    if (!writer.tabs) {
+      writer.tabs = Tabs.start(ta.value, "Notes");
+      writer.tabAt = 0;
+      ta.value = writer.tabs.tabs[0].text;
+    }
+    writerText();
+    writer.tabs.tabs.push({ name: Tabs.clean(out.name), text: "" });
+    writerShowTab(writer.tabs.tabs.length - 1);
+    writerChanged();
+  }
+
+  const TAB_POP_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>';
+  const TAB_DELETE_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
+
+  async function tabMenu(i, el) {
+    if (navigator.vibrate) navigator.vibrate(12);
+    el.classList.add("held");
+    writerText();
+    const t = writer.tabs.tabs[i];
+    const out = await tabSheet({
+      heading: "Tab name",
+      value: t.name,
+      actions: [
+        { act: "pop", label: "Make it its own note", icon: TAB_POP_ICON },
+        {
+          act: "delete",
+          label: "Delete tab",
+          small: t.text.trim() ? "kept in drafts" : "",
+          icon: TAB_DELETE_ICON,
+          danger: true,
+        },
+      ],
+    });
+    el.classList.remove("held");
+    if (!out || !writer.tabs) return;
+    if (out.name && Tabs.clean(out.name) !== t.name) {
+      t.name = Tabs.clean(out.name);
+      renderWriterTabs();
+      writerChanged();
+    }
+    if (out.act === "pop") writerPopTab(i);
+    else if (out.act === "delete") writerDeleteTab(i);
+  }
+
+  async function writerPopTab(i) {
+    writerText();
+    const t = writer.tabs.tabs[i];
+    try {
+      await invoke("mobile_capture", {
+        text: "# " + t.name + (t.text.trim() ? "\n\n" + t.text : ""),
+        asNote: true,
+      });
+    } catch (e) {
+      return toast("Could not make the note: " + errString(e), true);
+    }
+    writerDropTab(i);
+    toast("“" + t.name + "” is its own note now.");
+  }
+
+  async function writerDeleteTab(i) {
+    writerText();
+    const t = writer.tabs.tabs[i];
+    if (
+      t.text.trim() &&
+      !(await mobileConfirm(
+        "Delete the “" + t.name + "” tab? Its text stays in this note's drafts.",
+        "Delete",
+        true,
+      ))
+    )
+      return;
+    writerDropTab(i);
+  }
+
+  // One tab left is no tabs: the note is plain again.
+  function writerDropTab(i) {
+    const ta = document.getElementById("writer_body");
+    writer.tabs.tabs.splice(i, 1);
+    if (writer.tabs.tabs.length <= 1) {
+      ta.value = Tabs.join(writer.tabs.pre, writer.tabs.tabs);
+      writer.tabs = null;
+    } else {
+      if (writer.tabAt > i) writer.tabAt -= 1;
+      writer.tabAt = Math.min(writer.tabAt, writer.tabs.tabs.length - 1);
+      ta.value = writer.tabs.tabs[writer.tabAt].text;
+      if (writer.art) rememberTab(writer.art.id, writer.tabAt);
+    }
+    renderWriterTabs();
+    writerChanged();
+  }
+
+  // A sheet from the bottom with a name field: a new tab's (`ok` adds it) or an open
+  // tab's (its `actions` below; closing it keeps the name as typed). It sits on the
+  // keyboard: sized to the visual viewport, which the keyboard shrinks. Resolves
+  // {name, act} or null. The Back gesture closes it like a tap outside.
+  function tabSheet({ heading, value, ok, actions }) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "mconfirm-backdrop mtabsheet-back";
+      const card = document.createElement("div");
+      card.className = "mtabsheet";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      card.setAttribute("aria-label", heading);
+      card.innerHTML =
+        '<div class="mtabsheet-grab" aria-hidden="true"></div>' +
+        '<label class="mtabsheet-label" for="mtabsheet_name"></label>' +
+        '<input id="mtabsheet_name" class="mtabsheet-name" type="text" maxlength="60" autocomplete="off" enterkeyhint="done" placeholder="Name">';
+      card.querySelector("label").textContent = heading;
+      const input = card.querySelector("input");
+      input.value = value || "";
+      const vv = window.visualViewport;
+      const fit = () => {
+        if (!vv) return;
+        backdrop.style.top = vv.offsetTop + "px";
+        backdrop.style.bottom = "auto";
+        backdrop.style.height = vv.height + "px";
+      };
+      const done = (v) => {
+        if (vv) vv.removeEventListener("resize", fit);
+        backdrop.remove();
+        resolve(v);
+      };
+      const named = () => input.value.trim();
+      if (ok) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "mtabsheet-ok";
+        b.textContent = ok;
+        b.addEventListener("click", () => (named() ? done({ name: named(), act: null }) : input.focus()));
+        card.appendChild(b);
+      }
+      for (const a of actions || []) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "mtabsheet-row" + (a.danger ? " danger" : "");
+        b.innerHTML = a.icon;
+        b.append(a.label);
+        if (a.small) {
+          const small = document.createElement("small");
+          small.textContent = a.small;
+          b.appendChild(small);
+        }
+        b.addEventListener("click", () => done({ name: named(), act: a.act }));
+        card.appendChild(b);
+      }
+      input.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        e.preventDefault();
+        if (named()) done({ name: named(), act: null });
+      });
+      const dismiss = () => done(ok ? null : { name: named(), act: null });
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) dismiss();
+      });
+      backdrop.addEventListener("enq-cancel", dismiss); // the Back gesture
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+      fit();
+      if (vv) vv.addEventListener("resize", fit);
+      input.focus();
+    });
+  }
+
+  (function wireWriterTabs() {
+    const strip = document.getElementById("writer_tabs");
+    if (!strip) return;
+    let timer = 0;
+    let held = false;
+    let x0 = 0;
+    let y0 = 0;
+    const cancel = () => clearTimeout(timer);
+    strip.addEventListener("pointerdown", (e) => {
+      const t = e.target.closest(".mtab:not(.mtab-add)");
+      held = false;
+      if (!t) return;
+      x0 = e.clientX;
+      y0 = e.clientY;
+      cancel();
+      timer = setTimeout(() => {
+        held = true;
+        tabMenu(+t.dataset.at, t);
+      }, 480);
+    });
+    strip.addEventListener("pointermove", (e) => {
+      if (Math.abs(e.clientX - x0) > 8 || Math.abs(e.clientY - y0) > 8) cancel();
+    });
+    strip.addEventListener("pointerup", cancel);
+    strip.addEventListener("pointercancel", cancel);
+    strip.addEventListener("contextmenu", (e) => e.preventDefault());
+    strip.addEventListener("click", (e) => {
+      if (held) {
+        held = false;
+        return;
+      }
+      const t = e.target.closest(".mtab");
+      if (!t || !writer.tabs) return;
+      if (t.classList.contains("mtab-add")) return writerAddTab();
+      const i = +t.dataset.at;
+      if (i !== writer.tabAt) writerShowTab(i);
+    });
+  })();
+
+  // ---- a note's drafts ------------------------------------------------------------
+  // Details shows how many and the note's switch; the drafts screen lists them and
+  // compares one with the note as it is (js/diff.js), with Restore. The Mac decides
+  // how many are kept as they age; the phone only follows (a thinned list arrives in
+  // the next snapshot). Restoring keeps the text it replaces as a draft.
+  const draftsView = { id: null, title: "", body: "", list: [], keep: true, sel: null, mode: "changes" };
+
+  function draftsDay(when) {
+    const d = new Date(when);
+    const today = new Date();
+    const y = new Date();
+    y.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === y.toDateString()) return "Yesterday";
+    const sameYear = d.getFullYear() === today.getFullYear();
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(sameYear ? {} : { year: "numeric" }),
+    });
+  }
+
+  function draftsTime(when) {
+    return new Date(when).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // What a draft changed against the one before it: words added and removed, and the
+  // first run of words it added (else removed), as the desktop's list shows.
+  function draftChange(older, newer) {
+    const words = (s) =>
+      String(s || "")
+        .replace(/<!--\s*tab:.*?-->/g, " ")
+        .split(/\s+/)
+        .filter((w) => w && !/^([-*+>#]+|\d+[.)])$/.test(w)); // words, not list or heading marks
+    const a = words(older);
+    const b = words(newer);
+    let added = 0;
+    let removed = 0;
+    const runs = [];
+    for (const [op, i, j] of Diff.align(a, b)) {
+      if (op === "=") {
+        runs.push(null);
+        continue;
+      }
+      if (op === "+") added++;
+      else removed++;
+      const w = op === "+" ? b[j] : a[i];
+      const last = runs[runs.length - 1];
+      if (last && last.op === op) last.w.push(w);
+      else runs.push({ op, w: [w] });
+    }
+    const pick = runs.find((r) => r && r.op === "+") || runs.find((r) => r && r.op === "-");
+    return { added, removed, first: pick ? pick.w.slice(0, 6).join(" ") : "" };
+  }
+
+  function paintKeepSwitch(el, on) {
+    el.setAttribute("aria-checked", String(on));
+    const sub = el.querySelector(".mswitch-sub");
+    if (sub)
+      sub.textContent = on
+        ? "How many are kept as they age is set on the Mac."
+        : "Off: edits replace the text, no history.";
+  }
+
+  function paintDetailsDrafts(a) {
+    const sec = document.getElementById("details_drafts");
+    if (!sec) return;
+    sec.hidden = true;
+    if (a.kind !== "note" || a.vaulted_at) return;
+    invoke("mobile_drafts", { id: a.id })
+      .then((raw) => {
+        const d = parse(raw);
+        const n = d.drafts.length;
+        sec.dataset.id = a.id;
+        sec.dataset.count = String(n);
+        document.getElementById("details_drafts_open").hidden = n < 2;
+        document.getElementById("details_drafts_count").textContent = n + " drafts";
+        document.getElementById("details_drafts_last").textContent = n
+          ? "last at " + draftsTime(d.drafts[0].at) + " ›"
+          : "";
+        paintKeepSwitch(document.getElementById("details_drafts_keep"), d.keep);
+        sec.hidden = false;
+      })
+      .catch(() => {});
+  }
+
+  async function setKeepDrafts(id, on, count) {
+    if (
+      !on &&
+      count > 1 &&
+      !(await mobileConfirm(
+        "Stop keeping drafts of this note? Its " +
+          (count - 1) +
+          (count === 2 ? " earlier draft is" : " earlier drafts are") +
+          " removed, here and on the Mac.",
+        "Stop and remove",
+        true,
+      ))
+    )
+      return false;
+    try {
+      await invoke("mobile_drafts_keep", { id, on });
+    } catch (e) {
+      toast(errString(e), true);
+      return false;
+    }
+    invoke("mobile_outbox_push").catch(() => {});
+    return true;
+  }
+
+  async function openDrafts(id) {
+    let d;
+    let art;
+    try {
+      d = parse(await invoke("mobile_drafts", { id }));
+      art = parse(await invoke("mobile_get", { id })).artifact;
+    } catch (e) {
+      return toast(errString(e), true);
+    }
+    Object.assign(draftsView, {
+      id,
+      title: shownTitle(art),
+      body: art.body || "",
+      list: d.drafts,
+      keep: d.keep,
+      sel: null,
+      mode: "changes",
+    });
+    show("drafts");
+    renderDraftsList();
+  }
+
+  function renderDraftsList() {
+    const v = draftsView;
+    document.getElementById("drafts_title").textContent = "Drafts";
+    document.getElementById("drafts_sub").textContent = v.title;
+    document.getElementById("drafts_compare").hidden = true;
+    const list = document.getElementById("drafts_list");
+    list.hidden = false;
+    let html = "";
+    let day = null;
+    v.list.forEach((d, i) => {
+      const label = draftsDay(d.at);
+      if (label !== day) {
+        day = label;
+        html += '<div class="drafts-day">' + esc(label) + "</div>";
+      }
+      const now = i === 0 && Diff.same(d.body, v.body);
+      const older = v.list[i + 1];
+      const c = older ? draftChange(older.body, d.body) : null;
+      const words = now ? "The note as it is" : !older ? "First draft" : c.first || "Spacing only";
+      html +=
+        '<button type="button" class="drow' +
+        (now ? ' now" disabled' : '" data-draft="' + esc(d.id) + '"') +
+        '><span class="drow-time">' +
+        (now ? "Now" : esc(draftsTime(d.at))) +
+        '</span><span class="drow-words">' +
+        esc(words) +
+        '</span><span class="drow-delta">' +
+        (!now && c
+          ? (c.added ? '<span class="plus">+' + c.added + "</span>" : "") +
+            (c.removed ? '<span class="minus">−' + c.removed + "</span>" : "")
+          : "") +
+        "</span></button>";
+    });
+    if (v.list.length < 2)
+      html +=
+        '<p class="drafts-empty">' +
+        (v.keep
+          ? "A new draft is kept as you write: one for each few minutes of writing, and how the note began."
+          : "Drafts are off for this note, so only its latest text is kept.") +
+        "</p>";
+    html +=
+      '<div class="drafts-keep"><button id="drafts_keep" type="button" class="mswitch-row" role="switch" aria-checked="true">' +
+      '<span class="mswitch-text"><span class="mswitch-label">Keep drafts of this note</span><span class="mswitch-sub"></span></span>' +
+      '<span class="mswitch" aria-hidden="true"><span class="mswitch-knob"></span></span></button></div>';
+    list.innerHTML = html;
+    paintKeepSwitch(document.getElementById("drafts_keep"), v.keep);
+    window.scrollTo(0, 0);
+  }
+
+  function renderDraftCompare() {
+    const v = draftsView;
+    const d = v.list.find((x) => x.id === v.sel);
+    if (!d) return renderDraftsList();
+    document.getElementById("drafts_title").textContent = draftsDay(d.at) + ", " + draftsTime(d.at);
+    document.getElementById("drafts_sub").textContent =
+      v.mode === "changes" ? "compared with now" : "as it was";
+    document.getElementById("drafts_list").hidden = true;
+    document.getElementById("drafts_compare").hidden = false;
+    for (const b of document.querySelectorAll("#drafts_compare .dseg button"))
+      b.setAttribute("aria-pressed", String(b.dataset.mode === v.mode));
+    document.getElementById("drafts_legend").hidden = v.mode !== "changes";
+    const diff = document.getElementById("drafts_diff");
+    if (v.mode === "was") renderMd(diff, d.body);
+    else if (Diff.same(d.body, v.body))
+      diff.innerHTML = '<p class="ddiff-none">No change since this draft.</p>' + md(v.body);
+    else diff.innerHTML = Diff.html(d.body, v.body, md);
+  }
+
+  function draftsBack() {
+    if (draftsView.sel) {
+      draftsView.sel = null;
+      draftsView.mode = "changes";
+      renderDraftsList();
+    } else {
+      openArtifact(draftsView.id);
+    }
+  }
+
+  async function restoreDraft() {
+    const v = draftsView;
+    if (!v.sel) return;
+    try {
+      await invoke("mobile_draft_restore", { id: v.id, versionId: v.sel });
+    } catch (e) {
+      return toast("Not restored: " + errString(e), true);
+    }
+    invoke("mobile_outbox_push").catch(() => {});
+    toast("Restored. The text it replaced is kept as a draft.");
+    openArtifact(v.id);
+  }
+
+  (function wireDrafts() {
+    document.getElementById("details_drafts_open")?.addEventListener("click", () => {
+      const id = document.getElementById("details_drafts").dataset.id;
+      if (id) openDrafts(id);
+    });
+    document.getElementById("details_drafts_keep")?.addEventListener("click", async (e) => {
+      const sec = document.getElementById("details_drafts");
+      const el = e.currentTarget;
+      const on = el.getAttribute("aria-checked") !== "true";
+      if (await setKeepDrafts(sec.dataset.id, on, +sec.dataset.count || 0))
+        paintDetailsDrafts({ id: sec.dataset.id, kind: "note" });
+    });
+    document.getElementById("drafts_back")?.addEventListener("click", draftsBack);
+    document.getElementById("drafts_done")?.addEventListener("click", draftsBack);
+    document.getElementById("drafts_restore")?.addEventListener("click", restoreDraft);
+    document.getElementById("drafts_list")?.addEventListener("click", async (e) => {
+      if (e.target.closest("#drafts_keep")) {
+        const v = draftsView;
+        if (await setKeepDrafts(v.id, !v.keep, v.list.length)) openDrafts(v.id);
+        return;
+      }
+      const row = e.target.closest(".drow[data-draft]");
+      if (!row) return;
+      draftsView.sel = row.dataset.draft;
+      draftsView.mode = "changes";
+      renderDraftCompare();
+      window.scrollTo(0, 0);
+    });
+    document.querySelector("#drafts_compare .dseg")?.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-mode]");
+      if (!b) return;
+      draftsView.mode = b.dataset.mode;
+      renderDraftCompare();
+    });
+  })();
 
   (function wireWriter() {
     const ta = document.getElementById("writer_body");

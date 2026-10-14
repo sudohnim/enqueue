@@ -92,10 +92,16 @@ def keep(drafts: list[tuple[str, str]], rule: str, now: datetime, keep_all: bool
 
 def thin(artifact_id: str | None = None, now: datetime | None = None) -> int:
     """Remove the drafts the policy no longer keeps, for one note or every note.
-    Returns how many were removed."""
+    Returns how many were removed.
+
+    Each note that lost drafts is pushed, without moving its date: a device applies a
+    snapshot with an equal key, so the phone takes the shorter list. Unpushed, the
+    phone's next edit would carry every old draft back (drafts replace each other
+    wholesale when a snapshot is applied)."""
     now = now or datetime.now(timezone.utc)
     rule = policy()
     removed = 0
+    touched: list[str] = []
     with db.transaction() as conn:
         rows = conn.execute(
             "SELECT v.id, v.artifact_id, v.created_at, a.keep_drafts FROM artifact_versions v"
@@ -114,6 +120,11 @@ def thin(artifact_id: str | None = None, now: datetime | None = None) -> int:
             if gone:
                 conn.executemany("DELETE FROM artifact_versions WHERE id = ?", gone)
                 removed += len(gone)
+                touched.append(note)
+    from .sync.client import push_artifact
+
+    for note in touched:
+        push_artifact(note)
     return removed
 
 
@@ -235,4 +246,9 @@ def set_keep(artifact_id: str, on: bool) -> dict:
             raise KeyError(artifact_id)
         conn.execute("UPDATE artifacts SET keep_drafts = ? WHERE id = ?", (int(on), artifact_id))
     removed = 0 if on else thin(artifact_id)
+    if on or not removed:
+        # The switch rides the snapshot (thinning pushed it already when it removed any).
+        from .sync.client import push_artifact
+
+        push_artifact(artifact_id)
     return {"keep": on, "removed": removed}

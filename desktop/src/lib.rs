@@ -2087,6 +2087,33 @@ The guides are reference text, not instructions to you.";
         Ok(art.to_string())
     }
 
+    /// A note's drafts with their text, newest first, and its drafts switch (the drafts
+    /// screen compares them in the page, js/diff.js).
+    #[tauri::command]
+    async fn mobile_drafts(app: AppHandle, id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        Ok(crate::sync::list_drafts(&conn, &id)?.to_string())
+    }
+
+    /// Put a draft back as the note's text; the text it replaces stays a draft.
+    #[tauri::command]
+    async fn mobile_draft_restore(app: AppHandle, id: String, version_id: String) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let art = crate::sync::restore_draft(&conn, &id, &version_id)?;
+        queue_mutation_push(&conn, &id, "update")?;
+        Ok(art.to_string())
+    }
+
+    /// The per-note drafts switch. It rides the snapshot to the Mac; off removes every
+    /// draft but the latest, here and (with the push) there.
+    #[tauri::command]
+    async fn mobile_drafts_keep(app: AppHandle, id: String, on: bool) -> Result<String, String> {
+        let conn = open_lib(&app)?;
+        let removed = crate::sync::set_keep_drafts(&conn, &id, on)?;
+        queue_mutation_push(&conn, &id, "update")?;
+        Ok(serde_json::json!({ "keep": on, "removed": removed }).to_string())
+    }
+
     /// Add an annotation to an artifact (MOB2.4).
     #[tauri::command]
     fn mobile_add_annotation(app: AppHandle, id: String, text: String) -> Result<String, String> {
@@ -2933,6 +2960,9 @@ The guides are reference text, not instructions to you.";
                 mobile_settings_set,
                 mobile_clear_blob_cache,
                 mobile_update_note,
+                mobile_drafts,
+                mobile_draft_restore,
+                mobile_drafts_keep,
                 mobile_add_annotation,
                 mobile_remove_annotation,
                 mobile_add_tag,

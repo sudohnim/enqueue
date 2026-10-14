@@ -55,4 +55,14 @@ assert.ok(Diff.html("a", "a <b>", md).includes("&lt;b&gt;"));
 const big = Array.from({ length: 3000 }, (_, i) => "line " + i).join("\n");
 assert.ok(show(big, big.replace("line 1500", "line changed")).includes("[-1500-]{+changed+}"));
 assert.ok(Diff.same("a  \n", "a"));
+
+// A tab's marker line is structure: renamed or added, it still renders as a tab.
+const tabbed = Diff.html(
+  "<!-- tab: Steps -->\n\n- a\n\n<!-- tab: Prompt -->\n\nold words",
+  "<!-- tab: Steps -->\n\n- a\n\n<!-- tab: The prompt -->\n\nnew words\n\n<!-- tab: More -->\n\nx",
+  md,
+);
+assert.ok(tabbed.includes('data-tab="The prompt"'), tabbed);
+assert.ok(tabbed.includes('data-tab="More"'), tabbed);
+assert.ok(!tabbed.includes("&lt;!--"), "no marker shows as text");
 console.log("diff ok");

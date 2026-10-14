@@ -79,7 +79,57 @@ const Tabs = (() => {
     };
   }
 
-  return { parse, join, start, clean, MARKER };
+  // Which tab a search hit came from: -1 when it cannot tell. The snippet is the start
+  // of the passage that matched (raw markdown, so it may hold a marker); the query is
+  // what was typed. A marker in the snippet names the tab outright; else the tab holding
+  // the snippet's opening words; else the tab holding most of the query's words.
+  const norm = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+
+  // A marker anywhere in a line of text: a snippet has its newlines folded to spaces.
+  const ANY = /<!--\s*tab:\s*(.*?)\s*-->/g;
+
+  function find(parsed, query, snippet) {
+    if (!parsed) return -1;
+    const src = String(snippet || "");
+    const marks = [...src.matchAll(ANY)];
+    const last = marks[marks.length - 1];
+    const after = last ? src.slice(last.index + last[0].length) : src;
+    if (last && norm(after)) {
+      const at = parsed.tabs.findIndex((t) => t.name === clean(last[1]));
+      if (at >= 0) return at;
+    }
+    const texts = parsed.tabs.map((t) => norm(t.text));
+    const opening = norm(after).split(" ").slice(0, 8).join(" ");
+    if (opening.split(" ").length >= 3) {
+      const at = texts.findIndex((t) => t.includes(opening));
+      if (at >= 0) return at;
+    }
+    const words = norm(query)
+      .split(" ")
+      .filter((w) => w.length > 2);
+    let best = -1;
+    let most = 0;
+    texts.forEach((t, i) => {
+      const have = new Set(t.split(" "));
+      const n = words.filter((w) => have.has(w) || t.includes(w)).length;
+      if (n > most) {
+        most = n;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  // A cut of a note's raw text, for reading: a marker becomes its tab's name.
+  function plain(text) {
+    return String(text || "").replace(new RegExp(ANY.source + "\\s*", "g"), (_, name) => clean(name) + " \u00b7 ");
+  }
+
+  return { parse, join, start, clean, find, plain, MARKER };
 })();
 
 if (typeof module !== "undefined") module.exports = Tabs;

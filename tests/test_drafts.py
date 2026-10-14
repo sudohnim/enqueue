@@ -120,6 +120,22 @@ class TestTheSwitch:
         notes.edit(note, "# Trip\n\nedit 4")
         assert len(_drafts(note)) == 2
 
+    def test_the_phone_hears_of_it(self, note, monkeypatch):
+        """Thinning and the switch push the note, so the phone's copy follows; unpushed,
+        its next edit would bring every removed draft back."""
+        from enqueue.sync import client
+
+        pushed = []
+        monkeypatch.setattr(client, "push_artifact", pushed.append)
+        for i in range(2):
+            _age_all(note, 3600)
+            notes.edit(note, f"# Trip\n\nedit {i}")
+        pushed.clear()
+        drafts.set_keep(note, False)
+        assert pushed == [note], "removing drafts pushed the note once"
+        drafts.set_keep(note, True)
+        assert pushed == [note, note], "turning it back on pushed the switch"
+
     def test_the_library_policy(self, note, monkeypatch):
         settings.update({"drafts_keep": "off"})
         _age_all(note, 3600)

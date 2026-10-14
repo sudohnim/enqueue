@@ -1067,7 +1067,7 @@
         '<div class="notetabs" id="notetabs" role="tablist" aria-label="Tabs of this note" hidden></div>' +
         '<div class="docpane notesheet">' +
         edbarHtml() +
-        '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
+        '<div class="editor md notetype" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="The note itself" ' +
         'data-placeholder="Start writing. Markdown shorthand becomes formatting as you type."></div>' +
         // "12 drafts" opens the list of them (js/drafts.js). A row count would say
@@ -1081,7 +1081,7 @@
         "</button></div></div>";
       // A note with tabs shows one of them in the editor (js/tabs.js, js/notetabs.js).
       const tabs = Tabs.parse(a.body || "");
-      const tabAt = tabs ? NoteTabs.recalled(id, tabs.tabs.length) : 0;
+      const tabAt = tabs ? NoteTabs.recalled(id, tabs.tabs.length, tabs) : 0;
       ctx = {
         id,
         kind: "note",
@@ -1123,7 +1123,7 @@
       const last = current.length ? current[current.length - 1] : null;
       body +=
         '<div class="docpane">' +
-        '<div class="editor md" id="body" contenteditable="true" spellcheck="true" ' +
+        '<div class="editor md notetype" id="body" contenteditable="true" spellcheck="true" ' +
         'role="textbox" aria-multiline="true" aria-label="Your notes here" ' +
         'style="min-height:150px" data-placeholder="Your notes here"></div></div>' +
         notice;

@@ -32,4 +32,16 @@ const tricky = Tabs.join("", [{ name: "a --> b", text: "x" }, { name: "c", text:
 assert.deepStrictEqual(Tabs.parse(tricky).tabs.map((x) => x.name), ["a b", "c"]);
 // An empty tab keeps its place.
 assert.strictEqual(Tabs.parse(tricky).tabs[1].text, "");
+
+// A search hit opens on the tab it came from.
+const trip = Tabs.parse(
+  "# Trip\n\n<!-- tab: Steps -->\n\n- book the hotel in Lisbon early\n\n<!-- tab: Prompt -->\n\nYou are a careful travel agent who plans slow trips",
+);
+assert.strictEqual(Tabs.find(trip, "anything", "<!-- tab: Prompt -->\n\nYou are a careful"), 1, "a marker names the tab");
+assert.strictEqual(Tabs.find(trip, "agent", "You are a careful travel agent who"), 1, "the snippet's words");
+assert.strictEqual(Tabs.find(trip, "lisbon hotel", "# Trip"), 0, "the query's words");
+assert.strictEqual(Tabs.find(trip, "zebra", "# Trip"), -1, "cannot tell");
+assert.strictEqual(Tabs.find(null, "x", "y"), -1);
+assert.strictEqual(Tabs.find(trip, "x", "- a <!-- tab: Prompt --> You are"), 1, "a folded snippet's marker");
+assert.strictEqual(Tabs.plain("<!-- tab: Prompt --> You are"), "Prompt \u00b7 You are");
 console.log("tabs ok");

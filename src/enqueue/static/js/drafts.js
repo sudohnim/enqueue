@@ -247,7 +247,7 @@ function renderCompare() {
 	let pane = sheet.querySelector(".diffview");
 	if (!pane) {
 		pane = document.createElement("div");
-		pane.className = "diffview md";
+		pane.className = "diffview md notetype";
 		pane.setAttribute("aria-live", "polite");
 		ed.after(pane);
 	}

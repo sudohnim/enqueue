@@ -74,6 +74,9 @@ const Diff = (() => {
   // A line's markdown prefix: what md() reads as structure, never marked.
   const PREFIX = /^(\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+|#{1,6}\s+|>\s?)*)/;
   const FENCE = /^\s*(```|~~~)/;
+  // A tab's marker line (js/tabs.js) is structure too: marked, md() would no longer
+  // read it as a tab and would show the comment itself.
+  const TAB = /^<!--\s*tab:.*-->\s*$/;
 
   function split(line) {
     const pre = (line.match(PREFIX) || [""])[0];
@@ -86,6 +89,7 @@ const Diff = (() => {
 
   // One changed line against the line it replaced: the words that differ are marked.
   function words(oldLine, newLine) {
+    if (TAB.test(oldLine) || TAB.test(newLine)) return newLine;
     const [oldPre, oldText] = split(oldLine);
     const [newPre, newText] = split(newLine);
     const a = oldText.split(/(\s+)/).filter((s) => s !== "");
@@ -113,6 +117,7 @@ const Diff = (() => {
   // How alike two lines are, 0..1, by shared words: alike enough means one was edited
   // into the other; otherwise one was removed and another added.
   function alike(x, y) {
+    if (TAB.test(x) !== TAB.test(y)) return 0;
     const a = split(x)[1].split(/\s+/).filter(Boolean);
     const b = split(y)[1].split(/\s+/).filter(Boolean);
     if (!a.length || !b.length) return 0;
@@ -121,7 +126,7 @@ const Diff = (() => {
   }
 
   function markLine(line, open, close) {
-    if (!line.trim() || FENCE.test(line)) return line;
+    if (!line.trim() || FENCE.test(line) || TAB.test(line)) return line;
     const [pre, text] = split(line);
     return pre + wrap(text, open, close);
   }
