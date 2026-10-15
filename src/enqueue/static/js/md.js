@@ -241,6 +241,9 @@
   // first so the box only ever holds a text run, which clamps cleanly.
   function mdText(src) {
     let t = src;
+    // A tab's marker line (js/tabs.js) is plumbing: the preview reads the tabs' text
+    // one after another, without the comment that starts each.
+    t = t.replace(/^[^\S\n]*<!--\s*tab:.*?-->[^\S\n]*$/gm, "");
     t = t.replace(/```[\s\S]*?```/g, " ");
     t = t.replace(/`([^`\n]+)`/g, "$1");
     // An embedded image reduces to its alt text (usually empty) in a text preview -

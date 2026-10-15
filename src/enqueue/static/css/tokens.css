@@ -70,19 +70,20 @@
        menus dark against the canvas. */
     color-scheme: light;
 
-    /* The violet ground (DESIGN.md section 2). The canvas is a flat medium lavender,
-       not white: the app sits in the raven's colour rather than on paper. Surfaces
-       climb TOWARD white from it - a tile is a lighter plate on the ground, a hovered
-       or raised thing is white - and recessed wells sink to a deeper lavender.
-       --surface-doc is the reading pane, the lightest resting ground. */
-    --bg: #f6f2fb;
-    --surface: #ffffff;
+    /* The violet ground (DESIGN.md section 2). The canvas is a flat lavender, not
+       white: the app sits in the raven's colour rather than on paper. A tile is a
+       lighter plate of the same lavender (the ground 55% of the way to white), a
+       hovered tile lighter still, and recessed wells (code, quotations) sink to a
+       deeper lavender. A note is written straight on the ground, with no sheet.
+       What floats (menus, dialogs) and a PDF's pages are white: --surface-2 and
+       --surface-doc. js/ground.js moves --bg through the day and derives --surface,
+       --surface-hover and --surface-3 from it at these same steps. */
+    --bg: #e4d8f0;
+    --surface: #f3edf8;
     --surface-doc: #ffffff;
     --surface-2: #ffffff;
-    --surface-3: #ece5f4;
-    /* What a white tile turns when it is hovered or pressed: it cannot rise any
-       further toward white, so it takes a breath of the accent instead. */
-    --surface-hover: #faf7fd;
+    --surface-3: #dacce8;
+    --surface-hover: #f8f5fb;
 
     /* Ink. --surface-3 is the darkest ground anything sits on, so it is the binding
        case: --text-mute (ink-subtle) measures 4.19 there, --text-dim 6.38. */
@@ -91,11 +92,10 @@
     --text: #1a1426;
     --text-dim: #382f4d;
     --text-mute: #574d6e;
-    /* The faintest ink that can carry text. DESIGN.md's #9497a9 measures 2.89:1 on
-       the canvas and fails 4.5, so the token is pulled up to #6c6f84: 4.62:1 on
-       surface-1 (the darkest ground a placeholder renders on - inputs sit on
-       surface-1), 4.95:1 on the canvas. It is not permitted on surface-2 (4.33). */
-    --ink-faint: #665c7e;
+    /* The faintest ink that can carry text: meta, counts, placeholders. Its binding
+       case is the night ground (js/ground.js), where it measures 4.62:1; it is not
+       permitted on --surface-3. */
+    --ink-faint: #5f5578;
 
     /* The chromatic accent is the raven eye's bold purple #60079f (the loud Kraken
        purple #7132f5 stays banned). It is a fill, a focus ring, a link - never a
@@ -138,7 +138,7 @@
     /* Hairlines are violet at low alpha, never grey: an edge that belongs to the
        ground instead of a drawn box. --line is the tile hairline, --line-soft the
        divider inside a tile. */
-    --line: rgba(96, 7, 159, 0.12);
+    --line: rgba(96, 7, 159, 0.13);
     --line-soft: rgba(96, 7, 159, 0.07);
     /* The only line token allowed to be a sole boundary. DESIGN.md's #c4c6d0
        measures 1.70:1 on the canvas and fails the 3:1 boundary rule, so the token
