@@ -32,12 +32,22 @@ assets/         the logo, source art, and the README screenshots
 | Mac (engine + window) | `bin/setup` (Rust >= 1.88, uv + Python 3.12, Node, Chromium for link previews; no sudo) | `bin/launch desktop` (rebuilds the shell, restarts engine and window, waits for health) |
 | Android phone (USB debugging on) | `bin/setup --android` (checks SDK/NDK/JDK, installs the Tauri CLI and the target) | `bin/launch mobile` (one-shot build, `adb install`, launch, exit) |
 | Android emulator (headless) | an AVD named `enqueue` (the script prints how) | `bin/launch emulator` |
+| iPhone (plugged in, Developer Mode on) | Xcode, then `bin/setup --ios` | `bin/launch ios` |
+| iOS Simulator | Xcode, then `bin/setup --ios` | `bin/launch simulator` (no camera: linking needs a real iPhone) |
 | Engine alone | `uv sync` | `uv run enq serve` (127.0.0.1:8787; open it in a browser) |
 | Relay, locally | | `uv run enq relay` (127.0.0.1:8788, secret `dev-secret`) |
 
 Engine output goes to `$TMPDIR/enqueue-app.log`.
 A model is optional: capture and search work without one; summaries and answers need Ollama on the Mac or an online backend (Settings > Assistant).
 The phone starts empty; link it to the Mac over a relay both can reach (Settings > Phone shows a QR the phone scans; see [The relay](#the-relay)).
+
+**Testing on an iPhone.** For whoever holds the iPhone, and their agent:
+
+1. **Get it on the phone.** `bin/setup --ios` once (it checks Xcode, the iOS Rust targets and the simulator runtime), then plug the iPhone in, unlock it, trust the Mac, turn on Developer Mode (Settings > Privacy & Security), and run `bin/launch ios`. The signing team is `bundle.iOS.developmentTeam` in `desktop/tauri.conf.json`; a tester on another Apple account changes it to their own team (Xcode > Settings > Accounts shows the id) and does not commit that change.
+2. **Link it.** On the Mac that holds the library: Settings > Phone shows a QR (the relay must be a public `https://` address). In the app, Scan QR. The library downloads; captures, edits, deletes and pins made on the phone come back to the Mac.
+3. **What to try.** Read every kind of item (note, link, PDF, image); write and edit a note (tabs and drafts too); capture a thought; ask the eye a question; delete and restore; lock the phone, wait, open the app again; quit the app and open it again; turn on airplane mode, change something, turn it off.
+4. **What is not there on iOS yet** (expected, not bugs): quick capture from the home screen, the app lock and fingerprint vault unlock, the Back gesture, and sync while the app is closed. See [The iOS app](#the-ios-app).
+5. **Reporting.** A screenshot of the screen, what you did just before, and the app's log: Xcode > Window > Devices and Simulators > the phone > Open Console, filtered to `Enqueue`, or Safari > Develop > the phone > the page for the web view's console. There is no `bin/cdp-eval` on iOS.
 
 **The gate.** `bin/verify` is lint (black 100, ruff), a JS parse of every page, pytest, the contrast check, the desktop Rust tests when Rust changed, and an Android build when anything under `desktop/` changed.
 `bin/verify --fast` is the static part, and what the pre-commit hook runs: enable it once with `git config core.hooksPath .githooks`.
@@ -377,6 +387,7 @@ One line per file, describing its job.
 | `bin/screenshots` | Regenerate the README screenshots from a demo library: a second engine on its own port and a throwaway data folder (never the real library, Keychain key or relay), seeded, then shot with headless Chromium. Before writing anything it checks that the engine answering reports the scratch folder as its `data_dir` and refuses otherwise: on 2026-10-01 its engine failed to bind (the port was held by a preview proxy to the real engine), it carried on, and 15 demo items landed in the real library. Any script that seeds an engine must prove which engine it is talking to first. |
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
+| `bin/launch simulator` / `bin/launch ios` | One-shot build + install + launch in the iOS Simulator, or on a plugged-in iPhone, then exit. See "The iOS app" under Gotchas. |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
 | `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
@@ -469,7 +480,7 @@ There is no reset: Enqueue keeps no copy of any key, so the recovery kit is the 
 | Backup key, backup-names key | derived, `backup`, `backup-names` | nowhere | every file in the backup folder, and their names |
 | Sync key (DEK) | 32 random bytes | Keychain `enqueue-sync-dek`; the phone's sealed config; `keyring.json` wrapped under the library key (`dek_by_library`) and under the old recovery phrase | everything on the relay |
 | Relay names key | HMAC of the sync key, `enqueue relay names v1` | nowhere | the names of relay objects |
-| Phone store key | 32 random bytes, made on the phone (`StoreKey.kt`) | the phone's `filesDir/store_key`, encrypted by an Android Keystore key | the phone's database (SQLCipher), its sealed secrets, its file cache |
+| Phone store key | 32 random bytes, made on the phone | Android: `filesDir/store_key`, encrypted by an Android Keystore key (`StoreKey.kt`); iOS: a Keychain item, this device only (`store_key` in `lib.rs`) | the phone's database (SQLCipher), its sealed secrets, its file cache |
 | Vault key | 32 random bytes | wrapped under the 6-digit PIN (and a fingerprint-guarded Keystore secret on the phone) | vaulted items, a second lock inside everything above |
 
 The recovery kit is the library key written as 56 Crockford base32 characters (with a checksum).
@@ -484,7 +495,7 @@ The phone needs none of it: it is linked by scanning the Mac's code, which hands
 - **Mac, original files (`blobs/`):** not encrypted by Enqueue. FileVault covers a stolen Mac; the folder is the owner's only (0700).
   Encrypting them means routing PDF rendering, previews and captures through a sealed reader; left for later.
 - **Backups:** every file sealed (libsodium secretstream) under the backup key, named by keyed hashes, checked by opening it again (`backup.py`).
-- **Phone:** the database is SQLCipher (`bundled-sqlcipher-vendored-openssl`, Android only), the sync config and vault records are sealed files, and the file cache is sealed; all under keys derived from the store key.
+- **Phone (Android and iOS):** the database is SQLCipher (`bundled-sqlcipher-vendored-openssl`), the sync config and vault records are sealed files, and the file cache is sealed; all under keys derived from the store key.
   A plain database and plain files from an older build are converted the first time they are opened.
   The quick-capture inbox (thoughts written in the launcher popup before the app files them) is still plain, for the seconds it exists.
 
@@ -1354,6 +1365,23 @@ Since `fetch` re-queues the artifact and ingest fetches whatever needs it, one s
 `link_previews.body_tried` records a fetch that found no body, so the heal is tried once; "Try again" still forces a fetch.
 Anything that re-queues an artifact from inside ingest needs a condition that ingest itself makes false.
 
+### The iOS app
+
+The same Tauri mobile shell and the same `mobile.html` as Android, built for iOS: `bin/setup --ios` readies the toolchain, `bin/launch simulator` builds, installs and opens it in the iOS Simulator, `bin/launch ios` does the same on a plugged-in iPhone (written, not yet run on a device).
+The Xcode project is `desktop/gen/apple` (from `cargo tauri ios init`; its own `.gitignore` drops `build/` and `Externals/`); the signing team is `bundle.iOS.developmentTeam` in `tauri.conf.json` (Sudohnim, LLC), the minimum is iOS 16.
+What it took, each of which breaks the build or the screen if undone:
+
+- **`desktop/vendor/swift-rs` is a patched copy** (`[patch.crates-io]` in `desktop/Cargo.toml`). Xcode 27 made the Swift Build engine SwiftPM's default; it prelinks each static library into one object, which turns Tauri's `@_cdecl` entry points (`_register_plugin`, `_init_plugin_*`, `_on_webview_created`) into local symbols, and the app fails to link with "Undefined symbols". The patch is one argument, `--build-system native`, under Xcode 27. Drop the copy when swift-rs or Tauri handles it. swift-rs below 1.0.9 does not build under Xcode 27 at all.
+- **Tauri refuses to build without the simulator runtime matching the SDK** ("Xcode Simulator SDK 27.0 is not installed"): `xcodebuild -downloadPlatform iOS`.
+- **`jni` and `ndk-context` are Android-only dependencies**, and the foreground sync service has no-op twins off Android (`jni_start_sync_foreground_service`). Anything new that touches JNI must be `#[cfg(target_os = "android")]`, not `#[cfg(mobile)]`.
+- **The web view must not inset the page.** WKWebView insets its content by the safe area on its own, which left a black band under the page and made `env(safe-area-inset-*)` read 0. The mobile `setup` sets the scroll view's `contentInsetAdjustmentBehavior` to never and has the web view recompute its insets (`objc2`, iOS only); the page then pads itself as it does on Android.
+- **`cargo tauri ios build` fails with "Directory not empty"** when the last build's `gen/apple/build/<arch>/Enqueue.app` is still there; `bin/launch` removes it first.
+- `Info.plist` carries `NSCameraUsageDescription` (the QR scanner crashes on a device without it); it is also in `project.yml`, which regenerates the plist. The icons in `Assets.xcassets` are cut from `assets/logo.png` (full bleed, no alpha) with `cargo tauri icon`.
+
+Not there yet: linking is untested (the simulator has no camera, so the QR needs a real iPhone); the page's `EnqueueAndroid` bridge has no iOS twin, so quick capture from the home screen, the app lock, vault fingerprint unlock and a back gesture do not exist there (every call to the bridge is guarded, so the page runs without it); a sync runs only while the app is open; there is no CI job and `bin/verify` does not build iOS.
+At rest it matches Android: the library copy is SQLCipher (`bundled-sqlcipher-vendored-openssl` in the iOS table of `desktop/Cargo.toml`), and the store key that keys it and seals the secrets and the file cache is a Keychain item (`security-framework`, service `com.sudohnim.enqueue.store`, readable after first unlock on this device only, so never in iCloud Keychain or a restored backup; `store_key` in `lib.rs`). A plain library, plain secret files and a store-key file from an earlier iOS build are converted the first time the library opens.
+There is no CDP on iOS: verify by screenshot (`xcrun simctl io booted screenshot`), or Safari's Web Inspector by hand.
+
 ### Settings look like the home page and talk like a person (2026-10-15)
 
 One centred column (`.settings-page`, the last block of `css/settings.css`): the raven against the title, where things stand as one quiet line under it (`renderSetup` in `settings_guide.js` draws the steps as `.setup-line`), the home page's pill tabs, and settings as rows on the ground: a label and one plain sentence on the left, the control on the right (a `.field` is a two-column grid there), a hairline between rows. The backup status is the one tile.
@@ -1400,7 +1428,37 @@ While Settings is on screen the pill's eye opens the ask sheet instead of conver
 The sheet is the guide plate in a second mode (`openSettingsAsk`): a field at its top, where the keyboard cannot cover it, the matched guides under it, and the same "Ask: ..." row; Enter opens the closest guide, and each guide's foot ("Ask about ...") leads back to the sheet.
 The model call is `mobile_settings_ask` (`desktop/src/lib.rs`, async so the request stays off the main thread; registered in `build.rs`, `tauri.conf.json` and `generate_handler!`): the page sends the question plus a `context` of the closest guides and where the phone stands (`settingsFacts`: the sync line, the lock, the service and model, whether a key is present), and the command adds the instructions (`SETTINGS_ANSWER`, the same rules as the desktop's prompt).
 There is no schema on this path, so the model names its guide on a last line, `GUIDE: <id>`, which the page parses and strips.
-A failed call falls back to the closest guides.
+A failed call falls back to the closest guides. iOS uses the same page and the same command.
+
+### What vaulting covers, who can read the library, and what is never backed up (2026-10-13)
+
+A security review found three holes; this is what closes them and what is still open.
+
+**Vaulting reaches what was derived from the text (`vaultops._seal_derived`).**
+It used to seal an artifact's own words (body, title, annotations, page text, drafts, blob) and leave everything derived from them readable: the summary lines, a link's preview, cached model output.
+A summary says in plain words what the sealed text is about, so that was the vault leaking.
+Now what a model wrote is REMOVED (machine summary lines, entities, section summaries, `related` rows, `derived_values` keyed by the artifact, its retry and pending rows), since it can be written again, and what the person or the page said is SEALED (hand-written summary lines, the preview's title, description, site and picture) and opened again on the way out (`_open_derived`).
+Anything new that stores text about an artifact must be added to one of those two lists, and to `tests/test_vaultops.py`, whose test reads the database file for the words.
+`vaultops.scrub()` brings items vaulted by an older build up to this: at startup it removes the model's rows (no key needed), and when the vault is unlocked (`POST /vault/unlock`) it seals the rest; it vacuums and pushes each cleaned item so the readable copy leaves the other devices.
+A vaulted snapshot replaces a device's summary lines even when it carries none (`sync/snapshot.py` and `apply_snapshot` in `desktop/src/sync.rs`); every other snapshot still leaves local lines alone when it has none.
+The phone does the same when it vaults (`vault_apply` in `desktop/src/lib.rs`) and removes leftover model lines beside vaulted items at each launch (`init_schema`).
+Still readable about a vaulted item: its tags, its kind and dates, and any conversation that quoted it before it was vaulted.
+
+**The library is its owner's only (`db.restrict_permissions`, at engine startup).**
+The data folder is 0700 and the files in it 0600; they were 0755 and 0644, readable by every account on the Mac.
+The folder is the gate; blob files inside `blobs/` keep their mode and are unreachable through it.
+The phone's key file (`secure_store_set`) is written 0600.
+
+**Nothing of the phone app's is backed up by the system.**
+Android: `allowBackup="false"` and `res/xml/data_extraction_rules.xml` (which also stops the phone-to-phone transfer on Android 12+, which `allowBackup` alone does not).
+iOS: the app data folder carries `NSURLIsExcludedFromBackupKey`, set in the mobile `setup` (`objc2`).
+The files hold the sync key and a readable copy of the library; a new phone is linked by scanning the code on the Mac, so a backup of them buys nothing.
+
+**Not built: encryption at rest.** The database, the blobs and the backups are still plain files (Resolved decision 1), and the phone's key is in a file, not the Keystore or Keychain.
+The search index holds every word, so field-level encryption would be theatre; it has to be the whole database.
+The sync key must not be the disk key: it exists only once sync is set up, "Reset sync" discards it, and the phone holds a copy.
+The shape that fits is one library key born at first run, with separate keys for the disk, the relay and the backups derived from or wrapped under it.
+Other findings left open: the vault PIN is 6 digits (a million guesses against the wrapped key), one key both encrypts relay objects and names them, and the relay sees counts, sizes and timing.
 
 ### What vaulting covers, who can read the library, and what is never backed up (2026-10-13)
 
