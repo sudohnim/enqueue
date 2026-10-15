@@ -250,6 +250,13 @@ def update(changes: dict) -> dict:
         from .providers import pause
 
         pause.lift("model settings changed")
+        # A different ingest model rewrites the library once (ingest/queue.py).
+        try:
+            from .ingest import queue as ingest_queue
+
+            ingest_queue.refresh_on_model_change()
+        except Exception:  # noqa: BLE001 - the setting is saved; the rewrite can wait
+            pass
     return all_settings()
 
 

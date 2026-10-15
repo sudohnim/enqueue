@@ -90,7 +90,7 @@ def test_a_long_document_is_read_as_ordered_section_summaries(store, monkeypatch
     assert "Paragraph 29." in provider.users[-1]
 
 
-def test_summaries_are_cached_per_section_and_model(store, monkeypatch):
+def test_summaries_are_cached_per_section(store, monkeypatch):
     first = _patch(monkeypatch, _Provider())
     aid = _doc(_long_body())
     _text(aid)
@@ -100,8 +100,16 @@ def test_summaries_are_cached_per_section_and_model(store, monkeypatch):
     _text(aid)
     assert again.users == []
 
+    # Another model reads what is there (it may have come from another device): a
+    # document is summarized once. Only a rewrite on purpose asks the new model.
     other_model = _patch(monkeypatch, _Provider(model="another-model"))
     _text(aid)
+    assert other_model.users == []
+    conn = db.get_conn()
+    try:
+        source.ingest_text(conn, aid, fresh=True)
+    finally:
+        conn.close()
     assert len(other_model.users) == calls
 
 

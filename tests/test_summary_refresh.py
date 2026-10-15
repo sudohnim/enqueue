@@ -30,17 +30,41 @@ def _facet(aid: str, model: str) -> None:
         )
 
 
-def test_backfill_queues_summaries_written_by_another_model(store, quiet_queue):
+def test_backfill_leaves_summaries_written_by_another_model(store, quiet_queue):
+    # A summary from the current body is current whichever model (or device) wrote it.
     body = "a body long enough to earn a summary from the model, with a few more words"
-    stale = notes.create(body=body)["artifact"]["id"]
+    other = notes.create(body=body)["artifact"]["id"]
     current = notes.create(body=body + " and another")["artifact"]["id"]
     quiet_queue.clear()
-    _facet(stale, "some-older-model")
+    _facet(other, "some-older-model")
     _facet(current, get_provider(summarize=True).model)
+    from enqueue.ingest.chunk import chunk_artifact
 
-    assert q.backfill_summaries() >= 1
-    assert stale in quiet_queue
-    assert current not in quiet_queue
+    with db.transaction() as conn:
+        for aid in (other, current):
+            chunk_artifact(conn, aid)  # indexed here, so only the summary is in question
+
+    q.backfill_summaries()
+    assert other not in quiet_queue and current not in quiet_queue
+
+
+def test_a_new_ingest_model_rewrites_what_another_model_wrote(store, quiet_queue, monkeypatch):
+    body = "a body long enough to earn a summary from the model, with a few more words"
+    other = notes.create(body=body)["artifact"]["id"]
+    mine = notes.create(body=body + " and another")["artifact"]["id"]
+    _facet(other, "some-older-model")
+    _facet(mine, get_provider(summarize=True).model)
+    quiet_queue.clear()
+
+    # The first run only records the model: upgrading spends nothing.
+    assert q.refresh_on_model_change() == 0
+    assert q.refresh_on_model_change() == 0
+
+    from enqueue import settings
+
+    settings.update({"summarize_model": "some-newer-model"})
+    assert set(quiet_queue) == {other, mine}
+    assert facets_mod.take_forced(other) and facets_mod.take_forced(mine)
 
 
 def test_backfill_skips_trashed_and_vaulted(store, quiet_queue):

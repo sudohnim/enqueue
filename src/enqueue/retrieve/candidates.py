@@ -615,37 +615,22 @@ def _log_sub_queries(queries: list[str]) -> None:
 
 
 def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
-    """Whether a facet/entity hit was built from an older body or a different summary model.
+    """Whether a facet/entity/section hit was built from an older body.
 
-    `cache` maps artifact_id to (current_body_version, current_model).
+    `cache` maps artifact_id to its current body version (None for a gone artifact).
+    The model that wrote the line does not matter: a library is summarized once, on
+    whichever device got there first, and every desktop uses that (facets.is_current).
     """
     aid = hit["artifact_id"]
     if aid not in cache:
-        row = conn.execute(
-            "SELECT local_only,"
-            " (SELECT MAX(created_at) FROM artifact_versions v"
-            "  WHERE v.artifact_id = artifacts.id) AS body_version"
-            " FROM artifacts WHERE id = ?",
-            (aid,),
-        ).fetchone()
-        if row is None:
-            cache[aid] = None
-        else:
-            from ..providers.base import get_provider
-
-            cache[aid] = (
-                row["body_version"],
-                get_provider(local_only=bool(row["local_only"]), summarize=True).model,
-            )
-    current = cache[aid]
-    if current is None:
+        _prefetch_staleness(conn, cache, [aid])
+    if aid not in cache or cache[aid] is None:
         return True
     if hit.get("edited"):
         # A line the person wrote or rewrote is theirs: no model wrote it, and
-        # regeneration keeps it, so neither a model switch nor an edit stales it.
+        # regeneration keeps it, so an edit never stales it.
         return False
-    body_version, model = current
-    return hit.get("body_version") != body_version or hit.get("model_version") != model
+    return hit.get("body_version") != cache[aid][0]
 
 
 def _get_model(local_only: bool) -> str:
@@ -670,25 +655,16 @@ def _prefetch_staleness(conn, cache, ids) -> None:
     if not unseen:
         return
     rows = conn.execute(
-        "SELECT id, local_only,"
+        "SELECT id,"
         " (SELECT MAX(created_at) FROM artifact_versions v"
         "  WHERE v.artifact_id = artifacts.id) AS body_version"
         " FROM artifacts WHERE id IN (SELECT value FROM json_each(?))",
         (json.dumps(unseen),),
     ).fetchall()
     found = {row["id"]: row for row in rows}
-
-    providers: dict[bool, str] = {}
-
     for aid in unseen:
         row = found.get(aid)
-        if row is None:
-            cache[aid] = None
-            continue
-        local_only = bool(row["local_only"])
-        if local_only not in providers:
-            providers[local_only] = _get_model(local_only)
-        cache[aid] = (row["body_version"], providers[local_only])
+        cache[aid] = None if row is None else (row["body_version"],)
 
 
 def _weighted_hits(conn, hits, cache):

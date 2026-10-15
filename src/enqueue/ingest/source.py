@@ -40,7 +40,7 @@ def annotations_text(conn, artifact_id: str) -> str:
     return "\n\n".join(f"(your note) {a['text']}" for a in rows if a["text"])
 
 
-def ingest_text(conn, artifact_id: str) -> str:
+def ingest_text(conn, artifact_id: str, fresh: bool = False) -> str:
     """What the ingest model reads, then the annotations in full.
 
     A document that fits in FACET_INPUT_CHARS is read whole. A longer one is
@@ -49,10 +49,12 @@ def ingest_text(conn, artifact_id: str) -> str:
     page 1. If a section cannot be summarized it falls back to the opening
     FACET_INPUT_CHARS, except when the failure is transient: then SummariesOwed is
     raised, so the caller retries later rather than writing from the opening.
+    A section summarized before, on this device or another, is read from the cache;
+    `fresh` takes only the current model's (the model was changed, or a rebuild).
     """
     text = document_text(conn, artifact_id)
     if len(text) > config.FACET_INPUT_CHARS:
-        text = _map_reduce(conn, artifact_id, text) or text[: config.FACET_INPUT_CHARS]
+        text = _map_reduce(conn, artifact_id, text, fresh) or text[: config.FACET_INPUT_CHARS]
     yours = annotations_text(conn, artifact_id)
     if yours:
         text = (text + "\n\n" if text.strip() else "") + yours
@@ -113,7 +115,7 @@ def sections(text: str) -> list[str]:
     return out
 
 
-def _map_reduce(conn, artifact_id: str, text: str) -> str | None:
+def _map_reduce(conn, artifact_id: str, text: str, fresh: bool = False) -> str | None:
     """Ordered section summaries of a long document, or None if any section failed."""
     from ..prompts import SECTION_SUMMARY
     from ..providers.base import get_provider
@@ -129,15 +131,17 @@ def _map_reduce(conn, artifact_id: str, text: str) -> str | None:
         return None
     parts = sections(text)[:MAX_SECTIONS]
     summaries = []
+    models: set[str] = set()
     for i, part in enumerate(parts, start=1):
         key = hashlib.sha256(part.encode("utf-8")).hexdigest()
         cached = conn.execute(
-            "SELECT value FROM derived_values WHERE scope = 'section_summary' AND subject = ?"
-            " AND attribute = ? AND model_version = ?",
-            (artifact_id, key, provider.model),
+            "SELECT value, model_version FROM derived_values"
+            " WHERE scope = 'section_summary' AND subject = ? AND attribute = ?",
+            (artifact_id, key),
         ).fetchone()
-        if cached:
+        if cached and (not fresh or cached["model_version"] == provider.model):
             summary = cached["value"]
+            model = cached["model_version"]
         else:
             try:
                 raw = provider.complete(
@@ -152,6 +156,7 @@ def _map_reduce(conn, artifact_id: str, text: str) -> str | None:
                     raise SummariesOwed(f"section {i} of {len(parts)}: {exc}") from exc
                 return None  # the model cannot summarize it: read the capped opening
             summary = " ".join(raw.summary.split()[:SUMMARY_MAX_WORDS])
+            model = provider.model
             if not summary:
                 return None
             conn.execute(
@@ -161,7 +166,8 @@ def _map_reduce(conn, artifact_id: str, text: str) -> str | None:
                 (artifact_id, key, summary, provider.model, _now()),
             )
         summaries.append(summary)
-    _store_sections(conn, artifact_id, summaries, provider.model)
+        models.add(model)
+    _store_sections(conn, artifact_id, summaries, provider.model if fresh else min(models))
     return "(A long document, read as summaries of its sections in order.)\n\n" + "\n\n".join(
         f"Section {i} of {len(summaries)}: {s}" for i, s in enumerate(summaries, start=1)
     )
