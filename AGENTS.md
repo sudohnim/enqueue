@@ -420,15 +420,16 @@ One line per file, describing its job.
 
 1. **Eligibility gate** (`ingest/facets.py`): `apply_eligibility_gate()` marks artifacts that should not get facets (too short, not a note, text_only status).
 2. **Generate** (`ingest/facets.py` `generate_for_artifact`): feeds the model the artifact's page_text (not just the body, capped at `FACET_INPUT_CHARS`) PLUS its annotations marked "(your note)", so a person's notes shape the summary. Calls `get_provider(summarize=True)` (the summary model), stores facets stamped with `provider.model` and a trust derived from the model's confidence. DELETE-before-insert only removes rows `WHERE edited=0`, preserving hand-edited lines.
-3. **Index** (`index/store_sqlite.py`): `index_facets_artifact()` embeds facet statements, upserts into `vec_facets` and `fts_facets`. Search drops a facet whose `model_version` no longer matches the active summary model, so switching models never surfaces stale summaries.
+3. **Index** (`index/store_sqlite.py`): `index_facets_artifact()` embeds facet statements, upserts into `vec_facets` and `fts_facets`. Search drops a facet written from an older body; the model that wrote it does not matter (see "Two desktops read an item with the model once" under Gotchas).
 
-**Re-summarizing after a summary-model switch runs on the ingest worker.** Search only uses facets from the active summary model, so a switch empties the conceptual layer until the library is re-summarized. `backfill_summaries()` (every startup) queues every live item whose facets are not `facets.is_current` - none, another model, or an older body - so a switch finishes on its own across restarts. "Rebuild concepts" / `POST /facets` / `enq facets` call `queue_summary_refresh(redo)`, which queues the same set (or, with `redo`, every item, forced via `facets.force`) and returns at once; it used to run `generate_all` inside the request for hours, which a restart killed. `enq doctor` reports `summaries: {model, current, stale, retrying}`. The retry sweeper (`_sweep_due`) never re-queues an artifact already waiting in the queue or being processed (`_in_flight`): a due row only moves once the worker processes it, and re-queuing it every 30s while the worker was busy produced bursts of back-to-back re-ingests ("33 chunks, 0 facets" every ~13s). See "A retry run settles its row" under Gotchas.
+**Re-summarizing runs on the ingest worker.** `backfill_summaries()` (every startup) queues every live item whose facets are not `facets.is_current` (none, or written from an older body), and every live item with no chunks (one pulled before pulls were ingested), so the library converges across restarts. A change of ingest model is the one thing that rewrites current summaries: `queue.refresh_on_model_change()` (at startup and on any model setting change) forces every item whose summary lines another model wrote through every model step, once; it only records the model the first time it runs. "Rebuild concepts" / `POST /facets` / `enq facets` call `queue_summary_refresh(redo)`, which queues the same set (or, with `redo`, every item, forced via `facets.force`) and returns at once; it used to run `generate_all` inside the request for hours, which a restart killed. `enq doctor` reports `summaries: {model, current, stale, retrying}`. The retry sweeper (`_sweep_due`) never re-queues an artifact already waiting in the queue or being processed (`_in_flight`): a due row only moves once the worker processes it, and re-queuing it every 30s while the worker was busy produced bursts of back-to-back re-ingests ("33 chunks, 0 facets" every ~13s). See "A retry run settles its row" under Gotchas.
 
 **Editing the summary (facets are user-editable).** `ingest/facets.py` exposes `edit_facet(facet_id, statement)` (marks `edited=1`, full trust, reindexes), `add_facet(artifact_id, statement, level)`, `delete_facet(facet_id)`, and `regenerate(artifact_id)` (clears skip/retry, regenerates machine lines, keeps edited ones). Each is wired to an endpoint (`PATCH /facets/{id}`, `POST /artifacts/{id}/facets`, `DELETE /facets/{id}`, `POST /artifacts/{id}/facets/regenerate`) and to a mobile Tauri command (`mobile_facet_edit`, `mobile_facet_delete`). An edit bumps the artifact's `updated_at` and pushes so it wins LWW and reaches the other device; a background generation pushes without bumping (equal-key re-apply carries the new facets to the phone). The `facets.edited` column (migration `0031_facet_edited`) is what regeneration reads to decide which rows it may delete.
 
 **Link previews ride the snapshot too.** `read_artifact_snapshot` carries a `link_preview` child (the `link_previews` row), applied on both sides only when present, so a phone-authored snapshot never wipes the desktop's preview. The preview picture goes up as a blob by `image_hash` (`sync/client.py::_blob_hashes`), and `preview.fetch` re-pushes the artifact once the preview lands. `backfill_link_previews()` re-pushed every existing link once at startup (the `sync_link_previews_backfilled` setting). The phone's `list_artifacts` joins the preview so link tiles show the picture, site and description.
 
 **Facets ride the artifact snapshot to the phone.** The phone cannot generate its own, so facets are a child of the artifact snapshot (`sync/snapshot.py` `read_artifact_snapshot` includes them; apply is guarded to a non-empty facet list so a facet-less snapshot never wipes locally-generated facets on an equal-key re-apply). A summary edited on the phone syncs back, and `sync/client.py::pull()` reindexes any artifact whose pulled snapshot carried facets, so a phone edit becomes findable on the desktop.
+Every other model-written layer rides along too (`derived_layers`): entities, section summaries and their per-section cache, passage contexts by the hash of the passage's text, and the related judge's verdicts, so a second desktop takes them instead of paying again. See "Two desktops read an item with the model once" under Gotchas.
 
 ### Chat
 
@@ -635,6 +636,8 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_DRAFTS_KEEP` | `thinned` | How many drafts are kept as they age (`drafts.py`): thinned, 30d or off. |
 | `ENQ_DRAFT_EVERY` | `300` | Seconds between the drafts kept of a note while it is being written. 0 keeps one per save. |
 | `ENQ_SUMMARY_QUIET` | `300` | Seconds a note must be left alone before the model reads it again. 0 summarizes at every save. |
+| `ENQ_PEER_SUMMARY_WAIT` | `1800` | Seconds a desktop leaves an item another desktop wrote for that desktop to summarize, plus its own share of the same again. 0 summarizes pulled items at once. |
+| `ENQ_PEER_PHONE_WAIT` | `600` | The spread over which desktops take turns summarizing an item a phone wrote. |
 | `ENQ_CHAT_PREP_WAIT` | `8` | Seconds an answer waits for the search model to restate a follow-up or lift a question before retrieving without it. |
 | `ENQ_SEARCH_RERANK` | off | Opt-in cross-encoder rerank of the top fused search candidates (R.9). Off by default; measured net-neutral on the golden set. |
 
@@ -684,7 +687,7 @@ This is the one rule that is not a preference: marking something local-only is a
 - `chat` (`llm_model`): chat answers, titles/topics, `assistant.route`, pivot planning and `derive`.
 - `ingest` (`summarize_model`, UI label "Ingestion"): facets and entities. `summarize=True` is the older spelling of `role="ingest"`. The storage name stays `summarize_model` because it syncs and lives in existing settings files.
 - `search` (`search_model`): the gray-zone relevance judge.
-Blank `ingest`/`search` fall back to `llm_model`, so a single-model setup is unchanged. Local-only artifacts ignore every role and use the local model. A facet is stamped with the ingest model that wrote it, and retrieval drops facets whose `model_version` no longer matches the current ingest model, so changing it marks concepts stale until "Rebuild concepts". The Settings AI tab has a "Models" group (Chat, Ingestion, Search, Images) with a picker of the backend's known models. `test_model_split.py` covers the routing.
+Blank `ingest`/`search` fall back to `llm_model`, so a single-model setup is unchanged. Local-only artifacts ignore every role and use the local model. A facet is stamped with the ingest model that wrote it; retrieval keeps it whichever model that was, and changing the ingest model rewrites the library once (`refresh_on_model_change`). The Settings AI tab has a "Models" group (Chat, Ingestion, Search, Images) with a picker of the backend's known models. `test_model_split.py` covers the routing.
 
 The adapter builds its OpenAI/instructor client lazily on the first model call, so `get_provider().model` is free (the search staleness checks read it on every query; building the client costs ~50 ms plus a Keychain subprocess on macOS).
 
@@ -988,7 +991,7 @@ The committed evals have no opens, so it cannot move them; `enq eval-real` is wh
 The cross-encoder runs on CPU only: a second CoreML model in the process leaks contexts until the OS kills it (SIGKILL, "Context leak detected").
 
 **Staleness.**
-A facet or entity hit counts only while its `body_version` matches the artifact's latest `artifact_versions` row and its `model_version` matches the current SUMMARY model (not the chat model; keying it to the chat model once voided every facet on a chat-model swap).
+A facet, entity or section hit counts only while its `body_version` matches the artifact's latest `artifact_versions` row (`hit_is_stale`). The model that wrote it does not matter: it may have come from another device, and keying staleness to the model made a second desktop on another model rewrite the whole library (see "Two desktops read an item with the model once").
 A line the person wrote or rewrote (`facets.edited`) is never stale: `add_facet` stamps it `model_version = 'edited'`, which matched no model, so hand-written lines never counted in search until `hit_is_stale` learned to pass them.
 
 **Chat passages.**
@@ -1179,6 +1182,7 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 | `tests/test_trash.py` | Delete is reversible, purge destroys, retention window, blob sharing guard. |
 | `tests/test_preview.py` | Parse, image URL resolution, fetch guards, preview indexing, the browser fallback. |
 | `tests/test_model_pause.py` | The usage-limit pause: trip on 429, no call while paused, retries rescheduled, lifted by a new key. |
+| `tests/test_summarize_once.py` | Two desktops: the second takes every model-written layer and makes no model call; a pulled note waits for its author; a phone's note is summarized by one desktop; a phone or vaulted snapshot never leaves the wrong layers behind. |
 | `tests/test_backup.py` | Backups: copy without the index, nothing readable in the folder, the plain leftovers removed, a cut-short or changed file refused, change stamp, retention, no partial files, restore sets the library aside, a new Mac opens one with the recovery kit. |
 | `tests/test_md_roundtrip.py` + `tests/js/md_roundtrip.js` | md() and htmlToMd() round-trip a note unchanged (run under node). |
 
@@ -1308,6 +1312,21 @@ An edit in the meantime comes back through ingest and moves the row.
 Only notes wait; a capture has no body being typed. "Regenerate" (`facets.force`) never waits.
 `GET /artifacts/{id}` reports `summary_waiting`, the Details panel says so, and `enq doctor` counts these under `summaries.waiting`, apart from `retrying`.
 Tests run with both clocks at 0 (`conftest._every_save_counts`); `tests/test_writing_pace.py` turns them on.
+
+### Two desktops read an item with the model once (2026-10-15)
+
+A person with two Macs on one library (work and personal) paid for every item twice: only the summary lines rode the snapshot, so the second Mac wrote its own entities, section summaries and passage contexts for everything it pulled, and, on a different ingest model, rewrote the summary lines at every startup because another model's lines counted as stale.
+Three rules end it.
+
+**Every model-written layer rides the snapshot** (`sync/snapshot.py` `derived_layers` / `_apply_derived_layers`): `entities`, `sections`, `section_cache` (the per-section summaries `source._map_reduce` looks up, keyed by the hash of the section's text), `chunk_contexts` (keyed by the hash of the passage's text, since chunk ids differ per device; kept in `derived_values` scope `chunk_context`, where `chunk.chunk_artifact` finds them when it cuts the passages) and `related_verdicts`.
+A layer is replaced only when the snapshot carries it (a phone's snapshot carries none of these keys), except that a vaulted snapshot clears them all. The model's work is pushed once, at the end of an ingest run that wrote anything (`queue._process`), and after each judge call (`related.judge_next`).
+
+**A layer counts as current by the body it was written from, not the model** (`facets.is_current`, `entities.is_current`, `hit_is_stale`, `context.generate_for_artifact`, the section cache, `related._verdict_read`).
+Changing the ingest model is the deliberate rewrite: `queue.refresh_on_model_change()` forces every item whose lines another model wrote through every model step (`_redo_in_run`), and the other devices take the result.
+
+**A pulled item waits for the device that wrote it.** A pull now sends what it applied through ingest on the background lane (`client._ingest_pulled`: entities and sections indexed, related links derived, passages cut and indexed); before, a pulled item was indexed only at the next startup, and never when its summary already looked current.
+An item whose summary is not current yet holds its model steps (`queue.await_peer`, a `facet_retry` row with `last_error` = `queue.AWAITING`): `PEER_SUMMARY_WAIT_S` plus a per-device share of it when a desktop wrote it, only a per-device share of `PEER_PHONE_WAIT_S` when a phone did (a phone's snapshot has no `entities` key), so the desktops take turns.
+The wait ends the moment the summary arrives (`_awaiting_peer` checks `is_current`); if it never does, this device summarizes when the row comes due.
 
 ### The AI summary can be switched off for one artifact
 

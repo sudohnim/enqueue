@@ -205,6 +205,18 @@ def purge(artifact_id: str) -> dict:
                 f"DELETE FROM {table} WHERE {column} = ?", (artifact_id,)
             )  # table names are hardcoded tuple
         conn.execute("DELETE FROM related WHERE related_id = ?", (artifact_id,))
+        # What a model wrote about it, kept by its id (section summaries, passage
+        # placements, the related judge's verdicts on pairs that include it).
+        conn.execute(
+            "DELETE FROM derived_values WHERE scope IN ('section_summary', 'chunk_context')"
+            " AND subject = ?",
+            (artifact_id,),
+        )
+        conn.execute(
+            "DELETE FROM derived_values WHERE scope = 'related_judge'"
+            " AND (subject LIKE ? OR subject LIKE ?)",
+            (f"{artifact_id}|%", f"%|{artifact_id}"),
+        )
         # A tag the purged artifact was the last user of has nothing left to
         # reference it; drop the orphan so the cloud never lists a dead tag.
         conn.execute(

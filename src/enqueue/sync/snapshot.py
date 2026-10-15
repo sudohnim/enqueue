@@ -77,6 +77,108 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
         # link cards and reader had no preview at all. The picture's bytes travel as
         # a blob (sync/client.py), fetched on demand by hash.
         "link_preview": _link_preview(conn, artifact_id),
+        # Everything else a model wrote about the artifact rides along, so a library
+        # is read by a model once, on one device, and every other desktop takes the
+        # result instead of paying for it again (derived_layers). The phone ignores
+        # these keys and never sends them, which is also how a desktop tells a phone's
+        # snapshot from another desktop's (ingest/queue.py, await_peer).
+        **derived_layers(conn, artifact_id, vaulted=bool(row["vaulted_at"])),
+    }
+
+
+def _hash(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) -> dict:
+    """The model-written layers beyond the summary lines, for the snapshot.
+
+    `entities` (named things and their facts), `sections` (a long document's section
+    summaries, in order), `section_cache` (each summary keyed by the hash of the
+    section's text, which is what ingest/source.py looks up before calling a model),
+    `chunk_contexts` (the line placing each passage in its document, keyed by the hash
+    of the passage's text, since passage ids differ between devices) and
+    `related_verdicts` (the judge's rulings on pairs that include this artifact).
+    Everything is ordered so the canonical JSON is byte-stable. A vaulted artifact
+    carries none of it: vaulting removed it (vaultops._seal_derived).
+    """
+    if vaulted:
+        return {
+            "entities": [],
+            "sections": [],
+            "section_cache": [],
+            "chunk_contexts": [],
+            "related_verdicts": [],
+        }
+    from ..ingest import source
+
+    contexts = {
+        r["attribute"]: {"hash": r["attribute"], "context": r["value"], "model": r["model"]}
+        for r in conn.execute(
+            "SELECT attribute, value, model_version AS model FROM derived_values"
+            " WHERE scope = 'chunk_context' AND subject = ?",
+            (artifact_id,),
+        )
+    }
+    for r in conn.execute(
+        "SELECT text, context, context_model FROM chunks"
+        " WHERE artifact_id = ? AND context IS NOT NULL",
+        (artifact_id,),
+    ):
+        key = _hash(r["text"])
+        contexts.setdefault(
+            key, {"hash": key, "context": r["context"], "model": r["context_model"]}
+        )
+
+    section_cache: list[dict] = []
+    if conn.execute(
+        "SELECT 1 FROM derived_values WHERE scope = 'section_summary' AND subject = ? LIMIT 1",
+        (artifact_id,),
+    ).fetchone():
+        # Only the sections the document has now: an edited note leaves summaries of
+        # its older sections behind in the cache, and they need not travel.
+        current = {_hash(s) for s in source.sections(source.document_text(conn, artifact_id))}
+        section_cache = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT attribute AS hash, value AS summary, model_version AS model"
+                " FROM derived_values WHERE scope = 'section_summary' AND subject = ?"
+                " ORDER BY attribute, model_version",
+                (artifact_id,),
+            )
+            if r["hash"] in current
+        ]
+
+    return {
+        "entities": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, entity, fact, model_version, body_version, trust FROM entities"
+                " WHERE artifact_id = ? ORDER BY entity, fact, id",
+                (artifact_id,),
+            )
+        ],
+        "sections": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, ordinal, summary, model_version, body_version, created_at"
+                " FROM sections WHERE artifact_id = ? ORDER BY ordinal, id",
+                (artifact_id,),
+            )
+        ],
+        "section_cache": section_cache,
+        "chunk_contexts": [contexts[k] for k in sorted(contexts)],
+        "related_verdicts": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT subject, attribute, value, model_version FROM derived_values"
+                " WHERE scope = 'related_judge' AND source = 'model'"
+                " AND (subject LIKE ? OR subject LIKE ?) ORDER BY subject",
+                (f"{artifact_id}|%", f"%|{artifact_id}"),
+            )
+        ],
     }
 
 
@@ -213,6 +315,8 @@ def _apply_snapshot_children(
                 incoming_preview.get("fetched_at") or artifact["updated_at"],
             ),
         )
+
+    _apply_derived_layers(conn, artifact_id, snapshot, vaulted)
 
     from ..tags import normalize as normalize_tag
 
@@ -411,4 +515,108 @@ def apply_chat_snapshot(conn: Connection, snapshot: dict) -> None:
         conn.execute(
             f"INSERT INTO chat_topics ({','.join(tc)}) VALUES ({','.join('?' * len(tc))})",
             [t[c] for c in tc],
+        )
+
+
+def _apply_derived_layers(
+    conn: Connection, artifact_id: str, snapshot: dict, vaulted: bool
+) -> None:
+    """Take what another device's model wrote (derived_layers), so this one need not.
+
+    Like facets, a layer is replaced only when the snapshot carries it: a phone's
+    snapshot has none of these keys and must not wipe what this desktop holds, and an
+    empty list from a desktop that has not summarized yet must not either. A vaulted
+    artifact is the exception, as for facets: nothing readable stays behind.
+    Caches (section summaries, passage placements, verdicts) only ever gain rows.
+    """
+    if vaulted:
+        conn.execute("DELETE FROM entities WHERE artifact_id = ?", (artifact_id,))
+        conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
+        conn.execute(
+            "DELETE FROM derived_values WHERE subject = ?"
+            " AND scope IN ('section_summary', 'chunk_context')",
+            (artifact_id,),
+        )
+        return
+
+    entities = snapshot.get("entities") or []
+    if entities:
+        conn.execute("DELETE FROM entities WHERE artifact_id = ?", (artifact_id,))
+        conn.executemany(
+            "INSERT INTO entities (id, artifact_id, entity, fact, model_version, body_version,"
+            " trust) VALUES (?,?,?,?,?,?,?)",
+            [
+                (
+                    e["id"],
+                    artifact_id,
+                    e["entity"],
+                    e["fact"],
+                    e["model_version"],
+                    e.get("body_version"),
+                    e.get("trust", 0.5),
+                )
+                for e in entities
+            ],
+        )
+
+    sections = snapshot.get("sections") or []
+    if sections:
+        conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
+        conn.executemany(
+            "INSERT INTO sections (id, artifact_id, ordinal, summary, model_version,"
+            " body_version, created_at) VALUES (?,?,?,?,?,?,?)",
+            [
+                (
+                    s["id"],
+                    artifact_id,
+                    s["ordinal"],
+                    s["summary"],
+                    s["model_version"],
+                    s.get("body_version"),
+                    s.get("created_at") or snapshot["artifact"]["updated_at"],
+                )
+                for s in sections
+            ],
+        )
+
+    now = snapshot["artifact"]["updated_at"]
+    for s in snapshot.get("section_cache") or []:
+        conn.execute(
+            "INSERT OR IGNORE INTO derived_values (scope, subject, attribute, value, grounded,"
+            " source, model_version, created_at)"
+            " VALUES ('section_summary', ?, ?, ?, 1, 'model', ?, ?)",
+            (artifact_id, s["hash"], s["summary"], s["model"], now),
+        )
+
+    contexts = {c["hash"]: c for c in snapshot.get("chunk_contexts") or []}
+    if contexts:
+        for c in contexts.values():
+            conn.execute(
+                "INSERT OR IGNORE INTO derived_values (scope, subject, attribute, value,"
+                " grounded, source, model_version, created_at)"
+                " VALUES ('chunk_context', ?, ?, ?, 1, 'model', ?, ?)",
+                (artifact_id, c["hash"], c["context"], c["model"], now),
+            )
+        # Passages this device already holds take their placement now; ingest
+        # re-indexes them (ingest/queue.py notices the keyword row is out of date).
+        for r in conn.execute(
+            "SELECT id, text FROM chunks WHERE artifact_id = ? AND context IS NULL",
+            (artifact_id,),
+        ).fetchall():
+            c = contexts.get(_hash(r["text"]))
+            if c:
+                conn.execute(
+                    "UPDATE chunks SET context = ?, context_model = ? WHERE id = ?",
+                    (c["context"], c["model"], r["id"]),
+                )
+
+    for v in snapshot.get("related_verdicts") or []:
+        conn.execute(
+            "DELETE FROM derived_values WHERE scope = 'related_judge' AND subject = ?",
+            (v["subject"],),
+        )
+        conn.execute(
+            "INSERT INTO derived_values (scope, subject, attribute, value, grounded, source,"
+            " model_version, created_at) VALUES ('related_judge', ?, ?, ?, 1, 'model', ?, ?)",
+            (v["subject"], v["attribute"], v["value"], v["model_version"], now),
         )

@@ -57,14 +57,16 @@ def test_links_are_found_and_stored_both_ways(sqlite_store):
     assert "a" not in _links("a")
 
 
-def test_stale_facets_never_link(sqlite_store):
+def test_another_models_facets_still_link(sqlite_store):
+    # Summary lines written from the current body count whichever model wrote them
+    # (they may have come from another device).
     _note("a", SHARED)
     _note("old", SHARED, model="a-retired-model")
     sqlite_store.upsert_facets()
 
     related.compute("a")
 
-    assert "old" not in _links("a")
+    assert "old" in _links("a")
 
 
 def test_recompute_replaces_links(sqlite_store):
@@ -145,15 +147,12 @@ def test_notes_that_name_the_same_thing_are_linked_with_the_name(sqlite_store):
     assert [(r["id"], r["via"]) for r in links] == [("a", "Nassim Taleb")]
 
 
-def test_common_names_and_stale_entities_link_nothing(sqlite_store):
+def test_common_names_link_nothing(sqlite_store):
     _note("a", "One.")
     _entity("a", "Google")
-    _entity("a", "Old Name", model="a-retired-model")
     for i in range(related.MENTION_MAX_SHARED):
         _note(f"o{i}", f"Other {i}.")
         _entity(f"o{i}", "Google")
-    _note("z", "Two.")
-    _entity("z", "Old Name")
     sqlite_store.upsert_facets()
 
     related.compute("a")

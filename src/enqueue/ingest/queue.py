@@ -43,6 +43,8 @@ _facet_sweeper_lock = threading.Lock()
 # is cleared at the end of a run only when no step did, so an artifact stays owed
 # until every model step (sections, facets, entities, contexts) has gone through.
 _owed_in_run: set[str] = set()
+# Artifacts whose current run rewrites every model layer (a rebuild, a model change).
+_redo_in_run: set[str] = set()
 
 
 def _record_facet_retry(conn, artifact_id: str, error: str) -> None:
@@ -80,6 +82,80 @@ def _record_facet_retry(conn, artifact_id: str, error: str) -> None:
 # What a facet_retry row says while nothing has failed: the note is still being
 # written, and the model steps are due once it has been left alone.
 WAITING = "waiting for the note to be left alone"
+# Or: its text came from another device, which reads it with the model itself, and
+# the result rides back over sync. The model steps are due only if it never does.
+AWAITING = "waiting for the other device's summary"
+
+
+def await_peer(conn, artifact_id: str, from_desktop: bool) -> None:
+    """Hold this device's model steps for an artifact whose text arrived over sync.
+
+    Two desktops on one library used to read every item with the model twice: each
+    pulled the other's text and summarized it again. The device that wrote the text
+    summarizes it (after the quiet wait, config.SUMMARY_QUIET_S) and pushes the result,
+    which this device takes as current (facets.is_current). So a pulled item that is
+    not summarized yet waits here: config.PEER_SUMMARY_WAIT_S when another desktop
+    wrote it, plus a share of that again that differs per device, so that if neither
+    summarizes in time they do not both start at once. A phone cannot summarize, so
+    when one wrote the text both desktops would race for it; each waits only its own
+    share of config.PEER_PHONE_WAIT_S, and the first to finish pushes to the other.
+
+    A real retry (a failure with its own backoff) is left alone.
+    """
+    import hashlib
+
+    from .. import config
+    from ..sync import device_id
+
+    row = conn.execute(
+        "SELECT attempts, last_error FROM facet_retry WHERE artifact_id = ?", (artifact_id,)
+    ).fetchone()
+    if row is not None and row["last_error"] not in (WAITING, AWAITING):
+        return
+    share = int(hashlib.sha256(f"{device_id()}|{artifact_id}".encode()).hexdigest()[:8], 16)
+    share /= 0xFFFFFFFF
+    if from_desktop:
+        wait = config.PEER_SUMMARY_WAIT_S * (1 + share)
+    else:
+        wait = config.PEER_PHONE_WAIT_S * share
+    if wait <= 0:
+        return
+    due = (datetime.now(timezone.utc) + timedelta(seconds=wait)).isoformat()
+    conn.execute(
+        "INSERT INTO facet_retry (artifact_id, attempts, next_at, last_error) VALUES (?,?,?,?)"
+        " ON CONFLICT(artifact_id) DO UPDATE SET"
+        " next_at=excluded.next_at, last_error=excluded.last_error",
+        (artifact_id, row["attempts"] if row else 0, due, AWAITING),
+    )
+
+
+def _awaiting_peer(artifact_id: str) -> bool:
+    """Whether this run leaves the model steps to the device that wrote the text
+    (await_peer). The row stays; the run counts as owed so it is not cleared. The wait
+    is over as soon as that device's summary has arrived: the run then clears it."""
+    from .. import db
+    from . import facets as facets_mod
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT next_at FROM facet_retry WHERE artifact_id = ? AND last_error = ?",
+            (artifact_id, AWAITING),
+        ).fetchone()
+        if row is None or facets_mod.is_current(conn, artifact_id):
+            return False
+    finally:
+        conn.close()
+    try:
+        due = datetime.fromisoformat(row["next_at"])
+    except ValueError:
+        return False
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) >= due:
+        return False
+    _owed_in_run.add(artifact_id)
+    return True
 
 
 def _summary_off(artifact_id: str) -> bool:
@@ -320,6 +396,7 @@ def process(artifact_id: str) -> dict:
         settled = artifact_id not in _owed_in_run and _pending(artifact_id) == 0
         return result
     finally:
+        _redo_in_run.discard(artifact_id)
         _settle_retry(artifact_id, clear=settled)
         with _queued_lock:
             _processing.discard(artifact_id)
@@ -372,12 +449,23 @@ def _process(artifact_id: str) -> dict:
     # its own text by the time it gets here.
     pages = capture.extract_text(artifact_id)
 
+    # A model-written layer that arrived from another device is current here; until the
+    # device that wrote the text has summarized it, the model steps wait (await_peer).
+    from . import facets as facets_mod
+
+    awaiting = _awaiting_peer(artifact_id)
+    # "Rebuild concepts" or a change of ingest model (refresh_on_model_change): every
+    # model step rewrites what it has, not only the facets (the facet step takes the
+    # force flag, so the others read it from here).
+    if artifact_id in facets_mod._forced:
+        _redo_in_run.add(artifact_id)
+
     # An image is bytes with no text until a vision model reads it (K.11). The
     # description becomes the artifact body, so the rest of the pipeline - chunk,
     # facet, entity, search - treats it like any other text. Best effort like
     # facets: no vision model on the backend, and the image simply stays
     # unsearchable; the capture itself already succeeded.
-    described = _describe_image_if_needed(artifact_id)
+    described = "" if awaiting else _describe_image_if_needed(artifact_id)
 
     # A run whose chunks would come out exactly as they are stored, and are indexed as
     # they would be now, keeps them: a retry that only owes a model step, a sync
@@ -420,9 +508,13 @@ def _process(artifact_id: str) -> dict:
     # None of the model steps below run on a note that is still being written
     # (_wait_for_quiet): they are owed for when it has been left alone.
     # Nor on an artifact whose AI summary the person switched off (facets.set_summary).
-    ready = bool(chunks) and not _summary_off(artifact_id) and not _wait_for_quiet(artifact_id)
-    if ready:
-        _sections_artifact(artifact_id)
+    ready = (
+        bool(chunks)
+        and not _summary_off(artifact_id)
+        and not awaiting
+        and not _wait_for_quiet(artifact_id)
+    )
+    sections_made = _sections_artifact(artifact_id) if ready else False
     facets_made = _facet_artifact(artifact_id) if ready else 0
 
     # Entities are the named things in the body, each enriched with a one-line
@@ -451,6 +543,13 @@ def _process(artifact_id: str) -> dict:
     contexts_made = _context_artifact(artifact_id) if ready and chunks > 1 else 0
     if contexts_made:
         indexed = store.index_artifact(artifact_id)
+
+    # What the model wrote rides the artifact's snapshot to every other device (the
+    # phone cannot make its own; another desktop takes it instead of paying again).
+    # Pushed once, after every step, without bumping recency: a background summary is
+    # not a touch, and the other side applies a snapshot of an equal key.
+    if sections_made or facets_made or entities_made or contexts_made:
+        facets_mod.sync_facets(artifact_id, bump=False)
 
     # Section summaries (ingest/source.py) were written by whichever step above read a
     # long document through map-reduce; index them as their own layer.
@@ -667,35 +766,45 @@ def _facet_artifact(artifact_id: str) -> int:
         return 0
     if count:
         get_store().index_facets_artifact(artifact_id)
-        # Facets ride the artifact snapshot to other devices (the phone cannot make its
-        # own). Push without bumping recency - a background summary is not a "touch"; the
-        # phone's pull re-applies the snapshot on an equal key and picks the facets up.
-        facets_mod.sync_facets(artifact_id, bump=False)
     return count
 
 
-def _sections_artifact(artifact_id: str) -> None:
+def _sections_artifact(artifact_id: str) -> bool:
     """Make a long document's section summaries now (cached per section), or owe them.
+    Returns whether the stored summaries changed.
 
     Best effort, never raises. A short document, or one whose text must never reach a
     model, has nothing to do here.
     """
     if _pending(artifact_id) > 0:
-        return
+        return False
     from .. import config, db
     from . import source
+
+    def stored(conn) -> list:
+        return [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT summary, body_version FROM sections WHERE artifact_id = ?"
+                " ORDER BY ordinal",
+                (artifact_id,),
+            )
+        ]
 
     conn = db.get_conn()
     try:
         if len(source.document_text(conn, artifact_id)) <= config.FACET_INPUT_CHARS:
-            return
+            return False
+        before = stored(conn)
         try:
-            source.ingest_text(conn, artifact_id)
+            source.ingest_text(conn, artifact_id, fresh=artifact_id in _redo_in_run)
         except source.SummariesOwed as exc:
             _record_facet_retry(conn, artifact_id, str(exc))
         conn.commit()
+        return stored(conn) != before
     except Exception:  # noqa: BLE001 - derived; a failure never blocks capture
         log.exception("section summaries failed for %s", artifact_id)
+        return False
     finally:
         conn.close()
 
@@ -709,7 +818,9 @@ def _context_artifact(artifact_id: str) -> int:
 
     conn = db.get_conn()
     try:
-        count, error = context_mod.generate_for_artifact(conn, artifact_id)
+        count, error = context_mod.generate_for_artifact(
+            conn, artifact_id, redo=artifact_id in _redo_in_run
+        )
         if isinstance(error, Owed):
             _record_facet_retry(conn, artifact_id, error)
         conn.commit()
@@ -747,8 +858,8 @@ def _entities_artifact(artifact_id: str) -> int:
         ).fetchone()
         if gated:
             return 0
-        if entities_mod.is_current(conn, artifact_id):
-            return 0  # written by this model from this body already
+        if artifact_id not in _redo_in_run and entities_mod.is_current(conn, artifact_id):
+            return 0  # written from this body already, here or on another device
         count, error = entities_mod.generate_for_artifact(conn, artifact_id)
         if isinstance(error, Owed):
             _record_facet_retry(conn, artifact_id, error)
@@ -860,17 +971,38 @@ def backfill_summaries() -> int:
             for r in candidates
             if _pending(r["id"]) == 0 and not facets_mod.is_current(conn, r["id"])
         ]
+        # Every live artifact has at least one chunk once ingested here (a bodyless one
+        # falls back to its title). One with none arrived over sync before a pull sent
+        # items through ingest (sync/client.py), and was never indexed on this device.
+        queued = {r["id"] for r in rows}
+        unindexed = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT a.id FROM artifacts a"
+                " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+                "   AND a.kind != 'chat'"
+                "   AND NOT EXISTS (SELECT 1 FROM chunks c WHERE c.artifact_id = a.id)"
+                "   AND NOT EXISTS (SELECT 1 FROM facet_retry r WHERE r.artifact_id = a.id)"
+            )
+            if r["id"] not in queued and _pending(r["id"]) == 0
+        ]
     finally:
         conn.close()
 
     for row in rows:
         # A link summarizes off its fetched article body; force a fetch when it has none
         # so the worker downloads the page before it chunks and faceters it.
-        if row["kind"] == "link" and not (row["body"] or "").strip():
+        if (
+            row["kind"] == "link"
+            and not (row["body"] or "").strip()
+            and preview.needs_fetch(row["id"])
+        ):
             with contextlib.suppress(Exception):
                 preview.force(row["id"])
         submit_background(row["id"])
-    return len(rows)
+    for aid in unindexed:
+        submit_background(aid)
+    return len(rows) + len(unindexed)
 
 
 def queue_summary_refresh(redo: bool = False) -> int:
@@ -905,6 +1037,60 @@ def queue_summary_refresh(redo: bool = False) -> int:
         facets_mod.force(aid)
         if _pending(aid) == 0:
             submit_background(aid)
+    return len(ids)
+
+
+def refresh_on_model_change() -> int:
+    """Rewrite the library with the ingest model, once, when that model has changed.
+
+    A summary counts as current whichever model wrote it (facets.is_current), so that
+    two desktops do not each rewrite the other's work. Choosing another ingest model is
+    the one thing that should rewrite it: every artifact whose summary lines a different
+    model wrote is forced through every model step and pushed, and the other devices
+    take the new lines over sync. The model last seen is kept in `derived_values`
+    (scope `ingest_model`); the first run only records it, so an upgrade spends
+    nothing. Runs at engine startup (a model set by environment variable) and whenever
+    the model settings change. Returns the number queued.
+    """
+    from .. import db
+    from ..providers.base import get_provider
+    from . import facets as facets_mod
+
+    try:
+        model = get_provider(role="ingest").model
+    except Exception:  # noqa: BLE001 - no model configured: nothing to compare
+        return 0
+    with db.transaction() as conn:
+        seen = conn.execute(
+            "SELECT value FROM derived_values WHERE scope = 'ingest_model'"
+            " AND subject = 'library' AND attribute = 'model'"
+        ).fetchone()
+        conn.execute(
+            "INSERT OR REPLACE INTO derived_values (scope, subject, attribute, value, grounded,"
+            " source, model_version, created_at)"
+            " VALUES ('ingest_model', 'library', 'model', ?, 1, 'model', ?, ?)",
+            (model, model, db.now()),
+        )
+        if seen is None or seen["value"] == model:
+            return 0
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT a.id FROM artifacts a"
+                " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+                "   AND a.kind != 'chat' AND a.local_only = 0"
+                "   AND NOT EXISTS (SELECT 1 FROM facet_skips s WHERE s.artifact_id = a.id)"
+                "   AND EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id"
+                "               AND f.edited = 0 AND f.model_version != ?)",
+                (model,),
+            )
+        ]
+    for aid in ids:
+        facets_mod.force(aid)
+        if _pending(aid) == 0:
+            submit_background(aid)
+    if ids:
+        log.info("ingest model is now %s: rewriting %d summaries", model, len(ids))
     return len(ids)
 
 

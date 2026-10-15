@@ -126,23 +126,20 @@ def _enrich_one(provider, entity: str) -> str | None:
 
 
 def is_current(conn, artifact_id: str) -> bool:
-    """Whether the artifact's entities were written by the current ingest model from
-    its current body, so regenerating would only spend model calls."""
-    from ..providers.base import get_provider
-
+    """Whether the artifact's entities were written from its current body, by any
+    model on any device (see facets.is_current), so regenerating would only spend
+    model calls."""
     row = conn.execute(
-        "SELECT local_only, (SELECT MAX(created_at) FROM artifact_versions v"
+        "SELECT (SELECT MAX(created_at) FROM artifact_versions v"
         "  WHERE v.artifact_id = artifacts.id) AS body_version FROM artifacts WHERE id = ?",
         (artifact_id,),
     ).fetchone()
     if row is None:
         return False
-    model = get_provider(local_only=bool(row["local_only"]), summarize=True).model
     return (
         conn.execute(
-            "SELECT 1 FROM entities WHERE artifact_id = ? AND model_version = ?"
-            " AND body_version IS ?",
-            (artifact_id, model, row["body_version"]),
+            "SELECT 1 FROM entities WHERE artifact_id = ? AND body_version IS ?",
+            (artifact_id, row["body_version"]),
         ).fetchone()
         is not None
     )

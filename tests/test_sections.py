@@ -104,7 +104,7 @@ def test_a_long_document_is_found_by_what_one_section_is_about(sqlite_store):
     assert hits[0]["why"] == "section 3"
 
 
-def test_sections_from_another_model_are_ignored(sqlite_store, monkeypatch):
+def test_sections_from_another_model_still_count(sqlite_store, monkeypatch):
     import enqueue.providers.base as base_mod
     from enqueue.retrieve import candidates as cand
 
@@ -115,7 +115,7 @@ def test_sections_from_another_model_are_ignored(sqlite_store, monkeypatch):
     monkeypatch.setattr(base_mod, "get_provider", lambda **kw: newer)
     monkeypatch.setattr(cand, "get_provider", lambda **kw: newer)
 
-    assert cand.search_results("cartography sea charts") == []
+    assert any(r["artifact_id"] == aid for r in cand.search_results("cartography sea charts"))
 
 
 def test_chat_pulls_the_passage_from_that_part_of_the_document(sqlite_store):

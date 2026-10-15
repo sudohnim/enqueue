@@ -123,23 +123,24 @@ def take_forced(artifact_id: str) -> bool:
 
 
 def is_current(conn, artifact_id: str) -> bool:
-    """Whether the artifact's machine facets were written by the current ingest model
-    from its current body, so regenerating would only spend a model call."""
-    from ..providers.base import get_provider
+    """Whether the artifact's machine facets were written from its current body, so
+    regenerating would only spend a model call.
 
+    Any model's lines count, this device's or another's: a library is summarized once
+    and every desktop takes the result over sync. Choosing a different ingest model
+    rewrites the library on purpose (ingest/queue.py, refresh_on_model_change), never
+    by every device deciding on its own that the other's work is stale."""
     row = conn.execute(
-        "SELECT local_only, (SELECT MAX(created_at) FROM artifact_versions v"
+        "SELECT (SELECT MAX(created_at) FROM artifact_versions v"
         "  WHERE v.artifact_id = artifacts.id) AS body_version FROM artifacts WHERE id = ?",
         (artifact_id,),
     ).fetchone()
     if row is None:
         return False
-    model = get_provider(local_only=bool(row["local_only"]), summarize=True).model
     return (
         conn.execute(
-            "SELECT 1 FROM facets WHERE artifact_id = ? AND edited = 0 AND model_version = ?"
-            " AND body_version IS ?",
-            (artifact_id, model, row["body_version"]),
+            "SELECT 1 FROM facets WHERE artifact_id = ? AND edited = 0 AND body_version IS ?",
+            (artifact_id, row["body_version"]),
         ).fetchone()
         is not None
     )

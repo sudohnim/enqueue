@@ -483,9 +483,9 @@ class TestRetrieval:
         row = next(c for c in out if c["artifact_id"] == aid)
         assert row["why"] == "entity"
 
-    def test_stale_entity_line_never_wins_a_slot(self, store, sqlite_store, monkeypatch):
-        # A line written by an older model than the running one is dropped, the
-        # same provenance discipline as facets.
+    def test_a_line_from_another_model_still_counts(self, store, sqlite_store, monkeypatch):
+        # Written from the current body, any model's line counts: it may have come
+        # from another device, and a library is read by a model once (facets.is_current).
         aid = self._seed(store, model_version="old-model")
         sqlite_store.index_entities_artifact(aid)
         self._patch_model(monkeypatch)
@@ -494,7 +494,7 @@ class TestRetrieval:
 
         out = candidates(["presidents"], limit=10)
 
-        assert not any(c["artifact_id"] == aid for c in out)
+        assert any(c["artifact_id"] == aid for c in out)
 
     def test_chats_passages_reach_the_biography_via_entity(self, store, sqlite_store, monkeypatch):
         aid = self._seed(store)

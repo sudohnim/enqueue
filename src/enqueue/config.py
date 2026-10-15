@@ -225,6 +225,13 @@ SEARCH_RERANK = _SEARCH_RERANK in ("1", "true", "yes", "on")
 # writing one note. 0 turns either off (every save, the old behaviour).
 DRAFT_EVERY_S = int(os.getenv("ENQ_DRAFT_EVERY", "300"))
 SUMMARY_QUIET_S = int(os.getenv("ENQ_SUMMARY_QUIET", "300"))
+# PEER_SUMMARY_WAIT_S: how long a desktop leaves an item whose text came from another
+# desktop for that desktop to summarize (and push), before doing it itself; each device
+# adds its own share of the same again, so two do not start at once. PEER_PHONE_WAIT_S:
+# the spread for text from a phone, which cannot summarize, so whichever desktop's
+# share comes first does it (ingest/queue.py, await_peer). 0 turns the wait off.
+PEER_SUMMARY_WAIT_S = int(os.getenv("ENQ_PEER_SUMMARY_WAIT", "1800"))
+PEER_PHONE_WAIT_S = int(os.getenv("ENQ_PEER_PHONE_WAIT", "600"))
 
 # How long /search waits for the gray-zone judge before answering without it. The
 # judge keeps running and caches its verdicts, so the same search is exact next time.

@@ -241,11 +241,12 @@ def _pair_keys(conn, artifact_id: str, others: list[str]) -> dict[str, tuple[str
 
 def _verdict_read(conn, key: tuple[str, str], model: str) -> str | None:
     """A cached verdict: the judge's sentence for a yes, "" for a no, None when this
-    pair has not been judged by this model as the two items now stand."""
+    pair has not been judged as the two items now stand. Any model's verdict counts,
+    from this device or another (it rides the snapshot), so a pair is judged once."""
     row = conn.execute(
         "SELECT value FROM derived_values WHERE scope = 'related_judge' AND subject = ?"
-        " AND attribute = ? AND source = 'model' AND model_version = ?",
-        (key[0], key[1], model),
+        " AND attribute = ? AND source = 'model'",
+        (key[0], key[1]),
     ).fetchone()
     return None if row is None else row["value"]
 
@@ -352,6 +353,10 @@ def judge_next() -> str:
         compute(waiting[0], judge=True)
     except JudgeOwed:
         return "owed"
+    # The verdicts ride the artifact's snapshot, so no other desktop judges the pair.
+    from . import facets as facets_mod
+
+    facets_mod.sync_facets(waiting[0], bump=False)
     return "judged"
 
 

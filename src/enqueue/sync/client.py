@@ -186,6 +186,52 @@ def push_artifact(artifact_id: str) -> None:
         conn.execute("UPDATE artifacts SET _device_id = ? WHERE id = ?", (device_id(), artifact_id))
 
 
+def _ingest_pulled(applied: dict[str, bool]) -> None:
+    """Index what a pull brought in, and leave its model work to whoever wrote it.
+
+    The named things and section summaries another desktop wrote are indexed now; the
+    passages are cut and indexed by ingest, on its background lane (a pulled item used
+    to be indexed only at the next startup, and only when its summary looked stale). An
+    item whose summary is not current yet holds its model steps for the device that
+    wrote it (ingest/queue.py, await_peer), so the two do not both pay for it.
+    Best effort: a miss here is caught by the startup backfill.
+    """
+    from ..ingest import facets as facets_mod
+    from ..ingest import queue as ingest_queue
+    from ..index.store import get_store
+
+    try:
+        store = get_store()
+        from ..ingest import related
+
+        for aid in applied:
+            with contextlib.suppress(Exception):
+                store.index_entities_artifact(aid)
+            with contextlib.suppress(Exception):
+                store.index_sections_artifact(aid)
+            # Related links are derived here from what arrived (no model call: a pair
+            # another device judged carries its verdict over).
+            with contextlib.suppress(Exception):
+                related.compute(aid)
+        with db.transaction() as conn:
+            for aid, from_desktop in applied.items():
+                row = conn.execute(
+                    "SELECT kind, deleted_at, vaulted_at, embedded_at FROM artifacts"
+                    " WHERE id = ?",
+                    (aid,),
+                ).fetchone()
+                if row is None or row["kind"] == "chat":
+                    continue
+                if row["deleted_at"] or row["vaulted_at"] or row["embedded_at"]:
+                    continue
+                if not facets_mod.summary_off(conn, aid) and not facets_mod.is_current(conn, aid):
+                    ingest_queue.await_peer(conn, aid, from_desktop)
+        for aid in applied:
+            ingest_queue.submit_background(aid)
+    except Exception:  # noqa: BLE001 - never fail a pull over its follow-up work
+        log.exception("could not queue pulled artifacts for ingest")
+
+
 def push_vault_meta() -> None:
     """PUT the PIN-wrapped vault key as `lib/vault.enc` (VAULT.2b).
 
@@ -336,6 +382,10 @@ def pull() -> dict:
         # pull's writes are done, so a summary edited on another device becomes findable
         # here - the desktop edit path already reindexes; this closes the pulled path.
         facet_dirty: set[str] = set()
+        # Every artifact a pull applied, and whether a desktop sent it (a phone's
+        # snapshot carries none of the model-written layers): ingest indexes it here,
+        # and its model steps wait for the device that wrote it (ingest/queue.py).
+        applied: dict[str, bool] = {}
         for obj in listing.json()["objects"]:
             name = obj["name"]
             if name.startswith(mine):
@@ -373,9 +423,10 @@ def pull() -> dict:
                         apply_chat_snapshot(conn, snapshot)
                     else:
                         apply_pulled_snapshot(conn, snapshot)
-                        if snapshot.get("facets"):
-                            aid = (snapshot.get("artifact") or {}).get("id")
-                            if aid:
+                        aid = (snapshot.get("artifact") or {}).get("id")
+                        if aid:
+                            applied[aid] = "entities" in snapshot
+                            if snapshot.get("facets"):
                                 facet_dirty.add(aid)
                 pulled += 1
             except Exception as exc:  # noqa: BLE001
@@ -407,6 +458,8 @@ def pull() -> dict:
                     log.warning("post-pull facet reindex failed for %s", aid)
         except Exception:  # noqa: BLE001
             pass
+    if applied:
+        _ingest_pulled(applied)
 
     return {"pulled": pulled, "skipped": skipped}
 

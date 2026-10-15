@@ -17,6 +17,7 @@ Here the same shape is read from markdown structure instead of `parent_id`:
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 
@@ -242,9 +243,16 @@ def chunk_artifact(conn, artifact_id: str, made: list[tuple[str, str]] | None = 
             (artifact_id,),
         )
     }
+    # Placements another device wrote arrive before this device has the passages
+    # (sync/snapshot.py); they are kept by the hash of the passage's text.
+    from .context import remembered
+
+    arrived = remembered(conn, artifact_id)
     conn.execute("DELETE FROM chunks WHERE artifact_id = ?", (artifact_id,))
     for ordinal, (text, chunker) in enumerate(made):
-        context, context_model = kept_context.get(text, (None, None))
+        context, context_model = kept_context.get(text) or arrived.get(
+            hashlib.sha256(text.encode("utf-8")).hexdigest(), (None, None)
+        )
         conn.execute(
             "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker, context,"
             " context_model) VALUES (?,?,?,?,?,?,?)",
