@@ -92,19 +92,34 @@ def backup(wait: bool = typer.Option(True, help="Wait for the backup to land."))
 
 
 @app.command()
-def restore(source: str = typer.Argument(..., help="A backup folder, or one .db in it.")) -> None:
+def restore(
+    source: str = typer.Argument(..., help="A backup folder, or one file in it."),
+    kit: str = typer.Option(
+        "", "--kit", help="The recovery kit, on a Mac without this library's key."
+    ),
+) -> None:
     """Put a backup in place as the library. Quit Enqueue first.
 
+    Backups are encrypted with the library's key. On the Mac that made them they open
+    as they are; on any other, the recovery kit opens them (asked for when needed).
     The current library is moved aside (never deleted); the search index is rebuilt
     on the next start. Like `migrate`, this works on the files directly, because the
     engine must not be running.
     """
     from . import backup as backups
-    from . import datadir
+    from . import datadir, libkey
 
     datadir.move_legacy()  # restore into the library's current home, not the old one
     try:
-        _echo(backups.restore(source))
+        try:
+            _echo(backups.restore(source, kit=kit or None))
+        except backups.Locked:
+            typer.echo("This backup is locked with its library's key. Its recovery kit opens it.")
+            entered = typer.prompt("Recovery kit", hide_input=True)
+            _echo(backups.restore(source, kit=entered))
+    except libkey.KitError as exc:
+        typer.echo(f"not restored: {exc}", err=True)
+        raise typer.Exit(1) from None
     except backups.BackupError as exc:
         typer.echo(f"not restored: {exc}", err=True)
         raise typer.Exit(1) from None

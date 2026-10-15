@@ -74,6 +74,64 @@ pub fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8
     Ok(out)
 }
 
+// ---- what goes to the relay -----------------------------------------------------
+// Mirrors `seal_payload`/`open_payload`/`names_key`/`object_name` in crypto.py: a
+// payload is padded before it is sealed (a marker, its length, zeros to the next power
+// of two from 256 bytes, or the next multiple of 64 KiB past that), and an object is
+// named by its id hashed under a key of its own, never the DEK. An older unpadded
+// object opens as it is. Vault sealing and key wraps never pad.
+
+const PAD_MAGIC: &[u8; 8] = b"\x00ENQPAD1";
+const PAD_BIG: usize = 64 * 1024;
+
+fn pad_bucket(n: usize) -> usize {
+    if n > PAD_BIG {
+        return n.div_ceil(PAD_BIG) * PAD_BIG;
+    }
+    let mut size = 256;
+    while size < n {
+        size *= 2;
+    }
+    size
+}
+
+pub fn seal_payload(dek: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    let mut body = Vec::with_capacity(plaintext.len() + 12);
+    body.extend_from_slice(PAD_MAGIC);
+    body.extend_from_slice(&(plaintext.len() as u32).to_be_bytes());
+    body.extend_from_slice(plaintext);
+    body.resize(pad_bucket(body.len()), 0);
+    secretbox_encrypt(dek, &body)
+}
+
+pub fn open_payload(dek: &[u8; DEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    let body = secretbox_decrypt(dek, ciphertext)?;
+    if body.len() < 12 || &body[..8] != PAD_MAGIC {
+        return Ok(body);
+    }
+    let n = u32::from_be_bytes([body[8], body[9], body[10], body[11]]) as usize;
+    body.get(12..12 + n)
+        .map(|b| b.to_vec())
+        .ok_or_else(|| "padded payload shorter than its length".to_string())
+}
+
+fn hmac_hex(key: &[u8], data: &[u8]) -> Vec<u8> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("hmac takes any key length");
+    mac.update(data);
+    mac.finalize().into_bytes().to_vec()
+}
+
+pub fn names_key(dek: &[u8; DEK_LEN]) -> Vec<u8> {
+    hmac_hex(dek, b"enqueue relay names v1")
+}
+
+/// What an artifact or a conversation is called on the relay: its id, hashed.
+pub fn object_name(ident: &str, dek: &[u8; DEK_LEN]) -> String {
+    hex::encode(hmac_hex(&names_key(dek), ident.as_bytes()))[..40].to_string()
+}
+
 /// Unwrap a DEK wrapped with a KEK (inverse of `secretbox_encrypt`).
 /// Uses the same XSalsa20-Poly1305 secretbox decrypt.
 #[allow(dead_code)]
@@ -262,8 +320,11 @@ pub fn push_snapshot(
     snapshot: &Value,
 ) -> Result<(), String> {
     let bytes = serde_json::to_vec(snapshot).map_err(|e| e.to_string())?;
-    let ciphertext = secretbox_encrypt(dek, &bytes)?;
-    let name = format!("dev/{device}/artifacts/{}.enc", snapshot["artifact"]["id"].as_str().unwrap_or(""));
+    let ciphertext = seal_payload(dek, &bytes)?;
+    let name = format!(
+        "dev/{device}/artifacts/{}.enc",
+        object_name(snapshot["artifact"]["id"].as_str().unwrap_or(""), dek)
+    );
     let url = format!("{}/sync/object/{}", relay_url.trim_end_matches('/'), name);
     put_object_with_retry(&url, secret, &ciphertext, &format!("push_snapshot {name}"))
 }
@@ -986,7 +1047,7 @@ fn fetch_snapshots_parallel(
                         // unreadable until after decrypt, so every fetched object is
                         // decrypted here; the caller's apply_snapshot does the no-op
                         // LWW check.
-                        let plain = match secretbox_decrypt(dek, &bytes) {
+                        let plain = match open_payload(dek, &bytes) {
                             Ok(p) => p,
                             Err(_) => continue, // unreadable = "not yet arrived"
                         };
@@ -1089,7 +1150,7 @@ pub fn sync_library(
             {
                 let mut bytes = Vec::new();
                 if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
-                    if let Ok(plain) = secretbox_decrypt(dek, &bytes) {
+                    if let Ok(plain) = open_payload(dek, &bytes) {
                         if let Ok(s) = std::str::from_utf8(&plain) {
                             let _ = conn.execute(
                                 "INSERT INTO sync_meta (key,value) VALUES ('pivots',?1)\
@@ -1112,7 +1173,7 @@ pub fn sync_library(
             {
                 let mut bytes = Vec::new();
                 if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
-                    if let Ok(plain) = secretbox_decrypt(dek, &bytes) {
+                    if let Ok(plain) = open_payload(dek, &bytes) {
                         if let Ok(s) = std::str::from_utf8(&plain) {
                             let _ = conn.execute(
                                 "INSERT INTO sync_meta (key,value) VALUES ('vault_meta',?1)\
@@ -1137,7 +1198,7 @@ pub fn sync_library(
             {
                 let mut bytes = Vec::new();
                 if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
-                    if let Ok(plain) = secretbox_decrypt(dek, &bytes) {
+                    if let Ok(plain) = open_payload(dek, &bytes) {
                         if let Ok(incoming) = serde_json::from_slice::<Value>(&plain) {
                             let incoming_ts =
                                 incoming["updated_at"].as_str().unwrap_or("").to_string();
@@ -1465,9 +1526,9 @@ pub fn push_chat_snapshot(
     snapshot: &Value,
 ) -> Result<(), String> {
     let id = snapshot["chat"]["id"].as_str().unwrap_or("");
-    let name = format!("dev/{device}/chats/{id}.enc");
+    let name = format!("dev/{device}/chats/{}.enc", object_name(id, dek));
     let plaintext = serde_json::to_vec(snapshot).map_err(|e| e.to_string())?;
-    let body = secretbox_encrypt(dek, &plaintext)?;
+    let body = seal_payload(dek, &plaintext)?;
     let url = format!("{}/sync/object/{name}", base.trim_end_matches('/'));
     put_object_with_retry(&url, secret, &body, "chat")
 }
@@ -1917,11 +1978,15 @@ pub fn shared_link_title(text: &str, is_link: impl Fn(&str) -> bool) -> Option<S
 #[allow(dead_code)]
 #[allow(dead_code)]
 pub fn blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-    let mut mac = Hmac::<Sha256>::new_from_slice(dek).map_err(|e| e.to_string()).unwrap();
-    mac.update(content_hash.as_bytes());
-    hex::encode(mac.finalize().into_bytes())
+    let mut data = b"blob:".to_vec();
+    data.extend_from_slice(content_hash.as_bytes());
+    hex::encode(hmac_hex(&names_key(dek), &data))
+}
+
+/// The name blobs had before the names key (HMAC under the DEK itself): still fetched,
+/// for a blob nobody has pushed again since.
+pub fn legacy_blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
+    hex::encode(hmac_hex(dek, content_hash.as_bytes()))
 }
 
 /// Upload one file blob to the relay, encrypted and content-addressed exactly as
@@ -1940,7 +2005,7 @@ pub fn push_blob(
     plaintext: &[u8],
 ) -> Result<(), String> {
     let name = blob_name(content_hash, dek);
-    let ciphertext = secretbox_encrypt(dek, plaintext)?;
+    let ciphertext = seal_payload(dek, plaintext)?;
     let url = format!("{}/sync/object/blobs/{}", relay_url.trim_end_matches('/'), name);
     put_object_with_retry(&url, secret, &ciphertext, "push_blob")
 }
@@ -1954,23 +2019,33 @@ pub fn fetch_blob(
     dek: &[u8; DEK_LEN],
     content_hash: &str,
 ) -> Result<Vec<u8>, String> {
-    let name = blob_name(content_hash, dek);
-    let resp = ureq::get(&format!(
-        "{}/sync/object/blobs/{}",
-        relay_url.trim_end_matches('/'),
-        name
-    ))
-    .set("Authorization", &format!("Bearer {secret}"))
-    .call()
-    .map_err(|e| e.to_string())?;
-    if resp.status() != 200 {
-        return Err(format!("blob fetch: {}", resp.status()));
+    let mut last = String::new();
+    for name in [blob_name(content_hash, dek), legacy_blob_name(content_hash, dek)] {
+        let resp = match ureq::get(&format!(
+            "{}/sync/object/blobs/{}",
+            relay_url.trim_end_matches('/'),
+            name
+        ))
+        .set("Authorization", &format!("Bearer {secret}"))
+        .call()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last = e.to_string();
+                continue;
+            }
+        };
+        if resp.status() != 200 {
+            last = format!("blob fetch: {}", resp.status());
+            continue;
+        }
+        let mut bytes = Vec::new();
+        resp.into_reader()
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        return open_payload(dek, &bytes);
     }
-    let mut bytes = Vec::new();
-    resp.into_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    secretbox_decrypt(dek, &bytes)
+    Err(last)
 }
 
 /// Resolve a vaulted blob to its plaintext bytes: prefer the local cache, fall back to
@@ -1986,14 +2061,13 @@ pub fn fetch_blob(
 ///      it was vaulted) does not unwrap, and must be refetched as vault-ciphertext.
 #[allow(dead_code)]
 pub fn resolve_vaulted_blob<F: Fn() -> Result<Vec<u8>, String>>(
-    cache_path: &std::path::Path,
+    cached: Option<Vec<u8>>,
     vault_key: &[u8; DEK_LEN],
     fetch: F,
 ) -> Result<Vec<u8>, String> {
-    let raw = if cache_path.exists() {
-        std::fs::read(cache_path).map_err(|e| e.to_string())?
-    } else {
-        fetch()?
+    let raw = match cached {
+        Some(bytes) => bytes,
+        None => fetch()?,
     };
     match unwrap(&raw, vault_key) {
         Ok(plain) => Ok(plain),
@@ -2157,9 +2231,8 @@ mod tests {
         let key = [7u8; DEK_LEN];
         let plaintext = b"the vaulted image bytes".to_vec();
         let vault_ct = secretbox_encrypt(&key, &plaintext).unwrap();
-        let cache = scratch("miss").join("deadbeef"); // does not exist
         let calls = std::cell::Cell::new(0);
-        let got = resolve_vaulted_blob(&cache, &key, || {
+        let got = resolve_vaulted_blob(None, &key, || {
             calls.set(calls.get() + 1);
             Ok(vault_ct.clone())
         })
@@ -2175,9 +2248,7 @@ mod tests {
         let key = [9u8; DEK_LEN];
         let plaintext = b"cached vault bytes".to_vec();
         let vault_ct = secretbox_encrypt(&key, &plaintext).unwrap();
-        let cache = scratch("hit").join("hash1");
-        std::fs::write(&cache, &vault_ct).unwrap();
-        let got = resolve_vaulted_blob(&cache, &key, || {
+        let got = resolve_vaulted_blob(Some(vault_ct.clone()), &key, || {
             panic!("must not fetch when the cache is valid")
         })
         .unwrap();
@@ -2191,10 +2262,9 @@ mod tests {
         // refetch the current vault-ciphertext and return the real bytes.
         let key = [3u8; DEK_LEN];
         let plaintext = b"real image".to_vec();
-        let cache = scratch("stale").join("h2");
-        std::fs::write(&cache, &plaintext).unwrap(); // stale plaintext, not vault-ciphertext
+        // stale plaintext in the cache, not vault-ciphertext
         let vault_ct = secretbox_encrypt(&key, &plaintext).unwrap();
-        let got = resolve_vaulted_blob(&cache, &key, || Ok(vault_ct.clone())).unwrap();
+        let got = resolve_vaulted_blob(Some(plaintext.clone()), &key, || Ok(vault_ct.clone())).unwrap();
         assert_eq!(got, plaintext);
     }
 
@@ -2225,6 +2295,27 @@ mod tests {
         )
         .unwrap();
         assert_eq!(secretbox_decrypt(&kek, &ct).unwrap(), b"hello cross-language");
+    }
+
+    #[test]
+    fn relay_payloads_and_names_match_python() {
+        // Made by crypto.seal_payload / object_name / blob_name with a key of 7s.
+        let key = [7u8; 32];
+        assert_eq!(object_name("n1", &key), "5a45254d51ebfdffda4e29dc82348e48190a423b");
+        assert_eq!(
+            blob_name("abc", &key),
+            "a008f0e64fd513b788317ed42f2f2dd4b1142105e8658fab1c3b4f9bb517bf88"
+        );
+        let ct = hex::decode("febb94497e5435772b8239d3aac1f1aa2e53193bdbd9cbf909880157a04ee5b40dee0bf22de95be181de8fe0c5a754c73ced3c89b2ff86ee596f70cb86cc8ef7cbad1298c7a0f5abe9b7a4f954a26756359cb84f47e0bed49a8b6afbac9250edfcfa0dda07520537bbcd0735c06ff5d91cd26a43501e0a2cd5f93e8c2410557bc5763520169f635ea561ba90eeeb007f7ba4fb028a08ff05be8693ea179e6468765343580b53e2e43da6855e6ce8a8f66dafe267a7fb8fbe44c4719bc755ff8a879655e6aaf603334411a4804c9f6fa97055490d4fad528ce8f662e9646064d536a27ed275091961c22f1abcf2c4910f69780d65b426b525a12322376b9950b3f0408d10ac841ede3e15520e5ebeba5709c9b7ab5c461922377ed072bd9e0cfd10dfedf8f5af5662").unwrap();
+        assert_eq!(ct.len(), 24 + 16 + 256, "a short payload fills a 256-byte bucket");
+        assert_eq!(open_payload(&key, &ct).unwrap(), br#"{"hello":"relay"}"#);
+        // And back: what the phone seals, padded to the same bucket, opens to itself.
+        let sealed = seal_payload(&key, b"x").unwrap();
+        assert_eq!(sealed.len(), 24 + 16 + 256);
+        assert_eq!(open_payload(&key, &sealed).unwrap(), b"x");
+        // An older, unpadded object still opens.
+        let old = secretbox_encrypt(&key, b"legacy").unwrap();
+        assert_eq!(open_payload(&key, &old).unwrap(), b"legacy");
     }
 
     #[test]

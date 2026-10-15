@@ -8,15 +8,15 @@ vec0 has no INSERT OR REPLACE, so an upsert is delete-then-insert in one transac
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Callable
 from itertools import groupby
-from sqlite3 import OperationalError
 from typing import Any
 
 import sqlite_vec
 
 from .. import config, db
+from .. import sqlite as sqlite3
+from ..sqlite import OperationalError
 from .embed import embed, embed_passage, embed_query
 from .fusion import rrf_scored
 from .store import VectorStore
@@ -310,7 +310,7 @@ class SqliteVecStore(VectorStore):
         self._on_progress = on_progress
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(config.DB_PATH, timeout=10)
+        conn = db.connect()
         conn.row_factory = sqlite3.Row
         db.set_wal(conn)
         conn.enable_load_extension(True)

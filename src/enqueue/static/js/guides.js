@@ -180,15 +180,18 @@ const Guides = (() => {
         "Under Backup, press Choose a folder and pick one your cloud drive keeps: iCloud Drive, Dropbox, a USB disk all work. Use Proton Drive appears when Enqueue finds it.",
         "The first copy is made at once.",
         "After that it happens by itself. Back up now, beside the time of the last copy, makes one whenever you like.",
+        "Press Show recovery kit and keep the 56 letters and digits where you keep passwords, then press I saved it.",
       ],
       know: [
+        "Every copy is encrypted with your library's key before it leaves this Mac, so the folder, and whoever runs your cloud drive, holds nothing readable.",
+        "The recovery kit is the only way to open your backups on a new Mac. Enqueue keeps no other copy and cannot reset it.",
         "Your phone is not a backup. It holds a copy for reading, and only once sync is set up.",
         "The search index is left out of the copy and rebuilt after a restore, which takes a while.",
         "Your API key is never in a backup. It stays in the Keychain.",
       ],
       also: ["relay", "index", "trash"],
       words:
-        "backup backups back up copy proton drive folder restore lose lost everything mac dies broken stolen new mac safe recover icloud dropbox",
+        "backup backups back up copy proton drive folder restore lose lost everything mac dies broken stolen new mac safe recover icloud dropbox recovery kit key encrypted encryption locked code",
     },
     {
       id: "drafts",

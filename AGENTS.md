@@ -17,9 +17,10 @@ Do one task per turn, in order, and verify each with the command in its "Done wh
 These came up while surveying the code against the old AGENTS.md, then confirmed with Minh.
 They are recorded here so the next agent does not re-litigate them.
 
-1. **Encryption at rest (the local DB) is planned, not built.**
-The local database `~/Library/Application Support/Enqueue/enqueue.db` is plain `sqlite3` today; encryption at rest for it is still a planned milestone and no scheme is chosen.
-Treat the local store as plaintext and keep secret material out of the search index.
+1. **Encryption at rest is built (2026-10-14); see docs/ENCRYPTION.md.**
+The local database is a SQLCipher file once the recovery kit is saved (`db.encrypt_library`, `db.connect`; plain before that, on purpose), every connection goes through `db.connect` on SQLCipher's driver (`sqlite.py`: never import the standard library's `sqlite3` for the library, its error classes are different ones), backups are sealed, and the phone keeps its database, secrets and file cache under a Keystore-guarded key.
+The original files in `blobs/` on the Mac are not encrypted by Enqueue (FileVault covers them).
+Backups ARE encrypted (2026-10-14): with a key derived from the library key (`libkey.py`), the root the rest of the zero-knowledge design hangs from (sync key, phone, then the local database).
 (Distinct from the SYNC payload, which IS end-to-end encrypted - see decision 2. The DEK/keyring crypto in `crypto.py`/`keyring_file.py` protects what goes to the relay, not the DB on disk.)
 
 2. **Sync and E2E are built; the desktop SETUP flow is the missing piece.**
@@ -33,7 +34,7 @@ What exists in code:
 **Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow) is superseded - do not extend it.
 **QR wire format (pinned - both sides parse exactly this):** compact UTF-8 JSON `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}`, where `dek` is RFC 4648 base64 (with padding) of the raw 32-byte DEK, and `v` is the format version (a parser seeing any other `v` refuses with a clear message). CAMERA-ONLY: there is no copyable/pasteable form of the payload anywhere, by decision - the raw DEK must never touch the clipboard or clipboard history. A Rust round-trip test (`rqrr` decode) pins the format.
 **DEK-encoding gotcha (bit us on 2026-08-19):** the macOS Keychain stores `enqueue-sync-dek` ALREADY base64-encoded (44 chars = 32 raw bytes), so `desktop_link_code`/`load_link_credentials` must pass it into the QR VERBATIM. Re-encoding double-encodes it (the phone then base64-decodes to 44 bytes, not 32); `mobile_link_qr` must ERROR on a non-32-byte DEK, never silently zero it (a zero DEK links "successfully" but fails every decrypt).
-**Known deviation (MOB.3b):** the mobile DEK/secret is stored in an app-sandboxed file at mode 0600 (`sync_config` in the app data dir, DEK as hex), NOT the Android Keystore - Tauri v2 exposes no Keystore JNI API. Documented honestly; not hardware-backed.
+**Phone storage (2026-10-14, was MOB.3b's plain file):** the mobile DEK/secret is in `sync_config.sealed`, sealed under the phone's store key, which an Android Keystore key guards (`StoreKey.kt`, reached from Rust through the activity class cached at `JNI_OnLoad`: `store_key` in `lib.rs`). The phone's `library.db` is SQLCipher and its file cache is sealed under the same key (`blob_read`/`blob_write`).
 **What remains open (see `docs/PLAN.md`):** the code is built and the sync/decrypt/apply/render path is device-verified end to end; the open items are the hosted-relay deploy (Railway, RELAYHOST.1), the scanner camera-box containment (SCANUI.1), the cold-launch bootstrap race (MOBBOOT.1), the CAP2.2 capture-flight over-app pivot, and a handful of pending human device-verifies on already-committed work.
 
 1. **The library lives in `~/Library/Application Support/Enqueue` (moved 2026-10-14).**
@@ -224,7 +225,9 @@ One line per file, describing its job.
 | `events.py` | The activity log: `emit()`/`recent()` over the persisted `events` table. Never raises. Backs the Settings Activity tab and the vault decoy. |
 | `worker.py` | Shared single-thread queue lifecycle used by the ingest queue and the answer worker; two lanes (the person's work before background upkeep). |
 | `trash.py` | Soft delete with retention window. Purge is the only destructive operation. |
-| `backup.py` | Backups into a cloud drive's folder (Proton Drive): daily + on clean shutdown + on demand, `VACUUM INTO` a temp file then atomic rename, search index emptied in the copy, blobs mirrored, 7 daily + 4 weekly kept; `restore()` sets the current library aside. |
+| `backup.py` | Backups into any folder (a cloud drive's, typically): daily + on clean shutdown + on demand, every file encrypted with the library key before it reaches the folder, search index emptied in the copy, originals sealed under keyed-hash names, 7 daily + 4 weekly kept; `restore()` opens one with this Mac's key or the recovery kit and sets the current library aside. |
+| `sqlite.py` | The SQLite driver for everything that opens the library: SQLCipher's build (`sqlcipher3`), re-exported. Reads plain files too; `db.connect` keys an encrypted one. |
+| `libkey.py` | The library key: 32 random bytes made once, in the Keychain (`enqueue-library-key`), the root every other key is derived from (`derive`, HKDF-SHA256 per use); the recovery kit (`kit`/`from_kit`, 56 Crockford characters with a checksum) and whether the person said they saved it. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
 | `setup.py` | Where this installation stands: the three steps left to set up, the settings that need a look, and the one model answer about settings (`GET /setup`, `POST /setup/ask`). See "Settings explain themselves" under Gotchas. |
 | `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
@@ -608,7 +611,7 @@ The translation walks the exception chain to find the most specific OpenAI excep
 | `enq chunk` | Rebuild chunks from note bodies |
 | `enq facet-gate` | Decide which artifacts never get facets |
 | `enq backup` | Back up now into the folder chosen in Settings, and wait for it |
-| `enq restore <dir or .db>` | Put a backup in place (engine must be stopped; works on the files directly, like `migrate`) |
+| `enq restore <dir or file> [--kit KIT]` | Put a backup in place (engine must be stopped; works on the files directly, like `migrate`); asks for the recovery kit when this Mac does not hold the backup's key |
 | `enq eval-embedders [--models a,b]` | Compare embedding models on both evals and suggest each one's floor bars |
 | `enq eval-real [--update-baseline]` | Score your real searches against your library; fails when a baseline query now fails |
 
@@ -708,6 +711,8 @@ DELETE /settings/api-key             remove key from Keychain
 PATCH  /settings                     update writable settings
 POST   /setup/ask                    answer a question about settings from the page's matched guides
 POST   /backup                       back up now (background; GET /backup shows it land)
+POST   /backup/kit                   the recovery kit, to show once (a POST, so only the engine's own page gets it)
+POST   /backup/kit/saved             the person kept the kit (Settings stops asking)
 ```
 
 ---
@@ -998,13 +1003,15 @@ Before this, the page name landed as the link's first note and read like somethi
 
 ## Backups (Proton Drive)
 
-`backup.py`, decided 2026-09-30. The live library stays at `~/Library/Application Support/Enqueue`; the cloud drive only ever holds backups.
+`backup.py`, decided 2026-09-30, encrypted 2026-10-14. The live library stays at `~/Library/Application Support/Enqueue`; the cloud drive only ever holds backups.
 A live SQLite file in a File Provider folder is unsafe: WAL is three files a sync client can upload mid-write (a torn copy), the drive can evict a quiet file to a cloud-only placeholder under the engine, and the ~400 MB file (mostly the search index) would re-upload on every write.
 
 - `backup_dir` setting (empty = off; Settings > Storage offers the detected `~/Library/CloudStorage/ProtonDrive-*` folder). Backups go in `<backup_dir>/Enqueue Backup/`.
-- A run: `VACUUM INTO` a `.partial` file (one consistent snapshot while writers continue), empty every index table from `store_sqlite._DDL` and delete `index_meta.embed_version` in the copy, `VACUUM`, `PRAGMA integrity_check`, then `os.replace` into `library/enqueue-YYYY-MM-DD.db` - the drive never sees a half-written file. Blobs are mirrored by hash (copy only new ones); `settings.json` and `keyring.json` (DEK wrapped under the recovery phrase) are copied; `manifest.json` describes the latest. The API key stays in the Keychain, never backed up. Measured on a 410 MB library (332 items): a 5.7 MB copy in 2.4 s; a restore rebuilt the index in ~20 min, during which browsing works and search waits.
+- **Zero-knowledge.** Every file in the folder is encrypted with the `backup` key derived from the library key (libkey.py), so the drive, and whoever runs it, holds nothing readable (`test_nothing_in_the_drive_can_be_read` reads every byte for a note's words, an original file, a setting, a file name and the SQLite header). The format is libsodium's secretstream (XChaCha20-Poly1305, 1 MiB chunks, the last tagged final, so a cut-short file is refused) behind a 37-byte header: `ENQB`, a format byte, the 8-byte key id, the stream header. `manifest.json` stays readable: the format, the key id, the date and size of the latest.
+- A run: `VACUUM INTO` a plain copy in `DATA_DIR/.backup-work/` (never in the drive), empty every index table from `store_sqlite._DDL` and delete `index_meta.embed_version` in it, `VACUUM`, `PRAGMA integrity_check`, seal it into `library/enqueue-YYYY-MM-DD.db.enc` through a partial file, then open the sealed file again and quick-check that before it counts. Originals go into `files/`, each sealed with its name as the first line and named by HMAC of its name under the `backup-names` key (only new ones); `settings.json` and `keyring.json` become `.enc`. The first sealed run removes what older versions left in the clear (`library/*.db`, `blobs/`, the plain json files), only after its own copy checked out. The API key stays in the Keychain, never backed up. Measured on a 410 MB library (332 items): a 5.7 MB copy in 2.4 s; a restore rebuilt the index in ~20 min, during which browsing works and search waits.
 - When: the scheduler thread checks hourly (first after 5 min) and runs once a day if the change stamp (counts + latest timestamps of what a person writes) moved; a clean engine shutdown runs one more; choosing a folder runs the first at once; `POST /backup` / `enq backup` on demand. Keeps 7 daily + the newest of 4 earlier weeks.
-- `restore()` (`enq restore`): refuses while the engine answers on 127.0.0.1:8787, quick-checks the file, moves the live `enqueue.db` (+ wal/shm) to `before-restore-<time>/` (never deleted), copies the backup in, fills missing blobs, and fills `settings.json`/`keyring.json` only when absent (a new Mac). The next start migrates and, with no recorded embed version, rebuilds the index (index/bootstrap.py).
+- **The recovery kit** is the only way into a backup on a Mac without the key: Enqueue keeps no other copy and cannot reset it. Settings > Storage > Backup shows it on request (`POST /backup/kit`) with an amber dot until "I saved it", and the setup step stays a warning ("Save your recovery kit") until then. Restoring with a kit adopts that key as the new Mac's library key, so its next backups open with the same kit.
+- `restore()` (`enq restore`): refuses while the engine answers on 127.0.0.1:8787, opens the backup (this Mac's key, else `--kit` or a prompt; `Locked` when neither, "a different library" when the kit's key id does not match), quick-checks the file, moves the live `enqueue.db` (+ wal/shm) to `before-restore-<time>/` (never deleted), copies the backup in, fills missing blobs, and fills `settings.json`/`keyring.json` only when absent (a new Mac). The next start migrates and, with no recorded embed version, rebuilds the index (index/bootstrap.py).
 - Events: `backup` (with the record) and `backup.failed` in the Activity log.
 - Settings > Storage > Backup (`renderBackupSection` in `static/js/settings.js`) leads with when the last copy was made (a dot: green, amber when none or older than three days, pulsing while one runs) and Back up now; then what is kept (a bar per copy, weekly ones paler), where, and how to restore. Any folder works; a detected Proton Drive folder is only a shortcut. The folder is chosen with the Mac's own picker (`tauri-plugin-dialog`, registered on the desktop shell and allowed for the home window as `dialog:allow-open`); a plain browser gets a text field instead.
 
@@ -1045,7 +1052,7 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 | `tests/test_trash.py` | Delete is reversible, purge destroys, retention window, blob sharing guard. |
 | `tests/test_preview.py` | Parse, image URL resolution, fetch guards, preview indexing, the browser fallback. |
 | `tests/test_model_pause.py` | The usage-limit pause: trip on 429, no call while paused, retries rescheduled, lifted by a new key. |
-| `tests/test_backup.py` | Backups: copy without the index, change stamp, retention, no partial files, restore sets the library aside. |
+| `tests/test_backup.py` | Backups: copy without the index, nothing readable in the folder, the plain leftovers removed, a cut-short or changed file refused, change stamp, retention, no partial files, restore sets the library aside, a new Mac opens one with the recovery kit. |
 | `tests/test_md_roundtrip.py` + `tests/js/md_roundtrip.js` | md() and htmlToMd() round-trip a note unchanged (run under node). |
 
 ### Conventions
@@ -1155,7 +1162,7 @@ The adb toolkit (phone on USB or emulator, package `com.sudohnim.enqueue`):
 - **Drive the UI:** `adb shell input tap <x> <y>` / `input swipe` / `input text`; get coordinates from `adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml`.
 - **WebView console + JS + programmatic invoke (the real workhorse):** use `bin/cdp-eval "<js expr>"`. It does the whole dance - pid lookup, `adb forward`, `/json` target, `Runtime.evaluate` with `suppress_origin=True` (the Android DevTools endpoint 403s the default Origin), `awaitPromise` so `invoke(...)` resolves - and prints the JSON value. Examples: `bin/cdp-eval "document.getElementById('library').hidden"`, `bin/cdp-eval "await window.__TAURI__.core.invoke('mobile_status')"`, `bin/cdp-eval "(()=>{const r=document.querySelector('.card').getBoundingClientRect();return r.width+'x'+r.height;})()"`. Flags: `--serial`, `--timeout`, `--raw`.
   - **NEVER hand-roll the websocket loop.** The recurring failure is a bare `ws.recv()` with no timeout inside a fixed-count "drain" loop: CDP sends fewer messages than the loop assumed, so `recv()` blocks for the entire command budget (observed 3000s) and a bare `except` swallows it silently. `bin/cdp-eval` wraps every recv in a hard timeout - it returns a value or fails fast, it cannot hang. If you need something the helper does not cover, add a flag to it; do not write a fresh websocket loop.
-- **App state + secrets (debug build):** `adb shell run-as com.sudohnim.enqueue cat /data/data/com.sudohnim.enqueue/sync_config` (relay_url, secret, DEK hex) and `... cat .../library.db` into a local file, then `sqlite3` it to count applied artifacts. This is how you tell a decrypt/apply failure (cursor advances, 0 rows) from a render bug.
+- **App state (debug build):** the phone's `library.db` is SQLCipher and `sync_config.sealed` is sealed, so neither reads off the device any more. Ask the running app instead: `bin/cdp-eval "await window.__TAURI__.core.invoke('mobile_status')"`, or `mobile_list` to count applied artifacts. This is how you tell a decrypt/apply failure (cursor advances, 0 rows) from a render bug.
 - **Permissions / camera-active / logs:** `adb shell dumpsys package ... | grep CAMERA`; `adb shell dumpsys media.camera | grep -A2 com.sudohnim.enqueue` proves the camera stream is live even though it never shows in a screencap; `adb logcat -d | grep -iE 'Tauri/Console|enqueue|panic'` catches JS exceptions and Rust panics.
 - **Relay / engine state:** plain `curl` against the relay URL (with the Bearer secret) and `127.0.0.1:8787`.
 
@@ -1321,11 +1328,10 @@ Android: `allowBackup="false"` and `res/xml/data_extraction_rules.xml` (which al
 iOS (on the iOS branch): the app data folder carries `NSURLIsExcludedFromBackupKey`, set in the mobile `setup`.
 The files hold the sync key and a readable copy of the library; a new phone is linked by scanning the code on the Mac, so a backup of them buys nothing.
 
-**Not built: encryption at rest.** The database, the blobs and the backups are still plain files (Resolved decision 1), and the phone's key is in a file, not the Keystore or Keychain.
-The search index holds every word, so field-level encryption would be theatre; it has to be the whole database.
-The sync key must not be the disk key: it exists only once sync is set up, "Reset sync" discards it, and the phone holds a copy.
-The shape that fits is one library key born at first run, with separate keys for the disk, the relay and the backups derived from or wrapped under it.
-Other findings left open: the vault PIN is 6 digits (a million guesses against the wrapped key), one key both encrypts relay objects and names them, and the relay sees counts, sizes and timing.
+**Encryption at rest and the key hierarchy: built 2026-10-14 (docs/ENCRYPTION.md).** One library key (`libkey.py`), the root: the disk key and the backup keys are derived from it, the sync key is wrapped under it (`keyring_file.dek_by_library`), and the recovery kit is it written out.
+The search index holds every word, so the whole database is encrypted (SQLCipher), not fields.
+Relay objects are padded to size buckets and named by a keyed hash under their own names key (`crypto.seal_payload`/`object_name`, mirrored in `sync.rs`; a cross-language test pins them).
+Still open: the vault PIN is 6 digits (a million guesses against the wrapped key, until a hosted server can count attempts), the relay sees counts, bucketed sizes and timing, the Mac's `blobs/` rely on FileVault, and hosted passkey sign-in needs a domain and an account server.
 
 ### A note's drafts: kept by a policy, compared, restored (2026-10-14)
 

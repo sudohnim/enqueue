@@ -9,6 +9,12 @@ way to recover the DEK if the Keychain/file is lost.
 Only the wrapped DEK is written to `keyring.json`; the plaintext DEK is held
 in memory after unlock/load, and the recovery phrase is never written anywhere.
 
+The DEK is ALSO wrapped under the library key (libkey.py; `dek_by_library`, under the
+key it derives for `sync-wrap`), the root of the zero-knowledge design: the recovery
+kit that opens a backup on a new Mac then brings sync back with it, since keyring.json
+travels in the (encrypted) backup. A keyring made before this gets the wrap the first
+time the DEK loads. The recovery phrase is kept for libraries that already have one.
+
 This is separate from `keyring.py` (the macOS API-key store) on purpose: those
 keys go in the Keychain, while this file lives in `DATA_DIR` because the sync
 folder itself does not carry it and the device must be able to unlock offline.
@@ -123,6 +129,7 @@ def initialize() -> str:
 
     # Store the raw DEK in the Keychain (macOS) or file (other platforms)
     keyring.dek_store(dek)
+    _wrap_by_library(dek)
 
     _dek = dek
     return phrase
@@ -148,7 +155,36 @@ def unlock_with_recovery(phrase: str) -> bytes:
 
     _dek = _unlock("dek_by_recovery", phrase, "recovery_salt")
     keyring.dek_store(_dek)
+    _wrap_by_library(_dek)
     return _dek
+
+
+def _library_kek() -> bytes | None:
+    from . import libkey
+
+    root = libkey.get(create=False)
+    return libkey.derive(root, "sync-wrap") if root is not None else None
+
+
+def _wrap_by_library(dek: bytes) -> None:
+    """Keep the DEK wrapped under the library key too, so the recovery kit recovers
+    it. Makes the library key the first time anything needs it."""
+    from . import libkey
+
+    record = _read()
+    if record is None:
+        return
+    kek = libkey.derive(libkey.get(), "sync-wrap")
+    try:
+        if (
+            "dek_by_library" in record
+            and crypto.unwrap(bytes.fromhex(record["dek_by_library"]), kek) == dek
+        ):
+            return
+    except (ValueError, nacl.exceptions.CryptoError):
+        pass
+    record["dek_by_library"] = crypto.wrap(dek, kek).hex()
+    _write(record)
 
 
 def load_dek_from_keychain() -> bytes | None:
@@ -164,8 +200,24 @@ def load_dek_from_keychain() -> bytes | None:
         return _dek
 
     dek = keyring._dek_get()
+    if dek is None:
+        # A Mac restored from a backup: the Keychain has no DEK, but keyring.json came
+        # back with the backup and the library key with the recovery kit.
+        record = _read() or {}
+        kek = _library_kek()
+        if kek is not None and "dek_by_library" in record:
+            try:
+                dek = crypto.unwrap(bytes.fromhex(record["dek_by_library"]), kek)
+            except (ValueError, nacl.exceptions.CryptoError):
+                dek = None
+            if dek is not None:
+                keyring.dek_store(dek)
     if dek is not None:
         _dek = dek
+        try:
+            _wrap_by_library(dek)
+        except Exception:  # noqa: BLE001 - sync works without the extra wrap
+            pass
     return _dek
 
 

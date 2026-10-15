@@ -1,6 +1,11 @@
 """SQLite access, and the migration that brings the file up to date.
 
-The runtime talks to SQLite through `sqlite3`. Alembic exists only to evolve the
+The runtime talks to SQLite through SQLCipher's driver (sqlite.py), and every
+connection comes from `connect`: a library encrypted at rest (any file whose first
+bytes are not SQLite's plain header) is keyed with the disk key, derived from the
+library key (libkey.py). `encrypt_library` turns a plain library into an encrypted one
+at the engine's start, once the person has saved the recovery kit, since without the
+kit a lost Keychain would lose the library itself. The runtime talks to SQLite through `sqlite3`. Alembic exists only to evolve the
 schema: it is a build-time tool that happens to run at startup, not a second way to
 query. Nothing below this line uses SQLAlchemy.
 
@@ -9,7 +14,6 @@ Migrations run once per process, before the first connection is handed out.
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 import time
 from collections.abc import Iterator
@@ -18,6 +22,7 @@ from datetime import datetime, timezone
 from importlib import resources
 
 from . import config
+from . import sqlite as sqlite3
 
 # The revision a database created by the pre-migration `schema.sql` already matches.
 # Such a file is stamped at this revision rather than replayed, because replaying it
@@ -47,10 +52,103 @@ def _alembic_config():
     return cfg
 
 
+PLAIN_HEADER = b"SQLite format 3\x00"
+
+
+def is_encrypted(path=None) -> bool:
+    """Whether a database file is encrypted: it has bytes, and they do not start with
+    SQLite's plain header."""
+    path = path or config.DB_PATH
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except OSError:
+        return False
+    return bool(head) and head != PLAIN_HEADER
+
+
+def disk_key() -> bytes | None:
+    from . import libkey
+
+    root = libkey.get(create=False)
+    return libkey.derive(root, "disk") if root is not None else None
+
+
+def connect(path=None, *, timeout: float = 10, key: bytes | None = None, readonly=False):
+    """Open a database file; an encrypted one with `key` (default: this library's disk
+    key). Refuses an encrypted file it has no key for, rather than reading noise."""
+    path = path or config.DB_PATH
+    target = f"file:{path}?mode=ro" if readonly else str(path)
+    conn = sqlite3.connect(target, timeout=timeout, uri=readonly)
+    if is_encrypted(path):
+        key = key or disk_key()
+        if key is None:
+            conn.close()
+            raise sqlite3.DatabaseError(
+                "the library is encrypted and this Mac does not have its key: restore it"
+                " with the recovery kit (enq restore)"
+            )
+        conn.execute(f"PRAGMA key = \"x'{key.hex()}'\"")
+    return conn
+
+
+def _load_vec(conn) -> None:
+    import sqlite_vec
+
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
+
+
+_COUNTED = ("artifacts", "artifact_versions", "annotations", "chats", "chat_messages", "chunks")
+
+
+def encrypt_library() -> str:
+    """Encrypt a plain library in place, once, at the engine's start (before anything
+    opens it). Only when the recovery kit is saved. Exports into a keyed copy, checks
+    the copy (integrity, and the same row counts), then puts it in the original's place.
+    Returns a sentence for the log, "" when there was nothing to do."""
+    import os
+
+    from . import libkey
+
+    path = config.DB_PATH
+    if not path.exists() or is_encrypted(path) or not libkey.kit_saved():
+        return ""
+    key = disk_key()
+    tmp = path.with_name(".enqueue.encrypting.db")
+    tmp.unlink(missing_ok=True)
+    src = sqlite3.connect(str(path), timeout=30)
+    try:
+        _load_vec(src)
+        src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        before = {t: src.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in _COUNTED}
+        src.execute(f"ATTACH DATABASE ? AS enc KEY \"x'{key.hex()}'\"", (str(tmp),))
+        src.execute("SELECT sqlcipher_export('enc')")
+        src.execute("DETACH DATABASE enc")
+    finally:
+        src.close()
+    check = connect(tmp, key=key)
+    try:
+        _load_vec(check)
+        ok = check.execute("PRAGMA integrity_check").fetchone()[0]
+        after = {t: check.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in _COUNTED}
+    finally:
+        check.close()
+    if ok != "ok" or after != before:
+        tmp.unlink(missing_ok=True)
+        raise sqlite3.DatabaseError(f"the encrypted copy did not check out ({ok}); left as it was")
+    for suffix in ("-wal", "-shm"):
+        path.with_name(path.name + suffix).unlink(missing_ok=True)
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
+    return f"encrypted the library at rest ({sum(before.values())} rows checked)"
+
+
 def _tables() -> set[str]:
     if not config.DB_PATH.exists():
         return set()
-    conn = sqlite3.connect(config.DB_PATH)
+    conn = connect()
     try:
         return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     finally:
@@ -152,7 +250,7 @@ def get_conn() -> sqlite3.Connection:
     """Open the database, migrating it first if this process has not yet."""
     _ensure_migrated()
 
-    conn = sqlite3.connect(config.DB_PATH, timeout=10)
+    conn = connect()
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     set_wal(conn)

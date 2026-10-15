@@ -543,6 +543,46 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
+  /* The recovery kit: a row like the status above it, its dot amber until it is kept. */
+  .backup-kit {
+    align-items: flex-start;
+    margin-top: var(--sp-5);
+    padding-top: var(--sp-5);
+    border-top: 1px solid var(--line-soft);
+  }
+  .backup-kit .backup-dot {
+    margin-top: 4px;
+  }
+  .backup-kit .backup-words {
+    flex: 1;
+    min-width: 0;
+  }
+  .backup-kit .backup-label {
+    margin-bottom: 2px;
+  }
+  .kit-view[hidden] {
+    display: none;
+  }
+  .kit-code {
+    display: grid;
+    grid-template-columns: repeat(7, max-content);
+    gap: 6px 14px;
+    margin: var(--sp-3) 0 var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    width: fit-content;
+    border-radius: var(--r-lg);
+    background: var(--bg);
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 22px;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    user-select: all;
+  }
+  .kit-actions {
+    display: flex;
+    gap: var(--sp-2);
+  }
   .backup-foot {
     display: flex;
     align-items: center;

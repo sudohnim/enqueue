@@ -921,17 +921,93 @@ async function renderBackupSection() {
 		"</span>" +
 		(picker ? '<button class="btn tertiary sm" onclick="chooseBackupDir()">Change</button>' : "") +
 		"</div>" +
-		'<div class="backup-sub">' +
-		(/ProtonDrive/.test(b.folder)
-			? "Proton encrypts the copies. Enqueue does not yet."
-			: "Enqueue does not encrypt the copies yet, so this folder holds them as plain files.") +
-		"</div></div></div>" +
+		'<div class="backup-sub">Encrypted with this library\'s key before it leaves the Mac. ' +
+		"The folder holds nothing anyone else can read.</div></div></div>" +
+		backupKitHtml(b.kit_saved, b.library_encrypted) +
 		'<div class="backup-foot"><span class="backup-sub"><b>Restoring</b>, on this Mac or a new one: ' +
 		'quit Enqueue, then run <span class="mono chip" title="enq restore ' +
 		esc(b.dir) +
-		'">enq restore</span> with this folder. Your current library is set aside, never deleted.</span>' +
+		'">enq restore</span> with this folder. A new Mac asks for the recovery kit. ' +
+		"Your current library is set aside, never deleted.</span>" +
 		'<button class="btn tertiary sm" onclick="useBackupDir(\'\')">Turn off</button></div>';
 	return html + "</div>";
+}
+
+// The recovery kit: the library key written out (libkey.py). Backups are locked with
+// it and Enqueue keeps no other copy, so until the person says they saved it the
+// section asks, with the same amber dot a stale backup gets.
+function backupKitHtml(saved, encrypted) {
+	return (
+		'<div class="backup-kit backup-status" data-state="' +
+		(saved ? "ok" : "stale") +
+		'"><span class="backup-dot" aria-hidden="true"></span>' +
+		'<div class="backup-words"><div class="backup-label">Recovery kit</div><div class="backup-sub">' +
+		(saved
+			? "Saved. It opens these backups on a new Mac; Enqueue keeps no other copy of it. " +
+				(encrypted
+					? "The library on this Mac is encrypted with the same key."
+					: "The library on this Mac is encrypted the next time Enqueue starts.")
+			: "Only it opens these backups on a new Mac, and Enqueue keeps no other copy. " +
+				"Save it where you keep your passwords.") +
+		'</div><div class="kit-view" id="kitView" hidden></div></div>' +
+		'<button class="btn ' +
+		(saved ? "tertiary sm" : "primary") +
+		'" id="kitShowBtn" onclick="showRecoveryKit(this)">' +
+		(saved ? "Show again" : "Show recovery kit") +
+		"</button></div>"
+	);
+}
+
+async function showRecoveryKit(btn) {
+	const view = document.getElementById("kitView");
+	if (!view) return;
+	if (!view.hidden) {
+		view.hidden = true;
+		view.textContent = "";
+		btn.textContent = btn.dataset.label || btn.textContent;
+		return;
+	}
+	let r;
+	try {
+		r = await api("/backup/kit", { method: "POST" });
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	btn.dataset.label = btn.textContent;
+	btn.textContent = "Hide";
+	view.innerHTML =
+		'<div class="kit-code" aria-label="Recovery kit">' +
+		r.kit
+			.split("-")
+			.map((g) => "<span>" + esc(g) + "</span>")
+			.join("") +
+		'</div><div class="kit-actions">' +
+		'<button class="btn tertiary sm" onclick="copyRecoveryKit(this)">Copy</button>' +
+		(r.saved ? "" : '<button class="btn primary sm" onclick="recoveryKitSaved()">I saved it</button>') +
+		"</div>";
+	view.dataset.kit = r.kit;
+	view.hidden = false;
+}
+
+async function copyRecoveryKit(btn) {
+	const view = document.getElementById("kitView");
+	try {
+		await navigator.clipboard.writeText(view.dataset.kit || "");
+	} catch (err) {
+		return toast("Could not copy: " + String(err.message || err), true);
+	}
+	btn.textContent = "Copied";
+	toast("Copied. Paste it into your password manager, then copy something else over it.");
+}
+
+async function recoveryKitSaved() {
+	try {
+		await api("/backup/kit/saved", { method: "POST" });
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	await renderSettingsTab("storage");
+	toast("Recovery kit saved. The next time Enqueue starts, it encrypts this library on the Mac too.");
 }
 
 // The Mac's folder picker (tauri-plugin-dialog). Cancelling picks nothing.

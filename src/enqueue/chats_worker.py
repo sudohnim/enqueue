@@ -108,7 +108,7 @@ def _commit_answer(db, job: Job, msg: dict) -> None:
     """Write the finished turn, retrying a transient lock. Raises on a real failure
     (a deleted chat's FK violation, or a lock that never clears) so the caller can
     resolve the turn to `failed` with the reason."""
-    import sqlite3
+    from . import sqlite as sqlite3
     import time
 
     attempts = 5

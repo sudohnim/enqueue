@@ -35,6 +35,25 @@ def _fast_argon2(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_library_key(monkeypatch, tmp_path):
+    """The library key (libkey.py) lives in the macOS Keychain; no test may read or
+    write that one. Each test gets a key file of its own instead."""
+    from enqueue import libkey
+
+    path = tmp_path / "library-key.test"
+
+    def _load():
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            return None
+        return raw if len(raw) == 32 else None
+
+    monkeypatch.setattr(libkey, "_load", _load)
+    monkeypatch.setattr(libkey, "_save", path.write_bytes)
+
+
+@pytest.fixture(autouse=True)
 def _test_host(monkeypatch):
     """TestClient sends Host: testserver; the engine only answers loopback names
     (api/guard.py). tests/test_guard.py checks the production set on its own."""

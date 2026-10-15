@@ -114,6 +114,14 @@ def create_relay(data_dir: Path | None = None, secret: str | None = None) -> Fas
         hub.publish({"name": name, "cursor": cursor})
         return {"name": name, "size": size}
 
+    @app.delete("/sync/object/{name:path}", status_code=204)
+    def delete_object(name: str, _: None = Depends(_require_header)):
+        # A device clears its own superseded objects (the names from before the relay
+        # names were hashed, sync/client.py `repush_relay_v2`).
+        if not storage.delete(name):
+            raise HTTPException(status_code=404, detail="no such object")
+        return Response(status_code=204)
+
     # --- device pairing (PAIR.1) --------------------------------------------------
     # A brand-new device joining the library has no library secret yet - it is inside
     # the payload being handed over - so it cannot authenticate the object routes. The

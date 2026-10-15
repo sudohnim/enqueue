@@ -22,7 +22,6 @@ serde_json = "1"
 # The mobile sync client (MOB.3) reimplements the desktop's Phase SYNC in Rust: a
 # local SQLite read copy, the relay pull, and the same crypto (PyNaCl SecretBox =
 # XSalsa20-Poly1305, Argon2id MODERATE). Pure Rust, so they cross-compile for Android.
-rusqlite = { version = "0.32", features = ["bundled"] }
 xsalsa20poly1305 = "0.9"
 argon2 = "0.5"
 ureq = { version = "2", features = ["json"] }
@@ -41,6 +40,14 @@ qrcode = { version = "0.14", features = ["svg"] }
 tauri-plugin-dialog = { version = "2", default-features = false }
 tauri-plugin-opener = { version = "2", default-features = false }
 tauri-plugin-clipboard-manager = { version = "2", default-features = false }
+
+# The phone's library copy is a SQLCipher database (its key from the Keystore-guarded
+# store key, lib.rs `open_lib`); everywhere else SQLite as it ships.
+[target.'cfg(target_os = "android")'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # JNI for foreground service (QR.5b) - mobile only
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]

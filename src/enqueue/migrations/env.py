@@ -31,7 +31,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    engine = create_engine(_url(), poolclass=pool.NullPool)
+    # Through db.connect, so an encrypted library migrates with its key, on the same
+    # driver the runtime uses (sqlite.py).
+    from sqlcipher3 import dbapi2
+
+    from enqueue import db
+
+    engine = create_engine(
+        _url(), poolclass=pool.NullPool, module=dbapi2, creator=lambda: db.connect()
+    )
     try:
         with engine.connect() as connection:
             context.configure(

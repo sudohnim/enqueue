@@ -40,6 +40,11 @@ class MainActivity : TauriActivity() {
     /** Away longer than this and the app lock asks again. */
     private const val LOCK_GRACE_MS = 60_000L
 
+    /** The key the library on this phone is kept under (StoreKey.kt); called from
+     *  Rust (`store_key` in lib.rs) through the class cached at JNI_OnLoad. */
+    @JvmStatic
+    fun storeKey(): ByteArray = StoreKey.get()
+
     @JvmStatic
     fun getCurrentActivity(): MainActivity {
       return currentActivity ?: throw IllegalStateException("Activity not initialized")
@@ -307,6 +312,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    StoreKey.appContext = applicationContext
     enableEdgeToEdge()
     WebView.setWebContentsDebuggingEnabled(true)
     super.onCreate(savedInstanceState)

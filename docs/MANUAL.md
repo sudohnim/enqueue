@@ -297,9 +297,15 @@ Keep a copy of the whole library in your cloud drive, in case the Mac is lost.
 2. Under **Backup**, click **Use Proton Drive** (shown when Proton Drive is installed), or type another folder that a cloud drive syncs.
 
 From then on a backup is made once a day and when you quit, whenever something changed.
-In Proton Drive it is encrypted end to end.
 The last 7 days are kept, and one a week for the 4 weeks before.
 **Back up now** makes one at once.
+
+Every backup is encrypted with your library's own key before it leaves the Mac, so the folder, and whoever runs your cloud drive, holds nothing anyone can read.
+
+**Save your recovery kit.**
+Under Backup, **Show recovery kit** shows 56 letters and digits.
+Keep them where you keep passwords, then click **I saved it**.
+On a new Mac the recovery kit is the only way to open your backups: Enqueue keeps no other copy, and nobody can reset it.
 
 A backup is small, because the search index is left out; it is rebuilt when you restore.
 
@@ -309,6 +315,7 @@ To restore, on a new Mac or after a mistake: quit Enqueue, then run
 enq restore "~/Library/CloudStorage/ProtonDrive-.../"
 ```
 
+On a new Mac it asks for the recovery kit.
 Your current library is set aside, never deleted.
 Start Enqueue again and it rebuilds the search index; browsing works meanwhile, and search returns when it is done.
 

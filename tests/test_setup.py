@@ -82,10 +82,19 @@ class TestSteps:
         world["values"]["llm_headers"] = "x-opencode-session: abc"
         assert _step("model")["state"] == setup.DONE
 
-    def test_a_backup_is_done_only_once_a_recent_copy_exists(self, world, tmp_path):
+    def test_a_backup_is_done_only_once_a_recent_copy_exists(self, world, tmp_path, monkeypatch):
+        from enqueue import config, libkey
+
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)
         world["backup_dir"] = tmp_path / "Enqueue Backup"
         assert _step("backup")["state"] == setup.TODO, "chosen, but no copy made yet"
         world["last"] = {"at": _ago(0.2)}
+        step = _step("backup")
+        assert (
+            step["state"] == setup.WARN and "recovery kit" in step["title"]
+        ), "a copy only a lost key opens is not done"
+        libkey.get()
+        libkey.mark_kit_saved()
         assert _step("backup")["state"] == setup.DONE
         world["last"] = {"at": _ago(9)}
         assert _step("backup")["state"] == setup.WARN

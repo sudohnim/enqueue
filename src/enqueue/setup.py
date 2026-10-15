@@ -106,6 +106,16 @@ def _backup_step() -> dict:
         return step | {"state": TODO, "detail": "The first backup has not run yet"}
     if age > BACKUP_STALE_DAYS:
         return step | {"state": WARN, "detail": f"Last backup was {int(age)} days ago"}
+    from . import libkey
+
+    if not libkey.kit_saved():
+        # Backups are locked with the library key; without the kit they cannot be
+        # opened on a new Mac, so the step is not done until it is kept somewhere.
+        return step | {
+            "state": WARN,
+            "title": "Save your recovery kit",
+            "detail": "Only it opens your backups on a new Mac",
+        }
     when = "today" if age < 1 else ("yesterday" if age < 2 else f"{int(age)} days ago")
     return step | {
         "state": DONE,
