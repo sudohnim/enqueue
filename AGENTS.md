@@ -1,49 +1,116 @@
 # Enqueue - Agent Instructions
 
-Project-specific instructions for AI coding agents working in Enqueue.
-This file is engineering reference: architecture, module map, data flows, conventions, and gotchas.
-For what the app does from a person's side, see [docs/MANUAL.md](docs/MANUAL.md).
-For building, running, and configuration, see [docs/DEVELOPING.md](docs/DEVELOPING.md).
-For the look and its rules, see [docs/DESIGN.md](docs/DESIGN.md); for sync, [docs/e2e/E2E.md](docs/e2e/E2E.md) and [docs/sync-relay.md](docs/sync-relay.md).
-For the current build status and task queue, see [docs/PROGRESS.md](docs/PROGRESS.md) and [docs/PLAN.md](docs/PLAN.md).
+The engineering reference for Enqueue, for the people who work on it and their coding agents: how to build, run and test it, how it fits together, and the rules the code keeps.
+What the app does from a person's side is [docs/MANUAL.md](docs/MANUAL.md); its look and the rules of its design are [docs/DESIGN.md](docs/DESIGN.md).
 The README is the public face (a marketing piece with screenshots from `bin/screenshots`); keep engineering detail out of it.
-There is no docs/PRODUCT.md, CURATION.md or EVAL.md: the prompts live in `prompts.py`, the eval gates in `bin/check-eval*`.
+There is no task-queue file: open work is under [Known gaps](#known-gaps) and in the issues.
+Prompts live in `prompts.py`, the eval gates in `bin/check-eval*`.
 
-If you are here to write code, your work queue is [docs/PROGRESS.md](docs/PROGRESS.md).
-Do one task per turn, in order, and verify each with the command in its "Done when" before checking the box.
+## Start here
+
+**What it is.** A private second brain: capture anything (notes, links, PDFs, images, files) without organising it, then find it again by search or by asking.
+A Python engine on the Mac holds the library in one SQLite file and does the thinking; a Tauri shell gives it a window and a global capture hotkey; a Tauri mobile app holds an encrypted copy on the phone, synced through a relay that only ever sees ciphertext.
+Zero-knowledge: nothing that leaves a device can be read without a key only the owner holds (see [Encryption and keys](#encryption-and-keys)).
+
+**The repo.**
+
+```
+bin/            setup, launch, verify, screenshots, deploy-relay, cdp-eval, check-contrast, check-eval*
+desktop/        the Tauri shell (Rust): src/lib.rs (desktop + mobile commands), src/sync.rs (the phone's sync and crypto)
+  gen/android/  the Android project (Kotlin: MainActivity, StoreKey, Biometrics, QuickCapture*)
+src/enqueue/    the Python engine: api/ ingest/ index/ retrieve/ providers/ sync/ relay/ migrations/
+  static/       the interface: home.html + css/ + js/ (desktop), capture.html, mobile.html (the phone)
+tests/          pytest; tests/js holds the JS cases (markdown round trip, diff, tabs, guides), run under Node
+docs/           MANUAL.md (using it), DESIGN.md (the design system)
+assets/         the logo, source art, and the README screenshots
+```
+
+**Set up and run.** Everything goes through `bin/`; each script is safe to run again.
+
+| Where | Once | Every time |
+| --- | --- | --- |
+| Mac (engine + window) | `bin/setup` (Rust >= 1.88, uv + Python 3.12, Node, Chromium for link previews; no sudo) | `bin/launch desktop` (rebuilds the shell, restarts engine and window, waits for health) |
+| Android phone (USB debugging on) | `bin/setup --android` (checks SDK/NDK/JDK, installs the Tauri CLI and the target) | `bin/launch mobile` (one-shot build, `adb install`, launch, exit) |
+| Android emulator (headless) | an AVD named `enqueue` (the script prints how) | `bin/launch emulator` |
+| iPhone (plugged in, Developer Mode on) | Xcode, then `bin/setup --ios` | `bin/launch ios` |
+| iOS Simulator | Xcode, then `bin/setup --ios` | `bin/launch simulator` (no camera: linking needs a real iPhone) |
+| Engine alone | `uv sync` | `uv run enq serve` (127.0.0.1:8787; open it in a browser) |
+| Relay, locally | | `uv run enq relay` (127.0.0.1:8788, secret `dev-secret`) |
+
+Engine output goes to `$TMPDIR/enqueue-app.log`.
+A model is optional: capture and search work without one; summaries and answers need Ollama on the Mac or an online backend (Settings > Assistant).
+The phone starts empty; link it to the Mac over a relay both can reach (Settings > Phone shows a QR the phone scans; see [The relay](#the-relay)).
+
+**Testing on an iPhone.** For whoever holds the iPhone, and their agent:
+
+1. **Get it on the phone.** `bin/setup --ios` once (it checks Xcode, the iOS Rust targets and the simulator runtime), then plug the iPhone in, unlock it, trust the Mac, turn on Developer Mode (Settings > Privacy & Security), and run `bin/launch ios`. The signing team is `bundle.iOS.developmentTeam` in `desktop/tauri.conf.json`; a tester on another Apple account changes it to their own team (Xcode > Settings > Accounts shows the id) and does not commit that change.
+2. **Link it.** On the Mac that holds the library: Settings > Phone shows a QR (the relay must be a public `https://` address). In the app, Scan QR. The library downloads; captures, edits, deletes and pins made on the phone come back to the Mac.
+3. **What to try.** Read every kind of item (note, link, PDF, image); write and edit a note (tabs and drafts too); capture a thought; ask the eye a question; delete and restore; lock the phone, wait, open the app again; quit the app and open it again; turn on airplane mode, change something, turn it off.
+4. **What is not there on iOS yet** (expected, not bugs): quick capture from the home screen, the app lock and fingerprint vault unlock, the Back gesture, and sync while the app is closed. See [The iOS app](#the-ios-app).
+5. **Reporting.** A screenshot of the screen, what you did just before, and the app's log: Xcode > Window > Devices and Simulators > the phone > Open Console, filtered to `Enqueue`, or Safari > Develop > the phone > the page for the web view's console. There is no `bin/cdp-eval` on iOS.
+
+**The gate.** `bin/verify` is lint (black 100, ruff), a JS parse of every page, pytest, the contrast check, the desktop Rust tests when Rust changed, and an Android build when anything under `desktop/` changed.
+`bin/verify --fast` is the static part, and what the pre-commit hook runs: enable it once with `git config core.hooksPath .githooks`.
+Green proves it parses, passes and compiles; only running it on the Mac or a device proves it works (see [Verifying the Android app on a device](#verifying-the-android-app-on-a-device-headless-over-adb)).
+
+**Where the data lives.** Everything is under `~/Library/Application Support/Enqueue` (`config.DATA_DIR`; `ENQ_DATA_DIR` overrides; an old `~/.enqueue-poc` is moved there at the first start):
+
+| Path | What it is |
+| --- | --- |
+| `enqueue.db` | the library and its search index (vec0 + FTS5 tables); SQLCipher once the recovery kit is saved |
+| `blobs/` | original files, by content hash |
+| `settings.json` | preferences, never secrets (mode 0600) |
+| `keyring.json` | the sync key, wrapped under the library key and the recovery phrase |
+| `recovery-kit.json`, `backup.json`, `device_id`, `sync_cursor` | small state |
+| `repo`, `capture-position` | pointers the desktop shell reads |
+
+The Keychain holds the library key (`enqueue-library-key`), the sync key (`enqueue-sync-dek`), the relay secret and the model API key.
+Tests never touch any of it: `tests/conftest.py` points the process at a temporary folder and fakes the Keychain.
+
+**Releasing.** The Android APK is published from the Actions tab (the `release` workflow, run by hand with a tag); it is debug-signed unless the `RELEASE_*` secrets are set.
+The Mac app is source-only for now: its Python engine is not bundled as a standalone binary yet.
+
+## Known gaps
+
+- **No bundled Mac app.** The shell runs from `desktop/target/debug/Enqueue` and starts the engine with `uv run enq serve` from the repo.
+- **Hosted sign-in with a passkey is not built.** The paid tier's "sign in and your library arrives" needs a domain, an account server and a signed app entitlement; the steps are under [Encryption and keys](#encryption-and-keys).
+- **The Mac's original files (`blobs/`) are not encrypted by Enqueue**; FileVault covers them.
+- **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers.
+- **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
+- **The wall shows the newest 120 items**; there is no paging past that.
+- **macOS only on the desktop** (AppKit calls, the Keychain).
 
 ## Resolved decisions
 
 These came up while surveying the code against the old AGENTS.md, then confirmed with Minh.
 They are recorded here so the next agent does not re-litigate them.
 
-1. **Encryption at rest is built (2026-10-14); see docs/ENCRYPTION.md.**
-The local database is a SQLCipher file once the recovery kit is saved (`db.encrypt_library`, `db.connect`; plain before that, on purpose), every connection goes through `db.connect` on SQLCipher's driver (`sqlite.py`: never import the standard library's `sqlite3` for the library, its error classes are different ones), backups are sealed, and the phone keeps its database, secrets and file cache under a Keystore-guarded key.
-The original files in `blobs/` on the Mac are not encrypted by Enqueue (FileVault covers them).
-Backups ARE encrypted (2026-10-14): with a key derived from the library key (`libkey.py`), the root the rest of the zero-knowledge design hangs from (sync key, phone, then the local database).
-(Distinct from the SYNC payload, which IS end-to-end encrypted - see decision 2. The DEK/keyring crypto in `crypto.py`/`keyring_file.py` protects what goes to the relay, not the DB on disk.)
+1. **Zero-knowledge, with one library key at the root (built 2026-10-14).**
+The local database is a SQLCipher file once the recovery kit is saved, backups are sealed, the relay sees only padded ciphertext under hashed names, and the phone keeps its library under a key that never leaves it.
+Every connection goes through `db.connect` on SQLCipher's driver (`sqlite.py`): never import the standard library's `sqlite3` for the library, its error classes are different ones.
+The whole design is under [Encryption and keys](#encryption-and-keys).
 
-2. **Sync and E2E are built; the desktop SETUP flow is the missing piece.**
-The model is fixed and implemented: `docs/e2e/E2E.md` specifies encrypted per-artifact snapshots with last-writer-wins per artifact (no event log, no logical clock), and a dumb end-to-end-encrypted relay plus SSE push for the mobile client. Do not resurrect the old event-log / multi-peer design; LWW-per-snapshot is the model. SQLite is the source of truth, not a materialised view of a log. (E2E.md predates two renames: use `saved_pivots` for its `exhibits`, and ignore its `lens_judgments`.)
+2. **Sync is end-to-end encrypted, and last-writer-wins per snapshot is the model.**
+The model is fixed and implemented: encrypted per-artifact snapshots with last-writer-wins per artifact (the key is `(updated_at, _device_id)`, compared as strings; no event log, no logical clock), and a dumb end-to-end-encrypted relay plus SSE push for the mobile client. Do not resurrect the old event-log / multi-peer design; LWW-per-snapshot is the model. SQLite is the source of truth, not a materialised view of a log. A snapshot is canonical JSON (`sync/snapshot.py` `serialize`): the `artifacts` row plus its annotations, page text, drafts, tags, facets and link preview, each child list in a fixed order, so every device writes byte-identical state for the same row.
 What exists in code:
 
 - Relay: `src/enqueue/relay/app.py` (`create_relay(data_dir, secret=...)`, Bearer-secret auth, stores opaque bytes only). `enq relay` command in `src/enqueue/cli.py` wraps this with uvicorn (flags: `--host`, `--port`, `--data-dir`, `--secret`; env: `RELAY_HOST`, `RELAY_PORT`, `RELAY_DATA_DIR`, `RELAY_SECRET`).
 - Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
-- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. NOTE: this is E2E for the SYNC payload; the local `~/Library/Application Support/Enqueue/enqueue.db` at rest is still plain sqlite (see decision 1).
+- E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. The DEK is also wrapped under the library key (`dek_by_library`), so the recovery kit brings sync back on a new Mac.
 - Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
 **Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow) is superseded - do not extend it.
 **QR wire format (pinned - both sides parse exactly this):** compact UTF-8 JSON `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}`, where `dek` is RFC 4648 base64 (with padding) of the raw 32-byte DEK, and `v` is the format version (a parser seeing any other `v` refuses with a clear message). CAMERA-ONLY: there is no copyable/pasteable form of the payload anywhere, by decision - the raw DEK must never touch the clipboard or clipboard history. A Rust round-trip test (`rqrr` decode) pins the format.
 **DEK-encoding gotcha (bit us on 2026-08-19):** the macOS Keychain stores `enqueue-sync-dek` ALREADY base64-encoded (44 chars = 32 raw bytes), so `desktop_link_code`/`load_link_credentials` must pass it into the QR VERBATIM. Re-encoding double-encodes it (the phone then base64-decodes to 44 bytes, not 32); `mobile_link_qr` must ERROR on a non-32-byte DEK, never silently zero it (a zero DEK links "successfully" but fails every decrypt).
 **Phone storage (2026-10-14, was MOB.3b's plain file):** the mobile DEK/secret is in `sync_config.sealed`, sealed under the phone's store key, which an Android Keystore key guards (`StoreKey.kt`, reached from Rust through the activity class cached at `JNI_OnLoad`: `store_key` in `lib.rs`). The phone's `library.db` is SQLCipher and its file cache is sealed under the same key (`blob_read`/`blob_write`).
-**What remains open (see `docs/PLAN.md`):** the code is built and the sync/decrypt/apply/render path is device-verified end to end; the open items are the hosted-relay deploy (Railway, RELAYHOST.1), the scanner camera-box containment (SCANUI.1), the cold-launch bootstrap race (MOBBOOT.1), the CAP2.2 capture-flight over-app pivot, and a handful of pending human device-verifies on already-committed work.
+The sync, decrypt, apply and render path is device-verified end to end, and a hosted relay runs on Railway (see [The relay](#the-relay)).
 
-1. **The library lives in `~/Library/Application Support/Enqueue` (moved 2026-10-14).**
+3. **The library lives in `~/Library/Application Support/Enqueue` (moved 2026-10-14).**
 It was `~/.enqueue-poc` for the proof of concept; a product keeps its data where a Mac app does (`config.DATA_DIR`; the XDG data folder off macOS; `ENQ_DATA_DIR` overrides).
 `datadir.move_legacy()` moves an old folder there at the engine's first start (`serve()`, and `enq migrate`/`enq restore`, which work on the files directly), before anything opens a file: one rename on one disk, never a copy, and never over a folder that already holds a library.
 `~/.enqueue-poc` is left as a link to the new folder. The desktop shell reads its pointers (`repo`, `capture-position`) from the new folder and falls back to the old (`data_dir`/`library_file` in `desktop/src/lib.rs`); `bin/launch` writes them to the new one.
 The path has a space in it: quote it in every script.
 
-2. **`instructor.Mode.JSON` is used for every adapter.**
+4. **`instructor.Mode.JSON` is used for every adapter.**
 All providers pass `mode=instructor.Mode.JSON` unconditionally.
 This is correct for now, not a bug to fix.
 Ollama's adapter calls it out in a comment because the default is `TOOLS`, which needs function-calling support that local servers often lack.
@@ -58,39 +125,39 @@ The first call after the pause goes out normally; a still-limited provider just 
 The pause is in-memory: a restart forgets it and the first call re-trips it.
 Switching accounts ends it early: storing or removing the API key (`PUT`/`DELETE /settings/api-key`) or changing `llm_backend`/`llm_model`/`summarize_model`/`llm_url`/`llm_headers` calls `pause.lift()`, which clears the pause, brings every owed summary retry forward to now, and logs `model.resumed`.
 
-3. **Facet trust is a fixed multiplier, not a learning loop.**
+5. **Facet trust is a fixed multiplier, not a learning loop.**
 `facets.trust` defaults to 0.5, is read in `retrieve/candidates.py` as `score * trust * 2.0`, and is never written after creation.
 A trust-update mechanism (promote on save, demote on eject) is a planned feature, not an implemented one.
 For now, trust is a flat constant and every facet contributes equally after the 0.5 weighting.
 Usage does feed ranking one level up, per artifact rather than per facet: see "Usage" under Retrieval design notes.
 
-4. **There is no Lumo. The cloud backend is OpenRouter.**
+6. **There is no Lumo. The cloud backend is OpenRouter.**
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
 The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
-5. **crawl4ai is the opt-in browser fallback for link previews (2026-09-29).**
+7. **crawl4ai is the opt-in browser fallback for link previews (2026-09-29).**
 It is a dependency, used only by `preview._read_browser` when the `preview_browser` setting is on (see "Link previews").
 The Chromium it drives is a separate download that `bin/setup` installs.
 marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
-6. **API version string and package version are two different things.**
+8. **API version string and package version are two different things.**
 `pyproject.toml version = "0.3.0"` is the package release version (with `desktop/Cargo.toml` and `desktop/tauri.conf.json`, bumped together for a release).
 `api.py FastAPI(version="0.2.0")` is just the string the OpenAPI docs page shows.
 They are allowed to differ.
 If you bump one for a release, bump the other to match, but a mismatch is not a bug.
 
-7. **There is one view concept: the saved pivot.**
+9. **There is one view concept: the saved pivot.**
 The `exhibits` / `exhibit_members` tables and the `/exhibits*` endpoints that an earlier agent introduced to paper over the L.2 add-to-grouping bug are removed.
 `saved_pivots` and `/pivots*` carry the same concept with a re-runnable spec.
 The wall has no ephemeral view surface; only a saved pivot persists a view.
 
-8. **The SSE lens surface and curate are removed.**
+10. **The SSE lens surface and curate are removed.**
 `POST /lens` (Server-Sent Events), `POST /curate`, and the lens-cache endpoints were deleted in Phase M, along with the retrieve modules that powered them (`retrieve/expand.py`, `retrieve/rerank.py`, `retrieve/score.py`, `retrieve/lens.py`, `retrieve/judgments.py`, `retrieve/curate.py`), the lens settings, and the `lens_judgments` table (migration 0020).
 Search is the retrieval path; the assistant organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
 Do not add SSE plumbing back unless asked.
 
-9. **The browser extension is a future milestone; Android is in progress.**
+11. **The phone app is built; a browser extension is a future milestone.**
 No browser extension code exists; document it as future, do not build against it.
 The Android app (Tauri v2 mobile, `desktop/gen/android`, crate builds as `enqueue_lib`) is built: it syncs the encrypted library through the relay into a local SQLite copy, captures, reads, does the light in-the-moment writes (edit note, delete, pin - tagging and annotating are deliberately desktop-only), and chats by calling the configured LLM backend directly with keyword-only (FTS) grounding.
 It never computes embeddings, facets, or entities; enrichment stays desktop-only. AI-derived data that has not synced down is absent quietly - never a placeholder or a fabricated summary.
@@ -104,11 +171,11 @@ The launcher shortcut (long-press the app icon, "Quick capture", `res/xml/shortc
 It cannot reach the library (a Tauri app has one WebView, owned by `MainActivity`), so Save writes the text to `QuickCaptureInbox` (one file per capture under `filesDir/quick_capture`) and closes; the page files each one through `mobile_capture` and only then acknowledges it (`drainQuickInbox` over the `EnqueueAndroid` bridge's `quickCaptures()`/`ackQuickCapture(id)`), at boot, whenever the app comes to the front, and at once when the app is already running (`MainActivity.drainQuickCaptures`).
 A capture made while the app is not running reaches the library and the relay the next time the app opens.
 Dismissing the popup keeps its draft. Its look (raven and "Capture your thoughts." centred, a white field, Save) matches the desktop capture overlay.
-Build/run the app with `bin/launch mobile` (physical phone only) or `bin/launch emulator` (headless AVD, one-shot build + adb install + exit, for agent device-verify); the raw build is `cargo tauri android build --debug --target aarch64` with the apk at `desktop/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`. NEVER use `cargo tauri android dev` for headless verify - it hangs on device-pick. What remains open is any items in the current `docs/PLAN.md`.
+Build/run the app with `bin/launch mobile` (physical phone only) or `bin/launch emulator` (headless AVD, one-shot build + adb install + exit, for agent device-verify); the raw build is `cargo tauri android build --debug --target aarch64` with the apk at `desktop/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`. NEVER use `cargo tauri android dev` for headless verify - it hangs on device-pick.
 Sync/mobile scope boundaries (durable): one person, one library - no multi-user or shared libraries. Android-first; iOS is a follow-on. The relay is additive - with sync off, nothing about the desktop changes. `saved_pivots` (saved views) and chats do NOT cross the relay; mobile reads artifacts only, and mobile chat histories are device-local by decision.
 Mobile linking is passwordless (QR.1/QRSYNC): the phone receives the DEK by camera-scanning the desktop QR and persists it in its sandboxed `sync_config`; there is deliberately NO password and NO recovery-phrase unlock path on the phone. The desktop is the single source of truth and the recovery anchor: lose the phone and you simply re-scan the desktop QR. Do not add a mobile password or recovery-phrase fallback.
 
-10. **The user-facing concept is "view", not "grouping".**
+12. **The user-facing concept is "view", not "grouping".**
 We use the word "view" for the user-facing concept that was previously called "grouping", "saved grouping", and "collection".
 The persistence layer keeps its names (`saved_pivots`, `pivots_saved`, `_PlannedSpec`, `/pivots*` endpoints).
 Only user-facing strings and docs say "view".
@@ -363,15 +430,6 @@ One line per file, describing its job.
 
 **Facets ride the artifact snapshot to the phone.** The phone cannot generate its own, so facets are a child of the artifact snapshot (`sync/snapshot.py` `read_artifact_snapshot` includes them; apply is guarded to a non-empty facet list so a facet-less snapshot never wipes locally-generated facets on an equal-key re-apply). A summary edited on the phone syncs back, and `sync/client.py::pull()` reindexes any artifact whose pulled snapshot carried facets, so a phone edit becomes findable on the desktop.
 
-### Curate and the lens view (removed)
-
-The SSE lens surface (`POST /lens`), the curate flow (`POST /curate`), and the
-modules that powered them were deleted in Phase M. The wall has no ephemeral
-split or room surface: `/search` is the retrieval path, and a saved pivot is
-the only persistent view. What survives from that era is the conceptual layer -
-facets still give search a conceptual channel - and the assistant path that
-organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
-
 ### Chat
 
 Asking is submitted, not computed inline. `chats.ask`/`chats._submit` writes the user turn plus a pending assistant turn in one transaction, logs `ask.submitted`, and hands the work to the answer worker (`chats_worker.py`, an in-memory `Worker` thread); the request returns immediately with a visible pending turn. On startup `sweep_orphaned_pending` resolves any turn left pending by a killed worker to `failed` (Rule 2: a pending turn always resolves).
@@ -405,6 +463,74 @@ New Tauri commands need registration in THREE places: `build.rs`'s `commands(&[.
 - **Gotcha (bit us 2026-08-19):** a null `getElementById(...).addEventListener` in `mobile.html` throws at init and aborts the WHOLE inline script, so the on-load `bootstrap()`/sync never runs and the library just spins. Guard every listener wiring with `?.` when the element may have been removed.
 
 ---
+
+## Encryption and keys
+
+Enqueue is zero-knowledge.
+Nothing it stores off a device, and nothing it leaves on a device's disk once set up, can be read without a key only the person holds.
+There is no reset: Enqueue keeps no copy of any key, so the recovery kit is the way back after every device is gone.
+
+### The keys
+
+| Key | What it is | Where it lives | What it locks |
+| --- | --- | --- | --- |
+| Library key | 32 random bytes, made once (`libkey.py`) | macOS Keychain, `enqueue-library-key` | the root: everything on the Mac derives from it or is wrapped under it |
+| Disk key | derived from the library key, `disk` | nowhere; derived when needed | the library database on the Mac (SQLCipher) |
+| Backup key, backup-names key | derived, `backup`, `backup-names` | nowhere | every file in the backup folder, and their names |
+| Sync key (DEK) | 32 random bytes | Keychain `enqueue-sync-dek`; the phone's sealed config; `keyring.json` wrapped under the library key (`dek_by_library`) and under the old recovery phrase | everything on the relay |
+| Relay names key | HMAC of the sync key, `enqueue relay names v1` | nowhere | the names of relay objects |
+| Phone store key | 32 random bytes, made on the phone | Android: `filesDir/store_key`, encrypted by an Android Keystore key (`StoreKey.kt`); iOS: a Keychain item, this device only (`store_key` in `lib.rs`) | the phone's database (SQLCipher), its sealed secrets, its file cache |
+| Vault key | 32 random bytes | wrapped under the 6-digit PIN (and a fingerprint-guarded Keystore secret on the phone) | vaulted items, a second lock inside everything above |
+
+The recovery kit is the library key written as 56 Crockford base32 characters (with a checksum).
+It recovers, on a new Mac: the backups, the library inside them, and the sync key (from the `keyring.json` in the backup), so sync comes back too.
+The phone needs none of it: it is linked by scanning the Mac's code, which hands it the sync key, and its own store key never leaves it.
+
+### At rest
+
+- **Mac, library:** a SQLCipher database once the recovery kit is saved (`db.encrypt_library`, at the engine's start; checked by integrity and row counts before it replaces the plain file).
+  Before the kit is saved the library stays plain on purpose: a lost Keychain would otherwise lose the library itself.
+  Every connection comes from `db.connect`, on SQLCipher's driver (`sqlite.py`), which reads a plain file too.
+- **Mac, original files (`blobs/`):** not encrypted by Enqueue. FileVault covers a stolen Mac; the folder is the owner's only (0700).
+  Encrypting them means routing PDF rendering, previews and captures through a sealed reader; left for later.
+- **Backups:** every file sealed (libsodium secretstream) under the backup key, named by keyed hashes, checked by opening it again (`backup.py`).
+- **Phone (Android and iOS):** the database is SQLCipher (`bundled-sqlcipher-vendored-openssl`), the sync config and vault records are sealed files, and the file cache is sealed; all under keys derived from the store key.
+  A plain database and plain files from an older build are converted the first time they are opened.
+  The quick-capture inbox (thoughts written in the launcher popup before the app files them) is still plain, for the seconds it exists.
+
+### In transit (the relay)
+
+- Every object is sealed under the sync key, padded to a size bucket (a power of two from 256 bytes, then multiples of 64 KiB), and named by a keyed hash of its id (`crypto.seal_payload`, `crypto.object_name`; the same in `desktop/src/sync.rs`).
+- The relay still sees: how many objects, their bucketed sizes, when they change, and which device namespace wrote them.
+- Libraries synced before this were re-pushed once under the new names (`repush_relay_v2`), and each device's old id-named objects deleted, on a relay that has the DELETE route (redeploy the hosted relay with `bin/deploy-relay`).
+
+### Not built: hosted sign-in with a passkey
+
+The paid tier's promise is that a new device signs in with a passkey (Face ID, Touch ID, the phone's lock) and the library arrives, with no recovery kit typed.
+The design: the library key is wrapped under a key the passkey derives with the WebAuthn PRF extension, and only that wrapped copy is stored on our server.
+The server holds ciphertext; the passkey stays in the person's Apple or Google account.
+
+What it needs, in order:
+
+1. A domain for the service, serving `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`.
+2. An account server (beside the relay) that stores per account: the wrapped library key, the relay secret, and WebAuthn credentials; with WebAuthn registration and assertion endpoints.
+3. The macOS app signed with an Associated Domains entitlement (`webcredentials:<domain>`), since a passkey in a non-Safari web view needs it; likely a small native bridge (ASAuthorizationController with the PRF extension) because WKWebView's WebAuthn support in an embedded app is limited.
+4. The Android app with Credential Manager (`androidx.credentials`) and the PRF extension, and the asset links file.
+5. A sign-in screen on both: "Sign in with a passkey" restores the library key, then the relay secret, then the sync key from `keyring.json` (or from the account record).
+6. Server-side guess limits for the vault PIN, which the hosted server makes possible (the PIN's wrap stays the person's; the server only counts attempts, as Signal's secure value recovery does).
+
+The free tier keeps working without any of it: the person runs their own relay and keeps their recovery kit.
+
+## The relay
+
+A dumb byte store (`src/enqueue/relay/`): objects keyed by name, a cursor that moves on every write, and a "something changed" stream.
+It parses nothing, holds no key, and can decrypt nothing; no user accounts, one library per relay secret.
+
+- **Auth.** One shared secret per library (the relay secret, in each device's Keychain or sealed config): `Authorization: Bearer <secret>` on HTTP, `?token=<secret>` on the SSE stream (an `EventSource` cannot set headers). A wrong secret is 401.
+- **Routes.** `GET /sync/objects?since=<cursor>` lists names changed after a cursor (and the new cursor); `GET /sync/object/<name>` fetches one; `PUT /sync/object/<name>` stores or overwrites one (an upsert takes a fresh cursor, so a device past the old one pulls the update again); `DELETE /sync/object/<name>` removes one (a device clearing its own superseded copies); `GET /sync/events` streams a line per write; `PUT`/`GET /pair/<id>` carry a one-time sealed envelope for adding a computer.
+- **Names.** `dev/<device_id>/artifacts/<hash>.enc` and `dev/<device_id>/chats/<hash>.enc` (the id hashed under the names key), `blobs/<hash>`, `lib/settings/<time>-<device>.enc` (the newest by its own `updated_at` wins), `lib/vault.enc`, `lib/pivots.enc`. A device writes only under its own `dev/<device_id>/`, and reads everything.
+- **Running one.** `enq relay --host 0.0.0.0 --port <port> --secret <long random>` (or `RELAY_HOST`/`RELAY_PORT`/`RELAY_DATA_DIR`/`RELAY_SECRET`), behind TLS (Caddy, nginx, the host's own), on a data folder that survives restarts. `bin/deploy-relay dev|prod` deploys to Railway (`dev` is the `enqueue` service the current library uses; wait for the new build before trusting `/health`, since the old one keeps answering while it rolls out). For a test, `enq relay` plus `cloudflared tunnel --url http://127.0.0.1:8788`. No CORS: every client is native (Python `httpx`, Rust `ureq`).
+- **Reach.** A headless emulator reaches a relay on the Mac at `10.0.2.2:8788`; a phone that leaves the house needs a public `https://` address, and the desktop refuses to show a linking QR for a loopback or private one.
 
 ## Database schema
 
@@ -771,7 +897,7 @@ Fuse with RRF (canonical k=60, M.5g), apply the R.8 recency multiplier, optional
 
 ### The relevance floor (Q.3, in progress)
 
-Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` applies the same `_floor_verdict` gate (Q.5 chunks, Q.10 facets/entities) without the judge call: below the floor is dropped, the gray zone is left to the answering model (see "The judge never holds a search"). Calibration (the two constants + the gray-zone judge) is the active work in `docs/PLAN.md` Phase Q.
+Dense kNN always returns a nearest neighbor however far, so a no-match query would return a wall. The floor is a two-tier gate on the raw legs (not the fused score): any lexical leg or `dense_similarity >= KEEP_ABOVE` keeps; `< DROP_BELOW` drops; the gray zone is settled by one batched model judgment (`judge_gray_zone`), failing open. A search with zero survivors returns `[]`. `chats.passages()` applies the same `_floor_verdict` gate (Q.5 chunks, Q.10 facets/entities) without the judge call: below the floor is dropped, the gray zone is left to the answering model (see "The judge never holds a search"). The two constants and the gray-zone judge are tuned against the evals (see the notes below).
 
 ### Retrieval design notes
 
@@ -1066,59 +1192,13 @@ Provider calls are replaced with a `FakeProvider` that returns scripted response
 
 ---
 
-## Build and run commands
+## Build notes
 
-### Development
+Setting up and running are under [Start here](#start-here). What else is worth knowing:
 
-```bash
-# Fresh machine: install/verify the toolchain (Rust >= 1.88, uv + Python 3.12, Node).
-# Idempotent, no sudo. Add --android for the mobile toolchain. Fixes the
-# "rustc <ver> is not supported ... requires rustc 1.88.0" build error.
-bin/setup
-
-# Install dependencies (uv manages everything)
-uv sync
-
-# Run the engine
-uv run enq serve
-
-# Run the CLI against a running engine
-uv run enq health
-uv run enq search "antifragility"
-
-# Run tests (parallel; pytest-xdist)
-uv run pytest -q -n auto
-
-# Format check
-uv run black --check src/ tests/
-
-# Lint gate, seconds (what the pre-commit hook runs)
-bin/verify --fast
-
-# Full verification gate (lint + JS parse + pytest + contrast + desktop Rust + Android compile)
-bin/verify
-```
-
-### Desktop shell
-
-```bash
-# Build the Tauri shell (first time or after editing desktop/src)
-cd desktop && cargo build
-
-# Launch everything (engine + shell); rebuilds the shell first
-bin/launch desktop
-
-# Put it on a plugged-in Android phone
-bin/launch mobile
-```
-
-`bin/launch desktop` always rebuilds the shell with `cargo build` first (incremental, near-instant when unchanged; a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to `~/Library/Application Support/Enqueue/repo`, launches the shell, waits for the engine health check, and brings the window to front. `bin/launch mobile` requires a real phone on USB (USB debugging on) - an emulator is rejected on purpose - then does a one-shot build + `adb install` + launch and EXITS (no `cargo tauri android dev`, so no held Gradle lock).
-
-The shell finds the engine repo via (in order):
-
-1. `ENQUEUE_REPO` env var
-2. `~/Library/Application Support/Enqueue/repo` file
-3. Parent of the current directory (works when run from `desktop/`)
+- `bin/launch desktop` rebuilds the shell with `cargo build` (a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to the data folder's `repo`, starts the shell and waits for `/health`.
+- `bin/launch mobile` refuses an emulator on purpose and never runs `cargo tauri android dev` (that watch loop never exits and holds the Gradle lock); it builds once, installs, launches and exits.
+- The shell finds the engine repo through `ENQUEUE_REPO`, else the data folder's `repo` file, else the parent of the current directory.
 
 ### Tauri build notes
 
@@ -1143,7 +1223,7 @@ Verified work has been lost twice to uncommitted-then-reverted working trees, an
 
 2. **Commit the same turn work goes green - never leave verified code uncommitted.** The loss happened in the gap between "it works in the working tree" and "someone commits it." Close that gap: as soon as `bin/verify` is green, the working tree is committed (the human commits after each green turn; or, if agreed, an agent commits its own verified work to a branch the human reviews). Uncommitted verified work is treated as work that will be lost.
 
-**The verification split** (why "I can't run the device" is never a reason to stop): implementing code, `cargo check`, and `bin/verify` are HEADLESS and need no hardware - do all of it. The final runtime check on a physical phone / desktop window ("Done when: on the device...") is done by the HUMAN TESTER, who has the device. So the loop is: agent implements + `bin/verify` green + commit, leaving the box UNCHECKED with a "code-complete, pending device verify" note; the human runs the device pass and checks the box. Never stop a turn merely because the device runtime is out of reach - there is almost always headless implementation + gate + commit work to finish first.
+**The verification split** (why "I can't run the device" is never a reason to stop): implementing code, `cargo check`, and `bin/verify` are headless and need no hardware - do all of it. The runtime check on a physical phone or the desktop window is done by whoever holds the device: the agent implements, gets `bin/verify` green, says plainly what is verified headlessly and what still needs a device, and the person with the device runs that pass. Never stop a turn merely because the device runtime is out of reach - there is almost always headless implementation and gate work to finish first.
 
 ---
 
@@ -1266,7 +1346,7 @@ Since `fetch` re-queues the artifact and ingest fetches whatever needs it, one s
 `link_previews.body_tried` records a fetch that found no body, so the heal is tried once; "Try again" still forces a fetch.
 Anything that re-queues an artifact from inside ingest needs a condition that ingest itself makes false.
 
-### The iOS app (started 2026-10-13, simulator only so far)
+### The iOS app
 
 The same Tauri mobile shell and the same `mobile.html` as Android, built for iOS: `bin/setup --ios` readies the toolchain, `bin/launch simulator` builds, installs and opens it in the iOS Simulator, `bin/launch ios` does the same on a plugged-in iPhone (written, not yet run on a device).
 The Xcode project is `desktop/gen/apple` (from `cargo tauri ios init`; its own `.gitignore` drops `build/` and `Externals/`); the signing team is `bundle.iOS.developmentTeam` in `tauri.conf.json` (Sudohnim, LLC), the minimum is iOS 16.
@@ -1385,7 +1465,7 @@ Android: `allowBackup="false"` and `res/xml/data_extraction_rules.xml` (which al
 iOS (on the iOS branch): the app data folder carries `NSURLIsExcludedFromBackupKey`, set in the mobile `setup`.
 The files hold the sync key and a readable copy of the library; a new phone is linked by scanning the code on the Mac, so a backup of them buys nothing.
 
-**Encryption at rest and the key hierarchy: built 2026-10-14 (docs/ENCRYPTION.md).** One library key (`libkey.py`), the root: the disk key and the backup keys are derived from it, the sync key is wrapped under it (`keyring_file.dek_by_library`), and the recovery kit is it written out.
+**Encryption at rest and the key hierarchy: built 2026-10-14 (see [Encryption and keys](#encryption-and-keys)).** One library key (`libkey.py`), the root: the disk key and the backup keys are derived from it, the sync key is wrapped under it (`keyring_file.dek_by_library`), and the recovery kit is it written out.
 The search index holds every word, so the whole database is encrypted (SQLCipher), not fields.
 Relay objects are padded to size buckets and named by a keyed hash under their own names key (`crypto.seal_payload`/`object_name`, mirrored in `sync.rs`; a cross-language test pins them).
 Still open: the vault PIN is 6 digits (a million guesses against the wrapped key, until a hosted server can count attempts), the relay sees counts, bucketed sizes and timing, the Mac's `blobs/` rely on FileVault, and hosted passkey sign-in needs a domain and an account server.
@@ -1566,13 +1646,6 @@ This exists because a note whose title is the only place a name appears is other
 instructor >= 1.9 renamed `validation_context` to `context`.
 The keyword is what carries `proper_nouns` and `artifact_text` into the validators.
 Getting it wrong silently disables every context-dependent check.
-
-### The old AGENTS.md is stale
-
-Much of the old AGENTS.md described things that are not built: encryption at rest, sync, crawl4ai, marker, whisper.cpp, browser extension, Android, facet trust updates.
-It also named a "Lumo" backend that never existed; the cloud path is OpenRouter.
-This file documents what actually exists.
-See the Resolved decisions section above for the status of each of these.
 
 ---
 

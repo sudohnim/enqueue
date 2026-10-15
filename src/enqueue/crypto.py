@@ -1,4 +1,4 @@
-"""Crypto building blocks (E2E.md Phase E1).
+"""Crypto building blocks (the sync design (AGENTS.md)).
 
 PyNaCl (libsodium) only - no hand-rolled primitives, no other crypto library.
 XSalsa20-Poly1305 (libsodium's SecretBox) for the box, Argon2id (MODERATE) for the key

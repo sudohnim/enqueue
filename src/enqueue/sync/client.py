@@ -1,6 +1,6 @@
 """The relay client: push snapshot objects (SYNC.4).
 
-In the plaintext prototype the object is the canonical-JSON snapshot (E2E.md
+In the plaintext prototype the object is the canonical-JSON snapshot (the sync design (AGENTS.md)
 Section 1); after SYNC.8 it is the same snapshot encrypted, and this push code
 is unchanged except for the one wrap call. The object is PUT under this
 device's namespace with a name that is stable for a given artifact, so a later
@@ -131,7 +131,7 @@ def push_artifact(artifact_id: str) -> None:
     if dek is None:
         return  # the keyring is locked; sync is paused, not failing
 
-    # Stamp this device's id (E2E.md Phase E4), serialize, and encrypt at the
+    # Stamp this device's id (the sync design (AGENTS.md)), serialize, and encrypt at the
     # relay boundary (SYNC.8). The relay stores and streams these bytes as-is.
     snapshot["artifact"]["_device_id"] = device_id()
     data = crypto.seal_payload(serialize(snapshot), dek)
@@ -157,7 +157,7 @@ def push_artifact(artifact_id: str) -> None:
         print(f"[sync] push rejected for {artifact_id}: {resp.status_code}", flush=True)
         return
 
-    # Push the blobs the snapshot refers to (E2E.md E5: fetched on demand by the
+    # Push the blobs the snapshot refers to (the sync design (AGENTS.md): fetched on demand by the
     # reader/thumbnails). The blob name is HMAC(content_hash, DEK), so it reveals
     # nothing about the content; the bytes are encrypted like the snapshot.
     for content_hash in _blob_hashes(snapshot):

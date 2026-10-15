@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run python
 """Regenerate the README screenshots from a demo library.
 
-    bin/screenshots            # desktop shots into docs/screenshots/
+    bin/screenshots            # desktop shots into assets/screenshots/
     bin/screenshots --keep     # leave the demo engine running on :8851 to look around
 
 The shots must never show a real library, so this starts a SECOND engine: its own
@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-OUT = REPO / "docs" / "screenshots"
+OUT = REPO / "assets" / "screenshots"
 PORT = 8851
 BASE = f"http://127.0.0.1:{PORT}"
 
