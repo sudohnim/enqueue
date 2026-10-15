@@ -2,22 +2,28 @@
 // Not a destination. This is where you go when something is wrong, so it says where
 // every value came from: a field you edit that is silently overridden by an
 // environment variable is worse than no field.
+// What each setting is called on screen: the words a person uses, not the engine's.
 const SETTING_LABELS = {
-	llm_model: "Chat",
-	summarize_model: "Ingestion",
-	search_model: "Search",
-	llm_url: "Endpoint",
-	vision_model: "Images",
-	model_retries: "Retries after a failed answer",
-	user_agent: "User agent for link previews",
-	hotkey: "Capture hotkey",
+	llm_model: "Model for chatting",
+	summarize_model: "Model for summaries",
+	search_model: "Model for search",
+	llm_url: "Address",
+	vision_model: "Model for pictures",
+	model_retries: "Tries before giving up",
+	user_agent: "Name Enqueue gives websites",
+	hotkey: "Shortcut to capture",
 	llm_headers: "Extra headers",
-	auto_preview: "Resolve links when you save them",
-	preview_browser: "Open refused links in a browser",
-	search_lift: "Rewrite searches as ideas",
-	search_model_rank: "Let the model order results",
-	trash_days: "Days a deleted thing waits before it goes",
+	auto_preview: "Show a preview when you save a link",
+	preview_browser: "Try harder on sites that block previews",
+	search_lift: "Search by idea, not just words",
+	search_model_rank: "Let the assistant rank results",
+	trash_days: "Keep deleted things for",
 };
+
+// "More options" at the foot of a tab: what most people never need, closed until asked.
+function moreOptions(inner) {
+	return inner ? '<details class="more"><summary>More options</summary>' + inner + "</details>" : "";
+}
 
 // Two spellings of the same binding, kept apart on purpose.
 //
@@ -122,13 +128,15 @@ function recordHotkey(button) {
 	window.addEventListener("keydown", onKey, true);
 }
 
+// The ids are the old ones (guides, routes and the setup checks name them); the labels
+// are what a person calls them.
 const SETTINGS_TABS = [
-	{ id: "ai", label: "AI", render: renderSettingsAI },
-	{ id: "features", label: "Features", render: renderSettingsFeatures },
-	{ id: "storage", label: "Storage", render: renderSettingsStorage },
+	{ id: "ai", label: "Assistant", render: renderSettingsAI },
+	{ id: "features", label: "Capture", render: renderSettingsFeatures },
+	{ id: "storage", label: "Library", render: renderSettingsStorage },
+	{ id: "sync", label: "Phone", render: renderSettingsSync },
 	{ id: "trash", label: "Trash", render: renderSettingsTrash },
-	{ id: "sync", label: "Sync", render: renderSettingsSync },
-	{ id: "events", label: "Events", render: renderSettingsEvents },
+	{ id: "events", label: "Activity", render: renderSettingsEvents },
 ];
 
 // The tab on screen, so Save, Discard, and the key actions can re-render it
@@ -202,23 +210,20 @@ async function showSettings() {
 	// stayed on whatever was open before (e.g. a saved view `g/<id>`), and every reinit
 	// re-ran that route, popping the custom view back over settings.
 	setRoute("settings");
+	// The same shape as the home page: one centred column, the raven against the title,
+	// where things stand in one quiet line under it, and the home page's pill tabs.
 	view.innerHTML =
 		'<div class="pagecol settings-page">' +
-		// The raven sits tight against the heading, the same title lockup as the
-		// home greeting, so settings reads as part of the same place.
+		'<div class="settings-head">' +
 		'<div class="settings-title">' +
 		'<div class="settings-eye eye" id="settingsEye" aria-hidden="true"></div>' +
 		'<h1 class="display">Settings<span class="greet-mark">.</span></h1>' +
 		"</div>" +
-		// Q.6: a one-line human orientation - names what settings does in
-		// product terms and when changes land, warming the bare heading.
-		'<p class="aside settings-lede">' +
-		"Tune how Enqueue captures, thinks, and remembers. Changes save when you press Save." +
-		"</p>" +
+		'<div id="settingsSetup"></div>' +
+		"</div>" +
 		'<div class="settings-layout">' +
 		settingsTabBar() +
-		// Above the pane: what is left to set up, and the settings that need a look.
-		'<div class="settings-main"><div id="settingsSetup"></div>' +
+		'<div class="settings-main"><div id="settingsNotes"></div>' +
 		'<div id="settingsTabPane"></div></div>' +
 		"</div>" +
 		"</div>";
@@ -267,16 +272,14 @@ function fieldRow(name, label, opts) {
 
 async function renderSettingsAI() {
 	const d = await api("/settings");
-	let html = '<div class="h2">AI</div>';
-
-	// Connection: how the app reaches a model - the backend, the model name,
-	// the URL, the key, and any extra headers. Reads first, because a person
-	// sets the wire before they tune behaviour (N.7b).
-	html +=
-		'<div class="shelf">Connection</div><div class="group" style="margin-bottom: var(--sp-4);">';
+	let html = '<div class="h2">Assistant</div>';
 	const chosen = d.settings.llm_backend;
+	const picked = d.backends.find((b) => b.name === chosen.value);
+
 	html +=
-		'<div class="field"><label for="s_backend">Answers come from</label>' +
+		'<div class="shelf">Where answers come from</div><div class="group">' +
+		'<div class="aside">Enqueue\'s assistant reads what you save, so you can search by meaning and ask questions.</div>' +
+		'<div class="field"><label for="s_backend">Assistant</label>' +
 		'<select id="s_backend"' +
 		(chosen.locked ? " disabled" : "") +
 		' onchange="stageBackend(this.value)">' +
@@ -292,96 +295,68 @@ async function renderSettingsAI() {
 					"</option>",
 			)
 			.join("") +
-		"</select>";
-	const picked = d.backends.find((b) => b.name === chosen.value);
-	if (picked && !picked.local)
-		html +=
-			// Q.6: a warmer verb and plain English, same facts. The "yet" and
-			// "add one below" point at the key field instead of an env var.
-			'<div class="aside caution">When you ask a question, the text of whatever is retrieved goes to ' +
-			esc(picked.label) +
-			". Anything you marked local only stays here." +
-			(picked.needs_key && !picked.key_present
-				? " <b>No API key set yet</b>, so calls will fail until you add one below."
-				: "") +
-			"</div>";
-	else if (picked)
-		html += '<div class="aside">Nothing leaves this machine.</div>';
-	// SET.1: the endpoint is implied by the backend, so only `custom` - the one
-	// backend whose URL is not in config.BACKENDS - shows an Endpoint field.
+		"</select>" +
+		(picked && !picked.local
+			? '<div class="aside caution">Online: when you ask something, the notes it needs are sent to ' +
+				esc(picked.label) +
+				". Anything you marked as only on this Mac stays here." +
+				(picked.needs_key && !picked.key_present ? " <b>Add your account key below.</b>" : "") +
+				"</div>"
+			: '<div class="aside">On this Mac. Private: nothing leaves your computer.</div>') +
+		"</div>";
 	if (chosen.value === "custom") {
 		const f = d.settings.llm_url;
 		html += fieldRow("llm_url", esc(SETTING_LABELS.llm_url), {
 			value: f.value,
 			locked: f.locked,
-			pinned: "pinned by " + esc(f.env_var) + " in the environment",
+			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
 		});
 	}
-
-	html += "</div></div>";
-
-	html += modelsGroup(d, picked);
-
-	// --- API Key ---
-	html +=
-		'<div class="shelf">API Key</div><div class="group" style="margin-bottom: var(--sp-4);">';
 	const keyed = d.storage.api_key_present;
 	html +=
-		'<div class="field"><label for="s_key">API key</label>' +
+		'<div class="field"><label for="s_key">Your account key</label>' +
 		(d.storage.api_key_editable
 			? '<div class="keyrow">' +
 				'<input id="s_key" type="password" autocomplete="off" spellcheck="false" ' +
 				'placeholder="' +
-				(keyed
-					? "stored " + esc(d.storage.api_key_hint || "")
-					: "paste a key") +
+				(keyed ? "Saved (" + esc(d.storage.api_key_hint || "") + ")" : "Paste your key") +
 				'">' +
 				'<button class="btn tertiary sm" onclick="saveKey()">Save</button>' +
-				(keyed
-					? '<button class="btn ghost harm sm" onclick="forgetKey()">Forget</button>'
-					: "") +
+				(keyed ? '<button class="btn ghost harm sm" onclick="forgetKey()">Remove</button>' : "") +
 				"</div>" +
-				'<div class="aside">saved in the macOS Keychain, not in any file here.</div>'
+				'<div class="aside">Only needed for an online assistant. Kept in your Mac\'s Keychain.</div>'
 			: '<div class="aside caution">' +
 				(d.storage.api_key_where === "environment"
-					? "Pinned by <b>ENQ_LLM_API_KEY</b> in the environment" +
-						(d.storage.api_key_hint
-							? " (" + esc(d.storage.api_key_hint) + ")"
-							: "") +
-						". Unset it to store one here instead."
-					: "No keychain on this system.") +
+					? "Set outside Enqueue (ENQ_LLM_API_KEY)."
+					: "This computer has no Keychain to keep a key in.") +
 				"</div>") +
-		'<div id="keyState" class="aside caution"></div></div>';
+		'<div id="keyState" class="aside caution"></div></div>' +
+		"</div>";
 
-	html += "</div></div>";
-
-	// Behavior: how the model is used once connected - retries and the
-	// concept-layer rebuild.
-	html += '<div class="settings-divider"></div>';
 	html +=
-		'<div class="shelf">Behavior</div><div class="group" style="margin-bottom: var(--sp-4);">';
+		'<div class="shelf">Summaries</div><div class="group">' +
+		'<div class="aside">A few lines about each thing you save, so search finds it by what it\'s about, not just its words.</div>' +
+		'<div class="field"><span class="rowlabel">Summarize everything again</span>' +
+		'<button class="btn tertiary" id="rebuildFacetsBtn" onclick="rebuildFacets()">Summarize again</button>' +
+		'<div class="aside">Useful after you switch to a better assistant. Runs in the background and can take a while.</div>' +
+		'<div id="facetRebuildState" class="aside"></div></div>' +
+		"</div>";
+
 	const retries = d.settings.model_retries;
-	html += fieldRow("model_retries", esc(SETTING_LABELS.model_retries), {
-		value: retries.value,
-		locked: retries.locked,
-		pinned: "pinned by " + esc(retries.env_var) + " in the environment",
-	});
-	html += "</div>";
-
-	// The concept layer is generated by the model at capture, so switching to a
-	// better model above does not touch what is already stored. This rebuilds it
-	// for everything with the current model. It is its own action, not a staged
-	// setting: it fires now and runs in the background, so it lives outside the
-	// Save/Discard bar below.
-	html +=
-		'<div class="shelf">Search concepts</div><div class="group" style="margin-bottom: var(--sp-4);">' +
-		'<div class="field"><label>Concepts (facets)</label>' +
-		'<button class="btn secondary" id="rebuildFacetsBtn" onclick="rebuildFacets()">Rebuild concepts</button>' +
-		'<div class="aside">Concepts are what an item could be an example of - ' +
-		'"lamp", "sour", "packing list". The model reads them when you save, and ' +
-		"search and the looks-like groupings use them. Rebuilding re-analyzes every " +
-		"item with the current model; it runs in the background, one model call per item." +
-		'</div><div id="facetRebuildState" class="aside"></div></div>';
+	html += moreOptions(
+		modelsGroup(d, picked) +
+			'<div class="group">' +
+			fieldRow("model_retries", esc(SETTING_LABELS.model_retries), {
+				type: "number",
+				min: 1,
+				max: 10,
+				value: retries.value,
+				locked: retries.locked,
+				pinned: "set outside Enqueue (" + esc(retries.env_var) + ")",
+				aside: "How many times to ask again when an answer comes back garbled.",
+			}) +
+			"</div>",
+	);
 
 	html += settingsActionsBar();
 	return html;
@@ -393,16 +368,16 @@ async function renderSettingsAI() {
 // restart resumes the rest. Progress shows in the Activity tab as it goes.
 async function rebuildFacets() {
 	const yes = await ask(
-		"Rebuild concepts?",
-		"Every item is re-analyzed with the current model. This runs in the background and can take a while.",
-		"Rebuild",
+		"Summarize everything again?",
+		"The assistant reads everything you saved again. It runs in the background and can take a while.",
+		"Summarize again",
 	);
 	if (!yes) return;
 	const btn = document.getElementById("rebuildFacetsBtn");
 	const el = document.getElementById("facetRebuildState");
 	if (btn) btn.disabled = true;
-	if (btn) btn.textContent = "Rebuilding...";
-	if (el) el.textContent = "Rebuilding in the background...";
+	if (btn) btn.textContent = "Working...";
+	if (el) el.textContent = "Summarizing in the background...";
 	api("/facets", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -410,25 +385,20 @@ async function rebuildFacets() {
 	})
 		.then((r) => {
 			const n = r.queued || 0;
-			toast("Rebuilding " + n + " item" + (n === 1 ? "" : "s") + " in the background.");
+			toast("Summarizing " + n + " item" + (n === 1 ? "" : "s") + " in the background.");
 			if (el)
 				el.textContent =
-					n +
-					" item" +
-					(n === 1 ? " is" : "s are") +
-					" being re-analyzed in the background. Follow along in Activity.";
+					n + " item" + (n === 1 ? " is" : "s are") + " being summarized. Follow along in Activity.";
 			if (btn) {
 				btn.disabled = false;
-				btn.textContent = "Rebuild concepts";
+				btn.textContent = "Summarize again";
 			}
 		})
 		.catch((err) => {
-			if (el)
-				el.textContent =
-					"Rebuild failed: " + String((err && err.message) || err);
+			if (el) el.textContent = "Did not start: " + String((err && err.message) || err);
 			if (btn) {
 				btn.disabled = false;
-				btn.textContent = "Rebuild concepts";
+				btn.textContent = "Summarize again";
 			}
 		});
 }
@@ -483,7 +453,7 @@ function searchSwitchRow(s, name, onText, offText) {
 		esc(SETTING_LABELS[name]) +
 		"</span>" +
 		(s.locked
-			? '<div class="pinned">pinned by ' + esc(s.env_var) + "</div>"
+			? '<div class="pinned">set outside Enqueue (' + esc(s.env_var) + ")</div>"
 			: '<div class="aside">' + (on ? onText : offText) + "</div>") +
 		"</div>" +
 		'<button class="toggle" role="switch" aria-checked="' +
@@ -507,27 +477,21 @@ function searchSwitchRow(s, name, onText, offText) {
 // search and chat run per request, so faster is better. Blank ingestion/search
 // fall back to the chat model.
 const MODEL_ROLES = [
-	["llm_model", "Answers, chat titles, routing and views"],
+	["llm_model", "Answers your questions and names your chats"],
 	[
 		"summarize_model",
-		"Writes concepts and entities when you save. A stronger model here makes search " +
-			"better. Changing it marks existing concepts stale until you rebuild them below",
+		"Writes the summaries. A stronger one makes search better; after changing it, " +
+			"summarize everything again",
 	],
-	["search_model", "Decides borderline search results. Fast beats clever here"],
-	[
-		"vision_model",
-		"Describes images when you save them so search can find them. Needs a vision " +
-			"model on this backend, like Ollama's llava. Older images catch up with " +
-			"enq index --images",
-	],
+	["search_model", "Decides close calls in search. Fast beats clever here"],
+	["vision_model", "Describes photos so search can find them. Needs a model that can see, like llava"],
 ];
 
 function modelsGroup(d, picked) {
 	const known = (picked && picked.chat_models && picked.chat_models.chat_completions) || [];
 	const unsupported = (picked && picked.chat_models && picked.chat_models.unsupported_shape) || [];
 	const chatModel = (d.settings.llm_model && d.settings.llm_model.value) || "";
-	let html =
-		'<div class="shelf">Models</div><div class="group" style="margin-bottom: var(--sp-4);">';
+	let html = '<div class="shelf">Models</div><div class="group">';
 	if (known.length)
 		html +=
 			'<datalist id="modelOptions">' +
@@ -539,11 +503,11 @@ function modelsGroup(d, picked) {
 		html += fieldRow(name, esc(SETTING_LABELS[name]), {
 			value: f.value,
 			locked: f.locked,
-			pinned: "pinned by " + esc(f.env_var) + " in the environment",
+			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
 			list: known.length ? "modelOptions" : "",
 			placeholder:
 				name === "summarize_model" || name === "search_model"
-					? "same as chat" + (chatModel ? " (" + chatModel + ")" : "")
+					? "same as chatting" + (chatModel ? " (" + chatModel + ")" : "")
 					: "",
 			aside: esc(job) + ".",
 		});
@@ -553,8 +517,7 @@ function modelsGroup(d, picked) {
 			html +=
 				'<div class="aside caution"><b>' +
 				esc(f.value) +
-				"</b> is served by OpenCode Go behind an API shape Enqueue does not speak yet " +
-				"(/responses or /messages). Pick one of: " +
+				"</b> doesn't work with Enqueue yet. Pick one of: " +
 				esc(picked.chat_models.examples) +
 				".</div>";
 	}
@@ -594,7 +557,7 @@ function settingsActionsBar() {
 		'<div id="settingsActions" class="actions" hidden>' +
 		// Q.6: "Changes ready" is an invitation - the work is staged, go
 		// ahead and save - not a status report.
-		'<span class="aside dirty">Changes ready</span>' +
+		'<span class="aside dirty">You have unsaved changes</span>' +
 		'<button class="btn primary" onclick="saveSettings()">Save</button>' +
 		'<button class="btn ghost" onclick="discardSettings()">Discard</button>' +
 		"</div>"
@@ -605,11 +568,11 @@ function settingsActionsBar() {
 // ---- Features tab --------------------------------------------------------
 async function renderSettingsFeatures() {
 	const d = await api("/settings");
-	let html = '<div class="h2">Features</div>';
+	let html = '<div class="h2">Capture</div>';
 
-	html += '<div class="shelf">Capture</div><div class="group">';
 	const hk = d.settings.hotkey;
 	html +=
+		'<div class="shelf">Capturing</div><div class="group">' +
 		'<div class="field"><label for="s_hotkey">' +
 		esc(SETTING_LABELS.hotkey) +
 		"</label>" +
@@ -619,30 +582,24 @@ async function renderSettingsFeatures() {
 		esc(keyLabel(hk.value)) +
 		"</span></button>" +
 		(hk.locked
-			? '<div class="pinned">pinned by ' + esc(hk.env_var) + "</div>"
-			: '<div class="aside">Click, then press the combination you want.</div>') +
-		"</div>";
-	const ua = d.settings.user_agent;
-	html += fieldRow("user_agent", esc(SETTING_LABELS.user_agent), {
-		value: ua.value,
-		locked: ua.locked,
-		placeholder: "Enqueue/0.2 (+https://...)",
-		aside: "Some publishers refuse a client with no contact URL.",
-	});
+			? '<div class="pinned">set outside Enqueue (' + esc(hk.env_var) + ")</div>"
+			: '<div class="aside">Opens the capture box from any app. Click, then press the keys you want.</div>') +
+		"</div></div>";
+
 	const ap = d.settings.auto_preview;
 	const apOn = String(ap.value).toLowerCase() !== "off";
 	html +=
-		'</div><div class="shelf">Links</div><div class="group">' +
+		'<div class="shelf">Links</div><div class="group">' +
 		'<div class="field"><div class="togglerow"><div>' +
 		'<span class="rowlabel">' +
 		esc(SETTING_LABELS.auto_preview) +
 		"</span>" +
 		(ap.locked
-			? '<div class="pinned">pinned by ' + esc(ap.env_var) + "</div>"
+			? '<div class="pinned">set outside Enqueue (' + esc(ap.env_var) + ")</div>"
 			: '<div class="aside">' +
 				(apOn
-					? "One request per link, as you save it."
-					: "A link stays a bare address until you open it.") +
+					? "Enqueue fetches the page's title and picture once, as you save it."
+					: "Links stay plain addresses until you open them.") +
 				"</div>") +
 		"</div>" +
 		'<button class="toggle" role="switch" aria-checked="' +
@@ -656,32 +613,38 @@ async function renderSettingsFeatures() {
 		searchSwitchRow(
 			d.settings.preview_browser,
 			"preview_browser",
-			"When a site turns the plain request away, or its page is empty until it " +
-				"runs, a headless browser opens it once, the way you would. Slower.",
-			"A site that turns the plain request away stays without a preview.",
+			"When a site blocks the preview, Enqueue opens the page once in a hidden browser, the way you would. Slower.",
+			"Some sites block previews; those links stay without one.",
 		) +
 		"</div>";
 
-	// Both search-model stages are opt-in: each adds a model call to a new search
-	// (cached after), and chat already does both on its own.
 	html +=
 		'<div class="shelf">Search</div><div class="group">' +
 		searchSwitchRow(
 			d.settings.search_lift,
 			"search_lift",
-			"The search model restates each new search as general ideas, so notes " +
-				"from other fields can match. Adds a moment to a search the first time.",
-			"Searches match your words and meaning directly. Chat always " +
-				"rewrites questions as ideas.",
+			"The assistant turns each new search into ideas, so related notes on other topics can match. A moment slower the first time.",
+			"Search matches your words and what they mean. Asking the assistant always searches by idea.",
 		) +
 		searchSwitchRow(
 			d.settings.search_model_rank,
 			"search_model_rank",
-			"The search model reads the top results and puts the best answer first. " +
-				"Adds a moment to a search the first time.",
-			"Results are ordered by how closely they match your words and meaning.",
+			"The assistant reads the top results and puts the best one first. A moment slower the first time.",
+			"Results are ranked by how closely they match.",
 		) +
 		"</div>";
+
+	const ua = d.settings.user_agent;
+	html += moreOptions(
+		'<div class="group">' +
+			fieldRow("user_agent", esc(SETTING_LABELS.user_agent), {
+				value: ua.value,
+				locked: ua.locked,
+				placeholder: "Enqueue/0.2 (+https://...)",
+				aside: "How Enqueue introduces itself when it fetches a preview. Some sites turn away visitors that don't say.",
+			}) +
+			"</div>",
+	);
 
 	html += settingsActionsBar();
 	return html;
@@ -691,46 +654,43 @@ async function renderSettingsFeatures() {
 // ---- Storage tab ----------------------------------------------------------
 async function renderSettingsStorage() {
 	const d = await api("/settings");
-	let html = '<div class="h2">Storage</div>';
+	let html = '<div class="h2">Library</div>';
 	// The privacy line must stay true: with a backup folder chosen, a copy does leave.
 	const backupOn = !!String((d.settings.backup_dir || {}).value || "").trim();
 
 	const s0 = d.storage;
-	html +=
-		// Q.6: the second sentence reveals portability - the data is the
-		// user's, in a standard format, at a known path (SQLite is the source
-		// of truth per db.py / config.DB_PATH).
-		'<div class="callout note"><p>' +
-		(backupOn
-			? "Your library lives on this machine, and a copy goes to the backup folder you chose. "
-			: "Nothing you save here leaves this machine. ") +
-		"Everything you capture lives in one SQLite file you can back up, move, or read with any tool.</p></div>" +
-		'<div class="group"><div class="field">' +
-		'<span class="rowlabel">Everything lives at</span>' +
-		'<div class="mono chip">' +
-		esc(s0.data_dir) +
-		"</div></div></div>";
 	html += await renderBackupSection();
 	html += await renderDraftsSection(d);
+	const items = (s0.counts && s0.counts.artifacts) || 0;
+	const chats = (s0.counts && s0.counts.chats) || 0;
 	html +=
-		'<div class="shelf">Usage</div><div class="group">' +
-		'<div class="field"><div class="facts">' +
-		'<b>database</b> <span class="mono">' +
-		bytes(s0.database.bytes) +
-		"</span><br>" +
-		'<b>files</b> <span class="mono">' +
-		bytes(s0.blobs.bytes) +
-		"</span><br>" +
-		Object.entries(s0.counts)
-			.map(
-				([k, v]) => "<b>" + esc(k) + '</b> <span class="mono">' + v + "</span>",
-			)
-			.join("<br>") +
-		"</div></div>" +
-		'<div class="field"><span class="rowlabel">Rebuild the index</span>' +
-		'<div class="aside">Everything derived is thrown away and rebuilt.</div>' +
-		'<div class="actions"><button class="btn tertiary" ' +
-		'onclick="rebuildIndex(this)">Rebuild the index</button></div></div></div>';
+		'<div class="shelf">On this Mac</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">Space used</span>' +
+		'<div class="aside">' +
+		items +
+		" item" +
+		(items === 1 ? "" : "s") +
+		(chats ? " and " + chats + " chat" + (chats === 1 ? "" : "s") : "") +
+		", " +
+		bytes(s0.database.bytes + s0.blobs.bytes) +
+		"." +
+		(backupOn ? " A copy goes to your backup folder." : " Nothing you save leaves this Mac.") +
+		"</div></div></div>";
+	html += moreOptions(
+		'<div class="group">' +
+			'<div class="field"><span class="rowlabel">Library folder</span>' +
+			'<div class="aside path">' +
+			esc(s0.data_dir) +
+			"</div></div>" +
+			'<div class="field"><span class="rowlabel">Restore a backup</span>' +
+			'<div class="aside">Quit Enqueue, then run <span class="mono">enq restore</span> in ' +
+			"Terminal with your backup folder. On a new Mac it asks for your recovery kit. " +
+			"The library already here is set aside, never deleted.</div></div>" +
+			'<div class="field"><span class="rowlabel">Rebuild search</span>' +
+			'<div class="aside">Throws away the search index and builds it again. Takes a while; use it if search seems off.</div>' +
+			'<button class="btn tertiary" onclick="rebuildIndex(this)">Rebuild</button></div>' +
+			"</div>",
+	);
 
 	return html;
 }
@@ -743,8 +703,8 @@ async function renderSettingsStorage() {
 // Save like the other settings; "Apply now" thins at once instead of at the next
 // daily pass, after saying what it removes.
 const DRAFT_POLICIES = [
-	["thinned", "Keep a thinned history", "Close together while recent, further apart as they age."],
-	["30d", "Keep the last 30 days", "Everything older is removed, except how each note began."],
+	["thinned", "Thin them out over time", "Close together while recent, further apart as they age."],
+	["30d", "Keep 30 days", "Older drafts are removed, except how each note began."],
 	["off", "Don't keep drafts", "Edits replace the text. Each note keeps only its latest."],
 ];
 
@@ -760,49 +720,47 @@ async function renderDraftsSection(d) {
 		pendingSettings && pendingSettings.drafts_keep !== undefined
 			? pendingSettings.drafts_keep
 			: f.value || "thinned";
+	const help = (DRAFT_POLICIES.find((x) => x[0] === chosen) || DRAFT_POLICIES[0])[2];
 	return (
 		'<div class="shelf">Drafts</div><div class="group">' +
-		'<div class="field" role="radiogroup" aria-label="Drafts kept">' +
+		'<div class="aside">Earlier versions of your notes, so you can always go back.</div>' +
+		'<div class="field"><label for="s_drafts_keep">How long to keep them</label>' +
+		'<select id="s_drafts_keep"' +
+		(f.locked ? " disabled" : "") +
+		' onchange="stageDraftPolicy(this.value)">' +
 		DRAFT_POLICIES.map(
-			([value, label, help]) =>
-				'<button type="button" class="choice" role="radio" aria-checked="' +
-				String(chosen === value) +
-				'"' +
-				(f.locked ? " disabled" : "") +
-				" onclick=\"stageDraftPolicy('" +
-				value +
-				"')\"><span class=\"choice-dot\" aria-hidden=\"true\"></span><span><b>" +
-				esc(label) +
-				"</b><small>" +
-				esc(help) +
-				"</small></span></button>",
+			([value, label]) =>
+				'<option value="' + value + '"' + (chosen === value ? " selected" : "") + ">" + esc(label) + "</option>",
 		).join("") +
-		(f.locked ? '<div class="pinned">pinned by ' + esc(f.env_var) + " in the environment</div>" : "") +
-		"</div>" +
-		'<div class="field drafts-foot"><span class="aside"><b>' +
+		"</select>" +
+		'<div class="aside" id="draftsHelp">' +
+		esc(help) +
+		" " +
 		st.drafts +
-		"</b> drafts across " +
+		" draft" +
+		(st.drafts === 1 ? "" : "s") +
+		" of " +
 		st.notes +
-		" notes, " +
+		" note" +
+		(st.notes === 1 ? "" : "s") +
+		", " +
 		esc(bytes(st.bytes)) +
-		'.</span><button class="btn tertiary sm" onclick="applyDraftPolicy(this)">Apply now</button></div>' +
-		"</div>"
+		'. <button class="linkish" onclick="applyDraftPolicy(this)">Tidy up now</button></div>' +
+		(f.locked ? '<div class="pinned">set outside Enqueue (' + esc(f.env_var) + ")</div>" : "") +
+		"</div></div>"
 	);
 }
 
 function stageDraftPolicy(value) {
 	stageSetting("drafts_keep", value);
-	document.querySelectorAll('[role="radiogroup"][aria-label="Drafts kept"] .choice').forEach((b) => {
-		b.setAttribute("aria-checked", String(b.getAttribute("onclick").includes("'" + value + "'")));
-	});
 }
 
 async function applyDraftPolicy(button) {
 	if (isDirty()) return toast("Save your changes first, then apply.", true);
 	const yes = await ask(
-		"Apply the drafts setting now?",
-		"Drafts it no longer keeps are removed now rather than at tonight's pass. This cannot be undone.",
-		"Apply now",
+		"Tidy up drafts now?",
+		"Drafts this setting no longer keeps are removed now instead of tonight. This can't be undone.",
+		"Tidy up",
 	);
 	if (!yes) return;
 	button.disabled = true;
@@ -863,15 +821,11 @@ async function renderBackupSection() {
 	const last = b.last && b.last.folder === b.folder ? b.last : null;
 	const stale = last && Date.now() - new Date(last.at).getTime() > 3 * 86400000;
 	const state = b.running ? "running" : !last ? "none" : stale ? "stale" : "ok";
-	const head = b.running
-		? "Backing up…"
-		: last
-			? "Backed up " + since(last.at)
-			: "Not backed up yet";
+	const head = b.running ? "Backing up…" : last ? "Backed up " + since(last.at) : "Not backed up yet";
 	const sub = b.running
-		? "Copying the library. Keep working."
+		? "Making a copy. Keep working."
 		: last
-			? "Every day, and each time you quit. " + bytes(last.bytes) + " a copy."
+			? "Every day, and each time you quit."
 			: "The first copy is on its way.";
 	// What is kept, oldest on the left: the weekly copies paler than the daily ones.
 	const kept = (b.backups || []).map((x) => x.file).sort();
@@ -884,10 +838,14 @@ async function renderBackupSection() {
 			return '<i class="' + cls + '" title="' + esc(m ? m[1] : file) + '"></i>';
 		})
 		.join("");
-	const daily = kept.filter((f) => {
-		const m = f.match(/(\d{4}-\d{2}-\d{2})/);
-		return !m || (today - new Date(m[1] + "T12:00:00")) / 86400000 <= 7;
-	}).length;
+	// The folder by the name a person knows it by.
+	const where = /\/CloudStorage\/ProtonDrive/.test(b.folder)
+		? "Proton Drive"
+		: /\/Mobile Documents\/com~apple~CloudDocs/.test(b.dir)
+			? "iCloud Drive"
+			: /\/CloudStorage\/Dropbox/.test(b.folder)
+				? "Dropbox"
+				: "The folder " + (b.dir.split("/").filter(Boolean).pop() || b.dir);
 	html +=
 		'<div class="backup-status" data-state="' +
 		state +
@@ -901,37 +859,100 @@ async function renderBackupSection() {
 		(b.running ? " disabled" : "") +
 		">Back up now</button></div>" +
 		(b.running ? '<div class="backup-run" aria-hidden="true"><i></i></div>' : "") +
-		'<div class="backup-grid">' +
-		'<div><div class="backup-label">Kept</div>' +
-		(kept.length
-			? '<div class="backup-bars">' +
-				bars +
-				'</div><div class="backup-legend"><span>' +
-				daily +
-				" daily" +
-				(kept.length > daily ? ", " + (kept.length - daily) + " weekly" : "") +
-				"</span><span>today</span></div>"
-			: '<div class="backup-sub">None yet.</div>') +
-		"</div>" +
-		'<div><div class="backup-label">Where</div>' +
-		'<div class="backup-where"><span class="mono chip" title="' +
+		'<div class="field"><span class="rowlabel">Where copies go</span>' +
+		'<div class="aside" title="' +
 		esc(b.folder) +
 		'">' +
-		esc(b.folder.replace(/^.*\/CloudStorage\/([^/]+)/, (_m, d) => d.replace(/-.*$/, "")).replace(/^\/Users\/[^/]+/, "~")) +
-		"</span>" +
-		(picker ? '<button class="btn tertiary sm" onclick="chooseBackupDir()">Change</button>' : "") +
+		esc(where) +
+		". Locked with your library's key, so nobody else can read them.</div>" +
+		(picker ? '<button class="btn tertiary" onclick="chooseBackupDir()">Change</button>' : "") +
 		"</div>" +
-		'<div class="backup-sub">' +
-		(/ProtonDrive/.test(b.folder)
-			? "Proton encrypts the copies. Enqueue does not yet."
-			: "Enqueue does not encrypt the copies yet, so this folder holds them as plain files.") +
-		"</div></div></div>" +
-		'<div class="backup-foot"><span class="backup-sub"><b>Restoring</b>, on this Mac or a new one: ' +
-		'quit Enqueue, then run <span class="mono chip" title="enq restore ' +
-		esc(b.dir) +
-		'">enq restore</span> with this folder. Your current library is set aside, never deleted.</span>' +
-		'<button class="btn tertiary sm" onclick="useBackupDir(\'\')">Turn off</button></div>';
+		'<div class="field"><span class="rowlabel">Copies kept</span>' +
+		'<div class="aside">The last 7 days, then one a week for a month.</div>' +
+		(kept.length ? '<div class="actions"><div class="backup-bars">' + bars + "</div></div>" : "") +
+		"</div>" +
+		backupKitHtml(b.kit_saved, b.library_encrypted) +
+		'<div class="field"><span class="rowlabel">Turn off backups</span>' +
+		'<div class="aside">Stops new copies. The ones already made stay in the folder.</div>' +
+		'<button class="btn tertiary" onclick="useBackupDir(\'\')">Turn off</button></div>';
 	return html + "</div>";
+}
+
+// The recovery kit: the library key written out (libkey.py). Backups are locked with
+// it and Enqueue keeps no other copy, so until the person says they saved it the row
+// asks, in the warning's colour.
+function backupKitHtml(saved, encrypted) {
+	return (
+		'<div class="field"><span class="rowlabel">Recovery kit</span>' +
+		'<div class="aside' +
+		(saved ? "" : " caution") +
+		'">' +
+		(saved
+			? "Saved. It's the only way to open your backups on a new Mac. " +
+				(encrypted
+					? "The library on this Mac is locked with it too."
+					: "The library on this Mac gets locked with it the next time Enqueue starts.")
+			: "Only it opens your backups on a new Mac, and Enqueue keeps no other copy. " +
+				"Save it where you keep your passwords.") +
+		'</div><div class="kit-view" id="kitView" hidden></div>' +
+		'<button class="btn ' +
+		(saved ? "tertiary" : "primary") +
+		'" id="kitShowBtn" onclick="showRecoveryKit(this)">' +
+		(saved ? "Show again" : "Show recovery kit") +
+		"</button></div>"
+	);
+}
+
+async function showRecoveryKit(btn) {
+	const view = document.getElementById("kitView");
+	if (!view) return;
+	if (!view.hidden) {
+		view.hidden = true;
+		view.textContent = "";
+		btn.textContent = btn.dataset.label || btn.textContent;
+		return;
+	}
+	let r;
+	try {
+		r = await api("/backup/kit", { method: "POST" });
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	btn.dataset.label = btn.textContent;
+	btn.textContent = "Hide";
+	view.innerHTML =
+		'<div class="kit-code" aria-label="Recovery kit">' +
+		r.kit
+			.split("-")
+			.map((g) => "<span>" + esc(g) + "</span>")
+			.join("") +
+		'</div><div class="kit-actions">' +
+		'<button class="btn tertiary sm" onclick="copyRecoveryKit(this)">Copy</button>' +
+		(r.saved ? "" : '<button class="btn primary sm" onclick="recoveryKitSaved()">I saved it</button>') +
+		"</div>";
+	view.dataset.kit = r.kit;
+	view.hidden = false;
+}
+
+async function copyRecoveryKit(btn) {
+	const view = document.getElementById("kitView");
+	try {
+		await navigator.clipboard.writeText(view.dataset.kit || "");
+	} catch (err) {
+		return toast("Could not copy: " + String(err.message || err), true);
+	}
+	btn.textContent = "Copied";
+	toast("Copied. Paste it into your password manager, then copy something else over it.");
+}
+
+async function recoveryKitSaved() {
+	try {
+		await api("/backup/kit/saved", { method: "POST" });
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	await renderSettingsTab("storage");
+	toast("Recovery kit saved. The next time Enqueue starts, it encrypts this library on the Mac too.");
 }
 
 // The Mac's folder picker (tauri-plugin-dialog). Cancelling picks nothing.
@@ -1010,29 +1031,23 @@ async function renderSettingsTrash() {
 
 	const td = d.settings.trash_days;
 	html +=
-		'<div class="shelf">Retention</div><div class="group">' +
+		'<div class="shelf">Trash</div><div class="group">' +
 		fieldRow("trash_days", esc(SETTING_LABELS.trash_days), {
 			type: "number",
 			min: 1,
 			max: 3650,
 			value: td.value,
 			locked: td.locked,
-			pinned: "pinned by " + esc(td.env_var),
-			aside: "Only things you delete are ever removed.",
+			pinned: "set outside Enqueue (" + esc(td.env_var) + ")",
+			aside: "Days. After that, deleted things are gone for good. Nothing else is ever removed.",
 		}) +
 		"</div>";
-	html +=
-		'<div class="shelf">Trash</div><div class="group">' +
-		'<div class="aside">Deleted things wait ' +
-		trash.retention_days +
-		" day" +
-		(trash.retention_days === 1 ? "" : "s") +
-		", then go for good.</div>";
+	html += '<div class="shelf">In the trash</div><div class="group">';
 	if (!trash.items.length) {
 		html += '<div class="aside">Nothing in the trash.</div>';
 	} else {
 		html +=
-			'<div class="callout warn">Emptying the trash deletes files permanently.</div>' +
+			'<div class="callout warn">Emptying the trash deletes these for good.</div>' +
 			'<div class="actions"><button class="btn danger terminal" onclick="emptyTrash(' +
 			trash.items.length +
 			')">Empty trash (' +
@@ -1057,7 +1072,7 @@ async function renderSettingsTrash() {
 async function renderSettingsSync() {
 	const d = await api("/settings");
 	const sync = d.sync || {};
-	let html = '<div class="h2">Sync</div>';
+	let html = '<div class="h2">Phone</div>';
 
 	if (!sync.relay_configured) {
 		html += renderSyncSetup(d, sync);
@@ -1079,10 +1094,10 @@ function renderSyncSetup(_d, sync) {
 		return '<div class="shelf">Join a library</div><div class="group">' + renderSyncJoin(sync) + "</div>";
 	}
 	if (step === "recovery") {
-		return '<div class="shelf">Set up sync</div><div class="group">' + renderSyncRecovery() + "</div>";
+		return '<div class="shelf">Use Enqueue on your phone</div><div class="group">' + renderSyncRecovery() + "</div>";
 	}
 	if (step === 3) {
-		return '<div class="shelf">Set up sync</div><div class="group">' + renderSyncStepSecret(sync) + "</div>";
+		return '<div class="shelf">Use Enqueue on your phone</div><div class="group">' + renderSyncStepSecret(sync) + "</div>";
 	}
 
 	// The landing (step 1) offers two first-class choices as separate sections: start a
@@ -1090,33 +1105,31 @@ function renderSyncSetup(_d, sync) {
 	// buried aside link under the relay field; a second device is a common path and earns
 	// its own section.
 	return (
-		'<div class="shelf">Set up sync</div><div class="group">' +
+		'<div class="shelf">Use Enqueue on your phone</div><div class="group">' +
 		renderSyncStepRelay(sync) +
 		"</div>" +
-		'<div class="shelf">Join Existing Library</div>' +
-		'<div class="card" style="margin-top: var(--sp-4);"><div class="group">' +
-		'<div class="aside">Already set up sync on another device? Join that library so this ' +
-		"device shares the same encrypted data - no new key is created.</div>" +
-		'<div class="actions" style="margin-top: var(--sp-4);">' +
-		'<button class="btn primary" onclick="startSyncJoin(event)">Join existing library</button>' +
-		"</div></div></div>"
+		'<div class="shelf">Already using Enqueue on another computer?</div>' +
+		'<div class="group">' +
+		'<div class="field"><span class="rowlabel">Join that library</span>' +
+		'<div class="aside">This computer gets the same library instead of starting a new one.</div>' +
+		'<button class="btn tertiary" onclick="startSyncJoin(event)">Join</button>' +
+		"</div></div>"
 	);
 }
 
 function renderSyncStepRelay(sync) {
 	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
 	return (
-		'<div class="aside">First, the relay that stores your encrypted library ' +
-		"snapshots and shares them between devices. The bytes are encrypted - the " +
-		"relay cannot read them.</div>" +
-		'<div class="field" style="margin-top: var(--sp-4);">' +
-		'<label for="s_sync_relay_url">Relay URL</label>' +
+		'<div class="aside">Your phone and this Mac stay in step through a relay: a small ' +
+		"server that passes your library between them. It only ever holds scrambled copies, " +
+		"so it can't read anything.</div>" +
+		'<div class="field">' +
+		'<label for="s_sync_relay_url">Relay address</label>' +
 		'<input id="s_sync_relay_url" type="url" value="' +
 		relayValue +
-		'" placeholder="http://127.0.0.1:8788">' +
-		'<div class="aside">Default is the local <code>enq relay</code> address ' +
-		"from <code>127.0.0.1:8788</code>. A remote relay needs <code>--host 0.0.0.0</code> " +
-		"on the machine running it.</div>" +
+		'" placeholder="https://...">' +
+		'<div class="aside">The address of your relay. Your phone has to be able to reach it, ' +
+		"so it should start with https://.</div>" +
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
 		'<button class="btn primary" onclick="advanceSyncSetupAndInit()">Continue</button>' +
@@ -1136,12 +1149,10 @@ function startSyncJoin(e) {
 function renderSyncJoin(sync) {
 	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
 	return (
-		'<div class="aside">Pair this computer with a library you already set up on another ' +
-		'device. On that device open <strong>Settings -&gt; Sync -&gt; "Pair a computer"</strong> ' +
-		"to get a one-time pairing code and phrase, then enter them here. No recovery phrase, " +
-		"no key handling.</div>" +
+		'<div class="aside">On the other computer, open <strong>Settings, Phone, Add another ' +
+		"computer</strong>. It shows a one-time code and phrase; type them here.</div>" +
 		'<div class="field" style="margin-top: var(--sp-4);">' +
-		'<label for="s_pair_relay">Relay URL</label>' +
+		'<label for="s_pair_relay">Relay address</label>' +
 		'<input id="s_pair_relay" type="url" value="' +
 		relayValue +
 		'" placeholder="http://127.0.0.1:8788">' +
@@ -1164,13 +1175,13 @@ function renderSyncJoin(sync) {
 		// existed whose owner still has the recovery phrase.
 		'<details class="disclosure" style="margin-top: var(--sp-5);">' +
 		"<summary>Join with a recovery phrase instead</summary><div class=\"disclosure-body\">" +
-		'<div class="aside">Enter the relay, sync secret, and the recovery phrase shown when ' +
-		"the first device set up sync.</div>" +
-		'<div class="field" style="margin-top: var(--sp-4);"><label for="s_join_relay">Relay URL</label>' +
+		'<div class="aside">For a library set up before codes existed: the relay address, its ' +
+		"password, and the recovery phrase from the first computer.</div>" +
+		'<div class="field" style="margin-top: var(--sp-4);"><label for="s_join_relay">Relay address</label>' +
 		'<input id="s_join_relay" type="url" value="' +
 		relayValue +
 		'" placeholder="http://127.0.0.1:8788"></div>' +
-		'<div class="field"><label for="s_join_secret">Sync secret</label>' +
+		'<div class="field"><label for="s_join_secret">Relay password</label>' +
 		'<input id="s_join_secret" type="password" autocomplete="off" placeholder="The secret from the other device"></div>' +
 		'<div class="field"><label for="s_join_recovery">Recovery phrase</label>' +
 		'<input id="s_join_recovery" type="text" autocomplete="off" spellcheck="false" placeholder="The recovery phrase from the first device"></div>' +
@@ -1357,14 +1368,13 @@ function renderSyncRecovery() {
 
 function renderSyncStepSecret(_sync) {
 	return (
-		'<div class="aside">Finally, the sync secret. This authenticates your ' +
-		"devices to the relay. Leave the field empty to generate a secure one, " +
-		"or paste the secret from the relay you run.</div>" +
-		'<div class="field" style="margin-top: var(--sp-4);">' +
-		'<label for="s_sync_secret">Sync secret</label>' +
+		'<div class="aside">Last step: the relay\'s password, so only your devices can use it. ' +
+		"Leave it empty and Enqueue makes a strong one, or paste the one your relay gave you.</div>" +
+		'<div class="field">' +
+		'<label for="s_sync_secret">Relay password</label>' +
 		'<input id="s_sync_secret" type="password" autocomplete="off" ' +
-		'placeholder="Leave empty to generate a secure secret">' +
-		'<div class="aside">Stored in the macOS Keychain, never in any file.</div>' +
+		'placeholder="Leave empty to make one">' +
+		'<div class="aside">Kept in your Mac\'s Keychain.</div>' +
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
 		'<button class="btn primary" onclick="saveSyncSecretAndFinish()">Finish setup</button>' +
@@ -1430,22 +1440,19 @@ function generateSyncSecret() {
 }
 
 function renderSyncConfigured(_sync) {
-	let html =
-		'<div class="shelf">Link a device</div><div class="group" style="margin-bottom: var(--sp-4);">';
+	let html = '<div class="shelf">Link your phone</div><div class="group">';
 	html +=
-		'<div class="aside">On your phone, open the Enqueue app and choose "Link a device". ' +
-		"The phone camera scans the QR below and receives the encryption key in one " +
-		"step - no password, no typing. The QR contains your encryption key: only scan " +
-		"it with the Enqueue app, never screenshot it, and never share it." +
-		"</div>" +
-		'<div class="field" style="margin-top: var(--sp-4);"><label>Linking QR</label>' +
-		'<div class="actions" style="gap: var(--sp-2); margin-top: var(--sp-2);">' +
-		'<button class="btn primary" id="linkShowBtn" onclick="showLinkCode()">Show linking QR</button>' +
+		'<div class="aside">In the Enqueue app on your phone, choose <b>Link a device</b> and ' +
+		"point the camera at the code. The code holds your library's key: don't take a " +
+		"screenshot of it or share it.</div>" +
+		'<div class="field"><span class="rowlabel">Linking code</span>' +
+		'<div class="actions">' +
+		'<button class="btn primary" id="linkShowBtn" onclick="showLinkCode()">Show the code</button>' +
 		"</div>" +
 		'<div id="linkQRArea" hidden style="margin-top: var(--sp-4);">' +
 		'<div id="linkQR" style="text-align: center; margin-bottom: var(--sp-3);"></div>' +
 		'<div class="actions" style="margin-top: var(--sp-2);">' +
-		'<button class="btn ghost" onclick="hideLinkCode()">Hide QR</button>' +
+		'<button class="btn ghost" onclick="hideLinkCode()">Hide the code</button>' +
 		"</div>" +
 		"</div>" +
 		"</div>" +
@@ -1454,31 +1461,23 @@ function renderSyncConfigured(_sync) {
 	// Pair another COMPUTER (the phone uses the QR above). This mints a one-time code +
 	// phrase; you type them into the new computer's "Join Existing Library" screen.
 	html +=
-		'<div class="shelf">Pair a computer</div><div class="card" style="margin-top: var(--sp-4);"><div class="group">';
-	html +=
-		'<div class="aside">Add another computer to this library. Generate a one-time pairing ' +
-		"code and phrase here, then on the new computer open Settings -&gt; Sync -&gt; " +
-		'"Join Existing Library" and enter them. The code expires in 10 minutes and works once.' +
-		"</div>" +
-		'<div class="actions" style="margin-top: var(--sp-4);">' +
-		'<button class="btn primary" id="pairOfferBtn" onclick="createPairingOffer()">Create pairing code</button>' +
+		'<div class="shelf">Add another computer</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">One-time code</span>' +
+		'<div class="aside">Type it into Enqueue on the other computer (Settings, Phone, Join). ' +
+		"It works once and expires in 10 minutes.</div>" +
+		'<button class="btn tertiary" id="pairOfferBtn" onclick="createPairingOffer()">Make a code</button>' +
 		"</div>" +
 		'<div id="pairOfferArea" hidden style="margin-top: var(--sp-4);"></div>' +
-		"</div></div>";
-
-	html +=
-		'<div class="shelf">Reset sync</div><div class="card" style="margin-top: var(--sp-4);"><div class="group">';
-	html +=
-		'<div class="aside caution">' +
-		"Resetting sync wipes the current encryption key and orphans anything " +
-		"already synced to the relay. Only do this if nothing important has " +
-		"synced yet, or if you have the recovery phrase and want to start fresh." +
-		"</div>" +
-		'<div class="actions" style="margin-top: var(--sp-4);">' +
-		'<button class="btn harm" onclick="confirmResetSync()">Reset sync</button>' +
-		"</div>" +
-		"</div>" +
 		"</div>";
+
+	html += moreOptions(
+		'<div class="shelf">Start sync over</div><div class="group">' +
+			'<div class="field"><span class="rowlabel">Forget this sync setup</span>' +
+			'<div class="aside caution">Throws away the key your devices share. Anything already ' +
+			"sent can't be read again. Only for starting fresh.</div>" +
+			'<button class="btn harm" onclick="confirmResetSync()">Start over</button>' +
+			"</div></div>",
+	);
 
 	return html;
 }
@@ -1683,7 +1682,7 @@ async function renderSettingsEvents() {
 	return (
 		'<div class="settings-card">' +
 		'<div class="settings-card-label">Activity</div>' +
-		'<p class="aside" style="margin-bottom: var(--sp-3);">Questions asked and answered, captures, facet edits, and syncs. Click a row to see the full record. Updates live; persisted across restarts.</p>' +
+		'<p class="aside" style="margin-bottom: var(--sp-3);">What Enqueue has been doing. Click a line for the details.</p>' +
 		'<div class="event-log">' +
 		rows +
 		"</div>" +
@@ -1741,6 +1740,25 @@ function coalesceSync(events) {
 // One event as a summary line that expands to its full record when it carries
 // data. The kind is chipped and colour-keyed by family (ask/capture/facet/sync)
 // so the log scans; the timing, when known, rides the right edge.
+// What each kind of activity is called on screen; the engine's name stays in the
+// record (and the row's tooltip).
+const EVENT_LABELS = {
+	"ask.submitted": "Asked",
+	"ask.answered": "Answered",
+	"ask.failed": "Couldn't answer",
+	"capture.note": "Saved a note",
+	"facet.regenerated": "Summarized",
+	"facet.edited": "Summary edited",
+	ingest: "Read",
+	"model.sent": "Sent online",
+	"model.paused": "Assistant paused",
+	"model.resumed": "Assistant back",
+	"sync.pull": "Synced",
+	start: "Started",
+	backup: "Backed up",
+	"backup.failed": "Backup failed",
+};
+
 function eventRow(e) {
 	const family = String(e.kind || "").split(".")[0];
 	const dur =
@@ -1756,8 +1774,10 @@ function eventRow(e) {
 		'<div class="event-head" role="button" tabindex="0" onclick="toggleEvent(this)">' +
 		'<span class="event-kind" data-family="' +
 		esc(family) +
-		'">' +
+		'" title="' +
 		esc(e.kind) +
+		'">' +
+		esc(EVENT_LABELS[e.kind] || EVENT_LABELS[family] || e.kind) +
 		"</span>" +
 		'<span class="event-detail">' +
 		esc(e.detail || "") +

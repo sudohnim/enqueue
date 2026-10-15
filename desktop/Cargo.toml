@@ -22,7 +22,6 @@ serde_json = "1"
 # The mobile sync client (MOB.3) reimplements the desktop's Phase SYNC in Rust: a
 # local SQLite read copy, the relay pull, and the same crypto (PyNaCl SecretBox =
 # XSalsa20-Poly1305, Argon2id MODERATE). Pure Rust, so they cross-compile for Android.
-rusqlite = { version = "0.32", features = ["bundled"] }
 xsalsa20poly1305 = "0.9"
 argon2 = "0.5"
 ureq = { version = "2", features = ["json"] }
@@ -42,8 +41,11 @@ tauri-plugin-dialog = { version = "2", default-features = false }
 tauri-plugin-opener = { version = "2", default-features = false }
 tauri-plugin-clipboard-manager = { version = "2", default-features = false }
 
-# JNI for the foreground service and the Kotlin bridge (QR.5b) - Android only
+# The phone's library copy is a SQLCipher database (its key from the Keystore-guarded
+# store key, lib.rs `open_lib`); everywhere else SQLite as it ships. JNI for the
+# foreground service, the Kotlin bridge and the store key (QR.5b) - Android only.
 [target.'cfg(target_os = "android")'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 jni = { version = "0.21", default-features = false }
 ndk-context = { version = "0.1", default-features = false }
 
@@ -55,6 +57,7 @@ tauri-plugin-barcode-scanner = { version = "2.4.5", default-features = false }
 # none of it compiles or makes sense on Android/iOS (no local Python engine there).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # On Linux the dialog plugin needs a file-dialog backend, which its default features
 # pick and the `default-features = false` above turns off; without it rfd refuses to
@@ -86,6 +89,10 @@ strip = true
 # The page draws under the status bar and the home indicator itself (viewport-fit=cover
 # and env(safe-area-inset-*)), so the iOS scroll view must not inset it too.
 [target.'cfg(target_os = "ios")'.dependencies]
+# The same SQLCipher library copy as Android, and its store key in the Keychain
+# (lib.rs `store_key`), kept on this device only.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+security-framework = "3"
 objc2 = "0.6"
 
 [patch.crates-io]

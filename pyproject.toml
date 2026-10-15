@@ -23,6 +23,7 @@ dependencies = [
   "sqlite-vec>=0.1.9",
   "pynacl>=1.6.2",
   "crawl4ai>=0.9.4",
+  "sqlcipher3-wheels>=0.5.7",
 ]
 
 [project.optional-dependencies]

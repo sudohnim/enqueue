@@ -56,6 +56,17 @@ def serve() -> None:
     if moved:
         print(f"[engine] {moved}")
 
+    # Encrypt a plain library at rest, once the recovery kit is saved (db.encrypt_library).
+    # Before anything opens the file; a failure leaves the library as it was.
+    from .. import db as _db
+
+    try:
+        done = _db.encrypt_library()
+        if done:
+            print(f"[engine] {done}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - the library stays readable, as it was
+        print(f"[engine] could not encrypt the library yet: {exc}", flush=True)
+
     # QR.1: load the DEK from the Keychain/file so sync is unlocked with no
     # prompt after a restart. A missing DEK just means sync stays paused until
     # the recovery phrase is used or the keyring is re-initialized.
@@ -193,6 +204,11 @@ def _start_sync_worker() -> None:
             n = backfill_link_previews()
             if n:
                 print(f"[engine] pushed {n} link previews to the relay")
+            from ..sync.client import repush_relay_v2
+
+            n = repush_relay_v2()
+            if n:
+                print(f"[engine] pushed {n} items to the relay under hashed names")
         except Exception as exc:  # noqa: BLE001 - additive; never block startup
             print(f"[engine] could not backfill link previews: {exc}")
 

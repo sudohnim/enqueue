@@ -7,7 +7,8 @@ the ones where a plausible shortcut would destroy data.
 
 from __future__ import annotations
 
-import sqlite3
+
+from enqueue import sqlite as enq_sqlite
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -123,7 +124,7 @@ class TestPurge:
             row = conn.execute(
                 "SELECT content_hash FROM artifacts WHERE id = ?", (first["id"],)
             ).fetchone()
-            with pytest.raises(sqlite3.IntegrityError):
+            with pytest.raises(enq_sqlite.IntegrityError):
                 conn.execute(
                     "INSERT INTO artifacts (id, kind, title, body, content_hash, mime,"
                     " filename, created_at, updated_at, local_only, status)"

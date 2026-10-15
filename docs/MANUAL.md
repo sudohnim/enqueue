@@ -47,7 +47,7 @@ A small window appears over whatever you are doing.
 - **Shift+Enter** adds a new line. **Esc** closes the window and keeps your draft for next time.
 
 The raven flies off with it, the window closes, and you are back where you were.
-You can change the shortcut in Settings > Features.
+You can change the shortcut in Settings > Capture.
 
 ### Inside the app
 
@@ -123,7 +123,7 @@ Enqueue keeps drafts of a note as you write: how it began, one for each five min
 - Choose one to see the note with what was added since in green and what was removed struck in red, or **As it was**.
 - **Restore** puts it back. The text it replaces is kept as a draft, so going back loses nothing.
 - **Keep drafts of this note**, in the list and in Details, turns drafts off for one note (a scratch pad, a log). Off removes its earlier drafts.
-- **Settings > Storage > Drafts** decides how many are kept as they age: thinned (everything from today, then one an hour for a week, one a day for 90 days, one a week after), the last 30 days, or none.
+- **Settings > Library > Drafts** decides how many are kept as they age: thinned (everything from today, then one an hour for a week, one a day for 90 days, one a week after), the last 30 days, or none.
 
 On the phone, Details shows the drafts and the switch; the list and the comparison work the same way.
 
@@ -134,7 +134,7 @@ What you can add to a capture is your own note about it, in the box under it.
 Your note is searchable, and it shapes the summary.
 
 - **Links.** Saving a link fetches its page once, to learn its title, picture and text, so you can find it by what it says. Nothing remote is ever loaded afterwards: the picture is stored on your Mac. Click the address to open the page in your browser.
-- **A site that refuses.** Some sites turn away anything that is not a browser. The page says so under your note. Turn on **Open refused links in a browser** in Settings > Features and press **Try again** to have a hidden browser open it once.
+- **A site that refuses.** Some sites turn away anything that is not a browser. The page says so under your note. Turn on **Try harder on sites that block previews** in Settings > Capture and press **Try again** to have a hidden browser open it once.
 - **PDFs** open in a reader with find-in-document. Their text is searchable page by page.
 - **Images** are described by the vision model, when one is set, so you can find a photo by what is in it.
 - **Files** (text, markdown, CSV, JSON, HTML) are read and indexed. Anything else is kept and downloadable.
@@ -254,7 +254,7 @@ For the few things you want hidden even from someone holding your unlocked Mac.
 
 - The **lock** on an artifact moves it into the vault. It disappears from the wall, from search, and from answers.
 - In the vault it is encrypted with a key made from a 6-digit PIN that only you know. It stays encrypted when it syncs: your other device holds it, and still cannot read it without the PIN.
-- The door is deliberately unmarked: **Settings > Events > Diagnostics**. The first time, you choose the PIN. A wrong PIN looks like a diagnostic that failed.
+- The door is deliberately unmarked: **Settings > Activity > Diagnostics**. The first time, you choose the PIN. A wrong PIN looks like a diagnostic that failed.
 - The vault locks itself again after a few idle minutes, and whenever you leave it.
 - On the phone, the **Open with fingerprint** switch inside the vault lets a fingerprint open it instead of the PIN. The vault offers it once, right after the PIN opens it or locks an item away. With it on, locking an item away asks for your fingerprint; with it off, the PIN. The PIN always still works. Adding a new fingerprint to the phone, or changing the PIN on another device, turns this off until you enter the PIN again.
 
@@ -281,7 +281,7 @@ The relay only ever stores scrambled data: everything is encrypted on your devic
 
 To link a phone:
 
-1. On the Mac, open **Settings > Sync** and set it up. You are shown a **recovery phrase**: write it down. It is the only way back in if you lose every device.
+1. On the Mac, open **Settings > Phone** and set it up. You are shown a **recovery phrase**: write it down. It is the only way back in if you lose every device.
 2. The Mac shows a QR code.
 3. In the phone app, scan it. The phone downloads your library.
 
@@ -293,13 +293,19 @@ Your model settings travel too, so the phone can answer questions without being 
 
 Keep a copy of the whole library in your cloud drive, in case the Mac is lost.
 
-1. Open **Settings > Storage**.
+1. Open **Settings > Library**.
 2. Under **Backup**, click **Use Proton Drive** (shown when Proton Drive is installed), or type another folder that a cloud drive syncs.
 
 From then on a backup is made once a day and when you quit, whenever something changed.
-In Proton Drive it is encrypted end to end.
 The last 7 days are kept, and one a week for the 4 weeks before.
 **Back up now** makes one at once.
+
+Every backup is encrypted with your library's own key before it leaves the Mac, so the folder, and whoever runs your cloud drive, holds nothing anyone can read.
+
+**Save your recovery kit.**
+Under Backup, **Show recovery kit** shows 56 letters and digits.
+Keep them where you keep passwords, then click **I saved it**.
+On a new Mac the recovery kit is the only way to open your backups: Enqueue keeps no other copy, and nobody can reset it.
 
 A backup is small, because the search index is left out; it is rebuilt when you restore.
 
@@ -309,6 +315,7 @@ To restore, on a new Mac or after a mistake: quit Enqueue, then run
 enq restore "~/Library/CloudStorage/ProtonDrive-.../"
 ```
 
+On a new Mac it asks for the recovery kit.
 Your current library is set aside, never deleted.
 Start Enqueue again and it rebuilds the search index; browsing works meanwhile, and search returns when it is done.
 
@@ -322,7 +329,7 @@ Search and capture work without one.
 - **Ollama** (the default) runs the model on your Mac. Nothing leaves it.
 - **OpenRouter** or **OpenCode Go** use a model on someone else's computer. The text of the artifacts involved is sent there. An artifact marked **local only** never is.
 
-Choose in **Settings > AI**: the backend, the model for answers, optionally a second model for summaries, and your API key.
+Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**.
 The key is stored in the macOS Keychain, never in a file.
 
 If the provider says your usage limit is reached, Enqueue pauses its model calls until the limit resets and then carries on by itself.
@@ -335,16 +342,16 @@ What can leave, only if you set it up: text sent to an outside model, encrypted 
 
 | Tab | What is there |
 | --- | --- |
-| **AI** | Backend, models, API key, extra headers, retries. |
-| **Features** | The capture shortcut, link previews (automatic, and the browser fallback), search options. |
-| **Storage** | Where the library lives, the backup folder, usage, rebuilding the index. |
+| **Assistant** | Where answers come from, your account key, summaries; under More options the model for each job and retries. |
+| **Capture** | The capture shortcut, link previews, search by idea and ranking. |
+| **Library** | Backups and the recovery kit, drafts, space used; under More options the library folder, restoring, rebuilding search. |
 | **Trash** | How long deleted things wait, what is in the trash, emptying it. |
-| **Sync** | Setting up sync, the QR code to link a phone, the recovery phrase. |
-| **Events** | A log of what the app did: captures, questions and their answers, summaries, syncs, backups. Click a row for its full record. |
+| **Phone** | Setting up sync, the code to link a phone, adding another computer. |
+| **Activity** | What Enqueue has been doing: saves, questions and answers, summaries, syncs, backups. Click a line for the details. |
 
 ## When something goes wrong
 
-- **"Summary: generating in the background" never finishes.** The model is unreachable, out of quota, or keeps failing. Open **Settings > Events** to see why. Summaries that are owed are retried on their own.
+- **"Summary: generating in the background" never finishes.** The model is unreachable, out of quota, or keeps failing. Open **Settings > Activity** to see why. Summaries that are owed are retried on their own.
 - **A link has no preview.** The site refused, or is gone. The line under your note says which. See [Links](#links-pdfs-images-and-files).
 - **Search says "building".** The index is being rebuilt, after an update or a restore. It finishes by itself.
 - **The phone is behind.** Open the app with a connection; it syncs when it comes to the front. Pull down on the library to sync now.

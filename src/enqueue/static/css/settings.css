@@ -543,6 +543,46 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
+  /* The recovery kit: a row like the status above it, its dot amber until it is kept. */
+  .backup-kit {
+    align-items: flex-start;
+    margin-top: var(--sp-5);
+    padding-top: var(--sp-5);
+    border-top: 1px solid var(--line-soft);
+  }
+  .backup-kit .backup-dot {
+    margin-top: 4px;
+  }
+  .backup-kit .backup-words {
+    flex: 1;
+    min-width: 0;
+  }
+  .backup-kit .backup-label {
+    margin-bottom: 2px;
+  }
+  .kit-view[hidden] {
+    display: none;
+  }
+  .kit-code {
+    display: grid;
+    grid-template-columns: repeat(7, max-content);
+    gap: 6px 14px;
+    margin: var(--sp-3) 0 var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    width: fit-content;
+    border-radius: var(--r-lg);
+    background: var(--bg);
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 22px;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    user-select: all;
+  }
+  .kit-actions {
+    display: flex;
+    gap: var(--sp-2);
+  }
   .backup-foot {
     display: flex;
     align-items: center;
@@ -551,4 +591,358 @@
     margin-top: var(--sp-5);
     padding-top: var(--sp-4);
     border-top: 1px solid var(--line-soft);
+  }
+
+  /* ---- Settings, as light as the home page (2026-10-15) ----------------------------
+     One centred column, the raven against the title, where things stand in one quiet
+     line, the home page's pill tabs, and settings as rows on the ground: a label and
+     one plain sentence on the left, the control on the right, a hairline between rows.
+     No stacked cards; the backup status is the one tile, because it is worth a glance.
+     Scoped to .settings-page: other pages use .group and .field as they were. */
+  #view > .pagecol.settings-page {
+    max-width: 760px;
+  }
+  .settings-page .settings-head {
+    text-align: center;
+    margin-bottom: var(--sp-5);
+  }
+  .settings-page .settings-title {
+    justify-content: center;
+  }
+  .settings-page .setup-line {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 20px;
+    margin: var(--sp-3) 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  .settings-page .setup-line li {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .settings-page .setup-line .setup-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+  .settings-page .setup-line [data-state="todo"] .setup-dot {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--text-mute);
+  }
+  .settings-page .setup-line [data-state="warn"] .setup-dot {
+    background: var(--warning);
+  }
+  .settings-page .setup-go {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  .settings-page .setup-go:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* The tabs: the home page's pill bar, centred above the pane. */
+  .settings-page .settings-layout {
+    display: block;
+  }
+  .settings-page .settings-tabs {
+    position: static;
+    flex-direction: row;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    margin: 0 0 var(--sp-6);
+  }
+  .settings-page .settings-tabs button {
+    position: relative;
+    padding: 6px 14px;
+    border-radius: var(--r-full);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text-mute);
+    background: none;
+    box-shadow: none;
+    gap: 6px;
+  }
+  .settings-page .settings-tabs button:hover {
+    color: var(--text);
+    background: none;
+  }
+  .settings-page .settings-tabs button.active {
+    color: var(--accent-text);
+    font-weight: 400;
+    background: var(--lavender-subtle);
+    box-shadow: none;
+  }
+  .settings-page .settings-tabs button.active::before {
+    display: none;
+  }
+  .settings-page .tab-todo {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warning);
+  }
+
+  /* A setting that needs a look: a quiet line above the tab's settings. */
+  .settings-page .setup-alerts {
+    margin: 0 0 var(--sp-5);
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .settings-page .setup-alerts li {
+    padding: 6px 0;
+    border: 0;
+    font-size: 14px;
+  }
+  .settings-page .setup-alerts li + li {
+    border-top: 0;
+  }
+
+  /* Sections: a heading in the home page's shelf size, rows straight on the ground. */
+  .settings-page #settingsTabPane > .h2:first-child {
+    display: none;
+  }
+  .settings-page .shelf,
+  .settings-page .settings-card-label {
+    font-family: var(--sans);
+    font-size: 20px;
+    font-weight: var(--w-medium);
+    line-height: 26px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    margin: var(--sp-7, 40px) 0 var(--sp-1);
+    text-transform: none;
+  }
+  .settings-page #settingsTabPane > .shelf:first-of-type,
+  .settings-page #settingsTabPane > .settings-card:first-child .settings-card-label {
+    margin-top: 0;
+  }
+  .settings-page .group,
+  .settings-page .card,
+  .settings-page .settings-card {
+    margin: 0;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .settings-page .shelf + .group,
+  .settings-page .shelf + .card {
+    margin-top: 0;
+  }
+  .settings-page .group > .aside,
+  .settings-page .group > .callout {
+    margin: var(--sp-2) 0 var(--sp-1);
+    max-width: 60ch;
+  }
+
+  /* A row: label and its sentence on the left, the control on the right. */
+  .settings-page .group > .field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--sp-6);
+    align-items: center;
+    margin: 0;
+    padding: var(--sp-4) 0;
+    border-top: 0;
+    box-shadow: inset 0 -1px 0 var(--line-soft);
+  }
+  .settings-page .group > .field:last-child {
+    box-shadow: none;
+  }
+  .settings-page .group > .field + .field {
+    border-top: 0;
+    margin-top: 0;
+    padding-top: var(--sp-4);
+  }
+  .settings-page .field > label,
+  .settings-page .field > .rowlabel {
+    grid-column: 1;
+    margin: 0;
+    font-size: 15px;
+    line-height: 20px;
+  }
+  .settings-page .field > .aside,
+  .settings-page .field > .pinned,
+  .settings-page .field > .facts,
+  .settings-page .field > .mono.chip,
+  .settings-page .field > div[id] {
+    grid-column: 1;
+    margin-top: 3px;
+    font-size: 14px;
+    line-height: 20px;
+    max-width: 52ch;
+  }
+  .settings-page .field > .aside:empty,
+  .settings-page .field > div[id]:empty {
+    display: none;
+  }
+  .settings-page .field > input,
+  .settings-page .field > select,
+  .settings-page .field > .keyrow,
+  .settings-page .field > .recorder,
+  .settings-page .field > .btn,
+  .settings-page .field > .actions {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    justify-self: end;
+    align-self: center;
+    margin: 0;
+  }
+  .settings-page .field > input,
+  .settings-page .field > select {
+    width: 260px;
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .settings-page .field > input[type="number"] {
+    width: 96px;
+  }
+  .settings-page .field > .keyrow {
+    flex-wrap: nowrap;
+  }
+  .settings-page .field > .keyrow input {
+    width: 220px;
+    min-width: 0;
+    flex: none;
+    font-size: 15px;
+  }
+  /* A row whose own pieces are laid out already (the switches, the drafts choices). */
+  .settings-page .field:has(> .togglerow),
+  .settings-page .field[role="radiogroup"],
+  .settings-page .field.drafts-foot,
+  .settings-page .field:has(> .callout) {
+    display: block;
+  }
+  .settings-page .togglerow .rowlabel {
+    font-size: 15px;
+    margin: 0;
+  }
+  .settings-page .togglerow .aside,
+  .settings-page .togglerow .pinned {
+    margin-top: 3px;
+    font-size: 14px;
+    line-height: 20px;
+    max-width: 52ch;
+  }
+
+  /* "More options": what most people never need, closed until asked. */
+  .settings-page details.more {
+    margin-top: var(--sp-7, 40px);
+    padding-top: var(--sp-3);
+    box-shadow: inset 0 1px 0 var(--line-soft);
+  }
+  .settings-page details.more > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    list-style: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-dim);
+    padding: 6px 0;
+  }
+  .settings-page details.more > summary::-webkit-details-marker {
+    display: none;
+  }
+  .settings-page details.more > summary::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  .settings-page details.more[open] > summary::before {
+    transform: rotate(45deg);
+  }
+  .settings-page details.more > summary:hover {
+    color: var(--text);
+  }
+  .settings-page details.more > .shelf:first-of-type {
+    margin-top: var(--sp-4);
+  }
+
+  /* The backup's one tile. */
+  .settings-page .group.backup > .backup-status:first-child {
+    padding: var(--sp-4) var(--sp-5);
+    margin: var(--sp-2) 0 var(--sp-2);
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--hairline);
+  }
+
+  @media (max-width: 640px) {
+    .settings-page .group > .field {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .settings-page .field > input,
+    .settings-page .field > select,
+    .settings-page .field > .keyrow,
+    .settings-page .field > .recorder,
+    .settings-page .field > .btn,
+    .settings-page .field > .actions {
+      grid-column: 1;
+      grid-row: auto;
+      justify-self: start;
+      margin-top: var(--sp-2);
+    }
+  }
+
+  /* Secondary actions are quiet pills, the same as the home page's. */
+  .settings-page .btn.tertiary,
+  .settings-page .btn.secondary,
+  .settings-page .btn.ghost {
+    padding: 7px 14px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--hairline);
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text);
+  }
+  .settings-page .btn.tertiary:hover,
+  .settings-page .btn.secondary:hover,
+  .settings-page .btn.ghost:hover {
+    background: var(--surface-hover);
+  }
+  .settings-page .btn.ghost.harm,
+  .settings-page .btn.harm {
+    color: var(--danger);
+  }
+  .settings-page .btn.primary {
+    border-radius: var(--r-full);
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+  .settings-page .keyrow {
+    gap: var(--sp-2);
+  }
+  .settings-page .aside.path {
+    font-family: var(--mono);
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .settings-page .field > .kit-view {
+    grid-column: 1;
+  }
+  .settings-page .backup-status .btn.primary {
+    flex: none;
+  }
+  .settings-page .backup-status .backup-words {
+    flex: 1;
   }

@@ -48,13 +48,48 @@ def test_recovery_unlocks_when_the_stored_dek_is_lost(store):
     dek = keyring_file.dek()
     assert dek is not None
 
-    # Total device loss of the stored DEK: the recovery phrase is the only way.
+    # Total device loss of the stored DEK and the library key: the phrase is the way.
+    from enqueue import libkey
+
     keyring_file._dek = None
     keyring.dek_clear()
-    assert keyring_file.load_dek_from_keychain() is None
+    real_load = libkey._load
+    libkey._load = lambda: None
+    try:
+        assert keyring_file.load_dek_from_keychain() is None
+    finally:
+        libkey._load = real_load
     assert keyring_file.unlock_with_recovery(phrase) == dek
     # The recovered DEK is stored again, so a later restart stays unlocked.
     assert keyring_file.load_dek_from_keychain() == dek
+
+
+def test_the_library_key_brings_the_dek_back(store):
+    """A Mac restored from a backup with the recovery kit: no DEK in the Keychain, but
+    keyring.json and the library key came back, and sync with them."""
+    import json
+
+    from enqueue import keyring
+
+    keyring_file.initialize()
+    dek = keyring_file.dek()
+    assert "dek_by_library" in json.loads(keyring_file._path().read_text())
+    keyring_file._dek = None
+    keyring.dek_clear()
+    assert keyring_file.load_dek_from_keychain() == dek
+    assert keyring._dek_get() == dek, "and stored again for the next start"
+
+
+def test_an_older_keyring_gets_the_library_wrap_when_it_loads(store):
+    import json
+
+    keyring_file.initialize()
+    record = json.loads(keyring_file._path().read_text())
+    record.pop("dek_by_library")
+    keyring_file._path().write_text(json.dumps(record))
+    keyring_file._dek = None
+    keyring_file.load_dek_from_keychain()
+    assert "dek_by_library" in json.loads(keyring_file._path().read_text())
 
 
 def test_a_wrong_recovery_phrase_raises(store):

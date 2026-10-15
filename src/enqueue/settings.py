@@ -106,6 +106,8 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # One-shot flag: saved links were re-pushed once so their previews reach the phone
     # (previews started riding the snapshot after most links had synced).
     "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
+    "sync_relay_v2_pushed": ("ENQ_SYNC_RELAY_V2_PUSHED", False, True),
+    "sync_relay_v2_cleared": ("ENQ_SYNC_RELAY_V2_CLEARED", False, True),
 }
 
 # The settings that pick which account/model a call goes to.

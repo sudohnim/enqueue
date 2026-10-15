@@ -8,18 +8,32 @@ It holds backups: a consistent copy of the database made with `VACUUM INTO`, wri
 under a temporary name and renamed into place only once it is whole, so the drive
 only ever sees complete files.
 
+Every file a backup puts in the drive is encrypted with the library key (libkey.py;
+the `backup` key derived from it), so the drive, and whoever runs it, holds nothing
+readable. The plain copy is made in the library's own folder, sealed into the drive,
+and opened again to check it before it counts. The way back on a new Mac is the
+recovery kit (`restore(..., kit=...)`).
+
 What a backup holds (`<backup_dir>/Enqueue Backup/`):
 
-- `library/enqueue-YYYY-MM-DD.db` - one per day, the latest kept 7 days, then one per
-  week for 4 more. The search index tables are emptied in the copy and its recorded
-  embedding version cleared: they are derived, they are most of the file, and a
-  restored library rebuilds them on its first start (index/bootstrap.py).
-- `blobs/` - the original files, content-addressed, so only new ones are copied.
-- `settings.json`, `keyring.json` (the sync key, wrapped under the recovery phrase -
-  useless without it), and `manifest.json` describing the latest backup.
+- `library/enqueue-YYYY-MM-DD.db.enc` - one per day, the latest kept 7 days, then one
+  per week for 4 more. The search index tables are emptied in the copy and its
+  recorded embedding version cleared: they are derived, they are most of the file,
+  and a restored library rebuilds them on its first start (index/bootstrap.py).
+- `files/` - the original files, each sealed with its name inside and named by a keyed
+  hash of it (the `backup-names` key), so the drive cannot match a file to a known one
+  and only new ones are copied.
+- `settings.json.enc`, `keyring.json.enc`, and `manifest.json` (not encrypted: the
+  format, which key opens the backup, the date and size of the latest).
 
-The API key stays in the Keychain and is never backed up. Vaulted items stay
-encrypted in the copy exactly as they are on disk.
+An encrypted file is the stream format of libsodium's secretstream (XChaCha20-Poly1305
+in 1 MiB chunks, the last one tagged final, so a cut-short file is refused) behind a
+37-byte header: `ENQB`, the format byte, the 8-byte key id, the stream header.
+
+The first encrypted backup removes what older versions left in the clear (the `.db`
+copies, `blobs/`, `settings.json`, `keyring.json`), once it has checked its own copy.
+The API key stays in the Keychain and is never backed up. Vaulted items stay sealed
+in the copy exactly as they are on disk.
 
 A backup runs once a day (when something changed since the last one), when the engine
 shuts down cleanly, and on demand. Restoring (`restore`) never overwrites: the current
@@ -28,19 +42,36 @@ library is moved aside first.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import shutil
 import socket
-import sqlite3
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from . import config
+from nacl.bindings import (
+    crypto_secretstream_xchacha20poly1305_init_pull,
+    crypto_secretstream_xchacha20poly1305_init_push,
+    crypto_secretstream_xchacha20poly1305_pull,
+    crypto_secretstream_xchacha20poly1305_push,
+    crypto_secretstream_xchacha20poly1305_state,
+    crypto_secretstream_xchacha20poly1305_TAG_FINAL,
+    crypto_secretstream_xchacha20poly1305_TAG_MESSAGE,
+)
+from nacl.exceptions import CryptoError
+
+from . import config, db, libkey
+from . import sqlite as sqlite3
 
 FOLDER = "Enqueue Backup"
+MAGIC = b"ENQB"
+FORMAT = 1
+CHUNK = 1 << 20
+_SEALED = ("settings.json", "keyring.json")
 KEEP_DAILY = 7
 KEEP_WEEKLY = 4
 EVERY = timedelta(hours=24)
@@ -51,6 +82,88 @@ _running = threading.Event()
 
 class BackupError(RuntimeError):
     """A backup or restore could not be done; the message says why, for a person."""
+
+
+class Locked(BackupError):
+    """The backup is locked with a key this Mac does not have: the recovery kit opens it."""
+
+
+# ---- sealing -----------------------------------------------------------------------
+
+
+def _keys() -> tuple[bytes, bytes, str]:
+    key = libkey.get()
+    return libkey.derive(key, "backup"), libkey.derive(key, "backup-names"), libkey.key_id(key)
+
+
+def _header(kid: str) -> bytes:
+    return MAGIC + bytes([FORMAT]) + bytes.fromhex(kid)
+
+
+def _seal(src: Path, dst: Path, key: bytes, kid: str, prefix: bytes = b"") -> None:
+    """Encrypt `src` (after `prefix`) into `dst`, through a partial file, so the drive
+    only ever sees a whole one."""
+    tmp = dst.with_name("." + dst.name + ".partial")
+    state = crypto_secretstream_xchacha20poly1305_state()
+    ad = _header(kid)
+    with open(src, "rb") as f, open(tmp, "wb") as out:
+        out.write(ad + crypto_secretstream_xchacha20poly1305_init_push(state, key))
+        pending = prefix + f.read(max(0, CHUNK - len(prefix)))
+        while True:
+            nxt = f.read(CHUNK)
+            tag = (
+                crypto_secretstream_xchacha20poly1305_TAG_MESSAGE
+                if nxt
+                else crypto_secretstream_xchacha20poly1305_TAG_FINAL
+            )
+            out.write(crypto_secretstream_xchacha20poly1305_push(state, pending, ad, tag))
+            if not nxt:
+                break
+            pending = nxt
+    os.replace(tmp, dst)
+
+
+def _key_id_of(path: Path) -> str:
+    with open(path, "rb") as f:
+        head = f.read(13)
+    if len(head) < 13 or head[:4] != MAGIC or head[4] != FORMAT:
+        raise BackupError(f"{path.name} is not an Enqueue backup file")
+    return head[5:13].hex()
+
+
+def _open(path: Path, key: bytes):
+    """The plaintext of a sealed file, chunk by chunk. Refuses a wrong key, a changed
+    byte, and a file cut short."""
+    state = crypto_secretstream_xchacha20poly1305_state()
+    with open(path, "rb") as f:
+        ad = f.read(13)
+        crypto_secretstream_xchacha20poly1305_init_pull(state, f.read(24), key)
+        while True:
+            chunk = f.read(CHUNK + 17)
+            if not chunk:
+                raise BackupError(f"{path.name} is cut short; pick an older backup")
+            try:
+                plain, tag = crypto_secretstream_xchacha20poly1305_pull(state, chunk, ad)
+            except CryptoError:
+                raise BackupError(f"{path.name} is damaged; pick an older backup") from None
+            yield plain
+            if tag == crypto_secretstream_xchacha20poly1305_TAG_FINAL:
+                return
+
+
+def _open_to(path: Path, key: bytes, dst: Path) -> bytes:
+    """Decrypt `path` into `dst`; returns the first line when the file carries a name
+    (sealed originals do), else b""."""
+    first = None
+    name = b""
+    with open(dst, "wb") as out:
+        for plain in _open(path, key):
+            if first is None:
+                first = plain
+                if path.parent.name == "files":
+                    name, _, plain = plain.partition(b"\n")
+            out.write(plain)
+    return name
 
 
 # ---- where -----------------------------------------------------------------------
@@ -94,7 +207,7 @@ def status() -> dict:
     target = configured_dir()
     backups = []
     if target is not None:
-        for f in sorted((target / "library").glob("enqueue-*.db"), reverse=True):
+        for f in sorted((target / "library").glob("enqueue-*.db.enc"), reverse=True):
             try:
                 backups.append({"file": f.name, "bytes": f.stat().st_size})
             except OSError:
@@ -106,6 +219,9 @@ def status() -> dict:
         "running": _running.is_set(),
         "last": last(),
         "backups": backups,
+        # Backups are locked with the library key; the kit is the way back to it.
+        "kit_saved": libkey.kit_saved(),
+        "library_encrypted": db.is_encrypted(),
     }
 
 
@@ -136,14 +252,12 @@ def _change_stamp() -> str:
         conn.close()
 
 
-def _vec_conn(path: Path) -> sqlite3.Connection:
-    """A connection with sqlite-vec loaded: the vec0 index tables need it to be touched."""
-    import sqlite_vec
-
-    conn = sqlite3.connect(str(path))
-    conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
-    conn.enable_load_extension(False)
+def _vec_conn(path: Path, key: bytes | None = None) -> sqlite3.Connection:
+    """A connection with sqlite-vec loaded: the vec0 index tables need it to be touched.
+    An encrypted library (db.connect) stays encrypted in its copy, under the same key;
+    the copy is sealed again on top of that."""
+    conn = db.connect(path, key=key)
+    db._load_vec(conn)
     return conn
 
 
@@ -167,14 +281,9 @@ def _slim(path: Path) -> None:
         conn.close()
 
 
-def _copy_atomic(src: Path, dst: Path) -> None:
-    tmp = dst.with_name("." + dst.name + ".partial")
-    shutil.copy2(src, tmp)
-    os.replace(tmp, dst)
-
-
-def _mirror_blobs(dst: Path) -> int:
-    """Copy original files the backup does not have yet. They never change once written."""
+def _mirror_blobs(dst: Path, key: bytes, names: bytes, kid: str) -> int:
+    """Seal original files the backup does not have yet. They never change once written,
+    and each is named by a keyed hash of its own name."""
     dst.mkdir(parents=True, exist_ok=True)
     copied = 0
     if not config.BLOB_DIR.exists():
@@ -182,13 +291,10 @@ def _mirror_blobs(dst: Path) -> int:
     for f in config.BLOB_DIR.iterdir():
         if not f.is_file():
             continue
-        target = dst / f.name
-        try:
-            if target.exists() and target.stat().st_size == f.stat().st_size:
-                continue
-        except OSError:
-            pass
-        _copy_atomic(f, target)
+        target = dst / hmac.new(names, f.name.encode(), hashlib.sha256).hexdigest()[:40]
+        if target.exists():
+            continue
+        _seal(f, target, key, kid, prefix=f.name.encode() + b"\n")
         copied += 1
     return copied
 
@@ -209,9 +315,9 @@ def _keep(days: list[date], today: date) -> set[date]:
 
 def _prune(library: Path, today: date) -> int:
     by_day = {}
-    for f in library.glob("enqueue-*.db"):
+    for f in library.glob("enqueue-*.db.enc"):
         try:
-            by_day[date.fromisoformat(f.stem.removeprefix("enqueue-"))] = f
+            by_day[date.fromisoformat(f.name.removeprefix("enqueue-").removesuffix(".db.enc"))] = f
         except ValueError:
             continue
     keep = _keep(list(by_day), today)
@@ -255,36 +361,49 @@ def run(reason: str = "manual", force: bool = True) -> dict:
         if not force and prev.get("stamp") == stamp and prev.get("folder") == str(target):
             return {"skipped": "nothing changed since the last backup"}
 
+        key, names, kid = _keys()
         library = target / "library"
         library.mkdir(parents=True, exist_ok=True)
         today = date.today()
-        final = library / f"enqueue-{today.isoformat()}.db"
-        partial = library / f".enqueue-{today.isoformat()}.db.partial"
-        partial.unlink(missing_ok=True)
+        final = library / f"enqueue-{today.isoformat()}.db.enc"
 
-        # One consistent snapshot of the live database, writers and all (WAL).
-        src = _vec_conn(config.DB_PATH)
+        # The plain copy is made beside the live library, never in the drive: one
+        # consistent snapshot (writers and all, WAL), slimmed, then sealed into the
+        # drive and opened again to check it.
+        work = config.DATA_DIR / ".backup-work"
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(mode=0o700)
         try:
-            src.execute("VACUUM INTO ?", (str(partial),))
+            plain = work / "enqueue.db"
+            src = _vec_conn(config.DB_PATH)
+            try:
+                src.execute("VACUUM INTO ?", (str(plain),))
+            finally:
+                src.close()
+            _slim(plain)
+            _seal(plain, final, key, kid)
+            check = work / "check.db"
+            _open_to(final, key, check)
+            if _quick_check(check) != "ok":
+                final.unlink(missing_ok=True)
+                raise BackupError("the sealed backup did not open back to a sound copy")
         finally:
-            src.close()
-        try:
-            _slim(partial)
-        except Exception:
-            partial.unlink(missing_ok=True)
-            raise
-        os.replace(partial, final)
+            shutil.rmtree(work, ignore_errors=True)
 
-        blobs = _mirror_blobs(target / "blobs")
-        for name in ("settings.json", "keyring.json"):
+        blobs = _mirror_blobs(target / "files", key, names, kid)
+        for name in _SEALED:
             src_file = config.DATA_DIR / name
             if src_file.exists():
-                _copy_atomic(src_file, target / name)
+                _seal(src_file, target / (name + ".enc"), key, kid)
         pruned = _prune(library, today)
+        cleared = _clear_plaintext(target)
 
         size = final.stat().st_size
         now = datetime.now(timezone.utc).isoformat()
         manifest = {
+            "format": 2,
+            "encrypted": True,
+            "key_id": kid,
             "created_at": now,
             "file": f"library/{final.name}",
             "bytes": size,
@@ -312,13 +431,42 @@ def run(reason: str = "manual", force: bool = True) -> dict:
         events.emit(
             "backup",
             f"backed up to {target.parent.name} ({size // 1_000_000} MB)",
-            data={**record, "blobs_copied": blobs, "pruned": pruned},
+            data={**record, "blobs_copied": blobs, "pruned": pruned, "plaintext_removed": cleared},
             duration_ms=int((time.monotonic() - started) * 1000),
         )
         return record
     finally:
         _running.clear()
         _lock.release()
+
+
+def _quick_check(path: Path, key: bytes | None = None) -> str:
+    try:
+        conn = db.connect(path, key=key, readonly=True)
+        try:
+            return conn.execute("PRAGMA quick_check").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        return str(exc)
+
+
+def _clear_plaintext(target: Path) -> int:
+    """Remove what backups from before encryption left readable in the drive. Runs only
+    after a sealed backup has been checked, so the folder is never without one."""
+    gone = 0
+    for f in (target / "library").glob("enqueue-*.db"):
+        f.unlink(missing_ok=True)
+        gone += 1
+    old = target / "blobs"
+    if old.is_dir():
+        gone += sum(1 for f in old.iterdir() if f.is_file())
+        shutil.rmtree(old, ignore_errors=True)
+    for name in _SEALED:
+        if (target / name).exists():
+            (target / name).unlink()
+            gone += 1
+    return gone
 
 
 def run_quietly(reason: str, force: bool = False) -> None:
@@ -379,19 +527,24 @@ def _engine_running() -> bool:
         return False
 
 
-def restore(source: str | os.PathLike) -> dict:
+def restore(source: str | os.PathLike, kit: str | None = None) -> dict:
     """Put a backup in place as the library. The engine must be stopped.
 
-    `source` is a backup folder (its newest backup is used) or one `.db` file in it.
-    The current library is moved aside, never deleted, to `before-restore-<time>/`.
-    The search index is rebuilt by the engine on its next start.
+    `source` is a backup folder (its newest backup is used) or one file in it. A backup
+    opens with this Mac's library key, or with the recovery kit (`kit`) on any other;
+    a backup from before encryption (a plain `.db`) restores as it is. The current
+    library is moved aside, never deleted, to `before-restore-<time>/`. A library
+    restored with its kit keeps that key from then on (libkey.adopt). The search index
+    is rebuilt by the engine on its next start.
     """
     if _engine_running():
         raise BackupError("stop Enqueue first (the engine is running on 127.0.0.1:8787)")
     src = Path(source).expanduser()
     if src.is_dir():
         folder = src / FOLDER if (src / FOLDER).is_dir() else src
-        files = sorted((folder / "library").glob("enqueue-*.db"))
+        files = sorted((folder / "library").glob("enqueue-*.db.enc")) or sorted(
+            (folder / "library").glob("enqueue-*.db")
+        )
         if not files:
             raise BackupError(f"no backups found in {folder}")
         db_file = files[-1]
@@ -401,18 +554,39 @@ def restore(source: str | os.PathLike) -> dict:
     else:
         raise BackupError(f"{src} does not exist")
 
-    try:
-        check = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    key = adopt = None
+    if db_file.name.endswith(".enc"):
+        kid = _key_id_of(db_file)
+        mine = libkey.get(create=False)
+        if mine is not None and libkey.key_id(mine) == kid:
+            root = mine
+        elif kit:
+            root = libkey.from_kit(kit)
+            if libkey.key_id(root) != kid:
+                raise BackupError("that recovery kit is for a different library")
+            adopt = root
+        else:
+            raise Locked(
+                "this backup is locked with its library's key, which this Mac does not"
+                " have: the recovery kit opens it"
+            )
+        key = libkey.derive(root, "backup")
+        incoming = config.DATA_DIR / ".restore.partial"
         try:
-            ok = check.execute("PRAGMA quick_check").fetchone()[0]
-        finally:
-            check.close()
-    except sqlite3.DatabaseError as exc:
-        ok = str(exc)
+            _open_to(db_file, key, incoming)
+        except BackupError:
+            incoming.unlink(missing_ok=True)
+            raise
+    else:
+        incoming = db_file
+
+    ok = _quick_check(incoming, key=libkey.derive(adopt, "disk") if adopt else None)
     if ok != "ok":
+        if incoming != db_file:
+            incoming.unlink(missing_ok=True)
         raise BackupError(f"{db_file.name} is damaged ({ok}); pick an older backup")
 
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     moved_to = None
     live = [config.DB_PATH.with_name(config.DB_PATH.name + s) for s in ("", "-wal", "-shm")]
     if any(p.exists() for p in live):
@@ -424,19 +598,41 @@ def restore(source: str | os.PathLike) -> dict:
             if p.exists():
                 shutil.move(str(p), moved_to / p.name)
 
-    shutil.copy2(db_file, config.DB_PATH)
+    if incoming == db_file:
+        shutil.copy2(db_file, config.DB_PATH)
+    else:
+        os.replace(incoming, config.DB_PATH)
     restored_blobs = 0
+    config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
+    if key is not None and (folder / "files").is_dir():
+        for f in (folder / "files").iterdir():
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            tmp = config.BLOB_DIR / ".restoring"
+            name = _open_to(f, key, tmp).decode("utf-8", "replace")
+            dest = config.BLOB_DIR / Path(name).name
+            if name and not dest.exists():
+                os.replace(tmp, dest)
+                restored_blobs += 1
+            else:
+                tmp.unlink(missing_ok=True)
     if (folder / "blobs").is_dir():
-        config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
         for f in (folder / "blobs").iterdir():
             if f.is_file() and not (config.BLOB_DIR / f.name).exists():
                 shutil.copy2(f, config.BLOB_DIR / f.name)
                 restored_blobs += 1
     # Settings and the wrapped sync key only fill a gap (a new Mac); a library being
     # rolled back keeps the ones it has.
-    for name in ("settings.json", "keyring.json"):
-        if (folder / name).exists() and not (config.DATA_DIR / name).exists():
-            shutil.copy2(folder / name, config.DATA_DIR / name)
+    for name in _SEALED:
+        here = config.DATA_DIR / name
+        if here.exists():
+            continue
+        if key is not None and (folder / (name + ".enc")).exists():
+            _open_to(folder / (name + ".enc"), key, here)
+        elif (folder / name).exists():
+            shutil.copy2(folder / name, here)
+    if adopt is not None:
+        libkey.adopt(adopt)
     return {
         "restored": str(db_file),
         "blobs": restored_blobs,

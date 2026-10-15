@@ -114,7 +114,7 @@ class TestPush:
             assert b"hello relay" not in got.content
             dek = keyring_file.dek()
             assert dek is not None
-            snap = deserialize(crypto.decrypt(got.content, dek))
+            snap = deserialize(crypto.open_payload(got.content, dek))
             assert snap["artifact"]["body"] == "hello relay"
             assert snap["artifact"]["_device_id"]
 
@@ -127,6 +127,36 @@ class TestPush:
                 timeout=5,
             ).json()
             assert [o["name"] for o in after["objects"]] == obj_names
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
+    def test_the_relay_sees_hashed_names_and_old_ones_are_cleared(self, store, monkeypatch):
+        """Relay v2: a pushed object is named by a hash of its id, and the one-time
+        re-push clears this device's objects from before, named by the id itself."""
+        from enqueue.sync.client import repush_relay_v2
+
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        auth = {"Authorization": "Bearer test-secret"}
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+            keyring_file.initialize()
+            aid = notes.create(body="named by a hash")["artifact"]["id"]
+            old = f"dev/{device_id()}/artifacts/{aid}.enc"
+            httpx.put(f"{base}/sync/object/{old}", content=b"old copy", headers=auth, timeout=5)
+
+            assert repush_relay_v2() >= 1
+            names = [
+                o["name"]
+                for o in httpx.get(f"{base}/sync/objects", headers=auth, timeout=5).json()[
+                    "objects"
+                ]
+            ]
+            assert old not in names
+            assert not any(aid in n for n in names), "no object carries the id in its name"
+            assert settings.get("sync_relay_v2_pushed") is True
+            assert repush_relay_v2() == 0, "once per library"
         finally:
             server.should_exit = True
             thread.join(timeout=5)
@@ -144,11 +174,13 @@ class TestPush:
 
             created = notes.create(body="delete me")
             aid = created["artifact"]["id"]
-            snap_name = f"dev/{device_id()}/artifacts/{aid}.enc"
+            snap_name = (
+                f"dev/{device_id()}/artifacts/{crypto.object_name(aid, keyring_file.dek())}.enc"
+            )
 
             dek = keyring_file.dek()
             live = deserialize(
-                crypto.decrypt(
+                crypto.open_payload(
                     httpx.get(
                         base + f"/sync/object/{snap_name}",
                         headers={"Authorization": "Bearer test-secret"},
@@ -167,7 +199,7 @@ class TestPush:
                 timeout=5,
             )
             assert got.status_code == 200
-            tombstone = deserialize(crypto.decrypt(got.content, dek))
+            tombstone = deserialize(crypto.open_payload(got.content, dek))
             # The relay object now carries the tombstone with a newer LWW key.
             assert tombstone["artifact"]["deleted_at"] is not None
             assert tombstone["artifact"]["updated_at"] > live["artifact"]["updated_at"]
@@ -459,7 +491,9 @@ class TestAutoLoad:
                 ).json()
                 names = [o["name"] for o in listing["objects"]]
                 assert any(
-                    n.startswith("dev/") and n.endswith(f"/artifacts/{aid}.enc") for n in names
+                    n.startswith("dev/")
+                    and n.endswith(f"/artifacts/{crypto.object_name(aid, keyring_file.dek())}.enc")
+                    for n in names
                 ), names
         finally:
             server.should_exit = True
@@ -475,8 +509,11 @@ class TestAutoLoad:
         phrase = keyring_file.initialize()
 
         with TestClient(engine) as client:
-            # Total device loss of the stored DEK: the keyring is now locked and
-            # only the recovery phrase can restore it.
+            # Total device loss of the stored DEK and of the library key (which
+            # would otherwise bring it back): only the recovery phrase restores it.
+            from enqueue import libkey
+
+            monkeypatch.setattr(libkey, "_load", lambda: None)
             keyring_file._dek = None
             keyring.dek_clear()
             locked = client.get("/settings").json()["sync"]

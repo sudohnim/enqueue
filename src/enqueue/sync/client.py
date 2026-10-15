@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 
 import httpx
 
@@ -133,9 +134,9 @@ def push_artifact(artifact_id: str) -> None:
     # Stamp this device's id (E2E.md Phase E4), serialize, and encrypt at the
     # relay boundary (SYNC.8). The relay stores and streams these bytes as-is.
     snapshot["artifact"]["_device_id"] = device_id()
-    data = crypto.encrypt(serialize(snapshot), dek)
+    data = crypto.seal_payload(serialize(snapshot), dek)
 
-    name = f"dev/{device_id()}/artifacts/{artifact_id}.enc"
+    name = f"dev/{device_id()}/artifacts/{crypto.object_name(artifact_id, dek)}.enc"
     headers = {
         "Authorization": f"Bearer {_secret()}",
         "Content-Type": "application/octet-stream",
@@ -163,7 +164,7 @@ def push_artifact(artifact_id: str) -> None:
         blob_path = config.BLOB_DIR / content_hash
         if blob_path.exists():
             blob_name = crypto.blob_name(content_hash, dek)
-            blob_data = crypto.encrypt(blob_path.read_bytes(), dek)
+            blob_data = crypto.seal_payload(blob_path.read_bytes(), dek)
             try:
                 with httpx.Client(timeout=60) as client:
                     bresp = client.put(
@@ -203,7 +204,7 @@ def push_vault_meta() -> None:
     if dek is None or wrap is None:
         return
     meta = {"salt": wrap["vault_salt"], "wrap": wrap["vault_by_pin"]}
-    data = crypto.encrypt(json.dumps(meta).encode("utf-8"), dek)
+    data = crypto.seal_payload(json.dumps(meta).encode("utf-8"), dek)
     headers = {"Authorization": f"Bearer {_secret()}", "Content-Type": "application/octet-stream"}
     try:
         with httpx.Client(timeout=30) as client:
@@ -233,19 +234,22 @@ def fetch_blob_to_cache(content_hash: str) -> bool:
     dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
     if dek is None:
         return False
-    name = crypto.blob_name(content_hash, dek)
-    try:
-        with httpx.Client(timeout=60) as client:
-            resp = client.get(
-                f"{url.rstrip('/')}/sync/object/blobs/{name}",
-                headers={"Authorization": f"Bearer {_secret()}"},
-            )
-    except httpx.HTTPError:
+    resp = None
+    for name in (crypto.blob_name(content_hash, dek), crypto.legacy_blob_name(content_hash, dek)):
+        try:
+            with httpx.Client(timeout=60) as client:
+                resp = client.get(
+                    f"{url.rstrip('/')}/sync/object/blobs/{name}",
+                    headers={"Authorization": f"Bearer {_secret()}"},
+                )
+        except httpx.HTTPError:
+            return False
+        if resp.status_code == 200:
+            break
+    if resp is None or resp.status_code != 200:
         return False
-    if resp.status_code != 200:
-        return False
     try:
-        plain = crypto.decrypt(resp.content, dek)
+        plain = crypto.open_payload(resp.content, dek)
     except Exception:  # noqa: BLE001 - an undecryptable blob is "not here", never fatal
         return False
     config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
@@ -278,9 +282,9 @@ def push_chat(chat_id: str) -> None:
         return  # the keyring is locked; sync is paused, not failing
 
     snapshot["chat"]["_device_id"] = device_id()
-    data = crypto.encrypt(serialize(snapshot), dek)
+    data = crypto.seal_payload(serialize(snapshot), dek)
 
-    name = f"dev/{device_id()}/chats/{chat_id}.enc"
+    name = f"dev/{device_id()}/chats/{crypto.object_name(chat_id, dek)}.enc"
     headers = {
         "Authorization": f"Bearer {_secret()}",
         "Content-Type": "application/octet-stream",
@@ -345,7 +349,7 @@ def pull() -> dict:
                 try:
                     resp = client.get(f"{base}/sync/object/{name}", headers=headers)
                     if resp.status_code == 200:
-                        meta = _json.loads(crypto.decrypt(resp.content, dek).decode("utf-8"))
+                        meta = _json.loads(crypto.open_payload(resp.content, dek).decode("utf-8"))
                         if not keyring_file.vault_wrap_get():
                             keyring_file.vault_wrap_set(meta["salt"], meta["wrap"])
                 except Exception:  # noqa: BLE001 - a bad vault object never wedges the pull
@@ -361,7 +365,7 @@ def pull() -> dict:
             if resp.status_code != 200:
                 continue
             try:
-                snapshot = deserialize(crypto.decrypt(resp.content, dek))
+                snapshot = deserialize(crypto.open_payload(resp.content, dek))
                 with db.transaction() as conn:
                     # The object's path says what it is: a conversation snapshot applies
                     # through the chat limb, everything else is an artifact.
@@ -449,7 +453,7 @@ def push_settings() -> None:
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
-    data = crypto.encrypt(serialize(s), dek)
+    data = crypto.seal_payload(serialize(s), dek)
     timestamp = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     name = f"lib/settings/{timestamp}-{device_id()}.enc"
     headers = {
@@ -494,7 +498,7 @@ def pull_settings() -> None:
             resp = client.get(f"{base}/sync/object/{name}", headers=headers)
             if resp.status_code != 200:
                 continue
-            s = deserialize(crypto.decrypt(resp.content, dek))
+            s = deserialize(crypto.open_payload(resp.content, dek))
             if "updated_at" in s:
                 with db.transaction() as conn:
                     for key, val in s.items():
@@ -637,7 +641,7 @@ def push_pivots() -> None:
             flat = sorted({i for group in groups for i in group["ids"]})
             views.append({"name": name, "groups": groups, "ids": flat})
 
-    data = crypto.encrypt(serialize({"views": views}), dek)
+    data = crypto.seal_payload(serialize({"views": views}), dek)
     headers = {
         "Authorization": f"Bearer {_secret()}",
         "Content-Type": "application/octet-stream",
@@ -701,9 +705,9 @@ def push_all() -> int:
         snapshot["artifact"]["_device_id"] = device_id()
         from .snapshot import serialize
 
-        data = crypto.encrypt(serialize(snapshot), dek)
+        data = crypto.seal_payload(serialize(snapshot), dek)
 
-        name = f"dev/{device_id()}/artifacts/{artifact_id}.enc"
+        name = f"dev/{device_id()}/artifacts/{crypto.object_name(artifact_id, dek)}.enc"
         headers = {
             "Authorization": f"Bearer {_secret()}",
             "Content-Type": "application/octet-stream",
@@ -724,7 +728,7 @@ def push_all() -> int:
             blob_path = config.BLOB_DIR / content_hash
             if blob_path.exists():
                 blob_name = crypto.blob_name(content_hash, dek)
-                blob_data = crypto.encrypt(blob_path.read_bytes(), dek)
+                blob_data = crypto.seal_payload(blob_path.read_bytes(), dek)
                 # A blob push failure is non-fatal: the snapshot is already up, and
                 # the next push of this artifact retries the bytes.
                 with contextlib.suppress(httpx.HTTPError):
@@ -738,3 +742,71 @@ def push_all() -> int:
     # Custom views ride alongside the artifacts so the phone's Custom mode has data.
     push_pivots()
     return pushed
+
+
+def repush_relay_v2() -> int:
+    """Push everything once under the relay's v2 shape (crypto.seal_payload/object_name:
+    padded sizes, hashed names), so no object on the relay still carries an id in its
+    name or a size that tells its length. The objects pushed before stay readable until
+    overwritten or cleared; devices take whichever copy wins LWW. Runs once per library
+    (the `sync_relay_v2_pushed` setting), at startup, when sync is set up and unlocked."""
+    if not _relay_url():
+        return 0
+    if settings.get("sync_relay_v2_pushed"):
+        # The relay may have gained its DELETE route since (a redeploy): clear then.
+        if not settings.get("sync_relay_v2_cleared"):
+            _clear_legacy_names()
+        return 0
+    if keyring_file.load_dek_from_keychain() is None:
+        return 0
+    pushed = push_all()
+    conn = db.get_conn()
+    try:
+        chat_ids = [r[0] for r in conn.execute("SELECT id FROM chats")]
+    finally:
+        conn.close()
+    for chat_id in chat_ids:
+        push_chat(chat_id)
+    for extra in (push_settings, push_pivots, push_vault_meta):
+        try:
+            extra()
+        except Exception:  # noqa: BLE001 - one of these failing must not repeat the rest
+            pass
+    settings.update({"sync_relay_v2_pushed": True})
+    _clear_legacy_names()
+    return pushed + len(chat_ids)
+
+
+_UUID_NAME = re.compile(
+    r"/(artifacts|chats)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$"
+)
+
+
+def _clear_legacy_names() -> int:
+    """Delete this device's objects still named by a readable id (from before hashed
+    names). Best effort: an older relay has no DELETE and answers 405, which leaves
+    them; they were superseded by the copies just pushed either way."""
+    url = _relay_url()
+    if not url:
+        return 0
+    base = url.rstrip("/")
+    headers = {"Authorization": f"Bearer {_secret()}"}
+    mine = f"dev/{device_id()}/"
+    gone = 0
+    try:
+        with httpx.Client(timeout=30) as client:
+            listing = client.get(f"{base}/sync/objects", params={"since": 0}, headers=headers)
+            if listing.status_code != 200:
+                return 0
+            for obj in listing.json().get("objects", []):
+                name = obj["name"]
+                if not (name.startswith(mine) and _UUID_NAME.search(name)):
+                    continue
+                resp = client.delete(f"{base}/sync/object/{name}", headers=headers)
+                if resp.status_code == 405:
+                    return gone  # this relay cannot delete yet; asked again next start
+                gone += resp.status_code == 204
+    except httpx.HTTPError:
+        return gone
+    settings.update({"sync_relay_v2_cleared": True})
+    return gone

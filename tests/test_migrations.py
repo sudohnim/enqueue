@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib.util
 import os
 import sqlite3
+
+from enqueue import sqlite as enq_sqlite
 from importlib import resources
 
 import pytest
@@ -105,7 +107,7 @@ def test_a_capture_can_never_hold_a_body(store):
     """The invariant is the database's, not the application's."""
     conn = db.get_conn()
     try:
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(enq_sqlite.IntegrityError):
             conn.execute(
                 "INSERT INTO artifacts (id, kind, title, body, content_hash, created_at,"
                 " updated_at, local_only, status) VALUES ('x','pdf','A paper','edited',"

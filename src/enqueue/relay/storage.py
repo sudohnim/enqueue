@@ -70,6 +70,13 @@ class RelayStorage:
             )
             return cursor, len(data)
 
+    def delete(self, name: str) -> bool:
+        """Remove an object (a device clearing its own superseded copies). Devices that
+        already pulled it keep what they applied; the change feed simply no longer
+        lists it."""
+        with self._lock, self._connect() as conn:
+            return conn.execute("DELETE FROM objects WHERE name = ?", (name,)).rowcount > 0
+
     def get(self, name: str) -> bytes | None:
         """Return the stored bytes, or None when the name is absent."""
         with self._connect() as conn:
