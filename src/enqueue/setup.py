@@ -68,28 +68,28 @@ def _days_since(stamp: str | None) -> float | None:
 
 
 def _model_step(backend: dict, models: dict) -> dict:
-    step = {"id": "model", "tab": "ai", "guide": "answers", "title": "Connect a model"}
+    step = {"id": "model", "tab": "ai", "guide": "answers", "title": "Connect an assistant"}
     if backend.get("local"):
         return step | {
             "state": DONE,
-            "title": "A model is connected",
-            "detail": f"On this Mac, {models['chat']}",
+            "title": "Assistant connected",
+            "detail": "On this Mac",
         }
     if backend.get("needs_key") and not backend.get("key_present"):
         return step | {
             "state": TODO,
             "guide": "api-key",
-            "detail": f"{backend['label']} needs an API key",
+            "detail": f"{backend['label']} needs your account key",
         }
     if backend["name"] == "opencode-go" and not _has_session_header():
         return step | {
             "state": TODO,
-            "detail": "OpenCode Go needs a session header before it answers",
+            "detail": "OpenCode Go needs one more setting before it answers",
         }
     return step | {
         "state": DONE,
-        "title": "A model is connected",
-        "detail": f"{backend['label']}, {models['chat']}",
+        "title": "Assistant connected",
+        "detail": backend["label"],
     }
 
 
@@ -119,27 +119,28 @@ def _backup_step() -> dict:
     when = "today" if age < 1 else ("yesterday" if age < 2 else f"{int(age)} days ago")
     return step | {
         "state": DONE,
-        "title": "Your library is backed up",
+        "title": f"Backed up {when}",
         "detail": f"Last copy {when}",
     }
 
 
 def _phone_step(sync: dict) -> dict:
-    step = {"id": "phone", "tab": "sync", "guide": "relay", "title": "Read on your phone"}
+    step = {"id": "phone", "tab": "sync", "guide": "relay", "title": "Phone not linked"}
     if not sync["relay_configured"]:
-        return step | {"state": TODO, "detail": "Needs a relay"}
+        return step | {"state": TODO, "detail": "Needs a relay to pass your library along"}
     if sync["keyring_locked"]:
         return step | {
             "state": WARN,
             "guide": "recovery-phrase",
-            "detail": "This Mac has lost its key. Your recovery phrase restores it",
+            "title": "Sync needs your recovery phrase",
+            "detail": "This Mac has lost its sync key. Your recovery phrase brings it back",
         }
     if not (sync["secret_present"] and sync["keyring_ready"]):
-        return step | {"state": TODO, "detail": "Sync setup is not finished"}
+        return step | {"state": TODO, "detail": "Setup isn't finished"}
     return step | {
         "state": DONE,
         "guide": "link-phone",
-        "title": "Sync is ready",
+        "title": "Ready for your phone",
         "detail": "Link a phone whenever you like",
     }
 
@@ -177,8 +178,8 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             WARN,
             "ai",
             "answers",
-            "The model service has stopped answering for now (a usage limit). Summaries and"
-            " answers resume on their own.",
+            "The online assistant has paused for now (a usage limit). It picks up again on"
+            " its own.",
         )
 
     key = settings.api_key_state()
@@ -188,7 +189,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "note",
             "ai",
             "api-key",
-            "A stored API key is not used while answers come from this Mac.",
+            "A key is saved, but the assistant on this Mac doesn't use it.",
         )
     if backend.get("local") and str(settings.get("llm_headers") or "").strip():
         say(
@@ -196,7 +197,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "note",
             "ai",
             "answers",
-            "Extra headers are set, but nothing is sent anywhere while answers come from this Mac.",
+            "Settings for an online assistant are saved, but the one on this Mac doesn't use them.",
         )
 
     if backend["name"] == "opencode-go":
@@ -208,7 +209,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
                 WARN,
                 "ai",
                 "models",
-                f"OpenCode Go does not answer for {', '.join(gone)}. Pick another model.",
+                f"OpenCode Go doesn't offer {', '.join(gone)}. Pick another under More options.",
             )
 
     stale, blind = _summaries()
@@ -218,8 +219,8 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "note",
             "ai",
             "concepts",
-            f"{stale} {'item is' if stale == 1 else 'items are'} waiting for a summary from"
-            f" {models['ingestion']}. Search finds them by their words until then.",
+            f"{stale} {'item is' if stale == 1 else 'items are'} waiting for a summary."
+            " Search still finds them by their words.",
         )
     if blind:
         say(
@@ -227,8 +228,8 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "note",
             "ai",
             "models",
-            f"{blind} {'image has' if blind == 1 else 'images have'} no description, so search"
-            " finds them by name only.",
+            f"{blind} {'image has' if blind == 1 else 'images have'} no description yet, so"
+            " search finds them by name only.",
         )
 
     if sync["relay_configured"] and _relay_reach(sync["relay_url"]) == "local":
@@ -237,7 +238,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             WARN,
             "sync",
             "relay",
-            "The relay is on this Mac or this network, so a phone can only reach it at home.",
+            "Your relay is on this Mac or your home network, so your phone can only sync at home.",
         )
     if sync["keyring_legacy"]:
         say(
@@ -245,7 +246,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             WARN,
             "sync",
             "recovery-phrase",
-            "Sync still uses the old password setup. Reset sync to move to the recovery phrase.",
+            "Sync still uses an older setup. Start sync over to move to the new one.",
         )
     return out
 

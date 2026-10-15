@@ -30,7 +30,7 @@ const Guides = (() => {
         "Saving and searching by your own words work with no model at all. Summaries, finding things by what they mean, and asking questions need one.",
       steps: [
         "Choose a service under Answers come from.",
-        "For a service that is not on this Mac, add its key under API key.",
+        "For an online assistant, paste its key into Your account key.",
         "Pick a model under Models, then press Save.",
       ],
       know: [
@@ -47,17 +47,17 @@ const Guides = (() => {
       title: "The four models",
       voice: "Four jobs. One bird can do them all.",
       what:
-        "Four jobs, each of which can use its own model. Chat answers your questions. Ingestion writes the summary when you save. Search settles borderline results. Images describes pictures so they can be found.",
+        "Four jobs, each of which can use its own model, under More options on the Assistant tab: chatting answers your questions, summaries are written when you save, search settles close calls, and pictures are described so they can be found.",
       need:
-        "Only Chat has to be set. Leave Ingestion and Search empty and they use the Chat model.",
+        "Only the model for chatting has to be set. Leave summaries and search empty and they use the same one.",
       steps: [
         "Set Chat to the model you want answers from.",
-        "Optional: a stronger model for Ingestion makes search better, at the cost of a slower save.",
+        "Optional: a stronger model for summaries makes search better, at the cost of a slower save.",
         "Optional: a fast, cheap model for Search. It runs on every search.",
         "Images needs a model that can see, such as llava on Ollama.",
       ],
       know: [
-        "Changing Ingestion makes existing summaries count as old. They are rewritten in the background, a few at a time.",
+        "Changing the model for summaries makes the ones you have count as old. They are rewritten in the background, a few at a time.",
       ],
       also: ["answers", "concepts"],
       words:
@@ -66,14 +66,14 @@ const Guides = (() => {
     {
       id: "api-key",
       tab: "ai",
-      title: "The API key",
+      title: "Your account key (API key)",
       voice: "A key I keep, and never read aloud.",
       what:
         "The password a model service gives you so it knows the calls are yours. Enqueue keeps it in the macOS Keychain, not in any file.",
       need: "Only when answers come from a service. A model on this Mac needs no key.",
       steps: [
-        "Get a key from the service you chose (their site, under API keys).",
-        "Paste it into API key and press Save beside it.",
+        "Get a key from the service you chose (on their site, often under API keys).",
+        "Paste it into Your account key and press Save beside it.",
         "Forget removes it from the Keychain.",
       ],
       know: [
@@ -92,11 +92,11 @@ const Guides = (() => {
       what:
         "When you save something, the model writes a few lines about what it is and what it could be an example of. Search uses those lines to find a note by its meaning, not only its words.",
       need:
-        "They are written for you. Rebuild concepts is for after you switch to a better model and want everything read again.",
+        "They are written for you. Summarize again is for after you switch to a better assistant and want everything read again.",
       steps: [
-        "Rebuild concepts reads every item again with the current Ingestion model.",
+        "Summarize again reads every item again with the current model for summaries.",
         "It runs in the background, one item at a time. Keep using the app.",
-        "Progress shows under Events.",
+        "Progress shows under Activity.",
       ],
       know: [
         "A note you are still writing is read once you have left it alone for five minutes.",
@@ -187,7 +187,7 @@ const Guides = (() => {
         "The recovery kit is the only way to open your backups on a new Mac. Enqueue keeps no other copy and cannot reset it.",
         "Your phone is not a backup. It holds a copy for reading, and only once sync is set up.",
         "The search index is left out of the copy and rebuilt after a restore, which takes a while.",
-        "Your API key is never in a backup. It stays in the Keychain.",
+        "Your account key is never in a backup. It stays in the Keychain.",
       ],
       also: ["relay", "index", "trash"],
       words:
@@ -231,7 +231,7 @@ const Guides = (() => {
       ],
       know: [
         "Rebuilding the index does not call a model and does not change your notes.",
-        "To have the model read everything again, that is Rebuild concepts, under AI.",
+        "To have everything read again, that is Summarize again, on the Assistant tab.",
       ],
       also: ["concepts", "backups"],
       words:
@@ -271,7 +271,7 @@ const Guides = (() => {
       ],
       know: [
         "The relay is part of Enqueue and you run it yourself. The project's notes on the sync relay say how to host one.",
-        "Your summaries, your API key and your notes all cross it encrypted. Saved views and conversations stay on the device they were made on.",
+        "Your summaries, your account key and your notes all cross it encrypted. Saved views and conversations stay on the device they were made on.",
       ],
       also: ["recovery-phrase", "sync-secret", "link-phone"],
       words:
@@ -347,7 +347,7 @@ const Guides = (() => {
       need: "Only if you use Enqueue on more than one computer.",
       steps: [
         "Here, press Create pairing code. A code and a phrase appear.",
-        "On the other computer, open Settings, Sync, and press Join existing library.",
+        "On the other computer, open Settings, Phone, and press Join.",
         "Enter this relay's address, the code and the phrase there, and press Pair this device.",
       ],
       know: [
@@ -422,7 +422,7 @@ const Guides = (() => {
         "It runs by itself while Enqueue is open. Sync Now is for when you do not want to wait.",
       steps: [
         "Sync Now fetches anything new and sends anything waiting.",
-        "Re-link with QR is for a new relay, or after sync was reset on the Mac: scan the code under Settings, Sync, on the Mac.",
+        "Re-link with QR is for a new relay, or after sync was reset on the Mac: scan the code under Settings, Phone, on the Mac.",
       ],
       know: [
         "With no connection everything still works. Your changes wait on the phone and go out when it is back.",

@@ -18,20 +18,19 @@
 // right for anything its one-line note already explains.
 const SHELF_GUIDES = {
 	ai: {
-		Connection: "answers",
+		"Where answers come from": "answers",
 		Models: "models",
-		"API Key": "api-key",
-		"Search concepts": "concepts",
+		Summaries: "concepts",
 	},
-	features: { Capture: "hotkey", Links: "link-previews", Search: "search-options" },
+	features: { Capturing: "hotkey", Links: "link-previews", Search: "search-options" },
 	storage: { Backup: "backups", Drafts: "drafts" },
-	trash: { Retention: "trash" },
+	trash: { Trash: "trash" },
 	sync: {
 		"Join a library": "join-library",
-		"Join Existing Library": "join-library",
-		"Link a device": "link-phone",
-		"Pair a computer": "pair-computer",
-		"Reset sync": "reset-sync",
+		"Already using Enqueue on another computer?": "join-library",
+		"Link your phone": "link-phone",
+		"Add another computer": "pair-computer",
+		"Start sync over": "reset-sync",
 	},
 	events: { Activity: "activity" },
 };
@@ -64,7 +63,7 @@ function decorateSettingsGuides() {
 	pane.querySelectorAll(".shelf, .settings-card-label").forEach((head) => {
 		if (head.querySelector(".gmark")) return;
 		const name = head.textContent.trim();
-		const id = name === "Set up sync" ? syncSetupGuide() : map[name];
+		const id = name === "Use Enqueue on your phone" ? syncSetupGuide() : map[name];
 		if (!id || !Guides.get(id)) return;
 		head.insertAdjacentHTML("beforeend", guideMarkHtml(id));
 		// The thing the guide is about: the card under the heading.
@@ -132,36 +131,36 @@ function renderSetup() {
 	if (!strip) return;
 	const steps = (setupState && setupState.steps) || [];
 	const alerts = (setupState && setupState.alerts) || [];
-	// The cards are for getting set up. Once everything is, they leave.
-	const open = steps.some((s) => s.state !== "done");
-	strip.innerHTML =
-		(open
-			? '<div class="setup-strip" role="list" aria-label="Left to set up">' +
-				steps
-					.map(
-						(s) =>
-							'<div class="setup-card" role="listitem" data-state="' +
-							esc(s.state) +
-							'"><span class="setup-dot" aria-hidden="true">' +
-							(s.state === "done" ? svg("check") : "") +
-							'</span><span class="setup-words"><span class="setup-title">' +
-							esc(s.title) +
-							'</span><span class="setup-detail">' +
-							esc(s.detail || "") +
-							"</span>" +
-							(s.state === "done"
-								? ""
-								: '<button type="button" class="setup-go" data-guide="' +
-									esc(s.guide) +
-									'">Show me</button>') +
-							"</span></div>",
-					)
-					.join("") +
-				"</div>"
-			: "") +
-		(alerts.length
-			? '<ul class="setup-alerts" aria-label="Settings that need a look">' +
-				alerts
+	// Where things stand, as one quiet line under the title: a dot per step, and a
+	// way in on the ones not done.
+	strip.innerHTML = steps.length
+		? '<ul class="setup-line" aria-label="Where things stand">' +
+			steps
+				.map(
+					(s) =>
+						'<li data-state="' +
+						esc(s.state) +
+						'"><span class="setup-dot" aria-hidden="true"></span>' +
+						esc(s.title) +
+						(s.state === "done"
+							? ""
+							: ' <button type="button" class="setup-go" data-guide="' +
+								esc(s.guide) +
+								'">' +
+								esc(s.state === "warn" ? "Fix" : "Set up") +
+								"</button>") +
+						"</li>",
+				)
+				.join("") +
+			"</ul>"
+		: "";
+	// A setting that needs a look is said on its own tab, above its settings.
+	const notes = document.getElementById("settingsNotes");
+	const here = alerts.filter((a) => !a.tab || a.tab === currentSettingsTab);
+	if (notes)
+		notes.innerHTML = here.length
+			? '<ul class="setup-alerts" aria-label="Needs a look">' +
+				here
 					.map(
 						(a) =>
 							'<li data-level="' +
@@ -174,7 +173,7 @@ function renderSetup() {
 					)
 					.join("") +
 				"</ul>"
-			: "");
+			: "";
 	// The tabs say where something is left.
 	const todo = new Set(
 		steps
@@ -186,7 +185,7 @@ function renderSetup() {
 		const b = document.getElementById("tab-" + t.id);
 		if (!b) continue;
 		const had = b.querySelector(".tab-todo");
-		if (todo.has(t.id) && !had) b.insertAdjacentHTML("beforeend", '<span class="tab-todo">to do</span>');
+		if (todo.has(t.id) && !had) b.insertAdjacentHTML("beforeend", '<span class="tab-todo" aria-label="to do"></span>');
 		else if (!todo.has(t.id) && had) had.remove();
 	}
 }
