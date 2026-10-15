@@ -14,7 +14,7 @@ This is the design as built on 2026-10-14, and the one step left (hosted sign-in
 | Backup key, backup-names key | derived, `backup`, `backup-names` | nowhere | every file in the backup folder, and their names |
 | Sync key (DEK) | 32 random bytes | Keychain `enqueue-sync-dek`; the phone's sealed config; `keyring.json` wrapped under the library key (`dek_by_library`) and under the old recovery phrase | everything on the relay |
 | Relay names key | HMAC of the sync key, `enqueue relay names v1` | nowhere | the names of relay objects |
-| Phone store key | 32 random bytes, made on the phone (`StoreKey.kt`) | the phone's `filesDir/store_key`, encrypted by an Android Keystore key | the phone's database (SQLCipher), its sealed secrets, its file cache |
+| Phone store key | 32 random bytes, made on the phone | Android: `filesDir/store_key`, encrypted by an Android Keystore key (`StoreKey.kt`); iOS: a Keychain item, this device only (`store_key` in `lib.rs`) | the phone's database (SQLCipher), its sealed secrets, its file cache |
 | Vault key | 32 random bytes | wrapped under the 6-digit PIN (and a fingerprint-guarded Keystore secret on the phone) | vaulted items, a second lock inside everything above |
 
 The recovery kit is the library key written as 56 Crockford base32 characters (with a checksum).
@@ -29,7 +29,7 @@ The phone needs none of it: it is linked by scanning the Mac's code, which hands
 - **Mac, original files (`blobs/`):** not encrypted by Enqueue. FileVault covers a stolen Mac; the folder is the owner's only (0700).
   Encrypting them means routing PDF rendering, previews and captures through a sealed reader; left for later.
 - **Backups:** every file sealed (libsodium secretstream) under the backup key, named by keyed hashes, checked by opening it again (`backup.py`).
-- **Phone:** the database is SQLCipher (`bundled-sqlcipher-vendored-openssl`, Android only), the sync config and vault records are sealed files, and the file cache is sealed; all under keys derived from the store key.
+- **Phone (Android and iOS):** the database is SQLCipher (`bundled-sqlcipher-vendored-openssl`), the sync config and vault records are sealed files, and the file cache is sealed; all under keys derived from the store key.
   A plain database and plain files from an older build are converted the first time they are opened.
   The quick-capture inbox (thoughts written in the launcher popup before the app files them) is still plain, for the seconds it exists.
 
