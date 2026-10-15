@@ -3660,7 +3660,7 @@ mod desktop {
         // LINKSTAY.1: refuse to bake an unreachable relay URL into the link QR.
         if is_loopback_or_private_url(&relay_url) {
             return Err(
-                "This relay URL is only reachable from this Mac. Set a hosted relay URL first                  (Settings > Sync, see docs/sync-relay.md), then show the QR again.".into()
+                "This relay address only works on this Mac or your home network. Set one your phone can reach in Settings, Phone, then show the code again.".into()
             );
         }
 

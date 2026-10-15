@@ -1,8 +1,8 @@
 """Sync: the relay transport and the snapshot/LWW core.
 
-The sync unit is one canonical encrypted snapshot per artifact (E2E.md). This
+The sync unit is one canonical encrypted snapshot per artifact (the sync design (AGENTS.md)). This
 package holds the device identity, the snapshot model and LWW merge (built in
-SYNC.4 per E2E.md Phase E3), and later the relay client and crypto.
+SYNC.4 per the sync design (AGENTS.md)), and later the relay client and crypto.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from .. import config
 
 
 def device_id() -> str:
-    """This device's identity, per E2E.md Section 1.
+    """This device's identity, per the sync design (AGENTS.md).
 
     A UUID4 generated once and stored at `DATA_DIR/device_id`, never derived
     from hardware. It names this device's write namespace on the relay and

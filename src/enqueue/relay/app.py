@@ -3,7 +3,7 @@
 It is a dumb byte store. It holds per-device snapshot objects and
 content-addressed blobs keyed by name, serves them back, and streams a
 "something changed" signal over SSE. It parses none of the bytes and can
-decrypt nothing. See `docs/sync-relay.md` for the protocol.
+decrypt nothing. The protocol is in AGENTS.md, "The relay".
 """
 
 from __future__ import annotations

@@ -11,12 +11,12 @@
 
 <p align="center">
   <a href="docs/MANUAL.md">Manual</a> ·
-  <a href="docs/DEVELOPING.md">Build from source</a> ·
+  <a href="AGENTS.md#start-here">Build from source</a> ·
   <a href="https://github.com/sudohnim/enqueue/releases">Android app</a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/desktop-wall.png" alt="The Enqueue library: a wall of saved notes, links and files" width="100%">
+  <img src="assets/screenshots/desktop-wall.png" alt="The Enqueue library: a wall of saved notes, links and files" width="100%">
 </p>
 
 ---
@@ -34,7 +34,7 @@ Your library is one file in one folder, and nothing leaves unless you say so.
 
 ## Capture in one keystroke
 
-<img src="docs/screenshots/desktop-capture.png" alt="The quick capture window" width="560" align="right">
+<img src="assets/screenshots/desktop-capture.png" alt="The quick capture window" width="560" align="right">
 
 Press **Option+Shift+E** from anywhere.
 Type a thought, paste a link, or drop a file.
@@ -63,7 +63,7 @@ If your library does not hold the answer, it tells you so.
 
 ## Write on a page, not in a form
 
-<img src="docs/screenshots/desktop-note.png" alt="A note open as a plain page" width="100%">
+<img src="assets/screenshots/desktop-note.png" alt="A note open as a plain page" width="100%">
 
 A note is just the page.
 Type and it is saved; every earlier version is kept.
@@ -127,8 +127,8 @@ Capture, notes and search work without any model at all.
 The Android app is on the [Releases](https://github.com/sudohnim/enqueue/releases) page.
 
 - **[The manual](docs/MANUAL.md)**: everything the app does, and how.
-- **[Developing](docs/DEVELOPING.md)**: building, the Android app, the relay, tests, configuration.
-- **[Running a relay](docs/sync-relay.md)**: hosting your own sync relay.
+- **[AGENTS.md](AGENTS.md)**: building and running on a Mac, Android and iOS, testing, configuration, and the engineering reference.
+- **[Running a relay](docs/MANUAL.md#your-own-relay)**: hosting your own sync relay.
 - **[Design](docs/DESIGN.md)**: the look, and the rules behind it.
 
 ## Where it stands

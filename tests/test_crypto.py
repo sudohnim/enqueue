@@ -1,4 +1,4 @@
-"""Crypto building blocks (E2E.md Phase E1).
+"""Crypto building blocks (the sync design (AGENTS.md)).
 
 The load-bearing guarantee: XChaCha20-Poly1305 with a fresh random nonce per
 call, Argon2id MODERATE, and a keyed HMAC for the blob name. Wrong-key and

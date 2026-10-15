@@ -44,7 +44,7 @@ EMBED_DROP_BELOW = EMBED_MODELS[EMBED_MODEL]["drop_below"]
 EMBED_MAX_TOKENS = 512  # the shortest a candidate reads; more is silently dropped
 
 # 127.0.0.1, never localhost. This machine runs a second Ollama in Docker bound to
-# the IPv6 wildcard, and localhost resolves to IPv6 first. See docs/PROGRESS.md.
+# the IPv6 wildcard, and localhost resolves to IPv6 first. See AGENTS.md, "127.0.0.1, not localhost".
 OLLAMA_URL = os.getenv("ENQ_OLLAMA_URL", "http://127.0.0.1:11434/v1")
 
 # Named endpoints, so switching backend is a choice rather than a URL to remember.

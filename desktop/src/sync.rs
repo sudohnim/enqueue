@@ -2,7 +2,7 @@
 //! it, and keep a local SQLite read copy - so the phone holds the synced artifacts
 //! offline. It reimplements the desktop's Phase SYNC in Rust (there is no Python on
 //! the device), reusing the same crypto (MOB.3a) and the same snapshot + LWW model
-//! (E2E.md Phase E3).
+//! (the sync design (AGENTS.md)).
 
 use std::io::Read;
 
@@ -140,7 +140,7 @@ pub fn unwrap(wrapped: &[u8], kek: &[u8; DEK_LEN]) -> Result<Vec<u8>, String> {
     secretbox_decrypt(kek, wrapped)
 }
 
-/// The mobile device's UUID4, generated once and stored in the app data dir (E2E.md
+/// The mobile device's UUID4, generated once and stored in the app data dir (the sync design (AGENTS.md)
 /// Section 1: a device id is a UUID, never from hardware).
 #[allow(dead_code)]
 pub fn device_id(dir: &std::path::Path) -> String {
@@ -369,7 +369,7 @@ fn int_at(v: Option<&Value>) -> Option<i64> {
     v.and_then(Value::as_i64)
 }
 
-/// The LWW key `(updated_at, _device_id)`, compared lexicographically (E2E.md E3).
+/// The LWW key `(updated_at, _device_id)`, compared lexicographically (the sync design (AGENTS.md)).
 #[allow(dead_code)]
 fn lww_key(snapshot: &Value) -> (String, String) {
     let a = &snapshot["artifact"];

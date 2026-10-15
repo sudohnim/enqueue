@@ -1,6 +1,6 @@
 """Persist the device that last wrote each artifact.
 
-E2E.md Phase E3/SYNC.4: the LWW key is `(updated_at, device_id)`, compared
+the sync design (AGENTS.md)/SYNC.4: the LWW key is `(updated_at, device_id)`, compared
 lexicographically. The local DB must remember which device wrote the current
 row, or a pull that applies snapshots out of order cannot tell a newer local
 edit from a stale one (and the convergence invariant breaks on equal

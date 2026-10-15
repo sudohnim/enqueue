@@ -1,4 +1,4 @@
-"""The snapshot model and LWW merge (E2E.md Phase E3).
+"""The snapshot model and LWW merge (the sync design (AGENTS.md)).
 
 The convergence invariant is the load-bearing property: given the same set of
 snapshots, every device picks the same winner and reaches byte-identical state
@@ -239,7 +239,7 @@ class TestApply:
 
 
 class TestConvergence:
-    """E2E.md's load-bearing invariant: any apply order yields the winner's rows."""
+    """the sync design (AGENTS.md) load-bearing invariant: any apply order yields the winner's rows."""
 
     @given(
         st.lists(

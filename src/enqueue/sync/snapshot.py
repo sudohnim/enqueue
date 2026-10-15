@@ -1,4 +1,4 @@
-"""The per-artifact snapshot and last-writer-wins merge (E2E.md Phase E3).
+"""The per-artifact snapshot and last-writer-wins merge (the sync design (AGENTS.md)).
 
 The sync unit is one canonical snapshot per artifact: the `artifacts` row plus
 its child rows (`annotations`, `page_text`, `artifact_versions`), serialized as
@@ -23,7 +23,7 @@ from . import device_id
 def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
     """Build one artifact's snapshot, or None when the artifact does not exist.
 
-    Children are ordered exactly as E2E.md Section 1 specifies: annotations by
+    Children are ordered exactly as the sync design (AGENTS.md) specifies: annotations by
     `created_at, id`, page_text by `page`, versions by `created_at, id`.
     Tags are ordered by name (canonical form).
     """
@@ -101,7 +101,7 @@ def _link_preview(conn: Connection, artifact_id: str) -> dict | None:
 
 
 def serialize(snapshot: dict) -> bytes:
-    """The canonical JSON from E2E.md Section 1. No other serialization is valid."""
+    """The canonical JSON from the sync design (AGENTS.md). No other serialization is valid."""
     return json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode(
         "utf-8"
     )
@@ -119,7 +119,7 @@ def deserialize(raw: bytes) -> dict:
 def lww_key(snapshot: dict) -> tuple[str, str]:
     """The LWW key: `(updated_at, device_id)`. Higher tuple wins.
 
-    `_device_id` is stamped at push time (E2E.md Phase E4); a snapshot that has
+    `_device_id` is stamped at push time (the sync design (AGENTS.md)); a snapshot that has
     not been exported yet carries None (or the empty string) for it.
     """
     return (
