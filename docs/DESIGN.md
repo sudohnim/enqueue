@@ -1,6 +1,6 @@
 # Enqueue Design System
 
-A soft lavender ground, white tiles, light type, and one bold violet accent: the app still lives inside the raven's colour, with the lights turned up.
+A lavender ground, lavender tiles, light type, and one bold violet accent: the app lives inside the raven's colour, with Mercury's lightness and clean edges.
 
 This is the October 2026 revision of the September 2026 "violet ground" system.
 September moved the app off white paper onto a flat lavender canvas with white-lit tiles and tight, bold Instrument Sans headings.
@@ -9,33 +9,33 @@ October keeps the identity - the raven, the bold violet `#60079f`, the lavender 
 The method was studied from Mercury's app (nothing above medium weight, one neutral used by strength, no shadows except on what floats); the colour is ours, where Mercury's is white and grey.
 
 The rules in one breath:
-the canvas is a soft lavender, tiles are white, every edge and chip is the brand violet at low strength, one face (Hanken Grotesk) carries everything at 400 to 480, headings thin out as they grow, nothing casts a shadow unless it floats, and violet is the one accent.
+the canvas is lavender, tiles are a lighter plate of it, a note is written straight on the ground, every edge and chip is the brand violet at low strength, one face (Hanken Grotesk) carries everything at 400 to 480, headings thin out as they grow, nothing casts a shadow unless it floats, and violet is the one accent.
 
 ## 1. Atmosphere
 
-- Light, and still not white. The canvas is a soft lavender (`#f6f2fb`), with no gradient and no wash.
-- Tiles are white plates on that ground. Separation is the tone step plus a violet hairline, never a shadow.
+- Light, and still not white. The canvas is lavender (`#e4d8f0`, closer to the README's screenshots than October's near-white), with no gradient and no wash.
+- Tiles are lighter plates of the same lavender (the ground 55% of the way to white). What floats (menus, dialogs, drawers) is white. Separation is the tone step plus a violet hairline, never a shadow.
 - Edges come from a 1px violet hairline drawn as an inset shadow. There are no grey borders, and the neutral itself is violet: every hairline, chip and resting fill is `#60079f` at 7 to 12%.
 - The bold violet `#60079f` (the raven eye's pupil) is the only chromatic accent: primary fills, focus rings, links, the chosen tab's tint, the greeting's last word and period.
 - The raven sits tight against its heading everywhere it appears (home greeting, settings title, capture overlay, the phone's quick-capture popup, a new note's date line), as part of the title rather than beside it.
 - Type is light. Nothing in the interface is heavier than 480; hierarchy comes from size and from four inks, not from weight.
-- The capture pill is the one object that kept the September ground (section 7): deeper lavender glass and the bold eye, so it holds its contrast over the white tiles.
+- The capture pill is the one object that kept the September ground (section 7): deeper lavender glass and the bold eye, so it holds its contrast over the tiles.
 
 ## 2. Color
 
 ### The violet ground (surface ladder)
 
-Surfaces climb toward white from the canvas, and recessed wells sink below it.
+Tiles climb toward white from the canvas, what floats is white, and recessed wells sink below it.
 
-- **Canvas** `--bg` `#f6f2fb`: the page, the frozen home header, the capture card, dialogs' page behind the scrim.
-- **Tile** `--surface` `#ffffff`: wall cards, settings groups, list rows, resting chips.
-- **Reading** `--surface-doc` `#ffffff`: menus, dialogs, drawers, toasts.
-- A note (and a capture's notes) is a sheet lying on the canvas, the same raised page a PDF's leaves are: `--surface-doc` (white on the lavender ground), a 20px corner, hairline plus `--shadow-card` (now a 1px contact shadow only), 44/52px of padding (`.docpane:has(> .editor)` in `css/artifact.css`). A line fills across the sheet's top edge on a successful save (`.docpane.landed`) and "✓ Saved" whispers beside the date. A picture stays straight on the ground. On the phone there is no room for a sheet with margins, so the screen itself is the paper: the reader turns white when it shows a note, and so do the note's drafts and the writing page (full screen, with a `--surface` tool bar on the keyboard). Code and quotations sink into the `--bg` ground on both apps (`css/notetype.css`). The caret is the accent everywhere you write.
-- A note's typography reads the shape already typed, with nothing for the writer to do (scoped to `.editor`): a line that leads into a list is that list's label (500, `--text`); an item with items under it heads them; markers step down by depth (accent dot, dash, small dot) beside a hairline guide; headings are in the display face; a quotation is a soft `--bg` block, never a striped margin; a line of three or more dashes is a short centred rule (`md.js` renders it as `<hr data-dashes>` and writes the same dashes back).
+- **Canvas** `--bg` `#e4d8f0`: the page, the frozen home header, the capture card, dialogs' page behind the scrim.
+- **Tile** `--surface` `#f3edf8` (the ground 55% toward white): wall cards, settings groups, list rows, resting chips.
+- **Floating** `--surface-doc` `#ffffff`: menus, dialogs, drawers, toasts, a PDF's pages.
+- A note (and a capture's notes) is written straight on the canvas, like a picture: no sheet, no edge, no shadow, its text in line with the title (`.docpane` in `css/artifact.css`). The formatting bar sits above it on a violet hairline, and a note's tabs above that, the chosen one underlined in the accent. A long note scrolls inside its column and fades out under the bar and above its foot (a mask over its own padding, the scroll bar left out), so there is more without a box to say so. A line fills across the top on a successful save (`.docpane.landed`) and "✓ Saved" whispers beside the date. The phone is the same: the reader, the drafts and the writing page are the ground. Code and quotations sink into the deeper `--surface-3` well on both apps (`css/notetype.css`). The caret is the accent everywhere you write.
+- A note's typography reads the shape already typed, with nothing for the writer to do (scoped to `.editor`): a line that leads into a list is that list's label (500, `--text`); an item with items under it heads them; markers step down by depth (accent dot, dash, small dot) beside a hairline guide; headings are in the display face; a quotation is a soft `--surface-3` block, never a striped margin; a line of three or more dashes is a short centred rule (`md.js` renders it as `<hr data-dashes>` and writes the same dashes back).
 - **Raised** `--surface-2` `#ffffff`: search, inputs, the active settings section, secondary buttons.
-- **Recessed** `--surface-3` `#ece5f4`: an OFF toggle track, pressed wells. The darkest ground any text sits on.
-- **Hover** `--surface-hover` `#faf7fd`: what a white tile turns when hovered or pressed. It cannot rise further toward white, so it takes a breath of the ground.
-- The ground drifts through the day (`js/ground.js`): `--bg`, `--surface-hover` and `--surface-3` move; tiles and reading surfaces are white at every hour. The night ground is `#e9e1f3`, and every ink is checked against it (`bin/check-contrast`).
+- **Recessed** `--surface-3` `#dacce8`: an OFF toggle track, code and quotation wells. The darkest ground any text sits on.
+- **Hover** `--surface-hover` `#f8f5fb`: what a tile turns when hovered or pressed, a step closer to white.
+- The ground drifts through the day (`js/ground.js`): `--bg` moves, and `--surface`, `--surface-hover` and `--surface-3` are derived from it; what floats is white at every hour. The night ground is `#dbcfe9`, and every ink is checked against it (`bin/check-contrast`).
 
 ### Accent
 
@@ -52,11 +52,11 @@ With no weight to lean on, the four of them are the hierarchy.
 - **Ink** `--text` `#1a1426`: headings, titles, primary text.
 - **Ink dim** `--text-dim` `#382f4d`: body and secondary text.
 - **Ink mute** `--text-mute` `#574d6e`: excerpts, helper text, inactive tabs.
-- **Ink faint** `--ink-faint` `#665c7e`: meta, counts, placeholders. Clears 4.5:1 on every ground including `--surface-3` and the night ground.
+- **Ink faint** `--ink-faint` `#5f5578`: meta, counts, placeholders. Clears 4.5:1 on the canvas and tiles at every hour, the night ground included; not permitted on `--surface-3`.
 
 ### Lines
 
-- **Hairline** `--line` `rgba(96, 7, 159, 0.12)`: the tile edge, drawn as `--hairline` (`inset 0 0 0 1px var(--line)`), so it adds no layout. It is the accent at low strength, not a separate grey.
+- **Hairline** `--line` `rgba(96, 7, 159, 0.13)`: the tile edge, drawn as `--hairline` (`inset 0 0 0 1px var(--line)`), so it adds no layout. It is the accent at low strength, not a separate grey.
 - **Soft line** `--line-soft` `rgba(96, 7, 159, 0.07)`: dividers inside a tile, ghost-button hovers, keycap fills.
 - **Strong line** `--line-strong` `#6f6886`: the only line that may be a sole boundary; used for the OFF toggle ring and the rare control that has no fill to bound it.
 
@@ -206,7 +206,7 @@ White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture field
 
 - One icon system: three equal 46px circles. Capture is the one solid violet disc (24px plus, 2.25px stroke); ask and settings sit on soft lavender discs of the same size (the accent at 8%), as line icons in `--text-dim` (the eye 30px, the gear 26px, about a 1.5px line), so all three carry equal weight.
 - On desktop (capture, ask, settings; Home + ask inside an artifact; search lives in the header and on ⌘K) and phone (capture, ask, settings) alike, the ask eye is drawn in that same line (an almond and three lashes), with a violet iris in a clipped socket that still follows the cursor (desktop) or glances on its own (phone), constricts on tap and blinks. It is not the `eye-only.png` art, whose thick black outline outweighed everything around it.
-- Glass: the canvas tinted toward white (`color-mix(--bg 62%, white 70%)`), 20px backdrop blur, a white inner rim and a violet hairline ring, so the edge holds even over white tiles; a violet drop shadow.
+- Glass: the canvas tinted toward white (`color-mix(--bg 62%, white 70%)`), 20px backdrop blur, a white inner rim and a violet hairline ring, so the edge holds even over the tiles; a violet drop shadow.
 - Pressed: the lavender disc deepens to 14% and squashes to 0.94. No outlines anywhere.
 
 ### Quick capture (desktop overlay)
@@ -239,7 +239,7 @@ The phone's Details panel is the same component with `data-touch` on its root: b
 ### Personality
 
 - **The ask eye has moods** (`js/eyemood.js`, shared by desktop and phone). It follows you anywhere (the cursor on desktop, your finger on the phone), blinks, and drifts into a lazy eye every 9 to 16 seconds. It approves a keep with one slow blink, squints and darts while search thinks then opens wide on results, startles when something new arrives, looks away and shuts while the vault is open, dozes after a minute of nothing and wakes with a start, and winces and looks away when poked three times. The iris is one flat violet disc, big enough to stare with white left around it. Reduced motion gets a still eye.
-- **The ground drifts with the day** (`js/ground.js`): night `#e9e1f3`, dawn `#f8f1f6`, day `#f6f2fb`, dusk `#f5edf6`, evening `#efe8f6`, interpolated by the minute. Only the ground moves (`--bg`, and `--surface-hover` and `--surface-3` derived from it); tiles stay white, inks and the accent stay. The pill drifts on its own, earlier ladder (`PILL_KEYS`). `bin/check-contrast` re-checks every rule on the night ladder. On Android the status and navigation bar strips follow it through the `EnqueueAndroid.setGround` bridge.
+- **The ground drifts with the day** (`js/ground.js`): night `#dbcfe9`, dawn `#ecdeea`, day `#e4d8f0`, dusk `#e9dbec`, evening `#e0d4ee`, interpolated by the minute. Only the ground moves (`--bg`, with the tile, hover and well derived from it); what floats stays white, inks and the accent stay. The pill drifts on its own, earlier ladder (`PILL_KEYS`). `bin/check-contrast` re-checks every rule on the night ladder. On Android the status and navigation bar strips follow it through the `EnqueueAndroid.setGround` bridge.
 - **The loading raven flies** (`css/bird.css`, `.flybird`, shared with the phone). The one loading mark is the front-on raven with its wings out, cut into a body and two wings with clip-paths: each wing beats about its own shoulder and the body rides the beat, sinking on the upstroke and lifting on the downstroke, with a slow sway. It used to be the whole picture spinning like a wheel. Markup is `<span class="flybird"><i></i><i></i><i></i></span>`, sized where it is used; reduced motion holds it still.
 - **The raven that found them stands on Related** (`.related-raven`, `raven-scroll.png`): on the top edge of the first row of related artifacts, the scroll it carried at its feet, leaning in when you reach for one.
 - **The raven stands in the Details panel** (`.dpanel-perch` in `css/details.css`, `Details.voice` and `Details.nod` in `js/details.js`, on the desktop and the phone alike). The panel is the raven showing what it made of the thing, so it stands on the header's rule with its head cocked (`raven-tilt.png`), facing the page, and the header says so in its voice ("I read it. Here's what stuck.", "My reading. Correct me.", "Still reading. One moment.", "I kept my eyes off this one." for a thing held out of every model call). Every line is true of the state it is shown in, and the "read it" line an artifact gets is fixed by its id. It lands once when the panel is opened (never on a re-render), bobs for exactly as long as a summary is being rewritten while the ask eye squints, and hops, with the eye's slow approving blink, when you rewrite or add a line; that line's dot takes the accent with a small pop. Reduced motion gets a still raven.
@@ -302,11 +302,11 @@ The Android status bar and navigation bar are reserved by `MainActivity` (system
 ## 10. Token summary
 
 ```
---bg:          #f6f2fb    --surface:   #ffffff    --surface-doc: #ffffff
---surface-2:   #ffffff    --surface-3: #ece5f4    --surface-hover: #faf7fd
+--bg:          #e4d8f0    --surface:   #f3edf8    --surface-doc: #ffffff
+--surface-2:   #ffffff    --surface-3: #dacce8    --surface-hover: #f8f5fb
 
 --text:        #1a1426    --text-dim:  #382f4d    --text-mute:   #574d6e
---ink-faint:   #665c7e
+--ink-faint:   #5f5578
 
 --accent / --purple-bold:   #60079f
 --lavender-focus / hover:   #7a1fc0
@@ -342,7 +342,8 @@ The pill only: --pill-ground #eee8f6  --pill-tile #f8f5fb  --pill-well #e3d9ef (
 
 | Earlier system | Decision | Now |
 | --- | --- | --- |
-| White canvas `#ffffff` | Replaced | Lavender ground: `#eee8f6` in September, lightened to `#f6f2fb` in October |
+| White canvas `#ffffff` | Replaced | Lavender ground: `#eee8f6` in September, lightened to `#f6f2fb` in October, deepened to `#e4d8f0` with lavender tiles mid-October |
+| A note on a white sheet (white screen on the phone) | Replaced | Written straight on the ground, with a fade where it scrolls |
 | Grey 1px borders on every surface | Removed | Violet inset hairline; September's layered shadows were dropped in October |
 | Home header purple gradient wash | Removed | Flat full-bleed ground, a short functional fade |
 | Uppercase shelf labels | Removed | Sentence-case display headings |

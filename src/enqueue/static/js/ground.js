@@ -13,16 +13,16 @@
 (function () {
 	// Keyframes by hour (0-24), interpolated linearly between neighbours.
 	const KEYS = [
-		[0, "#e9e1f3"], // night: a deeper violet-grey
-		[6, "#f8f1f6"], // dawn: a rosy lavender
-		[11, "#f6f2fb"], // day: the tokens.css default
-		[18, "#f5edf6"], // dusk: warmer, a touch of mauve
-		[21, "#efe8f6"], // evening: cooling toward night
-		[24, "#e9e1f3"],
+		[0, "#dbcfe9"], // night: a deeper violet-grey
+		[6, "#ecdeea"], // dawn: a rosy lavender
+		[11, "#e4d8f0"], // day: the tokens.css default
+		[18, "#e9dbec"], // dusk: warmer, a touch of mauve
+		[21, "#e0d4ee"], // evening: cooling toward night
+		[24, "#dbcfe9"],
 	];
 	// The pill keeps the deeper lavender it has always floated in (the ground before
 	// the canvas was lightened), so its glass and the bold eye hold their contrast
-	// against the white tiles. Same hours, the earlier ladder.
+	// against the tiles. Same hours, the earlier ladder.
 	const PILL_KEYS = [
 		[0, "#ddd1ec"],
 		[6, "#f2e9f2"],
@@ -63,11 +63,12 @@
 		if (key === last) return;
 		last = key;
 		const root = document.documentElement.style;
-		// Tiles and reading surfaces are white at every hour (tokens.css), so only the
-		// ground, the hover tint just under white and the recessed well move with it,
-		// at the same steps as the tokens.css defaults (#f6f2fb -> #faf7fd, #ece5f4).
+		// Tiles, their hover and the recessed well are the ground's own lavender, so
+		// they move with it, at the same steps as the tokens.css defaults (#e4d8f0 ->
+		// tile #f3edf8, hover #f8f5fb, well #dacce8). What floats stays white.
 		root.setProperty("--bg", key);
-		root.setProperty("--surface-hover", hex(mix(bg, WHITE, 0.45)));
+		root.setProperty("--surface", hex(mix(bg, WHITE, 0.55)));
+		root.setProperty("--surface-hover", hex(mix(bg, WHITE, 0.75)));
 		root.setProperty("--surface-3", hex(mix(bg, DEEP, 0.06)));
 		const pill = groundAt(new Date(), PILL_KEYS);
 		root.setProperty("--pill-ground", hex(pill));

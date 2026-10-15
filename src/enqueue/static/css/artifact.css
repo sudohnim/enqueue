@@ -403,28 +403,13 @@
     color: var(--badge-danger-ink);
   }
 
-  /* The reading pane. A picture sits straight on the ground; anything you write in
-     (a note, your notes on a capture) is a sheet lying on it, the same raised page a
-     PDF's leaves are: the warm reading white (--surface-doc, not the pure white that
-     glares against the violet over a whole page of text), a 20px corner and the card
-     shadow. Words on the bare ground read as unfinished next to a document's pages. */
+  /* The reading pane. What you write in (a note, your notes on a capture) is written
+     straight on the lavender ground, like a picture: no sheet, no edge, no shadow, its
+     text in line with the title above it. Only a PDF's pages are white leaves. */
   .docpane {
     position: relative;
     padding: var(--sp-5) 0 0;
     margin-top: var(--sp-5);
-  }
-  .docpane:has(> .editor) {
-    padding: 44px 52px 40px;
-    background: var(--surface-doc);
-    border-radius: 20px;
-    box-shadow: var(--hairline), var(--shadow-card);
-    overflow: hidden;
-  }
-  @media (max-width: 760px) {
-    .docpane:has(> .editor) {
-      padding: var(--sp-5) var(--sp-5) var(--sp-5);
-      border-radius: var(--r-xl);
-    }
   }
   /* A note's sheet is as tall as the window allows and no taller: the bar of
      formatting stays at its top, the count of drafts at its foot, and the note
@@ -443,11 +428,38 @@
   main#view:has(.notesheet) {
     padding-bottom: 88px;
   }
+  /* With no edge to stop at, the note fades out where it scrolls under the bar and
+     above the foot, over its own top and bottom padding, so a note at rest is
+     untouched and one being scrolled reads as "there is more". The right 12px (the
+     scroll bar) is left out of the fade. */
   .notesheet > .editor {
     flex: 1 1 auto;
     min-height: 240px;
     overflow-y: auto;
-    padding: var(--sp-6) 52px var(--sp-5);
+    padding: var(--sp-5) var(--sp-4) var(--sp-7) 0;
+    --fade: linear-gradient(
+      to bottom,
+      transparent,
+      #000 var(--sp-5),
+      #000 calc(100% - var(--sp-7)),
+      transparent
+    );
+    -webkit-mask-image: var(--fade), linear-gradient(#000, #000);
+    mask-image: var(--fade), linear-gradient(#000, #000);
+    -webkit-mask-size:
+      calc(100% - 12px) 100%,
+      12px 100%;
+    mask-size:
+      calc(100% - 12px) 100%,
+      12px 100%;
+    -webkit-mask-position:
+      left top,
+      right top;
+    mask-position:
+      left top,
+      right top;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--accent) 22%, transparent) transparent;
   }
@@ -467,7 +479,7 @@
   .docpane.notesheet > .bar {
     flex: none;
     margin: 0;
-    padding: var(--sp-3) 52px var(--sp-4);
+    padding: var(--sp-3) 0 var(--sp-4);
   }
   /* The formatting bar: quiet line icons in a row, set off from the page by a
      hairline. What the caret is in wears the accent tint, like the chosen tab. */
@@ -477,8 +489,12 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 2px;
-    padding: var(--sp-2) 44px;
-    box-shadow: inset 0 -1px 0 var(--line-soft);
+    padding: var(--sp-2) 0;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  /* The first button's icon lines up with the text under it. */
+  .edbar > :first-child {
+    margin-left: -7px;
   }
   .edbtn {
     display: grid;
@@ -521,17 +537,6 @@
     height: 18px;
     margin: 0 var(--sp-2);
     background: var(--line);
-  }
-  @media (max-width: 760px) {
-    .notesheet > .editor {
-      padding: var(--sp-5);
-    }
-    .edbar {
-      padding: var(--sp-2) var(--sp-4);
-    }
-    .docpane.notesheet > .bar {
-      padding: var(--sp-3) var(--sp-5) var(--sp-4);
-    }
   }
   /* A line fills across the sheet's top edge, left to right, when a save lands: the
      page acknowledging the words rather than a notification about them. */
@@ -929,15 +934,16 @@
 }
 
   /* ---- Tabs on a note's sheet (js/notetabs.js) ---------------------------------- */
-  /* Folder tabs on the sheet's top edge: the chosen one is the sheet's own white and
-     runs into it; the others sit back, a shade of the ground. They read as parts of
-     one note, not as navigation. */
+  /* The tabs sit over the formatting bar's hairline, the first one's name in line
+     with the text: the chosen one is underlined in the accent where it meets the
+     line, the others sit back in a lighter ink. They read as parts of one note, not
+     as navigation. */
   .notetabs {
     display: flex;
     align-items: flex-end;
-    gap: 4px;
+    gap: var(--sp-5);
     margin-top: var(--sp-5);
-    padding: 0 22px;
+    padding: 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -947,10 +953,6 @@
   .notetabs + .docpane.notesheet {
     margin-top: 0;
   }
-  .docpane.notesheet.tabbed {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
   .ntab {
     position: relative;
     flex: none;
@@ -958,10 +960,8 @@
     align-items: center;
     gap: 6px;
     max-width: 240px;
-    padding: 9px 16px 10px;
-    border-radius: 12px 12px 0 0;
-    background: color-mix(in srgb, var(--surface-doc) 45%, transparent);
-    box-shadow: inset 0 0 0 1px var(--line-soft);
+    padding: 9px 0 10px;
+    background: transparent;
     font-size: 14px;
     color: var(--text-mute);
     cursor: pointer;
@@ -974,16 +974,11 @@
   }
   .ntab:hover {
     color: var(--text);
-    background: color-mix(in srgb, var(--surface-doc) 75%, transparent);
   }
   .ntab[aria-selected="true"] {
     z-index: 2;
-    margin-bottom: -1px;
-    padding-bottom: 11px;
-    background: var(--surface-doc);
-    box-shadow:
-      inset 1px 1px 0 var(--line),
-      inset -1px 0 0 var(--line);
+    background: transparent;
+    box-shadow: inset 0 -2px 0 var(--accent);
     color: var(--text);
     font-weight: var(--w-medium);
     cursor: grab;
@@ -996,6 +991,7 @@
     z-index: 3;
     cursor: grabbing;
     transition: none;
+    background: var(--surface);
     box-shadow:
       inset 0 0 0 1px var(--line),
       0 10px 24px -12px rgba(43, 11, 74, 0.45);

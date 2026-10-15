@@ -1027,19 +1027,6 @@
     color: var(--on-purple-bold);
   }
 
-  /* A note is white paper (docs/DESIGN.md). On the desktop it is a sheet lying on the
-     lavender ground; here the whole screen is the paper whenever what it shows is a
-     note's text: the reader on a note, its drafts, and the writing page (which paints
-     its own). Its code and quotations sink into the ground, as on the desktop
-     (css/notetype.css). `paperScreen` in the script sets the class. */
-  html.paper,
-  html.paper body {
-    background: var(--surface-doc);
-  }
-  /* The frosted toolbar is frosted paper there, not a band of the ground. */
-  html.paper header {
-    background: color-mix(in srgb, var(--surface-doc) 88%, transparent);
-  }
 
   .kind-hint {
     font-size: 12px;
@@ -1199,7 +1186,7 @@
     z-index: 60;
     display: flex;
     flex-direction: column;
-    background: var(--surface-doc); /* a note is white paper */
+    background: var(--bg); /* a note is written on the ground, as on the desktop */
     animation: writer-in 220ms var(--ease) both;
   }
   .writer[hidden] {
@@ -1720,7 +1707,7 @@
      lavender discs of the same size, as line icons in violet-grey ink, so all
      three carry equal weight - one icon system. The
      glass is lavender-tinted with a violet hairline so its edge still holds where
-     it floats over the white tiles. */
+     it floats over the tiles. */
   .pill {
     /* The pill keeps the deeper lavender it has always floated in. The page around
        it was lightened (soft lavender ground, white tiles); the pill was not, so the
@@ -3842,18 +3829,7 @@
     "drafts",
   ];
 
-  // Whether the reader is showing a note: then the screen is white paper (paperScreen).
-  let readerOnNote = false;
-
-  function paperScreen(id) {
-    document.documentElement.classList.toggle(
-      "paper",
-      id === "drafts" || (id === "reader" && readerOnNote),
-    );
-  }
-
   function show(id) {
-    paperScreen(id);
     if (id === "reader") {
       const from = SCREENS.find((s) => {
         const el = document.getElementById(s);
@@ -5186,7 +5162,6 @@
   let readerVaulted = false;
   function renderReader(a, data) {
     readerVaulted = !!a.vaulted_at;
-    readerOnNote = a.kind === "note";
     document.getElementById("reader_title").textContent = shownTitle(a);
     document.getElementById("reader_kind").textContent = a.kind;
     const body = document.getElementById("reader_body");

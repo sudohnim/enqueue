@@ -19,7 +19,10 @@ const esc = (s) =>
   );
 
 const src = fs.readFileSync(path.join(__dirname, "../../src/enqueue/static/js/md.js"), "utf8");
-const { md, htmlToMd } = new Function("esc", src + "\nreturn { md, htmlToMd };")(esc);
+const { md, htmlToMd, mdText } = new Function(
+  "esc",
+  src + "\nreturn { md, htmlToMd, mdText };",
+)(esc);
 
 // ---- a DOM just big enough for md()'s output ----------------------------------
 const VOID = new Set(["BR", "IMG", "HR"]);
@@ -143,6 +146,9 @@ for (const [name, [text, want]] of Object.entries(normalised)) {
   if (once !== want) fail(name, want, once);
   else if (roundTrip(once) !== once) fail(name + " (second trip)", once, roundTrip(once));
 }
-const total = Object.keys(exact).length + Object.keys(normalised).length;
+// A card's preview of a tabbed note reads the tabs' text, never their marker lines.
+const preview = mdText("<!-- tab: Steps -->\n- book flights\n\n<!-- tab: Places -->\nLisbon");
+if (preview !== "• book flights\n\nLisbon") fail("a preview drops tab markers", "", preview);
+const total = Object.keys(exact).length + Object.keys(normalised).length + 1;
 console.log(`${total - failed}/${total} markdown round trips hold`);
 process.exit(failed ? 1 : 0);

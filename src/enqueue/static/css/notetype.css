@@ -8,9 +8,9 @@
    depth has its own quiet marker and a hairline guide down its side.
 
    Apply `.notetype` to the element whose children are the note's blocks. Chat answers
-   and file text keep the plain `.md` setting. A note is white paper on both apps (a
-   sheet on the desktop, the whole screen on the phone), and its code and quotations
-   sink into the lavender ground. Loaded after css/artifact.css on the desktop. */
+   and file text keep the plain `.md` setting. A note is written straight on the
+   lavender ground on both apps, with no sheet, and its code and quotations sink into
+   a deeper well of it (--surface-3). Loaded after css/artifact.css on the desktop. */
 .notetype {
   font-size: 16px;
   line-height: 26px;
@@ -116,7 +116,7 @@
 .notetype code {
   padding: 1px 6px;
   border-radius: var(--r-sm);
-  background: var(--bg);
+  background: var(--surface-3);
   font-family: var(--mono);
   font-size: 14px;
   line-height: 20px;
@@ -131,7 +131,7 @@
   margin: var(--sp-4) 0 0;
   padding: var(--sp-4);
   border-radius: var(--r);
-  background: var(--bg);
+  background: var(--surface-3);
   font-family: var(--mono);
   font-size: 14px;
   line-height: 20px;
@@ -152,7 +152,7 @@
   padding: var(--sp-3) var(--sp-4);
   border-left: 0;
   border-radius: var(--r-lg);
-  background: var(--bg);
+  background: var(--surface-3);
   color: var(--text);
   font-style: italic;
 }

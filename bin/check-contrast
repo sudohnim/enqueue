@@ -295,8 +295,8 @@ def main():
         )
         night = {
             "--bg": luminance(night_hex),
-            # Tiles are white at every hour; only the ground and the well drift.
-            "--surface": grounds["--surface"],
+            # Tiles are the ground's lavender, lightened as js/ground.js does.
+            "--surface": luminance(mixc(nb, (255, 255, 255), 0.55)),
             "--surface-2": grounds["--surface-2"],
             "--surface-3": luminance(mixc(nb, (58, 13, 99), 0.06)),
         }
