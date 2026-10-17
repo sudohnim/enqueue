@@ -1369,11 +1369,12 @@ function renderSyncRecovery() {
 function renderSyncStepSecret(_sync) {
 	return (
 		'<div class="aside">Last step: the relay\'s password, so only your devices can use it. ' +
-		"Leave it empty and Enqueue makes a strong one, or paste the one your relay gave you.</div>" +
+		"Paste the one the relay runs with: your own relay's RELAY_SECRET, or the password " +
+		"whoever runs a shared relay gave you.</div>" +
 		'<div class="field">' +
 		'<label for="s_sync_secret">Relay password</label>' +
 		'<input id="s_sync_secret" type="password" autocomplete="off" ' +
-		'placeholder="Leave empty to make one">' +
+		'placeholder="Paste the relay password">' +
 		'<div class="aside">Kept in your Mac\'s Keychain.</div>' +
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
@@ -1403,17 +1404,21 @@ async function saveSyncSecretAndFinish() {
 	const relayUrl = window.syncRelayUrl || "http://127.0.0.1:8788";
 	const secretField = document.getElementById("s_sync_secret");
 	const secret = secretField ? secretField.value.trim() : "";
+	if (!secret) {
+		toast("Paste the relay's password first.", true);
+		secretField?.focus();
+		return;
+	}
 	const btn = event.target;
 	btn.disabled = true;
 	btn.textContent = "Saving...";
 	try {
-		// Generate a secure secret when the field is empty.
-		const finalSecret = secret || generateSyncSecret();
+		const finalSecret = secret;
 		// PUT /settings/sync-secret also pushes the keyring to the relay.
 		await api("/settings/sync-secret", {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ secret: finalSecret }),
+			body: JSON.stringify({ secret: finalSecret, relay_url: relayUrl }),
 		});
 		// Persist the relay URL as a plaintext setting.
 		await api("/settings", {
@@ -1431,12 +1436,6 @@ async function saveSyncSecretAndFinish() {
 		btn.disabled = false;
 		btn.textContent = "Finish setup";
 	}
-}
-
-function generateSyncSecret() {
-	const array = new Uint8Array(32);
-	crypto.getRandomValues(array);
-	return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function renderSyncConfigured(_sync) {

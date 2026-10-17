@@ -62,7 +62,8 @@ cd "$STAGE"
 railway link --project "$PROJECT" --environment "$RAILWAY_ENVIRONMENT" --service "$SERVICE" >/dev/null 2>&1 \
   || { echo "could not link service '$SERVICE' in project '$PROJECT' ($RAILWAY_ENVIRONMENT)." >&2
        echo "For a new prod service: create it once in the Railway dashboard (add a" >&2
-       echo "volume at /data and set RELAY_SECRET, RELAY_DATA_DIR=/data), then re-run." >&2
+       echo "volume at /data and set RELAY_SECRET, RELAY_DATA_DIR=/data, and" >&2
+       echo "RELAY_ADMIN_SECRET to issue libraries with enq relay-admin), then re-run." >&2
        exit 1; }
 railway up --service "$SERVICE" --detach
 

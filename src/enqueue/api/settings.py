@@ -89,6 +89,29 @@ def forget_api_key() -> dict:
 
 class SyncSecret(BaseModel):
     secret: str
+    # The relay the secret is for, when the page knows it (sync setup): checked first.
+    relay_url: str | None = None
+
+
+def _relay_refuses(url: str, secret: str) -> bool:
+    """Whether the relay at `url` answers that it does not know this secret.
+
+    A relay that serves several libraries (relay/storage.py) only opens the ones it
+    issued, so a made-up secret would be stored here and every sync would then fail
+    in the background. Unreachable is not a refusal: setup may happen offline.
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(
+            f"{url.rstrip('/')}/sync/objects",
+            params={"since": 2**62},
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=10,
+        )
+    except httpx.HTTPError:
+        return False
+    return resp.status_code == 401
 
 
 @router.put("/settings/sync-secret")
@@ -98,6 +121,12 @@ def store_sync_secret(req: SyncSecret) -> dict:
     Like the API key: never written to settings.json, and the value is never
     returned - only whether one now exists and its hint.
     """
+    if req.relay_url and _relay_refuses(req.relay_url, req.secret):
+        raise HTTPException(
+            status_code=400,
+            detail="That relay doesn't know this password. Use the one its owner gave you"
+            " (a shared relay only opens libraries it set up).",
+        )
     try:
         keyring.sync_secret_set(req.secret)
     except ValueError as exc:
