@@ -716,7 +716,6 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "beautifulsoup4" },
-    { name = "crawl4ai" },
     { name = "fastapi" },
     { name = "fastembed" },
     { name = "httpx", extra = ["http2"] },
@@ -737,6 +736,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+browser = [
+    { name = "crawl4ai" },
+]
 index = [
     { name = "fastembed" },
 ]
@@ -744,6 +746,7 @@ index = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
+    { name = "crawl4ai" },
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-xdist" },
@@ -754,7 +757,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "crawl4ai", specifier = ">=0.9.4" },
+    { name = "crawl4ai", marker = "extra == 'browser'", specifier = ">=0.9.4" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastembed", specifier = ">=0.8.0" },
     { name = "fastembed", marker = "extra == 'index'", specifier = ">=0.4" },
@@ -774,11 +777,12 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
-provides-extras = ["index"]
+provides-extras = ["index", "browser"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=24.0" },
+    { name = "crawl4ai", specifier = ">=0.9.4" },
     { name = "hypothesis", specifier = ">=6.165.4" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-xdist", specifier = ">=3.6" },

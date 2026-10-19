@@ -327,6 +327,26 @@ class TestBrowserFallback:
         assert row["status"] == "failed"
         assert "bin/setup" in row["error"]
 
+    def test_an_app_built_without_the_browser_says_so(self, store, quiet_queue, monkeypatch):
+        # The Mac app ships without the `browser` extra: no "run bin/setup" for a person
+        # who has no repository, and Settings does not offer the switch.
+        made = capture.link("https://steve-yegge.medium.com/another-post")
+        self._setting(monkeypatch, "on")
+        monkeypatch.setattr(preview, "_read_capped", _refused)
+        monkeypatch.setattr(preview, "browser_available", lambda: False)
+
+        def missing(url):
+            raise preview.BrowserMissing("crawl4ai is not installed")
+
+        monkeypatch.setattr(preview, "_read_browser", missing)
+
+        row = preview.fetch(made["id"])
+        assert "does not include the preview browser" in row["error"]
+
+        from enqueue.api import settings as api_settings
+
+        assert api_settings.read_settings()["features"] == {"preview_browser": False}
+
     def test_a_page_the_plain_fetch_read_keeps_it_when_the_browser_fails(
         self, store, quiet_queue, monkeypatch
     ):

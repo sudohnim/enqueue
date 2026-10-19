@@ -2657,6 +2657,7 @@ fn update_note_body_with(
 
 /// A note's drafts, newest first, each with its whole text (the page compares them),
 /// and whether the note keeps drafts. A vaulted note's drafts are sealed: not listed.
+#[allow(dead_code)] // the phone's drafts screen (mobile commands)
 pub fn list_drafts(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
     let row: Option<(i64, Option<String>)> = conn
         .query_row(
@@ -2695,6 +2696,7 @@ pub fn list_drafts(conn: &Connection, artifact_id: &str) -> Result<Value, String
 /// Put a draft back as the note's text. Today's text was already kept as the newest
 /// draft (every save keeps it), and the restored text is kept as a new draft standing
 /// on its own, so going back never loses anything.
+#[allow(dead_code)] // the phone's drafts screen (mobile commands)
 pub fn restore_draft(conn: &Connection, artifact_id: &str, version_id: &str) -> Result<Value, String> {
     let body: String = conn
         .query_row(
@@ -2710,6 +2712,7 @@ pub fn restore_draft(conn: &Connection, artifact_id: &str, version_id: &str) -> 
 
 /// The per-note drafts switch. Off keeps only the latest draft (the body version).
 /// Returns how many drafts were removed.
+#[allow(dead_code)] // the phone's drafts screen (mobile commands)
 pub fn set_keep_drafts(conn: &Connection, artifact_id: &str, on: bool) -> Result<i64, String> {
     conn.execute(
         "UPDATE artifacts SET keep_drafts = ?1 WHERE id = ?2 AND kind = 'note'",

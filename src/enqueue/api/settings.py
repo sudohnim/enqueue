@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import threading
 
-from .. import db, greeting, keyring, keyring_file, settings
+from .. import db, greeting, keyring, keyring_file, preview, settings
 from ..providers import pause
 from ..sync.client import push_keyring
 
@@ -25,6 +25,9 @@ def read_settings() -> dict:
         "storage": settings.storage(),
         "backends": settings.backends(),
         "sync": settings.sync_state(),
+        # What this copy of Enqueue can do: the Mac app ships without the preview
+        # browser, so its setting is not offered there.
+        "features": {"preview_browser": preview.browser_available()},
     }
 
 

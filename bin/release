@@ -62,6 +62,20 @@ release_desktop() {
   # resources at build time, and signs + notarizes the bundle when the APPLE_* env is set.
   cargo tauri build --config tauri.release.conf.json
 
+  # Notarize through a notarytool profile kept in the login keychain, so no Apple
+  # password passes through this script. Make it once (it asks for an app-specific
+  # password from appleid.apple.com):
+  #   xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG
+  # then: NOTARY_PROFILE=enqueue-notary bin/release desktop
+  if [ -n "${NOTARY_PROFILE:-}" ]; then
+    local dmg
+    dmg="$(ls -1t "$REPO"/desktop/target/release/bundle/dmg/*.dmg | head -1)"
+    echo "==> Notarizing $(basename "$dmg") (a few minutes)"
+    xcrun notarytool submit "$dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$dmg"
+    spctl --assess --type open --context context:primary-signature -v "$dmg" || true
+  fi
+
   echo
   echo "Built:"
   ls -1d "$REPO"/desktop/target/release/bundle/macos/*.app 2>/dev/null || true
@@ -75,6 +89,21 @@ release_desktop() {
 release_android() {
   local target="${1:-aarch64}"
   cd "$REPO/desktop"
+
+  # The Android toolchain, as bin/launch finds it (respecting anything exported).
+  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+  if [[ -z "${NDK_HOME:-}" ]]; then
+    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
+  fi
+  export NDK_HOME
+  # SQLCipher's vendored OpenSSL (openssl-src) archives with `<triple>-ar`/`-ranlib`,
+  # which NDK r23+ no longer ships: point it at the NDK's llvm tools, or a clean release
+  # build fails with "aarch64-linux-android-ranlib: command not found".
+  local ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+  export AR_aarch64_linux_android="$ndk_bin/llvm-ar"
+  export RANLIB_aarch64_linux_android="$ndk_bin/llvm-ranlib"
+  export PATH="$ndk_bin:$ANDROID_HOME/platform-tools:$PATH"
 
   # Gradle can package a stale .so if an intermediate lingers from an earlier build; clear
   # the release native-lib intermediates so the apk always carries the freshly-built lib.

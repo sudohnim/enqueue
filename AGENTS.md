@@ -58,14 +58,14 @@ The Keychain holds the library key (`enqueue-library-key`), the sync key (`enque
 Tests never touch any of it: `tests/conftest.py` points the process at a temporary folder and fakes the Keychain.
 
 **Releasing.** The Android APK is published from the Actions tab (the `release` workflow, run by hand with a tag); it is debug-signed unless the `RELEASE_*` secrets are set.
-The Mac app is source-only for now: its Python engine is not bundled as a standalone binary yet.
+The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own engine (see "The Mac app bundle" under Build notes), signed with the Developer ID certificate when `APPLE_SIGNING_IDENTITY` is set and notarized when `NOTARY_PROFILE` names a `notarytool` keychain profile.
 
 ## Known gaps
 
-- **No bundled Mac app.** The shell runs from `desktop/target/debug/Enqueue` and starts the engine with `uv run enq serve` from the repo.
+- **The Mac app has no auto-update.** A new version is a new `.dmg` to download; Tauri's updater (a signed update feed) is not wired up.
 - **Hosted sign-in with a passkey is not built.** The paid tier's "sign in and your library arrives" needs a domain, an account server and a signed app entitlement; the steps are under [Encryption and keys](#encryption-and-keys).
 - **The Mac's original files (`blobs/`) are not encrypted by Enqueue**; FileVault covers them.
-- **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers.
+- **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers. The plan (2026-10-16): first-run setup suggests a cheap OpenRouter pair, one model for ingestion and one for chat, picked by a bake-off on the eval notes (real cost with reprompts, quality-gate failures, both search evals) between `qwen/qwen3.7-flash`, `deepseek/deepseek-v4-flash` and `anthropic/claude-haiku-5.5` for ingestion, and `deepseek/deepseek-v4-pro`, `qwen/qwen3.7-plus` and `anthropic/claude-sonnet-5.5` for chat. Set the OpenRouter account to refuse providers that train on data before other people's notes pass through it.
 - **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
 - **The wall shows the newest 120 items**; there is no paging past that.
 - **macOS only on the desktop** (AppKit calls, the Keychain).
@@ -378,8 +378,11 @@ One line per file, describing its job.
 | `bin/launch desktop` | Rebuild shell, kill engine + shell, launch, wait for health, bring to front. |
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
+| `bin/android-matrix` | Opens the app on five test emulators (Android 9, a small Android 15 phone, Android 15, 16 and a tablet) one at a time, and reports for each whether it stayed up, crashed or rendered its first screen; screenshots go to `$TMPDIR/enqueue-android-matrix`. `--create` makes the emulators (the system images come from `sdkmanager`), `--debug` tests the debug apk instead of the release one. |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
 | `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
+| `bin/release desktop` / `bin/release android` | Shippable builds: the Mac `.app` + `.dmg` with the engine inside (signed and notarized when the Apple settings are given), or the signed Android release `.apk`/`.aab`. |
+| `bin/bundle-engine` | Vendors the relocatable engine into `desktop/engine` for the Mac app; `bin/release desktop` runs it. |
 | `bin/deploy-relay` | Deploy the sync relay to Railway (dev/prod), gated on the relay tests, polls `/health`. |
 
 ### Static
@@ -1197,6 +1200,23 @@ Setting up and running are under [Start here](#start-here). What else is worth k
 - `bin/launch mobile` refuses an emulator on purpose and never runs `cargo tauri android dev` (that watch loop never exits and holds the Gradle lock); it builds once, installs, launches and exits.
 - The shell finds the engine repo through `ENQUEUE_REPO`, else the data folder's `repo` file, else the parent of the current directory.
 
+### The Mac app bundle
+
+`bin/release desktop` runs `bin/bundle-engine`, then `cargo tauri build --config tauri.release.conf.json`, which copies `desktop/engine` into `Enqueue.app/Contents/Resources/engine`.
+The engine is a relocatable CPython 3.12 (python-build-standalone, the one uv manages) plus a `site/` folder; the shell finds it next to its own executable and runs `python3.12 -m enqueue serve` with `PYTHONPATH` set to it (`bundled_engine_command` in `desktop/src/lib.rs`), so the app needs no repo, no uv and no system Python. Without a bundled engine (a dev build) the shell runs `uv run enq serve` from the repo as before.
+- **Exactly the locked versions.** `site/` is installed from `uv export --frozen --no-dev` (uv.lock), then the project itself with `--no-deps`; resolving fresh would ship whatever was newest that day.
+- **No preview browser.** crawl4ai is the optional `browser` extra (kept in the dev group, so a checkout has it): it pulled two copies of Playwright's driver, litellm and scipy, over half the bundle (814 MB with it, 356 MB without), and needs a separate Chromium download the app could not do. The app reports `features.preview_browser = false` on `GET /settings`, Settings does not offer the switch, and a refused link says "this copy of Enqueue does not include the preview browser" (`preview.browser_available`). `bin/bundle-engine` fails if it leaks back in.
+- **First launch** downloads the embedding model once (about 200 MB from Hugging Face) into the data folder; search says "Updating your search index" until it is ready.
+- **Signing.** With `APPLE_SIGNING_IDENTITY="Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"` every Mach-O in the engine is signed inside-out with the hardened runtime and `desktop/Entitlements.plist` (library validation off, dyld variables, JIT), then Tauri signs the app.
+- **Notarizing.** Once per Mac, `xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG` (it asks for an app-specific password from appleid.apple.com, which stays in the keychain); then `NOTARY_PROFILE=enqueue-notary bin/release desktop` submits the `.dmg`, waits, staples it and checks it with `spctl`.
+
+### The Android release build
+
+`bin/release android` makes the signed release `.apk` and `.aab` (signed with `desktop/gen/android/key.properties` + `release.keystore`, both gitignored). A release build differs from the debug one every other script makes in three ways, each of which broke it once (2026-10-17):
+- **OpenSSL archives with `llvm-ar`/`llvm-ranlib`.** SQLCipher's vendored OpenSSL looks for `aarch64-linux-android-ranlib`, which NDK r23+ no longer ships; `bin/release` exports `AR_`/`RANLIB_aarch64_linux_android` pointing at the NDK's llvm tools.
+- **R8 keeps the app's own classes** (`proguard-rules.pro`): Rust calls `MainActivity.storeKey`, `getCurrentActivity` and the sync service by name over JNI, and the page calls the `@JavascriptInterface` bridge, so a shrunk build renamed them away and the app died at launch with "store key: Java exception was thrown". Verify a release build by installing it and opening it, not by its build passing.
+- **No typedef-annotation extraction** for the plugin modules (`build.gradle.kts`, `allprojects`): it only matters for publishing an AAR, and the lint tooling it downloads was cut off mid-download by Google's CDN on every attempt.
+
 ### Tauri build notes
 
 - The shell spawns the engine via `uv run enq serve` from the repo directory.
@@ -1525,6 +1545,14 @@ Removing a card (`POST /pivots/{id}/remove`) edits the frozen groups AND records
 A card with no recorded group (an old exclusion, or an add) is placed by `pivot.place_from_cache`, which walks the spec's steps reading only the row and the derive cache - never a model - and falls back to "" ("Not determined").
 `pivot.run` folds group keys that differ only in case or spacing ("Non-fiction" / "non-fiction") into one group, shown in the commonest spelling.
 On the page, `pivotState` is cleared in `teardown()` and every late re-render checks `onSavedView(id)`: a view left set used to redraw itself over whichever page was open when the window regained focus.
+
+### The phone page needs WebView 111 or newer (2026-10-19)
+
+The page runs in the phone's Android System WebView, which Android updates through the Play Store apart from the OS, so the Android version does not say which browser it gets.
+`mobile.html` needs Chrome 111 (CSS `color-mix`; `:has` needs 105, `?.` 80); on an older one its scripts fail to parse and it opened half-built (the pill alone at the top, no linking screen).
+The first script in the page, written in the JavaScript an old WebView can read, checks for those three and otherwise replaces the page with what to do: update Android System WebView in the Play Store.
+`bin/android-matrix`'s Android 9 emulator (WebView 66, no Play Store) is the case that found it and the one that checks the guard; the other four check the page itself.
+A newer CSS or JavaScript feature the page starts to need goes into that check.
 
 ### The phone's fingerprint lock is two separate locks (BIO.1)
 

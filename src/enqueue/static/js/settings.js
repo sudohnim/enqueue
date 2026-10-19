@@ -610,12 +610,16 @@ async function renderSettingsFeatures() {
 		(ap.locked ? ' disabled aria-disabled="true"' : "") +
 		' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
 		"</div></div>" +
-		searchSwitchRow(
-			d.settings.preview_browser,
-			"preview_browser",
-			"When a site blocks the preview, Enqueue opens the page once in a hidden browser, the way you would. Slower.",
-			"Some sites block previews; those links stay without one.",
-		) +
+		// The Mac app ships without the preview browser (pyproject.toml, the `browser`
+		// extra), so the switch is offered only where it can work.
+		(d.features?.preview_browser === false
+			? ""
+			: searchSwitchRow(
+					d.settings.preview_browser,
+					"preview_browser",
+					"When a site blocks the preview, Enqueue opens the page once in a hidden browser, the way you would. Slower.",
+					"Some sites block previews; those links stay without one.",
+				)) +
 		"</div>";
 
 	html +=

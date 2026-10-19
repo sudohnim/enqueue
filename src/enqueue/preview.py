@@ -428,6 +428,14 @@ def browser_enabled() -> bool:
     return str(settings.get("preview_browser") or "off").lower() in ("on", "1", "true")
 
 
+def browser_available() -> bool:
+    """Whether this copy of Enqueue carries the preview browser (the `browser` extra):
+    the Mac app ships without it, a development checkout has it."""
+    import importlib.util
+
+    return importlib.util.find_spec("crawl4ai") is not None
+
+
 def _read_browser(url: str) -> tuple[str, str]:
     """Return (content_type, html) for a page opened in headless Chromium."""
     import asyncio
@@ -463,6 +471,8 @@ def _read_browser(url: str) -> tuple[str, str]:
 
 def _why_browser(exc: Exception) -> str:
     if isinstance(exc, BrowserMissing):
+        if not browser_available():
+            return "this copy of Enqueue does not include the preview browser"
         return "the browser for previews is not installed; run bin/setup, then try again"
     if "(401)" in str(exc) or "(403)" in str(exc):
         return "the site turned the preview away, even in a browser"

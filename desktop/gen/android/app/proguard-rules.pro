@@ -19,3 +19,13 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Enqueue's own classes are reached by NAME from Rust over JNI (desktop/src/lib.rs:
+# MainActivity.storeKey, MainActivity.getCurrentActivity, SyncForegroundService,
+# CameraHelper, Biometrics callbacks) and from the page (the EnqueueAndroid
+# @JavascriptInterface bridge). Nothing in Kotlin calls most of them, so R8 strips or
+# renames them in a release build and the app dies at launch with "store key: Java
+# exception was thrown". The classes are few and small: keep them whole.
+-keep class com.sudohnim.enqueue.** { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

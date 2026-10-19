@@ -12,6 +12,40 @@
      this resolves offline. -->
 <link rel="preload" href="fonts/HankenGrotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="css/tokens.css" />
+<!-- Before anything else, in JavaScript an old WebView can still read: the page needs
+     Chrome 111 or newer (CSS color-mix and :has, and ?. in the scripts). Android updates
+     its WebView through the Play Store, but a phone that never has (or an emulator
+     image with no Play Store, like Android 9's WebView 66) would otherwise open to a
+     half-built page with no word of why: the scripts below fail to parse. It shows
+     what to do instead. bin/android-matrix's Android 9 emulator is what found it. -->
+<script>
+  (function () {
+    var ok = false;
+    try {
+      ok =
+        !!window.CSS &&
+        CSS.supports("color", "color-mix(in srgb, red, blue)") &&
+        CSS.supports("selector(:has(*))") &&
+        new Function("var a; return a?.b ?? 1")() === 1;
+    } catch (e) {
+      ok = false;
+    }
+    if (ok) return;
+    window.__enqTooOld = true;
+    document.addEventListener("DOMContentLoaded", function () {
+      var link = "https://play.google.com/store/apps/details?id=com.google.android.webview";
+      document.body.innerHTML =
+        '<div style="font-family:sans-serif;padding:48px 28px;color:#1a1426;background:#e4d8f0;min-height:100vh;box-sizing:border-box">' +
+        '<h1 style="font-weight:500;font-size:26px;margin:0 0 12px">Enqueue needs an update to Android</h1>' +
+        '<p style="font-size:16px;line-height:1.5;margin:0 0 20px;color:#382f4d">This phone\'s ' +
+        "Android System WebView is too old to run Enqueue. Open the Play Store, update " +
+        "<b>Android System WebView</b> (and <b>Chrome</b>), then open Enqueue again.</p>" +
+        '<a href="' + link + '" style="display:inline-block;padding:12px 20px;border-radius:999px;' +
+        'background:#60079f;color:#fff;text-decoration:none;font-size:16px">Open in the Play Store</a>' +
+        "</div>";
+    });
+  })();
+</script>
 <link rel="stylesheet" href="css/linkpop.css" />
 <link rel="stylesheet" href="css/tour.css" />
 <link rel="stylesheet" href="css/bird.css" />
