@@ -330,3 +330,25 @@ def test_setup_refuses_a_password_the_relay_does_not_know(tmp_path, monkeypatch)
             api_settings.SyncSecret(secret="made-up", relay_url="https://relay.example")
         )
     assert refused.value.status_code == 400 and stored == []
+
+
+def test_the_access_log_never_holds_a_secret(tmp_path):
+    import logging
+
+    from enqueue.relay.app import create_relay
+
+    create_relay(tmp_path, secret="s" * 30)
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:5", "GET", "/sync/events?since=4&token=the-library-password", "1.1", 200),
+        None,
+    )
+    for f in logging.getLogger("uvicorn.access").filters:
+        f.filter(record)
+    line = record.getMessage()
+    assert "the-library-password" not in line
+    assert "token=***" in line and "since=4" in line

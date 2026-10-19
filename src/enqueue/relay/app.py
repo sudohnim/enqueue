@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import threading
@@ -32,6 +33,30 @@ from .storage import LibraryFull, RelayStorage, library_id
 MAX_OBJECT_BYTES = int(os.getenv("RELAY_MAX_OBJECT_BYTES", str(100 * 1024 * 1024)))
 # Each library's storage limit, unless the library has its own: 5 GiB; 0 for none.
 DEFAULT_QUOTA_BYTES = int(os.getenv("RELAY_QUOTA_BYTES", str(5 * 1024**3)))
+
+
+# The change stream takes its secret in the address (`?token=`, since an EventSource
+# cannot set a header), and the server's access log writes every address out: the
+# hosted relay's logs held each library's password in plain text. Blank it there.
+_TOKEN_IN_PATH = re.compile(r"([?&]token=)[^&\s]*")
+
+
+class _HideTokens(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _TOKEN_IN_PATH.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_IN_PATH.sub(r"\1***", record.msg)
+        return True
+
+
+def hide_tokens_in_access_log() -> None:
+    """Install the filter once on uvicorn's access logger (safe to call again)."""
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _HideTokens) for f in access.filters):
+        access.addFilter(_HideTokens())
 
 
 async def _sse_stream(request: Request, queue: asyncio.Queue, hub: RelayHub):
@@ -90,15 +115,19 @@ def create_relay(
     admin_secret: str | None = None,
     max_object_bytes: int | None = None,
     quota_bytes: int | None = None,
+    account_settings=None,
 ) -> FastAPI:
     """Build the relay app. Every argument defaults to its env override.
 
     `secret` is the first library's secret (the one a single-library relay always ran
     with): it is registered at startup, and objects stored before libraries existed
     move into it. `admin_secret` turns on the routes that make and revoke libraries.
+    `account_settings` (relay/accounts.py; from DATABASE_URL by default) turns on
+    sign-in and device tokens: the hosted relay. A self-hosted one has neither.
     Injectable so tests can point the store at a temp dir and known secrets without
     touching process-global env state.
     """
+    hide_tokens_in_access_log()
     the_secret = secret or os.getenv("RELAY_SECRET", "dev-secret")
     the_admin = admin_secret if admin_secret is not None else os.getenv("RELAY_ADMIN_SECRET")
     max_object = max_object_bytes if max_object_bytes is not None else MAX_OBJECT_BYTES
@@ -109,10 +138,26 @@ def create_relay(
     )
     hub = RelayHub()
 
+    from .accounts import AccountSettings, Accounts
+    from .accounts import router as accounts_router
+
+    if account_settings is None:
+        account_settings = AccountSettings.from_env()
+    accounts = Accounts(account_settings, storage) if account_settings else None
+
     app = FastAPI(title="Enqueue sync relay", version="0.3.0")
+    if accounts is not None:
+        app.include_router(accounts_router(accounts))
 
     def _library(secret: str) -> str:
         lid = storage.library_for(secret) if secret else None
+        if lid is None and accounts is not None and secret:
+            # A signed-in device's own token (relay/accounts.py), for its account's
+            # library; checked only after a library secret, so the self-hosted path
+            # never touches the account database.
+            lid = accounts.library_for_device(secret)
+            if lid is not None and not storage.is_live(lid):
+                lid = None
         if lid is None:
             raise HTTPException(status_code=401, detail="bad secret")
         return lid

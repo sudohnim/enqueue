@@ -147,6 +147,26 @@ class RelayStorage:
             )
         return lid, secret
 
+    def add_account_library(self, label: str = "", quota_bytes: int | None = None) -> str:
+        """Make a library for a signed-in account (relay/accounts.py) and return its id.
+        It has no secret at all: only the account's device tokens open it."""
+        lid = library_id(new_secret())  # the id of a secret nobody is ever given
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO libraries (id, label, created_at, quota_bytes) VALUES (?,?,?,?)",
+                (lid, label, time.time(), quota_bytes),
+            )
+        return lid
+
+    def is_live(self, library: str) -> bool:
+        with self._connect() as conn:
+            return (
+                conn.execute(
+                    "SELECT 1 FROM libraries WHERE id = ? AND revoked_at IS NULL", (library,)
+                ).fetchone()
+                is not None
+            )
+
     def revoke_library(self, library: str) -> bool:
         """Refuse the library's secret from now on. Its objects stay until deleted."""
         with self._lock, self._connect() as conn:

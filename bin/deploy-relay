@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Deploy the Enqueue sync relay to Railway.
 #
-# Usage: ./bin/deploy-relay <dev|prod>
+# Usage: bin/deploy-relay [-y]
+#
+# There is one relay: the `enqueue` service in the `enqueue` Railway project
+# (environment `production`), with its Postgres beside it for accounts. It is the
+# live relay every linked device syncs through, so a deploy asks first; -y skips
+# the question (for a script that has already asked).
 #
 # The relay is a dumb ciphertext byte store (src/enqueue/relay). This ships the
-# repo's Dockerfile to a Railway service and waits for /health to go green.
+# repo's Dockerfile to the service and waits for /health to go green.
 #
 # Why the staging copy: `railway up` uploads its working directory, and this
 # repo carries a multi-hundred-MB desktop/target and Android build output that
@@ -12,20 +17,17 @@
 # (Dockerfile + pyproject.toml + uv.lock + src/) into a tmp dir and deploy from
 # there, so the upload is small and reproducible.
 #
-# Environments map to Railway services (both live in the one "production"
-# Railway environment; isolation is per-service vars, not per-environment,
-# mirroring the dequeue backend split):
-#   dev  -> enqueue        (override with RELAY_SERVICE_DEV)
-#   prod -> enqueue-prod   (override with RELAY_SERVICE_PROD)
+# RELAY_SERVICE names another service to deploy to (a staging relay, once there
+# is one, with its own volume, secrets, Postgres and sign-in clients).
 set -euo pipefail
 
-ENV="${1:?usage: deploy-relay <dev|prod>}"
-case "$ENV" in
-  dev)  SERVICE="${RELAY_SERVICE_DEV:-enqueue}" ;;
-  prod) SERVICE="${RELAY_SERVICE_PROD:-enqueue-prod}" ;;
-  *) echo "env must be dev or prod" >&2; exit 1 ;;
+yes=0
+case "${1:-}" in
+  "") ;;
+  -y) yes=1 ;;
+  *) echo "usage: bin/deploy-relay [-y]" >&2; exit 2 ;;
 esac
-
+SERVICE="${RELAY_SERVICE:-enqueue}"
 PROJECT="${RAILWAY_PROJECT:-enqueue}"
 RAILWAY_ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,15 +39,15 @@ command -v railway >/dev/null || { echo "railway CLI not installed (brew install
 railway whoami >/dev/null 2>&1 || { echo "not logged in: run 'railway login'" >&2; exit 1; }
 command -v rsync >/dev/null || { echo "rsync not found" >&2; exit 1; }
 
-# The relay tests must pass before shipping: the whole reason to redeploy right
-# now is the MOBFIX.5 upsert, and a broken put() would silently drop every
-# sync. Cheap to gate here rather than discover it against the live relay.
+# The relay tests must pass before shipping: a broken put() silently drops every
+# sync, and a broken sign-in check lets anyone in. Cheap to gate here rather than
+# discover it against the live relay.
 echo "running relay tests before deploy ..."
-(cd "$ROOT" && uv run pytest tests/test_relay.py -q) \
+(cd "$ROOT" && uv run pytest tests/test_relay.py tests/test_relay_accounts.py -q) \
   || { echo "relay tests failed - not deploying" >&2; exit 1; }
 
-if [[ "$ENV" == "prod" ]]; then
-  read -r -p "Deploy relay to PROD ($SERVICE)? [y/N] " ans
+if [[ "$yes" != 1 ]]; then
+  read -r -p "Deploy to the live relay ($SERVICE)? [y/N] " ans
   [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted"; exit 1; }
 fi
 
@@ -61,9 +63,10 @@ rsync -a --exclude='__pycache__' --exclude='*.egg-info' "$ROOT/src/" "$STAGE/src
 cd "$STAGE"
 railway link --project "$PROJECT" --environment "$RAILWAY_ENVIRONMENT" --service "$SERVICE" >/dev/null 2>&1 \
   || { echo "could not link service '$SERVICE' in project '$PROJECT' ($RAILWAY_ENVIRONMENT)." >&2
-       echo "For a new prod service: create it once in the Railway dashboard (add a" >&2
-       echo "volume at /data and set RELAY_SECRET, RELAY_DATA_DIR=/data, and" >&2
-       echo "RELAY_ADMIN_SECRET to issue libraries with enq relay-admin), then re-run." >&2
+       echo "For a new service: create it once in the Railway dashboard (add a volume" >&2
+       echo "at /data and set RELAY_SECRET, RELAY_DATA_DIR=/data and RELAY_ADMIN_SECRET;" >&2
+       echo "for accounts also a Postgres, DATABASE_URL, JWT_SECRET and the sign-in" >&2
+       echo "client ids, see AGENTS.md \"The relay\"), then re-run." >&2
        exit 1; }
 railway up --service "$SERVICE" --detach
 
