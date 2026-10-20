@@ -3,6 +3,7 @@
 #
 #   bin/setup             desktop toolchain: Rust (>= MSRV), uv (Python engine), Node
 #   bin/setup --android   also check the Android SDK / NDK / Java / tauri-cli for mobile
+#   bin/setup --ios       also check Xcode + the simulator runtime, install xcodegen/cocoapods/targets
 #
 # The failure this exists to fix: `bin/launch desktop` on another Mac died with
 # "rustc 1.86.0 is not supported ... requires rustc 1.88.0" because that machine's Rust
@@ -47,6 +48,8 @@ ver_ge() {
 
 ANDROID=0
 [[ "${1:-}" == "--android" ]] && ANDROID=1
+IOS=0
+[[ "${1:-}" == "--ios" ]] && IOS=1
 
 FAILED=0
 
@@ -187,10 +190,49 @@ if [[ "$ANDROID" == 1 ]]; then
   rustup target add aarch64-linux-android >/dev/null 2>&1 && ok "rust target aarch64-linux-android" || true
 fi
 
+# --- iOS (opt-in) ----------------------------------------------------------------
+# Only needed for `bin/launch ios|simulator`. Xcode itself and the simulator runtime
+# are large Apple downloads, so those are checked and reported; the small tools are
+# installed.
+if [[ "$IOS" == 1 ]]; then
+  bold "iOS (mobile builds)"
+  if xcodebuild -version >/dev/null 2>&1; then ok "$(xcodebuild -version | head -1)"
+  else fail "no Xcode - install it from the App Store, then: sudo xcode-select -s /Applications/Xcode.app"; FAILED=1; fi
+
+  # Tauri refuses to build without the simulator runtime that matches the SDK.
+  sdk="$(xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null || true)"
+  if [[ -n "$sdk" ]] && xcrun simctl list runtimes 2>/dev/null | grep -q "iOS ${sdk%%.*}\\."; then
+    ok "iOS $sdk simulator runtime"
+  else
+    fail "no iOS ${sdk:-?} simulator runtime - install with: xcodebuild -downloadPlatform iOS"; FAILED=1
+  fi
+
+  for tool in xcodegen cocoapods; do
+    bin="$tool"; [[ "$tool" == cocoapods ]] && bin=pod
+    if command -v "$bin" >/dev/null 2>&1; then ok "$tool"
+    elif command -v brew >/dev/null 2>&1; then
+      info "installing $tool (brew)"
+      brew install "$tool" >/dev/null && ok "$tool installed" || { fail "$tool install failed"; FAILED=1; }
+    else fail "no $tool, and no Homebrew to install it with (https://brew.sh)"; FAILED=1; fi
+  done
+
+  if cargo tauri --version >/dev/null 2>&1; then
+    ok "tauri-cli $(cargo tauri --version 2>/dev/null | awk '{print $2}')"
+  else
+    info "installing tauri-cli (cargo install)"
+    cargo install tauri-cli --locked --version "^2" >/dev/null && ok "tauri-cli installed" \
+      || { fail "tauri-cli install failed"; FAILED=1; }
+  fi
+
+  rustup target add aarch64-apple-ios aarch64-apple-ios-sim >/dev/null 2>&1 \
+    && ok "rust targets aarch64-apple-ios, aarch64-apple-ios-sim" || true
+fi
+
 echo
 if [[ "$FAILED" == 0 ]]; then
   bold "Ready. Next: bin/launch desktop"
   [[ "$ANDROID" == 1 ]] && echo "         or: bin/launch mobile   (phone on USB, debugging on)"
+  [[ "$IOS" == 1 ]] && echo "         or: bin/launch simulator   (or: bin/launch ios, iPhone plugged in)"
   exit 0
 else
   bold "Not ready - resolve the 'fail' lines above, then re-run bin/setup"

@@ -1789,6 +1789,24 @@
       0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
       0 16px 36px -14px rgba(43, 11, 74, 0.42);
   }
+  /* The setup screen's one action. It had no rule of its own, so it showed as the
+     platform's default button (grey with blue text on iOS). */
+  #scan_qr_btn {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 48px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: #ffffff;
+    font-family: inherit;
+    font-weight: var(--w-strong);
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  #scan_qr_btn:active {
+    transform: scale(0.97);
+  }
   .pill .keep,
   .pill .round {
     display: grid;
