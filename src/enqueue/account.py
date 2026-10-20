@@ -415,9 +415,29 @@ def devices() -> list[dict]:
     if picture_file() is None and me.get("picture"):
         _keep_picture(me["picture"])
     mine = settings.get("account_device_id")
+    _keep_my_name(me.get("devices", []), mine)
     return [
         {**d, "this_mac": d["id"] == mine} for d in me.get("devices", []) if not d.get("revoked_at")
     ]
+
+
+def _keep_my_name(listed: list[dict], mine: str | None) -> None:
+    """This Mac goes by the name its owner gave it (it once registered the network's
+    name, "macbookair.lan"): put it right whenever the list shows otherwise."""
+    want = _device_name()
+    for d in listed:
+        if d["id"] == mine and d.get("name") != want:
+            try:
+                with _client() as http:
+                    resp = http.patch(
+                        f"/account/devices/{mine}",
+                        json={"name": want},
+                        headers=_bearer(_access_token()),
+                    )
+                if resp.status_code == 204:
+                    d["name"] = want
+            except httpx.HTTPError:
+                pass
 
 
 def new_device_token(name: str) -> str:

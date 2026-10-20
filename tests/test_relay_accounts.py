@@ -315,3 +315,40 @@ def test_an_older_accounts_table_gets_the_picture_column(tmp_path):
     settings = AccountSettings(database_url=url, jwt_secret="x" * 40, environment="test")
     create_relay(tmp_path / "r", secret="s" * 30, account_settings=settings)
     assert "picture" in {c["name"] for c in inspect(create_engine(url)).get_columns("accounts")}
+
+
+def test_a_code_nobody_scanned_stops_working_and_leaves_the_list(relay, monkeypatch):
+    pair = _sign_in(relay)
+    auth = _bearer(pair["access_token"])
+    used = relay.post("/account/devices", json={"name": "Mac"}, headers=auth).json()
+    unused = relay.post("/account/devices", json={"name": "Phone"}, headers=auth).json()
+    assert relay.get("/sync/objects", headers=_bearer(used["relay_token"])).status_code == 200
+    # Past the window for using a code (shrunk to nothing rather than moving the clock,
+    # which the sign-in tokens' own expiry reads too).
+    monkeypatch.setattr(accounts_mod, "UNUSED_DEVICE_TTL_S", -1)
+    names = [d["name"] for d in relay.get("/account", headers=auth).json()["devices"]]
+    assert names == ["Mac"]  # the used one stays, whenever it was made
+    assert relay.get("/sync/objects", headers=_bearer(unused["relay_token"])).status_code == 401
+
+
+def test_a_device_can_be_renamed_by_its_account_only(relay):
+    mine = _sign_in(relay)
+    theirs = _sign_in(relay, sub="google-user-2", email="other@example.com")
+    dev = relay.post(
+        "/account/devices", json={"name": "macbookair.lan"}, headers=_bearer(mine["access_token"])
+    ).json()
+    assert (
+        relay.patch(
+            f"/account/devices/{dev['device_id']}",
+            json={"name": "Minh's Laptop"},
+            headers=_bearer(theirs["access_token"]),
+        ).status_code
+        == 404
+    )
+    relay.patch(
+        f"/account/devices/{dev['device_id']}",
+        json={"name": "Minh's Laptop"},
+        headers=_bearer(mine["access_token"]),
+    )
+    me = relay.get("/account", headers=_bearer(mine["access_token"])).json()
+    assert [d["name"] for d in me["devices"]] == ["Minh's Laptop"]

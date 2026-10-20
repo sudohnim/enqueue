@@ -183,6 +183,11 @@ handoffs_t = Table(
 
 HANDOFF_TTL_S = 120
 
+# A device token nobody has used this long after it was made was never linked: a
+# phone's code shown and not scanned, a computer's code not typed in. It stops opening
+# anything and leaves the account's list, so showing a code twice leaves no clutter.
+UNUSED_DEVICE_TTL_S = 30 * 60
+
 # Where Apple's web flow may send the browser back to: the Mac's own engine, nothing
 # else. An open address here would hand a sign-in to any site that asked for one.
 _RETURN_TO = re.compile(r"http://127\.0\.0\.1:\d{2,5}/account/apple/done")
@@ -580,7 +585,19 @@ class Accounts:
         return {"device_id": device_id, "relay_token": token, "library_id": library}
 
     def devices(self, account_id: str) -> list[dict]:
-        with self.engine.connect() as conn:
+        """The account's devices, without the codes that were never used (they are
+        deleted here, once past UNUSED_DEVICE_TTL_S)."""
+        cutoff = time.time() - UNUSED_DEVICE_TTL_S
+        with self.engine.begin() as conn:
+            conn.execute(
+                delete(devices_t).where(
+                    and_(
+                        devices_t.c.account_id == account_id,
+                        devices_t.c.last_seen_at.is_(None),
+                        devices_t.c.created_at < cutoff,
+                    )
+                )
+            )
             return [
                 {k: r[k] for k in ("id", "name", "created_at", "last_seen_at", "revoked_at")}
                 for r in conn.execute(
@@ -589,6 +606,17 @@ class Accounts:
                     .order_by(devices_t.c.created_at)
                 ).mappings()
             ]
+
+    def rename_device(self, account_id: str, device_id: str, name: str) -> bool:
+        with self.engine.begin() as conn:
+            return (
+                conn.execute(
+                    update(devices_t)
+                    .where(and_(devices_t.c.id == device_id, devices_t.c.account_id == account_id))
+                    .values(name=(name or "device")[:100])
+                ).rowcount
+                > 0
+            )
 
     def revoke_device(self, account_id: str, device_id: str) -> bool:
         with self.engine.begin() as conn:
@@ -623,10 +651,17 @@ class Accounts:
                 return hit[1]
         with self.engine.begin() as conn:
             row = conn.execute(
-                select(devices_t.c.id, devices_t.c.last_seen_at, accounts_t.c.library_id)
+                select(
+                    devices_t.c.id,
+                    devices_t.c.last_seen_at,
+                    accounts_t.c.library_id,
+                    devices_t.c.created_at,
+                )
                 .select_from(devices_t.join(accounts_t, accounts_t.c.id == devices_t.c.account_id))
                 .where(and_(devices_t.c.token_hash == key, devices_t.c.revoked_at.is_(None)))
             ).first()
+            if row is not None and row[1] is None and now - row[3] > UNUSED_DEVICE_TTL_S:
+                row = None  # never used in time: the code was not scanned
             if row is not None and (row[1] is None or now - row[1] > 300):
                 conn.execute(
                     update(devices_t).where(devices_t.c.id == row[0]).values(last_seen_at=now)
@@ -809,6 +844,11 @@ def router(accounts: Accounts) -> APIRouter:
     @r.post("/account/devices", status_code=201)
     def add_device(body: DeviceIn, account: dict = Depends(current)):
         return accounts.add_device(account, body.name)
+
+    @r.patch("/account/devices/{device_id}", status_code=204)
+    def rename_device(device_id: str, body: DeviceIn, account: dict = Depends(current)):
+        if not accounts.rename_device(account["id"], device_id, body.name):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such device")
 
     @r.delete("/account/devices/{device_id}", status_code=204)
     def revoke_device(device_id: str, account: dict = Depends(current)):
