@@ -34,13 +34,13 @@ def _token(
     email="minh@example.com",
     exp_in=600,
     key=PROVIDER_KEY,
+    picture=None,
 ):
     now = int(time.time())
-    return jwt.encode(
-        {"iss": iss, "aud": aud, "sub": sub, "email": email, "iat": now, "exp": now + exp_in},
-        key,
-        algorithm="RS256",
-    )
+    claims = {"iss": iss, "aud": aud, "sub": sub, "email": email, "iat": now, "exp": now + exp_in}
+    if picture:
+        claims["picture"] = picture
+    return jwt.encode(claims, key, algorithm="RS256")
 
 
 @pytest.fixture
@@ -202,3 +202,116 @@ def test_without_a_database_the_relay_has_no_accounts(tmp_path, monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     client = TestClient(create_relay(tmp_path, secret="s" * 30))
     assert client.post("/auth/google", json={"id_token": "x"}).status_code == 404
+
+
+def _apple_state(return_to="http://127.0.0.1:8787/account/apple/done", nonce="n" * 24):
+    import base64
+    import json
+
+    raw = json.dumps({"r": return_to, "n": nonce}).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _apple_id_token():
+    return _token(iss="https://appleid.apple.com", aud=APPLE_SERVICE, sub="apple-9", email=None)
+
+
+def test_apples_web_flow_hands_the_mac_a_one_time_code_not_a_session(relay):
+    resp = relay.post(
+        "/auth/apple/callback",
+        data={
+            "id_token": _apple_id_token(),
+            "state": _apple_state(),
+            "user": '{"name": {"firstName": "Minh", "lastName": "Mai"}}',
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    where = resp.headers["location"]
+    assert where.startswith("http://127.0.0.1:8787/account/apple/done?state=" + "n" * 24)
+    assert "access_token" not in where and "refresh_token" not in where
+    code = where.split("handoff=")[1]
+
+    pair = relay.post("/auth/handoff", json={"code": code})
+    assert pair.status_code == 200
+    assert pair.json()["account"]["display_name"] == "Minh Mai"
+    # One use only.
+    assert relay.post("/auth/handoff", json={"code": code}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "return_to",
+    [
+        "https://evil.example/account/apple/done",
+        "http://127.0.0.1.evil.example:8787/account/apple/done",
+        "http://localhost:8787/account/apple/done",
+        "http://127.0.0.1:8787/somewhere/else",
+    ],
+)
+def test_apple_never_sends_a_sign_in_anywhere_but_this_macs_engine(relay, return_to):
+    resp = relay.post(
+        "/auth/apple/callback",
+        data={"id_token": _apple_id_token(), "state": _apple_state(return_to=return_to)},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
+def test_a_forged_apple_post_makes_no_code(relay):
+    forged = _token(iss="https://appleid.apple.com", aud=APPLE_SERVICE, key=STRANGER_KEY)
+    resp = relay.post(
+        "/auth/apple/callback",
+        data={"id_token": forged, "state": _apple_state()},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 401
+
+
+def test_a_cancelled_apple_sign_in_tells_the_mac(relay):
+    resp = relay.post(
+        "/auth/apple/callback",
+        data={"error": "user_cancelled_authorize", "state": _apple_state()},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303 and resp.headers["location"].endswith("error=cancelled")
+
+
+def test_an_expired_handoff_is_refused(relay, monkeypatch):
+    resp = relay.post(
+        "/auth/apple/callback",
+        data={"id_token": _apple_id_token(), "state": _apple_state()},
+        follow_redirects=False,
+    )
+    code = resp.headers["location"].split("handoff=")[1]
+    real = time.time
+    monkeypatch.setattr(accounts_mod.time, "time", lambda: real() + accounts_mod.HANDOFF_TTL_S + 1)
+    assert relay.post("/auth/handoff", json={"code": code}).status_code == 401
+
+
+def test_the_accounts_picture_is_kept_and_only_from_https(relay):
+    pic = "https://lh3.googleusercontent.com/a/photo"
+    first = _sign_in(relay, picture=pic)
+    assert first["account"]["picture"] == pic
+    me = relay.get("/account", headers=_bearer(first["access_token"])).json()
+    assert me["picture"] == pic
+    # A later sign-in without one (or with a plain-http one) keeps what is there.
+    again = _sign_in(relay, picture="http://evil.example/p.png")
+    assert again["account"]["picture"] == pic
+
+
+def test_an_older_accounts_table_gets_the_picture_column(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+
+    url = f"sqlite:///{tmp_path / 'old.db'}"
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE accounts (id VARCHAR(36) PRIMARY KEY, provider VARCHAR(16) NOT NULL,"
+                " subject VARCHAR(255) NOT NULL, email VARCHAR(320), display_name VARCHAR(255),"
+                " tier VARCHAR(16) NOT NULL, library_id VARCHAR(64), created_at FLOAT NOT NULL)"
+            )
+        )
+    settings = AccountSettings(database_url=url, jwt_secret="x" * 40, environment="test")
+    create_relay(tmp_path / "r", secret="s" * 30, account_settings=settings)
+    assert "picture" in {c["name"] for c in inspect(create_engine(url)).get_columns("accounts")}

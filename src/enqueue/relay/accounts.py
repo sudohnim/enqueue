@@ -21,13 +21,22 @@ them the hard way:
   bundle id (a native sheet). Both are ours;
 - refresh tokens are rows, so a sign-out ends them, and a swapped one keeps working for
   a short grace in case the reply carrying its successor was lost.
+
+One place this is stricter than Dequeue: Apple's web flow posts back to the relay, which
+must hand the result to the Mac. Dequeue sent the browser to whatever address the
+request named, with the tokens in it. Here the address must be this Mac's own engine
+(loopback, one path), and what it carries is a one-time code good for two minutes,
+which the engine swaps for the session itself (`/auth/handoff`).
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -37,7 +46,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import (
     Column,
@@ -131,6 +141,7 @@ accounts_t = Table(
     Column("subject", String(255), nullable=False),  # the provider's stable user id
     Column("email", String(320)),
     Column("display_name", String(255)),
+    Column("picture", String(1024)),  # the provider's picture address (Google only)
     Column("tier", String(16), nullable=False, default="free"),
     Column("library_id", String(64)),  # the relay library (relay/storage.py), once made
     Column("created_at", Float, nullable=False),
@@ -160,6 +171,22 @@ devices_t = Table(
     Column("revoked_at", Float),
 )
 
+# A sign-in finished in a browser, waiting for the Mac to collect it: one use, two
+# minutes. Only the code's hash is kept, and the session is issued on collection.
+handoffs_t = Table(
+    "handoffs",
+    metadata,
+    Column("code_hash", String(64), primary_key=True),
+    Column("account_id", String(36), nullable=False),
+    Column("expires_at", Float, nullable=False),
+)
+
+HANDOFF_TTL_S = 120
+
+# Where Apple's web flow may send the browser back to: the Mac's own engine, nothing
+# else. An open address here would hand a sign-in to any site that asked for one.
+_RETURN_TO = re.compile(r"http://127\.0\.0\.1:\d{2,5}/account/apple/done")
+
 
 def _hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -177,11 +204,23 @@ class Accounts:
         self.storage = storage  # relay/storage.py RelayStorage: makes the libraries
         self.engine = create_engine(_engine_url(settings.database_url), future=True)
         # The tables are created at start, not migrated: this database holds only these
-        # three, and a column added later gets an Alembic history of its own then.
+        # few. A column added later is added here too (_add_missing_columns); past a
+        # handful of those, this database gets an Alembic history of its own.
         metadata.create_all(self.engine)
+        self._add_missing_columns()
         self._device_cache: dict[str, tuple[float, str | None]] = {}
         self._cache_lock = threading.Lock()
         self._jwks: dict[str, Any] = {}
+
+    def _add_missing_columns(self) -> None:
+        """create_all makes missing tables, never missing columns: add the ones this
+        version brought to a table an older one made (one ALTER each, once)."""
+        from sqlalchemy import inspect, text
+
+        have = {c["name"] for c in inspect(self.engine).get_columns("accounts")}
+        if "picture" not in have:
+            with self.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE accounts ADD COLUMN picture VARCHAR(1024)"))
 
     # -- id tokens -------------------------------------------------------------------
 
@@ -266,6 +305,11 @@ class Accounts:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "sign in token has no subject")
         email = claims.get("email")
         name = display_name or claims.get("name") or email
+        picture = (
+            claims.get("picture")
+            if str(claims.get("picture") or "").startswith("https://")
+            else None
+        )
         with self.engine.begin() as conn:
             row = (
                 conn.execute(
@@ -285,6 +329,7 @@ class Accounts:
                         subject=subject,
                         email=email,
                         display_name=name,
+                        picture=picture,
                         tier="free",
                         created_at=time.time(),
                     )
@@ -297,6 +342,8 @@ class Accounts:
                     changes["email"] = email
                 if display_name and display_name != row["display_name"]:
                     changes["display_name"] = display_name
+                if picture and picture != row["picture"]:
+                    changes["picture"] = picture
                 if changes:
                     conn.execute(
                         update(accounts_t).where(accounts_t.c.id == account_id).values(**changes)
@@ -342,6 +389,7 @@ class Accounts:
                 delete(refresh_tokens_t).where(refresh_tokens_t.c.account_id == account_id)
             )
             conn.execute(delete(devices_t).where(devices_t.c.account_id == account_id))
+            conn.execute(delete(handoffs_t).where(handoffs_t.c.account_id == account_id))
             conn.execute(delete(accounts_t).where(accounts_t.c.id == account_id))
         if account.get("library_id"):
             self.storage.revoke_library(account["library_id"])
@@ -481,6 +529,37 @@ class Accounts:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no such account")
         return account
 
+    # -- handoffs --------------------------------------------------------------------
+
+    def start_handoff(self, account: dict) -> str:
+        code = secrets.token_urlsafe(32)
+        now = time.time()
+        with self.engine.begin() as conn:
+            conn.execute(delete(handoffs_t).where(handoffs_t.c.expires_at < now))
+            conn.execute(
+                insert(handoffs_t).values(
+                    code_hash=_hash(code), account_id=account["id"], expires_at=now + HANDOFF_TTL_S
+                )
+            )
+        return code
+
+    def redeem_handoff(self, code: str) -> dict:
+        """The session for a one-time code, which is gone once used."""
+        with self.engine.begin() as conn:
+            row = (
+                conn.execute(select(handoffs_t).where(handoffs_t.c.code_hash == _hash(code)))
+                .mappings()
+                .first()
+            )
+            if row is not None:
+                conn.execute(delete(handoffs_t).where(handoffs_t.c.code_hash == row["code_hash"]))
+        if row is None or row["expires_at"] < time.time():
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "sign in expired, try again")
+        account = self.get_account(row["account_id"])
+        if account is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no such account")
+        return self.issue_pair(account)
+
     # -- devices ---------------------------------------------------------------------
 
     def add_device(self, account: dict, name: str) -> dict:
@@ -568,6 +647,7 @@ def _public(account: dict) -> dict:
         "email": account.get("email"),
         "display_name": account.get("display_name"),
         "provider": account.get("provider"),
+        "picture": account.get("picture"),
         "tier": account.get("tier"),
     }
 
@@ -620,6 +700,33 @@ class AppleIn(BaseModel):
     user_name: str | None = Field(default=None, max_length=255)
 
 
+class HandoffIn(BaseModel):
+    code: str = Field(max_length=128)
+
+
+def _apple_state(state: str | None) -> tuple[str, str] | None:
+    """(return_to, nonce) from the state the Mac sent Apple, or None if it is not ours."""
+    try:
+        raw = base64.urlsafe_b64decode((state or "") + "=" * (-len(state or "") % 4))
+        data = json.loads(raw)
+        return_to, nonce = str(data["r"]), str(data["n"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not _RETURN_TO.fullmatch(return_to) or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", nonce):
+        return None
+    return return_to, nonce
+
+
+def _apple_name(user: str | None) -> str | None:
+    """The name Apple sends once, on the first sign-in only, as JSON in `user`."""
+    try:
+        name = json.loads(user or "{}").get("name") or {}
+    except (ValueError, AttributeError):
+        return None
+    full = " ".join(p for p in (name.get("firstName"), name.get("lastName")) if p)
+    return full[:255] or None
+
+
 class RefreshIn(BaseModel):
     refresh_token: str = Field(max_length=4096)
 
@@ -653,6 +760,31 @@ def router(accounts: Accounts) -> APIRouter:
     def apple(body: AppleIn):
         claims = accounts.verify_apple(body.identity_token)
         return accounts.issue_pair(accounts.account_for("apple", claims, body.user_name))
+
+    @r.post("/auth/apple/callback", dependencies=[Depends(limit)])
+    def apple_callback(
+        id_token: str | None = Form(default=None, max_length=8192),
+        user: str | None = Form(default=None, max_length=4096),
+        state: str | None = Form(default=None, max_length=1024),
+        error: str | None = Form(default=None, max_length=200),
+    ):
+        """Apple's web flow posts here (response_mode=form_post). The browser is sent
+        on to the Mac's engine with a one-time code, never with the session itself."""
+        target = _apple_state(state)
+        if target is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "not a sign in this relay started")
+        return_to, nonce = target
+        if error or not id_token:
+            # Cancelled in Apple's page: tell the Mac, so it stops waiting.
+            return RedirectResponse(f"{return_to}?state={nonce}&error=cancelled", 303)
+        claims = accounts.verify_apple(id_token)
+        account = accounts.account_for("apple", claims, _apple_name(user))
+        code = accounts.start_handoff(account)
+        return RedirectResponse(f"{return_to}?state={nonce}&handoff={code}", 303)
+
+    @r.post("/auth/handoff", dependencies=[Depends(limit)])
+    def handoff(body: HandoffIn):
+        return accounts.redeem_handoff(body.code)
 
     @r.post("/auth/refresh", dependencies=[Depends(limit)])
     def refresh(body: RefreshIn):

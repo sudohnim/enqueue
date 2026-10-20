@@ -112,6 +112,16 @@ launch_desktop() {
   pkill -f "Enqueue" 2>/dev/null || true
   sleep 1
   pkill -f "enq serve" 2>/dev/null || true
+  # A frozen engine never acts on the polite signal (its main thread cannot take the
+  # GIL to run the handler: the 2026-10-20 SQLite deadlock), and then the new one
+  # cannot bind the port and launch waits for a health that never comes. Give it five
+  # seconds, then stop it hard; SQLite's write-ahead log survives that.
+  for _ in 1 2 3 4 5; do
+    pgrep -f "enq serve" >/dev/null || break
+    sleep 1
+  done
+  pkill -9 -f "enq serve" 2>/dev/null || true
+  pkill -9 -f "target/debug/Enqueue" 2>/dev/null || true
   sleep 1
 
   js_gate "home capture"

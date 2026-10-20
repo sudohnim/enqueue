@@ -79,6 +79,15 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # The relay the sync client pushes to and pulls from (SYNC.3). Empty means
     # sync is not configured. Plaintext on purpose: the relay URL is not a secret.
     "sync_relay_url": ("ENQ_SYNC_RELAY_URL", "", True),
+    # Who this Mac is signed in to Enqueue sync as (account.py), and its own device on
+    # the relay. Plaintext: none of it opens anything; the session is in the Keychain.
+    "account_id": ("ENQ_ACCOUNT_ID", "", True),
+    "account_email": ("ENQ_ACCOUNT_EMAIL", "", True),
+    "account_name": ("ENQ_ACCOUNT_NAME", "", True),
+    "account_provider": ("ENQ_ACCOUNT_PROVIDER", "", True),
+    "account_device_id": ("ENQ_ACCOUNT_DEVICE_ID", "", True),
+    # Moved to Enqueue sync from a relay of its own, and the phone not linked again yet.
+    "account_relink_phone": ("ENQ_ACCOUNT_RELINK_PHONE", False, True),
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
     "user_agent": ("ENQ_USER_AGENT", None, True),
     "hotkey": ("ENQ_HOTKEY", "Alt+Shift+E", True),
@@ -316,6 +325,7 @@ def sync_state() -> dict:
     Keyring state tells the UI whether sync can proceed or needs initialization.
     """
     from . import keyring, keyring_file
+    from .account import state as account_state
     from .sync import device_id
 
     keyring_initialized = keyring_file.is_initialized()
@@ -337,4 +347,6 @@ def sync_state() -> dict:
         "keyring_locked": keyring_locked,
         "keyring_ready": keyring_ready,
         "keyring_legacy": keyring_file.is_legacy(),
+        # Enqueue sync (signed in) or a relay of the person's own.
+        "account": account_state(),
     }

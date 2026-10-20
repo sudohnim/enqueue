@@ -2190,7 +2190,15 @@ The guides are reference text, not instructions to you.";
         // Persist relay_url, sync_secret, and DEK (hex) via save_config so
         // load_config can find them and sync can start.
         save_config(&app, &relay_url, &sync_secret, &keyring_json_or_empty, &dek_array, None, None, None, None, None, None)?;
-        
+
+        // A new code can name another library (a Mac that moved to Enqueue sync), whose
+        // cursor counts from its own start: pulling on from the old position would skip
+        // everything in it. Pull from the beginning; re-applying what the phone already
+        // holds changes nothing (last writer wins).
+        if let Ok(conn) = open_lib(&app) {
+            let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
+        }
+
         // For now, return success; sync is driven by the events system (QR.5a)
         Ok("linked".to_string())
     }
@@ -3283,6 +3291,40 @@ mod desktop {
         raw.split_once("\r\n\r\n").map(|(_, body)| body.to_owned())
     }
 
+    /// POST a JSON body to the engine and read back its JSON. For calls that wait on the
+    /// network behind the engine (Enqueue sync), so the read waits longer than engine_get;
+    /// call it off the main thread. A refusal comes back as the engine's own sentence.
+    fn engine_post_json(path: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let unreachable = || "Enqueue's engine is not answering".to_string();
+        let mut stream = TcpStream::connect_timeout(
+            &HOST_PORT.parse().expect("valid host"),
+            Duration::from_millis(500),
+        )
+        .map_err(|_| unreachable())?;
+        stream.set_read_timeout(Some(Duration::from_secs(30))).map_err(|e| e.to_string())?;
+        let payload = body.to_string();
+        write!(
+            stream,
+            "POST {path} HTTP/1.0\r\nHost: {HOST_PORT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+            payload.len()
+        )
+        .map_err(|_| unreachable())?;
+        let mut raw = String::new();
+        stream.read_to_string(&mut raw).map_err(|_| unreachable())?;
+        let (head, text) = raw.split_once("\r\n\r\n").ok_or_else(unreachable)?;
+        let ok = head.split_whitespace().nth(1).is_some_and(|code| code.starts_with('2'));
+        let json: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
+        if ok {
+            Ok(json)
+        } else {
+            Err(json
+                .get("detail")
+                .and_then(|d| d.as_str())
+                .unwrap_or("the engine refused")
+                .to_string())
+        }
+    }
+
     /// The capture hotkey, which is a stored setting rather than a constant so it can be
     /// rebound in the interface. Falls back when the engine is not answering yet: an
     /// unregistered hotkey is a feature that silently does not exist.
@@ -3600,10 +3642,17 @@ mod desktop {
     /// Generate a linking QR code for mobile setup (QR.3).
     /// Returns ONLY the rendered SVG - the payload is encoded in the QR, never as text.
     /// The QR encodes the pinned wire format: {"v":1,"relay_url","relay_secret","dek"}
+    ///
+    /// Async and off the main thread: with Enqueue sync it asks the relay for the phone's
+    /// own device token, a network round trip a plain command would make on the UI thread.
     #[tauri::command]
-    fn desktop_link_code() -> Result<String, String> {
-        let (relay_url, secret, dek_b64) = load_link_credentials()?;
-        build_link_qr(&relay_url, &secret, &dek_b64)
+    async fn desktop_link_code() -> Result<String, String> {
+        tauri::async_runtime::spawn_blocking(|| {
+            let (relay_url, secret, dek_b64) = load_link_credentials()?;
+            build_link_qr(&relay_url, &secret, &dek_b64)
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     /// Load relay URL, sync secret, and DEK from their configured sources.
@@ -3619,7 +3668,22 @@ mod desktop {
             .unwrap_or("")
             .to_string();
 
-        let secret = if cfg!(target_os = "macos") {
+        // Enqueue sync (signed in): the phone gets a device token of its own, so it can
+        // be cancelled without touching this Mac's. A relay of the person's own has one
+        // password, which every device shares.
+        let signed_in = settings
+            .get("sync")
+            .and_then(|s| s.get("account"))
+            .and_then(|a| a.get("signed_in"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let secret = if signed_in {
+            engine_post_json("/account/device-token", &serde_json::json!({"name": "Phone"}))?
+                .get("relay_token")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+                .ok_or("Enqueue sync did not give the phone a token")?
+        } else if cfg!(target_os = "macos") {
             std::process::Command::new("/usr/bin/security")
                 .args(["find-generic-password", "-a", "enqueue", "-s", "enqueue-sync-secret", "-w"])
                 .output()

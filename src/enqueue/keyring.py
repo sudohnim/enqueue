@@ -36,6 +36,8 @@ import sys
 SERVICE = "enqueue-llm-api-key"
 SYNC_SERVICE = "enqueue-sync-secret"
 DEK_SERVICE = "enqueue-sync-dek"
+# The Enqueue sync sign-in (account.py): the relay's refresh token for this Mac.
+SESSION_SERVICE = "enqueue-account-session"
 ACCOUNT = "enqueue"
 
 _SECURITY = "/usr/bin/security"
@@ -157,6 +159,18 @@ def sync_secret_set(secret: str) -> None:
 
 def sync_secret_clear() -> bool:
     return _clear(SYNC_SERVICE)
+
+
+def session_get() -> str | None:
+    return _get(SESSION_SERVICE)
+
+
+def session_set(token: str) -> None:
+    _set(SESSION_SERVICE, token, noun="sign-in")
+
+
+def session_clear() -> bool:
+    return _clear(SESSION_SERVICE)
 
 
 def sync_secret_hint() -> str | None:

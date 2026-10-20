@@ -94,6 +94,7 @@ Weight is rationed, and named in tokens so no stylesheet writes a number.
 | `--w-medium` | 440 | Labels, section heads at 19-20px, the chosen-state where one is needed |
 | `--w-strong` | 480 | Tile titles, button labels. The heaviest thing on any screen |
 | `--w-display` | 400 | Headings of 22px and up: they thin out as they grow |
+| `--w-heading` | 600 | Settings section headings only (2026-10-20): in a long list of settings a heading has to stand clear of the rows under it, and size alone left the page one tone |
 
 One exception: bold a person typed (`<strong>`, `<b>` in a note or an answer) is 600, because 480 beside 400 does not read as bold.
 
@@ -195,8 +196,10 @@ White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture field
 ### Settings
 
 - Title lockup: the living raven eye tight against "Settings." (44px).
-- A 196px sidebar of sections (the active one a white plate with an accent dot), beside a pane of titled tiles; below 820px the sidebar folds into a scrolling row.
-- Section names are headings in the display face; the pane does not repeat the section title.
+- One centred column under the home page's pill tabs (the 196px sidebar is gone).
+- Each section is a heading at 19px in `--w-heading` on the ground, and its rows sit on one soft plate under it (`--surface`, `--hairline`, 16px radius). Inside a plate: a row's label at 15px `--w-strong` in `--text`, its sentence at 14px regular in `--text-mute` (a warning only darker, never heavier), a hairline between rows, and quiet buttons on white. A section's opening sentence is 15px in `--text-dim`.
+- Sign in with Google and with Apple are two alike white pills, each with its provider's own mark (Google's four-colour G, never recoloured; Apple's logo in the text colour).
+- The phone's linking code opens under its row on a white panel beside a line that says to keep it private; one button shows and hides it.
 - Toggles: an OFF recessed violet track ringed in `--line-strong`, an ON violet track, a white bead.
 - On the phone, settings are managed by the desktop and read-only.
 

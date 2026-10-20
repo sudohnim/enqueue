@@ -12,7 +12,20 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .. import chats_worker, config, trash
-from . import admin, artifacts, backup, chats, pivots, search, settings, setup, static, vault, write
+from . import (
+    account,
+    admin,
+    artifacts,
+    backup,
+    chats,
+    pivots,
+    search,
+    settings,
+    setup,
+    static,
+    vault,
+    write,
+)
 from .guard import LocalOnlyGuard
 
 
@@ -30,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(vault.router)
     app.include_router(backup.router)
     app.include_router(setup.router)
+    app.include_router(account.router)
     # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
     app.add_middleware(LocalOnlyGuard)
     return app
@@ -39,7 +53,14 @@ app = create_app()
 
 
 def serve() -> None:
+    import faulthandler
+    import signal
+
     import uvicorn
+
+    # `kill -USR1 <engine pid>` writes every thread's Python stack to the log. A frozen
+    # engine (0% CPU, no answers) cannot be looked into otherwise without root.
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
 
     # The library's folder moved (datadir.py). Before anything opens a file in it. When
     # the move cannot be made, the engine does not start: starting would make a new,

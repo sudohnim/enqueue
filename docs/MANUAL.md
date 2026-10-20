@@ -294,12 +294,16 @@ The relay only ever stores scrambled data: everything is encrypted on your devic
 
 To link a phone:
 
-1. On the Mac, open **Settings > Phone** and set it up: the address of your relay (see [Your own relay](#your-own-relay)), then a recovery phrase to write down.
-2. The Mac shows a QR code.
+1. On the Mac, open **Settings > Sync** and press **Sign in with Google** or **Sign in with Apple**. That turns on Enqueue sync, a relay we run. The first time, the Mac shows a recovery phrase to write down before the sign-in opens in your browser.
+2. Press **Show the code**. The Mac shows a QR code.
 3. In the phone app, scan it. The phone downloads your library.
 
-There is no password to remember, and nothing to type on the phone.
-If you lose the phone, link the new one the same way.
+Signing in only says who you are. Your library is locked with a key that stays on your devices, so we cannot read what Enqueue sync holds.
+Every phone and computer gets a pass of its own, listed under **Devices**: remove one and it stops syncing at once.
+To use a relay you run yourself instead, open **Use a relay of your own** on the same screen (see [Your own relay](#your-own-relay)).
+
+There is nothing to type on the phone.
+If you lose the phone, remove it under **Devices** and link the new one the same way.
 Your model settings travel too, so the phone can answer questions without being set up separately.
 
 ## Your own relay

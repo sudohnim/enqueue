@@ -127,7 +127,10 @@ def _backup_step() -> dict:
 def _phone_step(sync: dict) -> dict:
     step = {"id": "phone", "tab": "sync", "guide": "relay", "title": "Phone not linked"}
     if not sync["relay_configured"]:
-        return step | {"state": TODO, "detail": "Needs a relay to pass your library along"}
+        return step | {
+            "state": TODO,
+            "detail": "Sign in under Sync to keep it in step with this Mac",
+        }
     if sync["keyring_locked"]:
         return step | {
             "state": WARN,

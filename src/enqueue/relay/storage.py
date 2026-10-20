@@ -14,6 +14,8 @@ no one in.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import hashlib
 import secrets as _secrets
 import sqlite3
@@ -66,8 +68,24 @@ class RelayStorage:
         conn.row_factory = sqlite3.Row
         return conn
 
+    @contextmanager
+    def _open(self):
+        """A connection for one block: committed (or rolled back) and then CLOSED.
+
+        `with conn:` on a sqlite connection only commits; it never closes, so every
+        block left its connection to the garbage collector. Freed that way it closes
+        inside dealloc, holding the GIL while it waits on SQLite's file lock, and when
+        another thread held that lock and needed the GIL, the whole engine froze
+        (2026-10-20: the Mac app stuck, every request hanging, 0% CPU)."""
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _init_db(self, legacy_library: str | None) -> None:
-        with self._lock, self._connect() as conn:
+        with self._lock, self._open() as conn:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS libraries ("
                 " id TEXT PRIMARY KEY,"
@@ -140,7 +158,7 @@ class RelayStorage:
         the relay keeps only its hash."""
         secret = new_secret()
         lid = library_id(secret)
-        with self._lock, self._connect() as conn:
+        with self._lock, self._open() as conn:
             conn.execute(
                 "INSERT INTO libraries (id, label, created_at, quota_bytes) VALUES (?,?,?,?)",
                 (lid, label, time.time(), quota_bytes),
@@ -151,7 +169,7 @@ class RelayStorage:
         """Make a library for a signed-in account (relay/accounts.py) and return its id.
         It has no secret at all: only the account's device tokens open it."""
         lid = library_id(new_secret())  # the id of a secret nobody is ever given
-        with self._lock, self._connect() as conn:
+        with self._lock, self._open() as conn:
             conn.execute(
                 "INSERT INTO libraries (id, label, created_at, quota_bytes) VALUES (?,?,?,?)",
                 (lid, label, time.time(), quota_bytes),
@@ -159,7 +177,7 @@ class RelayStorage:
         return lid
 
     def is_live(self, library: str) -> bool:
-        with self._connect() as conn:
+        with self._open() as conn:
             return (
                 conn.execute(
                     "SELECT 1 FROM libraries WHERE id = ? AND revoked_at IS NULL", (library,)
@@ -169,7 +187,7 @@ class RelayStorage:
 
     def revoke_library(self, library: str) -> bool:
         """Refuse the library's secret from now on. Its objects stay until deleted."""
-        with self._lock, self._connect() as conn:
+        with self._lock, self._open() as conn:
             return (
                 conn.execute(
                     "UPDATE libraries SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
@@ -179,7 +197,7 @@ class RelayStorage:
             )
 
     def libraries(self) -> list[dict]:
-        with self._connect() as conn:
+        with self._open() as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -192,7 +210,7 @@ class RelayStorage:
     def library_for(self, secret: str) -> str | None:
         """The live library a secret opens, or None."""
         lid = library_id(secret)
-        with self._connect() as conn:
+        with self._open() as conn:
             row = conn.execute(
                 "SELECT id FROM libraries WHERE id = ? AND revoked_at IS NULL", (lid,)
             ).fetchone()
@@ -216,7 +234,7 @@ class RelayStorage:
         overwrite only ever replaces that device's own older snapshot.
         Raises LibraryFull when the write would take the library past its limit.
         """
-        with self._lock, self._connect() as conn:
+        with self._lock, self._open() as conn:
             row = conn.execute(
                 "SELECT used_bytes, quota_bytes FROM libraries WHERE id = ?", (library,)
             ).fetchone()
@@ -243,7 +261,7 @@ class RelayStorage:
         """Remove an object (a device clearing its own superseded copies). Devices that
         already pulled it keep what they applied; the change feed simply no longer
         lists it."""
-        with self._lock, self._connect() as conn:
+        with self._lock, self._open() as conn:
             gone = (
                 conn.execute(
                     "DELETE FROM objects WHERE library = ? AND name = ?", (library, name)
@@ -256,7 +274,7 @@ class RelayStorage:
 
     def get(self, library: str, name: str) -> bytes | None:
         """Return the stored bytes, or None when the name is absent."""
-        with self._connect() as conn:
+        with self._open() as conn:
             row = conn.execute(
                 "SELECT data FROM objects WHERE library = ? AND name = ?", (library, name)
             ).fetchone()
@@ -264,7 +282,7 @@ class RelayStorage:
 
     def list_changed(self, library: str, since: int) -> tuple[list[dict], int]:
         """Every object of the library with cursor > `since`, plus the new cursor."""
-        with self._connect() as conn:
+        with self._open() as conn:
             rows = conn.execute(
                 "SELECT name, length(data) AS size FROM objects"
                 " WHERE library = ? AND cursor > ? ORDER BY cursor",

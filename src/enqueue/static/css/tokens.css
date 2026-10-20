@@ -249,6 +249,9 @@
     --w-medium: 440;
     --w-strong: 480;
     --w-display: 400;
+    /* The one heavier step (2026-10-20): a section heading in a long list of settings
+       has to stand out from the rows under it, and size alone made the page one tone. */
+    --w-heading: 600;
     /* System-only on purpose. Monospace here is information - hashes, paths, byte
        sizes - never decoration, and it is not worth a second font file. Nothing is
        named here that is not already on the machine. */

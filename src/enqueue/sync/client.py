@@ -516,7 +516,7 @@ def push_settings() -> None:
     try:
         with httpx.Client(timeout=30) as client:
             resp = client.put(
-                f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
             )
         if resp.status_code not in (201, 409):
             print(f"[sync] settings push rejected: {resp.status_code}", flush=True)
@@ -749,7 +749,11 @@ def push_all() -> int:
     # blob PUT, keeping the connection pool warm instead of a fresh open/close each time.
     client = httpx.Client(timeout=60)
     for artifact_id in artifact_ids:
-        snapshot = read_artifact_snapshot(db.get_conn(), artifact_id)
+        conn = db.get_conn()
+        try:
+            snapshot = read_artifact_snapshot(conn, artifact_id)
+        finally:
+            conn.close()
         if snapshot is None:
             continue
         if snapshot["artifact"].get("local_only"):
@@ -767,7 +771,7 @@ def push_all() -> int:
         }
         try:
             resp = client.put(
-                f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
             )
         except httpx.HTTPError:
             continue
@@ -786,7 +790,7 @@ def push_all() -> int:
                 # the next push of this artifact retries the bytes.
                 with contextlib.suppress(httpx.HTTPError):
                     client.put(
-                        f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
+                        f"{url.rstrip('/')}/sync/object/blobs/{blob_name}",
                         content=blob_data,
                         headers=headers,
                     )
@@ -794,6 +798,24 @@ def push_all() -> int:
     client.close()
     # Custom views ride alongside the artifacts so the phone's Custom mode has data.
     push_pivots()
+    return pushed
+
+
+def push_everything() -> int:
+    """Everything this device has, to a relay that holds none of it yet (a switch to
+    Enqueue sync): the library and its views, every conversation, the settings and
+    the vault's wrap. The keyring went up when the password was stored. Returns the
+    number of artifacts pushed."""
+    pushed = push_all()
+    conn = db.get_conn()
+    try:
+        chat_ids = [r[0] for r in conn.execute("SELECT id FROM chats").fetchall()]
+    finally:
+        conn.close()
+    for chat_id in chat_ids:
+        push_chat(chat_id)
+    push_settings()
+    push_vault_meta()
     return pushed
 
 

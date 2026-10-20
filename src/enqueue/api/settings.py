@@ -13,7 +13,7 @@ import threading
 
 from .. import db, greeting, keyring, keyring_file, preview, settings
 from ..providers import pause
-from ..sync.client import push_keyring
+from ..sync.enable import enable
 
 router = APIRouter()
 
@@ -131,36 +131,11 @@ def store_sync_secret(req: SyncSecret) -> dict:
             " (a shared relay only opens libraries it set up).",
         )
     try:
-        keyring.sync_secret_set(req.secret)
+        enable(req.secret)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
-    # After sync secret is configured, push the encrypted keyring to the relay
-    # so mobile devices can pull it during pairing (MOB2.10).
-    push_keyring()
-    # The secret is the last step of first-time sync setup, done after boot, so the
-    # boot-time worker start no-op'd (no relay/secret yet). Start it now so this device
-    # begins auto-syncing without an app restart. Idempotent.
-    try:
-        from ..sync.worker import start as start_sync_worker
-
-        start_sync_worker()
-    except Exception as exc:  # noqa: BLE001 - sync is additive; never fail the request
-        print(f"[engine] could not start the sync worker after secret set: {exc}")
-    # BACKFILL.2: Auto-backfill on first sync-enable (guarded by one-shot flag).
-    # Only runs when DEK is loaded (keyring unlocked) and backfill hasn't run yet.
-    if keyring_file.load_dek_from_keychain() is not None:
-        if not settings.get("sync_backfill_done"):
-
-            def _bg():
-                from ..sync.client import push_all
-
-                count = push_all()
-                print(f"[sync] auto-backfill pushed {count} artifacts", flush=True)
-
-            threading.Thread(target=_bg, daemon=True).start()
-            settings.update({"sync_backfill_done": True})
     return settings.sync_state()
 
 

@@ -209,6 +209,21 @@
   .field textarea {
     resize: vertical;
   }
+  /* A checkbox is not a text field: the rule above stretched it into a 400px bar. */
+  .field input[type="checkbox"] {
+    width: auto;
+    max-width: none;
+    padding: 0;
+    margin: 0 8px 0 0;
+    vertical-align: -2px;
+    background: none;
+    box-shadow: none;
+    accent-color: var(--accent);
+  }
+  .field input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--lavender-focus);
+    outline-offset: 2px;
+  }
   .field input::placeholder,
   .field textarea::placeholder {
     color: var(--ink-faint);
@@ -717,19 +732,18 @@
   .settings-page .shelf,
   .settings-page .settings-card-label {
     font-family: var(--sans);
-    font-size: 20px;
-    font-weight: var(--w-medium);
-    line-height: 26px;
-    letter-spacing: -0.01em;
+    font-size: 19px;
+    font-weight: var(--w-heading);
+    line-height: 24px;
+    letter-spacing: -0.014em;
     color: var(--text);
-    margin: var(--sp-7, 40px) 0 var(--sp-1);
+    margin: var(--sp-7, 40px) 0 var(--sp-3);
     text-transform: none;
   }
   .settings-page #settingsTabPane > .shelf:first-of-type,
   .settings-page #settingsTabPane > .settings-card:first-child .settings-card-label {
     margin-top: 0;
   }
-  .settings-page .group,
   .settings-page .card,
   .settings-page .settings-card {
     margin: 0;
@@ -738,14 +752,55 @@
     box-shadow: none;
     border-radius: 0;
   }
+  /* Each section's rows sit on one soft plate under its heading: the tile step the
+     home page already uses. A long tab reads as a few groups, not one column of lines. */
+  .settings-page .group {
+    margin: 0;
+    padding: var(--sp-1) var(--sp-5);
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--hairline);
+  }
+  .settings-page .group:empty {
+    display: none;
+  }
+  /* A section with a second plate (the retry count under the models). */
+  .settings-page .group + .group {
+    margin-top: var(--sp-3);
+  }
+  .settings-page .backup-status .backup-actions {
+    flex: none;
+    margin: 0;
+  }
   .settings-page .shelf + .group,
   .settings-page .shelf + .card {
     margin-top: 0;
   }
+  /* A section's opening sentence: one step larger than a row's, in body ink. */
   .settings-page .group > .aside,
   .settings-page .group > .callout {
-    margin: var(--sp-2) 0 var(--sp-1);
+    margin: var(--sp-4) 0 var(--sp-1);
     max-width: 60ch;
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+  }
+  .settings-page .group > .callout {
+    margin-bottom: var(--sp-3);
+  }
+  .settings-page .group > .aside:last-child {
+    margin-bottom: var(--sp-4);
+  }
+  /* On a plate, a quiet button is the white step above it, not the plate's own tone. */
+  .settings-page .group .btn.tertiary,
+  .settings-page .group .btn.secondary,
+  .settings-page .group .btn.ghost {
+    background: var(--surface-2);
+  }
+  .settings-page .group .btn.tertiary:hover,
+  .settings-page .group .btn.secondary:hover,
+  .settings-page .group .btn.ghost:hover {
+    background: var(--surface-hover);
   }
 
   /* A row: label and its sentence on the left, the control on the right. */
@@ -773,6 +828,8 @@
     margin: 0;
     font-size: 15px;
     line-height: 20px;
+    font-weight: var(--w-strong);
+    color: var(--text);
   }
   .settings-page .field > .aside,
   .settings-page .field > .pinned,
@@ -784,6 +841,15 @@
     font-size: 14px;
     line-height: 20px;
     max-width: 52ch;
+  }
+  /* A row's sentence: always the quiet ink at reading weight. A warning is darker, not
+     heavier: at 480 it outweighed its own label and the page read uneven. */
+  .settings-page .field > .aside {
+    font-weight: var(--w-regular);
+    color: var(--text-mute);
+  }
+  .settings-page .field > .aside.caution {
+    color: var(--text);
   }
   .settings-page .field > .aside:empty,
   .settings-page .field > div[id]:empty {
@@ -829,6 +895,8 @@
   .settings-page .togglerow .rowlabel {
     font-size: 15px;
     margin: 0;
+    font-weight: var(--w-strong);
+    color: var(--text);
   }
   .settings-page .togglerow .aside,
   .settings-page .togglerow .pinned {
@@ -836,6 +904,8 @@
     font-size: 14px;
     line-height: 20px;
     max-width: 52ch;
+    font-weight: var(--w-regular);
+    color: var(--text-mute);
   }
 
   /* "More options": what most people never need, closed until asked. */
@@ -876,13 +946,11 @@
     margin-top: var(--sp-4);
   }
 
-  /* The backup's one tile. */
+  /* The backup's status leads its plate, as the first row. */
   .settings-page .group.backup > .backup-status:first-child {
-    padding: var(--sp-4) var(--sp-5);
-    margin: var(--sp-2) 0 var(--sp-2);
-    background: var(--surface);
-    border-radius: var(--r-xl);
-    box-shadow: var(--hairline);
+    padding: var(--sp-4) 0;
+    margin: 0;
+    box-shadow: inset 0 -1px 0 var(--line-soft);
   }
 
   @media (max-width: 640px) {
@@ -945,4 +1013,135 @@
   }
   .settings-page .backup-status .backup-words {
     flex: 1;
+  }
+
+  /* ---- Enqueue sync -------------------------------------------------------------- */
+  /* Sign in: two alike white buttons, each with its provider's own mark. */
+  .settings-page .actions.signin {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+  }
+  .settings-page .btn.signin-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px 8px 14px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--surface-2);
+    box-shadow: var(--hairline);
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: var(--w-strong);
+    color: var(--text);
+  }
+  .settings-page .btn.signin-btn:hover {
+    background: var(--surface-hover);
+  }
+  .settings-page .btn.signin-btn:focus-visible {
+    outline: 2px solid var(--lavender-focus);
+    outline-offset: 2px;
+  }
+  .settings-page .signin-mark {
+    width: 18px;
+    height: 18px;
+    flex: none;
+  }
+
+  /* The phone's code: under its row, across the plate, on white so it scans. */
+  .settings-page .link-qr {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-5);
+    margin: 0 0 var(--sp-4);
+    padding: var(--sp-4);
+    background: var(--surface-2);
+    border-radius: var(--r-lg);
+    box-shadow: var(--hairline);
+  }
+  .settings-page .link-qr[hidden] {
+    display: none;
+  }
+  .settings-page .link-qr-code {
+    flex: none;
+    width: 200px;
+    height: 200px;
+  }
+  .settings-page .link-qr-code svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .settings-page .link-qr-note {
+    margin: 0;
+    max-width: 32ch;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text-mute);
+  }
+  @media (max-width: 640px) {
+    .settings-page .link-qr {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  /* Who is signed in: their picture (or initial) in a violet ring, then name and email. */
+  .settings-page .account-who {
+    grid-column: 1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  .settings-page .account-words {
+    min-width: 0;
+  }
+  .settings-page .account-words .rowlabel {
+    display: block;
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: var(--w-strong);
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .settings-page .account-words .aside {
+    margin-top: 3px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--text-mute);
+  }
+  .settings-page .account-avatar {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    /* The ring sits a hair off the face, the ground showing between: a white gap, then violet. */
+    border: 2px solid var(--surface-2);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .settings-page .account-avatar.initial {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    background: var(--purple-bold-wash);
+    color: var(--accent-text);
+    font: inherit;
+    font-size: 18px;
+    font-weight: var(--w-strong);
+  }
+  .settings-page button.account-avatar {
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease);
+  }
+  .settings-page button.account-avatar:hover {
+    background: var(--purple-bold-wash-strong);
+  }
+  .settings-page button.account-avatar:focus-visible {
+    outline: 2px solid var(--lavender-focus);
+    outline-offset: 3px;
   }

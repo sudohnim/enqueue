@@ -445,7 +445,7 @@ def relay_admin_add(
     admin_secret: str = _ADMIN,
 ) -> None:
     """Make a library and print its secret, once. Give it to its owner: in Enqueue,
-    Settings > Phone > More options > relay address and secret."""
+    Settings > Sync > More options > relay address and secret."""
     body = {"label": label}
     if quota_gb:
         body["quota_bytes"] = int(quota_gb * 1024**3)

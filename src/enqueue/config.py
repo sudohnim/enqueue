@@ -56,7 +56,7 @@ OLLAMA_URL = os.getenv("ENQ_OLLAMA_URL", "http://127.0.0.1:11434/v1")
 # selection and never a default, and `local_only` artifacts never take this path.
 BACKENDS = {
     "ollama": {
-        "label": "Ollama, on this machine",
+        "label": "This Mac (Ollama)",
         "url": "http://127.0.0.1:11434/v1",
         "local": True,
         "key_var": None,
@@ -195,6 +195,18 @@ ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 ALLOWED_ORIGINS = frozenset(
     {f"http://127.0.0.1:{API_PORT}", f"http://localhost:{API_PORT}", f"http://[::1]:{API_PORT}"}
 )
+
+# Enqueue sync: the hosted relay, signed in to with Google or Apple (account.py). The
+# client ids are public by design (each provider shows them in every sign-in page);
+# the Google desktop client's secret stays on the relay, never in the app.
+HOSTED_RELAY_URL = os.getenv(
+    "ENQ_HOSTED_RELAY_URL", "https://enqueue-production-cd3d.up.railway.app"
+).rstrip("/")
+GOOGLE_DESKTOP_CLIENT_ID = os.getenv(
+    "ENQ_GOOGLE_DESKTOP_CLIENT_ID",
+    "760253515706-863p922ohjd4sl5sflpfocrfa7frhbmh.apps.googleusercontent.com",
+)
+APPLE_SERVICES_ID = os.getenv("ENQ_APPLE_SERVICES_ID", "com.sudohnim.enqueue.signin")
 
 # Facet eligibility. See docs/CURATION.md.
 MIN_WORDS_FOR_FACETS = 40
