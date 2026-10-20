@@ -191,6 +191,41 @@ class MainActivity : TauriActivity() {
 
     @JavascriptInterface
     fun vaultSecretClear() = bio.clearVaultSecret()
+
+    // ---- Enqueue Pro (Billing.kt) ---------------------------------------------------
+    // Each call answers later through window.__enqBillingReply(id, {...}).
+
+    @JavascriptInterface
+    fun billingAvailable(): Boolean = billing.available
+
+    @JavascriptInterface
+    fun billingStart(requestId: String, accountId: String) =
+      runOnUiThread { billing.start(accountId) { billingReply(requestId, it) } }
+
+    @JavascriptInterface
+    fun billingStatus(requestId: String) =
+      runOnUiThread { billing.customer { billingReply(requestId, it) } }
+
+    @JavascriptInterface
+    fun billingOfferings(requestId: String) =
+      runOnUiThread { billing.offerings { billingReply(requestId, it) } }
+
+    @JavascriptInterface
+    fun billingPurchase(requestId: String, packageId: String) =
+      runOnUiThread { billing.purchase(packageId) { billingReply(requestId, it) } }
+
+    @JavascriptInterface
+    fun billingRestore(requestId: String) =
+      runOnUiThread { billing.restore { billingReply(requestId, it) } }
+  }
+
+  private val billing by lazy { Billing(this) }
+
+  private fun billingReply(requestId: String, payload: JSONObject) {
+    val wv = webView ?: return
+    val script =
+      "window.__enqBillingReply && window.__enqBillingReply(${JSONObject.quote(requestId)}, $payload)"
+    wv.post { wv.evaluateJavascript(script, null) }
   }
 
   private fun reply(requestId: String, ok: Boolean, reason: String, secret: String? = null) {

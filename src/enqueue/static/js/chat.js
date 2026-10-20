@@ -16,6 +16,9 @@ function teardown() {
 	// is a licence for the old screen to redraw itself over the new one.
 	clearTimeout(faceWatch);
 	faceWatch = null;
+	// The wall's "Reading your library" poll (home.js) belongs to the wall.
+	clearTimeout(readingTimer);
+	readingTimer = null;
 	// The drawer belongs to the artifact view; leaving the view takes it with it.
 	const drawer = document.getElementById("drawer");
 	if (drawer) drawer.classList.remove("open");

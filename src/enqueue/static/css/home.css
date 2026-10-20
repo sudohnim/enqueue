@@ -1329,6 +1329,60 @@ main {
 	color: var(--text);
 }
 
+/* The first big read (refreshReading in js/home.js): a quiet line above the wall, no
+   plate, a hairline bar under the count. It fills while the assistant works and holds
+   still (fainter) while it waits on a limit, a refused key or a retry. */
+.reading {
+	max-width: 720px;
+	margin: 0 auto var(--sp-5);
+	padding: 0 2px;
+}
+.reading-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--sp-3);
+}
+.reading-title {
+	font-size: 13px;
+	font-weight: var(--w-strong);
+	color: var(--text);
+}
+.reading-count {
+	font-size: 13px;
+	color: var(--text-mute);
+	font-variant-numeric: tabular-nums;
+}
+.reading-bar {
+	height: 3px;
+	margin: 6px 0 6px;
+	border-radius: var(--r-full);
+	background: var(--line);
+	overflow: hidden;
+}
+.reading-bar span {
+	display: block;
+	height: 100%;
+	min-width: 3px;
+	border-radius: inherit;
+	background: var(--accent);
+	transition: width 600ms var(--ease);
+}
+.reading-bar.still span {
+	background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.reading-why {
+	font-size: 12.5px;
+	line-height: 18px;
+	color: var(--text-mute);
+}
+.reading[data-state="key"] .reading-why {
+	color: var(--danger);
+}
+.reading-why a {
+	color: var(--accent);
+}
+
 /* Resurfacing: one older note between the header and the wall. The card recipe,
    one row wide, so it reads as part of the wall rather than a banner over it. */
 .resurface {

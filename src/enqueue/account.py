@@ -237,7 +237,7 @@ def _adopt(pair: dict, refresh: bool = False) -> None:
     with _client() as http:
         resp = http.post(
             "/account/devices",
-            json={"name": _device_name()},
+            json={"name": _device_name(), "kind": "computer"},
             headers=_bearer(pair["access_token"]),
         )
     if resp.status_code != 201:
@@ -399,6 +399,12 @@ def state() -> dict:
         # scans a new code (cleared when this Mac makes one).
         "relink_phone": bool(settings.get("account_relink_phone")),
         "picture": picture_file() is not None,
+        "plan": {
+            "tier": settings.get("account_tier") or "free",
+            "pro_until": settings.get("account_pro_until") or None,
+            "used_bytes": settings.get("account_used_bytes") or 0,
+            "storage_bytes": settings.get("account_storage_bytes") or 0,
+        },
     }
 
 
@@ -412,6 +418,7 @@ def devices() -> list[dict]:
     if resp.status_code != 200:
         raise AccountError(f"Enqueue sync did not answer ({_detail(resp)}).")
     me = resp.json()
+    _keep_plan(me.get("plan"))
     if picture_file() is None and me.get("picture"):
         _keep_picture(me["picture"])
     mine = settings.get("account_device_id")
@@ -419,6 +426,20 @@ def devices() -> list[dict]:
     return [
         {**d, "this_mac": d["id"] == mine} for d in me.get("devices", []) if not d.get("revoked_at")
     ]
+
+
+def _keep_plan(plan: dict | None) -> None:
+    """The account's plan as the relay last said, for Settings (no network to read)."""
+    if not plan:
+        return
+    settings.update(
+        {
+            "account_tier": plan.get("tier") or "free",
+            "account_pro_until": plan.get("pro_until") or 0,
+            "account_used_bytes": int(plan.get("used_bytes") or 0),
+            "account_storage_bytes": int((plan.get("limits") or {}).get("storage_bytes") or 0),
+        }
+    )
 
 
 def _keep_my_name(listed: list[dict], mine: str | None) -> None:
@@ -440,11 +461,13 @@ def _keep_my_name(listed: list[dict], mine: str | None) -> None:
                 pass
 
 
-def new_device_token(name: str) -> str:
+def new_device_token(name: str, kind: str = "phone") -> str:
     """A relay token for one more device (a phone being linked, a computer joining)."""
     with _client() as http:
         resp = http.post(
-            "/account/devices", json={"name": name[:100]}, headers=_bearer(_access_token())
+            "/account/devices",
+            json={"name": name[:100], "kind": kind},
+            headers=_bearer(_access_token()),
         )
     if resp.status_code != 201:
         raise AccountError(f"Enqueue sync could not add the device ({_detail(resp)}).")
@@ -480,6 +503,10 @@ def _forget_here() -> None:
             "account_provider": "",
             "account_device_id": "",
             "account_relink_phone": False,
+            "account_tier": "free",
+            "account_pro_until": 0,
+            "account_used_bytes": 0,
+            "account_storage_bytes": 0,
             "sync_relay_url": "",
         }
     )

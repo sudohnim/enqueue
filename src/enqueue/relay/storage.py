@@ -176,6 +176,21 @@ class RelayStorage:
             )
         return lid
 
+    def set_quota(self, library: str, quota_bytes: int | None) -> None:
+        """A library's own storage limit (None: the relay's default). Lowering it below
+        what the library holds refuses new writes; nothing stored is removed."""
+        with self._lock, self._open() as conn:
+            conn.execute(
+                "UPDATE libraries SET quota_bytes = ? WHERE id = ?", (quota_bytes, library)
+            )
+
+    def used_bytes(self, library: str) -> int:
+        with self._open() as conn:
+            row = conn.execute(
+                "SELECT used_bytes FROM libraries WHERE id = ?", (library,)
+            ).fetchone()
+            return int(row["used_bytes"] or 0) if row else 0
+
     def is_live(self, library: str) -> bool:
         with self._open() as conn:
             return (

@@ -489,6 +489,20 @@ def relay_admin_revoke(
     typer.secho(f"revoked {ids[0][:12]}", fg=typer.colors.GREEN)
 
 
+@relay_admin.command("pro")
+def relay_admin_pro(
+    email: str = typer.Argument(..., help="The account's sign-in email."),
+    days: int = typer.Option(-1, "--days", help="How long; 0 ends Pro; omitted: for good."),
+    url: str = _URL,
+    admin_secret: str = _ADMIN,
+) -> None:
+    """Give an Enqueue sync account Pro (the owner, support) without a purchase."""
+    body = {"email": email} if days < 0 else {"email": email, "days": days}
+    made = _admin("PUT", "/admin/accounts/pro", url, admin_secret, json=body).json()
+    for plan in made["accounts"]:
+        typer.secho(f"account {plan['account_id'][:8]}: {plan['tier']}", fg=typer.colors.GREEN)
+
+
 # ---------------------------------------------------------------------------
 # Test corpus commands (eval harness)
 # ---------------------------------------------------------------------------

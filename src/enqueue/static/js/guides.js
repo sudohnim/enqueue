@@ -327,7 +327,7 @@ const Guides = (() => {
       need: "Once per phone. Sync has to be set up first, on a relay the phone can reach away from home.",
       steps: [
         "Under Link a device, press Show linking QR.",
-        "On the phone, open Enqueue and press Scan QR.",
+        "On the phone, open Enqueue and press Scan the code.",
         "Point the camera at the code. The library starts arriving.",
         "Press Hide QR when it is done.",
       ],

@@ -273,3 +273,12 @@ evals/search/blobs/
 # pi harness
 .pi-subagents/*
 desktop/engine/
+
+# fastlane: the Play service account key never enters the repo; reports are per run
+desktop/play-store-svc.json
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output
+fastlane/.env*
+/vendor/bundle/
+/.bundle/

@@ -32,6 +32,9 @@
     "M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12z";
 
   let opts = { platform: "desktop", hotkey: "Alt+Shift+E", assets: "/static/" };
+  // One run's ending, from whoever opened it: the last card's label and what follows
+  // it (the desktop welcome continues into setup). Closing early runs neither.
+  let ending = null;
   let stage = null;
   let parts = null;
   let index = 0;
@@ -602,12 +605,18 @@
     );
     stage.setAttribute("aria-label", `How Enqueue works, card ${index + 1} of ${deck.length}`);
     parts.back.hidden = index === 0;
-    parts.next.textContent = index === deck.length - 1 ? "Start capturing" : "Next";
+    parts.next.textContent =
+      index === deck.length - 1 ? (ending && ending.label) || "Start capturing" : "Next";
   }
 
   function go(to) {
     const count = cards().length;
-    if (to >= count) return close();
+    if (to >= count) {
+      const then = ending && ending.then;
+      close();
+      if (then) then();
+      return;
+    }
     if (to < 0) return;
     const dir = to > index ? 1 : -1;
     index = to;
@@ -668,9 +677,10 @@
     }
   }
 
-  function open(from) {
+  function open(from, end) {
     build();
     if (!stage.hidden) return;
+    ending = end || null;
     lastFocus = from && from.focus ? from : document.activeElement;
     // Everything behind the stage goes inert: not clickable, not in the tab order,
     // not read out.
@@ -699,6 +709,7 @@
       lastFocus && document.contains(lastFocus) ? lastFocus : document.querySelector("[data-tour-open]");
     if (back && back.focus) back.focus();
     lastFocus = null;
+    ending = null;
   }
 
   // The ? as markup, for a header built from a string (the desktop home).
@@ -732,7 +743,8 @@
 
   window.Tour = {
     attach,
-    open: () => open(),
+    // `end`: { label, then } for the last card's button and what it leads to.
+    open: (end) => open(null, end),
     close,
     triggerHtml,
     isOpen: () => !!stage && !stage.hidden,

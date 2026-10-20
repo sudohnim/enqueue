@@ -1,6 +1,6 @@
 [project]
 name = "enqueue"
-version = "0.3.0"
+version = "0.3.1"
 description = "A digital hoarder's dream. Capture anything, organise it later, by concept."
 requires-python = ">=3.12"
 dependencies = [

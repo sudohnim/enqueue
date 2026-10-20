@@ -308,16 +308,6 @@ LinkPop.attach({
 	notify: (message, bad) => toast(message, bad),
 });
 
-// The tour behind the ? on the home header (TOUR.1, js/tour.js) - the same deck the
-// phone shows. Its capture card names the hotkey as it is actually set, so ask Settings
-// for it; until that answers (or if it fails) the card shows the default.
-Tour.attach({ platform: "desktop", assets: "/static/" });
-api("/settings")
-	.then((d) => {
-		const key = d && d.settings && d.settings.hotkey && d.settings.hotkey.value;
-		if (key) Tour.set({ hotkey: key });
-	})
-	.catch(() => {});
 
 // Drag the window by the top strip. `-webkit-app-region` is inert in this WKWebView,
 // so the move is done by invoking the Rust `window_drag` on mousedown, the same path
@@ -341,3 +331,13 @@ if (topbar && bridge) {
 		);
 	});
 }
+
+// The tour (js/tour.js) is played from the welcome's first step, not from a ? of its
+// own on the desktop. Its capture card names the hotkey as it is actually set.
+Tour.set({ platform: "desktop", assets: "/static/" });
+api("/settings")
+	.then((d) => {
+		const key = d && d.settings && d.settings.hotkey && d.settings.hotkey.value;
+		if (key) Tour.set({ hotkey: key });
+	})
+	.catch(() => {});

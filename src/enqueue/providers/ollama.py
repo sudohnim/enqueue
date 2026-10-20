@@ -108,10 +108,13 @@ class OpenAICompatibleProvider:
             "messages": messages,
         }
         try:
-            return cast(T, self._client.chat.completions.create(**kwargs))
+            result = cast(T, self._client.chat.completions.create(**kwargs))
+            pause.note_success()
+            return result
         except Exception as exc:  # noqa: BLE001 - translated, not swallowed
             if not _refused_json_mode(exc):
                 pause.trip_from(exc)  # a 429 pauses every model call until retry-after
+                pause.note_failure(exc, self.base_url, self.model)  # a refused key
                 raise ProviderError(why(exc, self.base_url, self.model)) from exc
         # JSON mode sends `response_format: json_object`, and some upstreams refuse it
         # for particular inputs with a bare 400 (OpenCode Go's kimi-k3 answers "Invalid
@@ -123,9 +126,12 @@ class OpenAICompatibleProvider:
                 self.base_url, self.model, response_model.__name__, len(system) + len(user), blanked
             )
         try:
-            return cast(T, self._client_md.chat.completions.create(**kwargs))
+            result = cast(T, self._client_md.chat.completions.create(**kwargs))
+            pause.note_success()
+            return result
         except Exception as exc:  # noqa: BLE001 - translated, not swallowed
             pause.trip_from(exc)
+            pause.note_failure(exc, self.base_url, self.model)
             raise ProviderError(why(exc, self.base_url, self.model)) from exc
 
     def describe_image(self, image: bytes, mime: str) -> str:
@@ -160,7 +166,9 @@ class OpenAICompatibleProvider:
             )
         except Exception as exc:  # noqa: BLE001 - translated, not swallowed
             pause.trip_from(exc)
+            pause.note_failure(exc, self.base_url, self.model)
             raise ProviderError(why(exc, self.base_url, self.model)) from exc
+        pause.note_success()
 
         text = (reply.choices[0].message.content or "").strip()
         if not text:

@@ -29,3 +29,7 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# RevenueCat (Billing.kt): its own consumer rules cover it; kept whole as Dequeue does,
+# since a stripped model class fails only at purchase time, on a release build.
+-keep class com.revenuecat.purchases.** { *; }

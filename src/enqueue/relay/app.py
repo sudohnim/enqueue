@@ -145,7 +145,7 @@ def create_relay(
         account_settings = AccountSettings.from_env()
     accounts = Accounts(account_settings, storage) if account_settings else None
 
-    app = FastAPI(title="Enqueue sync relay", version="0.3.0")
+    app = FastAPI(title="Enqueue sync relay", version="0.3.1")
     if accounts is not None:
         app.include_router(accounts_router(accounts))
 
@@ -249,6 +249,26 @@ def create_relay(
         if not storage.revoke_library(lid):
             raise HTTPException(status_code=404, detail="no such library")
         return Response(status_code=204)
+
+    @app.put("/admin/accounts/pro")
+    async def grant_pro(request: Request, _: None = Depends(_require_admin)):
+        """Pro for an account by its email, for `days` (0 ends it; omitted: for good).
+        For the owner and for support; a purchase sets it through the webhook."""
+        if accounts is None:
+            raise HTTPException(status_code=404, detail="no accounts on this relay")
+        body = await request.json()
+        found = accounts.accounts_by_email(str(body.get("email") or ""))
+        if not found:
+            raise HTTPException(status_code=404, detail="no account with that email")
+        days = body.get("days")
+        until = None if days == 0 else (time.time() + float(days) * 86400 if days else None)
+        if days is None:
+            from .accounts import FOREVER
+
+            until = FOREVER
+        for account in found:
+            accounts.set_pro_until(account["id"], until)
+        return {"accounts": [accounts.plan(accounts.get_account(a["id"])) for a in found]}
 
     # --- device pairing (PAIR.1) --------------------------------------------------
     # A brand-new device joining the library has no library secret yet - it is inside

@@ -185,6 +185,16 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             " its own.",
         )
 
+    if pause.key_refused() and not backend.get("local"):
+        say(
+            "key-refused",
+            WARN,
+            "ai",
+            "api-key",
+            "The online assistant turned down your key, so nothing is being read or"
+            " answered. Paste a new one under Your key.",
+        )
+
     key = settings.api_key_state()
     if backend.get("local") and key["api_key_present"] and key["api_key_where"] == "keychain":
         say(

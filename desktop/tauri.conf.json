@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Enqueue",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "identifier": "com.sudohnim.enqueue",
   "build": {
     "frontendDist": "../src/enqueue/static"
@@ -109,6 +109,7 @@
             "allow-mobile-vault-blob",
             "allow-mobile-events",
             "allow-mobile-settings-ask",
+            "allow-mobile-plan",
             "allow-mobile-drafts",
             "allow-mobile-draft-restore",
             "allow-mobile-drafts-keep",

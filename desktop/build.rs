@@ -101,6 +101,7 @@ fn main() {
                 "mobile_vault_blob",
                 "mobile_events",
                 "mobile_settings_ask",
+                "mobile_plan",
                 "mobile_drafts",
                 "mobile_draft_restore",
                 "mobile_drafts_keep",

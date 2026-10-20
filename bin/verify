@@ -72,6 +72,7 @@ JS_ORDER = [
     "drafts.js",
     "notetabs.js",
     "settings_guide.js",
+    "welcome.js",
     "settings.js",
 ]
 # The mobile shell (MOB.2) loads md.js for markdown; MOB.4+ adds the mobile UI's

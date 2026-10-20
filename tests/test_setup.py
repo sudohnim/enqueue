@@ -121,6 +121,14 @@ class TestAlerts:
         world["backend"] = dict(REMOTE)
         assert not {"key-unused", "headers-unused"} & _alerts()
 
+    def test_a_refused_key_is_said_for_an_online_assistant(self, world, monkeypatch):
+        from enqueue.providers import pause
+
+        monkeypatch.setattr(pause, "key_refused", lambda: True)
+        assert "key-refused" not in _alerts()  # the assistant on this Mac has no key
+        world["backend"] = dict(REMOTE)
+        assert "key-refused" in _alerts()
+
     def test_a_model_the_service_no_longer_answers_for(self, world):
         world["backend"] = REMOTE | {"name": "opencode-go", "label": "OpenCode Go"}
         world["values"] |= {"llm_model": "kimi-k3", "summarize_model": "retired-model"}

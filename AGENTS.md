@@ -57,7 +57,14 @@ Green proves it parses, passes and compiles; only running it on the Mac or a dev
 The Keychain holds the library key (`enqueue-library-key`), the sync key (`enqueue-sync-dek`), the relay secret and the model API key.
 Tests never touch any of it: `tests/conftest.py` points the process at a temporary folder and fakes the Keychain.
 
-**Releasing.** The Android APK is published from the Actions tab (the `release` workflow, run by hand with a tag); it is debug-signed unless the `RELEASE_*` secrets are set.
+**Releasing.** Store releases go through fastlane (`fastlane/`, run as `bundle exec fastlane <platform> <lane>` after `bundle install`; setup and keys in `fastlane/README.md`).
+`bin/deploy` is the front door (Dequeue's): `bin/deploy android dev` runs the `android dev` lane, which builds the signed `.aab` with a fresh versionCode and releases it to Play's internal testing track, completed, so testers get it; `bin/deploy android prod` runs `android prod` after asking; `bin/deploy desktop` runs `mac release`. `bin/release` alone only builds, so an upload is always its own step. The Play key is Dequeue's `google-play@sudohnim-play-billing` service account (`desktop/play-store-svc.json`, gitignored), invited to Enqueue per app in Play Console.
+`android prod` does the same to production; `ANDROID_PROD_ROLLOUT=0.1` makes it a staged rollout.
+`android next_code` prints the versionCode the next upload would use and changes nothing.
+`mac release` builds the Developer ID signed, notarized and stapled `.dmg`; the Mac app ships outside the App Store, so nothing is uploaded.
+There is no iOS lane yet; one goes in `platform :ios` after Dequeue's (`~/dequeue/frontend/fastlane`).
+The Play lanes need the service account key at `desktop/play-store-svc.json` (gitignored, or `PLAY_JSON_KEY`), and that account invited to the Enqueue app in Play Console.
+The Actions tab's `release` workflow (run by hand with a tag) still builds an APK; it is debug-signed unless the `RELEASE_*` secrets are set.
 The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own engine (see "The Mac app bundle" under Build notes), signed with the Developer ID certificate when `APPLE_SIGNING_IDENTITY` is set and notarized when `NOTARY_PROFILE` names a `notarytool` keychain profile.
 
 ## Known gaps
@@ -66,6 +73,12 @@ The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own e
 - **Hosted sign-in with a passkey is not built.** The paid tier's "sign in and your library arrives" needs a domain, an account server and a signed app entitlement; the steps are under [Encryption and keys](#encryption-and-keys).
 - **The Mac's original files (`blobs/`) are not encrypted by Enqueue**; FileVault covers them.
 - **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers. The plan (2026-10-16): first-run setup suggests a cheap OpenRouter pair, one model for ingestion and one for chat, picked by a bake-off on the eval notes (real cost with reprompts, quality-gate failures, both search evals) between `qwen/qwen3.7-flash`, `deepseek/deepseek-v4-flash` and `anthropic/claude-haiku-5.5` for ingestion, and `deepseek/deepseek-v4-pro`, `qwen/qwen3.7-plus` and `anthropic/claude-sonnet-5.5` for chat. Set the OpenRouter account to refuse providers that train on data before other people's notes pass through it.
+- **The paid tier is planned, not built (decided 2026-10-20).**
+  Bring-your-own-key works for everyone, free or paid, with no limit Enqueue sets: the device calls the provider with the person's key, as today.
+  Without a key, Enqueue includes AI: a small, cheap model with a small monthly cap on the free tier; Pro (about $4-6 a month) gets the choice of better models and higher caps. Pro is caps and usage, never a feature that free cannot touch.
+  Enqueue sync is free for one Mac and one phone up to about 1 GB; Pro raises storage and devices.
+  Built (2026-10-20): plans, purchase and enforcement for sync (see "Enqueue Pro" under Gotchas).
+  Still to build: an AI pass-through on the relay that adds Enqueue's key, meters per account (the first ingest of a whole library is the spike the cap must plan for) and keeps nothing (the privacy policy has to say notes pass through it, and local-only items still never leave the Mac); the phone's chat calling that pass-through with its device token when there is no key; model pickers that are a curated list per backend and tier, not free text; the Apple side of the purchase, with the iPhone app.
 - **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
 - **The wall shows the newest 120 items**; there is no paging past that.
 - **macOS only on the desktop** (AppKit calls, the Keychain).
@@ -286,6 +299,7 @@ One line per file, describing its job.
 | `sqlite.py` | The SQLite driver for everything that opens the library: SQLCipher's build (`sqlcipher3`), re-exported. Reads plain files too; `db.connect` keys an encrypted one. |
 | `libkey.py` | The library key: 32 random bytes made once, in the Keychain (`enqueue-library-key`), the root every other key is derived from (`derive`, HKDF-SHA256 per use); the recovery kit (`kit`/`from_kit`, 56 Crockford characters with a checksum) and whether the person said they saved it. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `reading.py` | How far the assistant is through reading the library (`GET /reading`), for the wall's "Reading your library" line. See "Reading your library" under Gotchas. |
 | `setup.py` | Where this installation stands: the three steps left to set up, the settings that need a look, and the one model answer about settings (`GET /setup`, `POST /setup/ask`). See "Settings explain themselves" under Gotchas. |
 | `account.py` | Enqueue sync from the Mac: sign in with Google (desktop PKCE, back to `/account/google/callback`) or Apple (the web flow, back through the relay to `/account/apple/done` with a one-time code), then a device token for this Mac becomes the sync secret (`sync/enable.py`). Keeps the relay's refresh token in the Keychain (`enqueue-account-session`) and who is signed in in settings; mints a token per phone (`desktop_link_code`) and per joining computer (`sync/pairing.py`); lists and removes devices, signs out, deletes the account. Routes in `api/account.py`. See "Enqueue sync" under Gotchas. |
 | `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
@@ -382,8 +396,9 @@ One line per file, describing its job.
 | `bin/android-matrix` | Opens the app on five test emulators (Android 9, a small Android 15 phone, Android 15, 16 and a tablet) one at a time, and reports for each whether it stayed up, crashed or rendered its first screen; screenshots go to `$TMPDIR/enqueue-android-matrix`. `--create` makes the emulators (the system images come from `sdkmanager`), `--debug` tests the debug apk instead of the release one. |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
 | `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
-| `bin/release desktop` / `bin/release android` | Shippable builds: the Mac `.app` + `.dmg` with the engine inside (signed and notarized when the Apple settings are given), or the signed Android release `.apk`/`.aab`. |
+| `bin/release desktop` / `bin/release android` | Shippable builds: the Mac `.app` + `.dmg` with the engine inside (signed and notarized when the Apple settings are given), or the signed Android release `.apk`/`.aab` (`ANDROID_VERSION_CODE` overrides the versionCode). The fastlane lanes wrap both. |
 | `bin/bundle-engine` | Vendors the relocatable engine into `desktop/engine` for the Mac app; `bin/release desktop` runs it. |
+| `bin/deploy` | Ship a build through fastlane: `android dev` (Play internal testing), `android prod` (Play production, asks first; `-y` skips), `android code` (the next versionCode, read only), `desktop` (the notarized `.dmg`). Gems go to `vendor/bundle`. |
 | `bin/deploy-relay` | Deploy the one hosted relay (Railway service `enqueue`) after the relay tests pass, asking first (`-y` skips), and wait for `/health`. |
 
 ### Static
@@ -391,8 +406,8 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
 
@@ -790,6 +805,7 @@ GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
 GET    /events?limit=N              the activity log, newest first, each with its full record
 GET    /setup                       what is connected, what is left to set up, settings that need a look
+GET    /reading                     how far the assistant is through reading the library (the wall's progress line)
 GET    /backup                      backup folder, detected Proton Drive folders, last backup, the kept backups
 GET    /fonts/{name}                font files (cached 1 year)
 ```
@@ -1224,6 +1240,12 @@ The engine is a relocatable CPython 3.12 (python-build-standalone, the one uv ma
 - **OpenSSL archives with `llvm-ar`/`llvm-ranlib`.** SQLCipher's vendored OpenSSL looks for `aarch64-linux-android-ranlib`, which NDK r23+ no longer ships; `bin/release` exports `AR_`/`RANLIB_aarch64_linux_android` pointing at the NDK's llvm tools.
 - **R8 keeps the app's own classes** (`proguard-rules.pro`): Rust calls `MainActivity.storeKey`, `getCurrentActivity` and the sync service by name over JNI, and the page calls the `@JavascriptInterface` bridge, so a shrunk build renamed them away and the app died at launch with "store key: Java exception was thrown". Verify a release build by installing it and opening it, not by its build passing.
 - **No typedef-annotation extraction** for the plugin modules (`build.gradle.kts`, `allprojects`): it only matters for publishing an AAR, and the lint tooling it downloads was cut off mid-download by Google's CDN on every attempt.
+**Version codes.** Tauri derives the versionCode from `tauri.conf.json`'s version (major * 1000000 + minor * 1000 + patch, so 0.3.0 is 3000) and writes it to `gen/android/app/tauri.properties`, which is gitignored and rewritten on every build.
+Play refuses a code it has seen, so `bin/release android` takes `ANDROID_VERSION_CODE` and merges it into the Tauri config for that build only (`--config '{"bundle":{"android":{"versionCode":N}}}'`); nothing in the repo changes per release.
+The fastlane Android lanes pick N as one more than the highest of every code Play lists (bundles, APKs, every track) and the code in `tauri.properties` (the last one this checkout attempted), after Dequeue's `next_android_version_code`.
+The local half matters because Play reserves a code the moment a bundle is uploaded, even when the upload fails, and never lists it.
+The lane refuses to upload when the built code is not the one it asked for, and sends the R8 map (`outputs/mapping/universalRelease/mapping.txt`) with the bundle so Play can read crashes.
+A plain `bin/release android` without the variable still builds with the derived code, which Play will refuse once that code is taken.
 
 ### Tauri build notes
 
@@ -1359,6 +1381,37 @@ Showing the code twice makes two phone tokens; one never scanned stays "not sync
 A Mac already on a relay of its own switches with the same sign-in ("Switch to Enqueue sync" on the configured Sync tab): `account._move_library` stores the new device token, forgets the pull cursor (the account's library counts from its own start), restarts the sync worker (`worker.restart`, which retires the old loops by generation, since the change stream can sit in a read on the old relay), and pushes everything once (`client.push_everything`: artifacts, views, conversations, settings, the vault's wrap; the keyring goes up as the password is stored), logged as `sync.moved`. The key is the same, so nothing new is written down. Settings asks to link the phone again until a phone code is made (`account_relink_phone`); the phone forgets its own cursor on every link (`mobile_link_qr`), for the same reason. The old library stays on the old relay until `enq relay-admin revoke`.
 Google and Apple are set up in the `enqueue-sudohnim` Google Cloud project and Apple team 572NMYL3ZG; the relay's variables (client ids, the desktop client secret, `JWT_SECRET`, `DATABASE_URL`) are on the Railway `enqueue` service, and the Sign in with Apple key (`66CTHBC793`) is in the Keychain as `enqueue-apple-siwa-key` until the relay needs it (Apple's token revocation on account deletion).
 `tests/test_account.py` runs the Mac's side against the real relay code.
+
+### The first-run welcome (desktop) and the phone's first screen (2026-10-20)
+
+A fresh library opens on `js/welcome.js` (styles in `css/welcome.css`) instead of the empty wall: `home()` calls `maybeWelcome()` when the wall is empty, and it shows when the `welcome_done` setting is false and the three `GET /setup` steps are not all done.
+Five skippable steps: Overview, the assistant, sync, the recovery kit, the phone; finishing or skipping sets `welcome_done` (a setting, not localStorage, so a cleared webview does not bring it back).
+The Overview is a hub with two halves: the tour (`js/tour.js`, the seven live-demo cards, played as one card, `welcomePlayTour`, whose last button says "Set it up" and continues to the Assistant step through `Tour.open({label, then})`) and a setup list (`welcomeChecklist`), one row per step with where this Mac stands, read from `/settings`, `/setup` and `/backup`.
+The `?` at the top right of the home header opens the same welcome on demand (`openWelcome`, `welcomeTriggerHtml`), each step showing where this Mac stands, with Close and Done in place of Skip; the tour has no `?` of its own on the desktop; it is played from the hub. `refreshIfStale` leaves an open welcome alone, since its sign-in round trip through the browser brings the window back into focus.
+It adds no machinery: the assistant step writes `llm_backend`/`llm_model` (from `BACKEND_MODELS`) and `PUT /settings/api-key`, the sync step renders the real Sync tab into its own `#settingsTabPane` through `renderSettingsTab("sync")` (so `startAccountSignIn`, the recovery phrase, the browser sign-in and joining another computer run unchanged), the kit step uses `backupKitHtml`/`showRecoveryKit` (`recoveryKitSaved` re-renders the welcome when it is open), and the phone step uses the Sync tab's `linkShowBtn`/`toggleLinkCode` ids.
+The page wears `.settings-page` so the embedded Sync tab looks as it does in Settings; the guide marks are hidden there because their plate belongs to the Settings page.
+A sync flow that ends by calling `renderSettingsTab` lands back in the welcome only because the pane id is the same: keep new sync steps rendering through `renderSettingsTab(currentSettingsTab)`.
+The phone's `#setup` screen in `mobile.html` is a short welcome (what Enqueue is, then "On your Mac, open Settings, Sync, and press Show the code") above the scan button; the scan flow's ids (`setup_camera`, `scan_qr_btn`, `scan_status`, `setup_no_camera`, `retry_camera`, `status`) are unchanged.
+
+### "Reading your library" on the wall (2026-10-20)
+
+`reading.py` (`GET /reading`) says how far the assistant is through a big read: `total`/`done` are the doctor's summary counts in one aggregate query, `state` is `reading` (the ingest queue is busy, `queue.busy()`), `retrying` (owed `facet_retry` rows, queue idle), `paused` (`providers/pause.py`, with `paused_until`), `key` (the provider refused the key) or `idle`, and `show` is true from `SHOW_FROM` (10) items left while work is owed or blocked.
+A note still being typed (`queue.WAITING`) is not owed work there.
+`refreshReading` in `js/home.js` draws one quiet line above the wall on every wall render and polls every 8 seconds only while it is up; once up it stays until nothing is left, so it does not blink off near the end; `teardown()` stops the poll.
+The refused key is `pause.key_refused()`: `OpenAICompatibleProvider` calls `pause.note_failure` on a failed call (true for a 401 that is not OpenCode Go's unknown-model 401, `base.key_rejected`) and `pause.note_success` on one that went through; `pause.lift` (a new key or model) clears it.
+It is in memory like the pause, and `/setup` reports it as the `key-refused` alert.
+`tests/test_reading.py` pins both.
+
+### Enqueue Pro: bought on the phone, kept by the relay (2026-10-20)
+
+Dequeue's pattern: the phone sells, RevenueCat tells the relay, and every device reads the plan; the Mac sells nothing.
+**Plans** are `PLANS` in `relay/accounts.py`: free is one computer, one phone and 1 GiB on Enqueue sync; Pro is five of each and 50 GiB. Bring-your-own-key AI is never part of a plan.
+**What makes an account Pro** is `accounts.pro_until`: Pro while it is in the future. Only two things write it: RevenueCat's webhook (`POST /webhooks/revenuecat`, checked against `REVENUECAT_WEBHOOK_AUTH`, closed while that is unset) and the admin grant (`enq relay-admin pro <email> [--days N]`, `PUT /admin/accounts/pro`).
+The webhook sets `pro_until` from the event's own expiry, whatever the event is called: a cancellation keeps Pro to the end of the paid period, a refund (a cancellation whose expiry is now) and an expiration end it, a billing problem keeps it through the grace period. Only events naming the `pro` entitlement count; an event older than the last one applied (`pro_event_at`) is ignored, since RevenueCat may deliver out of order; a TRANSFER moves the Pro time to the other account. Dequeue switched on event names and dropped Pro at a mere cancellation.
+**The RevenueCat user is the Enqueue sync account id.** The phone has no session, only its device token, so it asks `GET /account/plan` with that token (`mobile_plan` in `desktop/src/lib.rs`, null on a relay of its own) and starts RevenueCat for the account (`Billing.kt`, bridged as `EnqueueAndroid.billing*`, answering through `window.__enqBillingReply`). Settings > Plan on the phone (`paintPlan`, `goPro`, `restorePro` in `mobile.html`) shows the plan and the paywall; the Mac shows it under Enqueue sync (`planRow` in `settings.js`, from `account._keep_plan`).
+**Enforcement is on the relay.** A device token carries its `kind` (computer or phone). A computer past the plan is refused at `POST /account/devices` with a 402 that says what to do. A phone never is: the new one replaces the least recently used once it first syncs (`_replace_phones`, in `library_for_device`), so a code shown and never scanned cuts nobody off. Storage is the library's own quota (`storage.set_quota`), set when the plan changes; going back to free removes nothing and only refuses new writes past the limit.
+RevenueCat: project "Enqueue" (`1abb2acc`), app "Enqueue (Play Store)", entitlement `pro`; the public SDK key is in `Billing.kt` (public by design). The Play service account is Dequeue's `revenuecat@sudohnim-play-billing`, which has account-wide Play Console access.
+`tests/test_relay_plans.py` pins all of it.
 
 ### The AI summary can be switched off for one artifact
 
@@ -1607,7 +1660,7 @@ Tested on the emulator without hardware: `adb shell locksettings set-pin 1111`, 
 System prompts are black in `screencap`; read them with `uiautomator dump`.
 `locksettings clear --old 1111` puts the emulator back.
 
-### The tour behind the ? is one deck for both apps (TOUR.1)
+### The tour: the phone's ?, and the desktop welcome's first step (TOUR.1)
 
 `static/js/tour.js` + `static/css/tour.css` are loaded by the desktop home and by `mobile.html`, the way `linkpop` is, so the words, the order and the examples exist once (Dequeue's lesson: its two clients had drifted to different tours).
 A card only changes the words that are true of one device (`opts.platform`: click or tap, the hotkey or the + menu); the desktop passes the capture hotkey as it is actually set (`Tour.set({hotkey})` once `/settings` answers).

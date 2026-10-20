@@ -114,9 +114,22 @@ release_android() {
     "$abd/intermediates/stripped_native_libs/universalRelease" \
     "$abd/outputs/apk/universal/release" 2>/dev/null || true
 
+  # Tauri derives the versionCode from tauri.conf.json's version (0.3.0 -> 3000) and writes
+  # it into gen/android/app/tauri.properties (gitignored, regenerated every build). Play
+  # refuses a code it has already seen, so a store upload needs a fresh one per build:
+  # ANDROID_VERSION_CODE overrides it for this build only (fastlane sets it), through a
+  # config merge, so nothing in the repo changes per release.
+  local overrides=()
+  if [[ -n "${ANDROID_VERSION_CODE:-}" ]]; then
+    [[ "$ANDROID_VERSION_CODE" =~ ^[1-9][0-9]*$ ]] \
+      || { echo "ANDROID_VERSION_CODE must be a positive integer" >&2; exit 2; }
+    overrides=(--config "{\"bundle\":{\"android\":{\"versionCode\":$ANDROID_VERSION_CODE}}}")
+    echo "==> versionCode $ANDROID_VERSION_CODE (from ANDROID_VERSION_CODE)"
+  fi
+
   echo "==> Building the signed release apk/aab (target: $target)"
   # No --debug: a release build embeds the frontend and signs with gen/android/key.properties.
-  cargo tauri android build --target "$target"
+  cargo tauri android build --target "$target" ${overrides[@]+"${overrides[@]}"}
 
   echo
   echo "Built:"

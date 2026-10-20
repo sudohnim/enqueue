@@ -1,0 +1,189 @@
+# Enqueue releases. The builds themselves stay in bin/release (it is what a person runs
+# by hand too); these lanes add what a store upload needs around it: a version code the
+# store has not seen, the upload, and the checks that fail before a build is spent.
+#
+#   bundle exec fastlane android dev        Play internal testing, completed
+#   bundle exec fastlane android prod       Play production, completed (or a staged rollout)
+#
+# bin/deploy is the front door (`bin/deploy android dev|prod`, Dequeue's), and asks
+# before prod; bin/release alone only builds, so uploading is always a separate step.
+#   bundle exec fastlane android next_code  print the next versionCode, change nothing
+#   bundle exec fastlane mac release        Developer ID signed + notarized .dmg (no store)
+#
+# No iOS lane yet (the iPhone app is on feature/ios). One goes in `platform :ios`, after
+# Dequeue's: an App Store Connect API key (connect_asc), a build number from
+# latest_testflight_build_number, gym, then pilot or upload_to_app_store.
+
+require "json"
+
+# fastlane/README.md is written by hand (setup, keys, version codes); keep fastlane from
+# regenerating it as a bare lane list after every run.
+ENV["FASTLANE_SKIP_DOCS"] = "1"
+
+REPO = File.expand_path("..", __dir__)
+ANDROID_PACKAGE = "com.sudohnim.enqueue"
+PLAY_KEY = ENV["PLAY_JSON_KEY"].to_s.empty? ? File.join(REPO, "desktop", "play-store-svc.json") : File.expand_path(ENV["PLAY_JSON_KEY"])
+ANDROID_APP = File.join(REPO, "desktop", "gen", "android", "app")
+ANDROID_OUT = File.join(ANDROID_APP, "build", "outputs")
+AAB = File.join(ANDROID_OUT, "bundle", "universalRelease", "app-universal-release.aab")
+MAPPING = File.join(ANDROID_OUT, "mapping", "universalRelease", "mapping.txt")
+
+def assert_play_key
+  return if File.exist?(PLAY_KEY)
+
+  UI.user_error!(
+    "No Play service account key at #{PLAY_KEY}.\n" \
+    "Put the JSON key there (gitignored), and invite that service account to the " \
+    "Enqueue app in Play Console (Users and permissions) with release rights.",
+  )
+end
+
+# --- version codes ------------------------------------------------------------
+#
+# Play refuses a versionCode it has already accepted. Tauri derives one from
+# tauri.conf.json's version (major * 1000000 + minor * 1000 + patch: 0.3.0 -> 3000), so
+# every build of one version gets the same code and only the first upload works.
+# bin/release takes ANDROID_VERSION_CODE and merges it into the Tauri config for that
+# build only, so no file in the repo changes per release.
+#
+# Which code: the highest of what Play has seen and what this machine last attempted,
+# plus one (Dequeue's next_android_version_code). Play reserves a code the moment a
+# bundle is uploaded, even when the edit is aborted, and such a code appears in none of
+# the lists the API returns; the local record covers that. Play covers other machines.
+#
+# The local record is gen/android/app/tauri.properties: Tauri writes the code it built
+# with there on every build (overridden or not), and the file is gitignored, so it holds
+# the last code this checkout attempted, successful upload or not.
+
+def play_version_codes
+  require "supply"
+  require "supply/client"
+
+  assert_play_key
+  Supply.config = FastlaneCore::Configuration.create(
+    Supply::Options.available_options,
+    { json_key: PLAY_KEY, package_name: ANDROID_PACKAGE, timeout: 300 },
+  )
+  client = Supply::Client.make_from_config
+  client.begin_edit(package_name: ANDROID_PACKAGE)
+  begin
+    # Every uploaded artifact, not only those on a track: a superseded code still blocks.
+    codes = (client.aab_version_codes + client.apks_version_codes).map(&:to_i)
+    codes += %w[internal alpha beta production].flat_map do |track|
+      client.track_version_codes(track).compact.map(&:to_i)
+    rescue StandardError
+      [] # a track with nothing on it raises instead of returning []
+    end
+  ensure
+    client.abort_current_edit # read only: nothing is ever committed
+  end
+  codes
+end
+
+def local_version_code
+  props = File.join(ANDROID_APP, "tauri.properties")
+  return 0 unless File.exist?(props)
+
+  File.read(props)[/^tauri\.android\.versionCode=(\d+)/, 1].to_i
+end
+
+def next_android_version_code
+  remote = play_version_codes
+  local = local_version_code
+  next_code = ([local] + remote).max + 1
+  UI.success(
+    "versionCode: #{next_code} (Play's highest: #{remote.max || 0}, " \
+    "last attempted here: #{local})",
+  )
+  next_code
+end
+
+# --- android ------------------------------------------------------------------
+
+def build_aab(version_code)
+  # Signing comes from desktop/gen/android/key.properties + release.keystore (the upload
+  # key; Play App Signing holds the app key), or the RELEASE_* variables.
+  sh({ "ANDROID_VERSION_CODE" => version_code.to_s }, File.join(REPO, "bin", "release"), "android")
+  UI.user_error!("No bundle at #{AAB}") unless File.exist?(AAB)
+
+  built = local_version_code
+  return if built == version_code
+
+  UI.user_error!("Built versionCode #{built}, expected #{version_code}; not uploading.")
+end
+
+def upload_play(track)
+  # ANDROID_PROD_ROLLOUT (e.g. 0.1 = 10%) makes a production release a staged rollout,
+  # which Play calls inProgress; without it the release goes to everyone at once.
+  rollout = ENV["ANDROID_PROD_ROLLOUT"].to_s.strip
+  staged = track == "production" && !rollout.empty? && rollout.to_f < 1.0
+  supply(
+    package_name: ANDROID_PACKAGE,
+    json_key: PLAY_KEY,
+    track: track,
+    release_status: staged ? "inProgress" : "completed",
+    rollout: (rollout if staged),
+    aab: AAB,
+    # R8 is on for release (proguard-rules.pro), so Play needs the map to read crashes.
+    mapping: (MAPPING if File.exist?(MAPPING)),
+    skip_upload_apk: true,
+    skip_upload_metadata: true,
+    skip_upload_changelogs: true,
+    skip_upload_images: true,
+    skip_upload_screenshots: true,
+  )
+end
+
+platform :android do
+  desc "Dev: build a signed .aab with a fresh versionCode and release it to Play internal testing"
+  lane :dev do
+    assert_play_key
+    build_aab(next_android_version_code)
+    upload_play("internal")
+  end
+
+  desc "Prod: build a signed .aab with a fresh versionCode and release it to Play production " \
+       "(ANDROID_PROD_ROLLOUT=0.1 for a staged rollout)"
+  lane :prod do
+    assert_play_key
+    build_aab(next_android_version_code)
+    upload_play("production")
+  end
+
+  desc "Print the versionCode the next upload would use (reads Play, changes nothing)"
+  lane :next_code do
+    next_android_version_code
+  end
+end
+
+# --- mac ----------------------------------------------------------------------
+#
+# The Mac app ships outside the App Store: a Developer ID signed, notarized .dmg that
+# bin/release desktop already makes. This lane only fills in the two settings and checks
+# them before a ten-minute build. Notarizing needs a notarytool profile in the keychain,
+# made once per Mac:
+#   xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG
+
+MAC_IDENTITY = "Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"
+
+platform :mac do
+  desc "Build the Developer ID signed, notarized and stapled .dmg (no App Store upload)"
+  lane :release do
+    identity = ENV["APPLE_SIGNING_IDENTITY"].to_s.empty? ? MAC_IDENTITY : ENV["APPLE_SIGNING_IDENTITY"]
+    profile = ENV["NOTARY_PROFILE"].to_s.empty? ? "enqueue-notary" : ENV["NOTARY_PROFILE"]
+
+    identities = `security find-identity -v -p codesigning 2>/dev/null`
+    UI.user_error!("'#{identity}' is not in the keychain.") unless identities.include?(identity)
+
+    sh(
+      { "APPLE_SIGNING_IDENTITY" => identity, "NOTARY_PROFILE" => profile },
+      File.join(REPO, "bin", "release"), "desktop",
+    )
+
+    dmg = Dir[File.join(REPO, "desktop", "target", "release", "bundle", "dmg", "*.dmg")]
+          .max_by { |f| File.mtime(f) }
+    UI.user_error!("No .dmg was built.") unless dmg
+    sh("xcrun", "stapler", "validate", dmg)
+    UI.success("Ready to publish: #{dmg}")
+  end
+end

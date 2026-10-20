@@ -88,6 +88,14 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "account_device_id": ("ENQ_ACCOUNT_DEVICE_ID", "", True),
     # Moved to Enqueue sync from a relay of its own, and the phone not linked again yet.
     "account_relink_phone": ("ENQ_ACCOUNT_RELINK_PHONE", False, True),
+    # The account's plan as the relay last reported it (account._keep_plan): shown in
+    # Settings, never trusted for anything; the relay enforces the plan itself.
+    "account_tier": ("ENQ_ACCOUNT_TIER", "free", True),
+    "account_pro_until": ("ENQ_ACCOUNT_PRO_UNTIL", 0, True),
+    "account_used_bytes": ("ENQ_ACCOUNT_USED_BYTES", 0, True),
+    "account_storage_bytes": ("ENQ_ACCOUNT_STORAGE_BYTES", 0, True),
+    # The first-run welcome (static/js/welcome.js) was finished or skipped on this Mac.
+    "welcome_done": ("ENQ_WELCOME_DONE", False, True),
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
     "user_agent": ("ENQ_USER_AGENT", None, True),
     "hotkey": ("ENQ_HOTKEY", "Alt+Shift+E", True),

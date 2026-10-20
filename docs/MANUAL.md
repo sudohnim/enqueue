@@ -46,6 +46,17 @@ You need a Mac, and the code (`git clone`, then `cd enqueue`).
 
 Then link the phone to the Mac: see [Sync](#sync).
 
+### The first time
+
+A new, empty library opens on a short welcome instead of the wall.
+It walks through five steps, and each one can be skipped: what Enqueue is, choosing the assistant (on this Mac with Ollama, or an online service with your own key), turning on sync, saving the recovery kit, and linking your phone.
+The sync step is the same as **Settings > Sync**, so signing in with Google or Apple, writing down the recovery phrase and joining another computer all work there.
+An assistant included with Enqueue is planned; until then the welcome says so and asks you to pick one.
+Finishing or skipping it is remembered, and everything in it can be changed later in Settings.
+
+The phone's first screen is its own short welcome: what Enqueue is, then how to link it.
+On the Mac, open **Settings > Sync** and press **Show the code**; on the phone, press **Scan the code** and point it at the screen.
+
 ## Capturing
 
 ### From anywhere on the Mac
@@ -208,6 +219,13 @@ These lines are what let search find it by idea.
 
 Short notes, and anything holding what looks like a password or a key, get no summary.
 A long summary scrolls inside its own box, so the rest of the panel stays in reach.
+
+### Reading your library
+
+When many things need a summary at once (a first import, a switch to another assistant, or sync bringing a whole library onto a new Mac), the assistant reads them one by one, and that can take a while and costs a model call each.
+A quiet line above the wall says how far it is ("Reading your library: 120 of 360") and goes away when it is done.
+Search by words works the whole time; search by idea fills in as the summaries land.
+The line also says when the reading is held up: the online service hit its usage limit (it says when it goes on by itself), turned down your key (fix it in **Settings > Assistant**), or did not answer (it tries again shortly).
 
 ## Related
 

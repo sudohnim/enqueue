@@ -92,7 +92,7 @@ def create_offer() -> dict:
 
     if account.signed_in():
         try:
-            handed = account.new_device_token("Computer")
+            handed = account.new_device_token("Computer", kind="computer")
         except account.AccountError as exc:
             raise PairingError(str(exc)) from None
 

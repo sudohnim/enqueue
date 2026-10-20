@@ -44,6 +44,15 @@ def summaries_backfill() -> dict:
     return {"queued": ingest_queue.backfill_summaries()}
 
 
+@router.get("/reading")
+def reading_progress() -> dict:
+    """How far the assistant is through reading the library (reading.py). Cheap:
+    the wall polls it while a big read is under way."""
+    from .. import reading
+
+    return reading.progress()
+
+
 @router.get("/index/counts")
 def index_counts() -> dict:
     return get_store().counts()

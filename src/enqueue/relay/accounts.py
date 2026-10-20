@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -59,7 +60,9 @@ from sqlalchemy import (
     and_,
     create_engine,
     delete,
+    func,
     insert,
+    or_,
     select,
     update,
 )
@@ -93,6 +96,9 @@ class AccountSettings:
     apple_bundle_id: str = "com.sudohnim.enqueue"
     apple_jwks_url: str = "https://appleid.apple.com/auth/keys"
     rate_limit_per_min: int = 30
+    # The Authorization value set on RevenueCat's webhook, which it sends back; the
+    # webhook refuses everything while it is unset.
+    revenuecat_webhook_auth: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -110,6 +116,7 @@ class AccountSettings:
             google_desktop_client_secret=os.getenv("GOOGLE_DESKTOP_CLIENT_SECRET") or None,
             apple_client_id=os.getenv("APPLE_CLIENT_ID") or None,
             apple_bundle_id=os.getenv("APPLE_BUNDLE_ID", "com.sudohnim.enqueue"),
+            revenuecat_webhook_auth=os.getenv("REVENUECAT_WEBHOOK_AUTH") or None,
         )
 
     def check(self) -> None:
@@ -142,7 +149,12 @@ accounts_t = Table(
     Column("email", String(320)),
     Column("display_name", String(255)),
     Column("picture", String(1024)),  # the provider's picture address (Google only)
-    Column("tier", String(16), nullable=False, default="free"),
+    Column("tier", String(16), nullable=False, default="free"),  # mirrors pro_until
+    # Pro until this time (RevenueCat's expiry, or a grant); none or past is free.
+    Column("pro_until", Float),
+    # When the RevenueCat event behind pro_until happened: an older one arriving late
+    # never undoes a newer one.
+    Column("pro_event_at", Float),
     Column("library_id", String(64)),  # the relay library (relay/storage.py), once made
     Column("created_at", Float, nullable=False),
     UniqueConstraint("provider", "subject", name="uq_accounts_provider_subject"),
@@ -165,6 +177,7 @@ devices_t = Table(
     Column("id", String(36), primary_key=True),
     Column("account_id", String(36), nullable=False, index=True),
     Column("name", String(100), nullable=False),
+    Column("kind", String(16)),  # computer | phone: what the plan's limits count
     Column("token_hash", String(64), nullable=False, unique=True),
     Column("created_at", Float, nullable=False),
     Column("last_seen_at", Float),
@@ -182,6 +195,26 @@ handoffs_t = Table(
 )
 
 HANDOFF_TTL_S = 120
+
+# What each plan holds (AGENTS.md, "The paid tier"). Free is one computer and one phone;
+# Pro raises the counts and the storage. A phone over the limit is replaced (the one
+# used least recently stops opening the library once the new one first syncs); a
+# computer over it is refused, since silently cutting off another Mac would lose work.
+GiB = 1024**3
+PLANS = {
+    "free": {"computers": 1, "phones": 1, "storage_bytes": 1 * GiB},
+    "pro": {"computers": 5, "phones": 5, "storage_bytes": 50 * GiB},
+}
+DEVICE_KINDS = ("computer", "phone")
+PRO_ENTITLEMENT = "pro"
+# A purchase with no expiry (a lifetime product, a grant "for good").
+FOREVER = 4102444800.0  # 2100-01-01
+
+
+def tier_of(account: dict, now: float | None = None) -> str:
+    until = account.get("pro_until")
+    return "pro" if until and until > (now or time.time()) else "free"
+
 
 # A device token nobody has used this long after it was made was never linked: a
 # phone's code shown and not scanned, a computer's code not typed in. It stops opening
@@ -222,10 +255,29 @@ class Accounts:
         version brought to a table an older one made (one ALTER each, once)."""
         from sqlalchemy import inspect, text
 
-        have = {c["name"] for c in inspect(self.engine).get_columns("accounts")}
-        if "picture" not in have:
-            with self.engine.begin() as conn:
-                conn.execute(text("ALTER TABLE accounts ADD COLUMN picture VARCHAR(1024)"))
+        wanted = {
+            "accounts": {
+                "picture": "VARCHAR(1024)",
+                "pro_until": "FLOAT",
+                "pro_event_at": "FLOAT",
+            },
+            "devices": {"kind": "VARCHAR(16)"},
+        }
+        for table, columns in wanted.items():
+            have = {c["name"] for c in inspect(self.engine).get_columns(table)}
+            for name, sql_type in columns.items():
+                if name in have:
+                    continue
+                with self.engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"))
+                    if (table, name) == ("devices", "kind"):
+                        # Before kinds, a phone was the device the Mac named "Phone".
+                        conn.execute(
+                            text(
+                                "UPDATE devices SET kind = CASE WHEN name = 'Phone'"
+                                " THEN 'phone' ELSE 'computer' END"
+                            )
+                        )
 
     # -- id tokens -------------------------------------------------------------------
 
@@ -372,7 +424,10 @@ class Accounts:
         """The account's relay library, made the first time a device is linked."""
         if account.get("library_id"):
             return account["library_id"]
-        lid = self.storage.add_account_library(label=f"account {account['id'][:8]}")
+        lid = self.storage.add_account_library(
+            label=f"account {account['id'][:8]}",
+            quota_bytes=PLANS[tier_of(account)]["storage_bytes"],
+        )
         with self.engine.begin() as conn:
             conn.execute(
                 update(accounts_t)
@@ -567,9 +622,49 @@ class Accounts:
 
     # -- devices ---------------------------------------------------------------------
 
-    def add_device(self, account: dict, name: str) -> dict:
-        """A relay token for one device. Shown once: only its hash is kept."""
+    def _live_devices(self, conn, account_id: str, kind: str, now: float) -> list:
+        """The account's devices of a kind that count against its plan: not cancelled,
+        and used, or made recently enough that their code may still be scanned. Least
+        recently used first."""
+        return conn.execute(
+            select(devices_t.c.id)
+            .where(
+                and_(
+                    devices_t.c.account_id == account_id,
+                    func.coalesce(devices_t.c.kind, "computer") == kind,
+                    devices_t.c.revoked_at.is_(None),
+                    or_(
+                        devices_t.c.last_seen_at.is_not(None),
+                        devices_t.c.created_at >= now - UNUSED_DEVICE_TTL_S,
+                    ),
+                )
+            )
+            .order_by(func.coalesce(devices_t.c.last_seen_at, devices_t.c.created_at))
+        ).all()
+
+    def add_device(self, account: dict, name: str, kind: str = "computer") -> dict:
+        """A relay token for one device. Shown once: only its hash is kept.
+
+        A computer past the plan's count is refused (402). A phone never is: the
+        newest replaces the least recently used once it first syncs (library_for_device),
+        so a code shown and never scanned cuts nobody off."""
+        kind = kind if kind in DEVICE_KINDS else "computer"
         library = self.ensure_library(account)
+        now = time.time()
+        if kind == "computer":
+            limit = PLANS[tier_of(account, now)]["computers"]
+            with self.engine.connect() as conn:
+                live = self._live_devices(conn, account["id"], "computer", now)
+            if len(live) >= limit:
+                raise HTTPException(
+                    status.HTTP_402_PAYMENT_REQUIRED,
+                    (
+                        "Enqueue sync's free plan covers one computer. Remove the other one"
+                        " under Devices, or go Pro on your phone."
+                        if tier_of(account, now) == "free"
+                        else f"Enqueue sync covers {limit} computers. Remove one under Devices."
+                    ),
+                )
         token = DEVICE_TOKEN_PREFIX + secrets.token_urlsafe(32)
         device_id = str(uuid.uuid4())
         with self.engine.begin() as conn:
@@ -578,8 +673,9 @@ class Accounts:
                     id=device_id,
                     account_id=account["id"],
                     name=(name or "device")[:100],
+                    kind=kind,
                     token_hash=_hash(token),
-                    created_at=time.time(),
+                    created_at=now,
                 )
             )
         return {"device_id": device_id, "relay_token": token, "library_id": library}
@@ -599,7 +695,10 @@ class Accounts:
                 )
             )
             return [
-                {k: r[k] for k in ("id", "name", "created_at", "last_seen_at", "revoked_at")}
+                {
+                    k: r[k]
+                    for k in ("id", "name", "kind", "created_at", "last_seen_at", "revoked_at")
+                }
                 for r in conn.execute(
                     select(devices_t)
                     .where(devices_t.c.account_id == account_id)
@@ -649,6 +748,7 @@ class Accounts:
             hit = self._device_cache.get(key)
             if hit and now - hit[0] < 15:
                 return hit[1]
+        replaced = False
         with self.engine.begin() as conn:
             row = conn.execute(
                 select(
@@ -656,20 +756,151 @@ class Accounts:
                     devices_t.c.last_seen_at,
                     accounts_t.c.library_id,
                     devices_t.c.created_at,
+                    devices_t.c.kind,
+                    devices_t.c.account_id,
+                    accounts_t.c.pro_until,
                 )
                 .select_from(devices_t.join(accounts_t, accounts_t.c.id == devices_t.c.account_id))
                 .where(and_(devices_t.c.token_hash == key, devices_t.c.revoked_at.is_(None)))
             ).first()
             if row is not None and row[1] is None and now - row[3] > UNUSED_DEVICE_TTL_S:
                 row = None  # never used in time: the code was not scanned
+            if row is not None and row[1] is None and row[4] == "phone":
+                replaced = self._replace_phones(conn, row[5], row[0], row[6], now)
             if row is not None and (row[1] is None or now - row[1] > 300):
                 conn.execute(
                     update(devices_t).where(devices_t.c.id == row[0]).values(last_seen_at=now)
                 )
+        if replaced:
+            self._forget_devices()
         library = row[2] if row is not None else None
         with self._cache_lock:
             self._device_cache[key] = (now, library)
         return library
+
+    def _replace_phones(self, conn, account_id: str, new_id: str, pro_until, now: float) -> bool:
+        """A phone's first sync: the phones past the plan's count, least recently used
+        first, stop opening the library (on free, linking a new phone moves sync to it)."""
+        limit = PLANS[tier_of({"pro_until": pro_until}, now)]["phones"]
+        others = [
+            r[0] for r in self._live_devices(conn, account_id, "phone", now) if r[0] != new_id
+        ]
+        gone = others[: max(0, len(others) - (limit - 1))]
+        if gone:
+            conn.execute(update(devices_t).where(devices_t.c.id.in_(gone)).values(revoked_at=now))
+        return bool(gone)
+
+    def account_for_device(self, token: str) -> dict | None:
+        """The account a live device token belongs to (the phone asking for its plan)."""
+        if not token.startswith(DEVICE_TOKEN_PREFIX) or self.library_for_device(token) is None:
+            return None
+        with self.engine.connect() as conn:
+            account_id = conn.execute(
+                select(devices_t.c.account_id).where(devices_t.c.token_hash == _hash(token))
+            ).scalar()
+        return self.get_account(account_id) if account_id else None
+
+    # -- plans -----------------------------------------------------------------------
+
+    def plan(self, account: dict) -> dict:
+        tier = tier_of(account)
+        lib = account.get("library_id")
+        return {
+            "account_id": account["id"],
+            "tier": tier,
+            "pro_until": account.get("pro_until") if tier == "pro" else None,
+            "limits": PLANS[tier],
+            "used_bytes": self.storage.used_bytes(lib) if lib else 0,
+        }
+
+    def set_pro_until(self, account_id: str, until: float | None, event_at: float | None = None):
+        """Pro until a time (None: free from now), and the library's storage to match.
+        Nothing stored is removed when it shrinks; new writes are refused past it."""
+        account = self.get_account(account_id)
+        if account is None:
+            return
+        tier = tier_of({"pro_until": until})
+        values = {"pro_until": until, "tier": tier}
+        if event_at is not None:
+            values["pro_event_at"] = event_at
+        with self.engine.begin() as conn:
+            conn.execute(update(accounts_t).where(accounts_t.c.id == account_id).values(**values))
+        if account.get("library_id"):
+            self.storage.set_quota(account["library_id"], PLANS[tier]["storage_bytes"])
+        self._forget_devices()
+
+    def accounts_by_email(self, email: str) -> list[dict]:
+        with self.engine.connect() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    select(accounts_t).where(func.lower(accounts_t.c.email) == email.lower())
+                ).mappings()
+            ]
+
+    def _rc_account(self, app_user_id) -> dict | None:
+        # The phone configures RevenueCat with the account id, so an id that is not one
+        # (an anonymous "$RCAnonymousID:...") names nobody here.
+        try:
+            uuid.UUID(str(app_user_id))
+        except (ValueError, TypeError):
+            return None
+        return self.get_account(str(app_user_id))
+
+    def revenuecat(self, body: dict) -> dict:
+        """Apply one RevenueCat webhook event.
+
+        Pro lasts until the event's expiry, whatever the event is called: a
+        cancellation keeps Pro to the end of the period paid for, a refund or an
+        expiration ends it (RevenueCat sends a refund as a cancellation whose expiry is
+        now), a billing problem keeps it through the grace period. Only events about the
+        `pro` entitlement count, and an event older than the last one applied is
+        ignored, since RevenueCat may deliver out of order."""
+        event = body.get("event") or {}
+        kind = str(event.get("type") or "")
+        if kind == "TRANSFER":
+            return self._rc_transfer(event)
+        entitlements = set(event.get("entitlement_ids") or [])
+        if event.get("entitlement_id"):
+            entitlements.add(event["entitlement_id"])
+        if PRO_ENTITLEMENT not in entitlements:
+            return {"ok": True, "ignored": kind or "event"}
+        ids = [event.get("app_user_id"), event.get("original_app_user_id")]
+        ids += list(event.get("aliases") or [])
+        account = next((a for a in map(self._rc_account, ids) if a), None)
+        if account is None:
+            log.info("revenuecat %s for no account here", kind)
+            return {"ok": True, "ignored": "unknown user"}
+        at = (event.get("event_timestamp_ms") or time.time() * 1000) / 1000
+        if account.get("pro_event_at") and at < account["pro_event_at"]:
+            return {"ok": True, "ignored": "older event"}
+        expires = event.get("expiration_at_ms")
+        if kind == "EXPIRATION":
+            until = None
+        elif expires is None:
+            until = FOREVER
+        else:
+            until = float(expires) / 1000
+        self.set_pro_until(account["id"], until, event_at=at)
+        log.info(
+            "revenuecat %s: account %s is %s",
+            kind,
+            account["id"][:8],
+            tier_of({"pro_until": until}),
+        )
+        return {"ok": True, "tier": tier_of({"pro_until": until})}
+
+    def _rc_transfer(self, event: dict) -> dict:
+        """A purchase moved to another app user (a restore on another account): the
+        Pro time goes with it."""
+        source = [a for a in map(self._rc_account, event.get("transferred_from") or []) if a]
+        until = max((a.get("pro_until") or 0 for a in source), default=0) or None
+        for a in source:
+            self.set_pro_until(a["id"], None)
+        for a in map(self._rc_account, event.get("transferred_to") or []):
+            if a and until:
+                self.set_pro_until(a["id"], max(until, a.get("pro_until") or 0))
+        return {"ok": True}
 
     def _forget_devices(self) -> None:
         with self._cache_lock:
@@ -683,7 +914,7 @@ def _public(account: dict) -> dict:
         "display_name": account.get("display_name"),
         "provider": account.get("provider"),
         "picture": account.get("picture"),
-        "tier": account.get("tier"),
+        "tier": tier_of(account),
     }
 
 
@@ -768,6 +999,7 @@ class RefreshIn(BaseModel):
 
 class DeviceIn(BaseModel):
     name: str = Field(default="device", max_length=100)
+    kind: str = Field(default="computer", pattern="^(computer|phone)$")
 
 
 def router(accounts: Accounts) -> APIRouter:
@@ -779,6 +1011,16 @@ def router(accounts: Accounts) -> APIRouter:
         if scheme != "Bearer" or not token:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "sign in required")
         return accounts.account_from_access(token)
+
+    def signed_in_or_device(authorization: str = Header(default="")) -> dict:
+        """A session (the Mac) or a device token (the phone, which has no session)."""
+        scheme, _, token = authorization.partition(" ")
+        if scheme == "Bearer" and token.startswith(DEVICE_TOKEN_PREFIX):
+            account = accounts.account_for_device(token)
+            if account is None:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "device not linked")
+            return account
+        return current(authorization)
 
     @r.post("/auth/google", dependencies=[Depends(limit)])
     def google(body: GoogleIn):
@@ -839,11 +1081,23 @@ def router(accounts: Accounts) -> APIRouter:
             **_public(account),
             "has_library": bool(account.get("library_id")),
             "devices": accounts.devices(account["id"]),
+            "plan": accounts.plan(account),
         }
+
+    @r.get("/account/plan")
+    def plan(account: dict = Depends(signed_in_or_device)):
+        return accounts.plan(account)
 
     @r.post("/account/devices", status_code=201)
     def add_device(body: DeviceIn, account: dict = Depends(current)):
-        return accounts.add_device(account, body.name)
+        return accounts.add_device(account, body.name, body.kind)
+
+    @r.post("/webhooks/revenuecat")
+    def revenuecat(body: dict, authorization: str = Header(default="")):
+        expected = accounts.s.revenuecat_webhook_auth
+        if not expected or not hmac.compare_digest(authorization.encode(), expected.encode()):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not RevenueCat")
+        return accounts.revenuecat(body)
 
     @r.patch("/account/devices/{device_id}", status_code=204)
     def rename_device(device_id: str, body: DeviceIn, account: dict = Depends(current)):

@@ -116,6 +116,119 @@
   /* Default: show library, hide setup */
   body:not(.view-setup) #setup { display: none; }
   body:not(.view-setup) #library { display: flex; }
+  /* The first screen (#setup): a short welcome and how to link to the Mac. */
+  #setup {
+    justify-content: center;
+    /* Clear the pill, which floats over this screen too. */
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  }
+  #setup .welcome,
+  #setup .welcome-scan {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  #setup .welcome {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 8px 8px 0;
+  }
+  .welcome-raven {
+    display: block;
+    width: 84px;
+    height: auto;
+    margin: 0 0 6px -8px;
+  }
+  .welcome-title {
+    margin: 0;
+    font-size: 30px;
+    line-height: 34px;
+    font-weight: var(--w-heading);
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .welcome-dot {
+    color: var(--accent);
+  }
+  .welcome-lead {
+    margin: 14px 0 6px;
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: var(--w-strong);
+    color: var(--text);
+  }
+  .welcome-text {
+    margin: 0 0 22px;
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+  }
+  .welcome-steps {
+    margin: 0;
+    padding: 6px 16px;
+    list-style: none;
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--hairline);
+  }
+  .welcome-steps li {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+  }
+  .welcome-steps li + li {
+    box-shadow: inset 0 1px 0 var(--line-soft);
+  }
+  .welcome-steps b {
+    font-weight: var(--w-strong);
+    color: var(--text);
+  }
+  .welcome-num {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin-top: -1px;
+    border-radius: 50%;
+    background: var(--lavender-subtle);
+    color: var(--accent);
+    font-size: 13px;
+    line-height: 24px;
+    text-align: center;
+    font-weight: var(--w-strong);
+  }
+  .welcome-scan {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 24px 8px 0;
+    text-align: center;
+  }
+  .welcome-scan p {
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  .welcome-scan-btn {
+    width: 100%;
+    padding: 15px 28px;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    font-size: 16px;
+  }
+  .welcome-scan-btn:disabled {
+    opacity: 0.6;
+  }
+  .welcome-scan-status {
+    min-height: 18px;
+    margin: 12px 0 0;
+  }
+  #setup #status {
+    max-width: 420px;
+    margin: 14px auto 0;
+    padding: 0 8px;
+    text-align: center;
+  }
   .title {
     font-size: 22px;
     font-weight: var(--w-strong);
@@ -2685,38 +2798,36 @@
 </div>
 
 <section id="setup">
-  <h1 class="title">Enqueue</h1>
-  <p class="sub">Sync your library from the relay.</p>
-  <div
-    id="setup_camera"
-    style="display: block; text-align: center; padding: 48px 20px"
-  >
-    <p style="font-size: 13px; color: var(--text-subtle); margin: 0 0 24px">
-      Scan the linking QR on your desktop
+  <!-- The first screen: a short welcome, then how to link to the Mac (the QR from
+       Settings, Sync, Show the code). The ids below are the scan flow's; keep them. -->
+  <div class="welcome">
+    <img class="welcome-raven" src="raven-mark.png" alt="" aria-hidden="true" />
+    <h1 class="welcome-title">Welcome to Enqueue<span class="welcome-dot">.</span></h1>
+    <p class="welcome-lead">Save anything. Find it again.</p>
+    <p class="welcome-text">
+      Notes, links, photos and files go in as they are, with nothing to sort. Find them
+      again by searching, or by asking in your own words.
     </p>
-    <button
-      id="scan_qr_btn"
-      class="round primary"
-      style="min-width: 200px; padding: 14px 28px; font-size: 15px"
-    >
-      Scan QR
-    </button>
-    <p
-      id="scan_status"
-      style="
-        font-size: 13px;
-        color: var(--text-subtle);
-        text-align: center;
-        margin: 16px 0 0;
-      "
-    ></p>
+    <ol class="welcome-steps">
+      <li>
+        <span class="welcome-num" aria-hidden="true">1</span>
+        <span>Your library lives on your Mac. On your Mac, open Enqueue's
+          <b>Settings</b>, then <b>Sync</b>, and press <b>Show the code</b>.</span>
+      </li>
+      <li>
+        <span class="welcome-num" aria-hidden="true">2</span>
+        <span>Tap the button below and point your phone at the code. Your library
+          arrives in a moment.</span>
+      </li>
+    </ol>
   </div>
-  <div
-    id="setup_no_camera"
-    style="display: none; text-align: center; padding: 48px 20px"
-  >
-    <p>Camera access is required to scan the linking QR.</p>
-    <button id="retry_camera" style="margin-top: 12px">Retry</button>
+  <div id="setup_camera" class="welcome-scan">
+    <button id="scan_qr_btn" class="welcome-scan-btn">Scan the code</button>
+    <p id="scan_status" class="welcome-scan-status"></p>
+  </div>
+  <div id="setup_no_camera" class="welcome-scan" style="display: none">
+    <p>Enqueue needs the camera to scan the code.</p>
+    <button id="retry_camera" class="welcome-scan-btn">Try again</button>
   </div>
   <div id="status"></div>
 </section>
@@ -3087,6 +3198,19 @@
       <div class="mset-stack">
         <button id="settings_sync_now" type="button" class="mset-primary">Sync Now</button>
         <button id="settings_pair" type="button" class="mset-secondary">Re-link with QR</button>
+      </div>
+    </div>
+
+    <!-- Enqueue sync's plan: only for a phone signed in through Enqueue sync (a
+         relay of your own has no plans). Painted by paintPlan(); Pro is bought here,
+         through Google Play (Billing.kt), for the account, so the Mac sees it too. -->
+    <div id="settings_plan" class="mset-group" hidden>
+      <h2 class="mset-title">Plan</h2>
+      <div id="settings_plan_line" class="mset-sub"></div>
+      <div class="mset-stack">
+        <button id="settings_plan_go" type="button" class="mset-primary" hidden>Go Pro</button>
+        <button id="settings_plan_manage" type="button" class="mset-secondary" hidden>Manage subscription</button>
+        <button id="settings_plan_restore" type="button" class="mset-secondary" hidden>Restore purchase</button>
       </div>
     </div>
 
@@ -3591,6 +3715,190 @@
       yes.focus();
     });
   }
+  // ---- Enqueue Pro (Billing.kt) ---------------------------------------------------
+  // The phone buys Pro for its Enqueue sync account through Google Play. The relay
+  // learns of it from RevenueCat and is what enforces the plan; the page only shows it.
+  // Each bridge call answers later through window.__enqBillingReply(id, {...}).
+  const billingBridge =
+    window.EnqueueAndroid && typeof window.EnqueueAndroid.billingStart === "function"
+      ? window.EnqueueAndroid
+      : null;
+  const _billWaiting = new Map();
+  let _billSeq = 0;
+  window.__enqBillingReply = (id, payload) => {
+    const resolve = _billWaiting.get(id);
+    if (!resolve) return;
+    _billWaiting.delete(id);
+    resolve(payload || { ok: false, reason: "error" });
+  };
+  function billingAsk(method, ...args) {
+    return new Promise((resolve) => {
+      if (!billingBridge) return resolve({ ok: false, reason: "unavailable" });
+      const id = "bill" + ++_billSeq;
+      _billWaiting.set(id, resolve);
+      try {
+        billingBridge[method](id, ...args);
+      } catch (e) {
+        _billWaiting.delete(id);
+        resolve({ ok: false, reason: "error" });
+      }
+    });
+  }
+  function billingReady() {
+    try {
+      return !!billingBridge && billingBridge.billingAvailable();
+    } catch (e) {
+      return false;
+    }
+  }
+  function sizeWords(bytes) {
+    const gb = bytes / 1024 ** 3;
+    if (gb >= 1) return (gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10) + " GB";
+    return Math.max(1, Math.round(bytes / 1024 ** 2)) + " MB";
+  }
+  let planAccount = null; // the account RevenueCat was started for
+  let planManage = null;
+  async function paintPlan() {
+    const box = document.getElementById("settings_plan");
+    if (!box) return;
+    let plan = null;
+    try {
+      plan = await invoke("mobile_plan");
+    } catch (e) {
+      plan = null; // offline: leave the plan out rather than show a stale one
+    }
+    if (!plan || !plan.account_id) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const pro = plan.tier === "pro";
+    const room = sizeWords(plan.limits.storage_bytes);
+    const used = sizeWords(plan.used_bytes || 0);
+    let line;
+    if (pro) {
+      const until = plan.pro_until && plan.pro_until < 4e9
+        ? " until " + new Date(plan.pro_until * 1000).toLocaleDateString()
+        : "";
+      line = `Pro${until}. ${used} of ${room} used.`;
+    } else {
+      line = `Free: one computer, one phone and ${room}. ${used} used.`;
+    }
+    document.getElementById("settings_plan_line").textContent = line;
+    const canBuy = billingReady();
+    document.getElementById("settings_plan_go").hidden = pro || !canBuy;
+    document.getElementById("settings_plan_restore").hidden = pro || !canBuy;
+    document.getElementById("settings_plan_manage").hidden = true;
+    if (!canBuy) return;
+    if (planAccount !== plan.account_id) {
+      const started = await billingAsk("billingStart", plan.account_id);
+      if (!started.ok) return;
+      planAccount = plan.account_id;
+      planManage = started.manage || null;
+    }
+    document.getElementById("settings_plan_manage").hidden = !(pro && planManage);
+  }
+  function periodWords(iso) {
+    return { P1M: "Monthly", P1Y: "Yearly", P1W: "Weekly", P3M: "Every 3 months", P6M: "Every 6 months" }[iso] || "";
+  }
+  // The paywall: what Pro adds, one button per package Google Play prices, the
+  // fine print. Resolves with the package chosen, or null.
+  function paywallSheet(packages) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "mconfirm-backdrop";
+      const card = document.createElement("div");
+      card.className = "mconfirm-card";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      card.setAttribute("aria-labelledby", "mpaywall_title");
+      const heading = document.createElement("h2");
+      heading.className = "mconfirm-title";
+      heading.id = "mpaywall_title";
+      heading.textContent = "Enqueue Pro";
+      const body = document.createElement("div");
+      body.className = "mconfirm-points";
+      for (const text of [
+        "Sync up to five computers and five phones.",
+        "50 GB for your library on Enqueue sync, instead of 1 GB.",
+        "Your own AI key works either way. Pro never locks a feature away.",
+      ]) {
+        const para = document.createElement("p");
+        para.textContent = text;
+        body.appendChild(para);
+      }
+      const choices = document.createElement("div");
+      choices.className = "mset-stack";
+      const done = (v) => {
+        backdrop.remove();
+        resolve(v);
+      };
+      packages.forEach((pkg, i) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = i === 0 ? "mset-primary" : "mset-secondary";
+        const when = periodWords(pkg.period);
+        btn.textContent = (when ? when + " · " : "") + pkg.price;
+        btn.addEventListener("click", () => done(pkg));
+        choices.appendChild(btn);
+      });
+      const fine = document.createElement("p");
+      fine.className = "mset-sub";
+      fine.textContent =
+        "Billed by Google Play. Renews until you cancel it in the Play Store's subscriptions.";
+      const row = document.createElement("div");
+      row.className = "mconfirm-row";
+      const no = document.createElement("button");
+      no.type = "button";
+      no.textContent = "Not now";
+      no.addEventListener("click", () => done(null));
+      row.append(no);
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) done(null);
+      });
+      backdrop.addEventListener("enq-cancel", () => done(null)); // the Back gesture
+      card.append(heading, body, choices, fine, row);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+      choices.firstChild?.focus();
+    });
+  }
+  async function goPro() {
+    const offers = await billingAsk("billingOfferings");
+    if (!offers.ok || !(offers.packages || []).length) {
+      toast("Pro isn't available right now. Try again later.", true);
+      return;
+    }
+    const pkg = await paywallSheet(offers.packages);
+    if (!pkg) return;
+    const bought = await billingAsk("billingPurchase", pkg.id);
+    if (bought.reason === "cancelled") return;
+    if (!bought.ok) {
+      toast(bought.message || "The purchase did not go through.", true);
+      return;
+    }
+    if (bought.pro) toast("You're on Pro. Thank you.");
+    planManage = bought.manage || planManage;
+    // RevenueCat tells the relay a moment later: paint again once it has.
+    setTimeout(paintPlan, 4000);
+  }
+  async function restorePro() {
+    const restored = await billingAsk("billingRestore");
+    if (!restored.ok) {
+      toast(restored.message || "Nothing could be restored.", true);
+      return;
+    }
+    toast(restored.pro ? "Pro is back on this account." : "No Pro purchase found for this Google account.");
+    setTimeout(paintPlan, 4000);
+  }
+  document.getElementById("settings_plan_go")?.addEventListener("click", goPro);
+  document.getElementById("settings_plan_restore")?.addEventListener("click", restorePro);
+  document.getElementById("settings_plan_manage")?.addEventListener("click", () => {
+    openExternal(
+      planManage || "https://play.google.com/store/account/subscriptions?package=com.sudohnim.enqueue",
+    ).catch(() => {});
+  });
+
   function flag(name) {
     try {
       return !!localStorage.getItem(name);
@@ -3924,6 +4232,7 @@
     show("settings");
     loadSettings();
     paintAppLock();
+    paintPlan();
     renderMobileEvents();
   }
 
@@ -5833,7 +6142,7 @@
   });
 
   document.getElementById("retry_camera").addEventListener("click", () => {
-    // The "Retry" button is now just the Scan QR button
+    // The "Retry" button is now just the scan button
     document.getElementById("scan_qr_btn").click();
   });
 

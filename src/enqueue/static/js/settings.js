@@ -956,7 +956,9 @@ async function recoveryKitSaved() {
 	} catch (err) {
 		return toast(String(err.message || err), true);
 	}
-	await renderSettingsTab("storage");
+	// The welcome shows the kit too (js/welcome.js); it stays on its own step.
+	if (welcomeOpen()) await renderWelcome();
+	else await renderSettingsTab("storage");
 	toast("Recovery kit saved. The next time Enqueue starts, it encrypts this library on the Mac too.");
 }
 
@@ -1620,7 +1622,7 @@ function renderSyncConfigured(sync) {
 	}
 	html +=
 		'<div class="field"><span class="rowlabel">Your code</span>' +
-		'<div class="aside">Open Enqueue on your phone and tap <b>Scan QR</b> (on a phone ' +
+		'<div class="aside">Open Enqueue on your phone and tap <b>Scan the code</b> (on a phone ' +
 		"that's already set up: Settings, <b>Re-link with QR</b>). Then point the camera at " +
 		"the code.</div>" +
 		'<button class="btn primary" id="linkShowBtn" aria-expanded="false" ' +
@@ -1718,9 +1720,42 @@ function renderAccountSection(acct) {
 		(how ? "Signed in with " + esc(how) : "Signed in") +
 		"</div></div></div>" +
 		'<button class="btn tertiary" onclick="confirmSignOut()">Sign out</button>' +
+		"</div>" +
+		'<div class="field" id="accountPlan">' +
+		planRow(acct.plan) +
 		"</div></div>" +
 		'<div class="shelf">Devices</div>' +
 		'<div class="group" id="accountDevices"><div class="aside">Loading...</div></div>'
+	);
+}
+
+// The plan as the relay last said (account._keep_plan). Pro is bought on the phone,
+// never here: the Mac shows the plan and where to change it.
+function planBytes(n) {
+	const gb = n / 1024 ** 3;
+	if (gb >= 1) return (gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10) + " GB";
+	return Math.max(1, Math.round(n / 1024 ** 2)) + " MB";
+}
+
+function planRow(plan) {
+	plan = plan || {};
+	const pro = plan.tier === "pro";
+	const room = plan.storage_bytes ? planBytes(plan.storage_bytes) : "";
+	const used = room ? planBytes(plan.used_bytes || 0) + " of " + room + " used. " : "";
+	const until =
+		pro && plan.pro_until && plan.pro_until < 4e9
+			? " until " + deviceWhen(plan.pro_until)
+			: "";
+	return (
+		'<span class="rowlabel">' +
+		(pro ? "Pro" + esc(until) : "Free") +
+		"</span>" +
+		'<div class="aside">' +
+		esc(used) +
+		(pro
+			? "Up to five computers and five phones."
+			: "One computer and one phone. Go Pro in Enqueue on your phone, under Settings.") +
+		"</div>"
 	);
 }
 
@@ -1744,15 +1779,16 @@ async function loadAccountDevices() {
 		return;
 	}
 	const devices = res.devices || [];
-	// Asking the account for its devices also fetches its picture the first time.
-	const avatar = document.querySelector("#accountWho .account-avatar.initial");
-	if (avatar) {
-		api("/account")
-			.then((me) => {
-				if (me.picture) avatar.outerHTML = accountAvatar(me);
-			})
-			.catch(() => {});
-	}
+	// Asking the account for its devices also fetches its picture the first time, and
+	// the plan as it stands now.
+	api("/account")
+		.then((me) => {
+			const avatar = document.querySelector("#accountWho .account-avatar.initial");
+			if (avatar && me.picture) avatar.outerHTML = accountAvatar(me);
+			const plan = document.getElementById("accountPlan");
+			if (plan) plan.innerHTML = planRow(me.plan);
+		})
+		.catch(() => {});
 	box.innerHTML =
 		'<div class="aside">Every phone and computer syncing with this account. Remove one ' +
 		"you no longer use and it stops syncing at once.</div>" +

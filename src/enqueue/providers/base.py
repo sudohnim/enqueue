@@ -67,6 +67,17 @@ def is_transient(exc: BaseException) -> bool:
     return False
 
 
+def key_rejected(exc: BaseException, base_url: str, model: str) -> bool:
+    """Whether a failed call was the provider refusing the API key itself (a 401),
+    as opposed to OpenCode Go's 401 for a model name it does not know."""
+    import openai
+
+    for link in _chain(exc):
+        if isinstance(link, openai.AuthenticationError):
+            return _go_model_error_from_auth(link, base_url, model) is None
+    return False
+
+
 def why(exc: BaseException, base_url: str, model: str) -> str:
     """Turn a failed model call into something a person can act on.
 

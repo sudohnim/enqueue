@@ -525,6 +525,9 @@ let wallStamp = null;
 // stale - scroll is kept, nothing blinks.
 async function refreshIfStale() {
 	if (document.hidden || !view) return;
+	// The welcome sends people to the browser to sign in and back: never redraw the
+	// wall over it when they return, even if something synced meanwhile.
+	if (typeof welcomeOpen === "function" && welcomeOpen()) return;
 	if (place === "wall") {
 		const peek = await api("/artifacts?limit=1&order=ingested").catch(
 			() => null,
@@ -940,6 +943,8 @@ async function home(opts) {
 	const tagcloud = wallGroup === "tags" ? await api("/tags") : { tags: [] };
 
 	if (!kept.total && !first.total) {
+		// A fresh library opens on the first-run welcome, once (js/welcome.js).
+		if (await maybeWelcome()) return;
 		// An empty library still gets the normal greeting (the living emblem + the
 		// time-of-day phrase), so a fresh install opens on the brand, not a wall of prose.
 		// One short line points at the capture pill already on screen; no second button.
@@ -949,8 +954,8 @@ async function home(opts) {
 		view.innerHTML =
 			'<div class="homehead">' +
 			greetDateHtml() +
-			// The ? that opens the tour (js/tour.js), top right of the header.
-			Tour.triggerHtml() +
+			// The ? that opens the welcome on demand (js/welcome.js), top right.
+			welcomeTriggerHtml() +
 			'<div class="greetline">' +
 			'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
 			'<h1 class="display greeting">' +
@@ -972,8 +977,8 @@ async function home(opts) {
 	let html =
 		'<div class="homehead">' +
 		greetDateHtml() +
-		// The ? that opens the tour (js/tour.js), top right of the header.
-		Tour.triggerHtml() +
+		// The ? that opens the welcome on demand (js/welcome.js), top right.
+		welcomeTriggerHtml() +
 		'<div class="greetline">' +
 		// O.3: the eyeball PNG is split into a frame (the socket: outline, lashes,
 		// ground) and a small pupil image (only the purple iris, transparent
@@ -1013,12 +1018,14 @@ async function home(opts) {
 
 	// The wall body renders in the chosen grouping mode (K.6). Custom fetches
 	// /pivots after the shell is in place, so its slot starts empty.
+	html += '<div class="reading" id="reading" role="status" aria-live="polite" hidden></div>';
 	html += '<div class="resurface" id="resurface" hidden></div>';
 	html += '<div class="wallbody" id="wallbody"></div>';
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
 	refreshResurface();
+	refreshReading();
 
 	const bodySlot = view.querySelector(".wallbody");
 	// Custom is never a boot or persistent mode (L.5): it opens a modal on
@@ -1110,6 +1117,88 @@ async function refreshGreeting() {
 	} catch (err) {
 		// The wall keeps its fallback; a failed greeting is not worth an error state.
 	}
+}
+
+// The first big read (reading.py, GET /reading): after an import, a switch of AI model,
+// or a sync that brings a whole library onto this Mac, the assistant writes its few
+// lines about each item one by one for a while. One quiet line above the wall says how
+// far it is and why, and goes away when it is done. Checked on every wall render, and
+// polled only while the line is up.
+let readingTimer = null;
+const READING_POLL_MS = 8000;
+
+function readingWhy(r) {
+	if (r.state === "key")
+		return (
+			"Stopped: your AI service turned down the key. " +
+			'<a href="#" class="reading-fix">Check it in Settings</a>.'
+		);
+	if (r.state === "paused") {
+		const at = r.paused_until
+			? new Date(r.paused_until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+			: "";
+		return (
+			"Paused: your AI service hit its usage limit. It goes on by itself" +
+			(at ? " at " + esc(at) : "") +
+			"."
+		);
+	}
+	if (r.state === "retrying")
+		return "The assistant didn't answer just now, so it tries again in a moment.";
+	return (
+		"The assistant is writing a few lines about each thing you saved, so search " +
+		"finds it by what it's about. Search by words works the whole time."
+	);
+}
+
+async function refreshReading() {
+	clearTimeout(readingTimer);
+	readingTimer = null;
+	const slot = document.getElementById("reading");
+	if (!slot) return;
+	let r;
+	try {
+		r = await api("/reading");
+	} catch {
+		r = null;
+	}
+	// The wall may have been left while the request was out.
+	if (slot !== document.getElementById("reading")) return;
+	// Once up, the line stays until the reading is done, even when fewer than the
+	// threshold are left, so it does not blink off at 351 of 360.
+	const keep = r && (r.show || (!slot.hidden && r.remaining > 0 && r.state !== "idle"));
+	if (!keep) {
+		slot.hidden = true;
+		slot.innerHTML = "";
+		return;
+	}
+	const pct = r.total ? Math.round((100 * r.done) / r.total) : 0;
+	slot.innerHTML =
+		'<div class="reading-head">' +
+		'<span class="reading-title">Reading your library</span>' +
+		'<span class="reading-count">' +
+		r.done.toLocaleString() +
+		" of " +
+		r.total.toLocaleString() +
+		"</span></div>" +
+		'<div class="reading-bar' +
+		(r.state === "reading" ? "" : " still") +
+		'" aria-hidden="true"><span style="width:' +
+		pct +
+		'%"></span></div>' +
+		'<div class="reading-why">' +
+		readingWhy(r) +
+		"</div>";
+	slot.dataset.state = r.state;
+	slot.hidden = false;
+	const fix = slot.querySelector(".reading-fix");
+	if (fix)
+		fix.addEventListener("click", (e) => {
+			e.preventDefault();
+			currentSettingsTab = "ai";
+			showSettings();
+		});
+	readingTimer = setTimeout(refreshReading, READING_POLL_MS);
 }
 
 // Resurfacing (resurface.py): one older note back on the wall each day, above the

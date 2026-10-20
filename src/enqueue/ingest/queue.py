@@ -370,6 +370,12 @@ def _pending(artifact_id: str) -> int:
         return len(numbers)
 
 
+def busy() -> int:
+    """How many artifacts are queued or being processed right now (reading.py)."""
+    with _queued_lock:
+        return len(set(_queued) | _processing)
+
+
 def _in_flight(artifact_id: str) -> bool:
     """Whether a run of this artifact is under way (on any thread)."""
     with _queued_lock:

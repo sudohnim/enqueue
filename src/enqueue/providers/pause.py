@@ -31,6 +31,10 @@ MIN_WAIT = 30
 _lock = threading.Lock()
 _until: datetime | None = None
 _reason = ""
+# The provider refused the key on the last call that reached it (a 401 that is not
+# OpenCode Go's "unknown model"). Not a pause: nothing is held back, but every call
+# will fail the same way until the key changes, so the page says so (reading.py).
+_key_refused = False
 
 
 class ModelPaused(ProviderError):
@@ -164,7 +168,31 @@ def lift(why: str) -> int:
 
 
 def reset() -> None:
-    """Clear any pause. For tests."""
-    global _until, _reason
+    """Clear any pause and any refused key. For tests, and for `lift`."""
+    global _until, _reason, _key_refused
     with _lock:
         _until, _reason = None, ""
+        _key_refused = False
+
+
+def note_failure(exc: BaseException, base_url: str, model: str) -> None:
+    """Remember a call the provider refused because of the key (providers/base.py)."""
+    global _key_refused
+    from .base import key_rejected
+
+    if key_rejected(exc, base_url, model):
+        with _lock:
+            _key_refused = True
+
+
+def note_success() -> None:
+    """A call went through, so the key works."""
+    global _key_refused
+    if _key_refused:
+        with _lock:
+            _key_refused = False
+
+
+def key_refused() -> bool:
+    """Whether the last call that reached the provider was refused for its key."""
+    return _key_refused

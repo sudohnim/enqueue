@@ -26,6 +26,7 @@ class SignIn(BaseModel):
 
 class DeviceName(BaseModel):
     name: str = Field(default="Phone", min_length=1, max_length=100)
+    kind: str = Field(default="phone", pattern="^(computer|phone)$")
 
 
 def _refuse(exc: account.AccountError, code: int = 400) -> HTTPException:
@@ -117,7 +118,7 @@ def device_token(req: DeviceName) -> dict:
     this Mac syncs through Enqueue sync (desktop_link_code). Asked for by the shell,
     which sends no Origin; a page from another site is refused by the guard."""
     try:
-        return {"relay_token": account.new_device_token(req.name)}
+        return {"relay_token": account.new_device_token(req.name, req.kind)}
     except account.AccountError as exc:
         raise _refuse(exc, 502) from None
 

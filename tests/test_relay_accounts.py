@@ -144,13 +144,17 @@ def test_a_device_token_opens_only_its_accounts_library_until_cancelled(relay):
     theirs = _sign_in(relay, sub="google-user-2", email="other@example.com")
 
     phone = relay.post(
-        "/account/devices", json={"name": "Pixel"}, headers=_bearer(mine["access_token"])
+        "/account/devices",
+        json={"name": "Pixel", "kind": "phone"},
+        headers=_bearer(mine["access_token"]),
     ).json()
     mac = relay.post(
         "/account/devices", json={"name": "Mac"}, headers=_bearer(mine["access_token"])
     ).json()
     other = relay.post(
-        "/account/devices", json={"name": "Pixel"}, headers=_bearer(theirs["access_token"])
+        "/account/devices",
+        json={"name": "Pixel", "kind": "phone"},
+        headers=_bearer(theirs["access_token"]),
     ).json()
     assert phone["library_id"] == mac["library_id"] != other["library_id"]
 
@@ -321,7 +325,9 @@ def test_a_code_nobody_scanned_stops_working_and_leaves_the_list(relay, monkeypa
     pair = _sign_in(relay)
     auth = _bearer(pair["access_token"])
     used = relay.post("/account/devices", json={"name": "Mac"}, headers=auth).json()
-    unused = relay.post("/account/devices", json={"name": "Phone"}, headers=auth).json()
+    unused = relay.post(
+        "/account/devices", json={"name": "Phone", "kind": "phone"}, headers=auth
+    ).json()
     assert relay.get("/sync/objects", headers=_bearer(used["relay_token"])).status_code == 200
     # Past the window for using a code (shrunk to nothing rather than moving the clock,
     # which the sign-in tokens' own expiry reads too).
