@@ -10,6 +10,7 @@ import json
 import math
 import re
 import threading
+import time
 from collections import Counter, defaultdict
 from contextvars import ContextVar, copy_context
 from datetime import datetime, timezone
@@ -85,6 +86,25 @@ def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
 # answers without one rather than queueing more model calls behind them.
 _JUDGES = threading.BoundedSemaphore(2)
 
+# How long the judge has been taking, per search model (a moving average of its recent
+# calls). A model that cannot answer within the wait (a thinking model on a busy
+# service took 20-30 s) is not waited for at all: the search answers at once from
+# cached verdicts and the judge still runs behind it, instead of every new search
+# paying the full wait for nothing.
+_JUDGE_SECONDS: dict[str, float] = {}
+
+
+def _judge_wait(model: str) -> float:
+    took = _JUDGE_SECONDS.get(model)
+    if took is not None and took > config.SEARCH_JUDGE_WAIT_S:
+        return 0.0
+    return config.SEARCH_JUDGE_WAIT_S
+
+
+def _judge_took(model: str, seconds: float) -> None:
+    before = _JUDGE_SECONDS.get(model)
+    _JUDGE_SECONDS[model] = seconds if before is None else 0.6 * before + 0.4 * seconds
+
 
 def _judge_in_time(query: str, gray: list[dict]) -> tuple[set[str], frozenset[str]]:
     """The judge's verdict on the gray zone, waited for `SEARCH_JUDGE_WAIT_S` at most.
@@ -97,18 +117,28 @@ def _judge_in_time(query: str, gray: list[dict]) -> tuple[set[str], frozenset[st
     if not _JUDGES.acquire(blocking=False):
         return _cached_verdicts(query, gray)
     box: dict = {}
+    try:
+        model = get_provider(role="search").model
+    except Exception:  # noqa: BLE001 - fail-open is the contract
+        model = ""
 
     def run() -> None:
+        started = time.monotonic()
         try:
             _UNJUDGED.set(frozenset())
             box["kept"] = judge_gray_zone(query, gray)
             box["unjudged"] = _UNJUDGED.get()
         finally:
+            # Only a call that went to the model says how fast the model is: one
+            # answered from the cache (milliseconds) would make a slow model look quick.
+            took = time.monotonic() - started
+            if took > 0.3:
+                _judge_took(model, took)
             _JUDGES.release()
 
     worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
     worker.start()
-    worker.join(config.SEARCH_JUDGE_WAIT_S)
+    worker.join(_judge_wait(model))
     if "unjudged" in box:
         return box["kept"], box["unjudged"]
     return _cached_verdicts(query, gray)

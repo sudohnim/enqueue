@@ -74,6 +74,15 @@
     max-width: 100%;
     overflow-x: hidden;
   }
+  /* The desktop's one ring (css/base.css). Without it the WebView draws its own
+     orange one on whatever a tap or the keyboard focused. */
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
   body {
     background: var(--bg);
     color: var(--text);
@@ -207,6 +216,32 @@
   .welcome-scan p {
     font-size: 14px;
     color: var(--text-mute);
+  }
+  .welcome-sample {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 28px 8px 8px;
+    text-align: center;
+  }
+  .welcome-sample p {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  .welcome-sample-btn {
+    width: 100%;
+    padding: 13px 24px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--hairline);
+    color: var(--accent);
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .welcome-sample-btn:disabled {
+    opacity: 0.6;
   }
   .welcome-scan-btn {
     width: 100%;
@@ -1896,6 +1931,11 @@
   .pill[hidden] {
     display: none;
   }
+  /* While the keyboard is up for a field on the page (the search), the pill would
+     sit on the keyboard over the results; it comes back when the field lets go. */
+  body.typing .pill {
+    display: none;
+  }
   .pill:focus-within {
     box-shadow:
       inset 0 0 0 1px rgb(255 255 255 / 0.7),
@@ -2829,6 +2869,12 @@
     <p>Enqueue needs the camera to scan the code.</p>
     <button id="retry_camera" class="welcome-scan-btn">Try again</button>
   </div>
+  <!-- No Mac at hand (or a Play reviewer): a made-up library on this phone only,
+       cleared the moment a real one is linked (mobile_sample_library). -->
+  <div id="setup_sample" class="welcome-sample">
+    <p>No Mac nearby?</p>
+    <button id="sample_btn" type="button" class="welcome-sample-btn">Try it with a sample library</button>
+  </div>
   <div id="status"></div>
 </section>
 
@@ -2861,6 +2907,10 @@
   <div id="loading" hidden>
     <span class="flybird" aria-hidden="true"><i></i><i></i><i></i></span>
     <span>Syncing&#8230;</span>
+  </div>
+  <div id="sample_banner" class="syncnote" role="status" hidden>
+    <span>Made-up sample. Link your Mac to see yours.</span>
+    <button id="sample_link" type="button">Link my Mac</button>
   </div>
   <div id="offline_banner" class="syncnote" role="status" hidden>
     <span id="offline_banner_text">You're offline. Changes sync later.</span>
@@ -3190,14 +3240,14 @@
     <h1>Settings</h1>
   </header>
   <div class="mset-body">
-    <span class="mset-managed">Managed by your desktop</span>
+    <span id="settings_managed" class="mset-managed" hidden>Managed by your Mac</span>
     <!-- Sync Section -->
     <div class="mset-group" data-guide-for="phone-sync">
       <h2 class="mset-title">Sync</h2>
       <div id="settings_sync_status" class="mset-sub"></div>
       <div class="mset-stack">
-        <button id="settings_sync_now" type="button" class="mset-primary">Sync Now</button>
-        <button id="settings_pair" type="button" class="mset-secondary">Re-link with QR</button>
+        <button id="settings_sync_now" type="button" class="mset-primary">Sync now</button>
+        <button id="settings_pair" type="button" class="mset-secondary">Link again</button>
       </div>
     </div>
 
@@ -3229,9 +3279,9 @@
 
     <!-- AI Section (read-only; the desktop is the source of truth) -->
     <div id="settings_ai" class="mset-group" data-guide-for="phone-ai">
-      <h2 class="mset-title">AI</h2>
+      <h2 class="mset-title">Assistant</h2>
       <dl id="settings_ai_rows" class="mset-rows"></dl>
-      <p class="mset-note">Managed on the desktop. Change the model or key there and it syncs here.</p>
+      <p id="settings_ai_note" class="mset-note">Set on your Mac. Change the model or key there and it comes here.</p>
     </div>
 
     <!-- Trash: deleted artifacts, restorable. Delete moves here; Restore brings it back. -->
@@ -4199,9 +4249,15 @@
     }
     // The floating pill is chrome for the library; on the crop-confirm and settings
     // screens it sits over the screen's own Save/Cancel controls, so hide it there.
+    // Before linking there is no library to capture into or ask, so setup has none.
     const pillEl = document.getElementById("pill");
     if (pillEl)
-      pillEl.hidden = id === "crop" || id === "settings" || id === "vault" || id === "drafts";
+      pillEl.hidden =
+        id === "setup" ||
+        id === "crop" ||
+        id === "settings" ||
+        id === "vault" ||
+        id === "drafts";
     // Sections are siblings in one scroll container, so switching from a
     // scrolled library would land the new section mid-page (Settings appeared
     // "at the bottom"). Reset scroll to the top on every switch.
@@ -4551,6 +4607,15 @@
     }
   }
 
+  // A note that opens with its own title as a heading would show it twice on its
+  // card (the title, then the same words as the excerpt's first line): drop that line.
+  function withoutTitleLine(body, title) {
+    const m = body.match(/^\s*#{1,6}\s+([^\n]+)\n*/);
+    if (m && m[1].trim().toLowerCase() === String(title || "").trim().toLowerCase())
+      return body.slice(m[0].length);
+    return body;
+  }
+
   function renderNoteCard(li, a) {
     li.className =
       "card card-note" + (a.status === "pending" ? " card-unsynced" : "");
@@ -4568,7 +4633,7 @@
 
     const excerpt = document.createElement("div");
     excerpt.className = "card-excerpt";
-    excerpt.textContent = mdText(a.body || "");
+    excerpt.textContent = mdText(withoutTitleLine(a.body || "", a.title));
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -6076,6 +6141,7 @@
           dek: payload.dek,
         }),
       });
+      setSampleMode(false);
       show("library");
       document.getElementById("loading").hidden = false;
       document.getElementById("shelves").replaceChildren();
@@ -6139,6 +6205,38 @@
 
   document.getElementById("scan_cancel").addEventListener("click", () => {
     invoke("plugin:barcode-scanner|cancel").catch(() => {});
+  });
+
+  // ---- the sample library ------------------------------------------------------
+  // For someone with no Mac at hand: made-up notes and links on this phone only. The
+  // banner says so and leads back to the scan, and linking clears the sample.
+  var sampleOn = false;
+  function setSampleMode(on) {
+    sampleOn = !!on;
+    const banner = document.getElementById("sample_banner");
+    if (banner) banner.hidden = !on;
+    const offer = document.getElementById("setup_sample");
+    if (offer) offer.hidden = !!on;
+  }
+  document.getElementById("sample_btn")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "Making it...";
+    try {
+      await invoke("mobile_sample_library");
+      setSampleMode(true);
+      show("library");
+      renderLibrary();
+    } catch (err) {
+      setStatus("Could not make the sample: " + errString(err), "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Try it with a sample library";
+    }
+  });
+  document.getElementById("sample_link")?.addEventListener("click", () => {
+    show("setup");
+    startCamera();
   });
 
   document.getElementById("retry_camera").addEventListener("click", () => {
@@ -6337,6 +6435,19 @@
   // The shell shrinks the WebView above the keyboard (MainActivity pads by the IME
   // inset), so the window resizes; the visual viewport covers a browser that overlays.
   window.addEventListener("resize", fitWriter);
+  // A page field (not the pill's own, not the writing page, which hides it itself)
+  // holding the keyboard puts the page in "typing": the pill steps aside.
+  const typingField = (el) =>
+    el &&
+    el.matches &&
+    el.matches("input:not([type=checkbox]):not([type=radio]), textarea") &&
+    !el.closest("#pill");
+  document.addEventListener("focusin", (e) => {
+    if (typingField(e.target)) document.body.classList.add("typing");
+  });
+  document.addEventListener("focusout", (e) => {
+    if (typingField(e.target)) document.body.classList.remove("typing");
+  });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitWriter);
     window.visualViewport.addEventListener("scroll", fitWriter);
@@ -7658,6 +7769,12 @@ startCamera();
 return;
           }
           show("library");
+          setSampleMode(!!r.sample);
+          if (r.sample) {
+            document.getElementById("loading").hidden = true;
+            renderLibrary();
+            return;
+          }
           document.getElementById("loading").hidden = false;
           document.getElementById("empty").hidden = true;
           // Local-first: paint the cached library immediately, never gate it on a
@@ -7722,7 +7839,7 @@ return;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "Sync Now";
+        btn.textContent = "Sync now";
       }
       // Hide offline banner on successful sync
       const banner = document.getElementById("offline_banner");
@@ -7751,7 +7868,7 @@ return;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "Sync Now";
+        btn.textContent = "Sync now";
       }
       const payload = e && e.payload ? e.payload : {};
       const err = payload.error || "unknown error";
@@ -8190,15 +8307,40 @@ return;
   function populateSettings(s) {
     // Mobile Settings reflects, never edits: the AI config lives on the desktop and
     // syncs down (MOB2.9). Show the sync status and the read-only AI config.
+    const managed = !!(s && s.managed_by_desktop);
+    const chip = document.getElementById("settings_managed");
+    if (chip) chip.hidden = !managed;
     updateSyncStatus();
     renderAiRows(s);
   }
 
+  // What Settings calls each backend; the ids are the Mac's.
+  const BACKEND_NAMES = {
+    enqueue: "Included with Enqueue",
+    openrouter: "OpenRouter",
+    "opencode-go": "OpenCode Go",
+    ollama: "Ollama on your Mac",
+  };
+
   function renderAiRows(s) {
     const dl = document.getElementById("settings_ai_rows");
     if (!dl || !s) return;
+    const note = document.getElementById("settings_ai_note");
+    // Until the Mac's settings arrive, the values here are only defaults: say where
+    // they will come from instead of showing a model this phone cannot reach.
+    if (!s.managed_by_desktop) {
+      dl.replaceChildren();
+      dl.style.display = "none";
+      if (note)
+        note.textContent = sampleOn
+          ? "Comes from your Mac once it's linked. The sample library cannot ask questions."
+          : "Comes from your Mac once it has synced.";
+      return;
+    }
+    dl.style.display = "";
+    if (note) note.textContent = "Set on your Mac. Change the model or key there and it comes here.";
     const rows = [
-      ["Backend", s.llm_backend || "-"],
+      ["Service", BACKEND_NAMES[s.llm_backend] || s.llm_backend || "-"],
       ["Model", s.llm_model || "-"],
       ["API key", s.llm_api_key_present ? "Set" : "Not set"],
     ];
@@ -8217,6 +8359,17 @@ return;
 
   function updateSyncStatus() {
     const el = document.getElementById("settings_sync_status");
+    const now = document.getElementById("settings_sync_now");
+    const pair = document.getElementById("settings_pair");
+    if (now) now.hidden = sampleOn;
+    if (pair) {
+      pair.textContent = sampleOn ? "Link my Mac" : "Link again";
+      pair.className = sampleOn ? "mset-primary" : "mset-secondary";
+    }
+    if (sampleOn) {
+      el.textContent = "This is a sample library, on this phone only. Link your Mac to see your own.";
+      return;
+    }
     if (!settingsCache) {
       el.textContent = "Not configured";
       return;
@@ -8298,7 +8451,7 @@ return;
     document.getElementById("loading").hidden = false;
     invoke("mobile_sync", { config: "{}" }).catch(() => {
       btn.disabled = false;
-      btn.textContent = "Sync Now";
+      btn.textContent = "Sync now";
       document.getElementById("loading").hidden = true;
     });
   });
@@ -8453,6 +8606,25 @@ return;
       return;
     }
     container.replaceChildren();
+    // The sample library has no assistant (it comes from the Mac): say so plainly
+    // rather than offer a conversation that can only fail.
+    if (sampleOn) {
+      const note = document.createElement("div");
+      note.style.cssText =
+        "color: var(--text-mute); text-align: center; padding: 40px 20px; font-size: 14px; line-height: 1.5;";
+      note.textContent =
+        "Asking needs your Mac's assistant, so the sample library can't answer. Link your Mac and ask away.";
+      const link = document.createElement("button");
+      link.className = "mset-primary";
+      link.style.cssText = "display: block; margin: 0 auto; max-width: 260px; width: 100%;";
+      link.textContent = "Link my Mac";
+      link.onclick = () => {
+        show("setup");
+        startCamera();
+      };
+      container.append(note, link);
+      return;
+    }
     // A New-conversation action sits at the top of the list, always available.
     const newBtn = document.createElement("button");
     newBtn.style.cssText =
@@ -8468,7 +8640,7 @@ return;
       empty.style.cssText =
         "color: var(--text-mute); text-align: center; padding: 40px 20px; font-size: 14px; line-height: 1.5;";
       empty.textContent =
-        "No conversations yet. Start one here or on desktop - it syncs both ways.";
+        "No conversations yet. Start one here or on your Mac; they show up on both.";
       container.appendChild(empty);
       return;
     }
@@ -8730,10 +8902,14 @@ return;
     head.innerHTML =
       '<span style="font-weight: var(--w-strong);color:' +
       mobileKindColor(e.kind) +
-      ';min-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-      escapeHtml(e.kind || "") +
-      '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-      escapeHtml(e.detail || "") +
+      ';min-width:104px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      escapeHtml(
+        e.kind === "capture.note" && /^link:/i.test(e.detail || "")
+          ? "Saved a link"
+          : mobileEventLabel(e.kind),
+      ) +
+      '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim)">' +
+      escapeHtml(mobileEventDetail(e.detail)) +
       "</span>" +
       dur +
       '<span style="color:var(--text-mute);font-variant-numeric:tabular-nums">' +
@@ -8765,10 +8941,39 @@ return;
 
   function mobileKindColor(kind) {
     const f = String(kind || "").split(".")[0];
-    if (f === "capture") return "#0a7d4a";
-    if (f === "facet") return "#b25a00";
-    if (f === "sync") return "#6a6d7e";
-    return "var(--purple-bold)";
+    if (f === "ask") return "var(--purple-bold)";
+    if (f === "sync") return "var(--text-mute)";
+    return "var(--text)";
+  }
+
+  // What the Activity rows call each event (the desktop's words, settings.js).
+  const MOBILE_EVENT_LABELS = {
+    "ask.submitted": "Asked",
+    "ask.answered": "Answered",
+    "ask.failed": "Couldn't answer",
+    "capture.note": "Saved a note",
+    "capture.link": "Saved a link",
+    "capture.image": "Saved a photo",
+    "capture.file": "Saved a file",
+    "facet.regenerated": "Summarized",
+    "facet.edited": "Summary edited",
+    "facet.deleted": "Summary edited",
+    "sync.pull": "Synced",
+    "sync.push": "Sent",
+    "sync.error": "Sync failed",
+    start: "Started",
+  };
+  function mobileEventLabel(kind) {
+    const k = String(kind || "");
+    if (MOBILE_EVENT_LABELS[k]) return MOBILE_EVENT_LABELS[k];
+    const words = k.replace(/[._]/g, " ").trim();
+    return words ? words[0].toUpperCase() + words.slice(1) : "";
+  }
+  // "note: # Lisbon, four days" reads as "Lisbon, four days" next to "Saved a note".
+  function mobileEventDetail(detail) {
+    return String(detail || "")
+      .replace(/^(note|link|image|photo|file|pdf):\s*/i, "")
+      .replace(/^#+\s*/, "");
   }
 
   function mobileEventBody(e) {

@@ -475,8 +475,9 @@ def relay_admin_revoke(
     library: str = typer.Argument(..., help="The library id (the first characters will do)."),
     url: str = _URL,
     admin_secret: str = _ADMIN,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask first."),
 ) -> None:
-    """Refuse a library's secret from now on. Its encrypted objects stay until removed."""
+    """Refuse a library's secret from now on and delete everything it holds (for good)."""
     ids = [
         lib["id"]
         for lib in _admin("GET", "/admin/libraries", url, admin_secret).json()["libraries"]
@@ -484,6 +485,10 @@ def relay_admin_revoke(
     ]
     if len(ids) != 1:
         typer.secho(f"{len(ids)} libraries match {library!r}; give more of the id", err=True)
+        raise typer.Exit(1)
+    if not yes and not typer.confirm(
+        f"Revoke {ids[0][:12]} and delete every object it holds? This cannot be undone."
+    ):
         raise typer.Exit(1)
     _admin("DELETE", f"/admin/libraries/{ids[0]}", url, admin_secret)
     typer.secho(f"revoked {ids[0][:12]}", fg=typer.colors.GREEN)

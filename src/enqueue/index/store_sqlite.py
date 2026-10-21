@@ -608,6 +608,42 @@ class SqliteVecStore(VectorStore):
                 self._index_layer_artifact(name, aid)
         return {name: len(ids) for name, ids in missing.items()}
 
+    # The keyword tables, merged by `compact`.
+    _FTS_TABLES = ("fts_chunks", "fts_chunks_tri", "fts_facets", "fts_entities", "fts_sections")
+
+    def compact(self) -> dict[str, float]:
+        """Merge each keyword table's segments, then give the space back to the disk.
+
+        FTS5 deletes by writing a tombstone into a new segment; the old entry stays until
+        segments are merged. Every re-index of an item (an edit, a retry, a reprocess)
+        added more, and nothing merged them: one library of 360 items held a 128 MB
+        trigram index over 0.8 MB of text, and the file was 210 MB where 41 MB would do.
+        `optimize` merges everything into one segment (about 3 s for that library); the
+        file is then rewritten (`VACUUM`) only when a quarter of it is free space, since
+        that copies the whole file.
+        """
+        out: dict[str, float] = {}
+        with self._open() as conn:
+            before = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            for table in self._FTS_TABLES:
+                try:
+                    conn.execute(f"INSERT INTO {table}({table}) VALUES('optimize')")
+                except sqlite3.OperationalError:
+                    pass  # a table an older index never made
+        conn = self._connect()
+        try:
+            size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+            pages = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            free = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+            if pages and free / pages > 0.25:
+                conn.execute("VACUUM")
+                pages = int(conn.execute("PRAGMA page_count").fetchone()[0])
+        finally:
+            conn.close()
+        out["before_mb"] = round(before * size / 1e6, 1)
+        out["after_mb"] = round(pages * size / 1e6, 1)
+        return out
+
     def prune_orphans(self) -> dict[str, int]:
         """Remove index rows whose chunk, facet, entity or section no longer exists, or
         belongs to an artifact that is not live.

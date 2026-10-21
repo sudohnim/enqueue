@@ -458,7 +458,7 @@ class Accounts:
             ).scalar_one()
 
     def delete_account(self, account_id: str) -> None:
-        """End every session and device, refuse the library from now on."""
+        """End every session and device, refuse the library and delete what it holds."""
         account = self.get_account(account_id)
         if account is None:
             return
@@ -793,8 +793,17 @@ class Accounts:
         if replaced:
             self._forget_devices()
         library = row[2] if row is not None else None
+        # Only a token that opens something is remembered: caching refusals let anyone
+        # grow this map without end by sending made-up tokens. Old entries go when it
+        # is large.
         with self._cache_lock:
-            self._device_cache[key] = (now, library)
+            if len(self._device_cache) > 4096:
+                for old in [k for k, v in self._device_cache.items() if now - v[0] > 15]:
+                    del self._device_cache[old]
+            if library is not None:
+                self._device_cache[key] = (now, library)
+            else:
+                self._device_cache.pop(key, None)
         return library
 
     def _replace_phones(self, conn, account_id: str, new_id: str, pro_until, now: float) -> bool:
@@ -1010,6 +1019,11 @@ class _Limiter:
         )
         now = time.time()
         with self.lock:
+            # Every address that ever signed in stayed in the map, on a relay anyone can
+            # reach: drop the ones idle for a minute whenever the map grows.
+            if len(self.hits) > 1024:
+                for old in [k for k, v in self.hits.items() if not v or now - v[-1] > 60]:
+                    del self.hits[old]
             q = self.hits[ip]
             while q and now - q[0] > 60:
                 q.popleft()

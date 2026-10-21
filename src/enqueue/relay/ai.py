@@ -68,6 +68,9 @@ class _Burst:
     def allow(self, key: str) -> bool:
         now = time.time()
         with self.lock:
+            if len(self.hits) > 1024:
+                for old in [k for k, v in self.hits.items() if not v or now - v[-1] > 60]:
+                    del self.hits[old]
             q = self.hits[key]
             while q and now - q[0] > 60:
                 q.popleft()

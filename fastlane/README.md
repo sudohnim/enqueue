@@ -32,8 +32,11 @@ xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572
 | --- | --- |
 | `bundle exec fastlane android dev` (`bin/deploy android dev`) | signed `.aab` with a fresh versionCode, released to the internal testing track (completed, so testers get it) |
 | `bundle exec fastlane android prod` (`bin/deploy android prod`) | the same, released to production; `ANDROID_PROD_ROLLOUT=0.1` makes it a staged rollout to 10% |
+| `bundle exec fastlane android listing` (`bin/deploy android listing`) | uploads the store text, icon, feature graphic and screenshots in `fastlane/metadata/android`; needs the service account's Manage store presence permission |
 | `bundle exec fastlane android next_code` | prints the versionCode the next upload would use; reads Play, changes nothing |
 | `bundle exec fastlane mac release` (`bin/deploy desktop`) | Developer ID signed, notarized and stapled `.dmg` (outside the App Store; nothing is uploaded) |
+
+The first production release of a new app can only be a draft (Play: "Only releases with status draft may be created on draft app"): the `prod` lane then uploads it as a draft and says to press **Send for review** in Play Console's Publishing overview. Every release after the first goes out on its own.
 
 The Mac lane takes `APPLE_SIGNING_IDENTITY` and `NOTARY_PROFILE` when set, else `Developer ID Application: Sudohnim, LLC (572NMYL3ZG)` and `enqueue-notary`.
 The `.dmg` lands in `desktop/target/release/bundle/dmg/`.

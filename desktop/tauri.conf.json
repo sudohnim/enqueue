@@ -110,6 +110,7 @@
             "allow-mobile-events",
             "allow-mobile-settings-ask",
             "allow-mobile-plan",
+            "allow-mobile-sample-library",
             "allow-mobile-drafts",
             "allow-mobile-draft-restore",
             "allow-mobile-drafts-keep",

@@ -30,12 +30,19 @@ function teardown() {
 	pivotState = null;
 	// A note's drafts list and comparison belong to that note (js/drafts.js).
 	draftsState = null;
+	// A note's formatting bar listens on the window and document (js/artifact.js).
+	if (window.stopEdbars) window.stopEdbars();
 
-	// A poller watching this chat's pending turns dies with the surface: a stale
-	// timer must never re-render a view the person has left.
-	stopPolling();
+	// The open conversation lives in the eye panel, which floats over every page and
+	// is not one of them: leaving or redrawing a page (the wall refreshing itself when
+	// the window comes back to the front) must not take it. Doing so stopped the poller
+	// and left the panel on "Loading..." until the person navigated away and back.
+	// closeEye() is what ends it.
+	if (!eyeOpen) {
+		stopPolling();
+		chat = null;
+	}
 	ctx = null;
-	chat = null;
 	organizeTurns = {};
 	// Unsaved settings edits are staging on a form, not a decision. Leaving the form
 	// drops them, so stale values never follow the user between screens.

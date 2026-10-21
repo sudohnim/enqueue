@@ -27,7 +27,9 @@ import hmac
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from .storage import LibraryFull, RelayStorage, library_id
+from . import blobs as _blobs
+from .blobs import BlobStoreError
+from .storage import LibraryFull, LibraryRevoked, RelayStorage, library_id
 
 # The largest object a device may store (a PDF, a photo): 100 MiB unless set.
 MAX_OBJECT_BYTES = int(os.getenv("RELAY_MAX_OBJECT_BYTES", str(100 * 1024 * 1024)))
@@ -117,6 +119,7 @@ def create_relay(
     quota_bytes: int | None = None,
     account_settings=None,
     ai_client=None,
+    blob_store=None,
 ) -> FastAPI:
     """Build the relay app. Every argument defaults to its env override.
 
@@ -125,6 +128,8 @@ def create_relay(
     move into it. `admin_secret` turns on the routes that make and revoke libraries.
     `account_settings` (relay/accounts.py; from DATABASE_URL by default) turns on
     sign-in and device tokens: the hosted relay. A self-hosted one has neither.
+    `blob_store` is where object bytes go (relay/blobs.py; R2 from the R2_* variables
+    by default); without one they stay in the relay's SQLite file.
     Injectable so tests can point the store at a temp dir and known secrets without
     touching process-global env state.
     """
@@ -136,7 +141,11 @@ def create_relay(
         data_dir or Path(os.getenv("RELAY_DATA_DIR", "./relay-data")),
         legacy_library=library_id(the_secret),
         default_quota=DEFAULT_QUOTA_BYTES if quota_bytes is None else quota_bytes,
+        blobs=blob_store if blob_store is not None else _blobs.from_env(),
     )
+    # Finish interrupted purges and move bytes still in the file into R2, behind the
+    # requests: the relay answers from the file for any object not moved yet.
+    storage.start_upkeep()
     hub = RelayHub()
 
     from .accounts import AccountSettings, Accounts
@@ -192,6 +201,14 @@ def create_relay(
             chunks.append(chunk)
         return b"".join(chunks)
 
+    @app.exception_handler(BlobStoreError)
+    async def _blob_store_down(request: Request, exc: BlobStoreError):
+        # R2 unreachable or refusing: nothing changed, the device tries again later.
+        logging.getLogger("enqueue.relay").warning(
+            "%s %s: %s", request.method, request.url.path, exc
+        )
+        return Response(status_code=503, content="storage unavailable, try again")
+
     @app.get("/health")
     def health() -> dict:
         # Unauthenticated liveness probe for the deploy script and Railway. It
@@ -216,9 +233,13 @@ def create_relay(
         # takes a fresh cursor so the change feed re-surfaces the updated object.
         data = await _body(request)
         try:
-            cursor, size = storage.put(library, name, data)
+            # Off the event loop: with R2 this is an upload, and the change streams
+            # share the loop.
+            cursor, size = await asyncio.to_thread(storage.put, library, name, data)
         except LibraryFull as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except LibraryRevoked as exc:
+            raise HTTPException(status_code=401, detail="bad secret") from exc
         hub.publish({"name": name, "cursor": cursor}, library)
         return {"name": name, "size": size}
 
@@ -252,6 +273,7 @@ def create_relay(
 
     @app.delete("/admin/libraries/{lid}", status_code=204)
     def revoke_library(lid: str, _: None = Depends(_require_admin)):
+        # Refuses its secret and deletes everything it holds, for good.
         if not storage.revoke_library(lid):
             raise HTTPException(status_code=404, detail="no such library")
         return Response(status_code=204)

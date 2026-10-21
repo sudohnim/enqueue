@@ -1,0 +1,25 @@
+# Sourced (not run) by bin/launch and bin/release: the Android toolchain every build uses.
+# Respects anything already exported; falls back to Android Studio's standard locations.
+# bin/verify sets the same variables in Python (check_android_compile).
+
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+if [[ -z "${NDK_HOME:-}" ]]; then
+  NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
+fi
+export NDK_HOME
+
+# SQLCipher's vendored OpenSSL (openssl-src) archives with `<triple>-ar`/`-ranlib`, which
+# NDK r23+ no longer ships: point it at the NDK's llvm tools, or any clean build (debug or
+# release) fails with "aarch64-linux-android-ranlib: command not found".
+case "$(uname -s)" in
+  Darwin) _ndk_host=darwin-x86_64 ;;
+  *) _ndk_host=linux-x86_64 ;;
+esac
+_ndk_bin="$NDK_HOME/toolchains/llvm/prebuilt/$_ndk_host/bin"
+export AR_aarch64_linux_android="$_ndk_bin/llvm-ar"
+export RANLIB_aarch64_linux_android="$_ndk_bin/llvm-ranlib"
+export AR_x86_64_linux_android="$_ndk_bin/llvm-ar"
+export RANLIB_x86_64_linux_android="$_ndk_bin/llvm-ranlib"
+export PATH="$_ndk_bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+unset _ndk_host _ndk_bin

@@ -6,6 +6,7 @@
 #   bin/deploy android prod    Play production (asks first; -y skips the question;
 #                              ANDROID_PROD_ROLLOUT=0.1 for a staged rollout)
 #   bin/deploy android code    print the versionCode the next upload would use
+#   bin/deploy android listing upload the store text, icon, feature graphic and screenshots
 #   bin/deploy desktop         the Developer ID signed, notarized .dmg (no store)
 set -euo pipefail
 
@@ -22,7 +23,7 @@ PLATFORM="${args[0]:-}"
 ENVIRONMENT="${args[1]:-}"
 
 usage() {
-  echo "usage: bin/deploy android <dev|prod|code> [-y]" >&2
+  echo "usage: bin/deploy android <dev|prod|code|listing> [-y]" >&2
   echo "       bin/deploy desktop" >&2
   exit 2
 }
@@ -33,6 +34,7 @@ case "$PLATFORM" in
       dev) LANE=(android dev) ;;
       prod) LANE=(android prod) ;;
       code) LANE=(android next_code) ;;
+      listing) LANE=(android listing) ;;
       *) usage ;;
     esac
     ;;

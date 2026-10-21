@@ -367,9 +367,22 @@
     }
   }
 
+  // The window and document listeners a note's formatting bar adds, ended together
+  // when the page is left (teardown -> stopEdbars). They used to remove themselves
+  // only when their event next fired after the note was gone, so each note opened
+  // and left without a resize kept its editor alive (one more per note opened).
+  let edbarListeners = new AbortController();
+
+  function stopEdbars() {
+    edbarListeners.abort();
+    edbarListeners = new AbortController();
+  }
+  window.stopEdbars = stopEdbars;
+
   function mountEdbar(ed) {
     const bar = ed.parentElement && ed.parentElement.querySelector(".edbar");
     if (!bar) return;
+    const signal = edbarListeners.signal;
     // A press on the bar must not take the selection out of the note.
     bar.addEventListener("mousedown", (e) => e.preventDefault());
     bar.addEventListener("click", (e) => {
@@ -382,7 +395,7 @@
       if (ed.isConnected) syncEdbar(ed);
       else document.removeEventListener("selectionchange", sync);
     };
-    document.addEventListener("selectionchange", sync);
+    document.addEventListener("selectionchange", sync, { signal });
     syncEdbar(ed);
     // The sheet stops above the pill: it is as tall as the window allows from where
     // it starts, and the note scrolls inside it (css/artifact.css .notesheet).
@@ -396,7 +409,7 @@
     };
     if (pane) {
       fit();
-      window.addEventListener("resize", fit);
+      window.addEventListener("resize", fit, { signal });
     }
   }
 

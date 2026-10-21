@@ -884,6 +884,47 @@ def _entities_artifact(artifact_id: str) -> int:
     return count
 
 
+COMPACT_EVERY_S = 24 * 3600
+
+
+def compact_index_if_due() -> dict | None:
+    """Merge the keyword index and reclaim the file's free space, at most once a day
+    (index/store_sqlite.py `compact`). Runs on the ingest worker's thread between two
+    items, so it never fights an ingest for SQLite's one writer; the stamp is kept in
+    `index_meta`."""
+    import time as _time
+
+    from .. import db, events
+    from ..index.store import get_store
+
+    with db.transaction() as conn:
+        row = conn.execute("SELECT value FROM index_meta WHERE key = 'compacted_at'").fetchone()
+    try:
+        last = float(row[0]) if row else 0.0
+    except (TypeError, ValueError):
+        last = 0.0
+    if _time.time() - last < COMPACT_EVERY_S:
+        return None
+
+    def run() -> dict:
+        result = get_store().compact()
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO index_meta (key, value) VALUES ('compacted_at', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(_time.time()),),
+            )
+        if result.get("before_mb", 0) - result.get("after_mb", 0) >= 1:
+            events.emit(
+                "index.compacted",
+                f"search index compacted: {result['before_mb']} MB to {result['after_mb']} MB",
+                result,
+            )
+        return result
+
+    return _ingest.run_exclusive(run, wait=True, timeout=600)
+
+
 def prune_index() -> None:
     """Bring the index back in line with the tables: whenever the queue drains, and once
     at engine startup.

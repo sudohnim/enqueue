@@ -161,12 +161,7 @@ launch_desktop() {
 launch_mobile() {
   # Android toolchain env. Respect anything already exported; fall back to the standard
   # Android Studio locations. NDK_HOME picks the newest installed NDK unless set.
-  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
-  if [[ -z "${NDK_HOME:-}" ]]; then
-    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
-  fi
-  export NDK_HOME
+  source "$(dirname "${BASH_SOURCE[0]}")/android-env"
   export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
   local ADB="$ANDROID_HOME/platform-tools/adb"
@@ -230,12 +225,7 @@ launch_mobile() {
 
 launch_emulator() {
   # Android toolchain env - same as launch_mobile
-  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
-  if [[ -z "${NDK_HOME:-}" ]]; then
-    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
-  fi
-  export NDK_HOME
+  source "$(dirname "${BASH_SOURCE[0]}")/android-env"
   export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
   local ADB="$ANDROID_HOME/platform-tools/adb"

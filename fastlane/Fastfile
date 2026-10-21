@@ -112,17 +112,18 @@ def build_aab(version_code)
   UI.user_error!("Built versionCode #{built}, expected #{version_code}; not uploading.")
 end
 
-def upload_play(track)
+def upload_play(track, status = nil)
   # ANDROID_PROD_ROLLOUT (e.g. 0.1 = 10%) makes a production release a staged rollout,
   # which Play calls inProgress; without it the release goes to everyone at once.
   rollout = ENV["ANDROID_PROD_ROLLOUT"].to_s.strip
   staged = track == "production" && !rollout.empty? && rollout.to_f < 1.0
+  status ||= staged ? "inProgress" : "completed"
   supply(
     package_name: ANDROID_PACKAGE,
     json_key: PLAY_KEY,
     track: track,
-    release_status: staged ? "inProgress" : "completed",
-    rollout: (rollout if staged),
+    release_status: status,
+    rollout: (rollout if staged && status != "draft"),
     aab: AAB,
     # R8 is on for release (proguard-rules.pro), so Play needs the map to read crashes.
     mapping: (MAPPING if File.exist?(MAPPING)),
@@ -131,6 +132,18 @@ def upload_play(track)
     skip_upload_changelogs: true,
     skip_upload_images: true,
     skip_upload_screenshots: true,
+  )
+rescue StandardError => e
+  # Until an app's first release is published, Play accepts releases as drafts only
+  # ("Only releases with status draft may be created on draft app"). Leave it as a
+  # draft and say where the person sends it for review, once, by hand.
+  raise unless status != "draft" && e.message.include?("draft app")
+
+  UI.important("Play takes only drafts until this app's first release is published.")
+  upload_play(track, "draft")
+  UI.success(
+    "Uploaded as a draft on #{track}. In Play Console, open Publishing overview " \
+    "and press Send for review (the first release only; later ones go out on their own).",
   )
 end
 
@@ -148,6 +161,25 @@ platform :android do
     assert_play_key
     build_aab(next_android_version_code)
     upload_play("production")
+  end
+
+  desc "Upload the store listing (fastlane/metadata/android: text, icon, feature graphic, " \
+       "phone screenshots). No build, no release; Play shows it once the app is published"
+  lane :listing do
+    assert_play_key
+    supply(
+      package_name: ANDROID_PACKAGE,
+      json_key: PLAY_KEY,
+      metadata_path: File.join(REPO, "fastlane", "metadata", "android"),
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_changelogs: true,
+      sync_image_upload: true,
+      # Without a bundle, supply still looks up a release to attach release notes to;
+      # point it at the newest code Play holds.
+      track: "internal",
+      version_code: play_version_codes.max,
+    )
   end
 
   desc "Print the versionCode the next upload would use (reads Play, changes nothing)"

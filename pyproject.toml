@@ -34,7 +34,8 @@ index = ["fastembed>=0.4"]
 browser = ["crawl4ai>=0.9.4"]
 # The hosted relay's accounts (relay/accounts.py): verifying Google and Apple sign-in
 # tokens, and Postgres. Only the relay's container installs it; the Mac app does not.
-hosted = ["pyjwt[crypto]>=2.9", "psycopg[binary]>=3.2"]
+# boto3: the object bytes in Cloudflare R2 (relay/blobs.py), on when R2_* is set.
+hosted = ["pyjwt[crypto]>=2.9", "psycopg[binary]>=3.2", "boto3>=1.35"]
 
 [project.scripts]
 enq = "enqueue.cli:app"
@@ -49,6 +50,8 @@ dev = [
     "pytest>=8.0",
     "pytest-xdist>=3.6",
     "ruff>=0.15,<0.16",
+    "boto3>=1.35",
+    "moto[s3]>=5.0",
 ]
 
 [build-system]

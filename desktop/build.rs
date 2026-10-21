@@ -102,6 +102,7 @@ fn main() {
                 "mobile_events",
                 "mobile_settings_ask",
                 "mobile_plan",
+                "mobile_sample_library",
                 "mobile_drafts",
                 "mobile_draft_restore",
                 "mobile_drafts_keep",

@@ -27,9 +27,12 @@ than not offering it.
 
 from __future__ import annotations
 
+import functools
 import shutil
 import subprocess
 import sys
+import threading
+import time
 
 # The provider API key (LLM backends), the per-library sync secret, and the
 # raw DEK for sync (QR.1) are three different Keychain entries under one account.
@@ -43,14 +46,47 @@ ACCOUNT = "enqueue"
 _SECURITY = "/usr/bin/security"
 
 
+@functools.lru_cache(maxsize=1)
 def available() -> bool:
     """Whether there is a real secret store to write to."""
     return sys.platform == "darwin" and bool(shutil.which(_SECURITY))
 
 
+# What the Keychain answered, per entry, remembered in this process. Reading it is a
+# `security` subprocess (about 30 ms), and the library key alone was read on every
+# database connection: 15 times in one search, 470 ms of its 627. Enqueue's own writes
+# and deletes go through `_set`/`_clear`, which update the cache, so a key changed in
+# Settings applies at once; a change made outside Enqueue (Keychain Access) shows
+# within the cache's lifetime. A miss is remembered for less, since a missing key is
+# usually about to be added.
+_CACHE: dict[str, tuple[float, str | None]] = {}
+_CACHE_LOCK = threading.Lock()
+_HIT_TTL_S = 300.0
+_MISS_TTL_S = 30.0
+
+
 def _get(service: str) -> str | None:
     if not available():
         return None
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        hit = _CACHE.get(service)
+    if hit is not None:
+        at, value = hit
+        if now - at < (_HIT_TTL_S if value is not None else _MISS_TTL_S):
+            return value
+    value = _read(service)
+    with _CACHE_LOCK:
+        _CACHE[service] = (now, value)
+    return value
+
+
+def _forget(service: str) -> None:
+    with _CACHE_LOCK:
+        _CACHE.pop(service, None)
+
+
+def _read(service: str) -> str | None:
     try:
         done = subprocess.run(
             [_SECURITY, "find-generic-password", "-a", ACCOUNT, "-s", service, "-w"],
@@ -103,7 +139,8 @@ def _set(service: str, secret: str, noun: str = "key") -> None:
         raise RuntimeError(done.stderr.strip() or f"the keychain refused to store the {noun}")
 
     # `security -i` reports per-command failures on stderr while still exiting 0, so
-    # the only trustworthy confirmation is reading it back.
+    # the only trustworthy confirmation is reading it back, from the Keychain itself.
+    _forget(service)
     if _get(service) != secret:
         raise RuntimeError(f"the {noun} did not store correctly")
 
@@ -111,12 +148,14 @@ def _set(service: str, secret: str, noun: str = "key") -> None:
 def _clear(service: str) -> bool:
     if not available():
         return False
+    _forget(service)
     done = subprocess.run(
         [_SECURITY, "delete-generic-password", "-a", ACCOUNT, "-s", service],
         capture_output=True,
         text=True,
         timeout=10,
     )
+    _forget(service)
     return done.returncode == 0
 
 
