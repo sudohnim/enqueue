@@ -283,7 +283,8 @@ async function renderSettingsAI() {
 		'<select id="s_backend"' +
 		(chosen.locked ? " disabled" : "") +
 		' onchange="stageBackend(this.value)">' +
-		d.backends
+		[...d.backends]
+			.sort((a, b) => (b.included ? 1 : 0) - (a.included ? 1 : 0))
 			.map(
 				(b) =>
 					'<option value="' +
@@ -296,7 +297,15 @@ async function renderSettingsAI() {
 			)
 			.join("") +
 		"</select>" +
-		(picked && !picked.local
+		(picked && picked.included
+			? '<div class="aside">' +
+				(picked.signed_in
+					? "Comes with Enqueue sync, no key needed. When you ask something, the notes it needs " +
+						"pass through Enqueue to the model and are not kept. Anything you marked as only on " +
+						"this Mac stays here."
+					: "<b>Sign in under Sync first.</b> It comes with Enqueue sync, no key needed.") +
+				"</div>"
+			: picked && !picked.local
 			? '<div class="aside caution">Online: when you ask something, the notes it needs are sent to ' +
 				esc(picked.label) +
 				". Anything you marked as only on this Mac stays here." +
@@ -314,7 +323,9 @@ async function renderSettingsAI() {
 	}
 	const keyed = d.storage.api_key_present;
 	html +=
-		'<div class="field"><label for="s_key">Your key for the online assistant</label>' +
+		'<div class="field"' +
+		(picked && picked.included ? " hidden" : "") +
+		'><label for="s_key">Your key for the online assistant</label>' +
 		(d.storage.api_key_editable
 			? '<div class="keyrow">' +
 				'<input id="s_key" type="password" autocomplete="off" spellcheck="false" ' +
@@ -487,7 +498,69 @@ const MODEL_ROLES = [
 	["vision_model", "Describes photos so search can find them. It has to be one that can look at pictures"],
 ];
 
+// The included assistant offers a fixed list per plan (included_ai.py), so each job
+// is a dropdown: the plan's models, the Pro ones shown but not choosable on free.
+function includedModelsGroup(d, picked) {
+	const pro = picked.tier === "pro";
+	let html = '<div class="shelf">Which AI does each job</div><div class="group">';
+	if (!pro)
+		html +=
+			'<div class="aside">Free includes fast models. Enqueue Pro adds Claude Sonnet, GPT-6.1 Sol ' +
+			"and the other mid-level models, with a higher monthly allowance. Go Pro in Enqueue on " +
+			"your phone, under Settings.</div>";
+	for (const [name, job] of MODEL_ROLES) {
+		const f = d.settings[name];
+		if (!f) continue;
+		const vision = name === "vision_model";
+		const sameAsChat = name === "summarize_model" || name === "search_model";
+		const current = f.value || "";
+		const options = picked.models.filter((m) => !vision || m.vision);
+		const known = options.some((m) => m.id === current);
+		html +=
+			'<div class="field"><label for="s_' +
+			name +
+			'">' +
+			esc(SETTING_LABELS[name]) +
+			"</label>" +
+			'<select id="s_' +
+			name +
+			'"' +
+			(f.locked ? " disabled" : "") +
+			" onchange=\"stageSetting('" +
+			name +
+			"', this.value || null)\">" +
+			(sameAsChat
+				? '<option value=""' +
+					(current ? "" : " selected") +
+					">Same as answering</option>"
+				: "") +
+			(current && !known && !sameAsChat
+				? '<option value="' + esc(current) + '" selected disabled>' + esc(current) + " (not offered)</option>"
+				: "") +
+			options
+				.map(
+					(m) =>
+						'<option value="' +
+						esc(m.id) +
+						'"' +
+						(m.id === current ? " selected" : "") +
+						(m.allowed ? "" : " disabled") +
+						">" +
+						esc(m.label) +
+						(m.allowed ? "" : " · Pro") +
+						"</option>",
+				)
+				.join("") +
+			"</select>" +
+			'<div class="aside">' +
+			esc(job) +
+			".</div></div>";
+	}
+	return html + "</div>";
+}
+
 function modelsGroup(d, picked) {
+	if (picked && picked.included) return includedModelsGroup(d, picked);
 	const known = (picked && picked.chat_models && picked.chat_models.chat_completions) || [];
 	const unsupported = (picked && picked.chat_models && picked.chat_models.unsupported_shape) || [];
 	const chatModel = (d.settings.llm_model && d.settings.llm_model.value) || "";
@@ -527,6 +600,12 @@ function modelsGroup(d, picked) {
 async function stageBackend(name) {
 	stageSetting("llm_backend", name);
 	if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
+	if (name === "enqueue") {
+		// One model for every job to start with; the dropdowns change any of them.
+		stageSetting("summarize_model", null);
+		stageSetting("search_model", null);
+		stageSetting("vision_model", BACKEND_MODELS.enqueue);
+	}
 }
 
 async function saveSettings() {
@@ -1992,6 +2071,7 @@ async function confirmResetSync() {
 }
 
 const BACKEND_MODELS = {
+	enqueue: "anthropic/claude-haiku-5.5",
 	ollama: "llama3.1:8b",
 	openrouter: "google/gemini-3-flash",
 	"opencode-go": "kimi-k3",

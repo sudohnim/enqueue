@@ -78,7 +78,8 @@ The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own e
   Without a key, Enqueue includes AI: a small, cheap model with a small monthly cap on the free tier; Pro (about $4-6 a month) gets the choice of better models and higher caps. Pro is caps and usage, never a feature that free cannot touch.
   Enqueue sync is free for one Mac and one phone up to about 1 GB; Pro raises storage and devices.
   Built (2026-10-20): plans, purchase and enforcement for sync (see "Enqueue Pro" under Gotchas).
-  Still to build: an AI pass-through on the relay that adds Enqueue's key, meters per account (the first ingest of a whole library is the spike the cap must plan for) and keeps nothing (the privacy policy has to say notes pass through it, and local-only items still never leave the Mac); the phone's chat calling that pass-through with its device token when there is no key; model pickers that are a curated list per backend and tier, not free text; the Apple side of the purchase, with the iPhone app.
+  Built the same day: the included assistant (see "The assistant included with Enqueue" under Gotchas).
+  Still to build: curated model lists for the bring-your-own-key backends (OpenRouter is still a free-text field with suggestions); the Apple side of the purchase, with the iPhone app.
 - **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
 - **The wall shows the newest 120 items**; there is no paging past that.
 - **macOS only on the desktop** (AppKit calls, the Keychain).
@@ -1412,6 +1413,15 @@ The webhook sets `pro_until` from the event's own expiry, whatever the event is 
 **Enforcement is on the relay.** A device token carries its `kind` (computer or phone). A computer past the plan is refused at `POST /account/devices` with a 402 that says what to do. A phone never is: the new one replaces the least recently used once it first syncs (`_replace_phones`, in `library_for_device`), so a code shown and never scanned cuts nobody off. Storage is the library's own quota (`storage.set_quota`), set when the plan changes; going back to free removes nothing and only refuses new writes past the limit.
 RevenueCat: project "Enqueue" (`1abb2acc`), app "Enqueue (Play Store)", entitlement `pro`; the public SDK key is in `Billing.kt` (public by design). The Play service account is Dequeue's `revenuecat@sudohnim-play-billing`, which has account-wide Play Console access.
 `tests/test_relay_plans.py` pins all of it.
+
+### The assistant included with Enqueue (2026-10-20)
+
+A Mac or phone signed in to Enqueue sync can use an assistant with no key of its own: the `enqueue` backend ("Included with Enqueue", `config.BACKENDS`), an OpenAI-compatible endpoint on the relay at `/ai/v1` (`relay/ai.py`), reached with the device's own token.
+`included_ai.py` is the one list both sides read: the models, the plan each needs, whether it can read pictures, its price, and the monthly cap per plan (free $0.50, Pro $3.00 of model cost). Free: Claude Haiku 5.5, GPT-6 Luna, Gemini 3.1 Flash Lite. Pro adds Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 3.8 Flash, DeepSeek V4 Pro, Qwen 3.7 Plus. Opus, Fable and GPT-6 Astra are left out on purpose: one long chat would cost more than a month of Pro.
+The relay checks the device token (401), the model against the plan (403), and the month's spend against the cap (429 with a `Retry-After` to the start of next month, which the engine's usage-limit pause already obeys); then it calls OpenRouter with Enqueue's key (`OPENROUTER_API_KEY` on the Railway service), forcing `provider.data_collection: deny` and usage accounting, and adds what OpenRouter says the call cost to `ai_usage` (account, month, cost, requests, tokens). Nothing of a prompt or an answer is stored or logged. OpenRouter refusing Enqueue's own key or credit becomes a 503, so no device tells its owner their key was refused. Streaming is refused.
+On the Mac, `config.llm_api_key(base_url)` returns the device token for the included endpoint and the pasted key for everything else, so the pasted key never reaches the relay and the device token never reaches a third party; `push_settings` still sends the phone only the pasted key. The phone answers with its own token (`included_ai` in `desktop/src/lib.rs`).
+Settings shows the included backend first; its model pickers are dropdowns of the plan's models, Pro ones visible but not choosable on free (`includedModelsGroup` in `settings.js`). `setup.py` says when it needs a sign-in, when a chosen model needs Pro, and when a model is not one it offers. The welcome's Assistant step offers it first. Local-only items never take this path. `GET /account/plan` carries the month's use as `ai`.
+`tests/test_relay_ai.py` (with a fake OpenRouter), `tests/test_included_ai.py` and `tests/test_setup.py` pin it.
 
 ### The AI summary can be switched off for one artifact
 

@@ -185,9 +185,26 @@ def backends() -> list[dict]:
             "needs_key": bool(spec["key_var"]),
             "key_present": bool(spec["key_var"]) and bool(key) and key != "ollama",
             **({"chat_models": _go_chat_models(name)} if name == "opencode-go" else {}),
+            **(_included(spec) if spec.get("included") else {}),
         }
         for name, spec in config.BACKENDS.items()
     ]
+
+
+def _included(spec: dict) -> dict:
+    """The included assistant: whether this Mac can use it (signed in to Enqueue sync)
+    and the models its plan offers, as the relay last reported the plan. The relay is
+    what enforces both; this only shapes the pickers."""
+    from . import included_ai
+
+    tier = get("account_tier") or "free"
+    return {
+        "included": True,
+        "signed_in": bool(get("account_device_id")),
+        "tier": tier,
+        "models": included_ai.for_tier(tier),
+        "default_model": included_ai.DEFAULT_MODEL,
+    }
 
 
 def all_settings() -> dict:

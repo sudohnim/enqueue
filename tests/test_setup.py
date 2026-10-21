@@ -214,3 +214,39 @@ class TestTheOneModelCall:
         asked = client.post("/setup/ask", json={"question": "backups?", "guides": self.GUIDES})
         assert asked.status_code == 200 and asked.json()["guide"] == "backups"
         assert client.post("/setup/ask", json={"question": ""}).status_code == 422
+
+
+INCLUDED = {
+    "name": "enqueue",
+    "label": "Included with Enqueue",
+    "local": False,
+    "needs_key": False,
+    "included": True,
+    "signed_in": True,
+    "tier": "free",
+}
+
+
+class TestIncludedAssistant:
+    def test_it_is_connected_only_when_signed_in(self, world):
+        world["backend"] = INCLUDED | {"signed_in": False}
+        step = _step("model")
+        assert step["state"] == setup.TODO and "Sign in" in step["detail"]
+        world["backend"] = dict(INCLUDED)
+        assert _step("model")["state"] == setup.DONE
+
+    def test_a_pro_model_on_the_free_plan_is_said(self, world):
+        world["backend"] = dict(INCLUDED)
+        world["values"]["llm_model"] = "anthropic/claude-haiku-5.5"
+        world["values"]["vision_model"] = "anthropic/claude-haiku-5.5"
+        assert "model-needs-pro" not in _alerts()
+        world["values"]["llm_model"] = "anthropic/claude-sonnet-5.5"
+        assert "model-needs-pro" in _alerts()
+        world["backend"] = INCLUDED | {"tier": "pro"}
+        assert "model-needs-pro" not in _alerts()
+
+    def test_a_model_it_does_not_offer_is_said(self, world):
+        world["backend"] = dict(INCLUDED)
+        world["values"]["llm_model"] = "anthropic/claude-haiku-5.5"
+        world["values"]["vision_model"] = "llava"
+        assert "model-unknown" in _alerts()

@@ -190,15 +190,29 @@ const WELCOME_RENDER = {
 		const [d, setup] = await Promise.all([api("/settings"), api("/setup").catch(() => null)]);
 		const stand = ((setup && setup.steps) || []).find((x) => x.id === "model");
 		const chosen = d.settings.llm_backend.value;
-		const online = d.backends.filter((b) => !b.local);
+		const online = d.backends.filter((b) => !b.local && !b.included);
+		const included = d.backends.find((b) => b.included);
+		const isIncluded = !!included && chosen === included.name;
 		const pick = online.find((b) => b.name === chosen) || online[0];
 		const local = (d.backends.find((b) => b.local) || {}).name || "ollama";
-		const isLocal = !online.some((b) => b.name === chosen);
+		const isLocal = !online.some((b) => b.name === chosen) && !isIncluded;
 		return (
 			'<div class="shelf">Choose your assistant</div>' +
 			'<div class="group">' +
 			'<div class="aside">The assistant reads what you save, so you can find things by ' +
 			"what they're about and ask questions. Pick where it runs.</div>" +
+			(included
+				? '<div class="field"><span class="rowlabel">Included with Enqueue</span>' +
+					'<div class="aside">No key and nothing to install. Comes with Enqueue sync: free ' +
+					"covers fast models from Anthropic, OpenAI and Google, and Pro adds more. Notes " +
+					"pass through Enqueue to the model and are not kept.</div>" +
+					(isIncluded
+						? '<span class="welcome-chosen">Chosen</span>'
+						: included.signed_in
+							? '<button class="btn tertiary" onclick="welcomeUseIncluded()">Use this</button>'
+							: '<button class="btn tertiary" onclick="welcomeGo(2)">Sign in first</button>') +
+					"</div>"
+				: "") +
 			'<div class="field"><span class="rowlabel">On this Mac</span>' +
 			'<div class="aside">Private: nothing leaves your computer. Needs the free ' +
 			"<b>Ollama</b> app, from ollama.com.</div>" +
@@ -211,7 +225,7 @@ const WELCOME_RENDER = {
 			'<div class="field"><span class="rowlabel">An online service, with your own key</span>' +
 			'<div class="aside">Faster and smarter on most Macs. When you ask something, the ' +
 			"notes it needs are sent to the service you pick.</div>" +
-			(isLocal ? "" : '<span class="welcome-chosen">Chosen</span>') +
+			(isLocal || isIncluded ? "" : '<span class="welcome-chosen">Chosen</span>') +
 			"</div>" +
 			'<div class="field welcome-online"><label for="w_backend">Service</label>' +
 			'<select id="w_backend">' +
@@ -362,6 +376,22 @@ async function welcomeSettings(changes) {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ changes }),
 	});
+}
+
+async function welcomeUseIncluded() {
+	try {
+		await welcomeSettings({
+			llm_backend: "enqueue",
+			llm_model: BACKEND_MODELS.enqueue,
+			vision_model: BACKEND_MODELS.enqueue,
+			summarize_model: null,
+			search_model: null,
+		});
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	toast("The assistant included with Enqueue is on.");
+	renderWelcome();
 }
 
 async function welcomeUseLocal(name) {

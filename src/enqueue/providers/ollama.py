@@ -44,7 +44,7 @@ class OpenAICompatibleProvider:
         return instructor.from_openai(
             OpenAI(
                 base_url=self.base_url,
-                api_key=config.llm_api_key(),
+                api_key=config.llm_api_key(self.base_url),
                 default_headers=_extra_headers(),
             ),
             mode=mode,
@@ -144,7 +144,7 @@ class OpenAICompatibleProvider:
         data_url = f"data:{mime};base64,{base64.b64encode(image).decode('ascii')}"
         client = OpenAI(
             base_url=self.base_url,
-            api_key=config.llm_api_key(),
+            api_key=config.llm_api_key(self.base_url),
             default_headers=_extra_headers(),
         )
         content: list[ChatCompletionContentPartParam] = [

@@ -96,6 +96,10 @@ class AccountSettings:
     apple_bundle_id: str = "com.sudohnim.enqueue"
     apple_jwks_url: str = "https://appleid.apple.com/auth/keys"
     rate_limit_per_min: int = 30
+    # Enqueue's own OpenRouter key, for the included assistant (relay/ai.py); without
+    # it the assistant answers 503 and everything else works.
+    openrouter_api_key: str | None = None
+    openrouter_url: str = "https://openrouter.ai/api/v1"
     # The Authorization value set on RevenueCat's webhook, which it sends back; the
     # webhook refuses everything while it is unset.
     revenuecat_webhook_auth: str | None = None
@@ -117,6 +121,7 @@ class AccountSettings:
             apple_client_id=os.getenv("APPLE_CLIENT_ID") or None,
             apple_bundle_id=os.getenv("APPLE_BUNDLE_ID", "com.sudohnim.enqueue"),
             revenuecat_webhook_auth=os.getenv("REVENUECAT_WEBHOOK_AUTH") or None,
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or None,
         )
 
     def check(self) -> None:
@@ -184,6 +189,18 @@ devices_t = Table(
     Column("revoked_at", Float),
 )
 
+# What the included assistant (relay/ai.py) cost each account each calendar month (UTC),
+# in US dollars as OpenRouter reported it. Counts only: never a prompt or an answer.
+ai_usage_t = Table(
+    "ai_usage",
+    metadata,
+    Column("account_id", String(36), primary_key=True),
+    Column("month", String(7), primary_key=True),  # YYYY-MM
+    Column("cost_usd", Float, nullable=False, default=0.0),
+    Column("requests", Float, nullable=False, default=0.0),
+    Column("tokens", Float, nullable=False, default=0.0),
+)
+
 # A sign-in finished in a browser, waiting for the Mac to collect it: one use, two
 # minutes. Only the code's hash is kept, and the session is issued on collection.
 handoffs_t = Table(
@@ -248,6 +265,7 @@ class Accounts:
         self._add_missing_columns()
         self._device_cache: dict[str, tuple[float, str | None]] = {}
         self._cache_lock = threading.Lock()
+        self._ai_lock = threading.Lock()
         self._jwks: dict[str, Any] = {}
 
     def _add_missing_columns(self) -> None:
@@ -450,6 +468,7 @@ class Accounts:
             )
             conn.execute(delete(devices_t).where(devices_t.c.account_id == account_id))
             conn.execute(delete(handoffs_t).where(handoffs_t.c.account_id == account_id))
+            conn.execute(delete(ai_usage_t).where(ai_usage_t.c.account_id == account_id))
             conn.execute(delete(accounts_t).where(accounts_t.c.id == account_id))
         if account.get("library_id"):
             self.storage.revoke_library(account["library_id"])
@@ -811,7 +830,58 @@ class Accounts:
             "pro_until": account.get("pro_until") if tier == "pro" else None,
             "limits": PLANS[tier],
             "used_bytes": self.storage.used_bytes(lib) if lib else 0,
+            "ai": self.ai_month(account["id"], tier),
         }
+
+    # -- the included assistant's meter (relay/ai.py) -----------------------------------
+
+    def ai_month(self, account_id: str, tier: str | None = None) -> dict:
+        """This calendar month's included-AI spend against the plan's cap."""
+        from .. import included_ai
+
+        if tier is None:
+            account = self.get_account(account_id)
+            tier = tier_of(account) if account else "free"
+        month = time.strftime("%Y-%m", time.gmtime())
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(
+                    select(ai_usage_t).where(
+                        and_(ai_usage_t.c.account_id == account_id, ai_usage_t.c.month == month)
+                    )
+                )
+                .mappings()
+                .first()
+            )
+        return {
+            "month": month,
+            "used_usd": round(float(row["cost_usd"]) if row else 0.0, 4),
+            "cap_usd": included_ai.MONTHLY_CAP_USD[tier],
+            "requests": int(row["requests"]) if row else 0,
+        }
+
+    def ai_record(self, account_id: str, cost_usd: float, tokens: int) -> None:
+        month = time.strftime("%Y-%m", time.gmtime())
+        with self._ai_lock, self.engine.begin() as conn:
+            done = conn.execute(
+                update(ai_usage_t)
+                .where(and_(ai_usage_t.c.account_id == account_id, ai_usage_t.c.month == month))
+                .values(
+                    cost_usd=ai_usage_t.c.cost_usd + cost_usd,
+                    requests=ai_usage_t.c.requests + 1,
+                    tokens=ai_usage_t.c.tokens + tokens,
+                )
+            ).rowcount
+            if not done:
+                conn.execute(
+                    insert(ai_usage_t).values(
+                        account_id=account_id,
+                        month=month,
+                        cost_usd=cost_usd,
+                        requests=1,
+                        tokens=tokens,
+                    )
+                )
 
     def set_pro_until(self, account_id: str, until: float | None, event_at: float | None = None):
         """Pro until a time (None: free from now), and the library's storage to match.

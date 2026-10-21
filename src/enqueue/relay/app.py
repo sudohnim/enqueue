@@ -116,6 +116,7 @@ def create_relay(
     max_object_bytes: int | None = None,
     quota_bytes: int | None = None,
     account_settings=None,
+    ai_client=None,
 ) -> FastAPI:
     """Build the relay app. Every argument defaults to its env override.
 
@@ -147,7 +148,12 @@ def create_relay(
 
     app = FastAPI(title="Enqueue sync relay", version="0.3.1")
     if accounts is not None:
+        from .ai import router as ai_router
+
         app.include_router(accounts_router(accounts))
+        # The included assistant (relay/ai.py): Enqueue's OpenRouter key, metered per
+        # account. `ai_client` is the HTTP client it calls OpenRouter with (tests).
+        app.include_router(ai_router(accounts, ai_client))
 
     def _library(secret: str) -> str:
         lid = storage.library_for(secret) if secret else None

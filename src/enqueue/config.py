@@ -144,14 +144,23 @@ LLM_MODEL = os.getenv("ENQ_LLM_MODEL", "llama3.1:8b")
 VISION_MODEL = os.getenv("ENQ_VISION_MODEL", "llava")
 
 
-def llm_api_key() -> str:
+def llm_api_key(base_url: str | None = None) -> str:
     """The key, resolved at call time rather than at import.
+
+    The included assistant (`enqueue` backend) is the exception: it is reached with this
+    Mac's own Enqueue sync device token, never a key the person pasted, and only while
+    the Mac is signed in (the relay answers 401 otherwise, which says to sign in).
 
     Order: the environment, then the macOS Keychain, then a placeholder that Ollama
     ignores. It is a function because the Keychain can change while the engine is
     running - someone sets a key in Settings and expects the next question to work
     without restarting anything.
     """
+    if base_url and base_url.startswith(INCLUDED_AI_URL):
+        from . import keyring as _keyring
+
+        token = _keyring.sync_secret_get() or ""
+        return token if token.startswith("enqd_") else "not-signed-in"
     from_env = os.getenv("ENQ_LLM_API_KEY")
     if from_env:
         return from_env
@@ -202,6 +211,16 @@ ALLOWED_ORIGINS = frozenset(
 HOSTED_RELAY_URL = os.getenv(
     "ENQ_HOSTED_RELAY_URL", "https://enqueue-production-cd3d.up.railway.app"
 ).rstrip("/")
+# The assistant included with Enqueue sync (relay/ai.py, included_ai.py): an
+# OpenAI-compatible endpoint on the hosted relay, reached with this Mac's device token.
+INCLUDED_AI_URL = HOSTED_RELAY_URL + "/ai/v1"
+BACKENDS["enqueue"] = {
+    "label": "Included with Enqueue",
+    "url": INCLUDED_AI_URL,
+    "local": False,
+    "key_var": None,
+    "included": True,
+}
 GOOGLE_DESKTOP_CLIENT_ID = os.getenv(
     "ENQ_GOOGLE_DESKTOP_CLIENT_ID",
     "760253515706-863p922ohjd4sl5sflpfocrfa7frhbmh.apps.googleusercontent.com",
