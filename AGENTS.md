@@ -1412,6 +1412,14 @@ Now a missed fetch counts like a failed apply and the cursor stays put until eve
 Phones on older builds pull everything once after updating (`FULL_PULL_KEY` in `sync_library`), which re-applies what is already there as no-ops and catches whatever they stepped past.
 Bump `FULL_PULL_KEY` to make every phone do that again.
 
+### One thread at a time opens or closes the library (2026-10-22)
+
+The engine froze whole (`/health` too, 0% CPU) when one thread opened a connection to the library while another closed one under load: SQLite's file locks (`findReusableFd` on open, `unixLock` in `sqlite3WalClose` on close) each waited on the same inode mutex forever, one of them holding Python's global lock.
+It showed after turning on "Try harder" for link previews, which only added load: a throwaway engine under capture and search load froze every time with the preview browser on or off, the same two stacks each time.
+`db.connect` opens under a process-wide lock (`_OPEN_CLOSE`) and returns a `_Connection` whose `close()` (and finalizer) takes the same lock; with it the same load ran 16,000 rounds clean.
+Every connection to the library must come from `db.connect` (it already must, for the key).
+A frozen engine's stacks: `kill -USR1 <pid>` writes every thread's Python stack to the log; `sample <pid>` shows where they wait inside SQLite.
+
 ### A Keychain that cannot answer is not a missing key (2026-10-21)
 
 `keyring._read` tells "no such item" (`security` exits 44) from "the Keychain did not answer" (a permission prompt waiting or refused, a locked keychain, a timeout), which raises `KeychainUnavailable`.

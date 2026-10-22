@@ -131,10 +131,9 @@ launch_desktop() {
   DATA_DIR="${ENQ_DATA_DIR:-$HOME/Library/Application Support/Enqueue}"
   mkdir -p "$DATA_DIR" && echo "$REPO" > "$DATA_DIR/repo" 2>/dev/null || true
 
-  # Link-preview fetches identify as a real browser so publishers that refuse the
-  # default bot user-agent (ipostal1, Instagram, Medium...) return the page. Respect
-  # an existing override.
-  export ENQ_USER_AGENT="${ENQ_USER_AGENT:-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36}"
+  # No user agent is set here: previews introduce themselves honestly (AGENTS.md, "Link
+  # previews"), the shipped app never runs this script, and a value set here would lock
+  # Settings' field. A site that refuses is what "Try harder" (a real browser) is for.
 
   ENQUEUE_REPO="$REPO" "$BIN" >"$LOG" 2>&1 &
 

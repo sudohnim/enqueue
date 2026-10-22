@@ -74,12 +74,37 @@ def disk_key() -> bytes | None:
     return libkey.derive(root, "disk") if root is not None else None
 
 
+# Opening and closing a connection, one thread at a time. SQLite's own file locks
+# (findReusableFd on open, unixLock in sqlite3WalClose on close) deadlocked when one
+# thread opened the library while another closed it under load: both waited on the same
+# inode mutex forever, one of them holding Python's global lock, so the whole engine
+# froze, `/health` included (2026-10-22; reproduced every time by a throwaway engine
+# under capture + search load). Both take microseconds, so a Python lock costs nothing,
+# and a thread waiting on it gives the GIL back.
+_OPEN_CLOSE = threading.Lock()
+
+
+class _Connection(sqlite3.Connection):
+    def close(self) -> None:
+        with _OPEN_CLOSE:
+            super().close()
+
+    def __del__(self) -> None:
+        # A connection dropped without close() is closed here, under the same lock,
+        # rather than by the C finalizer outside it.
+        try:
+            self.close()
+        except Exception:  # noqa: BLE001 - never raise from a finalizer
+            pass
+
+
 def connect(path=None, *, timeout: float = 10, key: bytes | None = None, readonly=False):
     """Open a database file; an encrypted one with `key` (default: this library's disk
     key). Refuses an encrypted file it has no key for, rather than reading noise."""
     path = path or config.DB_PATH
     target = f"file:{path}?mode=ro" if readonly else str(path)
-    conn = sqlite3.connect(target, timeout=timeout, uri=readonly)
+    with _OPEN_CLOSE:
+        conn = sqlite3.connect(target, timeout=timeout, uri=readonly, factory=_Connection)
     if is_encrypted(path):
         key = key or disk_key()
         if key is None:
