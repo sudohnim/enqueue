@@ -10,6 +10,7 @@ bootstrap) and then blocks on the server.
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from .. import chats_worker, config, trash
 from . import (
@@ -26,6 +27,7 @@ from . import (
     vault,
     write,
 )
+from ..keyring import KeychainUnavailable
 from .guard import LocalOnlyGuard
 
 
@@ -46,6 +48,20 @@ def create_app() -> FastAPI:
     app.include_router(account.router)
     # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
     app.add_middleware(LocalOnlyGuard)
+
+    # The library's key is in the Keychain; when it cannot answer (a prompt waiting or
+    # refused, a locked keychain) say so in words the page can show, not a bare 500.
+    @app.exception_handler(KeychainUnavailable)
+    async def _keychain_unavailable(request, exc):  # noqa: ARG001
+        return JSONResponse(
+            {
+                "detail": "Enqueue could not read its key from your Mac's Keychain. "
+                "If macOS is asking whether Enqueue may use it, choose Always Allow.",
+                "code": "keychain",
+            },
+            status_code=503,
+        )
+
     return app
 
 

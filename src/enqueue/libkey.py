@@ -51,7 +51,9 @@ def _file():
 
 def _load() -> bytes | None:
     if keyring.available():
-        raw = keyring._get(SERVICE)
+        # Strict: get() creates a key on None, so a Keychain that could not answer must
+        # raise, never read as "no key" (that overwrote the real key with a new one).
+        raw = keyring._get(SERVICE, strict=True)
     else:
         try:
             raw = _file().read_text(encoding="ascii").strip()

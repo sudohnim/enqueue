@@ -124,3 +124,30 @@ def names_key(dek: bytes) -> bytes:
 def object_name(ident: str, dek: bytes) -> str:
     """What an artifact or a conversation is called on the relay: its id, hashed."""
     return hmac.new(names_key(dek), ident.encode("utf-8"), hashlib.sha256).hexdigest()[:40]
+
+
+# ---- device approval (sync/join.py) ---------------------------------------------------
+# A new device makes a Curve25519 key pair and asks to join; a device that holds the
+# library's key seals that key to the public half (libsodium's sealed box: only the
+# private half opens it). The relay passes the public key and the sealed bytes, and
+# could swap the key for one of its own, so both screens show a code made from the
+# public key: the same code on both means the key reached the approver untouched.
+
+
+def join_code(public_key: bytes) -> str:
+    """Six digits from a public key, shown on both devices ("482 913")."""
+    n = int.from_bytes(hashlib.sha256(b"enqueue join v1" + public_key).digest()[:8], "big")
+    digits = f"{n % 1_000_000:06d}"
+    return digits[:3] + " " + digits[3:]
+
+
+def seal_to(public_key: bytes, message: bytes) -> bytes:
+    import nacl.public
+
+    return nacl.public.SealedBox(nacl.public.PublicKey(public_key)).encrypt(message)
+
+
+def open_sealed(private_key, sealed: bytes) -> bytes:
+    import nacl.public
+
+    return nacl.public.SealedBox(private_key).decrypt(sealed)

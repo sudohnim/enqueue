@@ -145,3 +145,68 @@ def delete_account() -> dict:
     except account.AccountError as exc:
         raise _refuse(exc, 502) from None
     return account.state()
+
+
+# ---- device approval (sync/join.py) --------------------------------------------------
+
+
+@router.post("/account/finish")
+def finish_new_library() -> dict:
+    """The account had no library key and this Mac just made the first one: sync on."""
+    try:
+        account.finish_new_library()
+    except account.AccountError as exc:
+        raise _refuse(exc) from None
+    return account.state()
+
+
+@router.post("/account/join")
+def ask_to_join() -> dict:
+    """Ask again (the last ask ran out or was turned down)."""
+    from ..sync import join
+
+    try:
+        return join.start()
+    except join.JoinError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.delete("/account/join")
+def stop_asking() -> dict:
+    from ..sync import join
+
+    join.cancel()
+    return join.status()
+
+
+@router.get("/account/joins")
+def joins_waiting() -> dict:
+    """Other computers asking to join, each with the code to compare."""
+    from ..sync import join
+
+    try:
+        return {"joins": join.waiting()}
+    except (join.JoinError, account.AccountError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from None
+
+
+@router.post("/account/joins/{join_id}/approve")
+def approve_join(join_id: str) -> dict:
+    from ..sync import join
+
+    try:
+        join.approve(join_id)
+    except (join.JoinError, account.AccountError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"ok": True}
+
+
+@router.post("/account/joins/{join_id}/deny")
+def deny_join(join_id: str) -> dict:
+    from ..sync import join
+
+    try:
+        join.deny(join_id)
+    except (join.JoinError, account.AccountError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"ok": True}

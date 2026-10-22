@@ -933,11 +933,31 @@ async function home(opts) {
 	restorePill("wall");
 	setRoute("");
 	view.innerHTML = spinner("lg", "opening...");
-
-	const [kept, first] = await Promise.all([
-		api("/artifacts?pinned=true&order=touched&limit=200"),
-		api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
-	]);
+	// The first open on a new Mac can wait on a Keychain prompt hidden behind the
+	// window: after a while say so, rather than spin without a word.
+	const slow = setTimeout(() => {
+		const line = view.querySelector(".loader-caption");
+		const note =
+			"Still opening your library. If macOS is asking whether Enqueue may use your Keychain, choose Always Allow.";
+		if (line) line.textContent = note;
+		else view.insertAdjacentHTML("beforeend", '<p class="state" id="openSlow">' + esc(note) + "</p>");
+	}, 8000);
+	let kept, first;
+	try {
+		[kept, first] = await Promise.all([
+			api("/artifacts?pinned=true&order=touched&limit=200"),
+			api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
+		]);
+	} catch (e) {
+		clearTimeout(slow);
+		view.innerHTML =
+			'<div class="homehead"><h1 class="display greeting">Your library did not open.</h1>' +
+			'<p class="state">' +
+			esc(e.message || "The engine did not answer.") +
+			'</p><button class="btn primary" type="button" onclick="home()">Try again</button></div>';
+		return;
+	}
+	clearTimeout(slow);
 	// /tags is paid for only in Tags mode (P.3d): every other grouping leaves
 	// the tag bar out of the DOM, and setWallGroup builds it on demand.
 	const tagcloud = wallGroup === "tags" ? await api("/tags") : { tags: [] };

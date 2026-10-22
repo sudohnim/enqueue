@@ -1145,3 +1145,43 @@
     outline: 2px solid var(--lavender-focus);
     outline-offset: 3px;
   }
+
+  /* Device approval (js/approve.js): the code both Macs show, set large and in
+     even-width digits so the two can be compared at a glance. */
+  .joincode {
+    margin: var(--sp-4) 0 var(--sp-3);
+    font-size: 44px;
+    line-height: 1;
+    font-weight: var(--w-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.06em;
+    color: var(--text);
+  }
+  .joinwait {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+  .joinwait::before {
+    content: "";
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 5px var(--purple-bold-wash);
+    animation: backup-pulse 1.4s ease-in-out infinite;
+  }
+  dialog.ask.approve .joincode {
+    text-align: center;
+    margin: var(--sp-5) 0;
+  }
+  dialog.ask.approve .approve-note {
+    color: var(--text-mute);
+    font-size: 13px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .joinwait::before {
+      animation: none;
+    }
+  }

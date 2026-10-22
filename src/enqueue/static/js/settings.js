@@ -1162,9 +1162,19 @@ async function renderSettingsSync() {
 	const sync = d.sync || {};
 	let html = '<div class="h2">Sync</div>';
 
-	if (window.syncSetupStep === "signin") {
+	const me = await api("/account").catch(() => ({}));
+	const pending = me.sign_in && me.sign_in.state;
+	if (window.syncSetupStep === "recovery") {
+		// The first key, made after signing in to an account with no library yet.
+		html += '<div class="shelf">Your recovery phrase</div><div class="group">' + renderSyncRecovery() + "</div>";
+	} else if (window.syncSetupStep === "signin") {
 		// Waiting on the browser, for a first setup and for a switch alike.
 		html += '<div class="shelf">Sign in to Enqueue sync</div><div class="group">' + renderSignInWaiting() + "</div>";
+	} else if (pending === "join") {
+		html += '<div class="shelf">Join your library</div><div class="group">' + renderAccountJoin(me) + "</div>";
+		pollJoin();
+	} else if (pending === "needs_key") {
+		html += '<div class="shelf">Enqueue sync</div><div class="group">' + renderAccountNeedsKey() + "</div>";
 	} else if (!sync.relay_configured) {
 		html += renderSyncSetup(d, sync);
 	} else {
@@ -1274,16 +1284,11 @@ function openOutside(url) {
 	return bridge ? bridge("open_external", { url }) : window.open(url, "_blank", "noopener");
 }
 
-// The library's key comes first (made here, and its recovery phrase shown once, when
-// this Mac has none yet); then the browser sign-in, which the engine finishes.
+// Sign in first; what the account already holds decides the rest (account.py): a
+// library with a key is joined, approved from a computer that has it (js/approve.js);
+// an account with no library yet has this Mac make the first key. Making a key before
+// knowing gave a second Mac a second key, which could not read the first one's library.
 async function startAccountSignIn(provider) {
-	const d = await api("/settings");
-	const sync = d.sync || {};
-	if (!sync.keyring_initialized) {
-		window.syncAfterRecovery = provider;
-		await initKeyringAndShowRecovery();
-		return;
-	}
 	await beginSignIn(provider);
 }
 
@@ -1349,6 +1354,13 @@ async function pollSignIn() {
 			);
 			window.accountSignInRefresh = false;
 			await renderSettingsTab("sync");
+			return;
+		}
+		if (progress.state === "join" || progress.state === "needs_key") {
+			window.syncSetupStep = null;
+			window.accountSignInUrl = null;
+			await renderSettingsTab(currentSettingsTab || "sync");
+			if (progress.state === "join") pollJoin();
 			return;
 		}
 		if (progress.state === "failed") {
@@ -1641,6 +1653,11 @@ function confirmRecoveryAndAdvance() {
 	}
 	window.syncRecoveryPhrase = null;
 	const provider = window.syncAfterRecovery;
+	if (provider === "finish") {
+		window.syncAfterRecovery = null;
+		finishNewLibrary();
+		return;
+	}
 	if (provider) {
 		window.syncAfterRecovery = null;
 		beginSignIn(provider);
@@ -2140,6 +2157,8 @@ function back() {
 // holds the route, so a hidden-and-restored window lands back on the artifact
 // or grouping, not the wall. An empty hash is the wall.
 restoreRoute();
+// Another computer asking to join the library is approved from here (js/approve.js).
+watchApprovals();
 
 // ---- Events tab + the vault behind it (VAULT.6) --------------------------
 // The Events tab is real diagnostics: it lists the events the engine emitted

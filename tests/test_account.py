@@ -29,7 +29,7 @@ HOSTED = "https://relay.test"
 def world(store, tmp_path, monkeypatch):
     # A Keychain in a dict: every service account.py and the sync code use.
     vault: dict[str, str] = {}
-    monkeypatch.setattr(keyring, "_get", lambda service: vault.get(service))
+    monkeypatch.setattr(keyring, "_get", lambda service, strict=False: vault.get(service))
     monkeypatch.setattr(
         keyring, "_set", lambda service, value, noun="key": vault.update({service: value})
     )
@@ -59,6 +59,9 @@ def world(store, tmp_path, monkeypatch):
     relay = TestClient(relay_app, base_url=HOSTED)
     monkeypatch.setattr(config, "HOSTED_RELAY_URL", HOSTED)
     monkeypatch.setattr(account, "_client", lambda: TestClient(relay_app, base_url=HOSTED))
+    from enqueue.sync import join
+
+    monkeypatch.setattr(join, "_http", lambda: TestClient(relay_app, base_url=HOSTED))
     account._access.update(token=None, until=0.0)
     account._pending.clear()
 
@@ -177,8 +180,10 @@ def test_apple_sign_in_comes_back_through_the_relay_with_a_one_time_code(world):
     assert me["signed_in"] and me["provider"] == "apple"
 
 
-def test_sign_in_waits_for_the_librarys_key(world, monkeypatch):
-    monkeypatch.setattr(keyring_file, "is_initialized", lambda: False)
+def test_sign_in_waits_while_this_macs_key_is_locked(world, monkeypatch):
+    # A Mac with no key at all may sign in (it joins or makes one: test_device_approval);
+    # one whose key is there but locked must unlock it first.
+    monkeypatch.setattr(keyring_file, "load_dek_from_keychain", lambda: None)
     resp = world["engine"].post("/account/sign-in", json={"provider": "google"})
     assert resp.status_code == 409
 

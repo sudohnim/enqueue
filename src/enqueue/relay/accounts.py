@@ -56,6 +56,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     UniqueConstraint,
     and_,
     create_engine,
@@ -212,6 +213,28 @@ handoffs_t = Table(
 )
 
 HANDOFF_TTL_S = 120
+
+# A new device asking to join the library (device approval). It sends a public key; a
+# device that holds the library's key seals that key to it (libsodium sealed box) and
+# posts the sealed bytes here; the asker collects them once. The relay only ever holds
+# the public key and ciphertext. Both screens show a code made from the public key
+# (crypto.join_code), so a relay that swapped the key in would show a different code.
+join_requests_t = Table(
+    "join_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("account_id", String(36), nullable=False, index=True),
+    Column("device_id", String(36), nullable=False),
+    Column("public_key", String(64), nullable=False),  # base64 of 32 bytes
+    Column("status", String(16), nullable=False),  # pending | approved | denied
+    Column("sealed", Text),  # base64, once approved; deleted when collected
+    Column("created_at", Float, nullable=False),
+    Column("expires_at", Float, nullable=False),
+)
+
+JOIN_TTL_S = 10 * 60
+JOIN_MAX_PENDING = 10
+JOIN_SEALED_MAX = 4096
 
 # What each plan holds (AGENTS.md, "The paid tier"). Free is one computer and one phone;
 # Pro raises the counts and the storage. A phone over the limit is replaced (the one
@@ -468,6 +491,7 @@ class Accounts:
             )
             conn.execute(delete(devices_t).where(devices_t.c.account_id == account_id))
             conn.execute(delete(handoffs_t).where(handoffs_t.c.account_id == account_id))
+            conn.execute(delete(join_requests_t).where(join_requests_t.c.account_id == account_id))
             conn.execute(delete(ai_usage_t).where(ai_usage_t.c.account_id == account_id))
             conn.execute(delete(accounts_t).where(accounts_t.c.id == account_id))
         if account.get("library_id"):
@@ -981,6 +1005,165 @@ class Accounts:
                 self.set_pro_until(a["id"], max(until, a.get("pro_until") or 0))
         return {"ok": True}
 
+    # -- device approval ----------------------------------------------------------
+
+    def _device_of(self, token: str) -> tuple[str, str] | None:
+        """(account id, device id) for a live device token."""
+        if self.library_for_device(token) is None:
+            return None
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                select(devices_t.c.account_id, devices_t.c.id).where(
+                    devices_t.c.token_hash == _hash(token)
+                )
+            ).first()
+        return (row[0], row[1]) if row else None
+
+    def ask_to_join(self, token: str, public_key: str) -> dict:
+        """The asking device posts its public key; any earlier ask of its own ends."""
+        owner = self._device_of(token)
+        if owner is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "device not linked")
+        try:
+            raw = base64.b64decode(public_key, validate=True)
+        except ValueError:
+            raw = b""
+        if len(raw) != 32:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "a public key is 32 bytes")
+        account_id, device_id = owner
+        now = time.time()
+        jid = str(uuid.uuid4())
+        with self.engine.begin() as conn:
+            conn.execute(
+                delete(join_requests_t).where(
+                    or_(
+                        join_requests_t.c.device_id == device_id,
+                        join_requests_t.c.expires_at < now,
+                    )
+                )
+            )
+            waiting = conn.execute(
+                select(func.count())
+                .select_from(join_requests_t)
+                .where(
+                    and_(
+                        join_requests_t.c.account_id == account_id,
+                        join_requests_t.c.status == "pending",
+                    )
+                )
+            ).scalar()
+            if waiting >= JOIN_MAX_PENDING:
+                raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many devices waiting")
+            conn.execute(
+                insert(join_requests_t).values(
+                    id=jid,
+                    account_id=account_id,
+                    device_id=device_id,
+                    public_key=base64.b64encode(raw).decode(),
+                    status="pending",
+                    created_at=now,
+                    expires_at=now + JOIN_TTL_S,
+                )
+            )
+        return {"id": jid, "expires_at": now + JOIN_TTL_S}
+
+    def joins_waiting(self, account_id: str, except_device: str | None = None) -> list[dict]:
+        """Devices asking to join this account's library, with the name each goes by."""
+        now = time.time()
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    join_requests_t.c.id,
+                    join_requests_t.c.device_id,
+                    join_requests_t.c.public_key,
+                    join_requests_t.c.created_at,
+                    join_requests_t.c.expires_at,
+                    devices_t.c.name,
+                    devices_t.c.kind,
+                )
+                .select_from(
+                    join_requests_t.join(devices_t, devices_t.c.id == join_requests_t.c.device_id)
+                )
+                .where(
+                    and_(
+                        join_requests_t.c.account_id == account_id,
+                        join_requests_t.c.status == "pending",
+                        join_requests_t.c.expires_at > now,
+                        devices_t.c.revoked_at.is_(None),
+                    )
+                )
+                .order_by(join_requests_t.c.created_at)
+            ).all()
+        return [
+            {
+                "id": r[0],
+                "device_id": r[1],
+                "public_key": r[2],
+                "created_at": r[3],
+                "expires_at": r[4],
+                "name": r[5],
+                "kind": r[6],
+            }
+            for r in rows
+            if r[1] != except_device
+        ]
+
+    def decide_join(self, account_id: str, join_id: str, sealed: str | None) -> bool:
+        """Approve (with the sealed key) or deny a waiting ask. False when there is no
+        such ask waiting on this account."""
+        if sealed is not None:
+            try:
+                ok = 0 < len(base64.b64decode(sealed, validate=True)) <= JOIN_SEALED_MAX
+            except ValueError:
+                ok = False
+            if not ok:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "not a sealed key")
+        with self.engine.begin() as conn:
+            done = conn.execute(
+                update(join_requests_t)
+                .where(
+                    and_(
+                        join_requests_t.c.id == join_id,
+                        join_requests_t.c.account_id == account_id,
+                        join_requests_t.c.status == "pending",
+                        join_requests_t.c.expires_at > time.time(),
+                    )
+                )
+                .values(
+                    status="approved" if sealed is not None else "denied",
+                    sealed=sealed,
+                )
+            )
+        return done.rowcount == 1
+
+    def collect_join(self, token: str, join_id: str) -> dict:
+        """The asker's view of its own ask; an approval is handed over once."""
+        owner = self._device_of(token)
+        if owner is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "device not linked")
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(
+                    join_requests_t.c.status,
+                    join_requests_t.c.sealed,
+                    join_requests_t.c.expires_at,
+                ).where(
+                    and_(
+                        join_requests_t.c.id == join_id,
+                        join_requests_t.c.device_id == owner[1],
+                    )
+                )
+            ).first()
+            if row is None:
+                return {"status": "gone"}
+            state, sealed, expires = row
+            if state == "pending" and expires < time.time():
+                conn.execute(delete(join_requests_t).where(join_requests_t.c.id == join_id))
+                return {"status": "expired"}
+            if state != "pending":
+                conn.execute(delete(join_requests_t).where(join_requests_t.c.id == join_id))
+        return {"status": state, "sealed": sealed} if state == "approved" else {"status": state}
+
     def _forget_devices(self) -> None:
         with self._cache_lock:
             self._device_cache.clear()
@@ -1079,6 +1262,14 @@ def _apple_name(user: str | None) -> str | None:
 
 class RefreshIn(BaseModel):
     refresh_token: str = Field(max_length=4096)
+
+
+class JoinIn(BaseModel):
+    public_key: str = Field(max_length=64)
+
+
+class DecideIn(BaseModel):
+    sealed: str = Field(max_length=8192)
 
 
 class DeviceIn(BaseModel):
@@ -1196,5 +1387,53 @@ def router(accounts: Accounts) -> APIRouter:
     @r.delete("/account", status_code=204)
     def delete_me(account: dict = Depends(current)):
         accounts.delete_account(account["id"])
+
+    # -- device approval: a new device asks, one that holds the key approves --------
+
+    def device_token(authorization: str = Header(default="")) -> str:
+        scheme, _, token = authorization.partition(" ")
+        if scheme != "Bearer" or not token.startswith(DEVICE_TOKEN_PREFIX):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "a device token is required")
+        return token
+
+    def caller_device(authorization: str) -> str | None:
+        scheme, _, token = authorization.partition(" ")
+        if scheme == "Bearer" and token.startswith(DEVICE_TOKEN_PREFIX):
+            owner = accounts._device_of(token)
+            return owner[1] if owner else None
+        return None
+
+    @r.post("/account/joins", status_code=201, dependencies=[Depends(limit)])
+    def ask_to_join(body: JoinIn, token: str = Depends(device_token)):
+        return accounts.ask_to_join(token, body.public_key)
+
+    @r.get("/account/joins")
+    def joins_waiting(
+        account: dict = Depends(signed_in_or_device), authorization: str = Header(default="")
+    ):
+        return {"joins": accounts.joins_waiting(account["id"], caller_device(authorization))}
+
+    @r.get("/account/joins/{join_id}")
+    def collect_join(join_id: str, token: str = Depends(device_token)):
+        return accounts.collect_join(token, join_id)
+
+    @r.post("/account/joins/{join_id}/approve", status_code=204)
+    def approve_join(
+        join_id: str,
+        body: DecideIn,
+        account: dict = Depends(signed_in_or_device),
+        authorization: str = Header(default=""),
+    ):
+        waiting = accounts.joins_waiting(account["id"])
+        asker = next((j for j in waiting if j["id"] == join_id), None)
+        if asker is not None and asker["device_id"] == caller_device(authorization):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "a device cannot approve itself")
+        if not accounts.decide_join(account["id"], join_id, body.sealed):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing waiting with that id")
+
+    @r.post("/account/joins/{join_id}/deny", status_code=204)
+    def deny_join(join_id: str, account: dict = Depends(signed_in_or_device)):
+        if not accounts.decide_join(account["id"], join_id, None):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing waiting with that id")
 
     return r

@@ -65,7 +65,23 @@ _HIT_TTL_S = 300.0
 _MISS_TTL_S = 30.0
 
 
-def _get(service: str) -> str | None:
+class KeychainUnavailable(RuntimeError):
+    """The Keychain could not answer (a permission prompt left waiting or refused, a
+    locked keychain, `security` failing): NOT the same as "there is no such item"."""
+
+
+# `security find-generic-password` exits 44 (errSecItemNotFound) when the item is not
+# there; any other failure means the Keychain did not say.
+_NOT_FOUND = 44
+
+
+def _get(service: str, strict: bool = False) -> str | None:
+    """The secret, or None when the Keychain has no such item.
+
+    A Keychain that cannot answer is None too, unless `strict`, which raises
+    KeychainUnavailable instead: a caller that would CREATE the secret on None (the
+    library key) must never mistake "could not read" for "not there", or it overwrites
+    the real one. An unanswered read is never cached."""
     if not available():
         return None
     now = time.monotonic()
@@ -75,7 +91,12 @@ def _get(service: str) -> str | None:
         at, value = hit
         if now - at < (_HIT_TTL_S if value is not None else _MISS_TTL_S):
             return value
-    value = _read(service)
+    try:
+        value = _read(service)
+    except KeychainUnavailable:
+        if strict:
+            raise
+        return None
     with _CACHE_LOCK:
         _CACHE[service] = (now, value)
     return value
@@ -87,17 +108,22 @@ def _forget(service: str) -> None:
 
 
 def _read(service: str) -> str | None:
+    """None when the item is not there; KeychainUnavailable when the Keychain did not
+    answer. A first read on a new Mac can sit behind a permission prompt, so the wait is
+    long enough for a person to click Allow."""
     try:
         done = subprocess.run(
             [_SECURITY, "find-generic-password", "-a", ACCOUNT, "-s", service, "-w"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=60,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as e:
+        raise KeychainUnavailable(f"the Keychain did not answer for {service}") from e
+    if done.returncode == _NOT_FOUND:
         return None
     if done.returncode != 0:
-        return None
+        raise KeychainUnavailable(done.stderr.strip() or f"the Keychain refused to read {service}")
     key = done.stdout.strip()
     return key or None
 
@@ -141,7 +167,7 @@ def _set(service: str, secret: str, noun: str = "key") -> None:
     # `security -i` reports per-command failures on stderr while still exiting 0, so
     # the only trustworthy confirmation is reading it back, from the Keychain itself.
     _forget(service)
-    if _get(service) != secret:
+    if _get(service, strict=True) != secret:
         raise RuntimeError(f"the {noun} did not store correctly")
 
 

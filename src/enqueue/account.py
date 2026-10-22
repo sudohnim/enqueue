@@ -107,10 +107,9 @@ def begin(provider: str, refresh: bool = False) -> str:
     the session is renewed, and the device, its token and sync stay as they are."""
     if provider not in ("google", "apple"):
         raise AccountError("Sign in with Google or Apple.")
-    if not keyring_file.is_initialized():
-        # The library's key comes first: the relay only ever holds what it locks.
-        raise AccountError("Set up this library's key first, then sign in.")
-    if keyring_file.load_dek_from_keychain() is None:
+    # No key yet is fine: signing in decides whether this Mac joins the account's library
+    # (approved from a device that holds the key) or makes its first key (_adopt).
+    if keyring_file.is_initialized() and keyring_file.load_dek_from_keychain() is None:
         raise AccountError("This Mac's library key is locked. Unlock sync first, then sign in.")
     if refresh:
         if not signed_in() or provider != settings.get("account_provider"):
@@ -243,6 +242,27 @@ def _adopt(pair: dict, refresh: bool = False) -> None:
     if resp.status_code != 201:
         raise AccountError(f"Enqueue sync could not add this Mac ({_detail(resp)}).")
     device = resp.json()
+    token = device["relay_token"]
+    # What the account's library already is decides what this Mac does next: a library
+    # with a key is joined (approved from a device that holds it), never given a second
+    # key; a Mac with a key of its own may only join the library that key opens.
+    from .sync import join
+
+    try:
+        theirs = join.relay_keyring(token, config.HOSTED_RELAY_URL)
+    except join.JoinError as exc:
+        _drop_device(device["device_id"], pair["access_token"])
+        raise AccountError(str(exc)) from None
+    mine = keyring_file.is_initialized()
+    if mine and theirs is not None:
+        local = (config.DATA_DIR / "keyring.json").read_bytes()
+        if not join.same_library(local, theirs):
+            _drop_device(device["device_id"], pair["access_token"])
+            raise AccountError(
+                "This account already has a library, and this Mac holds the key to a "
+                "different one. To join the account's library, start sync over on this "
+                "Mac (Settings, Sync, More options), then sign in again."
+            )
     settings.update(
         {
             "account_id": who.get("id") or "",
@@ -252,12 +272,58 @@ def _adopt(pair: dict, refresh: bool = False) -> None:
             "account_device_id": device["device_id"],
         }
     )
+    if not mine:
+        # No key here: hold the pass, and either ask to join or make the first key.
+        keyring.sync_secret_set(token)
+        settings.update({"sync_relay_url": config.HOSTED_RELAY_URL})
+        if theirs is not None:
+            with _lock:
+                _progress.update(state="join", error=None)
+            try:
+                join.start()
+            except join.JoinError as exc:
+                with _lock:
+                    _progress.update(state="join", error=str(exc))
+            return
+        with _lock:
+            _progress.update(state="needs_key", error=None)
+        return
     if switching:
-        _move_library(device["relay_token"])
+        _move_library(token)
     else:
-        enable(device["relay_token"], config.HOSTED_RELAY_URL)
+        enable(token, config.HOSTED_RELAY_URL)
     with _lock:
         _progress.update(state="done", error=None)
+
+
+def _drop_device(device_id: str, access: str) -> None:
+    """Cancel a device a sign-in just made and could not use."""
+    try:
+        with _client() as http:
+            http.delete(f"/account/devices/{device_id}", headers=_bearer(access))
+    except httpx.HTTPError:
+        pass
+
+
+def finish_new_library() -> None:
+    """After the first key is made on this Mac (the account had none): start syncing."""
+    from .sync.enable import enable
+
+    token = keyring.sync_secret_get()
+    if not token or not signed_in():
+        raise AccountError("Sign in to Enqueue sync first.")
+    if not keyring_file.is_initialized():
+        raise AccountError("Make the library's key first.")
+    enable(token, config.HOSTED_RELAY_URL)
+    with _lock:
+        _progress.update(state="done", error=None)
+
+
+def joined() -> None:
+    """The approval landed (sync/join.py): sign-in is complete."""
+    with _lock:
+        if _progress.get("state") == "join":
+            _progress.update(state="done", error=None)
 
 
 def _refresh_profile(pair: dict) -> None:
@@ -399,6 +465,8 @@ def state() -> dict:
         # scans a new code (cleared when this Mac makes one).
         "relink_phone": bool(settings.get("account_relink_phone")),
         "picture": picture_file() is not None,
+        # A Mac waiting for another device to approve it (sync/join.py).
+        "join": _join_status(),
         "plan": {
             "tier": settings.get("account_tier") or "free",
             "pro_until": settings.get("account_pro_until") or None,
@@ -406,6 +474,12 @@ def state() -> dict:
             "storage_bytes": settings.get("account_storage_bytes") or 0,
         },
     }
+
+
+def _join_status() -> dict:
+    from .sync import join
+
+    return join.status()
 
 
 # ---- devices -----------------------------------------------------------------------
