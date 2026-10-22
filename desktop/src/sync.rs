@@ -962,6 +962,10 @@ fn apply_chat_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String
 }
 
 #[allow(dead_code)]
+/// Set once a pull from the very start has applied everything (see sync_library).
+/// A new value pulls everything again once on every phone.
+const FULL_PULL_KEY: &str = "full_pull_v1";
+
 fn read_cursor(conn: &Connection) -> Result<u64, String> {
     let v: Option<String> = conn
         .query_row(
@@ -1010,16 +1014,17 @@ fn fetch_snapshots_parallel(
     auth: &str,
     dek: &[u8; DEK_LEN],
     names: &[String],
-) -> Vec<Value> {
+) -> (Vec<Value>, usize) {
     const WORKERS: usize = 8;
     if names.is_empty() {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     // One agent, cloned per worker: `ureq::Agent` is Send + Sync and shares a
     // connection pool, so cloning is cheap and keeps sockets warm across a chunk.
     let agent = ureq::AgentBuilder::new().build();
     let chunk = (names.len() + WORKERS - 1) / WORKERS;
     let mut out: Vec<Value> = Vec::new();
+    let mut missed = 0usize;
     std::thread::scope(|scope| {
         let handles: Vec<_> = names
             .chunks(chunk)
@@ -1027,6 +1032,11 @@ fn fetch_snapshots_parallel(
                 let agent = agent.clone();
                 scope.spawn(move || {
                     let mut local: Vec<Value> = Vec::new();
+                    // A fetch that did not come back (no network, the relay down or
+                    // busy) is MISSED, not skipped: the caller keeps its cursor so the
+                    // next sync asks again. Skipping it advanced the cursor past the
+                    // change for good: a phone kept two notes the Mac had trashed.
+                    let mut missed = 0usize;
                     for name in group {
                         let resp = match agent
                             .get(&format!("{base}/sync/object/{name}"))
@@ -1034,38 +1044,46 @@ fn fetch_snapshots_parallel(
                             .call()
                         {
                             Ok(r) => r,
-                            Err(_) => continue, // unreachable relay: skip this object
+                            // Gone since the listing (its device deleted it): nothing to get.
+                            Err(ureq::Error::Status(404, _)) => continue,
+                            Err(_) => {
+                                missed += 1;
+                                continue;
+                            }
                         };
-                        if resp.status() != 200 {
-                            continue;
-                        }
                         let mut bytes = Vec::new();
                         if resp.into_reader().read_to_end(&mut bytes).is_err() {
+                            missed += 1;
                             continue;
                         }
                         // The payload is secretbox-encrypted (PERF.6): the LWW key is
                         // unreadable until after decrypt, so every fetched object is
                         // decrypted here; the caller's apply_snapshot does the no-op
                         // LWW check.
+                        // Sealed under another key: asking again cannot open it.
                         let plain = match open_payload(dek, &bytes) {
                             Ok(p) => p,
-                            Err(_) => continue, // unreadable = "not yet arrived"
+                            Err(_) => continue,
                         };
                         if let Ok(v) = serde_json::from_slice::<Value>(&plain) {
                             local.push(v);
                         }
                     }
-                    local
+                    (local, missed)
                 })
             })
             .collect();
         for h in handles {
-            if let Ok(mut v) = h.join() {
-                out.append(&mut v);
+            match h.join() {
+                Ok((mut v, m)) => {
+                    out.append(&mut v);
+                    missed += m;
+                }
+                Err(_) => missed += 1,
             }
         }
     });
-    out
+    (out, missed)
 }
 
 #[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
@@ -1085,7 +1103,18 @@ pub fn sync_library(
 
     let base = relay_url.trim_end_matches('/');
     let auth = format!("Bearer {sync_secret}");
-    let cursor = match read_cursor(conn) {
+    // Once, after an update: pull every object from the start. Builds before this one
+    // stepped past objects they failed to fetch, so a change (a delete, an edit) could
+    // be missing for good; re-applying what is already here is an LWW no-op.
+    let full_pull_done = conn
+        .query_row("SELECT value FROM sync_meta WHERE key = ?1", [FULL_PULL_KEY], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()
+        .ok()
+        .flatten()
+        .is_some();
+    let cursor = match read_cursor(conn).map(|c| if full_pull_done { c } else { 0 }) {
         Ok(c) => c,
         Err(e) => {
             return SyncOutcome {
@@ -1245,8 +1274,9 @@ pub fn sync_library(
     // still runs on each one - we just no longer pay hundreds of round trips in
     // series. (Why every object is decrypted at all: PERF.6 - the payload is
     // secretbox-encrypted, so the LWW key cannot be peeked before decrypt.)
-    let mut failed = 0usize;
-    for snapshot in fetch_snapshots_parallel(base, &auth, dek, &dev_names) {
+    let (snapshots, missed) = fetch_snapshots_parallel(base, &auth, dek, &dev_names);
+    let mut failed = missed;
+    for snapshot in snapshots {
         // The snapshot names itself: a conversation carries a `chat` object, an
         // artifact a `artifact` one. Route each to its own apply.
         let applied = if snapshot.get("chat").is_some() {
@@ -1275,6 +1305,13 @@ pub fn sync_library(
             pulled,
             error: Some(e),
         };
+    }
+    if failed == 0 && !full_pull_done {
+        let _ = conn.execute(
+            "INSERT INTO sync_meta (key,value) VALUES (?1,'1') \
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [FULL_PULL_KEY],
+        );
     }
 
     SyncOutcome {
@@ -2446,6 +2483,105 @@ mod tests {
         apply_snapshot(&conn, &without).unwrap();
         let detail = get_artifact(&conn, "l2").unwrap();
         assert_eq!(detail["preview"]["site_name"], "Psyche");
+    }
+
+    /// A relay on a local port: `/sync/objects` lists two snapshots, and the second
+    /// one answers 503 until `heal` is set. Each connection serves one request.
+    fn flaky_relay(
+        dek: [u8; 32],
+        heal: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> String {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let note = |id: &str, deleted: Option<&str>| {
+            let snap = serde_json::json!({"artifact": {
+                "id": id, "kind": "note", "title": id, "body": id,
+                "created_at": "2026-10-20T03:59:00+00:00",
+                "updated_at": "2026-10-20T16:40:00+00:00",
+                "deleted_at": deleted, "_device_id": "mac", "pinned": 0,
+                "local_only": 0, "status": "ok", "title_explicit": 0}});
+            seal_payload(&dek, snap.to_string().as_bytes()).unwrap()
+        };
+        let a = note("kept", None);
+        let b = note("trashed", Some("2026-10-20T16:40:00+00:00"));
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                reader.read_line(&mut line).unwrap();
+                loop {
+                    let mut h = String::new();
+                    if reader.read_line(&mut h).unwrap() == 0 || h == "\r\n" {
+                        break;
+                    }
+                }
+                let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+                let (status, body): (&str, Vec<u8>) = if path.starts_with("/sync/objects") {
+                    let listing = r#"{"objects":[{"name":"dev/mac/artifacts/a.enc"},{"name":"dev/mac/artifacts/b.enc"}],"cursor":7}"#;
+                    ("200 OK", listing.as_bytes().to_vec())
+                } else if path.ends_with("/a.enc") {
+                    ("200 OK", a.clone())
+                } else if heal.load(std::sync::atomic::Ordering::SeqCst) {
+                    ("200 OK", b.clone())
+                } else {
+                    ("503 Service Unavailable", b"busy".to_vec())
+                };
+                let head = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&body);
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn a_snapshot_that_did_not_arrive_holds_the_cursor_until_it_does() {
+        // The bug: an object the relay failed to hand over was skipped and the cursor
+        // moved past it, so a note trashed on the Mac stayed on the phone for good.
+        let dek = [9u8; 32];
+        let heal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let relay = flaky_relay(dek, heal.clone());
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        let first = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(first.status, "synced");
+        assert_eq!(read_cursor(&conn).unwrap(), 0, "the missed object must be asked for again");
+        assert_eq!(list_artifact_ids(&conn).unwrap(), vec!["kept".to_string()]);
+
+        heal.store(true, std::sync::atomic::Ordering::SeqCst);
+        let second = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(second.status, "synced");
+        assert_eq!(read_cursor(&conn).unwrap(), 7);
+        let deleted: Option<String> = conn
+            .query_row("SELECT deleted_at FROM artifacts WHERE id = 'trashed'", [], |r| r.get(0))
+            .unwrap();
+        assert!(deleted.is_some(), "the trash from the Mac arrived");
+        assert_eq!(list_artifact_ids(&conn).unwrap(), vec!["kept".to_string()]);
+    }
+
+    #[test]
+    fn an_update_pulls_everything_once_from_the_start() {
+        let dek = [9u8; 32];
+        let heal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let relay = flaky_relay(dek, heal);
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        // A phone from an older build, already past both objects.
+        write_cursor(&conn, 7).unwrap();
+        let outcome = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(outcome.pulled, 2, "the first sync after the update starts over");
+        let again = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(again.status, "synced");
+        let done: String = conn
+            .query_row("SELECT value FROM sync_meta WHERE key = ?1", [FULL_PULL_KEY], |r| r.get(0))
+            .unwrap();
+        assert_eq!(done, "1");
     }
 
     #[test]

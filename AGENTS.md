@@ -1,7 +1,7 @@
 # Enqueue - Agent Instructions
 
 The engineering reference for Enqueue, for the people who work on it and their coding agents: how to build, run and test it, how it fits together, and the rules the code keeps.
-What the app does from a person's side is [docs/MANUAL.md](docs/MANUAL.md); its look and the rules of its design are [docs/DESIGN.md](docs/DESIGN.md).
+What the app does from a person's side is [docs/MANUAL.md](docs/MANUAL.md); its look and the rules of its design are [docs/DESIGN.md](docs/DESIGN.md); how the pieces and the data fit together, as diagrams, is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The README is the public face (a marketing piece with screenshots from `bin/screenshots`); keep engineering detail out of it.
 There is no task-queue file: open work is under [Known gaps](#known-gaps) and in the issues.
 Prompts live in `prompts.py`, the eval gates in `bin/check-eval*`.
@@ -21,7 +21,7 @@ desktop/        the Tauri shell (Rust): src/lib.rs (desktop + mobile commands), 
 src/enqueue/    the Python engine: api/ ingest/ index/ retrieve/ providers/ sync/ relay/ migrations/
   static/       the interface: home.html + css/ + js/ (desktop), capture.html, mobile.html (the phone)
 tests/          pytest; tests/js holds the JS cases (markdown round trip, diff, tabs, guides), run under Node
-docs/           MANUAL.md (using it), DESIGN.md (the design system)
+docs/           MANUAL.md (using it), DESIGN.md (the design system), ARCHITECTURE.md (the diagrams)
 assets/         the logo, source art, and the README screenshots
 ```
 
@@ -1403,6 +1403,14 @@ So what a Mac does after signing in depends on the account's library (`account._
 The pairing code (`sync/pairing.py`, a typed phrase) stays for a relay of your own, where there is no account. The phone still links by the QR code and cannot approve yet (it would need a sealed box in `sync.rs`).
 The free plan's one computer still applies: a second computer is refused at `POST /account/devices` (402) before it can ask.
 `tests/test_device_approval.py` runs the relay rules and the whole Mac side against the real relay code.
+
+### A pull never steps past what it did not receive (2026-10-22)
+
+The phone's pull (`sync_library` in `desktop/src/sync.rs`) fetches the changed objects in parallel (`fetch_snapshots_parallel`).
+An object it could not fetch (no network, the relay down or busy) used to be skipped while the cursor moved past it, so that change never came again: two notes trashed on the Mac stayed on the phone for good.
+Now a missed fetch counts like a failed apply and the cursor stays put until every object arrives; an object gone since the listing (404) or sealed under another key is still skipped, since asking again cannot help.
+Phones on older builds pull everything once after updating (`FULL_PULL_KEY` in `sync_library`), which re-applies what is already there as no-ops and catches whatever they stepped past.
+Bump `FULL_PULL_KEY` to make every phone do that again.
 
 ### A Keychain that cannot answer is not a missing key (2026-10-21)
 
