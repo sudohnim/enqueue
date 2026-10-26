@@ -1,8 +1,8 @@
 // The tour (TOUR.1): "How Enqueue works", opened from the ? on the home header.
 //
-// Seven cards, about a minute, each with a small WORKING demo rather than a screenshot:
-// you type into the capture box, pick a search, ask the eye, rewrite a summary line,
-// gather a view. Nothing in it touches the library - the demos run on a handful of
+// Eight cards on the Mac and seven on the phone, about a minute, each with a small
+// WORKING demo rather than a screenshot: you type into the capture box, pick a search,
+// ask the eye, rewrite a summary line, find another shiny thing, gather a view. Nothing in it touches the library - the demos run on a handful of
 // made-up artifacts, and say so where you type.
 //
 // One script and one stylesheet (css/tour.css) for the desktop home and the phone. The
@@ -14,7 +14,7 @@
 // carries a small accent bead. The vault is left out on purpose: its door is unmarked,
 // and a tour anyone holding the device can open is no place to mark it.
 (function () {
-  const VERSION = 1; // bump when the tour changes enough to put the bead back
+  const VERSION = 2; // bump when the tour changes enough to put the bead back
   const SEEN = "enq.tourSeen.v" + VERSION;
   const NS = "http://www.w3.org/2000/svg";
   const EASE = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -147,7 +147,7 @@
     return node;
   }
 
-  // ---- the seven demos --------------------------------------------------------------
+  // ---- the demos --------------------------------------------------------------------
   // Each fills the plate it is given and may return a function that stops what it started.
 
   function demoWelcome(plate) {
@@ -405,6 +405,70 @@
     plate.append(wrap);
   }
 
+  // Something shiny: notes from far-apart fields that make the same point, side by
+  // side, and "Find another" for the next set. Made-up notes, like every demo here.
+  const SHINY = [
+    {
+      idea: "Small, regular stress makes a thing stronger.",
+      notes: [
+        ["pdf", "Why forests need small fires", "Small fires clear the brush before a big one can."],
+        ["note", "Lift heavier each week", "A little more weight each week builds the muscle."],
+        ["link", "Chaos engineering at Netflix", "Breaking servers on purpose keeps the system ready."],
+      ],
+      question: "What do you shield from every small stress that might do better with some?",
+    },
+    {
+      idea: "The slowest step sets the pace for everything behind it.",
+      notes: [
+        ["pdf", "The Goal, chapter 4", "One slow machine decides the output of the whole plant."],
+        ["note", "Mise en place", "Prepping first keeps one station from backing up the line."],
+        ["note", "Why my inbox never empties", "Every reply waits behind the one hard email."],
+      ],
+      question: "Where is your slowest step this week, and what is waiting behind it?",
+    },
+    {
+      idea: "A shared rhythm moves a group as one, with no one in charge.",
+      notes: [
+        ["link", "How starling flocks turn", "Each bird only follows its nearest neighbours."],
+        ["note", "Rowing with the club", "Matching the stroke matters more than pulling hard."],
+      ],
+      question: "Which group you are part of could use a rhythm instead of a boss?",
+    },
+  ];
+
+  function demoShiny(plate) {
+    const wrap = el("div", "tour-shiny");
+    const head = el("div", "tour-shiny-head");
+    head.append(el("span", "tour-shiny-kicker", "Something shiny"));
+    const body = el("div", "tour-shiny-body");
+    const another = button("plate", "Find another");
+    let at = 0;
+    function show() {
+      const set = SHINY[at];
+      const notes = el("div", "tour-shiny-notes");
+      set.notes.forEach(([kind, title, how]) => notes.append(tile(kind, title, how)));
+      body.replaceChildren(
+        el("p", "tour-shiny-idea", set.idea),
+        notes,
+        el("p", "tour-shiny-question", set.question),
+      );
+      if (!still())
+        body.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], {
+          duration: 360,
+          easing: EASE,
+        });
+    }
+    another.addEventListener("click", () => {
+      at = (at + 1) % SHINY.length;
+      show();
+    });
+    const foot = el("div", "tour-shiny-foot");
+    foot.append(another);
+    wrap.append(head, body, foot);
+    plate.append(wrap);
+    show();
+  }
+
   function demoViews(plate) {
     const ITEMS = [
       ["link", "Time Out Market", "Eat"],
@@ -484,11 +548,11 @@
   function cards() {
     const phone = opts.platform === "mobile";
     const press = phone ? "Tap" : "Click";
-    return [
+    const list = [
       {
         title: ["Save first, organise", "never."],
         copy: ["Catch a thing the moment you meet it: a thought, a link, a PDF, a photo. No folder, no tag, no title. When it matters again, Enqueue brings it back."],
-        note: ["Seven cards, about a minute."],
+        note: null, // the count, filled in below
         demo: demoWelcome,
       },
       {
@@ -517,6 +581,15 @@
         note: [press + " a line to rewrite it."],
         demo: demoReads,
       },
+      // The phone has no related notes (they stay on the Mac), so no shiny things.
+      phone
+        ? null
+        : {
+            title: ["Something", "shiny."],
+            copy: ["Now and then the raven turns up things you saved in far-apart fields that make the same point. They sit side by side above your wall, with the idea they share and a question to take it further. The farther apart the fields, the better the idea."],
+            note: [press + " Find another for the next one."],
+            demo: demoShiny,
+          },
       {
         title: ["Shelve it your", "way."],
         copy: phone
@@ -533,7 +606,10 @@
         note: null,
         demo: demoYours,
       },
-    ];
+    ].filter(Boolean);
+    const count = { 7: "Seven", 8: "Eight" }[list.length] || String(list.length);
+    list[0].note = [count + " cards, about a minute."];
+    return list;
   }
 
   // ---- the stage --------------------------------------------------------------------
