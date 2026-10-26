@@ -97,6 +97,17 @@ The home screen is the wall: everything you saved, the most recently touched fir
 
 The greeting changes through the day, and so does the colour of the page: lavender by day, deeper at night.
 
+### Brain food
+
+Once the assistant has found notes from different fields that make the same point (see [Related](#related)), a **Brain food** card sits above the wall.
+It sets two or three of them side by side: the idea they share, how each one shows it, and a question to take it further.
+Comparing unlike cases is how the idea under them comes clear, and the farther apart the fields, the better; this does the comparing you would rarely think to do.
+There is one a day, and the farthest pairs come first.
+Click a note to open it; **Not today** hides the card until tomorrow.
+Nothing is hidden, moved or deleted by it.
+The words are written by your chat model from the notes' summaries, never their text; a set that holds a local-only note is written by the model on your computer.
+Without a model, the card shows the plain sentence the link was judged with.
+
 ## Notes
 
 A note is the one kind of artifact you can keep editing.

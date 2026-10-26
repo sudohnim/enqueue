@@ -32,26 +32,38 @@ def connections(artifact_id: str) -> dict:
     return {"passages": passage_links.for_artifact(artifact_id)}
 
 
-@router.get("/resurface")
-def resurface() -> dict:
-    """Today's older note for the wall (resurface.py), as a wall item, or null."""
-    from .. import resurface as resurface_mod
+@router.get("/brainfood")
+def brainfood() -> dict:
+    """Today's brain food (brainfood.py): two or three notes from different fields, as
+    wall items, and the idea they share. `notes` is empty when there is none yet."""
+    from .. import brainfood as brainfood_mod
 
-    chosen = resurface_mod.pick()
-    if chosen is None:
-        return {"item": None, "reason": None}
+    food = brainfood_mod.today()
+    if food is None:
+        return {"notes": [], "food": None, "links": [], "writing": False}
     conn = db.get_conn()
     try:
-        row = conn.execute(
+        rows = conn.execute(
             "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
-            " updated_at, local_only, pinned, status, pages FROM artifacts WHERE id = ?",
-            (chosen["id"],),
-        ).fetchone()
-        with_image = _link_images(conn, [row["id"]] if row["kind"] == "link" else [])
-        item = _wall_item(conn, row, with_image, _wall_tags(conn, [row["id"]]))
+            " updated_at, local_only, pinned, status, pages FROM artifacts"
+            " WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(food["ids"]),),
+        ).fetchall()
+        by_id = {r["id"]: r for r in rows}
+        links = [r["id"] for r in rows if r["kind"] == "link"]
+        with_image = _link_images(conn, links)
+        tags = _wall_tags(conn, food["ids"])
+        notes_out = [
+            _wall_item(conn, by_id[i], with_image, tags) for i in food["ids"] if i in by_id
+        ]
     finally:
         conn.close()
-    return {"item": item, "reason": chosen["reason"]}
+    return {
+        "notes": notes_out,
+        "food": food["food"],
+        "links": food["links"],
+        "writing": food["writing"],
+    }
 
 
 class Opened(BaseModel):

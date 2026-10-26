@@ -1039,12 +1039,12 @@ async function home(opts) {
 	// The wall body renders in the chosen grouping mode (K.6). Custom fetches
 	// /pivots after the shell is in place, so its slot starts empty.
 	html += '<div class="reading" id="reading" role="status" aria-live="polite" hidden></div>';
-	html += '<div class="resurface" id="resurface" hidden></div>';
+	html += '<div class="brainfood" id="brainfood" hidden></div>';
 	html += '<div class="wallbody" id="wallbody"></div>';
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
-	refreshResurface();
+	refreshBrainFood();
 	refreshReading();
 
 	const bodySlot = view.querySelector(".wallbody");
@@ -1221,69 +1221,73 @@ async function refreshReading() {
 	readingTimer = setTimeout(refreshReading, READING_POLL_MS);
 }
 
-// Resurfacing (resurface.py): one older note back on the wall each day, above the
-// cards. "Not today" hides it until tomorrow in this browser only.
-const RESURFACE_DISMISSED = "enqueue.resurface.dismissed";
+// Brain food (brainfood.py): two or three notes from different fields that make the
+// same point, side by side above the wall, with the idea they share and a question to
+// take it further. One set a day. The model's words are written in the background;
+// until they land the card shows the link's own sentence and asks again a few times.
+// "Not today" hides it until tomorrow in this browser only.
+const BRAINFOOD_DISMISSED = "enqueue.brainfood.dismissed";
+const BRAINFOOD_RETRY_MS = 6000;
+const BRAINFOOD_RETRIES = 4;
 
 function todayStamp() {
 	return new Date().toISOString().slice(0, 10);
 }
 
-async function refreshResurface() {
-	const slot = document.getElementById("resurface");
+async function refreshBrainFood(tries = 0) {
+	const slot = document.getElementById("brainfood");
 	if (!slot) return;
 	try {
-		if (localStorage.getItem(RESURFACE_DISMISSED) === todayStamp()) return;
+		if (localStorage.getItem(BRAINFOOD_DISMISSED) === todayStamp()) return;
 	} catch (_) {
-		// No storage (private window): the strip simply always shows.
+		// No storage (private window): the card simply always shows.
 	}
 	let r;
 	try {
-		r = await api("/resurface");
+		r = await api("/brainfood");
 	} catch (_) {
 		return;
 	}
-	if (!r || !r.item || !document.body.contains(slot)) return;
-	const a = r.item;
-	const why =
-		r.reason.kind === "related"
-			? "Connects to " + esc(r.reason.via_title || "something you just saved")
-			: "Saved " + esc(since(r.reason.created_at));
+	if (!r || !r.notes || r.notes.length < 2 || !document.body.contains(slot)) return;
+	const food = r.food || {};
+	const parts = food.parts || {};
 	slot.innerHTML =
-		'<div class="resurface-card" tabindex="0" role="button" aria-label="' +
-		esc("From your library: " + (a.title || "Untitled")) +
-		'">' +
-		'<div class="resurface-text">' +
-		'<div class="resurface-why">From your library &middot; ' +
-		why +
+		'<section class="brainfood-card" aria-label="Brain food">' +
+		'<div class="brainfood-head"><span class="brainfood-kicker">Brain food</span>' +
+		'<button class="brainfood-dismiss" type="button">Not today</button></div>' +
+		(food.idea ? '<p class="brainfood-idea">' + esc(food.idea) + "</p>" : "") +
+		'<div class="brainfood-notes">' +
+		r.notes
+			.map(
+				(a) =>
+					'<button class="brainfood-note" type="button" data-id="' +
+					esc(a.id) +
+					'"><span class="brainfood-title">' +
+					esc(a.title || "Untitled") +
+					"</span>" +
+					(parts[a.id] ? '<span class="brainfood-how">' + esc(parts[a.id]) + "</span>" : "") +
+					"</button>",
+			)
+			.join("") +
 		"</div>" +
-		'<div class="resurface-title">' +
-		esc(a.title || "Untitled") +
-		"</div>" +
-		(a.excerpt ? '<div class="resurface-excerpt">' + esc(mdText(a.excerpt)) + "</div>" : "") +
-		"</div>" +
-		'<button class="resurface-dismiss" type="button">Not today</button>' +
-		"</div>";
+		(food.question ? '<p class="brainfood-question">' + esc(food.question) + "</p>" : "") +
+		"</section>";
 	slot.hidden = false;
-	const card = slot.querySelector(".resurface-card");
-	const open = () => openArtifact(a.id, "resurface");
-	card.addEventListener("click", (e) => {
-		if (!e.target.closest(".resurface-dismiss")) open();
+	slot.querySelectorAll(".brainfood-note").forEach((b) => {
+		b.addEventListener("click", () => openArtifact(b.dataset.id, "brainfood"));
 	});
-	card.addEventListener("keydown", (e) => {
-		if (e.target === card && (e.key === "Enter" || e.key === " ")) {
-			e.preventDefault();
-			open();
-		}
-	});
-	slot.querySelector(".resurface-dismiss").addEventListener("click", () => {
+	slot.querySelector(".brainfood-dismiss").addEventListener("click", () => {
 		try {
-			localStorage.setItem(RESURFACE_DISMISSED, todayStamp());
+			localStorage.setItem(BRAINFOOD_DISMISSED, todayStamp());
 		} catch (_) {
 			// Hidden for this visit only.
 		}
 		slot.hidden = true;
 	});
+	if (r.writing && tries < BRAINFOOD_RETRIES)
+		setTimeout(() => {
+			if (document.body.contains(slot) && !slot.hidden) refreshBrainFood(tries + 1);
+		}, BRAINFOOD_RETRY_MS);
 }
 
 /// Drag-and-drop ingestion.
