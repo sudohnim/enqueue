@@ -230,11 +230,15 @@ The line also says when the reading is held up: the online service hit its usage
 ## Related
 
 Under an artifact, **Related** lists up to five others, each with the reason it is there.
+It is the answer to "what else is this like?".
 There are three kinds of link:
 
 - **The same subject.** The reason is the other artifact's own "what it is about" line.
 - **The same name.** Both mention the same person, place or thing: "Both mention Yosemite."
 - **The same point, from another field.** A book on statecraft beside one on war, because both say incentives predict behaviour better than character. The reason is one plain sentence beginning "Both".
+
+Same-point links come first, marked **Same idea, another field**, and the farther apart the two fields, the higher it sits: a note on a willow in a storm beside one on shipping software says more than two notes on the same book.
+The rest follow, closest first.
 
 Nothing is invented to fill the list.
 A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.
