@@ -962,6 +962,10 @@ fn apply_chat_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String
 }
 
 #[allow(dead_code)]
+/// Set once a pull from the very start has applied everything (see sync_library).
+/// A new value pulls everything again once on every phone.
+const FULL_PULL_KEY: &str = "full_pull_v1";
+
 fn read_cursor(conn: &Connection) -> Result<u64, String> {
     let v: Option<String> = conn
         .query_row(
@@ -1010,16 +1014,17 @@ fn fetch_snapshots_parallel(
     auth: &str,
     dek: &[u8; DEK_LEN],
     names: &[String],
-) -> Vec<Value> {
+) -> (Vec<Value>, usize) {
     const WORKERS: usize = 8;
     if names.is_empty() {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     // One agent, cloned per worker: `ureq::Agent` is Send + Sync and shares a
     // connection pool, so cloning is cheap and keeps sockets warm across a chunk.
     let agent = ureq::AgentBuilder::new().build();
     let chunk = (names.len() + WORKERS - 1) / WORKERS;
     let mut out: Vec<Value> = Vec::new();
+    let mut missed = 0usize;
     std::thread::scope(|scope| {
         let handles: Vec<_> = names
             .chunks(chunk)
@@ -1027,6 +1032,11 @@ fn fetch_snapshots_parallel(
                 let agent = agent.clone();
                 scope.spawn(move || {
                     let mut local: Vec<Value> = Vec::new();
+                    // A fetch that did not come back (no network, the relay down or
+                    // busy) is MISSED, not skipped: the caller keeps its cursor so the
+                    // next sync asks again. Skipping it advanced the cursor past the
+                    // change for good: a phone kept two notes the Mac had trashed.
+                    let mut missed = 0usize;
                     for name in group {
                         let resp = match agent
                             .get(&format!("{base}/sync/object/{name}"))
@@ -1034,38 +1044,46 @@ fn fetch_snapshots_parallel(
                             .call()
                         {
                             Ok(r) => r,
-                            Err(_) => continue, // unreachable relay: skip this object
+                            // Gone since the listing (its device deleted it): nothing to get.
+                            Err(ureq::Error::Status(404, _)) => continue,
+                            Err(_) => {
+                                missed += 1;
+                                continue;
+                            }
                         };
-                        if resp.status() != 200 {
-                            continue;
-                        }
                         let mut bytes = Vec::new();
                         if resp.into_reader().read_to_end(&mut bytes).is_err() {
+                            missed += 1;
                             continue;
                         }
                         // The payload is secretbox-encrypted (PERF.6): the LWW key is
                         // unreadable until after decrypt, so every fetched object is
                         // decrypted here; the caller's apply_snapshot does the no-op
                         // LWW check.
+                        // Sealed under another key: asking again cannot open it.
                         let plain = match open_payload(dek, &bytes) {
                             Ok(p) => p,
-                            Err(_) => continue, // unreadable = "not yet arrived"
+                            Err(_) => continue,
                         };
                         if let Ok(v) = serde_json::from_slice::<Value>(&plain) {
                             local.push(v);
                         }
                     }
-                    local
+                    (local, missed)
                 })
             })
             .collect();
         for h in handles {
-            if let Ok(mut v) = h.join() {
-                out.append(&mut v);
+            match h.join() {
+                Ok((mut v, m)) => {
+                    out.append(&mut v);
+                    missed += m;
+                }
+                Err(_) => missed += 1,
             }
         }
     });
-    out
+    (out, missed)
 }
 
 #[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
@@ -1085,7 +1103,18 @@ pub fn sync_library(
 
     let base = relay_url.trim_end_matches('/');
     let auth = format!("Bearer {sync_secret}");
-    let cursor = match read_cursor(conn) {
+    // Once, after an update: pull every object from the start. Builds before this one
+    // stepped past objects they failed to fetch, so a change (a delete, an edit) could
+    // be missing for good; re-applying what is already here is an LWW no-op.
+    let full_pull_done = conn
+        .query_row("SELECT value FROM sync_meta WHERE key = ?1", [FULL_PULL_KEY], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()
+        .ok()
+        .flatten()
+        .is_some();
+    let cursor = match read_cursor(conn).map(|c| if full_pull_done { c } else { 0 }) {
         Ok(c) => c,
         Err(e) => {
             return SyncOutcome {
@@ -1245,8 +1274,9 @@ pub fn sync_library(
     // still runs on each one - we just no longer pay hundreds of round trips in
     // series. (Why every object is decrypted at all: PERF.6 - the payload is
     // secretbox-encrypted, so the LWW key cannot be peeked before decrypt.)
-    let mut failed = 0usize;
-    for snapshot in fetch_snapshots_parallel(base, &auth, dek, &dev_names) {
+    let (snapshots, missed) = fetch_snapshots_parallel(base, &auth, dek, &dev_names);
+    let mut failed = missed;
+    for snapshot in snapshots {
         // The snapshot names itself: a conversation carries a `chat` object, an
         // artifact a `artifact` one. Route each to its own apply.
         let applied = if snapshot.get("chat").is_some() {
@@ -1275,6 +1305,13 @@ pub fn sync_library(
             pulled,
             error: Some(e),
         };
+    }
+    if failed == 0 && !full_pull_done {
+        let _ = conn.execute(
+            "INSERT INTO sync_meta (key,value) VALUES (?1,'1') \
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [FULL_PULL_KEY],
+        );
     }
 
     SyncOutcome {
@@ -2152,8 +2189,105 @@ pub fn key_from_hex(s: &str) -> Result<[u8; DEK_LEN], String> {
     Ok(out)
 }
 
+// ---- Device approval (the phone's side of sync/join.py) --------------------------
+//
+// A phone signed in to Enqueue sync asks to join the account's library with a fresh
+// X25519 key pair; a device that holds the library key seals it to the public half
+// (libsodium's sealed box, what the Mac's PyNaCl `SealedBox` makes) and the phone opens
+// it. Both show a six-digit code made from the public key, so the person can see the
+// two ends are talking about the same ask. A phone that holds the key approves other
+// devices the same way. The key pair lives in memory only.
+
+/// A fresh key pair for asking to join: (secret, public).
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
+pub fn join_keypair() -> ([u8; 32], [u8; 32]) {
+    let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
+    let public = secret.public_key();
+    (secret.to_bytes(), *public.as_bytes())
+}
+
+/// The six digits both devices show for an ask ("482 913"), as crypto.join_code.
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
+pub fn join_code(public_key: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"enqueue join v1");
+    h.update(public_key);
+    let digest = h.finalize();
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&digest[..8]);
+    let n = u64::from_be_bytes(first) % 1_000_000;
+    let digits = format!("{n:06}");
+    format!("{} {}", &digits[..3], &digits[3..])
+}
+
+/// Seal `message` to a public key (libsodium crypto_box_seal).
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
+pub fn seal_to(public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
+    let key: [u8; 32] = public_key.try_into().map_err(|_| "a public key is 32 bytes".to_string())?;
+    crypto_box::PublicKey::from(key)
+        .seal(&mut crypto_box::aead::OsRng, message)
+        .map_err(|_| "could not seal".to_string())
+}
+
+/// Open a sealed box with our secret key.
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
+pub fn open_sealed(secret: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, String> {
+    crypto_box::SecretKey::from(*secret)
+        .unseal(sealed)
+        .map_err(|_| "the key that arrived could not be opened".to_string())
+}
+
+/// The library key out of an approval's sealed payload ({"dek": hex}).
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
+pub fn dek_from_approval(secret: &[u8; 32], sealed_b64: &str) -> Result<[u8; 32], String> {
+    use base64::Engine as _;
+    let sealed = base64::engine::general_purpose::STANDARD
+        .decode(sealed_b64.trim())
+        .map_err(|_| "the approval was not readable".to_string())?;
+    let plain = open_sealed(secret, &sealed)?;
+    let payload: Value = serde_json::from_slice(&plain).map_err(|_| "the key that arrived was not whole")?;
+    let hexed = payload.get("dek").and_then(Value::as_str).ok_or("the key that arrived was not whole")?;
+    let raw = hex::decode(hexed).map_err(|_| "the key that arrived was not whole")?;
+    raw.try_into().map_err(|_| "the key that arrived was not whole".to_string())
+}
+
+/// The sealed payload that approves a device: the library key for its public key.
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
+pub fn approval_for(public_key_b64: &str, dek: &[u8]) -> Result<String, String> {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let public = b64.decode(public_key_b64.trim()).map_err(|_| "not a public key".to_string())?;
+    let payload = serde_json::json!({ "dek": hex::encode(dek) }).to_string();
+    Ok(b64.encode(seal_to(&public, payload.as_bytes())?))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pynacl_sealed_key_opens_here_and_the_codes_agree() {
+        // Made with the Mac's crypto.seal_to / crypto.join_code (PyNaCl).
+        let mut secret = [0u8; 32];
+        for (i, b) in secret.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let public = hex::decode("8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f").unwrap();
+        let sealed = "H3mfBsZm12kdQIndHTYfNCz/dn8UxIuiVcNpmAcgF1wmvQDL9oYf2N1nochkJ+EH67v3w/aBrMOn+IJB+DFDbYVgL2frZARRpJMyjCUHYRyoWIiv8ORDoD82sAgG/7QtKlj5ZBdp+I4xDq6npHFsUItFws2CWSAFoc8v";
+        assert_eq!(dek_from_approval(&secret, sealed).unwrap(), [0xab; 32]);
+        assert_eq!(join_code(&public), "108 920");
+    }
+
+    #[test]
+    fn an_approval_made_here_opens_with_the_askers_key() {
+        use base64::Engine as _;
+        let (secret, public) = join_keypair();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(public);
+        let sealed = approval_for(&b64, &[7u8; 32]).unwrap();
+        assert_eq!(dek_from_approval(&secret, &sealed).unwrap(), [7u8; 32]);
+        let (other, _) = join_keypair();
+        assert!(dek_from_approval(&other, &sealed).is_err());
+    }
+
     mod vault_fingerprint {
         use super::super::*;
 
@@ -2448,6 +2582,105 @@ mod tests {
         assert_eq!(detail["preview"]["site_name"], "Psyche");
     }
 
+    /// A relay on a local port: `/sync/objects` lists two snapshots, and the second
+    /// one answers 503 until `heal` is set. Each connection serves one request.
+    fn flaky_relay(
+        dek: [u8; 32],
+        heal: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> String {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let note = |id: &str, deleted: Option<&str>| {
+            let snap = serde_json::json!({"artifact": {
+                "id": id, "kind": "note", "title": id, "body": id,
+                "created_at": "2026-10-20T03:59:00+00:00",
+                "updated_at": "2026-10-20T16:40:00+00:00",
+                "deleted_at": deleted, "_device_id": "mac", "pinned": 0,
+                "local_only": 0, "status": "ok", "title_explicit": 0}});
+            seal_payload(&dek, snap.to_string().as_bytes()).unwrap()
+        };
+        let a = note("kept", None);
+        let b = note("trashed", Some("2026-10-20T16:40:00+00:00"));
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut line = String::new();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                reader.read_line(&mut line).unwrap();
+                loop {
+                    let mut h = String::new();
+                    if reader.read_line(&mut h).unwrap() == 0 || h == "\r\n" {
+                        break;
+                    }
+                }
+                let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+                let (status, body): (&str, Vec<u8>) = if path.starts_with("/sync/objects") {
+                    let listing = r#"{"objects":[{"name":"dev/mac/artifacts/a.enc"},{"name":"dev/mac/artifacts/b.enc"}],"cursor":7}"#;
+                    ("200 OK", listing.as_bytes().to_vec())
+                } else if path.ends_with("/a.enc") {
+                    ("200 OK", a.clone())
+                } else if heal.load(std::sync::atomic::Ordering::SeqCst) {
+                    ("200 OK", b.clone())
+                } else {
+                    ("503 Service Unavailable", b"busy".to_vec())
+                };
+                let head = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&body);
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn a_snapshot_that_did_not_arrive_holds_the_cursor_until_it_does() {
+        // The bug: an object the relay failed to hand over was skipped and the cursor
+        // moved past it, so a note trashed on the Mac stayed on the phone for good.
+        let dek = [9u8; 32];
+        let heal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let relay = flaky_relay(dek, heal.clone());
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        let first = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(first.status, "synced");
+        assert_eq!(read_cursor(&conn).unwrap(), 0, "the missed object must be asked for again");
+        assert_eq!(list_artifact_ids(&conn).unwrap(), vec!["kept".to_string()]);
+
+        heal.store(true, std::sync::atomic::Ordering::SeqCst);
+        let second = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(second.status, "synced");
+        assert_eq!(read_cursor(&conn).unwrap(), 7);
+        let deleted: Option<String> = conn
+            .query_row("SELECT deleted_at FROM artifacts WHERE id = 'trashed'", [], |r| r.get(0))
+            .unwrap();
+        assert!(deleted.is_some(), "the trash from the Mac arrived");
+        assert_eq!(list_artifact_ids(&conn).unwrap(), vec!["kept".to_string()]);
+    }
+
+    #[test]
+    fn an_update_pulls_everything_once_from_the_start() {
+        let dek = [9u8; 32];
+        let heal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let relay = flaky_relay(dek, heal);
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        // A phone from an older build, already past both objects.
+        write_cursor(&conn, 7).unwrap();
+        let outcome = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(outcome.pulled, 2, "the first sync after the update starts over");
+        let again = sync_library(&relay, "token", Some(&dek), &conn);
+        assert_eq!(again.status, "synced");
+        let done: String = conn
+            .query_row("SELECT value FROM sync_meta WHERE key = ?1", [FULL_PULL_KEY], |r| r.get(0))
+            .unwrap();
+        assert_eq!(done, "1");
+    }
+
     #[test]
     fn mob3_integration_against_a_real_relay() {
         // Reads /tmp/mob3_config.json (written by the Python setup script) and verifies
@@ -2657,6 +2890,7 @@ fn update_note_body_with(
 
 /// A note's drafts, newest first, each with its whole text (the page compares them),
 /// and whether the note keeps drafts. A vaulted note's drafts are sealed: not listed.
+#[allow(dead_code)] // the phone's drafts screen (mobile commands)
 pub fn list_drafts(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
     let row: Option<(i64, Option<String>)> = conn
         .query_row(
@@ -2695,6 +2929,7 @@ pub fn list_drafts(conn: &Connection, artifact_id: &str) -> Result<Value, String
 /// Put a draft back as the note's text. Today's text was already kept as the newest
 /// draft (every save keeps it), and the restored text is kept as a new draft standing
 /// on its own, so going back never loses anything.
+#[allow(dead_code)] // the phone's drafts screen (mobile commands)
 pub fn restore_draft(conn: &Connection, artifact_id: &str, version_id: &str) -> Result<Value, String> {
     let body: String = conn
         .query_row(
@@ -2710,6 +2945,7 @@ pub fn restore_draft(conn: &Connection, artifact_id: &str, version_id: &str) -> 
 
 /// The per-note drafts switch. Off keeps only the latest draft (the body version).
 /// Returns how many drafts were removed.
+#[allow(dead_code)] // the phone's drafts screen (mobile commands)
 pub fn set_keep_drafts(conn: &Connection, artifact_id: &str, on: bool) -> Result<i64, String> {
     conn.execute(
         "UPDATE artifacts SET keep_drafts = ?1 WHERE id = ?2 AND kind = 'note'",

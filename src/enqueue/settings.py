@@ -79,6 +79,23 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # The relay the sync client pushes to and pulls from (SYNC.3). Empty means
     # sync is not configured. Plaintext on purpose: the relay URL is not a secret.
     "sync_relay_url": ("ENQ_SYNC_RELAY_URL", "", True),
+    # Who this Mac is signed in to Enqueue sync as (account.py), and its own device on
+    # the relay. Plaintext: none of it opens anything; the session is in the Keychain.
+    "account_id": ("ENQ_ACCOUNT_ID", "", True),
+    "account_email": ("ENQ_ACCOUNT_EMAIL", "", True),
+    "account_name": ("ENQ_ACCOUNT_NAME", "", True),
+    "account_provider": ("ENQ_ACCOUNT_PROVIDER", "", True),
+    "account_device_id": ("ENQ_ACCOUNT_DEVICE_ID", "", True),
+    # Moved to Enqueue sync from a relay of its own, and the phone not linked again yet.
+    "account_relink_phone": ("ENQ_ACCOUNT_RELINK_PHONE", False, True),
+    # The account's plan as the relay last reported it (account._keep_plan): shown in
+    # Settings, never trusted for anything; the relay enforces the plan itself.
+    "account_tier": ("ENQ_ACCOUNT_TIER", "free", True),
+    "account_pro_until": ("ENQ_ACCOUNT_PRO_UNTIL", 0, True),
+    "account_used_bytes": ("ENQ_ACCOUNT_USED_BYTES", 0, True),
+    "account_storage_bytes": ("ENQ_ACCOUNT_STORAGE_BYTES", 0, True),
+    # The first-run welcome (static/js/welcome.js) was finished or skipped on this Mac.
+    "welcome_done": ("ENQ_WELCOME_DONE", False, True),
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
     "user_agent": ("ENQ_USER_AGENT", None, True),
     "hotkey": ("ENQ_HOTKEY", "Alt+Shift+E", True),
@@ -87,9 +104,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # on, because a wall of unresolved URLs is the thing the preview exists to fix.
     "auto_preview": ("ENQ_AUTO_PREVIEW", "on", True),
     # Whether a link the site refuses to a plain request (Medium's bot wall), or whose
-    # page is empty until its scripts run, is opened once more in headless Chromium
-    # through crawl4ai (preview.py). Off by default: a browser start per such link.
-    "preview_browser": ("ENQ_PREVIEW_BROWSER", "off", True),
+    # page is empty until its scripts run, is opened once more in the Mac's own WebKit
+    # (preview.py, webkit_page.py). On by default: a few seconds per such link only.
+    "preview_browser": ("ENQ_PREVIEW_BROWSER", "on", True),
     # The folder backups go into (backup.py) - a cloud drive's folder, Proton Drive by
     # design. Empty means backups are off. The live library never moves there.
     "backup_dir": ("ENQ_BACKUP_DIR", "", True),
@@ -107,8 +124,14 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # (previews started riding the snapshot after most links had synced).
     "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
     "sync_relay_v2_pushed": ("ENQ_SYNC_RELAY_V2_PUSHED", False, True),
+    # One-shot flag: links whose preview failed were fetched once more when previews
+    # moved to the Mac's own WebKit (preview.retry_refused_once).
+    "preview_webkit_retried": ("ENQ_PREVIEW_WEBKIT_RETRIED", False, True),
     "sync_relay_v2_cleared": ("ENQ_SYNC_RELAY_V2_CLEARED", False, True),
 }
+
+# The settings a linked phone reads (sync/client.push_settings).
+PHONE_FIELDS = {"llm_backend", "llm_model", "llm_url", "llm_headers", "auto_preview", "trash_days"}
 
 # The settings that pick which account/model a call goes to.
 _PROVIDER_FIELDS = {"llm_backend", "llm_model", "summarize_model", "llm_url", "llm_headers"}
@@ -168,9 +191,26 @@ def backends() -> list[dict]:
             "needs_key": bool(spec["key_var"]),
             "key_present": bool(spec["key_var"]) and bool(key) and key != "ollama",
             **({"chat_models": _go_chat_models(name)} if name == "opencode-go" else {}),
+            **(_included(spec) if spec.get("included") else {}),
         }
         for name, spec in config.BACKENDS.items()
     ]
+
+
+def _included(spec: dict) -> dict:
+    """The included assistant: whether this Mac can use it (signed in to Enqueue sync)
+    and the models its plan offers, as the relay last reported the plan. The relay is
+    what enforces both; this only shapes the pickers."""
+    from . import included_ai
+
+    tier = get("account_tier") or "free"
+    return {
+        "included": True,
+        "signed_in": bool(get("account_device_id")),
+        "tier": tier,
+        "models": included_ai.for_tier(tier),
+        "default_model": included_ai.DEFAULT_MODEL,
+    }
 
 
 def all_settings() -> dict:
@@ -191,6 +231,29 @@ def all_settings() -> dict:
             "editable": may_write,
         }
     return out
+
+
+MODEL_FIELDS = ("llm_model", "summarize_model", "search_model", "vision_model")
+
+
+def _refuse_unknown_models(changes: dict) -> None:
+    """A model id the chosen service does not serve is refused here, where the person
+    can see why, instead of saved and failing every answer after (catalog.py). A list
+    that cannot be fetched refuses nothing."""
+    from . import catalog
+
+    backend = changes.get("llm_backend") or get("llm_backend")
+    spec = config.BACKENDS.get(backend) or {}
+    for name in MODEL_FIELDS:
+        value = changes.get(name)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if catalog.unknown(backend, value.strip(), vision=name == "vision_model"):
+            job = "reading pictures" if name == "vision_model" else "this job"
+            raise ValueError(
+                f"{spec.get('label', backend)} doesn't offer {value.strip()} for {job}."
+                " Pick one from the list."
+            )
 
 
 def update(changes: dict) -> dict:
@@ -219,6 +282,8 @@ def update(changes: dict) -> dict:
     ):
         raise ValueError("drafts_keep is one of: thinned, 30d, off")
 
+    _refuse_unknown_models(changes)
+
     stored = _stored()
     for name, value in changes.items():
         # Trim surrounding whitespace on text settings: a model name or endpoint URL
@@ -236,8 +301,11 @@ def update(changes: dict) -> dict:
     settings_path().write_text(json.dumps(stored, indent=2), encoding="utf-8")
     # Not a secret, but not everyone's business either.
     settings_path().chmod(0o600)
-    # Propagate the change to a linked phone (LLM backend/model/url/auto-preview).
-    _resync_to_relay()
+    # Propagate the change to a linked phone, only when it touches what the phone reads
+    # (sync/client.push_settings): every push is a new object on the relay, and the
+    # plan, sign-in state and one-shot flags are written here too.
+    if set(changes) & PHONE_FIELDS:
+        _resync_to_relay()
     # A usage limit belongs to the account or model it was hit on; a switch to
     # another one should not keep waiting it out (providers/pause.py).
     # Choosing a backup folder makes the first backup right away, so the person sees
@@ -316,6 +384,7 @@ def sync_state() -> dict:
     Keyring state tells the UI whether sync can proceed or needs initialization.
     """
     from . import keyring, keyring_file
+    from .account import state as account_state
     from .sync import device_id
 
     keyring_initialized = keyring_file.is_initialized()
@@ -337,4 +406,6 @@ def sync_state() -> dict:
         "keyring_locked": keyring_locked,
         "keyring_ready": keyring_ready,
         "keyring_legacy": keyring_file.is_legacy(),
+        # Enqueue sync (signed in) or a relay of the person's own.
+        "account": account_state(),
     }

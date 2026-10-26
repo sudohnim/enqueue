@@ -45,6 +45,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import shutil
 import socket
@@ -66,6 +67,8 @@ from nacl.exceptions import CryptoError
 
 from . import config, db, libkey
 from . import sqlite as sqlite3
+
+log = logging.getLogger("enqueue.backup")
 
 FOLDER = "Enqueue Backup"
 MAGIC = b"ENQB"
@@ -511,6 +514,22 @@ def start_scheduler() -> None:
                     drafts.thin()
                 except Exception:  # noqa: BLE001 - never stop the scheduler
                     pass
+            # Something shiny (shiny.py) chooses the day's sets and writes the first
+            # one's words once a day, on this hourly beat; it keeps its own day stamp.
+            try:
+                from . import shiny
+
+                shiny.prepare()
+            except Exception:  # noqa: BLE001 - never stop the scheduler
+                log.exception("something shiny could not be prepared")
+            # The search index's daily upkeep (ingest/queue.py), on this hourly beat
+            # whether or not backups are on; it keeps its own once-a-day stamp.
+            try:
+                from .ingest import queue as ingest_queue
+
+                ingest_queue.compact_index_if_due()
+            except Exception:  # noqa: BLE001 - never stop the scheduler
+                log.exception("index compaction failed")
             time.sleep(3600)
 
     threading.Thread(target=loop, name="enqueue-backup-schedule", daemon=True).start()

@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import config, db
+from . import blobstore, db
 from .ingest import queue as ingest_queue
 from .sync.client import push_artifact
 
@@ -234,10 +234,7 @@ def upload(
                 )
                 return {"id": existing["id"], "created": False}
         else:
-            config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
-            blob = config.BLOB_DIR / digest
-            if not blob.exists():
-                blob.write_bytes(data)
+            blobstore.write(data, digest)
 
             artifact_id = str(uuid.uuid4())
             title = re.sub(r"[-_]+", " ", Path(filename).stem).strip() or filename
@@ -273,7 +270,33 @@ def upload(
     return out
 
 
-def blob_path(artifact_id: str) -> tuple[Path, str, str] | None:
+class Blob:
+    """An original file, read through blobstore (sealed on disk once the kit is saved)."""
+
+    suffix = ""
+
+    def __init__(self, content_hash: str):
+        self.content_hash = content_hash
+
+    def read_bytes(self) -> bytes:
+        return blobstore.read(self.content_hash)
+
+    def size(self) -> int:
+        return blobstore.size(self.content_hash)
+
+    @property
+    def path(self) -> Path:
+        return blobstore.path(self.content_hash)
+
+
+def open_pdf(blob: Blob):
+    """A PDF opened from its bytes, never from the (sealed) file on disk."""
+    import fitz
+
+    return fitz.open(stream=blob.read_bytes(), filetype="pdf")
+
+
+def blob_path(artifact_id: str) -> tuple[Blob, str, str] | None:
     conn = db.get_conn()
     try:
         row = conn.execute(
@@ -283,16 +306,23 @@ def blob_path(artifact_id: str) -> tuple[Path, str, str] | None:
         conn.close()
     if row is None:
         return None
-    path = config.BLOB_DIR / row["content_hash"]
-    if not path.exists():
+    if not row["content_hash"]:
+        return None
+    if not blobstore.exists(row["content_hash"]):
         # A blob captured on another device (e.g. a phone photo) lives only on the
         # relay until we fetch it. Pull it on demand, then serve from the local
         # cache like any other blob. Lazy import avoids a sync<->capture cycle.
         from .sync.client import fetch_blob_to_cache
 
-        if not fetch_blob_to_cache(row["content_hash"]) or not path.exists():
+        if not fetch_blob_to_cache(row["content_hash"]) or not blobstore.exists(
+            row["content_hash"]
+        ):
             return None
-    return path, row["mime"] or "application/octet-stream", row["filename"] or artifact_id
+    return (
+        Blob(row["content_hash"]),
+        row["mime"] or "application/octet-stream",
+        row["filename"] or artifact_id,
+    )
 
 
 def page_count(artifact_id: str) -> int | None:
@@ -315,20 +345,18 @@ def page_count(artifact_id: str) -> int | None:
     if row["pages"] is not None:
         return row["pages"]
 
-    count = _count_pages(config.BLOB_DIR / row["content_hash"])
+    count = _count_pages(Blob(row["content_hash"])) if row["content_hash"] else None
     if count is not None:
         _remember_pages(artifact_id, count)
     return count
 
 
-def _count_pages(path: Path) -> int | None:
+def _count_pages(blob: Blob) -> int | None:
     """Read the page count off the file itself. The slow path, taken once."""
-    if not path.exists():
+    if not blobstore.exists(blob.content_hash):
         return None
     try:
-        import fitz
-
-        with fitz.open(path) as doc:
+        with open_pdf(blob) as doc:
             return doc.page_count
     except Exception:  # noqa: BLE001 - a file that claims to be a PDF and is not
         return None
@@ -383,10 +411,8 @@ def extract_text(artifact_id: str) -> int:
         if text:
             rows.append((0, text))
     elif mime == "application/pdf":
-        import fitz
-
         try:
-            with fitz.open(path) as doc:
+            with open_pdf(path) as doc:
                 # The document is open anyway, so the page count is free here. Anywhere
                 # else it costs a file open, which is what the wall used to pay per card.
                 _remember_pages(artifact_id, doc.page_count)
@@ -446,11 +472,9 @@ def find_in_pdf(artifact_id: str, term: str) -> list[dict]:
     if not found or found[1] != "application/pdf" or not term:
         return []
 
-    import fitz
-
     hits: list[dict] = []
     try:
-        with fitz.open(found[0]) as doc:
+        with open_pdf(found[0]) as doc:
             for number in range(doc.page_count):
                 page = doc.load_page(number)
                 box = page.rect
@@ -487,7 +511,7 @@ def render_page(artifact_id: str, number: int, width: int = 900) -> bytes | None
     # A file can claim to be a PDF and not be one. That is a 404, not a crash: the
     # artifact is still real and still readable, it simply has no page to render.
     try:
-        with fitz.open(found[0]) as doc:
+        with open_pdf(found[0]) as doc:
             if not 0 <= number < doc.page_count:
                 return None
             page = doc.load_page(number)

@@ -487,6 +487,39 @@ dialog.ask.name .namefield:focus {
 	border-color: transparent;
 }
 
+/* A new version of the Mac app is downloaded (js/update.js): a card at the bottom right,
+   above the pill's row, until the person updates or puts it off to quit time. */
+.update-ready {
+	position: fixed;
+	right: var(--sp-5);
+	bottom: var(--sp-5);
+	z-index: var(--z-menu);
+	width: 320px;
+	max-width: calc(100vw - 32px);
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-3);
+	background: var(--surface-doc);
+	color: var(--text);
+	border-radius: var(--r-xl);
+	box-shadow: var(--shadow-lifted);
+	padding: var(--sp-4);
+	animation: drop-in var(--dur) ease both;
+}
+.update-title {
+	font-weight: var(--w-medium);
+}
+.update-sub {
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--text-mute);
+}
+.update-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--sp-2);
+}
+
 /* ---- drag-and-drop overlay ------------------------------------------------
      The whole window is a drop target, so there is no drop zone to find. When a
      file, image, or external text drag crosses in, the room dims slightly and a

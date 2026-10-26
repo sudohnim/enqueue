@@ -12,6 +12,40 @@
      this resolves offline. -->
 <link rel="preload" href="fonts/HankenGrotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="css/tokens.css" />
+<!-- Before anything else, in JavaScript an old WebView can still read: the page needs
+     Chrome 111 or newer (CSS color-mix and :has, and ?. in the scripts). Android updates
+     its WebView through the Play Store, but a phone that never has (or an emulator
+     image with no Play Store, like Android 9's WebView 66) would otherwise open to a
+     half-built page with no word of why: the scripts below fail to parse. It shows
+     what to do instead. bin/android-matrix's Android 9 emulator is what found it. -->
+<script>
+  (function () {
+    var ok = false;
+    try {
+      ok =
+        !!window.CSS &&
+        CSS.supports("color", "color-mix(in srgb, red, blue)") &&
+        CSS.supports("selector(:has(*))") &&
+        new Function("var a; return a?.b ?? 1")() === 1;
+    } catch (e) {
+      ok = false;
+    }
+    if (ok) return;
+    window.__enqTooOld = true;
+    document.addEventListener("DOMContentLoaded", function () {
+      var link = "https://play.google.com/store/apps/details?id=com.google.android.webview";
+      document.body.innerHTML =
+        '<div style="font-family:sans-serif;padding:48px 28px;color:#1a1426;background:#e4d8f0;min-height:100vh;box-sizing:border-box">' +
+        '<h1 style="font-weight:500;font-size:26px;margin:0 0 12px">Enqueue needs an update to Android</h1>' +
+        '<p style="font-size:16px;line-height:1.5;margin:0 0 20px;color:#382f4d">This phone\'s ' +
+        "Android System WebView is too old to run Enqueue. Open the Play Store, update " +
+        "<b>Android System WebView</b> (and <b>Chrome</b>), then open Enqueue again.</p>" +
+        '<a href="' + link + '" style="display:inline-block;padding:12px 20px;border-radius:999px;' +
+        'background:#60079f;color:#fff;text-decoration:none;font-size:16px">Open in the Play Store</a>' +
+        "</div>";
+    });
+  })();
+</script>
 <link rel="stylesheet" href="css/linkpop.css" />
 <link rel="stylesheet" href="css/tour.css" />
 <link rel="stylesheet" href="css/bird.css" />
@@ -39,6 +73,15 @@
        displaces fixed overlays. Dedicated scroll boxes keep their own overflow-x:auto. */
     max-width: 100%;
     overflow-x: hidden;
+  }
+  /* The desktop's one ring (css/base.css). Without it the WebView draws its own
+     orange one on whatever a tap or the keyboard focused. */
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
   }
   body {
     background: var(--bg);
@@ -82,6 +125,161 @@
   /* Default: show library, hide setup */
   body:not(.view-setup) #setup { display: none; }
   body:not(.view-setup) #library { display: flex; }
+  /* The first screen (#setup): a short welcome and how to link to the Mac. */
+  #setup {
+    justify-content: center;
+    /* Clear the pill, which floats over this screen too. */
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  }
+  #setup .welcome,
+  #setup .welcome-scan {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  #setup .welcome {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 8px 8px 0;
+  }
+  .welcome-raven {
+    display: block;
+    width: 84px;
+    height: auto;
+    margin: 0 0 6px -8px;
+  }
+  .welcome-title {
+    margin: 0;
+    font-size: 30px;
+    line-height: 34px;
+    font-weight: var(--w-heading);
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .welcome-dot {
+    color: var(--accent);
+  }
+  .welcome-lead {
+    margin: 14px 0 6px;
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: var(--w-strong);
+    color: var(--text);
+  }
+  .welcome-text {
+    margin: 0 0 22px;
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+  }
+  .welcome-steps {
+    margin: 0;
+    padding: 6px 16px;
+    list-style: none;
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--hairline);
+  }
+  .welcome-steps li {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text-dim);
+  }
+  .welcome-steps li + li {
+    box-shadow: inset 0 1px 0 var(--line-soft);
+  }
+  .welcome-steps b {
+    font-weight: var(--w-strong);
+    color: var(--text);
+  }
+  .welcome-num {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin-top: -1px;
+    border-radius: 50%;
+    background: var(--lavender-subtle);
+    color: var(--accent);
+    font-size: 13px;
+    line-height: 24px;
+    text-align: center;
+    font-weight: var(--w-strong);
+  }
+  .welcome-scan {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 24px 8px 0;
+    text-align: center;
+  }
+  .welcome-scan p {
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  .welcome-sample {
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 28px 8px 8px;
+    text-align: center;
+  }
+  .welcome-sample p {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--text-mute);
+  }
+  .welcome-sample-btn {
+    width: 100%;
+    padding: 13px 24px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--surface);
+    box-shadow: var(--hairline);
+    color: var(--accent);
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .welcome-sample-btn:disabled {
+    opacity: 0.6;
+  }
+  .welcome-join {
+    margin-top: var(--sp-5);
+    text-align: center;
+  }
+  .welcome-join-lead,
+  .welcome-join-wait {
+    color: var(--text-mute);
+    font-size: 15px;
+  }
+  .welcome-join-code {
+    margin: var(--sp-3) 0;
+    font-size: 34px;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .welcome-scan-btn {
+    width: 100%;
+    padding: 15px 28px;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+    font-size: 16px;
+  }
+  .welcome-scan-btn:disabled {
+    opacity: 0.6;
+  }
+  .welcome-scan-status {
+    min-height: 18px;
+    margin: 12px 0 0;
+  }
+  #setup #status {
+    max-width: 420px;
+    margin: 14px auto 0;
+    padding: 0 8px;
+    text-align: center;
+  }
   .title {
     font-size: 22px;
     font-weight: var(--w-strong);
@@ -1749,6 +1947,11 @@
   .pill[hidden] {
     display: none;
   }
+  /* While the keyboard is up for a field on the page (the search), the pill would
+     sit on the keyboard over the results; it comes back when the field lets go. */
+  body.typing .pill {
+    display: none;
+  }
   .pill:focus-within {
     box-shadow:
       inset 0 0 0 1px rgb(255 255 255 / 0.7),
@@ -2669,38 +2872,54 @@
 </div>
 
 <section id="setup">
-  <h1 class="title">Enqueue</h1>
-  <p class="sub">Sync your library from the relay.</p>
-  <div
-    id="setup_camera"
-    style="display: block; text-align: center; padding: 48px 20px"
-  >
-    <p style="font-size: 13px; color: var(--text-subtle); margin: 0 0 24px">
-      Scan the linking QR on your desktop
+  <!-- The first screen: a short welcome, then how to link to the Mac (the QR from
+       Settings, Sync, Show the code). The ids below are the scan flow's; keep them. -->
+  <div class="welcome">
+    <img class="welcome-raven" src="raven-mark.png" alt="" aria-hidden="true" />
+    <h1 class="welcome-title">Welcome to Enqueue<span class="welcome-dot">.</span></h1>
+    <p class="welcome-lead">Save anything. Find it again.</p>
+    <p class="welcome-text">
+      Notes, links, photos and files go in as they are, with nothing to sort. Find them
+      again by searching, or by asking in your own words.
     </p>
-    <button
-      id="scan_qr_btn"
-      class="round primary"
-      style="min-width: 200px; padding: 14px 28px; font-size: 15px"
-    >
-      Scan QR
-    </button>
-    <p
-      id="scan_status"
-      style="
-        font-size: 13px;
-        color: var(--text-subtle);
-        text-align: center;
-        margin: 16px 0 0;
-      "
-    ></p>
+    <ol class="welcome-steps">
+      <li>
+        <span class="welcome-num" aria-hidden="true">1</span>
+        <span>Your library lives on your Mac. On your Mac, open Enqueue's
+          <b>Settings</b>, then <b>Sync</b>, and press <b>Show the code</b>.</span>
+      </li>
+      <li>
+        <span class="welcome-num" aria-hidden="true">2</span>
+        <span>Tap the button below and point your phone at the code. Your library
+          arrives in a moment.</span>
+      </li>
+    </ol>
   </div>
-  <div
-    id="setup_no_camera"
-    style="display: none; text-align: center; padding: 48px 20px"
-  >
-    <p>Camera access is required to scan the linking QR.</p>
-    <button id="retry_camera" style="margin-top: 12px">Retry</button>
+  <div id="setup_camera" class="welcome-scan">
+    <button id="scan_qr_btn" class="welcome-scan-btn">Scan the code</button>
+    <p id="scan_status" class="welcome-scan-status"></p>
+  </div>
+  <!-- Or sign in: the phone asks to join the account's library and a device that has
+       the key approves it (mobile_sign_in, mobile_join_status). Android only. -->
+  <div id="setup_sign_in" class="welcome-sample" hidden>
+    <p>Or, signed in to Enqueue sync on your Mac?</p>
+    <button id="google_sign_in_btn" type="button" class="welcome-sample-btn">Sign in with Google</button>
+  </div>
+  <div id="setup_join" class="welcome-join" hidden>
+    <p class="welcome-join-lead">On your Mac, approve this phone. It shows the same code:</p>
+    <p class="welcome-join-code" id="join_code"></p>
+    <p class="welcome-join-wait" id="join_wait">Waiting for approval...</p>
+    <button id="join_cancel_btn" type="button" class="welcome-sample-btn">Cancel</button>
+  </div>
+  <div id="setup_no_camera" class="welcome-scan" style="display: none">
+    <p>Enqueue needs the camera to scan the code.</p>
+    <button id="retry_camera" class="welcome-scan-btn">Try again</button>
+  </div>
+  <!-- No Mac at hand (or a Play reviewer): a made-up library on this phone only,
+       cleared the moment a real one is linked (mobile_sample_library). -->
+  <div id="setup_sample" class="welcome-sample">
+    <p>No Mac nearby?</p>
+    <button id="sample_btn" type="button" class="welcome-sample-btn">Try it with a sample library</button>
   </div>
   <div id="status"></div>
 </section>
@@ -2734,6 +2953,10 @@
   <div id="loading" hidden>
     <span class="flybird" aria-hidden="true"><i></i><i></i><i></i></span>
     <span>Syncing&#8230;</span>
+  </div>
+  <div id="sample_banner" class="syncnote" role="status" hidden>
+    <span>Made-up sample. Link your Mac to see yours.</span>
+    <button id="sample_link" type="button">Link my Mac</button>
   </div>
   <div id="offline_banner" class="syncnote" role="status" hidden>
     <span id="offline_banner_text">You're offline. Changes sync later.</span>
@@ -3063,14 +3286,27 @@
     <h1>Settings</h1>
   </header>
   <div class="mset-body">
-    <span class="mset-managed">Managed by your desktop</span>
+    <span id="settings_managed" class="mset-managed" hidden>Managed by your Mac</span>
     <!-- Sync Section -->
     <div class="mset-group" data-guide-for="phone-sync">
       <h2 class="mset-title">Sync</h2>
       <div id="settings_sync_status" class="mset-sub"></div>
       <div class="mset-stack">
-        <button id="settings_sync_now" type="button" class="mset-primary">Sync Now</button>
-        <button id="settings_pair" type="button" class="mset-secondary">Re-link with QR</button>
+        <button id="settings_sync_now" type="button" class="mset-primary">Sync now</button>
+        <button id="settings_pair" type="button" class="mset-secondary">Link again</button>
+      </div>
+    </div>
+
+    <!-- Enqueue sync's plan: only for a phone signed in through Enqueue sync (a
+         relay of your own has no plans). Painted by paintPlan(); Pro is bought here,
+         through Google Play (Billing.kt), for the account, so the Mac sees it too. -->
+    <div id="settings_plan" class="mset-group" hidden>
+      <h2 class="mset-title">Plan</h2>
+      <div id="settings_plan_line" class="mset-sub"></div>
+      <div class="mset-stack">
+        <button id="settings_plan_go" type="button" class="mset-primary" hidden>Go Pro</button>
+        <button id="settings_plan_manage" type="button" class="mset-secondary" hidden>Manage subscription</button>
+        <button id="settings_plan_restore" type="button" class="mset-secondary" hidden>Restore purchase</button>
       </div>
     </div>
 
@@ -3089,9 +3325,9 @@
 
     <!-- AI Section (read-only; the desktop is the source of truth) -->
     <div id="settings_ai" class="mset-group" data-guide-for="phone-ai">
-      <h2 class="mset-title">AI</h2>
+      <h2 class="mset-title">Assistant</h2>
       <dl id="settings_ai_rows" class="mset-rows"></dl>
-      <p class="mset-note">Managed on the desktop. Change the model or key there and it syncs here.</p>
+      <p id="settings_ai_note" class="mset-note">Set on your Mac. Change the model or key there and it comes here.</p>
     </div>
 
     <!-- Trash: deleted artifacts, restorable. Delete moves here; Restore brings it back. -->
@@ -3575,6 +3811,190 @@
       yes.focus();
     });
   }
+  // ---- Enqueue Pro (Billing.kt) ---------------------------------------------------
+  // The phone buys Pro for its Enqueue sync account through Google Play. The relay
+  // learns of it from RevenueCat and is what enforces the plan; the page only shows it.
+  // Each bridge call answers later through window.__enqBillingReply(id, {...}).
+  const billingBridge =
+    window.EnqueueAndroid && typeof window.EnqueueAndroid.billingStart === "function"
+      ? window.EnqueueAndroid
+      : null;
+  const _billWaiting = new Map();
+  let _billSeq = 0;
+  window.__enqBillingReply = (id, payload) => {
+    const resolve = _billWaiting.get(id);
+    if (!resolve) return;
+    _billWaiting.delete(id);
+    resolve(payload || { ok: false, reason: "error" });
+  };
+  function billingAsk(method, ...args) {
+    return new Promise((resolve) => {
+      if (!billingBridge) return resolve({ ok: false, reason: "unavailable" });
+      const id = "bill" + ++_billSeq;
+      _billWaiting.set(id, resolve);
+      try {
+        billingBridge[method](id, ...args);
+      } catch (e) {
+        _billWaiting.delete(id);
+        resolve({ ok: false, reason: "error" });
+      }
+    });
+  }
+  function billingReady() {
+    try {
+      return !!billingBridge && billingBridge.billingAvailable();
+    } catch (e) {
+      return false;
+    }
+  }
+  function sizeWords(bytes) {
+    const gb = bytes / 1024 ** 3;
+    if (gb >= 1) return (gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10) + " GB";
+    return Math.max(1, Math.round(bytes / 1024 ** 2)) + " MB";
+  }
+  let planAccount = null; // the account RevenueCat was started for
+  let planManage = null;
+  async function paintPlan() {
+    const box = document.getElementById("settings_plan");
+    if (!box) return;
+    let plan = null;
+    try {
+      plan = await invoke("mobile_plan");
+    } catch (e) {
+      plan = null; // offline: leave the plan out rather than show a stale one
+    }
+    if (!plan || !plan.account_id) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    const pro = plan.tier === "pro";
+    const room = sizeWords(plan.limits.storage_bytes);
+    const used = sizeWords(plan.used_bytes || 0);
+    let line;
+    if (pro) {
+      const until = plan.pro_until && plan.pro_until < 4e9
+        ? " until " + new Date(plan.pro_until * 1000).toLocaleDateString()
+        : "";
+      line = `Pro${until}. ${used} of ${room} used.`;
+    } else {
+      line = `Free: one computer, one phone and ${room}. ${used} used.`;
+    }
+    document.getElementById("settings_plan_line").textContent = line;
+    const canBuy = billingReady();
+    document.getElementById("settings_plan_go").hidden = pro || !canBuy;
+    document.getElementById("settings_plan_restore").hidden = pro || !canBuy;
+    document.getElementById("settings_plan_manage").hidden = true;
+    if (!canBuy) return;
+    if (planAccount !== plan.account_id) {
+      const started = await billingAsk("billingStart", plan.account_id);
+      if (!started.ok) return;
+      planAccount = plan.account_id;
+      planManage = started.manage || null;
+    }
+    document.getElementById("settings_plan_manage").hidden = !(pro && planManage);
+  }
+  function periodWords(iso) {
+    return { P1M: "Monthly", P1Y: "Yearly", P1W: "Weekly", P3M: "Every 3 months", P6M: "Every 6 months" }[iso] || "";
+  }
+  // The paywall: what Pro adds, one button per package Google Play prices, the
+  // fine print. Resolves with the package chosen, or null.
+  function paywallSheet(packages) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "mconfirm-backdrop";
+      const card = document.createElement("div");
+      card.className = "mconfirm-card";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      card.setAttribute("aria-labelledby", "mpaywall_title");
+      const heading = document.createElement("h2");
+      heading.className = "mconfirm-title";
+      heading.id = "mpaywall_title";
+      heading.textContent = "Enqueue Pro";
+      const body = document.createElement("div");
+      body.className = "mconfirm-points";
+      for (const text of [
+        "Stronger models for the included assistant, like Claude Sonnet and GPT-6.1 Sol, and six times as much of it each month.",
+        "Sync up to five computers and five phones, and 50 GB instead of 1 GB.",
+        "Your own AI key works either way, with no limit from Enqueue.",
+      ]) {
+        const para = document.createElement("p");
+        para.textContent = text;
+        body.appendChild(para);
+      }
+      const choices = document.createElement("div");
+      choices.className = "mset-stack";
+      const done = (v) => {
+        backdrop.remove();
+        resolve(v);
+      };
+      packages.forEach((pkg, i) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = i === 0 ? "mset-primary" : "mset-secondary";
+        const when = periodWords(pkg.period);
+        btn.textContent = (when ? when + " · " : "") + pkg.price;
+        btn.addEventListener("click", () => done(pkg));
+        choices.appendChild(btn);
+      });
+      const fine = document.createElement("p");
+      fine.className = "mset-sub";
+      fine.textContent =
+        "Billed by Google Play. Renews until you cancel it in the Play Store's subscriptions.";
+      const row = document.createElement("div");
+      row.className = "mconfirm-row";
+      const no = document.createElement("button");
+      no.type = "button";
+      no.textContent = "Not now";
+      no.addEventListener("click", () => done(null));
+      row.append(no);
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) done(null);
+      });
+      backdrop.addEventListener("enq-cancel", () => done(null)); // the Back gesture
+      card.append(heading, body, choices, fine, row);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+      choices.firstChild?.focus();
+    });
+  }
+  async function goPro() {
+    const offers = await billingAsk("billingOfferings");
+    if (!offers.ok || !(offers.packages || []).length) {
+      toast("Pro isn't available right now. Try again later.", true);
+      return;
+    }
+    const pkg = await paywallSheet(offers.packages);
+    if (!pkg) return;
+    const bought = await billingAsk("billingPurchase", pkg.id);
+    if (bought.reason === "cancelled") return;
+    if (!bought.ok) {
+      toast(bought.message || "The purchase did not go through.", true);
+      return;
+    }
+    if (bought.pro) toast("You're on Pro. Thank you.");
+    planManage = bought.manage || planManage;
+    // RevenueCat tells the relay a moment later: paint again once it has.
+    setTimeout(paintPlan, 4000);
+  }
+  async function restorePro() {
+    const restored = await billingAsk("billingRestore");
+    if (!restored.ok) {
+      toast(restored.message || "Nothing could be restored.", true);
+      return;
+    }
+    toast(restored.pro ? "Pro is back on this account." : "No Pro purchase found for this Google account.");
+    setTimeout(paintPlan, 4000);
+  }
+  document.getElementById("settings_plan_go")?.addEventListener("click", goPro);
+  document.getElementById("settings_plan_restore")?.addEventListener("click", restorePro);
+  document.getElementById("settings_plan_manage")?.addEventListener("click", () => {
+    openExternal(
+      planManage || "https://play.google.com/store/account/subscriptions?package=com.sudohnim.enqueue",
+    ).catch(() => {});
+  });
+
   function flag(name) {
     try {
       return !!localStorage.getItem(name);
@@ -3875,9 +4295,15 @@
     }
     // The floating pill is chrome for the library; on the crop-confirm and settings
     // screens it sits over the screen's own Save/Cancel controls, so hide it there.
+    // Before linking there is no library to capture into or ask, so setup has none.
     const pillEl = document.getElementById("pill");
     if (pillEl)
-      pillEl.hidden = id === "crop" || id === "settings" || id === "vault" || id === "drafts";
+      pillEl.hidden =
+        id === "setup" ||
+        id === "crop" ||
+        id === "settings" ||
+        id === "vault" ||
+        id === "drafts";
     // Sections are siblings in one scroll container, so switching from a
     // scrolled library would land the new section mid-page (Settings appeared
     // "at the bottom"). Reset scroll to the top on every switch.
@@ -3908,6 +4334,7 @@
     show("settings");
     loadSettings();
     paintAppLock();
+    paintPlan();
     renderMobileEvents();
   }
 
@@ -4226,6 +4653,15 @@
     }
   }
 
+  // A note that opens with its own title as a heading would show it twice on its
+  // card (the title, then the same words as the excerpt's first line): drop that line.
+  function withoutTitleLine(body, title) {
+    const m = body.match(/^\s*#{1,6}\s+([^\n]+)\n*/);
+    if (m && m[1].trim().toLowerCase() === String(title || "").trim().toLowerCase())
+      return body.slice(m[0].length);
+    return body;
+  }
+
   function renderNoteCard(li, a) {
     li.className =
       "card card-note" + (a.status === "pending" ? " card-unsynced" : "");
@@ -4243,7 +4679,7 @@
 
     const excerpt = document.createElement("div");
     excerpt.className = "card-excerpt";
-    excerpt.textContent = mdText(a.body || "");
+    excerpt.textContent = mdText(withoutTitleLine(a.body || "", a.title));
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -5751,6 +6187,7 @@
           dek: payload.dek,
         }),
       });
+      setSampleMode(false);
       show("library");
       document.getElementById("loading").hidden = false;
       document.getElementById("shelves").replaceChildren();
@@ -5761,6 +6198,143 @@
       setStatus("Link failed: " + errString(e), "error");
     }
   }
+
+  // ---- Signing in to Enqueue sync on the phone ------------------------------------
+  // Google hands the shell an id token (SignIn.kt); the phone signs in, asks to join
+  // the account's library and waits for a device that has the key to approve it,
+  // showing the same code. Then it is linked as if it had scanned the Mac's code.
+  const signInBridge =
+    window.EnqueueAndroid && typeof window.EnqueueAndroid.googleSignIn === "function"
+      ? window.EnqueueAndroid
+      : null;
+  const _signInWaiting = new Map();
+  let _signInSeq = 0;
+  window.__enqSignInReply = (id, payload) => {
+    const resolve = _signInWaiting.get(id);
+    if (!resolve) return;
+    _signInWaiting.delete(id);
+    resolve(payload || { ok: false, reason: "error" });
+  };
+  function googleIdToken() {
+    return new Promise((resolve) => {
+      const id = "sign" + ++_signInSeq;
+      _signInWaiting.set(id, resolve);
+      try {
+        signInBridge.googleSignIn(id);
+      } catch (_) {
+        _signInWaiting.delete(id);
+        resolve({ ok: false, reason: "unavailable" });
+      }
+    });
+  }
+  if (signInBridge) document.getElementById("setup_sign_in").hidden = false;
+
+  let joinPoll = null;
+  function showJoin(on) {
+    document.getElementById("setup_join").hidden = !on;
+    document.getElementById("setup_sign_in").hidden = on || !signInBridge;
+    document.getElementById("setup_camera").hidden = on;
+    document.getElementById("setup_sample").hidden = on;
+  }
+  function stopJoinPoll() {
+    if (joinPoll) clearInterval(joinPoll);
+    joinPoll = null;
+  }
+  async function linkedBySignIn() {
+    stopJoinPoll();
+    showJoin(false);
+    setSampleMode(false);
+    show("library");
+    document.getElementById("loading").hidden = false;
+    document.getElementById("shelves").replaceChildren();
+    document.getElementById("empty").hidden = true;
+    await invoke("mobile_sync", { config: "{}" });
+  }
+  async function checkJoin() {
+    let r;
+    try {
+      r = await invoke("mobile_join_status");
+    } catch (e) {
+      document.getElementById("join_wait").textContent = errString(e);
+      return;
+    }
+    if (r.status === "done") return linkedBySignIn();
+    if (r.status === "waiting") return;
+    stopJoinPoll();
+    showJoin(false);
+    setStatus(
+      r.status === "denied"
+        ? "The request was turned down on your other device."
+        : "The request ran out. Sign in again to ask once more.",
+      "error",
+    );
+  }
+  document.getElementById("google_sign_in_btn").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    setStatus("");
+    try {
+      const google = await googleIdToken();
+      if (!google.ok) {
+        if (google.reason !== "cancelled")
+          setStatus(
+            google.reason === "no_account"
+              ? "Add a Google account to this phone first."
+              : "Google sign-in did not go through. Try again.",
+            "error",
+          );
+        return;
+      }
+      const asked = await invoke("mobile_sign_in", { idToken: google.idToken, name: "Phone" });
+      document.getElementById("join_code").textContent = asked.code;
+      document.getElementById("join_wait").textContent = "Waiting for approval...";
+      showJoin(true);
+      stopJoinPoll();
+      joinPoll = setInterval(checkJoin, 3000);
+    } catch (e) {
+      setStatus(errString(e), "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  document.getElementById("join_cancel_btn").addEventListener("click", () => {
+    stopJoinPoll();
+    invoke("mobile_join_cancel").catch(() => {});
+    showJoin(false);
+  });
+
+  // A linked phone approves other devices asking to join (mobile_joins): asked when the
+  // app comes to the front and every 15 seconds while it stays there.
+  const joinsPrompted = new Set();
+  let joinsBusy = false;
+  async function checkJoinAsks() {
+    if (joinsBusy || document.hidden || sampleOn) return;
+    if (document.querySelector(".mconfirm-backdrop")) return;
+    joinsBusy = true;
+    try {
+      const { joins } = await invoke("mobile_joins");
+      const ask = (joins || []).find((j) => !joinsPrompted.has(j.id));
+      if (!ask) return;
+      joinsPrompted.add(ask.id);
+      const yes = await mobileSheet({
+        title: (ask.name || "A device") + " wants to join your library",
+        points: [
+          "It shows this code: " + ask.code + ".",
+          "Approve only if the code matches. It can then read everything in your library.",
+        ],
+        ok: "Approve",
+        cancel: "Deny",
+      });
+      await invoke("mobile_join_decide", { id: ask.id, publicKey: ask.public_key, approve: !!yes });
+      toast(yes ? "Approved. It is syncing now." : "Turned down.");
+    } catch (_) {
+      // Not linked to Enqueue sync, or offline: nothing to approve now.
+    } finally {
+      joinsBusy = false;
+    }
+  }
+  setInterval(checkJoinAsks, 15000);
+  document.addEventListener("visibilitychange", checkJoinAsks);
 
   document.getElementById("scan_qr_btn").addEventListener("click", async () => {
     if (scanActive) return;
@@ -5816,8 +6390,40 @@
     invoke("plugin:barcode-scanner|cancel").catch(() => {});
   });
 
+  // ---- the sample library ------------------------------------------------------
+  // For someone with no Mac at hand: made-up notes and links on this phone only. The
+  // banner says so and leads back to the scan, and linking clears the sample.
+  var sampleOn = false;
+  function setSampleMode(on) {
+    sampleOn = !!on;
+    const banner = document.getElementById("sample_banner");
+    if (banner) banner.hidden = !on;
+    const offer = document.getElementById("setup_sample");
+    if (offer) offer.hidden = !!on;
+  }
+  document.getElementById("sample_btn")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "Making it...";
+    try {
+      await invoke("mobile_sample_library");
+      setSampleMode(true);
+      show("library");
+      renderLibrary();
+    } catch (err) {
+      setStatus("Could not make the sample: " + errString(err), "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Try it with a sample library";
+    }
+  });
+  document.getElementById("sample_link")?.addEventListener("click", () => {
+    show("setup");
+    startCamera();
+  });
+
   document.getElementById("retry_camera").addEventListener("click", () => {
-    // The "Retry" button is now just the Scan QR button
+    // The "Retry" button is now just the scan button
     document.getElementById("scan_qr_btn").click();
   });
 
@@ -6012,6 +6618,19 @@
   // The shell shrinks the WebView above the keyboard (MainActivity pads by the IME
   // inset), so the window resizes; the visual viewport covers a browser that overlays.
   window.addEventListener("resize", fitWriter);
+  // A page field (not the pill's own, not the writing page, which hides it itself)
+  // holding the keyboard puts the page in "typing": the pill steps aside.
+  const typingField = (el) =>
+    el &&
+    el.matches &&
+    el.matches("input:not([type=checkbox]):not([type=radio]), textarea") &&
+    !el.closest("#pill");
+  document.addEventListener("focusin", (e) => {
+    if (typingField(e.target)) document.body.classList.add("typing");
+  });
+  document.addEventListener("focusout", (e) => {
+    if (typingField(e.target)) document.body.classList.remove("typing");
+  });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitWriter);
     window.visualViewport.addEventListener("scroll", fitWriter);
@@ -7333,6 +7952,12 @@ startCamera();
 return;
           }
           show("library");
+          setSampleMode(!!r.sample);
+          if (r.sample) {
+            document.getElementById("loading").hidden = true;
+            renderLibrary();
+            return;
+          }
           document.getElementById("loading").hidden = false;
           document.getElementById("empty").hidden = true;
           // Local-first: paint the cached library immediately, never gate it on a
@@ -7397,7 +8022,7 @@ return;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "Sync Now";
+        btn.textContent = "Sync now";
       }
       // Hide offline banner on successful sync
       const banner = document.getElementById("offline_banner");
@@ -7426,7 +8051,7 @@ return;
       const btn = document.getElementById("settings_sync_now");
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "Sync Now";
+        btn.textContent = "Sync now";
       }
       const payload = e && e.payload ? e.payload : {};
       const err = payload.error || "unknown error";
@@ -7865,15 +8490,40 @@ return;
   function populateSettings(s) {
     // Mobile Settings reflects, never edits: the AI config lives on the desktop and
     // syncs down (MOB2.9). Show the sync status and the read-only AI config.
+    const managed = !!(s && s.managed_by_desktop);
+    const chip = document.getElementById("settings_managed");
+    if (chip) chip.hidden = !managed;
     updateSyncStatus();
     renderAiRows(s);
   }
 
+  // What Settings calls each backend; the ids are the Mac's.
+  const BACKEND_NAMES = {
+    enqueue: "Included with Enqueue",
+    openrouter: "OpenRouter",
+    "opencode-go": "OpenCode Go",
+    ollama: "Ollama on your Mac",
+  };
+
   function renderAiRows(s) {
     const dl = document.getElementById("settings_ai_rows");
     if (!dl || !s) return;
+    const note = document.getElementById("settings_ai_note");
+    // Until the Mac's settings arrive, the values here are only defaults: say where
+    // they will come from instead of showing a model this phone cannot reach.
+    if (!s.managed_by_desktop) {
+      dl.replaceChildren();
+      dl.style.display = "none";
+      if (note)
+        note.textContent = sampleOn
+          ? "Comes from your Mac once it's linked. The sample library cannot ask questions."
+          : "Comes from your Mac once it has synced.";
+      return;
+    }
+    dl.style.display = "";
+    if (note) note.textContent = "Set on your Mac. Change the model or key there and it comes here.";
     const rows = [
-      ["Backend", s.llm_backend || "-"],
+      ["Service", BACKEND_NAMES[s.llm_backend] || s.llm_backend || "-"],
       ["Model", s.llm_model || "-"],
       ["API key", s.llm_api_key_present ? "Set" : "Not set"],
     ];
@@ -7892,6 +8542,17 @@ return;
 
   function updateSyncStatus() {
     const el = document.getElementById("settings_sync_status");
+    const now = document.getElementById("settings_sync_now");
+    const pair = document.getElementById("settings_pair");
+    if (now) now.hidden = sampleOn;
+    if (pair) {
+      pair.textContent = sampleOn ? "Link my Mac" : "Link again";
+      pair.className = sampleOn ? "mset-primary" : "mset-secondary";
+    }
+    if (sampleOn) {
+      el.textContent = "This is a sample library, on this phone only. Link your Mac to see your own.";
+      return;
+    }
     if (!settingsCache) {
       el.textContent = "Not configured";
       return;
@@ -7973,7 +8634,7 @@ return;
     document.getElementById("loading").hidden = false;
     invoke("mobile_sync", { config: "{}" }).catch(() => {
       btn.disabled = false;
-      btn.textContent = "Sync Now";
+      btn.textContent = "Sync now";
       document.getElementById("loading").hidden = true;
     });
   });
@@ -8128,6 +8789,25 @@ return;
       return;
     }
     container.replaceChildren();
+    // The sample library has no assistant (it comes from the Mac): say so plainly
+    // rather than offer a conversation that can only fail.
+    if (sampleOn) {
+      const note = document.createElement("div");
+      note.style.cssText =
+        "color: var(--text-mute); text-align: center; padding: 40px 20px; font-size: 14px; line-height: 1.5;";
+      note.textContent =
+        "Asking needs your Mac's assistant, so the sample library can't answer. Link your Mac and ask away.";
+      const link = document.createElement("button");
+      link.className = "mset-primary";
+      link.style.cssText = "display: block; margin: 0 auto; max-width: 260px; width: 100%;";
+      link.textContent = "Link my Mac";
+      link.onclick = () => {
+        show("setup");
+        startCamera();
+      };
+      container.append(note, link);
+      return;
+    }
     // A New-conversation action sits at the top of the list, always available.
     const newBtn = document.createElement("button");
     newBtn.style.cssText =
@@ -8143,7 +8823,7 @@ return;
       empty.style.cssText =
         "color: var(--text-mute); text-align: center; padding: 40px 20px; font-size: 14px; line-height: 1.5;";
       empty.textContent =
-        "No conversations yet. Start one here or on desktop - it syncs both ways.";
+        "No conversations yet. Start one here or on your Mac; they show up on both.";
       container.appendChild(empty);
       return;
     }
@@ -8405,10 +9085,14 @@ return;
     head.innerHTML =
       '<span style="font-weight: var(--w-strong);color:' +
       mobileKindColor(e.kind) +
-      ';min-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-      escapeHtml(e.kind || "") +
-      '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-      escapeHtml(e.detail || "") +
+      ';min-width:104px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      escapeHtml(
+        e.kind === "capture.note" && /^link:/i.test(e.detail || "")
+          ? "Saved a link"
+          : mobileEventLabel(e.kind),
+      ) +
+      '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim)">' +
+      escapeHtml(mobileEventDetail(e.detail)) +
       "</span>" +
       dur +
       '<span style="color:var(--text-mute);font-variant-numeric:tabular-nums">' +
@@ -8440,10 +9124,39 @@ return;
 
   function mobileKindColor(kind) {
     const f = String(kind || "").split(".")[0];
-    if (f === "capture") return "#0a7d4a";
-    if (f === "facet") return "#b25a00";
-    if (f === "sync") return "#6a6d7e";
-    return "var(--purple-bold)";
+    if (f === "ask") return "var(--purple-bold)";
+    if (f === "sync") return "var(--text-mute)";
+    return "var(--text)";
+  }
+
+  // What the Activity rows call each event (the desktop's words, settings.js).
+  const MOBILE_EVENT_LABELS = {
+    "ask.submitted": "Asked",
+    "ask.answered": "Answered",
+    "ask.failed": "Couldn't answer",
+    "capture.note": "Saved a note",
+    "capture.link": "Saved a link",
+    "capture.image": "Saved a photo",
+    "capture.file": "Saved a file",
+    "facet.regenerated": "Summarized",
+    "facet.edited": "Summary edited",
+    "facet.deleted": "Summary edited",
+    "sync.pull": "Synced",
+    "sync.push": "Sent",
+    "sync.error": "Sync failed",
+    start: "Started",
+  };
+  function mobileEventLabel(kind) {
+    const k = String(kind || "");
+    if (MOBILE_EVENT_LABELS[k]) return MOBILE_EVENT_LABELS[k];
+    const words = k.replace(/[._]/g, " ").trim();
+    return words ? words[0].toUpperCase() + words.slice(1) : "";
+  }
+  // "note: # Lisbon, four days" reads as "Lisbon, four days" next to "Saved a note".
+  function mobileEventDetail(detail) {
+    return String(detail || "")
+      .replace(/^(note|link|image|photo|file|pdf):\s*/i, "")
+      .replace(/^#+\s*/, "");
   }
 
   function mobileEventBody(e) {

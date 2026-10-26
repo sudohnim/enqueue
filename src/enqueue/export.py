@@ -17,13 +17,11 @@ database, and so a stale-file prune knows exactly which files it created.
 
 from __future__ import annotations
 
-import filecmp
 import json
 import re
-import shutil
 from pathlib import Path
 
-from . import config, db
+from . import blobstore, db
 
 MANIFEST = "manifest.json"
 
@@ -54,11 +52,11 @@ def _put(target: Path, text: str) -> bool:
     return True
 
 
-def _copy_blob(src: Path, dst: Path) -> bool:
-    """Copy only when the bytes differ. Returns True when copied."""
-    if dst.exists() and filecmp.cmp(src, dst, shallow=True):
+def _copy_blob(content_hash: str, dst: Path) -> bool:
+    """Write the original's plaintext only when it differs. Returns True when written."""
+    if dst.exists() and dst.stat().st_size == blobstore.size(content_hash):
         return False
-    shutil.copy2(src, dst)
+    dst.write_bytes(blobstore.read(content_hash))
     return True
 
 
@@ -195,9 +193,9 @@ def export(directory: str | Path) -> dict:
         manifest["artifacts"][aid] = {"file": rel, "kind": row["kind"], "title": row["title"]}
 
         if copy_rel:
-            blob = config.BLOB_DIR / row["content_hash"]
-            if blob.exists():
-                if _copy_blob(blob, root / copy_rel):
+            if blobstore.exists(row["content_hash"]):
+                # The export is the person's own readable copy: the plaintext.
+                if _copy_blob(row["content_hash"], root / copy_rel):
                     copied.append(copy_rel)
                 referenced.add(copy_rel)
                 manifest["artifacts"][aid]["copy"] = copy_rel

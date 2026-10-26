@@ -1,0 +1,6 @@
+# Android: the Play package and the service account key (gitignored, never committed).
+package_name("com.sudohnim.enqueue")
+json_key_file(File.expand_path("../desktop/play-store-svc.json", __dir__))
+
+# Apple: the team the Mac app is signed for. No App Store Connect lanes yet.
+team_id(ENV["TEAM_ID"] || "572NMYL3ZG")

@@ -367,9 +367,22 @@
     }
   }
 
+  // The window and document listeners a note's formatting bar adds, ended together
+  // when the page is left (teardown -> stopEdbars). They used to remove themselves
+  // only when their event next fired after the note was gone, so each note opened
+  // and left without a resize kept its editor alive (one more per note opened).
+  let edbarListeners = new AbortController();
+
+  function stopEdbars() {
+    edbarListeners.abort();
+    edbarListeners = new AbortController();
+  }
+  window.stopEdbars = stopEdbars;
+
   function mountEdbar(ed) {
     const bar = ed.parentElement && ed.parentElement.querySelector(".edbar");
     if (!bar) return;
+    const signal = edbarListeners.signal;
     // A press on the bar must not take the selection out of the note.
     bar.addEventListener("mousedown", (e) => e.preventDefault());
     bar.addEventListener("click", (e) => {
@@ -382,7 +395,7 @@
       if (ed.isConnected) syncEdbar(ed);
       else document.removeEventListener("selectionchange", sync);
     };
-    document.addEventListener("selectionchange", sync);
+    document.addEventListener("selectionchange", sync, { signal });
     syncEdbar(ed);
     // The sheet stops above the pill: it is as tall as the window allows from where
     // it starts, and the note scrolls inside it (css/artifact.css .notesheet).
@@ -396,7 +409,7 @@
     };
     if (pane) {
       fit();
-      window.addEventListener("resize", fit);
+      window.addEventListener("resize", fit, { signal });
     }
   }
 
@@ -647,9 +660,10 @@
     );
   }
 
-  // Related, under the note: other notes about the same subject or naming the same
-  // thing (ingest/related.py), closest first, each with the reason it is here - the
-  // shared name, and the line of its summary that matched. Hidden when there are none.
+  // Related, under the note: what else this is like (ingest/related.py). Analogies come
+  // first, the farthest field first, labelled as such; then notes on the same subject
+  // or naming the same thing. Each says why it is here - the shared idea, the shared
+  // name, or the line of its summary that matched. Hidden when there are none.
   function relatedWhy(r) {
     const parts = [];
     if (r.via) parts.push("Both mention " + r.via + ".");
@@ -674,6 +688,7 @@
             '"><span class="relatedtitle">' +
             esc(r.title || "(untitled)") +
             "</span>" +
+            (r.link === "idea" ? '<span class="relatedkind">Same idea, another field</span>' : "") +
             (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
             "</button>"
           );
@@ -1610,7 +1625,7 @@
     else if (refused && !browser)
       why =
         esc(h) +
-        " turns previews away. Turning on <em>Open refused links in a browser</em> " +
+        " turns previews away. Turning on <em>Try harder on sites that block previews</em> " +
         'in <button class="inline-link" onclick="showSettings()">Settings</button> may get past it.';
     else why = "No preview: " + esc(p.error || "that page did not resolve") + ".";
     return (

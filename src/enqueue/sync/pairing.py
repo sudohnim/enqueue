@@ -85,8 +85,19 @@ def create_offer() -> dict:
     if dek is None:
         raise PairingError("The library key is locked on this device. Unlock sync, then retry.")
 
+    # Enqueue sync: the new computer gets a device token of its own (account.py), so it
+    # can be cancelled alone. This Mac's own token still stages the offer.
+    handed = secret
+    from .. import account
+
+    if account.signed_in():
+        try:
+            handed = account.new_device_token("Computer", kind="computer")
+        except account.AccountError as exc:
+            raise PairingError(str(exc)) from None
+
     phrase = _phrase()
-    envelope = seal_envelope({"relay": relay, "secret": secret, "dek": dek.hex()}, phrase)
+    envelope = seal_envelope({"relay": relay, "secret": handed, "dek": dek.hex()}, phrase)
 
     pid = secrets.token_urlsafe(18)  # 24 url-safe chars; matches the relay's id pattern
     try:

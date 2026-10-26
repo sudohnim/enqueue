@@ -1,6 +1,6 @@
 [package]
 name = "Enqueue"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Enqueue"
 
@@ -24,6 +24,9 @@ serde_json = "1"
 # XSalsa20-Poly1305, Argon2id MODERATE). Pure Rust, so they cross-compile for Android.
 xsalsa20poly1305 = "0.9"
 argon2 = "0.5"
+# libsodium's sealed box (X25519 + XSalsa20-Poly1305), for device approval: a phone asks
+# to join with a public key, or seals the library key to one (sync.rs join_*).
+crypto_box = { version = "0.9", features = ["seal"] }
 ureq = { version = "2", features = ["json"] }
 hex = "0.4"
 uuid = { version = "1", features = ["v4"] }
@@ -58,6 +61,8 @@ tauri-plugin-barcode-scanner = { version = "2.4.5", default-features = false }
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
+# A shipped Mac app updates itself from a signed feed (lib.rs watch_for_updates).
+tauri-plugin-updater = "2"
 
 # On Linux the dialog plugin needs a file-dialog backend, which its default features
 # pick and the `default-features = false` above turns off; without it rfd refuses to

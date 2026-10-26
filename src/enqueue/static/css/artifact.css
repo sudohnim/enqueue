@@ -359,6 +359,13 @@
   .relateditem:hover .relatedtitle {
     color: var(--accent-text);
   }
+  /* An analogy: the same idea from another field, the kind worth the most. */
+  .relatedkind {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: var(--w-strong);
+    color: var(--accent-text);
+  }
   .relatedwhy {
     font-size: 13px;
     line-height: 18px;

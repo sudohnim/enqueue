@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# Open the Android app on every test emulator and report what happened on each.
+#
+#   bin/android-matrix                 the release apk (bin/release android)
+#   bin/android-matrix --debug         the debug apk (bin/launch emulator builds it)
+#   bin/android-matrix --create        make the test emulators first (once)
+#
+# For each emulator: boot it headless, install the apk fresh, open the app, and check
+# three things: the process is still alive, logcat has no Rust panic or Java crash, and
+# the first screen rendered (the linking screen's "Scan QR", read from the accessibility
+# tree, not guessed). A screenshot of each lands in $OUT for a person to look at.
+#
+# The emulators cover what one phone cannot: an old Android with an old WebView, a
+# small screen, the newest Android the app targets, and a tablet. A release build is
+# the one that matters most here: R8 shrinking broke it at launch once while every
+# debug build was fine (AGENTS.md, "The Android release build").
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+EMU="$SDK/emulator/emulator"
+ADB="$SDK/platform-tools/adb"
+AVDM="$SDK/cmdline-tools/latest/bin/avdmanager"
+PKG=com.sudohnim.enqueue
+OUT="${OUT:-${TMPDIR:-/tmp}/enqueue-android-matrix}"
+
+# name | system image | device profile | the words the first screen must show
+# Android 9's image carries WebView 66 and no Play Store to update it: the page's guard
+# (top of mobile.html) must say to update it, not show a half-built page.
+MATRIX=(
+  "enqueue|system-images;android-35;google_apis;arm64-v8a|"
+  "enq-old|system-images;android-28;google_apis;arm64-v8a|pixel_4a|needs an update to Android"
+  "enq-small|system-images;android-35;google_apis;arm64-v8a|small_phone"
+  "enq-new|system-images;android-36;google_apis;arm64-v8a|pixel_7"
+  "enq-tablet|system-images;android-35;google_apis;arm64-v8a|pixel_tablet"
+)
+
+flavor=release
+create=0
+for arg in "$@"; do
+  case "$arg" in
+    --debug) flavor=debug ;;
+    --create) create=1 ;;
+    *) echo "usage: bin/android-matrix [--debug] [--create]" >&2; exit 2 ;;
+  esac
+done
+APK="$REPO/desktop/gen/android/app/build/outputs/apk/universal/$flavor/app-universal-$flavor.apk"
+
+if [ "$create" = 1 ]; then
+  for row in "${MATRIX[@]}"; do
+    IFS='|' read -r name image device _ <<<"$row"
+    if "$EMU" -list-avds | grep -qx "$name"; then
+      echo "exists: $name"
+      continue
+    fi
+    echo "creating $name ($image${device:+, $device})"
+    echo no | "$AVDM" create avd -n "$name" -k "$image" ${device:+-d "$device"} >/dev/null \
+      || { echo "could not create $name (is $image installed? sdkmanager --install \"$image\")"; exit 1; }
+  done
+fi
+
+[ -f "$APK" ] || { echo "no $flavor apk at $APK - build it first"; exit 1; }
+mkdir -p "$OUT"
+echo "apk: $APK"
+echo "screenshots: $OUT"
+echo
+
+# The emulator's own "<something> isn't responding" prompt (a busy system UI after a
+# cold boot, never the app's): answer "Wait" so it does not sit over the app.
+dismiss_anr() {
+  local s="$1" xy
+  "$ADB" -s "$s" shell uiautomator dump /sdcard/anr.xml >/dev/null 2>&1
+  xy="$("$ADB" -s "$s" shell cat /sdcard/anr.xml 2>/dev/null | tr '>' '\n' \
+    | grep -E 'text="Wait"' | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' \
+    | head -1 | grep -oE '[0-9]+' | tr '\n' ' ')"
+  if [ -n "$xy" ]; then
+    set -- $xy
+    "$ADB" -s "$s" shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) >/dev/null 2>&1
+    sleep 2
+  fi
+}
+
+failed=0
+for row in "${MATRIX[@]}"; do
+  IFS='|' read -r name _ _ expect <<<"$row"
+  expect="${expect:-Scan QR}"
+  if ! "$EMU" -list-avds | grep -qx "$name"; then
+    echo "$name: SKIP (no such emulator; run with --create)"
+    continue
+  fi
+
+  # One emulator at a time, so the Mac is not asked to run five at once. The last one
+  # can still be listed while it shuts down, so wait for it to go, and then find this
+  # one by its name, never by being first in the list. The Mac's own GPU (`host`):
+  # software rendering left the emulator's system UI too slow to answer, and it put
+  # "System UI isn't responding" over the app.
+  for _ in $(seq 1 30); do
+    "$ADB" devices | grep -q '^emulator-' || break
+    sleep 2
+  done
+  "$EMU" -avd "$name" -no-window -no-audio -no-snapshot-load -no-snapshot-save \
+    -gpu host >/dev/null 2>&1 &
+  emu_pid=$!
+  serial=""
+  booted=0
+  for _ in $(seq 1 200); do
+    for s in $("$ADB" devices | awk '/^emulator-/{print $1}'); do
+      if [ "$("$ADB" -s "$s" emu avd name 2>/dev/null | head -1 | tr -d '\r')" = "$name" ]; then
+        serial="$s"
+      fi
+    done
+    if [ -n "$serial" ] && [ "$("$ADB" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+      booted=1
+      break
+    fi
+    sleep 3
+  done
+  if [ "$booted" != 1 ]; then
+    echo "$name: FAIL (did not boot)"
+    kill "$emu_pid" 2>/dev/null
+    failed=1
+    continue
+  fi
+  # A cold boot leaves the system UI busy for a while; opening the app into it reads as
+  # a slow app. Let it settle, and dismiss an "isn't responding" prompt if one is up.
+  sleep 20
+  "$ADB" -s "$serial" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1
+  "$ADB" -s "$serial" shell wm dismiss-keyguard >/dev/null 2>&1
+  dismiss_anr "$serial"
+
+  "$ADB" -s "$serial" uninstall "$PKG" >/dev/null 2>&1
+  if ! "$ADB" -s "$serial" install "$APK" >/dev/null 2>&1; then
+    echo "$name: FAIL (install refused)"
+    "$ADB" -s "$serial" emu kill >/dev/null 2>&1
+    failed=1
+    continue
+  fi
+  "$ADB" -s "$serial" logcat -c
+  "$ADB" -s "$serial" shell am start -W -n "$PKG/.MainActivity" >/dev/null 2>&1
+
+  # Wait for the first screen rather than a fixed time: an old emulator is slow.
+  rendered=0
+  for _ in $(seq 1 20); do
+    dismiss_anr "$serial"
+    "$ADB" -s "$serial" shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+    if "$ADB" -s "$serial" shell cat /sdcard/ui.xml 2>/dev/null | grep -q "$expect"; then
+      rendered=1
+      break
+    fi
+    sleep 3
+  done
+  alive="$("$ADB" -s "$serial" shell pidof "$PKG" | tr -d '\r')"
+  # The app's own crashes only: uiautomator itself can die on an old Android.
+  crash="$("$ADB" -s "$serial" logcat -d | grep -E "panicked at|FATAL EXCEPTION|Fatal signal" \
+    | grep -v "UiAutomation" | head -2)"
+  version="$("$ADB" -s "$serial" shell getprop ro.build.version.release | tr -d '\r')"
+  size="$("$ADB" -s "$serial" shell wm size | awk '{print $NF}' | tr -d '\r')"
+  "$ADB" -s "$serial" exec-out screencap -p > "$OUT/$name.png"
+
+  if [ -n "$alive" ] && [ -z "$crash" ] && [ "$rendered" = 1 ]; then
+    echo "$name (Android $version, $size): OK (\"$expect\")"
+  else
+    echo "$name (Android $version, $size): FAIL (alive=${alive:-no} rendered=$rendered)"
+    [ -n "$crash" ] && echo "  $crash"
+    failed=1
+  fi
+
+  "$ADB" -s "$serial" emu kill >/dev/null 2>&1
+  wait "$emu_pid" 2>/dev/null
+done
+
+exit "$failed"

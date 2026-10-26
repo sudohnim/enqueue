@@ -11,9 +11,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import threading
 
-from .. import db, greeting, keyring, keyring_file, settings
+from .. import db, greeting, keyring, keyring_file, preview, settings
 from ..providers import pause
-from ..sync.client import push_keyring
+from ..sync.enable import enable
 
 router = APIRouter()
 
@@ -25,6 +25,25 @@ def read_settings() -> dict:
         "storage": settings.storage(),
         "backends": settings.backends(),
         "sync": settings.sync_state(),
+        # What this copy of Enqueue can do: the Mac app ships without the preview
+        # browser, so its setting is not offered there.
+        "features": {"preview_browser": preview.browser_available()},
+    }
+
+
+@router.get("/settings/models")
+def service_models(backend: str) -> dict:
+    """The models an online service serves, for the pickers: `chat` answer in text,
+    `vision` (when known) also read pictures. Fetched now when none is kept; empty
+    when the service has no list or cannot be reached (then anything may be typed)."""
+    from .. import catalog
+
+    listing = catalog.get(backend) or {}
+    return {
+        "backend": backend,
+        "chat": listing.get("chat", []),
+        "vision": listing.get("vision"),
+        "known": bool(listing),
     }
 
 
@@ -89,6 +108,29 @@ def forget_api_key() -> dict:
 
 class SyncSecret(BaseModel):
     secret: str
+    # The relay the secret is for, when the page knows it (sync setup): checked first.
+    relay_url: str | None = None
+
+
+def _relay_refuses(url: str, secret: str) -> bool:
+    """Whether the relay at `url` answers that it does not know this secret.
+
+    A relay that serves several libraries (relay/storage.py) only opens the ones it
+    issued, so a made-up secret would be stored here and every sync would then fail
+    in the background. Unreachable is not a refusal: setup may happen offline.
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(
+            f"{url.rstrip('/')}/sync/objects",
+            params={"since": 2**62},
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=10,
+        )
+    except httpx.HTTPError:
+        return False
+    return resp.status_code == 401
 
 
 @router.put("/settings/sync-secret")
@@ -98,37 +140,18 @@ def store_sync_secret(req: SyncSecret) -> dict:
     Like the API key: never written to settings.json, and the value is never
     returned - only whether one now exists and its hint.
     """
+    if req.relay_url and _relay_refuses(req.relay_url, req.secret):
+        raise HTTPException(
+            status_code=400,
+            detail="That relay doesn't know this password. Use the one its owner gave you"
+            " (a shared relay only opens libraries it set up).",
+        )
     try:
-        keyring.sync_secret_set(req.secret)
+        enable(req.secret)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
-    # After sync secret is configured, push the encrypted keyring to the relay
-    # so mobile devices can pull it during pairing (MOB2.10).
-    push_keyring()
-    # The secret is the last step of first-time sync setup, done after boot, so the
-    # boot-time worker start no-op'd (no relay/secret yet). Start it now so this device
-    # begins auto-syncing without an app restart. Idempotent.
-    try:
-        from ..sync.worker import start as start_sync_worker
-
-        start_sync_worker()
-    except Exception as exc:  # noqa: BLE001 - sync is additive; never fail the request
-        print(f"[engine] could not start the sync worker after secret set: {exc}")
-    # BACKFILL.2: Auto-backfill on first sync-enable (guarded by one-shot flag).
-    # Only runs when DEK is loaded (keyring unlocked) and backfill hasn't run yet.
-    if keyring_file.load_dek_from_keychain() is not None:
-        if not settings.get("sync_backfill_done"):
-
-            def _bg():
-                from ..sync.client import push_all
-
-                count = push_all()
-                print(f"[sync] auto-backfill pushed {count} artifacts", flush=True)
-
-            threading.Thread(target=_bg, daemon=True).start()
-            settings.update({"sync_backfill_done": True})
     return settings.sync_state()
 
 

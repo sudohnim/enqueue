@@ -1,0 +1,379 @@
+"""Something shiny: one relationship drawn across notes from different fields, each day.
+
+Instead of bringing one forgotten note back, the wall shows two or three notes that
+make the same point from far-apart fields, and what that shared point is. This is the
+far analogy from Epstein's *Range*: comparing cases from different domains is how a
+person finds the deep structure under the surface, and the farther apart the cases,
+the better the ideas they lead to. But people rarely make the comparison unprompted.
+
+The set comes from the links `ingest/related.py` already keeps. Idea links come
+first: the ingest model judged that the two notes make the same point. Only when
+there are none, mention links between notes on different subjects (a shared name is
+thin fare beside a shared idea). Pairs on the same subject never count. The
+pick favours the farthest pairs (`related.distance`), rotating daily through the top
+ROTATE so one strong pair does not hold the slot. "Find another" walks on through the
+day's order, past the top ROTATE into every other pair, each with its own words. A third note joins when one of the
+pair has another idea link. The same day always gives the same set.
+
+The words come from one call to the chat model per set, cached in `derived_values`
+(scope `shiny`): the shared idea, how each note shows it, and a question to take
+further. The call runs in the background; until it lands, or with no model, the card
+shows the judge's own sentence for the link. A set with a local-only note goes to the
+local model only. The model is shown titles and summary lines, never the notes' text.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import threading
+from datetime import date, datetime, timezone
+
+from pydantic import BaseModel, field_validator
+
+from . import db, prompts
+
+log = logging.getLogger(__name__)
+
+# How many of the farthest pairs the days rotate through.
+ROTATE = 7
+# The most notes in one set.
+MAX_NOTES = 3
+# The summary levels the model is shown: subject, mechanism, principle.
+LEVELS = (1, 2, 3)
+FALLBACK_QUESTION = "Where else have you seen this work?"
+
+_LIVE = "a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+
+
+class _Part(BaseModel):
+    id: str
+    how: str
+
+    @field_validator("how")
+    @classmethod
+    def _short(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value or len(value.split()) > 30:
+            raise ValueError("how must be one sentence of at most 30 words")
+        return value
+
+
+class _Food(BaseModel):
+    idea: str
+    parts: list[_Part]
+    question: str
+
+    @field_validator("idea")
+    @classmethod
+    def _one_sentence(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value or len(value.split()) > 30:
+            raise ValueError("idea must be one sentence of at most 30 words")
+        return value
+
+    @field_validator("question")
+    @classmethod
+    def _a_question(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value.endswith("?") or len(value.split()) > 30:
+            raise ValueError("question must be one question of at most 30 words")
+        return value
+
+
+def _pairs(conn) -> list[dict]:
+    """Every pair worth showing, best first: idea links before mention links, the
+    farthest first."""
+    rows = conn.execute(
+        "SELECT r.artifact_id AS a, r.related_id AS b, r.kind, r.distance, r.point, r.via"
+        " FROM related r JOIN artifacts a ON a.id = r.artifact_id"
+        " JOIN artifacts b ON b.id = r.related_id"
+        f" WHERE r.artifact_id < r.related_id AND r.kind IN ('idea', 'mention') AND {_LIVE}"
+        " AND b.deleted_at IS NULL AND b.vaulted_at IS NULL AND b.embedded_at IS NULL"
+    ).fetchall()
+    pairs = [dict(r) for r in rows]
+    pairs.sort(key=lambda p: (p["kind"] != "idea", -(p["distance"] or 0.0), p["a"], p["b"]))
+    return pairs
+
+
+def _grow(first: dict, pairs: list[dict]) -> tuple[list[str], list[dict]]:
+    """A pair, and a third note when one of the two has another idea link: the
+    farthest one to a note outside. The note both links pass through sits in the
+    middle, so the chain reads across."""
+    ids = [first["a"], first["b"]]
+    links = [first]
+    for p in pairs:
+        if len(ids) >= MAX_NOTES:
+            break
+        if p["kind"] != "idea" or (p["a"] in ids) == (p["b"] in ids):
+            continue
+        hub = p["a"] if p["a"] in ids else p["b"]
+        ids = [i for i in ids if i != hub] + [hub, p["b"] if hub == p["a"] else p["a"]]
+        links.append(p)
+    return ids, links
+
+
+def _order(today: date) -> list[tuple[list[str], list[dict]]]:
+    """The day's sets, best first, computed from the links as they stand."""
+    conn = db.get_conn()
+    try:
+        pairs = _pairs(conn)
+    finally:
+        conn.close()
+    # A shared name is thin fare beside a shared idea: only when there is no idea link.
+    ideas = [p for p in pairs if p["kind"] == "idea"]
+    if not pairs:
+        return []
+    pool = ideas or pairs
+    top, rest = pool[:ROTATE], pool[ROTATE:]
+    start = today.toordinal() % len(top)
+    # The day's order: the farthest pairs from today's turn on, then everything else.
+    # A set whose notes were all in an earlier one is skipped, or "Find another" would
+    # show the same three notes again by way of another of their pairs.
+    keep = ("a", "b", "kind", "point", "via")
+    sets: list[tuple[list[str], list[dict]]] = []
+    for first in top[start:] + top[:start] + rest:
+        ids, links = _grow(first, pairs)
+        if any(set(ids) <= set(shown) for shown, _ in sets):
+            continue
+        sets.append((ids, [{k: p[k] for k in keep} for p in links]))
+    return sets
+
+
+# The day's sets are chosen once and kept (derived_values, scope `shiny_day`), so the
+# card holds still all day: links keep arriving as the related judge works, and a set
+# recomputed on every wall refresh changed under the person every few seconds.
+def _kept(conn, day: str) -> list | None:
+    row = conn.execute(
+        "SELECT value FROM derived_values WHERE scope = 'shiny_day' AND subject = ?"
+        " AND attribute = 'sets' AND source = 'model'",
+        (day,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(row["value"])
+    except ValueError:
+        return None
+
+
+def _keep(day: str, sets: list) -> None:
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM derived_values WHERE scope = 'shiny_day'")
+        conn.execute(
+            "INSERT INTO derived_values"
+            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
+            " VALUES ('shiny_day', ?, 'sets', ?, 1, 'model', '', ?)",
+            (day, json.dumps(sets), db.now()),
+        )
+
+
+def _live(conn, ids: list[str]) -> set[str]:
+    rows = conn.execute(
+        f"SELECT a.id FROM artifacts a WHERE a.id IN (SELECT value FROM json_each(?)) AND {_LIVE}",
+        (json.dumps(ids),),
+    ).fetchall()
+    return {r["id"] for r in rows}
+
+
+def pick(today: date | None = None, n: int = 0) -> dict | None:
+    """{"ids", "links", "more"} for today's set, or None when the library has no
+    relationship across fields yet (or `n` has gone past the last one). `links` are the
+    pairs inside the set, each with its kind, the judge's sentence (`point`) or the
+    shared name (`via`). `n` is "Find another": 0 is the day's own set, each next one
+    the next pair in the day's order; `more` says whether there is another after it.
+    The order is chosen once a day and kept; a note trashed since drops its sets."""
+    today = today or datetime.now(timezone.utc).date()
+    day = today.isoformat()
+    conn = db.get_conn()
+    try:
+        sets = _kept(conn, day)
+    finally:
+        conn.close()
+    if sets is None:
+        sets = [[ids, links] for ids, links in _order(today)]
+        # Nothing to show yet is not kept: the first connection of the day shows at once.
+        if sets:
+            _keep(day, sets)
+    conn = db.get_conn()
+    try:
+        live = _live(conn, [i for ids, _ in sets for i in ids])
+    finally:
+        conn.close()
+    sets = [(ids, links) for ids, links in sets if all(i in live for i in ids)]
+    if n < 0 or n >= len(sets):
+        return None
+    ids, links = sets[n]
+    return {"ids": ids, "links": links, "more": n + 1 < len(sets)}
+
+
+def look_again(today: date | None = None) -> None:
+    """Choose today's sets again from the links as they stand now (the card's "Look
+    again"): new connections found since the morning get their turn."""
+    today = today or datetime.now(timezone.utc).date()
+    _keep(today.isoformat(), [[ids, links] for ids, links in _order(today)])
+
+
+def prepare(day: date | None = None) -> bool:
+    """Once a day (backup.start_scheduler's beat): choose the day's sets and have the
+    model write the first one's words, so the card is ready when the wall opens. True
+    when it did anything."""
+    day = day or datetime.now(timezone.utc).date()
+    conn = db.get_conn()
+    try:
+        done = _kept(conn, day.isoformat()) is not None
+    finally:
+        conn.close()
+    if done:
+        return False
+    return today(day, 0, background=False) is not None
+
+
+def _faces(conn, ids: list[str]) -> dict[str, dict]:
+    rows = conn.execute(
+        "SELECT id, kind, title FROM artifacts WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(ids),),
+    ).fetchall()
+    faces = {r["id"]: {"kind": r["kind"], "title": r["title"], "lines": []} for r in rows}
+    for r in conn.execute(
+        "SELECT artifact_id, level, statement FROM facets"
+        " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+        f" AND level IN ({','.join('?' * len(LEVELS))}) ORDER BY level, statement",
+        (json.dumps(ids), *LEVELS),
+    ):
+        if r["artifact_id"] in faces:
+            faces[r["artifact_id"]]["lines"].append(r["statement"])
+    return faces
+
+
+def _key(ids: list[str], faces: dict[str, dict]) -> tuple[str, str]:
+    """The cache key of a set: its ids in order, and a stamp of what the model is shown,
+    so the words are written again once a note's summary changes."""
+    subject = "|".join(sorted(ids))
+    shown = [[faces.get(i, {}).get("title"), faces.get(i, {}).get("lines")] for i in sorted(ids)]
+    return subject, hashlib.sha256(json.dumps(shown).encode()).hexdigest()[:16]
+
+
+def _cached(conn, key: tuple[str, str]) -> dict | None:
+    row = conn.execute(
+        "SELECT value FROM derived_values WHERE scope = 'shiny' AND subject = ?"
+        " AND attribute = ? AND source = 'model'",
+        key,
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(row["value"])
+    except ValueError:
+        return None
+
+
+_lock = threading.Lock()
+_writing: set[str] = set()
+# Sets whose call failed today, so a wall reload does not ask again: {subject: day}.
+_failed: dict[str, str] = {}
+
+
+def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) -> None:
+    """Ask the chat model for the set's words and cache them. Never raises."""
+    from . import privacy
+    from .providers import pause
+    from .providers.base import get_provider
+
+    try:
+        if pause.active():
+            return
+        conn = db.get_conn()
+        try:
+            faces = _faces(conn, ids)
+        finally:
+            conn.close()
+        blocks = []
+        for i in ids:
+            face = faces.get(i) or {"kind": "item", "title": None, "lines": []}
+            blocks.append(
+                f"note id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n"
+                + "\n".join(f"- {line}" for line in face["lines"][:6])
+            )
+        said = [p["point"] or (f"Both mention {p['via']}." if p["via"] else "") for p in links]
+        local = bool(privacy.local_only_ids(ids))
+        provider = get_provider(local_only=local, role="chat")
+        food = provider.complete(
+            system=prompts.SHINY,
+            user="Notes:\n\n"
+            + "\n\n".join(blocks)
+            + "\n\nWhat was already noticed about them:\n"
+            + "\n".join(f"- {s}" for s in said if s),
+            response_model=_Food,
+        )
+        parts = {p.id: p.how for p in food.parts if p.id in ids}
+        if set(parts) != set(ids):
+            raise ValueError("the answer did not cover every note")
+        value = json.dumps({"idea": food.idea, "parts": parts, "question": food.question})
+        with db.transaction() as conn:
+            conn.execute(
+                "DELETE FROM derived_values WHERE scope = 'shiny' AND subject = ?",
+                (key[0],),
+            )
+            conn.execute(
+                "INSERT INTO derived_values"
+                " (scope, subject, attribute, value, grounded, source, model_version,"
+                " created_at) VALUES ('shiny', ?, ?, ?, 1, 'model', ?, ?)",
+                (key[0], key[1], value, getattr(provider, "model", ""), db.now()),
+            )
+    except Exception as exc:  # noqa: BLE001 - the card falls back to the link's own words
+        log.info("something shiny not written: %s", exc)
+        _failed[key[0]] = day
+    finally:
+        with _lock:
+            _writing.discard(key[0])
+
+
+def today(day: date | None = None, n: int = 0, background: bool = True) -> dict | None:
+    """Today's set (or the `n`th "Find another") with its words, or None. `food` is the
+    model's words when written; `writing` says they are on the way; `more` whether
+    there is another set after this one. `background=False` writes the words in this
+    thread (tests)."""
+    day = day or datetime.now(timezone.utc).date()
+    chosen = pick(day, n)
+    if chosen is None:
+        return None
+    ids = chosen["ids"]
+    conn = db.get_conn()
+    try:
+        key = _key(ids, _faces(conn, ids))
+        food = _cached(conn, key)
+    finally:
+        conn.close()
+    writing = False
+    if food is None and _failed.get(key[0]) != day.isoformat():
+        with _lock:
+            writing = key[0] in _writing
+            start = not writing
+            if start:
+                _writing.add(key[0])
+        if start:
+            args = (ids, chosen["links"], key, day.isoformat())
+            if background:
+                threading.Thread(target=_write, args=args, daemon=True).start()
+                writing = True
+            else:
+                _write(*args)
+                conn = db.get_conn()
+                try:
+                    food = _cached(conn, key)
+                finally:
+                    conn.close()
+    if food is None:
+        first = chosen["links"][0]
+        idea = first["point"] or (f"Both mention {first['via']}." if first["via"] else "")
+        food = {"idea": idea, "parts": {}, "question": FALLBACK_QUESTION}
+    return {
+        "ids": ids,
+        "links": chosen["links"],
+        "food": food,
+        "writing": writing,
+        "more": chosen["more"],
+        "n": n,
+    }

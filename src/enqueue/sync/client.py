@@ -16,7 +16,7 @@ import re
 
 import httpx
 
-from .. import config, crypto, db, keyring, keyring_file, settings
+from .. import blobstore, config, crypto, db, keyring, keyring_file, settings
 
 from . import device_id
 from .guard import assert_local_relay
@@ -161,10 +161,9 @@ def push_artifact(artifact_id: str) -> None:
     # reader/thumbnails). The blob name is HMAC(content_hash, DEK), so it reveals
     # nothing about the content; the bytes are encrypted like the snapshot.
     for content_hash in _blob_hashes(snapshot):
-        blob_path = config.BLOB_DIR / content_hash
-        if blob_path.exists():
+        if blobstore.exists(content_hash):
             blob_name = crypto.blob_name(content_hash, dek)
-            blob_data = crypto.seal_payload(blob_path.read_bytes(), dek)
+            blob_data = crypto.seal_payload(blobstore.read(content_hash), dek)
             try:
                 with httpx.Client(timeout=60) as client:
                     bresp = client.put(
@@ -298,8 +297,7 @@ def fetch_blob_to_cache(content_hash: str) -> bool:
         plain = crypto.open_payload(resp.content, dek)
     except Exception:  # noqa: BLE001 - an undecryptable blob is "not here", never fatal
         return False
-    config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
-    (config.BLOB_DIR / content_hash).write_bytes(plain)
+    blobstore.write(plain, content_hash)
     return True
 
 
@@ -516,7 +514,7 @@ def push_settings() -> None:
     try:
         with httpx.Client(timeout=30) as client:
             resp = client.put(
-                f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
             )
         if resp.status_code not in (201, 409):
             print(f"[sync] settings push rejected: {resp.status_code}", flush=True)
@@ -749,7 +747,11 @@ def push_all() -> int:
     # blob PUT, keeping the connection pool warm instead of a fresh open/close each time.
     client = httpx.Client(timeout=60)
     for artifact_id in artifact_ids:
-        snapshot = read_artifact_snapshot(db.get_conn(), artifact_id)
+        conn = db.get_conn()
+        try:
+            snapshot = read_artifact_snapshot(conn, artifact_id)
+        finally:
+            conn.close()
         if snapshot is None:
             continue
         if snapshot["artifact"].get("local_only"):
@@ -767,7 +769,7 @@ def push_all() -> int:
         }
         try:
             resp = client.put(
-                f"{_relay_url().rstrip('/')}/sync/object/{name}", content=data, headers=headers
+                f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
             )
         except httpx.HTTPError:
             continue
@@ -778,15 +780,14 @@ def push_all() -> int:
 
         # Push the blobs the snapshot refers to (file and link-preview picture).
         for content_hash in _blob_hashes(snapshot):
-            blob_path = config.BLOB_DIR / content_hash
-            if blob_path.exists():
+            if blobstore.exists(content_hash):
                 blob_name = crypto.blob_name(content_hash, dek)
-                blob_data = crypto.seal_payload(blob_path.read_bytes(), dek)
+                blob_data = crypto.seal_payload(blobstore.read(content_hash), dek)
                 # A blob push failure is non-fatal: the snapshot is already up, and
                 # the next push of this artifact retries the bytes.
                 with contextlib.suppress(httpx.HTTPError):
                     client.put(
-                        f"{_relay_url().rstrip('/')}/sync/object/blobs/{blob_name}",
+                        f"{url.rstrip('/')}/sync/object/blobs/{blob_name}",
                         content=blob_data,
                         headers=headers,
                     )
@@ -794,6 +795,24 @@ def push_all() -> int:
     client.close()
     # Custom views ride alongside the artifacts so the phone's Custom mode has data.
     push_pivots()
+    return pushed
+
+
+def push_everything() -> int:
+    """Everything this device has, to a relay that holds none of it yet (a switch to
+    Enqueue sync): the library and its views, every conversation, the settings and
+    the vault's wrap. The keyring went up when the password was stored. Returns the
+    number of artifacts pushed."""
+    pushed = push_all()
+    conn = db.get_conn()
+    try:
+        chat_ids = [r[0] for r in conn.execute("SELECT id FROM chats").fetchall()]
+    finally:
+        conn.close()
+    for chat_id in chat_ids:
+        push_chat(chat_id)
+    push_settings()
+    push_vault_meta()
     return pushed
 
 

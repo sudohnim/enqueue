@@ -1,0 +1,289 @@
+# Enqueue releases. The builds themselves stay in bin/release (it is what a person runs
+# by hand too); these lanes add what a store upload needs around it: a version code the
+# store has not seen, the upload, and the checks that fail before a build is spent.
+#
+#   bundle exec fastlane android dev        Play internal testing, completed
+#   bundle exec fastlane android prod       Play production, completed (or a staged rollout)
+#
+# bin/deploy is the front door (`bin/deploy android dev|prod`, Dequeue's), and asks
+# before prod; bin/release alone only builds, so uploading is always a separate step.
+#   bundle exec fastlane android next_code  print the next versionCode, change nothing
+#   bundle exec fastlane mac release        the signed, notarized .dmg and update bundle
+#   bundle exec fastlane mac publish        both on GitHub, and the update feed pointed at them
+#   bundle exec fastlane ios beta           the iPhone app on TestFlight (feature/ios)
+
+require "json"
+
+# fastlane/README.md is written by hand (setup, keys, version codes); keep fastlane from
+# regenerating it as a bare lane list after every run.
+ENV["FASTLANE_SKIP_DOCS"] = "1"
+
+REPO = File.expand_path("..", __dir__)
+ANDROID_PACKAGE = "com.sudohnim.enqueue"
+PLAY_KEY = ENV["PLAY_JSON_KEY"].to_s.empty? ? File.join(REPO, "desktop", "play-store-svc.json") : File.expand_path(ENV["PLAY_JSON_KEY"])
+ANDROID_APP = File.join(REPO, "desktop", "gen", "android", "app")
+ANDROID_OUT = File.join(ANDROID_APP, "build", "outputs")
+AAB = File.join(ANDROID_OUT, "bundle", "universalRelease", "app-universal-release.aab")
+MAPPING = File.join(ANDROID_OUT, "mapping", "universalRelease", "mapping.txt")
+
+def assert_play_key
+  return if File.exist?(PLAY_KEY)
+
+  UI.user_error!(
+    "No Play service account key at #{PLAY_KEY}.\n" \
+    "Put the JSON key there (gitignored), and invite that service account to the " \
+    "Enqueue app in Play Console (Users and permissions) with release rights.",
+  )
+end
+
+# --- version codes ------------------------------------------------------------
+#
+# Play refuses a versionCode it has already accepted. Tauri derives one from
+# tauri.conf.json's version (major * 1000000 + minor * 1000 + patch: 0.3.0 -> 3000), so
+# every build of one version gets the same code and only the first upload works.
+# bin/release takes ANDROID_VERSION_CODE and merges it into the Tauri config for that
+# build only, so no file in the repo changes per release.
+#
+# Which code: the highest of what Play has seen and what this machine last attempted,
+# plus one (Dequeue's next_android_version_code). Play reserves a code the moment a
+# bundle is uploaded, even when the edit is aborted, and such a code appears in none of
+# the lists the API returns; the local record covers that. Play covers other machines.
+#
+# The local record is gen/android/app/tauri.properties: Tauri writes the code it built
+# with there on every build (overridden or not), and the file is gitignored, so it holds
+# the last code this checkout attempted, successful upload or not.
+
+def play_version_codes
+  require "supply"
+  require "supply/client"
+
+  assert_play_key
+  Supply.config = FastlaneCore::Configuration.create(
+    Supply::Options.available_options,
+    { json_key: PLAY_KEY, package_name: ANDROID_PACKAGE, timeout: 300 },
+  )
+  client = Supply::Client.make_from_config
+  client.begin_edit(package_name: ANDROID_PACKAGE)
+  begin
+    # Every uploaded artifact, not only those on a track: a superseded code still blocks.
+    codes = (client.aab_version_codes + client.apks_version_codes).map(&:to_i)
+    codes += %w[internal alpha beta production].flat_map do |track|
+      client.track_version_codes(track).compact.map(&:to_i)
+    rescue StandardError
+      [] # a track with nothing on it raises instead of returning []
+    end
+  ensure
+    client.abort_current_edit # read only: nothing is ever committed
+  end
+  codes
+end
+
+def local_version_code
+  props = File.join(ANDROID_APP, "tauri.properties")
+  return 0 unless File.exist?(props)
+
+  File.read(props)[/^tauri\.android\.versionCode=(\d+)/, 1].to_i
+end
+
+def next_android_version_code
+  remote = play_version_codes
+  local = local_version_code
+  next_code = ([local] + remote).max + 1
+  UI.success(
+    "versionCode: #{next_code} (Play's highest: #{remote.max || 0}, " \
+    "last attempted here: #{local})",
+  )
+  next_code
+end
+
+# --- android ------------------------------------------------------------------
+
+def build_aab(version_code)
+  # Signing comes from desktop/gen/android/key.properties + release.keystore (the upload
+  # key; Play App Signing holds the app key), or the RELEASE_* variables.
+  sh({ "ANDROID_VERSION_CODE" => version_code.to_s }, File.join(REPO, "bin", "release"), "android")
+  UI.user_error!("No bundle at #{AAB}") unless File.exist?(AAB)
+
+  built = local_version_code
+  return if built == version_code
+
+  UI.user_error!("Built versionCode #{built}, expected #{version_code}; not uploading.")
+end
+
+def upload_play(track, status = nil)
+  # ANDROID_PROD_ROLLOUT (e.g. 0.1 = 10%) makes a production release a staged rollout,
+  # which Play calls inProgress; without it the release goes to everyone at once.
+  rollout = ENV["ANDROID_PROD_ROLLOUT"].to_s.strip
+  staged = track == "production" && !rollout.empty? && rollout.to_f < 1.0
+  status ||= staged ? "inProgress" : "completed"
+  supply(
+    package_name: ANDROID_PACKAGE,
+    json_key: PLAY_KEY,
+    track: track,
+    release_status: status,
+    rollout: (rollout if staged && status != "draft"),
+    aab: AAB,
+    # R8 is on for release (proguard-rules.pro), so Play needs the map to read crashes.
+    mapping: (MAPPING if File.exist?(MAPPING)),
+    skip_upload_apk: true,
+    skip_upload_metadata: true,
+    skip_upload_changelogs: true,
+    skip_upload_images: true,
+    skip_upload_screenshots: true,
+  )
+rescue StandardError => e
+  # Until an app's first release is published, Play accepts releases as drafts only
+  # ("Only releases with status draft may be created on draft app"). Leave it as a
+  # draft and say where the person sends it for review, once, by hand.
+  raise unless status != "draft" && e.message.include?("draft app")
+
+  UI.important("Play takes only drafts until this app's first release is published.")
+  upload_play(track, "draft")
+  UI.success(
+    "Uploaded as a draft on #{track}. In Play Console, open Publishing overview " \
+    "and press Send for review (the first release only; later ones go out on their own).",
+  )
+end
+
+platform :android do
+  desc "Dev: build a signed .aab with a fresh versionCode and release it to Play internal testing"
+  lane :dev do
+    assert_play_key
+    build_aab(next_android_version_code)
+    upload_play("internal")
+  end
+
+  desc "Prod: build a signed .aab with a fresh versionCode and release it to Play production " \
+       "(ANDROID_PROD_ROLLOUT=0.1 for a staged rollout)"
+  lane :prod do
+    assert_play_key
+    build_aab(next_android_version_code)
+    upload_play("production")
+  end
+
+  desc "Upload the store listing (fastlane/metadata/android: text, icon, feature graphic, " \
+       "phone screenshots). No build, no release; Play shows it once the app is published"
+  lane :listing do
+    assert_play_key
+    supply(
+      package_name: ANDROID_PACKAGE,
+      json_key: PLAY_KEY,
+      metadata_path: File.join(REPO, "fastlane", "metadata", "android"),
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_changelogs: true,
+      sync_image_upload: true,
+      # Without a bundle, supply still looks up a release to attach release notes to;
+      # point it at the newest code Play holds.
+      track: "internal",
+      version_code: play_version_codes.max,
+    )
+  end
+
+  desc "Print the versionCode the next upload would use (reads Play, changes nothing)"
+  lane :next_code do
+    next_android_version_code
+  end
+end
+
+# --- mac ----------------------------------------------------------------------
+#
+# The Mac app ships outside the App Store: a Developer ID signed, notarized .dmg that
+# bin/release desktop already makes. This lane only fills in the two settings and checks
+# them before a ten-minute build. Notarizing needs a notarytool profile in the keychain,
+# made once per Mac:
+#   xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG
+
+MAC_IDENTITY = "Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"
+
+platform :mac do
+  desc "Build the Developer ID signed, notarized and stapled .dmg (no App Store upload)"
+  lane :release do
+    identity = ENV["APPLE_SIGNING_IDENTITY"].to_s.empty? ? MAC_IDENTITY : ENV["APPLE_SIGNING_IDENTITY"]
+    profile = ENV["NOTARY_PROFILE"].to_s.empty? ? "enqueue-notary" : ENV["NOTARY_PROFILE"]
+
+    identities = `security find-identity -v -p codesigning 2>/dev/null`
+    UI.user_error!("'#{identity}' is not in the keychain.") unless identities.include?(identity)
+
+    sh(
+      { "APPLE_SIGNING_IDENTITY" => identity, "NOTARY_PROFILE" => profile },
+      File.join(REPO, "bin", "release"), "desktop",
+    )
+
+    dmg = Dir[File.join(REPO, "desktop", "target", "release", "bundle", "dmg", "*.dmg")]
+          .max_by { |f| File.mtime(f) }
+    UI.user_error!("No .dmg was built.") unless dmg
+    sh("xcrun", "stapler", "validate", dmg)
+    UI.success("Ready to publish: #{dmg}")
+  end
+
+  desc "Publish the built .dmg and update bundle on GitHub, then point installed Macs at it"
+  lane :publish do
+    require "json"
+    version = JSON.parse(File.read(File.join(REPO, "desktop", "tauri.conf.json")))["version"]
+    bundle = File.join(REPO, "desktop", "target", "release", "bundle")
+    dmg = Dir[File.join(bundle, "dmg", "*.dmg")].max_by { |f| File.mtime(f) }
+    update = File.join(bundle, "macos", "Enqueue.app.tar.gz")
+    feed = File.join(bundle, "macos", "latest.json")
+    [dmg, update, "#{update}.sig", feed].each do |f|
+      UI.user_error!("Missing #{f || "the .dmg"}: run `bundle exec fastlane mac release` first.") unless f && File.exist?(f)
+    end
+    UI.user_error!("latest.json is not for #{version}.") unless JSON.parse(File.read(feed))["version"] == version
+
+    # The download people install from, versioned; the feed's url points into it.
+    tag = "mac-v#{version}"
+    sh("gh", "release", "create", tag, dmg, update, "#{update}.sig",
+       "--title", "Enqueue #{version} for Mac",
+       "--notes", "Download the .dmg, open it, and drag Enqueue to Applications. Installed copies update themselves.")
+    # The feed every installed Mac reads (tauri.conf.json plugins.updater): one release
+    # that is never "latest", whose latest.json is replaced, so an Android release can
+    # never take its place.
+    unless system("gh", "release", "view", "mac-updates", out: File::NULL, err: File::NULL)
+      sh("gh", "release", "create", "mac-updates", "--prerelease", "--latest=false",
+         "--title", "Mac update feed",
+         "--notes", "Where installed copies of Enqueue for Mac look for a new version. Download the app from the newest mac-v release instead.")
+    end
+    sh("gh", "release", "upload", "mac-updates", feed, "--clobber")
+    UI.success("Published #{tag}; installed Macs will update within six hours.")
+  end
+end
+
+
+# ---- iPhone (feature/ios) ------------------------------------------------------------
+# TestFlight, after Dequeue's lanes: the App Store Connect API key of the team (its id and
+# issuer in fastlane/.env, gitignored; the .p8 in ~/.appstoreconnect/private_keys), a
+# build number one above the newest TestFlight build, `cargo tauri ios build` exporting
+# for App Store Connect, then pilot. Testers are added in App Store Connect (TestFlight,
+# a group); an outside tester's first build waits for Apple's beta review.
+platform :ios do
+  IOS_BUNDLE_ID = "com.sudohnim.enqueue"
+
+  def asc_key
+    UI.user_error!("Set ASC_KEY_ID and ASC_ISSUER_ID in fastlane/.env") if ENV["ASC_KEY_ID"].to_s.empty?
+    app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{ENV["ASC_KEY_ID"]}.p8"),
+    )
+  end
+
+  desc "Build the iPhone app and upload it to TestFlight"
+  lane :beta do
+    api_key = asc_key
+    latest = latest_testflight_build_number(api_key: api_key, app_identifier: IOS_BUNDLE_ID, platform: "ios", initial_build_number: 0)
+    build = (ENV["BUILD"] || (latest.to_i + 1)).to_s
+    UI.message("build number #{build}")
+    Dir.chdir(File.join(REPO, "desktop")) do
+      sh("cargo", "tauri", "ios", "build", "--export-method", "app-store-connect", "--build-number", build)
+    end
+    ipa = Dir[File.join(REPO, "desktop", "gen", "apple", "build", "**", "*.ipa")].max_by { |f| File.mtime(f) }
+    UI.user_error!("No .ipa was built.") unless ipa
+    pilot(
+      api_key: api_key,
+      app_identifier: IOS_BUNDLE_ID,
+      ipa: ipa,
+      skip_waiting_for_build_processing: true,
+    )
+    UI.success("Build #{build} is on TestFlight; add testers in App Store Connect.")
+  end
+end

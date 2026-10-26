@@ -138,7 +138,7 @@ const Guides = (() => {
       need: "On by default. Off, a saved link stays a bare address until you ask for it.",
       steps: [
         "Resolve links when you save them: one request per link, at the moment you save.",
-        "Open refused links in a browser: for sites that turn a plain request away, the page is opened once in a hidden browser.",
+        "Try harder on sites that block previews: on by default. A site that turns a plain request away is opened once more in Safari's engine, out of sight, with no cookies kept. A few seconds, only for those sites.",
       ],
       know: [
         "Nothing is fetched for a link you marked local only.",
@@ -147,7 +147,7 @@ const Guides = (() => {
       ],
       also: [],
       words:
-        "link links preview previews fetch resolve url website page title picture image browser chromium medium refused user agent article",
+        "link links preview previews fetch resolve url website page title picture image browser safari webkit medium refused user agent article",
     },
     {
       id: "search-options",
@@ -264,18 +264,18 @@ const Guides = (() => {
         "A small server that holds your library in encrypted form so your phone can fetch it. It stores bytes it has no key for. Your Mac and your phone hold the key; the relay never does.",
       need: "Only for the phone app, or a second computer. With no relay, nothing about this Mac changes.",
       steps: [
-        "Put the relay somewhere your phone can reach from anywhere. A relay on this Mac only works at home.",
-        "Paste its address into Relay URL and press Continue.",
-        "You are shown a recovery phrase once. Write it down before going on.",
-        "Enter the relay's sync secret and press Finish setup.",
+        "Press Sign in with Google or Sign in with Apple, and finish signing in in your browser. That turns on Enqueue sync, a relay we run.",
+        "If this Mac has no library key yet, you are shown a recovery phrase first. Write it down before going on.",
+        "To run your own relay instead, open Use a relay of your own, paste its address, press Continue, then enter its password. Put it somewhere your phone can reach from anywhere: a relay on this Mac only works at home.",
       ],
       know: [
-        "The relay is part of Enqueue and you run it yourself. The project's notes on the sync relay say how to host one.",
+        "Signing in only says who you are. Your library stays locked with a key that lives on your devices, so we cannot read what Enqueue sync holds.",
+        "Each phone and computer on Enqueue sync gets its own pass, listed under Devices; remove one and it stops syncing at once.",
         "Your summaries, your account key and your notes all cross it encrypted. Saved views and conversations stay on the device they were made on.",
       ],
       also: ["recovery-phrase", "sync-secret", "link-phone"],
       words:
-        "relay sync server host hosted url phone mobile android iphone ios devices encrypted end to end e2e railway set up setup share another device what is",
+        "relay sync enqueue sync sign in signin google apple account server host hosted url phone mobile android iphone ios devices encrypted end to end e2e railway set up setup share another device what is",
     },
     {
       id: "recovery-phrase",
@@ -305,12 +305,15 @@ const Guides = (() => {
       voice: "The knock the door listens for.",
       what:
         "A password for the relay itself. It only decides who may store and fetch on that relay. It does not encrypt anything; the key from the recovery phrase does that.",
-      need: "Yes, to finish setting up sync. Whoever runs the relay chose it when starting it.",
+      need: "Only with a relay of your own; Enqueue sync needs none. Whoever runs the relay chose it when starting it.",
       steps: [
         "Enter the secret the relay was started with.",
         "Press Finish setup. It is kept in the macOS Keychain.",
       ],
-      know: ["Every device on the library uses the same one. The phone receives it when you link it."],
+      know: [
+        "Every device on the library uses the same one. The phone receives it when you link it.",
+        "With Enqueue sync there is no shared password: each device gets a pass of its own.",
+      ],
       also: ["relay", "link-phone"],
       words: "sync secret relay password bearer token authenticate unauthorized 401 403",
     },
@@ -324,7 +327,7 @@ const Guides = (() => {
       need: "Once per phone. Sync has to be set up first, on a relay the phone can reach away from home.",
       steps: [
         "Under Link a device, press Show linking QR.",
-        "On the phone, open Enqueue and press Scan QR.",
+        "On the phone, open Enqueue and press Scan the code.",
         "Point the camera at the code. The library starts arriving.",
         "Press Hide QR when it is done.",
       ],
@@ -347,7 +350,7 @@ const Guides = (() => {
       need: "Only if you use Enqueue on more than one computer.",
       steps: [
         "Here, press Create pairing code. A code and a phrase appear.",
-        "On the other computer, open Settings, Phone, and press Join.",
+        "On the other computer, open Settings, Sync, and press Join.",
         "Enter this relay's address, the code and the phrase there, and press Pair this device.",
       ],
       know: [
@@ -422,7 +425,7 @@ const Guides = (() => {
         "It runs by itself while Enqueue is open. Sync Now is for when you do not want to wait.",
       steps: [
         "Sync Now fetches anything new and sends anything waiting.",
-        "Re-link with QR is for a new relay, or after sync was reset on the Mac: scan the code under Settings, Phone, on the Mac.",
+        "Re-link with QR is for a new relay, or after sync was reset on the Mac: scan the code under Settings, Sync, on the Mac.",
       ],
       know: [
         "With no connection everything still works. Your changes wait on the phone and go out when it is back.",

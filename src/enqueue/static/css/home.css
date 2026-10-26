@@ -1329,56 +1329,217 @@ main {
 	color: var(--text);
 }
 
-/* Resurfacing: one older note between the header and the wall. The card recipe,
-   one row wide, so it reads as part of the wall rather than a banner over it. */
-.resurface {
+/* The first big read (refreshReading in js/home.js): a quiet line above the wall, no
+   plate, a hairline bar under the count. It fills while the assistant works and holds
+   still (fainter) while it waits on a limit, a refused key or a retry. */
+.reading {
+	max-width: 720px;
+	margin: 0 auto var(--sp-5);
+	padding: 0 2px;
+}
+.reading-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--sp-3);
+}
+.reading-title {
+	font-size: 13px;
+	font-weight: var(--w-strong);
+	color: var(--text);
+}
+.reading-count {
+	font-size: 13px;
+	color: var(--text-mute);
+	font-variant-numeric: tabular-nums;
+}
+.reading-bar {
+	height: 3px;
+	margin: 6px 0 6px;
+	border-radius: var(--r-full);
+	background: var(--line);
+	overflow: hidden;
+}
+.reading-bar span {
+	display: block;
+	height: 100%;
+	min-width: 3px;
+	border-radius: inherit;
+	background: var(--accent);
+	transition: width 600ms var(--ease);
+}
+.reading-bar.still span {
+	background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.reading-why {
+	font-size: 12.5px;
+	line-height: 18px;
+	color: var(--text-mute);
+}
+.reading[data-state="key"] .reading-why {
+	color: var(--danger);
+}
+.reading-why a {
+	color: var(--accent);
+}
+
+/* Something shiny: two or three notes from different fields that make the same point,
+   between the header and the wall. One tile, the wall's recipe: the raven with a gem
+   in its beak on the left, the shared idea as the headline, the notes as plain rows
+   (never tiles inside the tile), and one way on at the foot. */
+.shiny {
 	max-width: 720px;
 	margin: 0 auto var(--sp-5);
 }
-.resurface-card {
-	display: flex;
-	align-items: center;
+.shiny-card {
+	display: grid;
+	grid-template-columns: 64px 1fr;
 	gap: var(--sp-4);
-	padding: 14px 16px;
+	padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-4);
 	background: var(--surface);
 	box-shadow: var(--hairline);
 	border-radius: var(--r-lg);
-	cursor: pointer;
-	text-align: left;
-	transition:
-		background var(--dur) var(--ease),
-		box-shadow 260ms var(--ease);
+	transition: opacity 180ms var(--ease);
 }
-.resurface-card:hover {
-	background: var(--surface-hover);
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+/* While the next find is fetched, the current one steps back. */
+.shiny-card.shiny-turning {
+	opacity: 0.5;
 }
-.resurface-text {
-	flex: 1;
+.shiny-raven {
+	position: relative;
+	align-self: start;
+	width: 64px;
+	height: 72px;
+}
+.shiny-raven img {
+	width: 64px;
+	height: 72px;
+	object-fit: contain;
+}
+/* The gem sits at the tip of the tilted raven's beak. */
+.shiny-gem {
+	position: absolute;
+	top: -9px;
+	right: -14px;
+	width: 26px;
+	height: 26px;
+	overflow: visible;
+	transform: rotate(14deg);
+}
+.shiny-gem .gem-body {
+	fill: var(--accent);
+}
+.shiny-gem .gem-facet {
+	fill: none;
+	stroke: color-mix(in oklab, white 55%, transparent);
+	stroke-width: 1;
+	stroke-linejoin: round;
+}
+.shiny-gem .gem-glint {
+	fill: none;
+	stroke: var(--accent);
+	stroke-width: 1.4;
+	stroke-linecap: round;
+	transform-origin: 20.5px 4px;
+	animation: gem-glint 4.8s var(--ease) infinite;
+}
+@keyframes gem-glint {
+	0%,
+	82%,
+	100% {
+		opacity: 0;
+		transform: scale(0.4);
+	}
+	88% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.shiny-gem .gem-glint {
+		animation: none;
+		opacity: 1;
+	}
+}
+.shiny-body {
 	min-width: 0;
 }
-.resurface-why {
-	font-size: 12px;
-	line-height: 16px;
-	color: var(--ink-faint);
+.shiny-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--sp-3);
 }
-.resurface-title {
-	margin-top: 2px;
-	font-weight: var(--w-strong);
+.shiny-idea {
+	margin: 2px 0 0;
+	font-size: 18px;
+	line-height: 25px;
+	font-weight: var(--w-medium);
 	color: var(--text);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	text-wrap: pretty;
 }
-.resurface-excerpt {
-	margin-top: 2px;
-	font-size: 13px;
+.shiny-notes {
+	list-style: none;
+	margin: var(--sp-3) 0 0;
+	padding: 0;
+}
+.shiny-notes li + li {
+	box-shadow: inset 0 1px 0 var(--line-soft);
+}
+.shiny-note {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	width: 100%;
+	padding: var(--sp-2) 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+}
+.shiny-note:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: var(--r-md);
+}
+.shiny-title {
+	font-size: 15px;
+	line-height: 21px;
+	font-weight: var(--w-medium);
+	overflow-wrap: anywhere;
+	transition: color var(--dur-fast) var(--ease);
+}
+.shiny-note:hover .shiny-title {
+	color: var(--accent-text);
+}
+.shiny-how {
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--text-mute);
+}
+.shiny-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--sp-3);
+	margin-top: var(--sp-2);
+	padding-top: var(--sp-3);
+	box-shadow: inset 0 1px 0 var(--line-soft);
+}
+.shiny-question {
+	margin: 0;
+	font-size: 14px;
+	line-height: 20px;
+	font-style: italic;
 	color: var(--text-dim);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
-.resurface-dismiss {
+.shiny-another,
+.shiny-dismiss {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
 	flex-shrink: 0;
 	padding: 4px 10px;
 	border: 0;
@@ -1386,12 +1547,51 @@ main {
 	background: none;
 	font: inherit;
 	font-size: 13px;
-	color: var(--text-dim);
 	cursor: pointer;
+	transition:
+		background var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 }
-.resurface-dismiss:hover {
-	background: var(--surface-3);
+.shiny-another {
+	color: var(--accent-text);
+	font-weight: var(--w-medium);
+}
+.shiny-dismiss {
+	color: var(--text-mute);
+}
+.shiny-another:hover,
+.shiny-dismiss:hover {
+	background: var(--line-soft);
+}
+.shiny-dismiss:hover {
 	color: var(--text);
+}
+.shiny-another:disabled {
+	cursor: default;
+	opacity: 0.7;
+}
+.shiny-another:focus-visible,
+.shiny-dismiss:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.shiny-another svg {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	rotate: 90deg;
+}
+/* A phone-width window gives the words the room: the raven steps out. */
+@media (max-width: 560px) {
+	.shiny-card {
+		grid-template-columns: 1fr;
+		padding: var(--sp-4);
+	}
+	.shiny-raven {
+		display: none;
+	}
 }
 
 /* What a search understood as filters ("PDFs · saved last month"), after its count. */
@@ -1748,4 +1948,221 @@ body.mv-dragging * {
 /* Under the sure results: hits search kept but could not check. */
 .loosenote {
 	margin-top: var(--sp-5);
+}
+
+/* ---- The account, top right of the wall (js/accountmenu.js) ----------------------
+   The chip is a 32px circle; its menu drops under it, a
+   floating surface like the capture menu. */
+.homehead .homecorner {
+  position: absolute;
+  top: var(--sp-5);
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.acct-chip {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  cursor: pointer;
+}
+.acct-chip.signed-out {
+  background: var(--line-soft);
+  color: var(--text-mute);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.acct-chip.signed-out:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.acct-chip svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.acct-chip:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+.acct-chip:hover .acct-face {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.acct-face {
+  flex: none;
+  width: var(--face);
+  height: var(--face);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--surface-doc);
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--accent) 55%, transparent);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+.acct-face.initial {
+  display: inline-grid;
+  place-items: center;
+  background: var(--purple-bold-wash);
+  color: var(--accent-text);
+  font-size: calc(var(--face) * 0.42);
+  font-weight: var(--w-strong);
+}
+.acctmenu {
+  position: fixed;
+  z-index: var(--z-menu);
+  width: 288px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface-doc);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lifted);
+  padding: var(--sp-2);
+  animation: drop-in var(--dur-fast) ease both;
+}
+.acct-who,
+.acct-pitch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.acct-pitch {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+.acct-words {
+  min-width: 0;
+}
+.acct-name {
+  font-weight: var(--w-medium);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-sub {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-mute);
+  overflow-wrap: anywhere;
+}
+.acct-who .acct-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-plan {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-2);
+  font-size: 14px;
+  color: var(--text-mute);
+}
+.acct-tier {
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--line-soft);
+  color: var(--text);
+  font-weight: var(--w-medium);
+}
+.acct-tier.pro {
+  background: var(--purple-bold-wash);
+  color: var(--accent-text);
+}
+.acct-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.acct-item:hover {
+  background: var(--lavender-subtle);
+  color: var(--accent);
+}
+.acct-item:focus-visible {
+  outline: none;
+  background: var(--surface-2);
+}
+.acct-item.strong {
+  color: var(--accent-text);
+  font-weight: var(--w-medium);
+}
+.acct-meta {
+  color: var(--text-mute);
+  font-size: 14px;
+}
+.acct-rule {
+  height: 1px;
+  margin: var(--sp-1) var(--sp-3);
+  background: var(--line-soft);
+}
+
+/* `rise` (pill.css) carries the centred toast's translateX(-50%); a corner surface
+   needs its own, or it lands half its width to the left. */
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A Type or Tags shelf's next page (js/home.js moreOnShelf): a quiet line under its
+   tiles, left with them. */
+.shelfmore {
+  margin: var(--sp-3) 0 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--line-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: var(--w-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.shelfmore:hover {
+  background: var(--lavender-subtle);
+}
+.shelfmore:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.shelfmore:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wallgroup.collapsed .shelfmore {
+  display: none;
 }

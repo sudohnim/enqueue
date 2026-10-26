@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import capture, db, notes, opens, pivots_saved, preview, trash
@@ -32,26 +32,50 @@ def connections(artifact_id: str) -> dict:
     return {"passages": passage_links.for_artifact(artifact_id)}
 
 
-@router.get("/resurface")
-def resurface() -> dict:
-    """Today's older note for the wall (resurface.py), as a wall item, or null."""
-    from .. import resurface as resurface_mod
+@router.post("/shiny/again")
+def shiny_again() -> dict:
+    """Choose today's Something shiny again from the connections found so far (the
+    card's "Look again"), and return the first."""
+    from .. import shiny as shiny_mod
 
-    chosen = resurface_mod.pick()
-    if chosen is None:
-        return {"item": None, "reason": None}
+    shiny_mod.look_again()
+    return shiny_card(0)
+
+
+@router.get("/shiny")
+def shiny_card(n: int = 0) -> dict:
+    """Today's Something shiny (shiny.py): two or three notes from different fields, as
+    wall items, and the idea they share. `notes` is empty when there is none yet."""
+    from .. import shiny as shiny_mod
+
+    food = shiny_mod.today(n=max(0, n))
+    if food is None:
+        return {"notes": [], "food": None, "links": [], "writing": False, "more": False, "n": n}
     conn = db.get_conn()
     try:
-        row = conn.execute(
+        rows = conn.execute(
             "SELECT id, kind, title, body, source_url, mime, filename, created_at,"
-            " updated_at, local_only, pinned, status, pages FROM artifacts WHERE id = ?",
-            (chosen["id"],),
-        ).fetchone()
-        with_image = _link_images(conn, [row["id"]] if row["kind"] == "link" else [])
-        item = _wall_item(conn, row, with_image, _wall_tags(conn, [row["id"]]))
+            " updated_at, local_only, pinned, status, pages FROM artifacts"
+            " WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(food["ids"]),),
+        ).fetchall()
+        by_id = {r["id"]: r for r in rows}
+        links = [r["id"] for r in rows if r["kind"] == "link"]
+        with_image = _link_images(conn, links)
+        tags = _wall_tags(conn, food["ids"])
+        notes_out = [
+            _wall_item(conn, by_id[i], with_image, tags) for i in food["ids"] if i in by_id
+        ]
     finally:
         conn.close()
-    return {"item": item, "reason": chosen["reason"]}
+    return {
+        "notes": notes_out,
+        "food": food["food"],
+        "links": food["links"],
+        "writing": food["writing"],
+        "more": food["more"],
+        "n": food["n"],
+    }
 
 
 class Opened(BaseModel):
@@ -184,6 +208,7 @@ def list_artifacts(
     pinned: bool | None = None,
     tags: str = "",
     untagged: bool = False,
+    kind: str = "",
 ) -> dict:
     """Newest first, each with enough content to render rather than a blank.
 
@@ -230,6 +255,9 @@ def list_artifacts(
     # of every untagged chat would be noise) and drops the chats limb below.
     if untagged:
         where += " AND id NOT IN (SELECT artifact_id FROM artifact_tags)"
+    # One kind only (a Type shelf's "Show more", /artifacts/groups).
+    if kind:
+        where += " AND kind = :kind"
 
     # A conversation is the same kind of thing on the wall as a capture: something
     # you come back to, ordered by when you last touched it. So it lives in the same
@@ -258,6 +286,7 @@ def list_artifacts(
                 "limit": limit,
                 "offset": offset,
                 "tag_ids": tag_ids_param,
+                "kind": kind,
             },
         ).fetchall()
 
@@ -277,7 +306,7 @@ def list_artifacts(
         # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query,python.lang.security.audit.formatted-sql-query.formatted-sql-query
         total = conn.execute(
             f"SELECT COUNT(*) AS n FROM artifacts WHERE {where}",
-            {"tag_ids": tag_ids_param},
+            {"tag_ids": tag_ids_param, "kind": kind},
         ).fetchone()["n"]
         return {
             "total": total,
@@ -290,6 +319,56 @@ def list_artifacts(
         }
     finally:
         conn.close()
+
+
+# The wall's Type and Tags shelves, over the whole library: each with its true count
+# and its first items; a shelf's "Show more" pages it through GET /artifacts with
+# `kind`, `tags` or `untagged`. Before this the shelves were built in the page from the
+# newest 48 items, so an older note's kind or tag never had a shelf.
+GROUP_FIRST = 12
+
+
+@router.get("/artifacts/groups")
+def artifact_groups(by: str = "kind", per: int = GROUP_FIRST) -> dict:
+    if by not in ("kind", "tags"):
+        raise HTTPException(status_code=400, detail="by is kind or tags") from None
+    per = max(1, min(per, 60))
+    live = "deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+    conn = db.get_conn()
+    try:
+        if by == "kind":
+            keys = [
+                (r["kind"], r["n"])
+                for r in conn.execute(
+                    f"SELECT kind, COUNT(*) AS n FROM artifacts WHERE {live} GROUP BY kind"
+                    " ORDER BY n DESC, kind"
+                )
+            ]
+        else:
+            keys = [
+                (r["name"], r["n"])
+                for r in conn.execute(
+                    "SELECT t.name, COUNT(*) AS n FROM artifact_tags x"
+                    " JOIN tags t ON t.id = x.tag_id JOIN artifacts a ON a.id = x.artifact_id"
+                    f" WHERE a.{live.replace(' AND ', ' AND a.')}"
+                    " GROUP BY t.name ORDER BY n DESC, t.name"
+                )
+            ]
+    finally:
+        conn.close()
+    groups = []
+    for key, _count in keys:
+        page = (
+            list_artifacts(limit=per, kind=key, pinned=None)
+            if by == "kind"
+            else list_artifacts(limit=per, tags=key, pinned=None)
+        )
+        groups.append({"key": key, "count": page["total"], "items": page["items"]})
+    if by == "tags":
+        page = list_artifacts(limit=per, untagged=True, pinned=None)
+        if page["total"]:
+            groups.append({"key": "", "count": page["total"], "items": page["items"]})
+    return {"by": by, "groups": groups}
 
 
 @router.get("/artifacts/{artifact_id}")
@@ -325,9 +404,7 @@ def get_artifact(artifact_id: str) -> dict:
         else:
             found = capture.blob_path(artifact_id)
             detail["file"] = (
-                {"bytes": found[0].stat().st_size, "mime": found[1], "name": found[2]}
-                if found
-                else None
+                {"bytes": found[0].size(), "mime": found[1], "name": found[2]} if found else None
             )
     if kind == "pdf":
         # The reader needs to know how many pages to expect before it can render one.
@@ -462,8 +539,21 @@ def get_blob(artifact_id: str):
     found = capture.blob_path(artifact_id)
     if found is None:
         raise HTTPException(status_code=404, detail="this artifact has no stored file") from None
-    path, mime, filename = found
-    return FileResponse(path, media_type=mime, filename=filename, content_disposition_type="inline")
+    blob, mime, filename = found
+    # The file on disk is sealed (blobstore.py): it is served from its plaintext.
+    return Response(
+        content=blob.read_bytes(),
+        media_type=mime,
+        headers={"Content-Disposition": _inline(filename)},
+    )
+
+
+def _inline(filename: str) -> str:
+    """Content-Disposition for showing a file in place, its name kept (RFC 6266)."""
+    from urllib.parse import quote
+
+    plain = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in filename)
+    return f"inline; filename=\"{plain}\"; filename*=UTF-8''{quote(filename)}"
 
 
 @router.get("/artifacts/{artifact_id}/find")
@@ -486,9 +576,9 @@ def get_preview_image(artifact_id: str):
     found = preview.image(artifact_id)
     if found is None:
         raise HTTPException(status_code=404, detail="no picture for this link") from None
-    path, mime = found
-    return FileResponse(
-        path,
+    data, mime = found
+    return Response(
+        content=data,
         media_type=mime,
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",

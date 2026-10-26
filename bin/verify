@@ -72,6 +72,7 @@ JS_ORDER = [
     "drafts.js",
     "notetabs.js",
     "settings_guide.js",
+    "welcome.js",
     "settings.js",
 ]
 # The mobile shell (MOB.2) loads md.js for markdown; MOB.4+ adds the mobile UI's
@@ -251,6 +252,10 @@ def check_android_compile(force_full=False):
     env["ANDROID_HOME"] = android_home
     env["NDK_HOME"] = ndk_home
     # Ensure cargo can find the NDK toolchain
+    # SQLCipher's vendored OpenSSL needs the NDK's archiver by name (bin/android-env).
+    for triple in ("aarch64_linux_android", "x86_64_linux_android"):
+        env[f"AR_{triple}"] = os.path.join(toolchain_bin, "llvm-ar")
+        env[f"RANLIB_{triple}"] = os.path.join(toolchain_bin, "llvm-ranlib")
     env["PATH"] = f"{toolchain_bin}:{android_home}/platform-tools:{env.get('PATH', '')}"
     
     if android_files_staged:

@@ -9,10 +9,27 @@ bootstrap) and then blocks on the server.
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from .. import chats_worker, config, trash
-from . import admin, artifacts, backup, chats, pivots, search, settings, setup, static, vault, write
+from . import (
+    account,
+    admin,
+    artifacts,
+    backup,
+    chats,
+    pivots,
+    search,
+    settings,
+    setup,
+    static,
+    vault,
+    write,
+)
+from ..keyring import KeychainUnavailable
 from .guard import LocalOnlyGuard
 
 
@@ -30,8 +47,23 @@ def create_app() -> FastAPI:
     app.include_router(vault.router)
     app.include_router(backup.router)
     app.include_router(setup.router)
+    app.include_router(account.router)
     # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
     app.add_middleware(LocalOnlyGuard)
+
+    # The library's key is in the Keychain; when it cannot answer (a prompt waiting or
+    # refused, a locked keychain) say so in words the page can show, not a bare 500.
+    @app.exception_handler(KeychainUnavailable)
+    async def _keychain_unavailable(request, exc):  # noqa: ARG001
+        return JSONResponse(
+            {
+                "detail": "Enqueue could not read its key from your Mac's Keychain. "
+                "If macOS is asking whether Enqueue may use it, choose Always Allow.",
+                "code": "keychain",
+            },
+            status_code=503,
+        )
+
     return app
 
 
@@ -39,7 +71,14 @@ app = create_app()
 
 
 def serve() -> None:
+    import faulthandler
+    import signal
+
     import uvicorn
+
+    # `kill -USR1 <engine pid>` writes every thread's Python stack to the log. A frozen
+    # engine (0% CPU, no answers) cannot be looked into otherwise without root.
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
 
     # The library's folder moved (datadir.py). Before anything opens a file in it. When
     # the move cannot be made, the engine does not start: starting would make a new,
@@ -66,6 +105,20 @@ def serve() -> None:
             print(f"[engine] {done}", flush=True)
     except Exception as exc:  # noqa: BLE001 - the library stays readable, as it was
         print(f"[engine] could not encrypt the library yet: {exc}", flush=True)
+
+    # The original files the same way (blobstore.py), in the background: a plain file
+    # still reads while it waits, and each is sealed only after it reads back.
+    def _seal_files() -> None:
+        from .. import blobstore
+
+        try:
+            n = blobstore.seal_all()
+            if n:
+                print(f"[engine] sealed {n} original files", flush=True)
+        except Exception as exc:  # noqa: BLE001 - the files stay readable, as they were
+            print(f"[engine] could not seal the original files yet: {exc}", flush=True)
+
+    threading.Thread(target=_seal_files, name="enqueue-seal-files", daemon=True).start()
 
     # QR.1: load the DEK from the Keychain/file so sync is unlocked with no
     # prompt after a restart. A missing DEK just means sync stays paused until
@@ -154,6 +207,16 @@ def serve() -> None:
             print(f"[engine] gave {retitled} links a clean title")
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not retitle links: {exc}")
+
+    # Links that failed to preview before the WebKit preview browser get one more try.
+    try:
+        from .. import preview as previews
+
+        retried = previews.retry_refused_once()
+        if retried:
+            print(f"[engine] trying {retried} unpreviewed links again in WebKit")
+    except Exception as exc:  # noqa: BLE001 - never block startup on this
+        print(f"[engine] could not retry link previews: {exc}")
 
     from .. import events
 

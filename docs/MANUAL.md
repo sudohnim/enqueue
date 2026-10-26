@@ -32,7 +32,7 @@ You capture a thing the moment you meet it, without choosing a folder, a tag, or
 Later, when a subject is on your mind, you search or ask, and Enqueue brings back everything that speaks to it, including things that never used your words.
 
 Everything you save is an **artifact**: a note, a link, a PDF, an image, or a file.
-The **?** at the top right of the home page (and of the phone's library) opens a seven-card tour of all this, with small demos you can try; nothing typed there is saved.
+The **?** at the top right of the home page (and of the phone's library) opens a short tour of all this (eight cards on the Mac, seven on the phone), with small demos you can try; nothing typed there is saved.
 Your library lives on your Mac, in one folder (`~/Library/Application Support/Enqueue`).
 
 ## Getting it running
@@ -46,6 +46,22 @@ You need a Mac, and the code (`git clone`, then `cd enqueue`).
 - **A model.** Search and capture work without one. For summaries and answers, run [Ollama](https://ollama.com/) on the Mac, or choose an online one in **Settings > Assistant**.
 
 Then link the phone to the Mac: see [Sync](#sync).
+
+### The first time
+
+A new, empty library opens on a short welcome instead of the wall.
+It walks through five steps, and each one can be skipped: what Enqueue is, choosing the assistant (on this Mac with Ollama, or an online service with your own key), turning on sync, saving the recovery kit, and linking your phone.
+The sync step is the same as **Settings > Sync**, so signing in with Google or Apple, writing down the recovery phrase and joining another computer all work there.
+An assistant included with Enqueue is planned; until then the welcome says so and asks you to pick one.
+Finishing or skipping it is remembered, and everything in it can be changed later in Settings.
+
+The phone's first screen is its own short welcome: what Enqueue is, then how to link it.
+On the Mac, open **Settings > Sync** and press **Show the code**; on the phone, press **Scan the code** and point it at the screen.
+
+### Updates
+
+The Mac app keeps itself up to date.
+It looks for a new version every few hours and downloads it quietly. A card at the bottom right offers **Update now** (Enqueue restarts into it) or **Update on close** (it is put in place when you quit, which also happens if you ignore the card).
 
 ## Capturing
 
@@ -86,6 +102,18 @@ The home screen is the wall: everything you saved, the most recently touched fir
 - Click a tile to open it.
 
 The greeting changes through the day, and so does the colour of the page: lavender by day, deeper at night.
+
+### Something shiny
+
+Once the assistant has found notes from different fields that make the same point (see [Related](#related)), a **Something shiny** card sits above the wall.
+It sets two or three of them side by side: the idea they share, how each one shows it, and a question to take it further.
+Comparing unlike cases is how the idea under them comes clear, and the farther apart the fields, the better; this does the comparing you would rarely think to do.
+There is a new one each day, and the farthest pairs come first.
+Want more? **Find another** shows the next set, as many as the assistant has found; after the last, **Back to the first** starts over. The wall keeps showing the one you stopped at until tomorrow.
+Click a note to open it; **Not today** hides the card until tomorrow.
+Nothing is hidden, moved or deleted by it.
+The words are written by your chat model from the notes' summaries, never their text; a set that holds a local-only note is written by the model on your computer.
+Without a model, the card shows the plain sentence the link was judged with.
 
 ## Notes
 
@@ -148,7 +176,7 @@ What you can add to a capture is your own note about it, in the box under it.
 Your note is searchable, and it shapes the summary.
 
 - **Links.** Saving a link fetches its page once, to learn its title, picture and text, so you can find it by what it says. Nothing remote is ever loaded afterwards: the picture is stored on your Mac. Click the address to open the page in your browser.
-- **A site that refuses.** Some sites turn away anything that is not a browser. The page says so under your note. Turn on **Try harder on sites that block previews** in Settings > Capture and press **Try again** to have a hidden browser open it once.
+- **A site that refuses.** Some sites turn away anything that is not a browser. Enqueue then opens the page once more in Safari's engine, out of sight and with no cookies kept, which gets past most of them. A site that still refuses says so under your note. **Try harder on sites that block previews** in Settings > Capture turns this off.
 - **PDFs** open in a reader with find-in-document. Their text is searchable page by page.
 - **Images** are described by the vision model, when one is set, so you can find a photo by what is in it.
 - **Files** (text, markdown, CSV, JSON, HTML) are read and indexed. Anything else is kept and downloadable.
@@ -210,14 +238,25 @@ These lines are what let search find it by idea.
 Short notes, and anything holding what looks like a password or a key, get no summary.
 A long summary scrolls inside its own box, so the rest of the panel stays in reach.
 
+### Reading your library
+
+When many things need a summary at once (a first import, a switch to another assistant, or sync bringing a whole library onto a new Mac), the assistant reads them one by one, and that can take a while and costs a model call each.
+A quiet line above the wall says how far it is ("Reading your library: 120 of 360") and goes away when it is done.
+Search by words works the whole time; search by idea fills in as the summaries land.
+The line also says when the reading is held up: the online service hit its usage limit (it says when it goes on by itself), turned down your key (fix it in **Settings > Assistant**), or did not answer (it tries again shortly).
+
 ## Related
 
 Under an artifact, **Related** lists up to five others, each with the reason it is there.
+It is the answer to "what else is this like?".
 There are three kinds of link:
 
 - **The same subject.** The reason is the other artifact's own "what it is about" line.
 - **The same name.** Both mention the same person, place or thing: "Both mention Yosemite."
 - **The same point, from another field.** A book on statecraft beside one on war, because both say incentives predict behaviour better than character. The reason is one plain sentence beginning "Both".
+
+Same-point links come first, marked **Same idea, another field**, and the farther apart the two fields, the higher it sits: a note on a willow in a storm beside one on shipping software says more than two notes on the same book.
+The rest follow, closest first.
 
 Nothing is invented to fill the list.
 A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.
@@ -295,12 +334,20 @@ The relay only ever stores scrambled data: everything is encrypted on your devic
 
 To link a phone:
 
-1. On the Mac, open **Settings > Phone** and set it up: the address of your relay (see [Your own relay](#your-own-relay)), then a recovery phrase to write down.
-2. The Mac shows a QR code.
+1. On the Mac, open **Settings > Sync** and press **Sign in with Google** or **Sign in with Apple**. That turns on Enqueue sync, a relay we run. The first time, the Mac shows a recovery phrase to write down before the sign-in opens in your browser.
+2. Press **Show the code**. The Mac shows a QR code.
 3. In the phone app, scan it. The phone downloads your library.
 
-There is no password to remember, and nothing to type on the phone.
-If you lose the phone, link the new one the same way.
+Or, on an Android phone, press **Sign in with Google** instead of scanning: the phone shows a six-digit code, your Mac asks whether to let it in with the same code, and once you approve, the library arrives.
+A linked phone can approve a new Mac or phone the same way.
+
+Signing in only says who you are. Your library is locked with a key that stays on your devices, so we cannot read what Enqueue sync holds.
+Every phone and computer gets a pass of its own, listed under **Devices**: remove one and it stops syncing at once.
+Your picture at the top right of the wall opens your account: your plan and the space it has used, your devices, and Sign out.
+To use a relay you run yourself instead, open **Use a relay of your own** on the same screen (see [Your own relay](#your-own-relay)).
+
+There is nothing to type on the phone.
+If you lose the phone, remove it under **Devices** and link the new one the same way.
 Your model settings travel too, so the phone can answer questions without being set up separately.
 
 ## Your own relay
@@ -367,7 +414,7 @@ Search and capture work without one.
 - **Ollama** (the default) runs the model on your Mac. Nothing leaves it.
 - **OpenRouter** or **OpenCode Go** use a model on someone else's computer. The text of the artifacts involved is sent there. An artifact marked **local only** never is.
 
-Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**.
+Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**; for OpenRouter and OpenCode Go you pick from the models the service offers, and a name it does not offer is refused, so a typo cannot quietly stop answers.
 The key is stored in the macOS Keychain, never in a file.
 
 If the provider says your usage limit is reached, Enqueue pauses its model calls until the limit resets and then carries on by itself.

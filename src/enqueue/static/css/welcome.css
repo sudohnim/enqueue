@@ -1,0 +1,335 @@
+/* The first-run welcome (js/welcome.js). It wears the settings page's classes
+   (.settings-page: the raven against the title, sections as soft plates), so the
+   Sync tab it renders inside looks as it does in Settings. What is its own: the
+   step line under the title, the opening plate's larger type, and the foot. */
+#view > .pagecol.settings-page.welcome {
+	max-width: 680px;
+}
+
+.welcome-steps {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 4px 18px;
+	margin: var(--sp-4) 0 0;
+	padding: 0;
+	list-style: none;
+}
+.welcome-steps button {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	padding: 4px 2px;
+	border: 0;
+	background: none;
+	font: inherit;
+	font-size: 14px;
+	color: var(--text-mute);
+	cursor: pointer;
+}
+.welcome-steps button:hover {
+	color: var(--text);
+}
+.welcome-steps [data-state="now"] button {
+	color: var(--text);
+	font-weight: var(--w-strong);
+}
+.welcome-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	box-shadow: inset 0 0 0 1.5px var(--text-mute);
+}
+.welcome-steps [data-state="past"] .welcome-dot {
+	background: var(--accent);
+	box-shadow: none;
+}
+.welcome-steps [data-state="now"] .welcome-dot {
+	box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* The hub (the first step): a sentence of what Enqueue is, the tour as one card you
+   can play, and the setup list with where this Mac stands. */
+.welcome-hub {
+	margin-top: var(--sp-6);
+}
+.welcome-hub .welcome-lead {
+	margin: 0;
+	font-size: 26px;
+	line-height: 32px;
+	font-weight: var(--w-heading);
+	letter-spacing: -0.018em;
+	color: var(--text);
+	text-wrap: balance;
+}
+.welcome-sub {
+	margin: var(--sp-2) 0 0;
+	max-width: 56ch;
+	font-size: 16px;
+	line-height: 24px;
+	color: var(--text-dim);
+}
+
+/* The tour, as one card to play: a small deck of plates with the eye on top. */
+.welcome-tourcard {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: var(--sp-5);
+	width: 100%;
+	margin-top: var(--sp-5);
+	padding: var(--sp-5) var(--sp-5) var(--sp-5) var(--sp-6);
+	border: 0;
+	border-radius: var(--r-xl);
+	background: var(--surface);
+	box-shadow: var(--hairline);
+	font: inherit;
+	text-align: left;
+	color: inherit;
+	cursor: pointer;
+	transition: background 160ms var(--ease-out, ease-out);
+}
+.welcome-tourcard:hover {
+	background: var(--surface-hover);
+}
+.welcome-tourcard:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.welcome-deck {
+	position: relative;
+	width: 64px;
+	height: 76px;
+}
+.welcome-deck > span {
+	position: absolute;
+	inset: 0;
+	border-radius: 12px;
+	background: var(--surface-doc);
+	box-shadow: var(--hairline);
+	transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.welcome-deck > span:nth-child(1) {
+	transform: rotate(-9deg) translate(-4px, 2px);
+	background: var(--surface-3);
+}
+.welcome-deck > span:nth-child(2) {
+	transform: rotate(-3.5deg) translate(-1px, 1px);
+	background: var(--surface-hover);
+}
+.welcome-deck > span:nth-child(3) {
+	display: grid;
+	place-items: center;
+	transform: rotate(4deg);
+}
+.welcome-tourcard:hover .welcome-deck > span:nth-child(1) {
+	transform: rotate(-14deg) translate(-8px, 3px);
+}
+.welcome-tourcard:hover .welcome-deck > span:nth-child(3) {
+	transform: rotate(7deg) translate(3px, -2px);
+}
+.welcome-deck-mark {
+	width: 36px;
+	height: auto;
+}
+.welcome-tourcard-words {
+	display: grid;
+	gap: 4px;
+}
+.welcome-tourcard-title {
+	font-size: 18px;
+	line-height: 24px;
+	font-weight: var(--w-strong);
+	color: var(--text);
+}
+.welcome-tourcard-copy {
+	max-width: 46ch;
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--text-mute);
+}
+.welcome-tourcard-go {
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	border-radius: var(--r-full);
+	background: var(--accent);
+	color: #fff;
+	transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.welcome-tourcard:hover .welcome-tourcard-go {
+	transform: scale(1.06);
+}
+.welcome-tourcard-go svg {
+	width: 18px;
+	height: 18px;
+	margin-left: 2px;
+	fill: currentColor;
+}
+
+/* The setup list: a row per step, a mark for where it stands, the step one press away. */
+.settings-page .group.welcome-checklist {
+	padding: 4px 0;
+}
+.welcome-row {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: var(--sp-4);
+	width: 100%;
+	padding: 14px var(--sp-5);
+	border: 0;
+	background: none;
+	font: inherit;
+	text-align: left;
+	color: inherit;
+	cursor: pointer;
+}
+.welcome-row + .welcome-row {
+	box-shadow: inset 0 1px 0 var(--line-soft);
+}
+.welcome-row:hover {
+	background: var(--surface-hover);
+}
+.welcome-row:first-child:hover {
+	border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+.welcome-row:last-child:hover {
+	border-radius: 0 0 var(--r-xl) var(--r-xl);
+}
+.welcome-row:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+.welcome-row-mark {
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.welcome-row[data-state="done"] .welcome-row-mark {
+	background: var(--accent);
+	box-shadow: none;
+}
+.welcome-row-mark svg {
+	width: 14px;
+	height: 14px;
+	fill: none;
+	stroke: #fff;
+	stroke-width: 2.4;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+.welcome-row-words {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+}
+.welcome-row-title {
+	font-size: 15px;
+	line-height: 20px;
+	color: var(--text);
+}
+.welcome-row-detail {
+	overflow: hidden;
+	font-size: 13px;
+	line-height: 18px;
+	color: var(--text-mute);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.welcome-row-go {
+	font-size: 14px;
+	color: var(--accent);
+}
+.welcome-row[data-state="done"] .welcome-row-go {
+	color: var(--text-mute);
+}
+@media (max-width: 560px) {
+	.welcome-tourcard {
+		grid-template-columns: auto 1fr;
+		padding: var(--sp-4);
+	}
+	.welcome-tourcard-go {
+		display: none;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.welcome-deck > span,
+	.welcome-tourcard-go {
+		transition: none;
+	}
+}
+
+/* The opening plate reads as a few sentences, not as settings rows. */
+.settings-page .group.welcome-hello {
+	padding: var(--sp-5) var(--sp-6);
+}
+.welcome-hello p {
+	margin: 0 0 var(--sp-3);
+	max-width: 56ch;
+	font-size: 16px;
+	line-height: 24px;
+	color: var(--text-dim);
+}
+.welcome-hello p:last-child {
+	margin-bottom: 0;
+}
+.welcome-hello .welcome-lead {
+	font-size: 22px;
+	line-height: 28px;
+	font-weight: var(--w-heading);
+	letter-spacing: -0.014em;
+	color: var(--text);
+}
+.welcome-note {
+	margin: var(--sp-4) 0 0;
+	max-width: 60ch;
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--text-mute);
+}
+.welcome-chosen {
+	grid-column: 2;
+	grid-row: 1 / span 4;
+	justify-self: end;
+	align-self: center;
+	padding: 6px 12px;
+	border-radius: var(--r-full);
+	background: var(--lavender-subtle);
+	font-size: 13px;
+	color: var(--accent-text, var(--accent));
+}
+/* The service and key rows belong to the "online" row above them: no line between. */
+.settings-page .group > .field + .field.welcome-online {
+	padding-top: 0;
+}
+.settings-page .group > .field:has(+ .field.welcome-online) {
+	box-shadow: none;
+}
+
+/* The Sync tab inside the welcome: its own name is the step's, and the guide marks
+   open plates that belong to the Settings page. */
+.welcome #settingsTabPane > .h2:first-child,
+.welcome .gmark {
+	display: none;
+}
+
+.welcome-nav {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	margin-top: var(--sp-6);
+	padding-bottom: var(--sp-7, 40px);
+}
+.welcome-nav-gap {
+	flex: 1;
+}
+@media (max-width: 560px) {
+	.welcome-nav {
+		flex-wrap: wrap;
+	}
+}

@@ -34,7 +34,8 @@ function restorePill(where) {
 	const settings = place === "settings";
 	const inside = place === "inside" || settings;
 
-	// Wall: Plus + Eye (chat) + Settings. Search lives in the home header (and
+	// Wall: Plus + Eye (chat). Settings live in the account menu, top right
+	// (js/accountmenu.js). Search lives in the home header (and
 	// on Cmd+K), so the pill does not repeat it. Saved groupings moved into the
 	// wall's grouping selector (K.6), so the pill carries no grid button either.
 	// Inside: Back + Eye (context-aware).
@@ -64,9 +65,6 @@ function restorePill(where) {
 			"</span></button>" +
 			'<button class="round" aria-label="Chat with AI" onclick="openEye()">' +
 			'<span class="pill-eye eye" id="pillEye"></span>' +
-			"</button>" +
-			'<button class="round" aria-label="Settings" onclick="showSettings()">' +
-			svg("gear") +
 			"</button>";
 	}
 	pill.innerHTML = html;
@@ -308,16 +306,6 @@ LinkPop.attach({
 	notify: (message, bad) => toast(message, bad),
 });
 
-// The tour behind the ? on the home header (TOUR.1, js/tour.js) - the same deck the
-// phone shows. Its capture card names the hotkey as it is actually set, so ask Settings
-// for it; until that answers (or if it fails) the card shows the default.
-Tour.attach({ platform: "desktop", assets: "/static/" });
-api("/settings")
-	.then((d) => {
-		const key = d && d.settings && d.settings.hotkey && d.settings.hotkey.value;
-		if (key) Tour.set({ hotkey: key });
-	})
-	.catch(() => {});
 
 // Drag the window by the top strip. `-webkit-app-region` is inert in this WKWebView,
 // so the move is done by invoking the Rust `window_drag` on mousedown, the same path
@@ -341,3 +329,13 @@ if (topbar && bridge) {
 		);
 	});
 }
+
+// The tour (js/tour.js) is played from the welcome's first step, not from a ? of its
+// own on the desktop. Its capture card names the hotkey as it is actually set.
+Tour.set({ platform: "desktop", assets: "/static/" });
+api("/settings")
+	.then((d) => {
+		const key = d && d.settings && d.settings.hotkey && d.settings.hotkey.value;
+		if (key) Tour.set({ hotkey: key });
+	})
+	.catch(() => {});

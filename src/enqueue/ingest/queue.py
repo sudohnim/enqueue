@@ -370,6 +370,12 @@ def _pending(artifact_id: str) -> int:
         return len(numbers)
 
 
+def busy() -> int:
+    """How many artifacts are queued or being processed right now (reading.py)."""
+    with _queued_lock:
+        return len(set(_queued) | _processing)
+
+
 def _in_flight(artifact_id: str) -> bool:
     """Whether a run of this artifact is under way (on any thread)."""
     with _queued_lock:
@@ -664,7 +670,7 @@ def _describe_image_if_needed(artifact_id: str) -> str:
             conn.execute("UPDATE artifacts SET status = 'failed' WHERE id = ?", (artifact_id,))
         return ""
 
-    ocr = _ocr_text(path)
+    ocr = _ocr_text(path.read_bytes())
     body = text if not ocr else f"{text}\n\n{ocr}"
     with db.transaction() as conn:
         conn.execute(
@@ -674,34 +680,28 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     return body
 
 
-def _ocr_text(path) -> str:
+def _ocr_text(data: bytes) -> str:
     """OCR text via tesseract when it is installed; empty string otherwise.
 
     The vision description already asks for visible text word for word, so OCR
-    is a bonus for exact-word retrieval, never a requirement. Tesseract keys
-    file format detection off the file extension, so the blob is copied to a
-    temp file with the right one before it is asked.
+    is a bonus for exact-word retrieval, never a requirement. The picture goes to
+    tesseract on its standard input, so its plaintext never lands in a temp file.
     """
     import shutil
     import subprocess
-    import tempfile
 
     if not shutil.which("tesseract"):
         return ""
-    suffix = path.suffix or ".png"
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
-            tmp.write(path.read_bytes())
-            tmp.flush()
-            out = subprocess.run(
-                ["tesseract", tmp.name, "stdout"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+        out = subprocess.run(
+            ["tesseract", "stdin", "stdout"],
+            input=data,
+            capture_output=True,
+            timeout=60,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return ""
-    return (out.stdout or "").strip()
+    return (out.stdout or b"").decode("utf-8", "replace").strip()
 
 
 def _facet_artifact(artifact_id: str) -> int:
@@ -876,6 +876,47 @@ def _entities_artifact(artifact_id: str) -> int:
     if count:
         get_store().index_entities_artifact(artifact_id)
     return count
+
+
+COMPACT_EVERY_S = 24 * 3600
+
+
+def compact_index_if_due() -> dict | None:
+    """Merge the keyword index and reclaim the file's free space, at most once a day
+    (index/store_sqlite.py `compact`). Runs on the ingest worker's thread between two
+    items, so it never fights an ingest for SQLite's one writer; the stamp is kept in
+    `index_meta`."""
+    import time as _time
+
+    from .. import db, events
+    from ..index.store import get_store
+
+    with db.transaction() as conn:
+        row = conn.execute("SELECT value FROM index_meta WHERE key = 'compacted_at'").fetchone()
+    try:
+        last = float(row[0]) if row else 0.0
+    except (TypeError, ValueError):
+        last = 0.0
+    if _time.time() - last < COMPACT_EVERY_S:
+        return None
+
+    def run() -> dict:
+        result = get_store().compact()
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO index_meta (key, value) VALUES ('compacted_at', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(_time.time()),),
+            )
+        if result.get("before_mb", 0) - result.get("after_mb", 0) >= 1:
+            events.emit(
+                "index.compacted",
+                f"search index compacted: {result['before_mb']} MB to {result['after_mb']} MB",
+                result,
+            )
+        return result
+
+    return _ingest.run_exclusive(run, wait=True, timeout=600)
 
 
 def prune_index() -> None:

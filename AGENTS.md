@@ -1,7 +1,7 @@
 # Enqueue - Agent Instructions
 
 The engineering reference for Enqueue, for the people who work on it and their coding agents: how to build, run and test it, how it fits together, and the rules the code keeps.
-What the app does from a person's side is [docs/MANUAL.md](docs/MANUAL.md); its look and the rules of its design are [docs/DESIGN.md](docs/DESIGN.md).
+What the app does from a person's side is [docs/MANUAL.md](docs/MANUAL.md); its look and the rules of its design are [docs/DESIGN.md](docs/DESIGN.md); how the pieces and the data fit together, as diagrams, is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 The README is the public face (a marketing piece with screenshots from `bin/screenshots`); keep engineering detail out of it.
 There is no task-queue file: open work is under [Known gaps](#known-gaps) and in the issues.
 Prompts live in `prompts.py`, the eval gates in `bin/check-eval*`.
@@ -21,7 +21,7 @@ desktop/        the Tauri shell (Rust): src/lib.rs (desktop + mobile commands), 
 src/enqueue/    the Python engine: api/ ingest/ index/ retrieve/ providers/ sync/ relay/ migrations/
   static/       the interface: home.html + css/ + js/ (desktop), capture.html, mobile.html (the phone)
 tests/          pytest; tests/js holds the JS cases (markdown round trip, diff, tabs, guides), run under Node
-docs/           MANUAL.md (using it), DESIGN.md (the design system)
+docs/           MANUAL.md (using it), DESIGN.md (the design system), ARCHITECTURE.md (the diagrams)
 assets/         the logo, source art, and the README screenshots
 ```
 
@@ -29,7 +29,7 @@ assets/         the logo, source art, and the README screenshots
 
 | Where | Once | Every time |
 | --- | --- | --- |
-| Mac (engine + window) | `bin/setup` (Rust >= 1.88, uv + Python 3.12, Node, Chromium for link previews; no sudo) | `bin/launch desktop` (rebuilds the shell, restarts engine and window, waits for health) |
+| Mac (engine + window) | `bin/setup` (Rust >= 1.88, uv + Python 3.12, Node, Chromium for `bin/screenshots`; no sudo) | `bin/launch desktop` (rebuilds the shell, restarts engine and window, waits for health) |
 | Android phone (USB debugging on) | `bin/setup --android` (checks SDK/NDK/JDK, installs the Tauri CLI and the target) | `bin/launch mobile` (one-shot build, `adb install`, launch, exit) |
 | Android emulator (headless) | an AVD named `enqueue` (the script prints how) | `bin/launch emulator` |
 | iPhone (plugged in, Developer Mode on) | Xcode, then `bin/setup --ios` | `bin/launch ios` |
@@ -39,7 +39,7 @@ assets/         the logo, source art, and the README screenshots
 
 Engine output goes to `$TMPDIR/enqueue-app.log`.
 A model is optional: capture and search work without one; summaries and answers need Ollama on the Mac or an online backend (Settings > Assistant).
-The phone starts empty; link it to the Mac over a relay both can reach (Settings > Phone shows a QR the phone scans; see [The relay](#the-relay)).
+The phone starts empty; link it to the Mac over a relay both can reach (Settings > Sync shows a QR the phone scans; see [The relay](#the-relay)).
 
 **Testing on an iPhone.** For whoever holds the iPhone, and their agent:
 
@@ -67,17 +67,29 @@ Green proves it parses, passes and compiles; only running it on the Mac or a dev
 The Keychain holds the library key (`enqueue-library-key`), the sync key (`enqueue-sync-dek`), the relay secret and the model API key.
 Tests never touch any of it: `tests/conftest.py` points the process at a temporary folder and fakes the Keychain.
 
-**Releasing.** The Android APK is published from the Actions tab (the `release` workflow, run by hand with a tag); it is debug-signed unless the `RELEASE_*` secrets are set.
-The Mac app is source-only for now: its Python engine is not bundled as a standalone binary yet.
+**Releasing.** Store releases go through fastlane (`fastlane/`, run as `bundle exec fastlane <platform> <lane>` after `bundle install`; setup and keys in `fastlane/README.md`).
+`bin/deploy` is the front door (Dequeue's): `bin/deploy android dev` runs the `android dev` lane, which builds the signed `.aab` with a fresh versionCode and releases it to Play's internal testing track, completed, so testers get it; `bin/deploy android prod` runs `android prod` after asking; `bin/deploy desktop` runs `mac release`, then, after asking, `mac publish` (see "The Mac app updates itself" under Build notes). `bin/release` alone only builds, so an upload is always its own step. The Play key is Dequeue's `google-play@sudohnim-play-billing` service account (`desktop/play-store-svc.json`, gitignored), invited to Enqueue per app in Play Console.
+`android prod` does the same to production; `ANDROID_PROD_ROLLOUT=0.1` makes it a staged rollout.
+`android next_code` prints the versionCode the next upload would use and changes nothing.
+`mac release` builds the Developer ID signed, notarized and stapled `.dmg`; the Mac app ships outside the App Store, so nothing is uploaded.
+There is no iOS lane yet; one goes in `platform :ios` after Dequeue's (`~/dequeue/frontend/fastlane`).
+The Play lanes need the service account key at `desktop/play-store-svc.json` (gitignored, or `PLAY_JSON_KEY`), and that account invited to the Enqueue app in Play Console.
+The Actions tab's `release` workflow (run by hand with a tag) still builds an APK; it is debug-signed unless the `RELEASE_*` secrets are set.
+The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own engine (see "The Mac app bundle" under Build notes), signed with the Developer ID certificate when `APPLE_SIGNING_IDENTITY` is set and notarized when `NOTARY_PROFILE` names a `notarytool` keychain profile.
 
 ## Known gaps
 
-- **No bundled Mac app.** The shell runs from `desktop/target/debug/Enqueue` and starts the engine with `uv run enq serve` from the repo.
 - **Hosted sign-in with a passkey is not built.** The paid tier's "sign in and your library arrives" needs a domain, an account server and a signed app entitlement; the steps are under [Encryption and keys](#encryption-and-keys).
-- **The Mac's original files (`blobs/`) are not encrypted by Enqueue**; FileVault covers them.
-- **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers.
+- **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers. The plan (2026-10-16): first-run setup suggests a cheap OpenRouter pair, one model for ingestion and one for chat, picked by a bake-off on the eval notes (real cost with reprompts, quality-gate failures, both search evals) between `qwen/qwen3.7-flash`, `deepseek/deepseek-v4-flash` and `anthropic/claude-haiku-5.5` for ingestion, and `deepseek/deepseek-v4-pro`, `qwen/qwen3.7-plus` and `anthropic/claude-sonnet-5.5` for chat. Set the OpenRouter account to refuse providers that train on data before other people's notes pass through it.
+- **The paid tier is planned, not built (decided 2026-10-20).**
+  Bring-your-own-key works for everyone, free or paid, with no limit Enqueue sets: the device calls the provider with the person's key, as today.
+  Without a key, Enqueue includes AI: a small, cheap model with a small monthly cap on the free tier; Pro (about $4-6 a month) gets the choice of better models and higher caps. Pro is caps and usage, never a feature that free cannot touch.
+  Enqueue sync is free for one Mac and one phone up to about 1 GB; Pro raises storage and devices.
+  Built (2026-10-20): plans, purchase and enforcement for sync (see "Enqueue Pro" under Gotchas).
+  Built the same day: the included assistant (see "The assistant included with Enqueue" under Gotchas).
+  Built 2026-10-26: the bring-your-own-key model pickers list what the service serves and refuse anything else (`catalog.py`).
+  Still to build: the Apple side of the purchase, with the iPhone app.
 - **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
-- **The wall shows the newest 120 items**; there is no paging past that.
 - **macOS only on the desktop** (AppKit calls, the Keychain).
 
 ## Resolved decisions
@@ -135,9 +147,9 @@ Usage does feed ranking one level up, per artifact rather than per facet: see "U
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
 The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
-7. **crawl4ai is the opt-in browser fallback for link previews (2026-09-29).**
-It is a dependency, used only by `preview._read_browser` when the `preview_browser` setting is on (see "Link previews").
-The Chromium it drives is a separate download that `bin/setup` installs.
+7. **The preview browser is the Mac's own WebKit (2026-10-26; crawl4ai and Chromium before).**
+`webkit_page.py` opens a refused page in an off-screen WKWebView through `pyobjc-framework-WebKit` (29 MB in the app, where crawl4ai's Chromium was about 450 MB and never shipped), so it is on by default and in the Mac app (see "Link previews").
+Playwright stays a dev dependency only for `bin/screenshots`.
 marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
@@ -277,6 +289,9 @@ One line per file, describing its job.
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
 | `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421) and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403), so no other website can reach the engine, even through DNS rebinding. Requests with no Origin (CLI, the shell's health check) pass. Tests add `testserver` via conftest. |
 | `privacy.py` | What may go to which model. `is_remote(provider)` (endpoint not loopback), `shareable(items, provider)` drops local-only artifacts from anything shown to a remote model: chat passages, the gray-zone judge, model re-ranking. A chat scoped to a local-only artifact, and attribute extraction from one, use the local model. The phone's chat does the same through `sync::chat_sources`. |
+| `blobstore.py` | The original files on disk, sealed under a key from the library key once the kit is saved; every read and write goes through it. See "At rest" under Encryption and keys. |
+| `netguard.py` | `is_public(host, port)`: whether a host resolves only to public addresses. What a link preview may reach, for the plain fetch and the WebKit reader alike. |
+| `webkit_page.py` | The preview browser: one page in an off-screen WKWebView in a process of its own, HTML back once its scripts ran. See "Browser fallback" under Link previews. |
 | `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
@@ -296,8 +311,12 @@ One line per file, describing its job.
 | `sqlite.py` | The SQLite driver for everything that opens the library: SQLCipher's build (`sqlcipher3`), re-exported. Reads plain files too; `db.connect` keys an encrypted one. |
 | `libkey.py` | The library key: 32 random bytes made once, in the Keychain (`enqueue-library-key`), the root every other key is derived from (`derive`, HKDF-SHA256 per use); the recovery kit (`kit`/`from_kit`, 56 Crockford characters with a checksum) and whether the person said they saved it. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `reading.py` | How far the assistant is through reading the library (`GET /reading`), for the wall's "Reading your library" line. See "Reading your library" under Gotchas. |
+| `catalog.py` | Which models an online service serves: OpenRouter's public list (`GET /api/v1/models`, no key), fetched at most every 12 hours into memory and `model-catalog.json`, OpenCode Go's from `config`. `GET /settings/models?backend=` feeds the Settings pickers; `settings.update` refuses a model the list lacks (a list a few minutes old is fetched again first, so a new model is not turned away); `/setup` says when a saved one is not offered (`model-unknown`), reading the kept list only. The images job needs a model that reads pictures. A list that cannot be fetched refuses nothing. Tests never fetch (`conftest._no_model_catalog_fetch`). |
 | `setup.py` | Where this installation stands: the three steps left to set up, the settings that need a look, and the one model answer about settings (`GET /setup`, `POST /setup/ask`). See "Settings explain themselves" under Gotchas. |
-| `resurface.py` | Daily resurfacing: one artifact saved 14+ days ago and not opened in 14 days comes back above the wall. It prefers one linked (`related`) to something saved in the last 7 days, rotating daily through the top 3 links, else a stable hash pick for the day. `GET /resurface` returns it as a wall item plus the reason; `refreshResurface` in `static/js/home.js` draws the strip, and "Not today" hides it until tomorrow (localStorage, this browser only). Opening it records an open with source `resurface`, which also takes it out of the pool. No model call. |
+| `sync/join.py` | Device approval: a new Mac asks to join the account's library and one that holds the key seals it to the asker's public key. See "A new computer is approved from one that has the key" under Gotchas. |
+| `account.py` | Enqueue sync from the Mac: sign in with Google (desktop PKCE, back to `/account/google/callback`) or Apple (the web flow, back through the relay to `/account/apple/done` with a one-time code), then a device token for this Mac becomes the sync secret (`sync/enable.py`). Keeps the relay's refresh token in the Keychain (`enqueue-account-session`) and who is signed in in settings; mints a token per phone (`desktop_link_code`) and per joining computer (`sync/pairing.py`); lists and removes devices, signs out, deletes the account. Routes in `api/account.py`. See "Enqueue sync" under Gotchas. |
+| `shiny.py` | Something shiny (the idea is brain food: a glint found in the clutter), in place of resurfacing one old note: each day two or three notes from different fields that make the same point sit above the wall, with the idea they share, how each shows it, and a question to take it further (far analogies, Epstein's *Range*). The set comes from `related` idea links, the farthest first (`related.distance`), rotating daily through the top 7; a third note joins through another idea link; mention links across fields serve only when there is no idea link; subject links never. One call to the chat model per set writes the words (`prompts.SHINY`, shown titles and subject/mechanism/principle lines only, never the notes' text), in the background, cached in `derived_values` (scope `shiny`, subject the ids joined, attribute a stamp of what was shown); until then, or with no model, the card shows the link's own sentence. A set with a local-only note uses the local model; a failed call is not asked again that day. Vaulting and purge drop the cached words. `GET /shiny` returns the notes as wall items plus `food`, `links` and `writing`; "Find another" is `GET /shiny?n=N`: the day's order is the top 7 from today's turn, then every other pair, and `more` says whether one follows (after the last, the button says "Back to the first"); each set's words are written once, when first shown. `refreshShiny` in `static/js/home.js` draws the card, remembers today's `n` (localStorage `enqueue.shiny.at`) and asks again a few times while `writing`; "Not today" hides it until tomorrow (localStorage, this browser only). Opening a note records an open with source `shiny`. |
 | `eval_embedders.py` | `enq eval-embedders`: rebuilds both eval libraries with each candidate embedding model and reports main recall@10/MRR/Nothing-OK, cross-domain passes, and floor bars fitted to that model's scale. See "Embedding models". |
 | `eval_real.py` | The real-search eval: every search followed by an open is a case, scored against the live library. See "Real-search eval". |
 
@@ -310,7 +329,7 @@ One line per file, describing its job.
 | `ingest/facets.py` | Facet generation via the summary provider, fed page_text + annotations. Eligibility gate, proper-noun self-reference check, retry/backoff. Also the user-edit surface: `edit_facet`/`add_facet`/`delete_facet`/`regenerate` + `sync_facets` (push to other devices). |
 | `ingest/source.py` | The text every ingest writer reads: `ingest_text()` = the body (notes) or extracted `page_text` (links, PDFs, images), plus current annotations marked "(your note)". A document over `FACET_INPUT_CHARS` is map-reduced: split into sections of up to 10k characters on paragraph boundaries (at most 24), each summarized by the ingest model (cached in `derived_values`, scope `section_summary`, per section hash and model), and read as ordered summaries. The summaries are also written to `sections` (stamped with ingest model and body version; left untouched when unchanged, since facets, entities and contexts each read through here) and indexed as their own search layer by the ingest queue. A section that fails for a reason that will pass (rate limit, outage; `providers.base.is_transient`) raises `SummariesOwed` so the artifact is retried instead of written from its opening; any other failure falls back to the capped opening; `text_only` text is never mapped. Facets, entities and chunk contexts all read through it. |
 | `ingest/context.py` | Contextual chunks: for an artifact with 2+ chunks, the ingest model writes one or two sentences per chunk placing it in the document (batches of 30). Stored in `chunks.context`, embedded and keyword-indexed with the chunk (not in the trigram table). Skips `text_only` artifacts. |
-| `ingest/related.py` | Related artifacts, precision first: a missing link costs nothing, an invented one costs trust. Three kinds. **Subject links:** each of an artifact's subject lines (facet level 1, `SUBJECT_LEVEL`) searches the facet index and only another artifact's subject lines count; kept at or above `RELATED_MIN` 0.66, with `related.point` = the related artifact's subject line that matched (each direction holds the line of the artifact it points at). **Mention links:** another artifact whose current entities name the same person, place or thing (case-insensitive) scores 0.7 and stores the name in `related.via`; a name more than 8 artifacts share never links, nor does a link's own site name ("Medium" on an article saved from medium.com, read from its preview or its address). **Idea links** (cross-field): similarity between lines ABOVE the subject level only proposes pairs (`IDEA_MIN` 0.72, the closest `IDEA_CANDIDATES` 8), and the ingest model judges each with `prompts.RELATED_JUDGE` (one call per artifact); only a yes links, and its `point` is the model's plain "Both ..." sentence. Similarity alone cannot do this: the prompt's "bridge" lines borrow another field's words on purpose (a piano essay gets a line about codebases) and abstract sentences match on shape ("X beats Y"), which linked a data-modeling note to a piano essay and a tax letter. The judge FAILS CLOSED (an unjudged pair is not a link), the opposite of search's gray-zone judge. Verdicts are cached in `derived_values` (scope `related_judge`, subject `a|b` ids in order, attribute = a stamp of both items' level 0-1 lines, so a changed subject asks again). `compute(id)` never calls a model: it links on cached verdicts only and marks an artifact with unjudged pairs in the `related_pending` table. Judging has its own worker (`start_judge`, one daemon thread, started at engine startup): `judge_next()` takes the longest-waiting pending artifact and makes one model call, returning `idle`/`judged`/`budget`/`paused`/`owed`, which the loop paces itself by. It stops for the day at `JUDGE_DAILY` calls (`ENQ_RELATED_JUDGE_DAILY`, default 40, 0 = off; counted per UTC day in `related_state`), waits out a usage pause without spending a call, and leaves the artifact pending when the model cannot be reached. Ingest never calls the judge: the first version sent each note back through the whole ingest pipeline (re-chunk, re-embed) to make one call, had no ceiling, ran a weekly usage limit dry, and woke the link-refetch loop (see Gotchas). A pair with a local-only item goes to the local model only. `VERSION` (kept in `related_state`) makes `refresh_if_outdated()` recompute every artifact once at startup on the ingest worker (no model). `enq doctor` reports `related_pending` and `related_judged_today`. Tests keep the worker off (`conftest._no_judge_worker`) and drive `judge_next` directly. The top 5 are stored in `related` in both directions; stale facets and entities never count. `GET /artifacts/{id}` returns `related` (each with `via` and `point`), shown as a Related section under the note (`relatedRowHtml` in `static/js/artifact.js`). The phone has no related data (it does not ride the snapshot). |
+| `ingest/related.py` | Related artifacts, precision first: a missing link costs nothing, an invented one costs trust. Three kinds. **Subject links:** each of an artifact's subject lines (facet level 1, `SUBJECT_LEVEL`) searches the facet index and only another artifact's subject lines count; kept at or above `RELATED_MIN` 0.66, with `related.point` = the related artifact's subject line that matched (each direction holds the line of the artifact it points at). **Mention links:** another artifact whose current entities name the same person, place or thing (case-insensitive) scores 0.7 and stores the name in `related.via`; a name more than 8 artifacts share never links, nor does a link's own site name ("Medium" on an article saved from medium.com, read from its preview or its address). **Idea links** (cross-field): similarity between lines ABOVE the subject level only proposes pairs (`IDEA_MIN` 0.72, the closest `IDEA_CANDIDATES` 8), and the ingest model judges each with `prompts.RELATED_JUDGE` (one call per artifact); only a yes links, and its `point` is the model's plain "Both ..." sentence. Similarity alone cannot do this: the prompt's "bridge" lines borrow another field's words on purpose (a piano essay gets a line about codebases) and abstract sentences match on shape ("X beats Y"), which linked a data-modeling note to a piano essay and a tax letter. The judge FAILS CLOSED (an unjudged pair is not a link), the opposite of search's gray-zone judge. Verdicts are cached in `derived_values` (scope `related_judge`, subject `a|b` ids in order, attribute = a stamp of both items' level 0-1 lines, so a changed subject asks again). `compute(id)` never calls a model: it links on cached verdicts only and marks an artifact with unjudged pairs in the `related_pending` table. Judging has its own worker (`start_judge`, one daemon thread, started at engine startup): `judge_next()` takes the longest-waiting pending artifact and makes one model call, returning `idle`/`judged`/`budget`/`paused`/`owed`, which the loop paces itself by. It stops for the day at `JUDGE_DAILY` calls (`ENQ_RELATED_JUDGE_DAILY`, default 40, 0 = off; counted per UTC day in `related_state`), waits out a usage pause without spending a call, and leaves the artifact pending when the model cannot be reached. Ingest never calls the judge: the first version sent each note back through the whole ingest pipeline (re-chunk, re-embed) to make one call, had no ceiling, ran a weekly usage limit dry, and woke the link-refetch loop (see Gotchas). A pair with a local-only item goes to the local model only. `VERSION` (kept in `related_state`) makes `refresh_if_outdated()` recompute every artifact once at startup on the ingest worker (no model). `enq doctor` reports `related_pending` and `related_judged_today`. Tests keep the worker off (`conftest._no_judge_worker`) and drive `judge_next` directly. Each link keeps its `kind` (subject, mention, idea) and `distance` (1 minus the closest subject-line similarity between the two: how far apart their fields are). Analogies are kept and listed first, the farthest first (`_rank`), then the rest closest first: the further a shared idea reaches, the more it is worth (far analogies, Epstein's *Range*). The top 5 are stored in `related` in both directions; stale facets and entities never count. `GET /artifacts/{id}` returns `related` (each with `via`, `point`, `link` and `distance`), shown as a Related section under the note (`relatedRowHtml` in `static/js/artifact.js`), where an analogy is labelled "Same idea, another field". That section is the "what else is this like" surface; there is no separate one. The phone has no related data (it does not ride the snapshot). |
 | `ingest/secrets.py` | Credential pattern scanner. Runs before any text reaches a model. |
 
 ### Retrieve
@@ -355,6 +374,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0041_related_kind.py` | `related.kind` (subject/mention/idea) and `related.distance` (how far apart the two subjects are). |
 | `migrations/versions/0039_related_judge_state.py` | `related_pending` (artifacts with unjudged cross-field pairs), `related_state` (key/value: the link rule's version, the judge's calls today), `link_previews.body_tried` (fetched, no article in it; not in the sync snapshot). Moves what an earlier build had parked in `derived_values`. |
 | `migrations/versions/0038_related_point.py` | `related.point`: the related artifact's summary line behind an idea link (NULL for a name-only link). |
 | `migrations/versions/0037_related_via.py` | `related.via`: the shared name behind a "both mention" link (NULL for an idea link). |
@@ -362,7 +382,7 @@ One line per file, describing its job.
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
 | `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
-| `migrations/versions/0009` .. `0039` | One revision per schema change, applied at startup (latest: `0039_related_judge_state`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
+| `migrations/versions/0009` .. `0041` | One revision per schema change, applied at startup (latest: `0041_related_kind`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop
@@ -389,17 +409,22 @@ One line per file, describing its job.
 | `bin/launch mobile` | One-shot build + `adb install` + launch on a plugged-in Android phone, then EXIT (no `cargo tauri android dev`, so no held Gradle lock; emulator rejected). |
 | `bin/launch simulator` / `bin/launch ios` | One-shot build + install + launch in the iOS Simulator, or on a plugged-in iPhone, then exit. See "The iOS app" under Gotchas. |
 | `bin/launch emulator` | Boot a headless AVD, one-shot build the debug apk, `adb install` + launch, then exit (for headless device-verify over CDP/screencap). |
+| `bin/android-matrix` | Opens the app on five test emulators (Android 9, a small Android 15 phone, Android 15, 16 and a tablet) one at a time, and reports for each whether it stayed up, crashed or rendered its first screen; screenshots go to `$TMPDIR/enqueue-android-matrix`. `--create` makes the emulators (the system images come from `sdkmanager`), `--debug` tests the debug apk instead of the release one. |
 | `bin/cdp-eval` | Evaluate JS inside the running Android WebView over CDP (the supported way to read on-device runtime state); `--serial <device>`. |
 | `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
-| `bin/deploy-relay` | Deploy the sync relay to Railway (dev/prod), gated on the relay tests, polls `/health`. |
+| `bin/release desktop` / `bin/release android` | Shippable builds: the Mac `.app` + `.dmg` with the engine inside (signed and notarized when the Apple settings are given), or the signed Android release `.apk`/`.aab` (`ANDROID_VERSION_CODE` overrides the versionCode). The fastlane lanes wrap both. |
+| `bin/android-env` | Sourced, not run: the Android toolchain every build uses (SDK, NDK, JDK, and OpenSSL's `llvm-ar`/`llvm-ranlib`). |
+| `bin/bundle-engine` | Vendors the relocatable engine into `desktop/engine` for the Mac app; `bin/release desktop` runs it. |
+| `bin/deploy` | Ship a build through fastlane: `android dev` (Play internal testing), `android prod` (Play production, asks first; `-y` skips), `android code` (the next versionCode, read only), `desktop` (the notarized `.dmg`). Gems go to `vendor/bundle`. |
+| `bin/deploy-relay` | Deploy the one hosted relay (Railway service `enqueue`) after the relay tests pass, asking first (`-y` skips), and wait for `/health`. |
 
 ### Static
 
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `approve` (device approval: the waiting screen and the approve prompt), `update` (the Mac app's update card: Update now, Update on close), `accountmenu` (the account at the top right of the wall: who, the plan and storage used, devices, Settings, How to use, sign out; signed out, the way to sign in), `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
 
@@ -492,7 +517,9 @@ The phone needs none of it: it is linked by scanning the Mac's code, which hands
 - **Mac, library:** a SQLCipher database once the recovery kit is saved (`db.encrypt_library`, at the engine's start; checked by integrity and row counts before it replaces the plain file).
   Before the kit is saved the library stays plain on purpose: a lost Keychain would otherwise lose the library itself.
   Every connection comes from `db.connect`, on SQLCipher's driver (`sqlite.py`), which reads a plain file too.
-- **Mac, original files (`blobs/`):** not encrypted by Enqueue. FileVault covers a stolen Mac; the folder is the owner's only (0700).
+- **Mac, original files (`blobs/`):** sealed once the recovery kit is saved (`blobstore.py`, 2026-10-26): each file under the `blobs` key derived from the library key, in the backups' secretstream format behind an `ENQF` header, named by the hash of its plaintext as before.
+  Everything reads and writes through `blobstore` (`write`, `read`, `replace`, `size`, a `Handle` for the vault); a PDF opens from its bytes (`capture.open_pdf`), OCR gets the picture on stdin, the blob route serves the plaintext; nothing decrypted is written to disk. Plain files from before are sealed in place at engine start (`seal_all`, each read back before it replaces the plain copy), and a recently read file stays decrypted in memory (256 MB at most) so a PDF's pages do not decrypt the whole file each time.
+  Before the kit is saved the files stay plain, like the database, so a lost Keychain cannot lose them. Backups take the sealed files as they are; the same library key opens them after a restore.
   Encrypting them means routing PDF rendering, previews and captures through a sealed reader; left for later.
 - **Backups:** every file sealed (libsodium secretstream) under the backup key, named by keyed hashes, checked by opening it again (`backup.py`).
 - **Phone (Android and iOS):** the database is SQLCipher (`bundled-sqlcipher-vendored-openssl`), the sync config and vault records are sealed files, and the file cache is sealed; all under keys derived from the store key.
@@ -525,12 +552,28 @@ The free tier keeps working without any of it: the person runs their own relay a
 ## The relay
 
 A dumb byte store (`src/enqueue/relay/`): objects keyed by name, a cursor that moves on every write, and a "something changed" stream.
-It parses nothing, holds no key, and can decrypt nothing; no user accounts, one library per relay secret.
+It parses nothing, holds no key, and can decrypt nothing. The hosted one also keeps accounts (who signed in, and which device tokens open which library), never anything that opens a library.
 
-- **Auth.** One shared secret per library (the relay secret, in each device's Keychain or sealed config): `Authorization: Bearer <secret>` on HTTP, `?token=<secret>` on the SSE stream (an `EventSource` cannot set headers). A wrong secret is 401.
+- **Libraries.** One relay serves many libraries (2026-10-16). A library is known only by the SHA-256 of its relay secret (`storage.library_id`); every object, cursor and change notice belongs to one library, and nothing one library does is visible to another (cursors are per library, so not even how often it writes). Two libraries both writing `lib/vault.enc` never collide, and a DELETE reaches only the caller's own objects. The relay stores no secret, only hashes, so its database lets no one in.
+- **Issuing libraries.** The secret the relay starts with (`RELAY_SECRET`) is the first library, and a relay from before libraries moves its objects into it on first start (resumable: the old table is dropped only once every row is copied). Others are made with `enq relay-admin add "<who>"` (prints the secret once), listed with `enq relay-admin list` (label, size, objects, live or revoked) and refused with `enq relay-admin revoke <id>`; these call `/admin/libraries`, which exists only when `RELAY_ADMIN_SECRET` is set (`RELAY_URL` and `RELAY_ADMIN_SECRET` in the environment, or `--url`/`--admin-secret`). An unknown or revoked secret is 401.
+- **Accounts (the hosted relay, 2026-10-19).** With `DATABASE_URL` set (Railway Postgres; SQLite in tests), `relay/accounts.py` adds sign-in with Google or Apple and one relay token per device, after Dequeue's pattern (`~/dequeue/backend/app/auth.py`). A self-hosted relay without it has no accounts and never touches a database.
+  Id tokens are verified, never just decoded: the provider's signature (its published keys), the issuer, the expiry, and an audience that is one of our clients (Google: `GOOGLE_CLIENT_ID`, the Web client, and `GOOGLE_DESKTOP_CLIENT_ID`; Apple: `APPLE_CLIENT_ID`, the Services ID, and `APPLE_BUNDLE_ID`). With no client ids set, sign-in answers 503 rather than accept a token issued to any app.
+  The Mac's Google sign-in posts its one-time code to `POST /auth/google/desktop`, which does the exchange with `GOOGLE_DESKTOP_CLIENT_SECRET`, so no secret ships in the app.
+  Apple's web flow (Services ID `com.sudohnim.enqueue.signin`) posts to `POST /auth/apple/callback`, which sends the browser on only to the Mac's own engine (`http://127.0.0.1:<port>/account/apple/done`, nothing else) with a one-time code; the engine swaps it at `POST /auth/handoff` (two minutes, one use, kept as a hash in `handoffs`). Dequeue put the tokens themselves in whatever address the request named.
+  `POST /auth/google` / `/auth/apple` return a 15-minute access token and a refresh token that is a row (`refresh_tokens`): `/auth/refresh` swaps it (the old one keeps working 5 minutes, for a lost reply), `/auth/logout` ends its family, `/auth/logout-all` every one. Production refuses to start on a `JWT_SECRET` under 32 characters.
+  `POST /account/devices` makes the account's library on first use (`storage.add_account_library`: a library no secret opens) and returns a device token (`enqd_...`, shown once, stored as a hash); the relay takes it where it takes a library secret, after the secrets (`app._library`), cached 15 seconds. `DELETE /account/devices/{id}` cancels one; `DELETE /account` ends every session and device and revokes the library.
+  Sign-in proves who someone is and opens nothing: the library's key still reaches a device only from the Mac's QR code or the recovery kit. The tables are created at start (`metadata.create_all`); the first column added later starts an Alembic history for this database. `tests/test_relay_accounts.py` signs tokens with a key it makes in place of Google's and Apple's.
+- **Where the bytes live (2026-10-20).** The relay's SQLite file (`relay.db` in `RELAY_DATA_DIR`) is the index: per object its library, name, cursor and `size`, and either the bytes (`data`, a self-hosted relay) or a `blob_key` into Cloudflare R2 (the hosted one), with `data` empty. R2 is on only when all four of `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET` are set (`relay/blobs.py`, boto3 from the `hosted` extra); some but not all refuses to start.
+  A blob key is `<library id>/<SHA-256 of the name>/<random>`, a fresh one per write: `storage.put` uploads beside the old copy (outside the lock, off the event loop), switches the row in one transaction (quota checked again there), then deletes the old copy, so a reader never meets half an object and two writes of one name cannot leave the row's size and bytes disagreeing. Cursor, upsert, quota (`used_bytes` is a sum of `size`), `LibraryFull` and isolation are unchanged; `tests/test_relay_blobs.py` runs the same rules both ways and the adapter against moto.
+  A failed upload changes nothing and answers 503 (`BlobStoreError`); a failed delete of a superseded copy only leaves an orphan, which costs storage, not data. A row whose copy is missing or the wrong size is a 503, never a 404.
+  At every start `storage.start_upkeep` runs in a thread: it finishes interrupted purges, then moves bytes still in the file into R2 (`move_to_blob_store`), one object at a time, each copy read back and compared before its row lets go of the bytes, and only if no write replaced the row meanwhile; it stops at the first failure and resumes at the next start, and the relay serves from the file for anything not moved yet. It vacuums the file once something moved.
+  **Revoking a library deletes what it holds** (`revoke_library`, which `enq relay-admin revoke` and account deletion call): its rows at once, then every R2 key under `<library id>/` (orphans included). A blob store that fails leaves `libraries.purged_at` empty and the next start finishes it; libraries revoked before this rule are cleared the same way. It cannot be undone, so `enq relay-admin revoke` asks first.
+- **Limits.** An object over `RELAY_MAX_OBJECT_BYTES` (100 MiB) and a write past a library's storage limit (`RELAY_QUOTA_BYTES`, 5 GiB, or the library's own `--quota-gb`) are 413; at most 256 pairings wait at once. `enq relay` refuses to listen on anything but loopback with `dev-secret` or a secret under 24 characters.
+- **Setup.** The desktop's sync setup asks for the relay password and checks it against the relay first (`PUT /settings/sync-secret` with `relay_url`, `api/settings._relay_refuses`), so a made-up one is refused there instead of failing every sync after. There is no "make one" any more: a relay only ever opened the secret it ran with.
+- **Auth.** Each library's own secret (in each device's Keychain or sealed config): `Authorization: Bearer <secret>` on HTTP, `?token=<secret>` on the SSE stream (an `EventSource` cannot set headers); the relay blanks it in its access log (`app.hide_tokens_in_access_log`), which once held every library's password.
 - **Routes.** `GET /sync/objects?since=<cursor>` lists names changed after a cursor (and the new cursor); `GET /sync/object/<name>` fetches one; `PUT /sync/object/<name>` stores or overwrites one (an upsert takes a fresh cursor, so a device past the old one pulls the update again); `DELETE /sync/object/<name>` removes one (a device clearing its own superseded copies); `GET /sync/events` streams a line per write; `PUT`/`GET /pair/<id>` carry a one-time sealed envelope for adding a computer.
 - **Names.** `dev/<device_id>/artifacts/<hash>.enc` and `dev/<device_id>/chats/<hash>.enc` (the id hashed under the names key), `blobs/<hash>`, `lib/settings/<time>-<device>.enc` (the newest by its own `updated_at` wins), `lib/vault.enc`, `lib/pivots.enc`. A device writes only under its own `dev/<device_id>/`, and reads everything.
-- **Running one.** `enq relay --host 0.0.0.0 --port <port> --secret <long random>` (or `RELAY_HOST`/`RELAY_PORT`/`RELAY_DATA_DIR`/`RELAY_SECRET`), behind TLS (Caddy, nginx, the host's own), on a data folder that survives restarts. `bin/deploy-relay dev|prod` deploys to Railway (`dev` is the `enqueue` service the current library uses; wait for the new build before trusting `/health`, since the old one keeps answering while it rolls out). For a test, `enq relay` plus `cloudflared tunnel --url http://127.0.0.1:8788`. No CORS: every client is native (Python `httpx`, Rust `ureq`).
+- **Running one.** `enq relay --host 0.0.0.0 --port <port> --secret <long random> [--admin-secret <long random>]` (or `RELAY_HOST`/`RELAY_PORT`/`RELAY_DATA_DIR`/`RELAY_SECRET`/`RELAY_ADMIN_SECRET`), behind TLS (Caddy, nginx, the host's own), on a data folder that survives restarts. With R2 the volume holds only the index (a few hundred bytes per object); the bucket `enqueue` is in the Cloudflare account, with an R2 API token scoped to Object Read & Write on that bucket alone, and the four `R2_*` variables are on the Railway service. `bin/deploy-relay` deploys the hosted one: the `enqueue` service in the `enqueue` Railway project, with a Postgres service beside it whose `DATABASE_URL` reaches the relay as a reference over Railway's private network. It is the live relay for every linked device. **Staging** (made 2026-10-26) is the `staging` environment of the same Railway project: the same services with their own volume, Postgres and secrets (in the Keychain as `enqueue-staging-relay-secret` and `enqueue-staging-relay-admin-secret`), no R2 (its bytes stay on its volume) and no purchase webhook, at `https://enqueue-staging.up.railway.app`. Deploy there first with `RAILWAY_ENVIRONMENT=staging bin/deploy-relay`; point a test Mac at it with `ENQ_HOSTED_RELAY_URL` and its own `ENQ_DATA_DIR`. Sign in with Apple needs the staging callback added to the Services ID before it works there. Wait for the new build before trusting `/health`, since the old one keeps answering while it rolls out. For a test, `enq relay` plus `cloudflared tunnel --url http://127.0.0.1:8788`. No CORS: every client is native (Python `httpx`, Rust `ureq`).
 - **Reach.** A headless emulator reaches a relay on the Mac at `10.0.2.2:8788`; a phone that leaves the house needs a public `https://` address, and the desktop refuses to show a linking QR for a loopback or private one.
 
 ## Database schema
@@ -558,7 +601,7 @@ Migrations run automatically at startup via Alembic.
 | `chat_messages` | one turn | append-only. grounded flag. |
 | `chat_citations` | what an answer was built from | message to artifact, ranked |
 | `chat_topics` | concepts a conversation circles | derived, regenerable |
-| `related` | links between artifacts about the same subject, naming the same thing (`via`), or judged to make the same point; `point` is the reason shown | derived at ingest, both directions, filtered to live artifacts on read |
+| `related` | links between artifacts about the same subject, naming the same thing (`via`), or judged to make the same point; `point` is the reason shown, `kind` which of the three, `distance` how far apart their fields are | derived at ingest, both directions, filtered to live artifacts on read |
 | `related_pending` | artifacts with cross-field pairs the judge has not ruled on | the judge worker's queue; survives restarts; purge deletes an artifact's row |
 | `related_state` | key/value for related links: the rule's `version`, the judge's `judge_day` count | local only |
 | `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
@@ -625,7 +668,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
 | `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
 | `ENQ_MODEL_RETRIES` | `3` | TOTAL attempts per structured call (instructor's `max_retries`); 1 = one shot, no reprompt |
-| `ENQ_PREVIEW_BROWSER` | `off` | Open a refused or script-only link once in headless Chromium (crawl4ai) |
+| `ENQ_PREVIEW_BROWSER` | `on` | Open a refused or script-only link once more in the Mac's own WebKit (`webkit_page.py`) |
 | `ENQ_BACKUP_DIR` | (empty) | The cloud-drive folder backups go into; empty = backups off |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (...)` | User agent for preview fetches |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
@@ -761,7 +804,7 @@ All endpoints on `127.0.0.1:8787`.
 GET    /                            home HTML
 GET    /capture                     capture overlay HTML
 GET    /health                      status + row counts
-GET    /resurface                   today's older note for the wall (wall item + reason), or null
+GET    /shiny?n=                    today's Something shiny (n: Find another): 2-3 notes from different fields (wall items), the idea they share, `more`
 GET    /greeting                    the wall's greeting for the current four-hour bucket (cached or fallback)
 GET    /artifacts                   list, newest first. ?limit&offset&order&pinned
 GET    /artifacts/{id}              detail, body, annotations, facets, versions
@@ -786,6 +829,7 @@ GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
 GET    /events?limit=N              the activity log, newest first, each with its full record
 GET    /setup                       what is connected, what is left to set up, settings that need a look
+GET    /reading                     how far the assistant is through reading the library (the wall's progress line)
 GET    /backup                      backup folder, detected Proton Drive folders, last backup, the kept backups
 GET    /fonts/{name}                font files (cached 1 year)
 ```
@@ -1108,13 +1152,12 @@ Rules:
 Auto-preview is controlled by the `auto_preview` setting (default on).
 When on, the ingest worker fetches the preview in the background after capture.
 
-**Browser fallback (`preview_browser`, default off).**
+**Browser fallback (`preview_browser`, default on).**
 Some sites refuse any non-browser client (Medium's bot wall answers 403 to httpx every time, whatever the user agent).
-With the setting on, a refusal (401/403), or a page with no title and no description until its scripts run, is opened once more in headless Chromium through crawl4ai (`preview._read_browser`), and its HTML goes through the same `parse` and `_extract_body`.
-The line from rule "Not a browser string" still holds: a real browser loading a page is not a disguise, faking one is.
-So none of crawl4ai's anti-detection is enabled (no `enable_stealth`, `magic`, `simulate_user`, `override_navigator`, or random user agent); a page that still refuses a real browser stays refused.
-crawl4ai's cache lives under the data dir (`CRAWL4_AI_BASE_DIRECTORY`), not `~/.crawl4ai`.
-A missing Chromium fails with "run bin/setup" rather than silently.
+A refusal (401/403), or a page with no title and no description until its scripts run, is opened once more in the Mac's own WebKit (`preview._read_browser` -> `webkit_page.read`), and its HTML goes through the same `parse` and `_extract_body`.
+The reader is its own short-lived process (`python -m enqueue.webkit_page <url> <timeout>`, one JSON line back): WebKit needs a main-thread run loop the engine does not have, and a page that hangs or crashes WebKit takes only that process, which `read` kills at the deadline. At most two run at once (`_BROWSERS`).
+It keeps the plain fetch's lines: every navigation (redirects and frames too) is checked with `netguard.is_public`, the same check `_refuse_private` uses; a content rule list blocks the page's own requests to literal private addresses (one rule per range: WebKit's `url-filter` has no `|`, and a rule list that fails to compile fails the read); a non-persistent data store keeps no cookies; nothing plays; the user agent is WebKit's own, since a real browser loading a page is not a disguise and faking one is.
+A page that still refuses a real browser stays refused ("even in a browser"). A computer that is not a Mac has no preview browser and is not offered the switch (`features.preview_browser`).
 
 **A link's title before, or without, a preview (`capture.title_from_url`).**
 A link is titled from its address until its page says its own name, and for good when the publisher refuses the fetch (Medium does).
@@ -1203,6 +1246,40 @@ Setting up and running are under [Start here](#start-here). What else is worth k
 - `bin/launch desktop` rebuilds the shell with `cargo build` (a compile error stops it rather than launching a stale binary), kills the shell and engine, writes the repo path to the data folder's `repo`, starts the shell and waits for `/health`.
 - `bin/launch mobile` refuses an emulator on purpose and never runs `cargo tauri android dev` (that watch loop never exits and holds the Gradle lock); it builds once, installs, launches and exits.
 - The shell finds the engine repo through `ENQUEUE_REPO`, else the data folder's `repo` file, else the parent of the current directory.
+
+### The Mac app bundle
+
+`bin/release desktop` runs `bin/bundle-engine`, then `cargo tauri build --config tauri.release.conf.json`, which copies `desktop/engine` into `Enqueue.app/Contents/Resources/engine`.
+The engine is a relocatable CPython 3.12 (python-build-standalone, the one uv manages) plus a `site/` folder; the shell finds it next to its own executable and runs `python3.12 -m enqueue serve` with `PYTHONPATH` set to it (`bundled_engine_command` in `desktop/src/lib.rs`), so the app needs no repo, no uv and no system Python. Without a bundled engine (a dev build) the shell runs `uv run enq serve` from the repo as before.
+- **Exactly the locked versions.** `site/` is installed from `uv export --frozen --no-dev` (uv.lock), then the project itself with `--no-deps`; resolving fresh would ship whatever was newest that day.
+- **The preview browser is the system's.** Link previews open refused pages in the Mac's own WebKit through `pyobjc-framework-WebKit` (about 29 MB); crawl4ai and its Chromium (over half the bundle, 814 MB against 356) are gone. Playwright is dev-only (`bin/screenshots`), and `bin/bundle-engine` fails if it leaks in.
+- **First launch** downloads the embedding model once (about 200 MB from Hugging Face) into the data folder; search says "Updating your search index" until it is ready.
+- **Signing.** With `APPLE_SIGNING_IDENTITY="Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"` every Mach-O in the engine is signed inside-out with the hardened runtime and `desktop/Entitlements.plist` (library validation off, dyld variables, JIT), then Tauri signs the app.
+- **Notarizing.** Once per Mac, `xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG` (it asks for an app-specific password from appleid.apple.com, which stays in the keychain); then `NOTARY_PROFILE=enqueue-notary bin/release desktop` submits the `.dmg`, waits, staples it and checks it with `spctl`.
+
+### The Mac app updates itself
+
+A shipped app (one with a bundled engine) asks a feed for a newer version a minute after it starts and every six hours (`watch_for_updates` in `desktop/src/lib.rs`, `tauri-plugin-updater`).
+An update whose signature checks out against the public key in `tauri.conf.json` (`plugins.updater.pubkey`) is downloaded and kept in memory (`PendingUpdate`), and the page shows a card at the bottom right, the way Claude's desktop app does: **Update now** (`app_restart`: put it in place, stop the engine and wait for it so the new shell does not attach to the old engine on its port, restart) or **Update on close**, which only puts the card away. Either way it is put in place when the app quits (`install_pending` on `RunEvent::Exit`), so an ignored card still updates (`js/update.js`, `window.__enqUpdateReady`, `update_ready`).
+**The feed** is `latest.json` on a GitHub release tagged `mac-updates` (prerelease, never "latest", so an Android release cannot take its place); its `url` points at `Enqueue.app.tar.gz` on the versioned release `mac-v<version>`, which also carries the `.dmg` people download.
+**The key.** The private half is `~/.tauri/enqueue-updater.key` (made 2026-10-26 with `cargo tauri signer generate`), its password in the Keychain as `enqueue-updater-key-password`; `bin/release desktop` reads both (`TAURI_UPDATER_KEY_FILE` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` override). Lose it and installed copies can never update again: a new key means a new public key in the app, which only a manual download brings. Keep a copy in a password manager.
+**A release** (`bin/deploy desktop`): `bin/release desktop` builds and signs, notarizes and staples the `.dmg`, staples the `.app` (notarizing the `.dmg` registered it), makes the update bundle again from the stapled app and signs it, and writes `latest.json` (`write_update_feed`); after a yes, `fastlane mac publish` creates `mac-v<version>` with the `.dmg` and bundle and replaces `latest.json` on `mac-updates`. Bump the version in `pyproject.toml`, `desktop/Cargo.toml` and `desktop/tauri.conf.json` first: an app updates only to a higher version.
+Only Apple silicon is built (`darwin-aarch64`): the bundled Python is arm64.
+Notarizing needs the `enqueue-notary` profile once per Mac (`xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG`).
+
+### The Android release build
+
+`bin/release android` makes the signed release `.apk` and `.aab` (signed with `desktop/gen/android/key.properties` + `release.keystore`, both gitignored). A release build differs from the debug one every other script makes in three ways, each of which broke it once (2026-10-17):
+- **OpenSSL archives with `llvm-ar`/`llvm-ranlib`.** SQLCipher's vendored OpenSSL looks for `aarch64-linux-android-ranlib`, which NDK r23+ no longer ships; `bin/android-env` (sourced by `bin/launch` and `bin/release`, mirrored in `bin/verify`) exports `AR_`/`RANLIB_<triple>` pointing at the NDK's llvm tools. A clean debug build needs it too: until 2026-10-21 only `bin/release` set it, and a warm cache hid that every clean debug build failed.
+- **R8 keeps the app's own classes** (`proguard-rules.pro`): Rust calls `MainActivity.storeKey`, `getCurrentActivity` and the sync service by name over JNI, and the page calls the `@JavascriptInterface` bridge, so a shrunk build renamed them away and the app died at launch with "store key: Java exception was thrown". Verify a release build by installing it and opening it, not by its build passing.
+- **Native code aligned to 16 KB pages** (`desktop/.cargo/config.toml`, `-z max-page-size=16384` for the Android targets): Play refuses a production release whose `.so` loads at 4 KB ("Your app does not support 16 KB memory page sizes"), the NDK's default; internal testing let 3003 through, production did not (2026-10-21). Check with `llvm-readelf -lW` on the `.so` inside the `.aab`: every LOAD line must end `0x4000`.
+- **No typedef-annotation extraction** for the plugin modules (`build.gradle.kts`, `allprojects`): it only matters for publishing an AAR, and the lint tooling it downloads was cut off mid-download by Google's CDN on every attempt.
+**Version codes.** Tauri derives the versionCode from `tauri.conf.json`'s version (major * 1000000 + minor * 1000 + patch, so 0.3.0 is 3000) and writes it to `gen/android/app/tauri.properties`, which is gitignored and rewritten on every build.
+Play refuses a code it has seen, so `bin/release android` takes `ANDROID_VERSION_CODE` and merges it into the Tauri config for that build only (`--config '{"bundle":{"android":{"versionCode":N}}}'`); nothing in the repo changes per release.
+The fastlane Android lanes pick N as one more than the highest of every code Play lists (bundles, APKs, every track) and the code in `tauri.properties` (the last one this checkout attempted), after Dequeue's `next_android_version_code`.
+The local half matters because Play reserves a code the moment a bundle is uploaded, even when the upload fails, and never lists it.
+The lane refuses to upload when the built code is not the one it asked for, and sends the R8 map (`outputs/mapping/universalRelease/mapping.txt`) with the bundle so Play can read crashes.
+A plain `bin/release android` without the variable still builds with the derived code, which Play will refuse once that code is taken.
 
 ### Tauri build notes
 
@@ -1328,6 +1405,105 @@ Changing the ingest model is the deliberate rewrite: `queue.refresh_on_model_cha
 An item whose summary is not current yet holds its model steps (`queue.await_peer`, a `facet_retry` row with `last_error` = `queue.AWAITING`): `PEER_SUMMARY_WAIT_S` plus a per-device share of it when a desktop wrote it, only a per-device share of `PEER_PHONE_WAIT_S` when a phone did (a phone's snapshot has no `entities` key), so the desktops take turns.
 The wait ends the moment the summary arrives (`_awaiting_peer` checks `is_current`); if it never does, this device summarizes when the row comes due.
 
+### Enqueue sync: signing in gives each device a pass of its own (2026-10-19)
+
+Settings > Sync offers Enqueue sync first (sign in with Google or Apple; the relay is ours) and a relay of your own under "Use a relay of your own" (address, then its password, as before).
+Signing in needs the library's key first: a Mac without one makes it and shows the recovery phrase, then opens the sign-in (`startAccountSignIn` in `static/js/settings.js`).
+The sign-in runs in the system browser (`open_external`) and comes back to the engine, not the page; the page polls `GET /account` until `sign_in.state` is `done` or `failed`. Both return addresses check the `state` the engine made (`account.begin`, ten minutes, one use), so a page that sends the browser there on its own finishes nothing.
+What the sync client sends as its relay password is then a device token (`enqd_...`), not a shared secret: this Mac's own, a fresh one in every phone linking code (`desktop_link_code` asks `POST /account/device-token`, so it is async and off the main thread), and a fresh one for a computer joining (`pairing.create_offer`). Each shows under Devices and can be removed alone; signing out cancels this Mac's and clears its sync settings; deleting the account ends them all and the relay drops the library. Nothing changes on the phone: it reads `relay_secret` from the code as always.
+Showing the code twice makes two phone tokens; one never scanned stays "not synced yet" under Devices until removed.
+A Mac already on a relay of its own switches with the same sign-in ("Switch to Enqueue sync" on the configured Sync tab): `account._move_library` stores the new device token, forgets the pull cursor (the account's library counts from its own start), restarts the sync worker (`worker.restart`, which retires the old loops by generation, since the change stream can sit in a read on the old relay), and pushes everything once (`client.push_everything`: artifacts, views, conversations, settings, the vault's wrap; the keyring goes up as the password is stored), logged as `sync.moved`. The key is the same, so nothing new is written down. Settings asks to link the phone again until a phone code is made (`account_relink_phone`); the phone forgets its own cursor on every link (`mobile_link_qr`), for the same reason. The old library stays on the old relay until `enq relay-admin revoke`.
+Google and Apple are set up in the `enqueue-sudohnim` Google Cloud project and Apple team 572NMYL3ZG; the relay's variables (client ids, the desktop client secret, `JWT_SECRET`, `DATABASE_URL`) are on the Railway `enqueue` service, and the Sign in with Apple key (`66CTHBC793`) is in the Keychain as `enqueue-apple-siwa-key` until the relay needs it (Apple's token revocation on account deletion).
+`tests/test_account.py` runs the Mac's side against the real relay code.
+
+### A new computer is approved from one that has the key (2026-10-21)
+
+Signing in proves who someone is; it never carries the library's key (see [Encryption and keys](#encryption-and-keys)).
+So what a Mac does after signing in depends on the account's library (`account._adopt`, which reads the relay's `lib/keyring.enc` with the new device token):
+
+- **The library has a key and this Mac has none:** it asks to join (`sync/join.py`). It makes a Curve25519 key pair, posts the public half (`POST /account/joins`, device token) and shows a six-digit code made from it (`crypto.join_code`). Every signed-in Mac polls `GET /account/joins` every 10 seconds while its window is up (`watchApprovals` in `js/approve.js`) and shows "<name> wants to join your library" with the same code, worked out on that Mac from the public key the relay lists. Approve seals the key to that public key (`crypto.seal_to`, libsodium's sealed box) and posts the sealed bytes; the asker collects them once (`GET /account/joins/{id}`), takes the keyring from the relay and starts syncing. The relay holds a public key and ciphertext only; a relay that swapped in its own key would show a different code, which is why the person compares them. An ask lasts ten minutes (`JOIN_TTL_S`); the private half lives in the engine's memory only, so a restart means asking again.
+- **The account has no library key yet:** sign-in ends in `needs_key`; the page makes the key and shows the recovery phrase, then `POST /account/finish` turns sync on.
+- **This Mac has a key for a different library:** refused, and the device the sign-in made is cancelled. Making the key BEFORE signing in (the flow until today) gave a second Mac a second key that could not read the first one's library, and its `push_keyring` overwrote the account's keyring.
+
+The pairing code (`sync/pairing.py`, a typed phrase) stays for a relay of your own, where there is no account.
+**The phone takes part (2026-10-26).** It can sign in with Google instead of scanning (`SignIn.kt`, Credential Manager, an id token for the Web client; `mobile_sign_in` trades it at `/auth/google`, makes a phone device, and asks to join), shows the code and waits (`mobile_join_status`, every 3 seconds), and is then linked exactly as a QR link leaves it. A linked phone approves other devices too: it looks for asks when it comes to the front and every 15 seconds (`mobile_joins`, `mobile_join_decide`). The sealed box is `crypto_box` in `sync.rs` (`join_keypair`, `join_code`, `approval_for`, `dek_from_approval`), pinned against PyNaCl by a test vector. An account with no library key yet tells the phone to set the Mac up first.
+Google issues the token only once the Android OAuth client (package `com.sudohnim.enqueue` and the SHA-1 of every signing certificate: debug, upload and Play's app signing key) is registered in the `enqueue-sudohnim` Google Cloud project.
+The free plan's one computer still applies: a second computer is refused at `POST /account/devices` (402) before it can ask.
+`tests/test_device_approval.py` runs the relay rules and the whole Mac side against the real relay code.
+
+### A pull never steps past what it did not receive (2026-10-22)
+
+The phone's pull (`sync_library` in `desktop/src/sync.rs`) fetches the changed objects in parallel (`fetch_snapshots_parallel`).
+An object it could not fetch (no network, the relay down or busy) used to be skipped while the cursor moved past it, so that change never came again: two notes trashed on the Mac stayed on the phone for good.
+Now a missed fetch counts like a failed apply and the cursor stays put until every object arrives; an object gone since the listing (404) or sealed under another key is still skipped, since asking again cannot help.
+Phones on older builds pull everything once after updating (`FULL_PULL_KEY` in `sync_library`), which re-applies what is already there as no-ops and catches whatever they stepped past.
+Bump `FULL_PULL_KEY` to make every phone do that again.
+
+### One thread at a time opens or closes the library (2026-10-22)
+
+The engine froze whole (`/health` too, 0% CPU) when one thread opened a connection to the library while another closed one under load: SQLite's file locks (`findReusableFd` on open, `unixLock` in `sqlite3WalClose` on close) each waited on the same inode mutex forever, one of them holding Python's global lock.
+It showed after turning on "Try harder" for link previews, which only added load: a throwaway engine under capture and search load froze every time with the preview browser on or off, the same two stacks each time.
+`db.connect` opens under a process-wide lock (`_OPEN_CLOSE`) and returns a `_Connection` whose `close()` (and finalizer) takes the same lock; with it the same load ran 16,000 rounds clean.
+Every connection to the library must come from `db.connect` (it already must, for the key).
+A frozen engine's stacks: `kill -USR1 <pid>` writes every thread's Python stack to the log; `sample <pid>` shows where they wait inside SQLite.
+
+### A Keychain that cannot answer is not a missing key (2026-10-21)
+
+`keyring._read` tells "no such item" (`security` exits 44) from "the Keychain did not answer" (a permission prompt waiting or refused, a locked keychain, a timeout), which raises `KeychainUnavailable`.
+`libkey` reads strictly (`_get(..., strict=True)`): it MAKES the library key when there is none, and a failed read used to count as none, so the next ask (the daily backup, the recovery kit, the sync wrap) stored a new key over the real one, which locks an encrypted library for good.
+Other secrets still read a failed read as absent, without caching it.
+The engine answers a `KeychainUnavailable` with a 503 that says to choose Always Allow (`api/app.py`), and the wall says so after eight seconds of opening instead of spinning without a word.
+`tests/test_keychain_unanswered.py` pins it.
+
+### The first-run welcome (desktop) and the phone's first screen (2026-10-20)
+
+A fresh library opens on `js/welcome.js` (styles in `css/welcome.css`) instead of the empty wall: `home()` calls `maybeWelcome()` when the wall is empty, and it shows when the `welcome_done` setting is false and the three `GET /setup` steps are not all done.
+Five skippable steps: Overview, the assistant, sync, the recovery kit, the phone; finishing or skipping sets `welcome_done` (a setting, not localStorage, so a cleared webview does not bring it back).
+The Overview is a hub with two halves: the tour (`js/tour.js`, the live-demo cards (eight on the Mac), played as one card, `welcomePlayTour`, whose last button says "Set it up" and continues to the Assistant step through `Tour.open({label, then})`) and a setup list (`welcomeChecklist`), one row per step with where this Mac stands, read from `/settings`, `/setup` and `/backup`.
+The `?` at the top right of the home header opens the same welcome on demand (`openWelcome`, `welcomeTriggerHtml`), each step showing where this Mac stands, with Close and Done in place of Skip; the tour has no `?` of its own on the desktop; it is played from the hub. `refreshIfStale` leaves an open welcome alone, since its sign-in round trip through the browser brings the window back into focus.
+It adds no machinery: the assistant step writes `llm_backend`/`llm_model` (from `BACKEND_MODELS`) and `PUT /settings/api-key`, the sync step renders the real Sync tab into its own `#settingsTabPane` through `renderSettingsTab("sync")` (so `startAccountSignIn`, the recovery phrase, the browser sign-in and joining another computer run unchanged), the kit step uses `backupKitHtml`/`showRecoveryKit` (`recoveryKitSaved` re-renders the welcome when it is open), and the phone step uses the Sync tab's `linkShowBtn`/`toggleLinkCode` ids.
+The page wears `.settings-page` so the embedded Sync tab looks as it does in Settings; the guide marks are hidden there because their plate belongs to the Settings page.
+A sync flow that ends by calling `renderSettingsTab` lands back in the welcome only because the pane id is the same: keep new sync steps rendering through `renderSettingsTab(currentSettingsTab)`.
+The phone's `#setup` screen in `mobile.html` is a short welcome (what Enqueue is, then "On your Mac, open Settings, Sync, and press Show the code") above the scan button; the scan flow's ids (`setup_camera`, `scan_qr_btn`, `scan_status`, `setup_no_camera`, `retry_camera`, `status`) are unchanged.
+
+### "Reading your library" on the wall (2026-10-20)
+
+`reading.py` (`GET /reading`) says how far the assistant is through a big read: `total`/`done` are the doctor's summary counts in one aggregate query, `state` is `reading` (the ingest queue is busy, `queue.busy()`), `retrying` (owed `facet_retry` rows, queue idle), `paused` (`providers/pause.py`, with `paused_until`), `key` (the provider refused the key) or `idle`, and `show` is true from `SHOW_FROM` (10) items left while work is owed or blocked.
+A note still being typed (`queue.WAITING`) is not owed work there.
+`refreshReading` in `js/home.js` draws one quiet line above the wall on every wall render and polls every 8 seconds only while it is up; once up it stays until nothing is left, so it does not blink off near the end; `teardown()` stops the poll.
+The refused key is `pause.key_refused()`: `OpenAICompatibleProvider` calls `pause.note_failure` on a failed call (true for a 401 that is not OpenCode Go's unknown-model 401, `base.key_rejected`) and `pause.note_success` on one that went through; `pause.lift` (a new key or model) clears it.
+It is in memory like the pause, and `/setup` reports it as the `key-refused` alert.
+`tests/test_reading.py` pins both.
+
+### Enqueue Pro: bought on the phone, kept by the relay (2026-10-20)
+
+Dequeue's pattern: the phone sells, RevenueCat tells the relay, and every device reads the plan; the Mac sells nothing.
+**Plans** are `PLANS` in `relay/accounts.py`: free is one computer, one phone and 1 GiB on Enqueue sync; Pro is five of each and 50 GiB. Bring-your-own-key AI is never part of a plan.
+**What makes an account Pro** is `accounts.pro_until`: Pro while it is in the future. Only two things write it: RevenueCat's webhook (`POST /webhooks/revenuecat`, checked against `REVENUECAT_WEBHOOK_AUTH`, closed while that is unset) and the admin grant (`enq relay-admin pro <email> [--days N]`, `PUT /admin/accounts/pro`).
+The webhook sets `pro_until` from the event's own expiry, whatever the event is called: a cancellation keeps Pro to the end of the paid period, a refund (a cancellation whose expiry is now) and an expiration end it, a billing problem keeps it through the grace period. Only events naming the `pro` entitlement count; an event older than the last one applied (`pro_event_at`) is ignored, since RevenueCat may deliver out of order; a TRANSFER moves the Pro time to the other account. Dequeue switched on event names and dropped Pro at a mere cancellation.
+**The RevenueCat user is the Enqueue sync account id.** The phone has no session, only its device token, so it asks `GET /account/plan` with that token (`mobile_plan` in `desktop/src/lib.rs`, null on a relay of its own) and starts RevenueCat for the account (`Billing.kt`, bridged as `EnqueueAndroid.billing*`, answering through `window.__enqBillingReply`). Settings > Plan on the phone (`paintPlan`, `goPro`, `restorePro` in `mobile.html`) shows the plan and the paywall; the Mac shows it under Enqueue sync (`planRow` in `settings.js`, from `account._keep_plan`).
+**Enforcement is on the relay.** A device token carries its `kind` (computer or phone). A computer past the plan is refused at `POST /account/devices` with a 402 that says what to do. A phone never is: the new one replaces the least recently used once it first syncs (`_replace_phones`, in `library_for_device`), so a code shown and never scanned cuts nobody off. Storage is the library's own quota (`storage.set_quota`), set when the plan changes; going back to free removes nothing and only refuses new writes past the limit.
+RevenueCat: project "Enqueue" (`1abb2acc`), app "Enqueue (Play Store)", entitlement `pro`; the public SDK key is in `Billing.kt` (public by design). The Play service account is Dequeue's `revenuecat@sudohnim-play-billing`, which has account-wide Play Console access.
+`tests/test_relay_plans.py` pins all of it.
+
+### The assistant included with Enqueue (2026-10-20)
+
+A Mac or phone signed in to Enqueue sync can use an assistant with no key of its own: the `enqueue` backend ("Included with Enqueue", `config.BACKENDS`), an OpenAI-compatible endpoint on the relay at `/ai/v1` (`relay/ai.py`), reached with the device's own token.
+`included_ai.py` is the one list both sides read: the models, the plan each needs, whether it can read pictures, its price, and the monthly cap per plan (free $0.50, Pro $3.00 of model cost). Free: Claude Haiku 5.5, GPT-6 Luna, Gemini 3.1 Flash Lite. Pro adds Claude Sonnet 5.5, GPT-6.1 Sol, Gemini 3.8 Flash, DeepSeek V4 Pro, Qwen 3.7 Plus. Opus, Fable and GPT-6 Astra are left out on purpose: one long chat would cost more than a month of Pro.
+The relay checks the device token (401), the model against the plan (403), and the month's spend against the cap (429 with a `Retry-After` to the start of next month, which the engine's usage-limit pause already obeys); then it calls OpenRouter with Enqueue's key (`OPENROUTER_API_KEY` on the Railway service), forcing `provider.data_collection: deny` and usage accounting, and adds what OpenRouter says the call cost to `ai_usage` (account, month, cost, requests, tokens). Nothing of a prompt or an answer is stored or logged. OpenRouter refusing Enqueue's own key or credit becomes a 503, so no device tells its owner their key was refused. Streaming is refused.
+On the Mac, `config.llm_api_key(base_url)` returns the device token for the included endpoint and the pasted key for everything else, so the pasted key never reaches the relay and the device token never reaches a third party; `push_settings` still sends the phone only the pasted key. The phone answers with its own token (`included_ai` in `desktop/src/lib.rs`).
+Settings shows the included backend first; its model pickers are dropdowns of the plan's models, Pro ones visible but not choosable on free (`includedModelsGroup` in `settings.js`). `setup.py` says when it needs a sign-in, when a chosen model needs Pro, and when a model is not one it offers. The welcome's Assistant step offers it first. Local-only items never take this path. `GET /account/plan` carries the month's use as `ai`.
+`tests/test_relay_ai.py` (with a fake OpenRouter), `tests/test_included_ai.py` and `tests/test_setup.py` pin it.
+
+### Keeping it quick and small (2026-10-20 sweep)
+
+- **Keychain reads are cached** (`keyring._get`, `_CACHE`): each read is a `security` subprocess (~30 ms), and the library key was read on every database connection, 15 times per search (470 of 627 ms). Hits are kept 5 minutes, misses 30 seconds; `_set`/`_clear` update the cache, so a key changed in Settings applies at once. A search went from about 0.65 s to 0.1 s; `/setup` from 350 ms to 10 ms.
+- **The gray-zone judge is not waited for when it cannot make it** (`candidates._judge_wait`): a moving average of the search model's real judge calls (over 0.3 s, so cached ones do not count); when it is above `SEARCH_JUDGE_WAIT_S` the search answers at once and the judge finishes behind it. A thinking model on a busy service made every new search wait the full 2.5 s for nothing.
+- **The keyword index is compacted daily** (`store.compact`, `queue.compact_index_if_due` on the backup scheduler's hourly beat, stamped `compacted_at` in `index_meta`): FTS5 keeps a deleted entry until segments merge, and every re-index added more. One library's trigram index was 128 MB over 0.8 MB of text and the file 210 MB; `optimize` on every keyword table plus a `VACUUM` when a quarter of the file is free brought it to 41 MB. Logged as `index.compacted`.
+- **A page's window and document listeners end with the page.** The note formatting bar's `selectionchange`/`resize` listeners take an `AbortController` signal that `teardown()` aborts (`stopEdbars`); they used to remove themselves only on their next event, so each note opened kept its editor alive. To check: wrap `EventTarget.prototype.addEventListener` for `window`/`document` in the page, cycle the screens, and compare counts per event type.
+- **The chat panel is not a page**: `teardown()` leaves the open conversation and its poller alone while the panel is open (`eyeOpen`); a wall refresh used to stop the poller and leave the panel on "Loading..." until the person navigated away.
+- **The relay's in-memory maps are bounded**: the sign-in and included-AI rate limiters drop idle entries past 1024 keys, and the device-token cache keeps only tokens that open a library (refusals were cached, so made-up tokens grew it without end).
+
 ### The AI summary can be switched off for one artifact
 
 The Summary section of the Details panel carries a switch (`setSummary` in `js/artifact.js`, `PUT /artifacts/{id}/summary`, `facets.set_summary`), for a scratch pad or a log that needs no reading.
@@ -1387,7 +1563,7 @@ There is no CDP on iOS: verify by screenshot (`xcrun simctl io booted screenshot
 One centred column (`.settings-page`, the last block of `css/settings.css`): the raven against the title, where things stand as one quiet line under it (`renderSetup` in `settings_guide.js` draws the steps as `.setup-line`), the home page's pill tabs, and settings as rows on the ground: a label and one plain sentence on the left, the control on the right (a `.field` is a two-column grid there), a hairline between rows. The backup status is the one tile.
 A setting that needs a look shows only on its own tab (`#settingsNotes`, alerts filtered by `tab`).
 Each tab ends with "More options" (`moreOptions` in `settings.js`, a `details.more`) for what most people never need: the model per job, retries, the user agent, the library folder, restoring, rebuilding search, starting sync over.
-The tab ids are the old ones (`ai`, `features`, `storage`, `sync`, `trash`, `events`: the guides, routes and setup checks name them); the labels are Assistant, Capture, Library, Phone, Trash, Activity.
+The tab ids are the old ones (`ai`, `features`, `storage`, `sync`, `trash`, `events`: the guides, routes and setup checks name them); the labels are Assistant, Capture, Library, Sync, Trash, Activity.
 Words: what a person calls things, never the engine's (`SETTING_LABELS`, `EVENT_LABELS` for the Activity rows, the step titles and alert texts in `setup.py`). A setting fixed by an environment variable says "set outside Enqueue (NAME)".
 Section headings are what `SHELF_GUIDES` keys on: rename one and update it there, or its `?` mark silently goes.
 
@@ -1516,6 +1692,16 @@ Changes to the tabs themselves are saved at once; typing inside one is saved lik
 A search hit opens on the tab it came from: the search page keeps each hit's snippet, and `NoteTabs.hint` hands it to the next opening, where `Tabs.find` picks the tab a marker in the snippet names, else the tab holding the snippet's opening words, else the one holding most of the query's words, else the tab last open. A snippet is read with `Tabs.plain`, which shows a marker as its tab's name.
 **On the phone** (`mobile.html`: `renderNoteBody`, `writerText`, `tabSheet`): the reader shows one tab under a strip of their names (tap, or a sideways swipe over the text), and a tap in the text opens the writing page on that tab with the caret where the finger landed. The writing page edits one tab's text; `writerText()` puts the note back together for every save, so anything that reads the writing page's text must go through it. Its tool bar has "Add a tab" (the first press turns the note into a "Notes" tab, as on the desktop), the strip has a +, and a long press on a tab opens a bottom sheet sized to the visual viewport (so the keyboard does not cover it): its name (kept as typed when the sheet closes), make it its own note, delete. Reordering stays on the desktop. The strip stops its own taps (`stopPropagation`): it redraws itself, and a tap bubbling on to the note found a detached button and opened the writing page.
 
+### Something shiny holds still all day (2026-10-26)
+
+The day's sets are chosen once and kept (`shiny.pick`, `derived_values` scope `shiny_day`); a day with none yet is not kept, so the first connection shows at once. Recomputing on every wall refresh had the card change under the person every few seconds while the related judge kept finding links.
+`shiny.prepare()` runs on the backup scheduler's hourly beat and does the day's work once: it chooses the sets and has the model write the first one's words, so the card is ready when the wall opens.
+The card (`drawShiny` in `js/home.js`) is one tile: the tilted raven with a violet gem that glints, the shared idea as its headline, the notes as plain rows, the question and one way on. "Find another" walks the day's sets; at the end it becomes "Look for new ones" (`POST /shiny/again`, `shiny.look_again`), which chooses the day's sets again from the connections found since. It redraws only when what it shows changed.
+
+### The wall's Type and Tags shelves cover the whole library (2026-10-26)
+
+`GET /artifacts/groups?by=kind|tags` returns each shelf's true count and its first 12 items; a shelf's "Show more" pages it through `GET /artifacts` with `kind`, `tags` or `untagged` (`renderWallBody`, `moreOnShelf` in `js/home.js`). They used to be built in the page from the newest 48 items. Last touch pages as it scrolls, as before. The wall's staleness check counts and dates its newest item (`wallStampOf`) and looks again every 30 seconds while the wall shows, unless someone is typing or a menu is open, so an edit made on the phone reorders it.
+
 ### The pill keeps its own ground
 
 The page was lightened in October 2026 (lavender ground and tiles, light type; docs/DESIGN.md) and the capture pill deliberately was not: its own lavender glass and bold eye are what hold it over the tiles.
@@ -1580,6 +1766,14 @@ A card with no recorded group (an old exclusion, or an add) is placed by `pivot.
 `pivot.run` folds group keys that differ only in case or spacing ("Non-fiction" / "non-fiction") into one group, shown in the commonest spelling.
 On the page, `pivotState` is cleared in `teardown()` and every late re-render checks `onSavedView(id)`: a view left set used to redraw itself over whichever page was open when the window regained focus.
 
+### The phone page needs WebView 111 or newer (2026-10-19)
+
+The page runs in the phone's Android System WebView, which Android updates through the Play Store apart from the OS, so the Android version does not say which browser it gets.
+`mobile.html` needs Chrome 111 (CSS `color-mix`; `:has` needs 105, `?.` 80); on an older one its scripts fail to parse and it opened half-built (the pill alone at the top, no linking screen).
+The first script in the page, written in the JavaScript an old WebView can read, checks for those three and otherwise replaces the page with what to do: update Android System WebView in the Play Store.
+`bin/android-matrix`'s Android 9 emulator (WebView 66, no Play Store) is the case that found it and the one that checks the guard; the other four check the page itself.
+A newer CSS or JavaScript feature the page starts to need goes into that check.
+
 ### The phone's fingerprint lock is two separate locks (BIO.1)
 
 Both are checked by the Android shell (`MainActivity.kt` + `Biometrics.kt`, `androidx.biometric`), reached from the page through the `EnqueueAndroid` bridge.
@@ -1614,16 +1808,16 @@ Tested on the emulator without hardware: `adb shell locksettings set-pin 1111`, 
 System prompts are black in `screencap`; read them with `uiautomator dump`.
 `locksettings clear --old 1111` puts the emulator back.
 
-### The tour behind the ? is one deck for both apps (TOUR.1)
+### The tour: the phone's ?, and the desktop welcome's first step (TOUR.1)
 
 `static/js/tour.js` + `static/css/tour.css` are loaded by the desktop home and by `mobile.html`, the way `linkpop` is, so the words, the order and the examples exist once (Dequeue's lesson: its two clients had drifted to different tours).
 A card only changes the words that are true of one device (`opts.platform`: click or tap, the hotkey or the + menu); the desktop passes the capture hotkey as it is actually set (`Tour.set({hotkey})` once `/settings` answers).
 It opens only from the `?` (`[data-tour-open]`, top right of `.homehead` and of the phone's `.lib-hero`), never by itself; an accent bead sits on the `?` until it has been opened once (`localStorage` `enq.tourSeen.v1`, `VERSION` in tour.js: bump it to bring the bead back after a real change).
-Seven cards, each with a working demo on made-up artifacts (type into the capture box, pick a search, ask, rewrite a summary line, gather a view); nothing in it reads or writes the library.
+Eight cards on the Mac and seven on the phone (Something shiny is the Mac's only: the phone has no related notes), each with a working demo on made-up artifacts (type into the capture box, pick a search, ask, rewrite a summary line, find another shiny thing, gather a view); nothing in it reads or writes the library. The first card's "N cards" line is counted, not written.
 The vault is left out on purpose: its door is unmarked, and a tour anyone holding the device can open must not mark it.
 While open, everything else in `<body>` is `inert` and `html.tour-on` stops the page scrolling; Esc, the close button, the last card's button and the Android Back gesture (`window.__enqBack`) close it, arrow keys and a sideways swipe turn the card (`.tour-body` needs `touch-action: pan-y` or the browser cancels the touch before the swipe lands).
 Icons inside it are sized per place: keep the shared `.tour-ico` rule at one-class specificity or it outranks them.
-Adding a feature worth showing means editing `cards()` and its demo, not adding an eighth card by reflex: seven is already the ceiling.
+Adding a feature worth showing means editing `cards()` and its demo, not adding a card by reflex: eight is already the ceiling (the eighth, Something shiny, was asked for on purpose).
 
 ### A note must round-trip through md() and htmlToMd() unchanged
 

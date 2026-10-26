@@ -114,6 +114,16 @@ launch_desktop() {
   pkill -f "Enqueue" 2>/dev/null || true
   sleep 1
   pkill -f "enq serve" 2>/dev/null || true
+  # A frozen engine never acts on the polite signal (its main thread cannot take the
+  # GIL to run the handler: the 2026-10-20 SQLite deadlock), and then the new one
+  # cannot bind the port and launch waits for a health that never comes. Give it five
+  # seconds, then stop it hard; SQLite's write-ahead log survives that.
+  for _ in 1 2 3 4 5; do
+    pgrep -f "enq serve" >/dev/null || break
+    sleep 1
+  done
+  pkill -9 -f "enq serve" 2>/dev/null || true
+  pkill -9 -f "target/debug/Enqueue" 2>/dev/null || true
   sleep 1
 
   js_gate "home capture"
@@ -123,10 +133,9 @@ launch_desktop() {
   DATA_DIR="${ENQ_DATA_DIR:-$HOME/Library/Application Support/Enqueue}"
   mkdir -p "$DATA_DIR" && echo "$REPO" > "$DATA_DIR/repo" 2>/dev/null || true
 
-  # Link-preview fetches identify as a real browser so publishers that refuse the
-  # default bot user-agent (ipostal1, Instagram, Medium...) return the page. Respect
-  # an existing override.
-  export ENQ_USER_AGENT="${ENQ_USER_AGENT:-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36}"
+  # No user agent is set here: previews introduce themselves honestly (AGENTS.md, "Link
+  # previews"), the shipped app never runs this script, and a value set here would lock
+  # Settings' field. A site that refuses is what "Try harder" (a real browser) is for.
 
   ENQUEUE_REPO="$REPO" "$BIN" >"$LOG" 2>&1 &
 
@@ -153,12 +162,7 @@ launch_desktop() {
 launch_mobile() {
   # Android toolchain env. Respect anything already exported; fall back to the standard
   # Android Studio locations. NDK_HOME picks the newest installed NDK unless set.
-  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
-  if [[ -z "${NDK_HOME:-}" ]]; then
-    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
-  fi
-  export NDK_HOME
+  source "$(dirname "${BASH_SOURCE[0]}")/android-env"
   export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
   local ADB="$ANDROID_HOME/platform-tools/adb"
@@ -222,12 +226,7 @@ launch_mobile() {
 
 launch_emulator() {
   # Android toolchain env - same as launch_mobile
-  export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-  export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
-  if [[ -z "${NDK_HOME:-}" ]]; then
-    NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1 || true)"
-  fi
-  export NDK_HOME
+  source "$(dirname "${BASH_SOURCE[0]}")/android-env"
   export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 
   local ADB="$ANDROID_HOME/platform-tools/adb"

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-join-cancel"
+description = "Enables the mobile_join_cancel command without any pre-configured scope."
+commands.allow = ["mobile_join_cancel"]
+
+[[permission]]
+identifier = "deny-mobile-join-cancel"
+description = "Denies the mobile_join_cancel command without any pre-configured scope."
+commands.deny = ["mobile_join_cancel"]

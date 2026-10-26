@@ -55,12 +55,50 @@ release_desktop() {
     echo "==> No APPLE_SIGNING_IDENTITY set - building UNSIGNED (right-click -> Open to run)"
   fi
 
+  # The update bundle (Enqueue.app.tar.gz) is signed with the updater key, whose public
+  # half is in tauri.conf.json (plugins.updater): an installed app takes only an update
+  # that key signed. The key lives outside the repo, its password in the Keychain; made
+  # once with `cargo tauri signer generate` (see AGENTS.md, "The Mac app updates itself").
+  local key="${TAURI_UPDATER_KEY_FILE:-$HOME/.tauri/enqueue-updater.key}"
+  [ -f "$key" ] || { echo "error: no updater key at $key" >&2; exit 1; }
+  export TAURI_SIGNING_PRIVATE_KEY="$key"
+  if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s enqueue-updater-key-password -w)" \
+      || { echo "error: the updater key's password is not in the Keychain" >&2; exit 1; }
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+  fi
+
   echo "==> Building the .app / .dmg"
   cd "$REPO/desktop"
   # The engine resource + macOS entitlements live in a release-only overlay so dev builds
   # (bin/launch desktop) are not forced to have desktop/engine present. Tauri validates
   # resources at build time, and signs + notarizes the bundle when the APPLE_* env is set.
   cargo tauri build --config tauri.release.conf.json
+
+  # Notarize through a notarytool profile kept in the login keychain, so no Apple
+  # password passes through this script. Make it once (it asks for an app-specific
+  # password from appleid.apple.com):
+  #   xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG
+  # then: NOTARY_PROFILE=enqueue-notary bin/release desktop
+  if [ -n "${NOTARY_PROFILE:-}" ]; then
+    local dmg
+    dmg="$(ls -1t "$REPO"/desktop/target/release/bundle/dmg/*.dmg | head -1)"
+    echo "==> Notarizing $(basename "$dmg") (a few minutes)"
+    xcrun notarytool submit "$dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$dmg"
+    spctl --assess --type open --context context:primary-signature -v "$dmg" || true
+    # Notarizing the .dmg registered the app inside it too, so the .app takes its own
+    # ticket; the update bundle is then made again from the stapled app and signed again.
+    local bundle="$REPO/desktop/target/release/bundle/macos"
+    xcrun stapler staple "$bundle/Enqueue.app"
+    rm -f "$bundle/Enqueue.app.tar.gz" "$bundle/Enqueue.app.tar.gz.sig"
+    COPYFILE_DISABLE=1 tar -czf "$bundle/Enqueue.app.tar.gz" -C "$bundle" Enqueue.app
+    # The signer also reads the key from the environment, and refuses it twice.
+    env -u TAURI_SIGNING_PRIVATE_KEY -u TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+      cargo tauri signer sign -f "$TAURI_SIGNING_PRIVATE_KEY" \
+      -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$bundle/Enqueue.app.tar.gz" >/dev/null
+  fi
+  write_update_feed
 
   echo
   echo "Built:"
@@ -72,9 +110,35 @@ release_desktop() {
   [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || echo "Unsigned: on first open, right-click the app -> Open."
 }
 
+# latest.json, the feed an installed app reads (tauri.conf.json plugins.updater):
+# this version, and where its signed update bundle will be on GitHub. bin/deploy desktop
+# uploads it with the bundle (fastlane mac publish).
+write_update_feed() {
+  local bundle="$REPO/desktop/target/release/bundle/macos"
+  local version
+  version="$(python3 -c 'import json;print(json.load(open("'"$REPO"'/desktop/tauri.conf.json"))["version"])')"
+  python3 - "$bundle" "$version" <<'EOF'
+import datetime, json, pathlib, sys
+bundle, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+signature = (bundle / "Enqueue.app.tar.gz.sig").read_text().strip()
+url = f"https://github.com/sudohnim/enqueue/releases/download/mac-v{version}/Enqueue.app.tar.gz"
+feed = {
+    "version": version,
+    "notes": f"Enqueue {version}",
+    "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "platforms": {"darwin-aarch64": {"signature": signature, "url": url}},
+}
+(bundle / "latest.json").write_text(json.dumps(feed, indent=2) + "\n")
+print(f"==> Update feed for {version}: {bundle / 'latest.json'}")
+EOF
+}
+
 release_android() {
   local target="${1:-aarch64}"
   cd "$REPO/desktop"
+
+  # The Android toolchain every build uses (SDK, NDK, JDK, OpenSSL's archiver).
+  source "$REPO/bin/android-env"
 
   # Gradle can package a stale .so if an intermediate lingers from an earlier build; clear
   # the release native-lib intermediates so the apk always carries the freshly-built lib.
@@ -85,9 +149,22 @@ release_android() {
     "$abd/intermediates/stripped_native_libs/universalRelease" \
     "$abd/outputs/apk/universal/release" 2>/dev/null || true
 
+  # Tauri derives the versionCode from tauri.conf.json's version (0.3.0 -> 3000) and writes
+  # it into gen/android/app/tauri.properties (gitignored, regenerated every build). Play
+  # refuses a code it has already seen, so a store upload needs a fresh one per build:
+  # ANDROID_VERSION_CODE overrides it for this build only (fastlane sets it), through a
+  # config merge, so nothing in the repo changes per release.
+  local overrides=()
+  if [[ -n "${ANDROID_VERSION_CODE:-}" ]]; then
+    [[ "$ANDROID_VERSION_CODE" =~ ^[1-9][0-9]*$ ]] \
+      || { echo "ANDROID_VERSION_CODE must be a positive integer" >&2; exit 2; }
+    overrides=(--config "{\"bundle\":{\"android\":{\"versionCode\":$ANDROID_VERSION_CODE}}}")
+    echo "==> versionCode $ANDROID_VERSION_CODE (from ANDROID_VERSION_CODE)"
+  fi
+
   echo "==> Building the signed release apk/aab (target: $target)"
   # No --debug: a release build embeds the frontend and signs with gen/android/key.properties.
-  cargo tauri android build --target "$target"
+  cargo tauri android build --target "$target" ${overrides[@]+"${overrides[@]}"}
 
   echo
   echo "Built:"

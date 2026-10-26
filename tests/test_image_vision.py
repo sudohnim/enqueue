@@ -211,14 +211,20 @@ class TestDescribeAtIngest:
         _fake_vision(monkeypatch)
         _quiet_derived(monkeypatch)
         monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/tesseract")
-        monkeypatch.setattr(
-            subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="sign reads OPEN")
-        )
+        seen = {}
+
+        def run(args, **kw):
+            seen.update(args=args, input=kw.get("input"))
+            return SimpleNamespace(stdout=b"sign reads OPEN")
+
+        monkeypatch.setattr(subprocess, "run", run)
 
         result = ingest_queue.process(artifact_id)
 
         assert "OPEN" in result["described"]
         assert "sign reads OPEN" in result["described"]
+        # The picture goes in on stdin, never through a plaintext temp file.
+        assert seen["args"][1] == "stdin" and seen["input"]
 
 
 class TestFacetGate:

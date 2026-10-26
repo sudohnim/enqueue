@@ -342,23 +342,170 @@ def relay(
         "dev-secret",
         "--secret",
         envvar="RELAY_SECRET",
-        help="Bearer secret for relay auth (default dev-secret). Override with RELAY_SECRET.",
+        help="The first library's secret (default dev-secret, local only). RELAY_SECRET.",
+    ),
+    admin_secret: str = typer.Option(
+        "",
+        "--admin-secret",
+        envvar="RELAY_ADMIN_SECRET",
+        help="Turns on the routes `enq relay-admin` uses to add and revoke libraries.",
     ),
 ) -> None:
-    """Run the sync relay locally.
+    """Run the sync relay.
 
-    The relay is a dumb byte store for end-to-end encrypted snapshots.
-    It authenticates with a Bearer secret and serves SSE for change notifications.
+    The relay is a dumb byte store for end-to-end encrypted snapshots, one space per
+    library. It authenticates with each library's Bearer secret and serves SSE for
+    change notifications.
     """
 
     from .relay.app import create_relay
-    from pathlib import Path
 
-    app = create_relay(data_dir=Path(data_dir), secret=secret)
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        weak = [
+            name
+            for name, value in (("RELAY_SECRET", secret), ("RELAY_ADMIN_SECRET", admin_secret))
+            if value and (value == "dev-secret" or len(value) < 24)
+        ]
+        if secret == "dev-secret" or weak:
+            typer.secho(
+                f"refusing to serve on {host} with a weak secret ({', '.join(weak) or 'RELAY_SECRET'}):"
+                ' use 24+ random characters, e.g. `python -c "import secrets;'
+                ' print(secrets.token_urlsafe(32))"`',
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    app = create_relay(data_dir=Path(data_dir), secret=secret, admin_secret=admin_secret)
     typer.secho(f"Relay listening on {host}:{port}", fg=typer.colors.GREEN)
     typer.secho(f"Data directory: {data_dir}", fg=typer.colors.CYAN)
-    typer.secho(f"Bearer secret: {secret}", fg=typer.colors.CYAN)
+    if secret == "dev-secret":
+        typer.secho("Bearer secret: dev-secret (local only)", fg=typer.colors.CYAN)
+    if admin_secret:
+        typer.secho("Library admin routes: on", fg=typer.colors.CYAN)
     uvicorn.run(app, host=host, port=port)
+
+
+relay_admin = typer.Typer(
+    help="Add, list and revoke the libraries a hosted relay serves (needs RELAY_ADMIN_SECRET)."
+)
+app.add_typer(relay_admin, name="relay-admin")
+
+
+# Where `enq relay-admin` keeps the relay's admin secret on this Mac, so it never has
+# to be typed or pasted; the relay address defaults to this library's own relay.
+RELAY_ADMIN_SERVICE = "enqueue-relay-admin"
+
+
+def _admin(method: str, path: str, url: str, admin_secret: str, **kw) -> httpx.Response:
+    from . import keyring
+    from . import settings as settings_mod
+
+    url = url or (settings_mod.get("sync_relay_url") or "").strip()
+    admin_secret = admin_secret or keyring._get(RELAY_ADMIN_SERVICE) or ""
+    if not url or not admin_secret:
+        typer.secho(
+            "set --url/RELAY_URL and --admin-secret/RELAY_ADMIN_SECRET"
+            f" (or keep the admin secret in the Keychain as {RELAY_ADMIN_SERVICE})",
+            err=True,
+        )
+        raise typer.Exit(2)
+    resp = httpx.request(
+        method,
+        url.rstrip("/") + path,
+        headers={"Authorization": f"Bearer {admin_secret}"},
+        timeout=30,
+        **kw,
+    )
+    if resp.status_code >= 400:
+        typer.secho(f"relay answered {resp.status_code}: {resp.text[:200]}", err=True)
+        raise typer.Exit(1)
+    return resp
+
+
+_URL = typer.Option(
+    "", "--url", envvar="RELAY_URL", help="The relay's https address (default: this library's)."
+)
+
+
+def settings_relay_url() -> str:
+    from . import settings as settings_mod
+
+    return (settings_mod.get("sync_relay_url") or "").strip()
+
+
+_ADMIN = typer.Option("", "--admin-secret", envvar="RELAY_ADMIN_SECRET")
+
+
+@relay_admin.command("add")
+def relay_admin_add(
+    label: str = typer.Argument(..., help="Whose library this is, for your own list."),
+    quota_gb: float = typer.Option(0, "--quota-gb", help="Storage limit; 0 = the relay's."),
+    url: str = _URL,
+    admin_secret: str = _ADMIN,
+) -> None:
+    """Make a library and print its secret, once. Give it to its owner: in Enqueue,
+    Settings > Sync > More options > relay address and secret."""
+    body = {"label": label}
+    if quota_gb:
+        body["quota_bytes"] = int(quota_gb * 1024**3)
+    made = _admin("POST", "/admin/libraries", url, admin_secret, json=body).json()
+    typer.secho(f"library {made['id'][:12]} for {label}", fg=typer.colors.GREEN)
+    typer.echo(f"relay:  {url or settings_relay_url()}")
+    typer.echo(f"secret: {made['secret']}")
+    typer.secho(
+        "The relay keeps only a hash: this is the only time the secret is shown.",
+        fg=typer.colors.YELLOW,
+    )
+
+
+@relay_admin.command("list")
+def relay_admin_list(url: str = _URL, admin_secret: str = _ADMIN) -> None:
+    """Every library: who it is for, how much it holds, whether it is revoked."""
+    for lib in _admin("GET", "/admin/libraries", url, admin_secret).json()["libraries"]:
+        state = "revoked" if lib["revoked_at"] else "live"
+        mb = lib["used_bytes"] / 1024**2
+        typer.echo(
+            f"{lib['id'][:12]}  {state:7}  {mb:9.1f} MB  {lib['objects']:6} objects  {lib['label']}"
+        )
+
+
+@relay_admin.command("revoke")
+def relay_admin_revoke(
+    library: str = typer.Argument(..., help="The library id (the first characters will do)."),
+    url: str = _URL,
+    admin_secret: str = _ADMIN,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask first."),
+) -> None:
+    """Refuse a library's secret from now on and delete everything it holds (for good)."""
+    ids = [
+        lib["id"]
+        for lib in _admin("GET", "/admin/libraries", url, admin_secret).json()["libraries"]
+        if lib["id"].startswith(library)
+    ]
+    if len(ids) != 1:
+        typer.secho(f"{len(ids)} libraries match {library!r}; give more of the id", err=True)
+        raise typer.Exit(1)
+    if not yes and not typer.confirm(
+        f"Revoke {ids[0][:12]} and delete every object it holds? This cannot be undone."
+    ):
+        raise typer.Exit(1)
+    _admin("DELETE", f"/admin/libraries/{ids[0]}", url, admin_secret)
+    typer.secho(f"revoked {ids[0][:12]}", fg=typer.colors.GREEN)
+
+
+@relay_admin.command("pro")
+def relay_admin_pro(
+    email: str = typer.Argument(..., help="The account's sign-in email."),
+    days: int = typer.Option(-1, "--days", help="How long; 0 ends Pro; omitted: for good."),
+    url: str = _URL,
+    admin_secret: str = _ADMIN,
+) -> None:
+    """Give an Enqueue sync account Pro (the owner, support) without a purchase."""
+    body = {"email": email} if days < 0 else {"email": email, "days": days}
+    made = _admin("PUT", "/admin/accounts/pro", url, admin_secret, json=body).json()
+    for plan in made["accounts"]:
+        typer.secho(f"account {plan['account_id'][:8]}: {plan['tier']}", fg=typer.colors.GREEN)
 
 
 # ---------------------------------------------------------------------------

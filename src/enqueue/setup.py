@@ -14,7 +14,7 @@ import ipaddress
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from . import backup, config, db, settings
+from . import backup, db, settings
 
 DONE, TODO, WARN = "done", "todo", "warn"
 
@@ -75,6 +75,18 @@ def _model_step(backend: dict, models: dict) -> dict:
             "title": "Assistant connected",
             "detail": "On this Mac",
         }
+    if backend.get("included"):
+        if not backend.get("signed_in"):
+            return step | {
+                "state": TODO,
+                "guide": "relay",
+                "detail": "Sign in under Sync to use the included assistant",
+            }
+        return step | {
+            "state": DONE,
+            "title": "Assistant connected",
+            "detail": "Included with Enqueue",
+        }
     if backend.get("needs_key") and not backend.get("key_present"):
         return step | {
             "state": TODO,
@@ -127,7 +139,10 @@ def _backup_step() -> dict:
 def _phone_step(sync: dict) -> dict:
     step = {"id": "phone", "tab": "sync", "guide": "relay", "title": "Phone not linked"}
     if not sync["relay_configured"]:
-        return step | {"state": TODO, "detail": "Needs a relay to pass your library along"}
+        return step | {
+            "state": TODO,
+            "detail": "Sign in under Sync to keep it in step with this Mac",
+        }
     if sync["keyring_locked"]:
         return step | {
             "state": WARN,
@@ -182,6 +197,16 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             " its own.",
         )
 
+    if pause.key_refused() and not backend.get("local"):
+        say(
+            "key-refused",
+            WARN,
+            "ai",
+            "api-key",
+            "The online assistant turned down your key, so nothing is being read or"
+            " answered. Paste a new one under Your key.",
+        )
+
     key = settings.api_key_state()
     if backend.get("local") and key["api_key_present"] and key["api_key_where"] == "keychain":
         say(
@@ -200,16 +225,57 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "Settings for an online assistant are saved, but the one on this Mac doesn't use them.",
         )
 
-    if backend["name"] == "opencode-go":
-        known = config.GO_CHAT_COMPLETIONS_MODELS
-        gone = sorted({m for job, m in models.items() if job != "images" and m and m not in known})
+    if backend["name"] in ("opencode-go", "openrouter"):
+        from . import catalog
+
+        gone = sorted(
+            {
+                m
+                for job, m in models.items()
+                if m and catalog.unknown(backend["name"], m, vision=job == "images", recheck=False)
+            }
+        )
         if gone:
             say(
                 "model-unknown",
                 WARN,
                 "ai",
                 "models",
-                f"OpenCode Go doesn't offer {', '.join(gone)}. Pick another under More options.",
+                f"{backend['label']} doesn't offer {', '.join(gone)}, so that job isn't"
+                " running. Pick another under More options.",
+            )
+
+    if backend.get("included"):
+        from . import included_ai
+
+        tier = backend.get("tier") or "free"
+        locked = sorted(
+            {
+                m
+                for m in models.values()
+                if m and included_ai.model(m) and not included_ai.allowed(m, tier)
+            }
+        )
+        offered = sorted(
+            {m for m in models.values() if m and included_ai.model(m) is None and m != ""}
+        )
+        if locked:
+            say(
+                "model-needs-pro",
+                WARN,
+                "ai",
+                "models",
+                f"{', '.join(locked)} comes with Enqueue Pro. Pick another under More options,"
+                " or go Pro on your phone.",
+            )
+        if offered:
+            say(
+                "model-unknown",
+                WARN,
+                "ai",
+                "models",
+                f"The included assistant doesn't offer {', '.join(offered)}. Pick one under"
+                " More options.",
             )
 
     stale, blind = _summaries()

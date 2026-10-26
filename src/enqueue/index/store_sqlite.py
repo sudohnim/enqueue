@@ -7,6 +7,8 @@ vec0 has no INSERT OR REPLACE, so an upsert is delete-then-insert in one transac
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import json
 from collections.abc import Callable
 from itertools import groupby
@@ -318,6 +320,22 @@ class SqliteVecStore(VectorStore):
         conn.enable_load_extension(False)
         return conn
 
+    @contextmanager
+    def _open(self):
+        """A connection for one block: committed (or rolled back) and then CLOSED.
+
+        `with conn:` on a sqlite connection only commits; it never closes, so every
+        block left its connection to the garbage collector. Freed that way it closes
+        inside dealloc, holding the GIL while it waits on SQLite's file lock, and when
+        another thread held that lock and needed the GIL, the whole engine froze
+        (2026-10-20: the Mac app stuck, every request hanging, 0% CPU)."""
+        conn = self._connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _sql(self, name: str) -> dict:
         if name not in _SQL:
             raise ValueError(f"unknown collection {name!r}")
@@ -390,7 +408,7 @@ class SqliteVecStore(VectorStore):
         finally:
             conn.close()
 
-        with self._connect() as conn:
+        with self._open() as conn:
             conn.execute(sql["clear_vec"])
             conn.execute(sql["clear_fts"])
             if name == self.CHUNKS:
@@ -400,7 +418,7 @@ class SqliteVecStore(VectorStore):
         for start in range(0, len(entries), batch_size):
             batch = entries[start : start + batch_size]
             vectors = embed([entry[1] for entry in batch])
-            with self._connect() as conn:
+            with self._open() as conn:
                 conn.executemany(
                     sql["insert_vec"],
                     [
@@ -422,7 +440,7 @@ class SqliteVecStore(VectorStore):
     def index_artifact(self, artifact_id: str) -> int:
         """Re-embed one artifact's chunks in place. The caller re-chunks first."""
         self.ensure()
-        with self._connect() as conn:
+        with self._open() as conn:
             rows = conn.execute(
                 "SELECT c.id, c.text, c.context, a.title"
                 " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
@@ -472,7 +490,7 @@ class SqliteVecStore(VectorStore):
         written now: a vector and a substring row each, and the keyword row holding
         today's title, context and text. False for an artifact with no chunks."""
         self.ensure()
-        with self._connect() as conn:
+        with self._open() as conn:
             rows = conn.execute(
                 "SELECT c.id, c.text, c.context, a.title"
                 " FROM chunks c JOIN artifacts a ON a.id = c.artifact_id"
@@ -513,7 +531,7 @@ class SqliteVecStore(VectorStore):
         """Replace one artifact's rows in a facet-like layer's vec and fts tables."""
         self.ensure()
         sql = self._sql(name)
-        with self._connect() as conn:
+        with self._open() as conn:
             rows = conn.execute(sql["select_artifact"], (artifact_id,)).fetchall()
             conn.execute(sql["drop_vec"], (artifact_id,))
             conn.execute(sql["drop_fts"], (artifact_id,))
@@ -530,7 +548,7 @@ class SqliteVecStore(VectorStore):
     def drop_artifact(self, name: str, artifact_id: str) -> None:
         """Remove one artifact's rows from a collection's vec and fts tables."""
         self.ensure()
-        with self._connect() as conn:
+        with self._open() as conn:
             if name == self.CHUNKS:
                 conn.execute(
                     "DELETE FROM vec_chunks"
@@ -590,6 +608,42 @@ class SqliteVecStore(VectorStore):
                 self._index_layer_artifact(name, aid)
         return {name: len(ids) for name, ids in missing.items()}
 
+    # The keyword tables, merged by `compact`.
+    _FTS_TABLES = ("fts_chunks", "fts_chunks_tri", "fts_facets", "fts_entities", "fts_sections")
+
+    def compact(self) -> dict[str, float]:
+        """Merge each keyword table's segments, then give the space back to the disk.
+
+        FTS5 deletes by writing a tombstone into a new segment; the old entry stays until
+        segments are merged. Every re-index of an item (an edit, a retry, a reprocess)
+        added more, and nothing merged them: one library of 360 items held a 128 MB
+        trigram index over 0.8 MB of text, and the file was 210 MB where 41 MB would do.
+        `optimize` merges everything into one segment (about 3 s for that library); the
+        file is then rewritten (`VACUUM`) only when a quarter of it is free space, since
+        that copies the whole file.
+        """
+        out: dict[str, float] = {}
+        with self._open() as conn:
+            before = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            for table in self._FTS_TABLES:
+                try:
+                    conn.execute(f"INSERT INTO {table}({table}) VALUES('optimize')")
+                except sqlite3.OperationalError:
+                    pass  # a table an older index never made
+        conn = self._connect()
+        try:
+            size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+            pages = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            free = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+            if pages and free / pages > 0.25:
+                conn.execute("VACUUM")
+                pages = int(conn.execute("PRAGMA page_count").fetchone()[0])
+        finally:
+            conn.close()
+        out["before_mb"] = round(before * size / 1e6, 1)
+        out["after_mb"] = round(pages * size / 1e6, 1)
+        return out
+
     def prune_orphans(self) -> dict[str, int]:
         """Remove index rows whose chunk, facet, entity or section no longer exists, or
         belongs to an artifact that is not live.
@@ -603,7 +657,7 @@ class SqliteVecStore(VectorStore):
         """
         self.ensure()
         removed: dict[str, int] = {}
-        with self._connect() as conn:
+        with self._open() as conn:
             for name, (table, index_tables, col) in _ORPHANS.items():
                 gone = 0
                 for index_table in index_tables:
@@ -629,7 +683,7 @@ class SqliteVecStore(VectorStore):
     def write_embed_version(self) -> None:
         """Record the embedding version. Call only after every collection is rebuilt."""
         self.ensure()
-        with self._connect() as conn:
+        with self._open() as conn:
             conn.execute(
                 "INSERT INTO index_meta (key, value) VALUES ('embed_version', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",

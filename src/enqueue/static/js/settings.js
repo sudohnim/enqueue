@@ -4,13 +4,13 @@
 // environment variable is worse than no field.
 // What each setting is called on screen: the words a person uses, not the engine's.
 const SETTING_LABELS = {
-	llm_model: "Model for chatting",
-	summarize_model: "Model for summaries",
-	search_model: "Model for search",
+	llm_model: "For answering questions",
+	summarize_model: "For summaries",
+	search_model: "For search",
 	llm_url: "Address",
-	vision_model: "Model for pictures",
-	model_retries: "Tries before giving up",
-	user_agent: "Name Enqueue gives websites",
+	vision_model: "For pictures",
+	model_retries: "Times to retry",
+	user_agent: "How Enqueue introduces itself to websites",
 	hotkey: "Shortcut to capture",
 	llm_headers: "Extra headers",
 	auto_preview: "Show a preview when you save a link",
@@ -134,7 +134,7 @@ const SETTINGS_TABS = [
 	{ id: "ai", label: "Assistant", render: renderSettingsAI },
 	{ id: "features", label: "Capture", render: renderSettingsFeatures },
 	{ id: "storage", label: "Library", render: renderSettingsStorage },
-	{ id: "sync", label: "Phone", render: renderSettingsSync },
+	{ id: "sync", label: "Sync", render: renderSettingsSync },
 	{ id: "trash", label: "Trash", render: renderSettingsTrash },
 	{ id: "events", label: "Activity", render: renderSettingsEvents },
 ];
@@ -258,9 +258,9 @@ function fieldRow(name, label, opts) {
 		esc(String(f.value ?? "")) +
 		'"' +
 		(f.locked ? " disabled" : "") +
-		" onchange=\"stageSetting('" +
-		name +
-		"', this.value)\">" +
+		(f.model
+			? " oninput=\"clearModelField('" + name + "', this.value)\" onchange=\"stageModel('" + name + "', this.value)\">"
+			: " onchange=\"stageSetting('" + name + "', this.value)\">") +
 		(f.locked && f.pinned
 			? '<div class="pinned">' + f.pinned + "</div>"
 			: f.aside
@@ -283,7 +283,8 @@ async function renderSettingsAI() {
 		'<select id="s_backend"' +
 		(chosen.locked ? " disabled" : "") +
 		' onchange="stageBackend(this.value)">' +
-		d.backends
+		[...d.backends]
+			.sort((a, b) => (b.included ? 1 : 0) - (a.included ? 1 : 0))
 			.map(
 				(b) =>
 					'<option value="' +
@@ -296,7 +297,15 @@ async function renderSettingsAI() {
 			)
 			.join("") +
 		"</select>" +
-		(picked && !picked.local
+		(picked && picked.included
+			? '<div class="aside">' +
+				(picked.signed_in
+					? "Comes with Enqueue sync, no key needed. When you ask something, the notes it needs " +
+						"pass through Enqueue to the model and are not kept. Anything you marked as only on " +
+						"this Mac stays here."
+					: "<b>Sign in under Sync first.</b> It comes with Enqueue sync, no key needed.") +
+				"</div>"
+			: picked && !picked.local
 			? '<div class="aside caution">Online: when you ask something, the notes it needs are sent to ' +
 				esc(picked.label) +
 				". Anything you marked as only on this Mac stays here." +
@@ -314,7 +323,9 @@ async function renderSettingsAI() {
 	}
 	const keyed = d.storage.api_key_present;
 	html +=
-		'<div class="field"><label for="s_key">Your account key</label>' +
+		'<div class="field"' +
+		(picked && picked.included ? " hidden" : "") +
+		'><label for="s_key">Your key for the online assistant</label>' +
 		(d.storage.api_key_editable
 			? '<div class="keyrow">' +
 				'<input id="s_key" type="password" autocomplete="off" spellcheck="false" ' +
@@ -324,7 +335,7 @@ async function renderSettingsAI() {
 				'<button class="btn tertiary sm" onclick="saveKey()">Save</button>' +
 				(keyed ? '<button class="btn ghost harm sm" onclick="forgetKey()">Remove</button>' : "") +
 				"</div>" +
-				'<div class="aside">Only needed for an online assistant. Kept in your Mac\'s Keychain.</div>'
+				'<div class="aside">The service gives you one when you sign up. Kept safely on this Mac, never in a file.</div>'
 			: '<div class="aside caution">' +
 				(d.storage.api_key_where === "environment"
 					? "Set outside Enqueue (ENQ_LLM_API_KEY)."
@@ -484,19 +495,82 @@ const MODEL_ROLES = [
 			"summarize everything again",
 	],
 	["search_model", "Decides close calls in search. Fast beats clever here"],
-	["vision_model", "Describes photos so search can find them. Needs a model that can see, like llava"],
+	["vision_model", "Describes photos so search can find them. It has to be one that can look at pictures"],
 ];
 
+// The included assistant offers a fixed list per plan (included_ai.py), so each job
+// is a dropdown: the plan's models, the Pro ones shown but not choosable on free.
+function includedModelsGroup(d, picked) {
+	const pro = picked.tier === "pro";
+	let html = '<div class="shelf">Which AI does each job</div><div class="group">';
+	if (!pro)
+		html +=
+			'<div class="aside">Free includes fast models. Enqueue Pro adds Claude Sonnet, GPT-6.1 Sol ' +
+			"and the other mid-level models, with a higher monthly allowance. Go Pro in Enqueue on " +
+			"your phone, under Settings.</div>";
+	for (const [name, job] of MODEL_ROLES) {
+		const f = d.settings[name];
+		if (!f) continue;
+		const vision = name === "vision_model";
+		const sameAsChat = name === "summarize_model" || name === "search_model";
+		const current = f.value || "";
+		const options = picked.models.filter((m) => !vision || m.vision);
+		const known = options.some((m) => m.id === current);
+		html +=
+			'<div class="field"><label for="s_' +
+			name +
+			'">' +
+			esc(SETTING_LABELS[name]) +
+			"</label>" +
+			'<select id="s_' +
+			name +
+			'"' +
+			(f.locked ? " disabled" : "") +
+			" onchange=\"stageSetting('" +
+			name +
+			"', this.value || null)\">" +
+			(sameAsChat
+				? '<option value=""' +
+					(current ? "" : " selected") +
+					">Same as answering</option>"
+				: "") +
+			(current && !known && !sameAsChat
+				? '<option value="' + esc(current) + '" selected disabled>' + esc(current) + " (not offered)</option>"
+				: "") +
+			options
+				.map(
+					(m) =>
+						'<option value="' +
+						esc(m.id) +
+						'"' +
+						(m.id === current ? " selected" : "") +
+						(m.allowed ? "" : " disabled") +
+						">" +
+						esc(m.label) +
+						(m.allowed ? "" : " · Pro") +
+						"</option>",
+				)
+				.join("") +
+			"</select>" +
+			'<div class="aside">' +
+			esc(job) +
+			".</div></div>";
+	}
+	return html + "</div>";
+}
+
 function modelsGroup(d, picked) {
-	const known = (picked && picked.chat_models && picked.chat_models.chat_completions) || [];
+	if (picked && picked.included) return includedModelsGroup(d, picked);
+	const listed = picked && !picked.local && picked.name !== "ollama";
 	const unsupported = (picked && picked.chat_models && picked.chat_models.unsupported_shape) || [];
 	const chatModel = (d.settings.llm_model && d.settings.llm_model.value) || "";
-	let html = '<div class="shelf">Models</div><div class="group">';
-	if (known.length)
+	let html = '<div class="shelf">Which AI does each job</div><div class="group">';
+	if (listed)
 		html +=
-			'<datalist id="modelOptions">' +
-			known.map((m) => '<option value="' + esc(m) + '"></option>').join("") +
-			"</datalist>";
+			'<datalist id="modelOptions"></datalist><datalist id="visionOptions"></datalist>' +
+			'<div class="aside" id="modelListState">Getting the models ' +
+			esc(picked.label) +
+			" offers...</div>";
 	for (const [name, job] of MODEL_ROLES) {
 		const f = d.settings[name];
 		if (!f) continue;
@@ -504,12 +578,15 @@ function modelsGroup(d, picked) {
 			value: f.value,
 			locked: f.locked,
 			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
-			list: known.length ? "modelOptions" : "",
+			list: listed ? (name === "vision_model" ? "visionOptions" : "modelOptions") : "",
 			placeholder:
 				name === "summarize_model" || name === "search_model"
 					? "same as chatting" + (chatModel ? " (" + chatModel + ")" : "")
-					: "",
+					: listed
+						? "start typing to pick one"
+						: "",
 			aside: esc(job) + ".",
+			model: listed,
 		});
 		// SET2.2b/FIX.3: an OpenCode Go model behind /responses or /messages cannot be
 		// reached by the /chat/completions adapter. Warn before a call fails.
@@ -521,12 +598,106 @@ function modelsGroup(d, picked) {
 				esc(picked.chat_models.examples) +
 				".</div>";
 	}
+	if (listed) setTimeout(() => loadServiceModels(picked), 0);
 	return html + "</div>";
+}
+
+// The models the chosen service serves (GET /settings/models, catalog.py), filled into
+// the pickers once they are on screen. A model it does not serve is said under its
+// field and never staged, so a typo cannot be saved and break every answer after.
+let serviceModels = null;
+
+async function loadServiceModels(picked) {
+	serviceModels = null;
+	const state = document.getElementById("modelListState");
+	let listing;
+	try {
+		listing = await api("/settings/models?backend=" + encodeURIComponent(picked.name));
+	} catch {
+		listing = { known: false };
+	}
+	if (!document.getElementById("modelOptions")) return; // the page moved on
+	if (!listing.known) {
+		if (state) state.textContent = "Couldn't get the list from " + picked.label + ", so type the model's id as the service names it.";
+		return;
+	}
+	serviceModels = { label: picked.label, chat: new Set(listing.chat), vision: listing.vision ? new Set(listing.vision) : null };
+	const fill = (id, ids) => {
+		const el = document.getElementById(id);
+		if (el) el.innerHTML = ids.map((m) => '<option value="' + esc(m) + '"></option>').join("");
+	};
+	fill("modelOptions", listing.chat);
+	fill("visionOptions", listing.vision || listing.chat);
+	if (state) state.textContent = picked.label + " offers " + listing.chat.length + " models. Type part of a name to find one.";
+	for (const [name] of MODEL_ROLES) {
+		const input = document.getElementById("s_" + name);
+		if (input) checkModelField(name, input.value);
+	}
+}
+
+// Whether the service serves `value` for this job: true, or the sentence that says not.
+function modelOffered(name, value) {
+	const v = (value || "").trim();
+	if (!v || !serviceModels) return true;
+	const pool = name === "vision_model" ? serviceModels.vision : serviceModels.chat;
+	if (!pool || pool.has(v)) return true;
+	return (
+		serviceModels.label +
+		" doesn't offer <b>" +
+		esc(v) +
+		"</b>" +
+		(name === "vision_model" && serviceModels.chat.has(v) ? " for reading pictures" : "") +
+		". Pick one from the list."
+	);
+}
+
+function checkModelField(name, value) {
+	const input = document.getElementById("s_" + name);
+	if (!input) return true;
+	const verdict = modelOffered(name, value);
+	let note = document.getElementById("s_" + name + "_bad");
+	if (verdict === true) {
+		input.removeAttribute("aria-invalid");
+		if (note) note.remove();
+		return true;
+	}
+	input.setAttribute("aria-invalid", "true");
+	if (!note) {
+		note = document.createElement("div");
+		note.id = "s_" + name + "_bad";
+		note.className = "aside caution";
+		input.closest(".field").appendChild(note);
+	}
+	note.innerHTML = verdict;
+	return false;
+}
+
+// While typing, a complaint goes as soon as the name is right, and never appears early.
+function clearModelField(name, value) {
+	if (modelOffered(name, value) === true) checkModelField(name, value);
+}
+
+function stageModel(name, value) {
+	if (!checkModelField(name, value)) {
+		if (pendingSettings) delete pendingSettings[name];
+		refreshDirtyBar();
+		return;
+	}
+	stageSetting(name, value);
 }
 
 async function stageBackend(name) {
 	stageSetting("llm_backend", name);
 	if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
+	// The images model belongs to a service too: Ollama's llava left behind on OpenRouter
+	// never described a picture. Each service starts on a model of its own that reads them.
+	if (VISION_MODELS[name]) stageSetting("vision_model", VISION_MODELS[name]);
+	if (name === "enqueue") {
+		// One model for every job to start with; the dropdowns change any of them.
+		stageSetting("summarize_model", null);
+		stageSetting("search_model", null);
+		stageSetting("vision_model", BACKEND_MODELS.enqueue);
+	}
 }
 
 async function saveSettings() {
@@ -610,12 +781,16 @@ async function renderSettingsFeatures() {
 		(ap.locked ? ' disabled aria-disabled="true"' : "") +
 		' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
 		"</div></div>" +
-		searchSwitchRow(
-			d.settings.preview_browser,
-			"preview_browser",
-			"When a site blocks the preview, Enqueue opens the page once in a hidden browser, the way you would. Slower.",
-			"Some sites block previews; those links stay without one.",
-		) +
+		// The preview browser is the Mac's own WebKit (webkit_page.py); a computer without
+		// one is not offered the switch.
+		(d.features?.preview_browser === false
+			? ""
+			: searchSwitchRow(
+					d.settings.preview_browser,
+					"preview_browser",
+					"When a site blocks the preview, Enqueue opens the page once in Safari's engine, out of sight, the way you would. A few seconds, only for those sites.",
+					"Some sites block previews; those links stay without one.",
+				)) +
 		"</div>";
 
 	html +=
@@ -683,11 +858,11 @@ async function renderSettingsStorage() {
 			esc(s0.data_dir) +
 			"</div></div>" +
 			'<div class="field"><span class="rowlabel">Restore a backup</span>' +
-			'<div class="aside">Quit Enqueue, then run <span class="mono">enq restore</span> in ' +
-			"Terminal with your backup folder. On a new Mac it asks for your recovery kit. " +
-			"The library already here is set aside, never deleted.</div></div>" +
+			'<div class="aside">Not in the app yet: it takes the Terminal app (quit Enqueue, then ' +
+			'run <span class="mono">enq restore</span> with your backup folder). On a new Mac it asks ' +
+			"for your recovery kit. Whatever is here now is set aside, never deleted.</div></div>" +
 			'<div class="field"><span class="rowlabel">Rebuild search</span>' +
-			'<div class="aside">Throws away the search index and builds it again. Takes a while; use it if search seems off.</div>' +
+			'<div class="aside">Starts search over from scratch. Takes a while; try it if search keeps missing things you know are there.</div>' +
 			'<button class="btn tertiary" onclick="rebuildIndex(this)">Rebuild</button></div>' +
 			"</div>",
 	);
@@ -804,16 +979,17 @@ async function renderBackupSection() {
 			'<div class="backup-status" data-state="none"><span class="backup-dot" aria-hidden="true"></span>' +
 			'<div class="backup-words"><div class="backup-head">Not backed up yet</div>' +
 			'<div class="backup-sub">Your library lives only on this Mac. Choose a folder your cloud ' +
-			"drive keeps, and a copy goes there every day and each time you quit.</div></div></div>" +
+			"drive keeps, and a copy goes there every day and each time you quit.</div></div>" +
 			'<div class="actions backup-actions">' +
 			choose +
-			"</div>" +
+			"</div></div>" +
 			(picker
 				? ""
 				: '<div class="field"><label for="backup_dir_input">Folder</label>' +
+					'<div class="keyrow">' +
 					'<input id="backup_dir_input" placeholder="~/Library/CloudStorage/..." ' +
 					'onkeydown="if(event.key===\'Enter\')useBackupDir(this.value)">' +
-					'<div class="actions"><button class="btn tertiary" ' +
+					'<button class="btn tertiary" ' +
 					"onclick=\"useBackupDir(document.getElementById('backup_dir_input').value)\">" +
 					"Back up there</button></div></div>");
 		return html + "</div>";
@@ -951,7 +1127,9 @@ async function recoveryKitSaved() {
 	} catch (err) {
 		return toast(String(err.message || err), true);
 	}
-	await renderSettingsTab("storage");
+	// The welcome shows the kit too (js/welcome.js); it stays on its own step.
+	if (welcomeOpen()) await renderWelcome();
+	else await renderSettingsTab("storage");
 	toast("Recovery kit saved. The next time Enqueue starts, it encrypts this library on the Mac too.");
 }
 
@@ -1066,15 +1244,30 @@ async function renderSettingsTrash() {
 
 // ---- Sync tab ------------------------------------------------------------
 // The Sync tab branches on configuration state:
-// - Not configured: the setup walk (relay URL -> passwordless keyring init with
-//   the recovery phrase shown once -> sync secret).
-// - Configured: the read-only configuration + the Signal-style linking QR (QR.3).
+// - Not configured: Enqueue sync first (the library's key, shown once if it is new,
+//   then sign in with Google or Apple in the browser: account.py), and under it the
+//   walk for a relay of your own (relay URL -> keyring init -> the relay's password).
+// - Configured: who is signed in and the account's devices (Enqueue sync only), the
+//   Signal-style linking QR (QR.3), and adding another computer.
 async function renderSettingsSync() {
 	const d = await api("/settings");
 	const sync = d.sync || {};
-	let html = '<div class="h2">Phone</div>';
+	let html = '<div class="h2">Sync</div>';
 
-	if (!sync.relay_configured) {
+	const me = await api("/account").catch(() => ({}));
+	const pending = me.sign_in && me.sign_in.state;
+	if (window.syncSetupStep === "recovery") {
+		// The first key, made after signing in to an account with no library yet.
+		html += '<div class="shelf">Your recovery phrase</div><div class="group">' + renderSyncRecovery() + "</div>";
+	} else if (window.syncSetupStep === "signin") {
+		// Waiting on the browser, for a first setup and for a switch alike.
+		html += '<div class="shelf">Sign in to Enqueue sync</div><div class="group">' + renderSignInWaiting() + "</div>";
+	} else if (pending === "join") {
+		html += '<div class="shelf">Join your library</div><div class="group">' + renderAccountJoin(me) + "</div>";
+		pollJoin();
+	} else if (pending === "needs_key") {
+		html += '<div class="shelf">Enqueue sync</div><div class="group">' + renderAccountNeedsKey() + "</div>";
+	} else if (!sync.relay_configured) {
 		html += renderSyncSetup(d, sync);
 	} else {
 		html += renderSyncConfigured(sync);
@@ -1099,6 +1292,9 @@ function renderSyncSetup(_d, sync) {
 	if (step === 3) {
 		return '<div class="shelf">Use Enqueue on your phone</div><div class="group">' + renderSyncStepSecret(sync) + "</div>";
 	}
+	if (step === "signin") {
+		return '<div class="shelf">Sign in to Enqueue sync</div><div class="group">' + renderSignInWaiting() + "</div>";
+	}
 
 	// The landing (step 1) offers two first-class choices as separate sections: start a
 	// NEW library here, or JOIN one already set up on another device. Joining used to be a
@@ -1106,15 +1302,167 @@ function renderSyncSetup(_d, sync) {
 	// its own section.
 	return (
 		'<div class="shelf">Use Enqueue on your phone</div><div class="group">' +
-		renderSyncStepRelay(sync) +
+		renderSyncHosted() +
 		"</div>" +
 		'<div class="shelf">Already using Enqueue on another computer?</div>' +
 		'<div class="group">' +
 		'<div class="field"><span class="rowlabel">Join that library</span>' +
 		'<div class="aside">This computer gets the same library instead of starting a new one.</div>' +
 		'<button class="btn tertiary" onclick="startSyncJoin(event)">Join</button>' +
+		"</div></div>" +
+		'<details class="more"><summary>Use your own sync server instead</summary>' +
+		'<div class="group">' +
+		renderSyncStepRelay(sync) +
+		"</div></details>"
+	);
+}
+
+// Enqueue sync: sign in, and the relay is ours to run. What it holds is scrambled with a
+// key that never leaves your devices, which is the promise this row has to make plainly.
+function renderSyncHosted() {
+	return (
+		'<div class="aside">Keep your phone and this Mac in step. Everything is scrambled ' +
+		"before it leaves your devices, so not even we can read it.</div>" +
+		'<div class="field"><span class="rowlabel">Enqueue sync</span>' +
+		'<div class="aside">Sign in to turn it on. Signing in only tells us who you are.</div>' +
+		signInButtons("startAccountSignIn") +
+		"</div>"
+	);
+}
+
+// The providers' own marks, as each asks: Google's four-colour G on a light button,
+// never recoloured; Apple's logo in the text colour. Both buttons look alike so neither
+// reads as the "right" one.
+const GOOGLE_G =
+	'<svg class="signin-mark" viewBox="0 0 18 18" aria-hidden="true">' +
+	'<path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62z"/>' +
+	'<path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 0 0 9 18z"/>' +
+	'<path fill="#FBBC05" d="M3.96 10.71A5.41 5.41 0 0 1 3.68 9c0-.59.1-1.17.28-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l3-2.33z"/>' +
+	'<path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3 2.33C4.67 5.16 6.66 3.58 9 3.58z"/>' +
+	"</svg>";
+const APPLE_MARK =
+	'<svg class="signin-mark" viewBox="0 0 814 1000" aria-hidden="true"><path fill="currentColor" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/></svg>';
+
+function signInButtons(handler) {
+	return (
+		'<div class="actions signin">' +
+		'<button class="btn signin-btn" onclick="' +
+		handler +
+		"('google')\">" +
+		GOOGLE_G +
+		"Sign in with Google</button>" +
+		'<button class="btn signin-btn" onclick="' +
+		handler +
+		"('apple')\">" +
+		APPLE_MARK +
+		"Sign in with Apple</button>" +
+		"</div>"
+	);
+}
+
+function renderSignInWaiting() {
+	return (
+		'<div class="field"><span class="rowlabel">Finish in your browser</span>' +
+		'<div class="aside">A sign-in page opened in your browser. Sign in there, and this ' +
+		"page moves on by itself.</div>" +
+		'<div class="actions">' +
+		'<button class="btn tertiary" onclick="reopenSignIn()">Open it again</button>' +
+		'<button class="btn ghost" onclick="cancelSignIn()">Cancel</button>' +
 		"</div></div>"
 	);
+}
+
+function openOutside(url) {
+	return bridge ? bridge("open_external", { url }) : window.open(url, "_blank", "noopener");
+}
+
+// Sign in first; what the account already holds decides the rest (account.py): a
+// library with a key is joined, approved from a computer that has it (js/approve.js);
+// an account with no library yet has this Mac make the first key. Making a key before
+// knowing gave a second Mac a second key, which could not read the first one's library.
+async function startAccountSignIn(provider) {
+	await beginSignIn(provider);
+}
+
+async function beginSignIn(provider, refresh = false) {
+	let res;
+	try {
+		res = await api("/account/sign-in", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider, refresh }),
+		});
+	} catch (err) {
+		toast(String(err.message || err), true);
+		return;
+	}
+	window.accountSignInUrl = res.url;
+	window.accountSignInRefresh = refresh;
+	window.syncSetupStep = "signin";
+	await renderSettingsTab("sync");
+	try {
+		await openOutside(res.url);
+	} catch (err) {
+		toast(String(err.message || err), true);
+	}
+	pollSignIn();
+}
+
+function reopenSignIn() {
+	if (window.accountSignInUrl) openOutside(window.accountSignInUrl);
+}
+
+function cancelSignIn() {
+	window.syncSetupStep = null;
+	window.accountSignInUrl = null;
+	renderSettingsTab("sync");
+}
+
+// The browser comes back to the engine, not to this page: watch the engine until the
+// sign-in lands or fails. Ten minutes, the same as the engine keeps a sign-in open.
+async function pollSignIn() {
+	const until = Date.now() + 10 * 60 * 1000;
+	while (window.syncSetupStep === "signin" && Date.now() < until) {
+		await new Promise((done) => setTimeout(done, 1500));
+		let me;
+		try {
+			me = await api("/account");
+		} catch {
+			continue;
+		}
+		const progress = me.sign_in || {};
+		if (progress.state === "done" && me.signed_in) {
+			window.syncSetupStep = null;
+			window.accountSignInUrl = null;
+			pendingSettings = null;
+			toast(
+				window.accountSignInRefresh
+					? me.picture
+						? "Your picture is in."
+						: "Signed in again. Google didn't send a picture for this account."
+					: me.relink_phone
+						? "Moved to Enqueue sync. Link your phone again with the new code."
+						: "Signed in. Enqueue sync is on.",
+			);
+			window.accountSignInRefresh = false;
+			await renderSettingsTab("sync");
+			return;
+		}
+		if (progress.state === "join" || progress.state === "needs_key") {
+			window.syncSetupStep = null;
+			window.accountSignInUrl = null;
+			await renderSettingsTab(currentSettingsTab || "sync");
+			if (progress.state === "join") pollJoin();
+			return;
+		}
+		if (progress.state === "failed") {
+			window.syncSetupStep = null;
+			window.accountSignInUrl = null;
+			toast(progress.error || "Sign-in did not finish.", true);
+			await renderSettingsTab("sync");
+			return;
+		}
+	}
 }
 
 function renderSyncStepRelay(sync) {
@@ -1149,7 +1497,7 @@ function startSyncJoin(e) {
 function renderSyncJoin(sync) {
 	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
 	return (
-		'<div class="aside">On the other computer, open <strong>Settings, Phone, Add another ' +
+		'<div class="aside">On the other computer, open <strong>Settings, Sync, Add another ' +
 		"computer</strong>. It shows a one-time code and phrase; type them here.</div>" +
 		'<div class="field" style="margin-top: var(--sp-4);">' +
 		'<label for="s_pair_relay">Relay address</label>' +
@@ -1369,11 +1717,12 @@ function renderSyncRecovery() {
 function renderSyncStepSecret(_sync) {
 	return (
 		'<div class="aside">Last step: the relay\'s password, so only your devices can use it. ' +
-		"Leave it empty and Enqueue makes a strong one, or paste the one your relay gave you.</div>" +
+		"Paste the one the relay runs with: your own relay's RELAY_SECRET, or the password " +
+		"whoever runs a shared relay gave you.</div>" +
 		'<div class="field">' +
 		'<label for="s_sync_secret">Relay password</label>' +
 		'<input id="s_sync_secret" type="password" autocomplete="off" ' +
-		'placeholder="Leave empty to make one">' +
+		'placeholder="Paste the relay password">' +
 		'<div class="aside">Kept in your Mac\'s Keychain.</div>' +
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
@@ -1395,6 +1744,17 @@ function confirmRecoveryAndAdvance() {
 		return;
 	}
 	window.syncRecoveryPhrase = null;
+	const provider = window.syncAfterRecovery;
+	if (provider === "finish") {
+		window.syncAfterRecovery = null;
+		finishNewLibrary();
+		return;
+	}
+	if (provider) {
+		window.syncAfterRecovery = null;
+		beginSignIn(provider);
+		return;
+	}
 	window.syncSetupStep = 3;
 	renderSettingsTab(currentSettingsTab);
 }
@@ -1403,17 +1763,21 @@ async function saveSyncSecretAndFinish() {
 	const relayUrl = window.syncRelayUrl || "http://127.0.0.1:8788";
 	const secretField = document.getElementById("s_sync_secret");
 	const secret = secretField ? secretField.value.trim() : "";
+	if (!secret) {
+		toast("Paste the relay's password first.", true);
+		secretField?.focus();
+		return;
+	}
 	const btn = event.target;
 	btn.disabled = true;
 	btn.textContent = "Saving...";
 	try {
-		// Generate a secure secret when the field is empty.
-		const finalSecret = secret || generateSyncSecret();
+		const finalSecret = secret;
 		// PUT /settings/sync-secret also pushes the keyring to the relay.
 		await api("/settings/sync-secret", {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ secret: finalSecret }),
+			body: JSON.stringify({ secret: finalSecret, relay_url: relayUrl }),
 		});
 		// Persist the relay URL as a plaintext setting.
 		await api("/settings", {
@@ -1433,28 +1797,29 @@ async function saveSyncSecretAndFinish() {
 	}
 }
 
-function generateSyncSecret() {
-	const array = new Uint8Array(32);
-	crypto.getRandomValues(array);
-	return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function renderSyncConfigured(_sync) {
-	let html = '<div class="shelf">Link your phone</div><div class="group">';
+function renderSyncConfigured(sync) {
+	const acct = sync.account || {};
+	let html = "";
+	if (acct.signed_in) html += renderAccountSection(acct);
+	else html += renderSyncSwitch();
+	html += '<div class="shelf">Link your phone</div><div class="group">';
+	if (acct.relink_phone) {
+		html +=
+			'<div class="callout warn">Link your phone again: show the code below and scan it. ' +
+			"Until you do, changes on this Mac don't reach it.</div>";
+	}
 	html +=
-		'<div class="aside">In the Enqueue app on your phone, choose <b>Link a device</b> and ' +
-		"point the camera at the code. The code holds your library's key: don't take a " +
-		"screenshot of it or share it.</div>" +
-		'<div class="field"><span class="rowlabel">Linking code</span>' +
-		'<div class="actions">' +
-		'<button class="btn primary" id="linkShowBtn" onclick="showLinkCode()">Show the code</button>' +
+		'<div class="field"><span class="rowlabel">Your code</span>' +
+		'<div class="aside">Open Enqueue on your phone and tap <b>Scan the code</b> (on a phone ' +
+		"that's already set up: Settings, <b>Re-link with QR</b>). Then point the camera at " +
+		"the code.</div>" +
+		'<button class="btn primary" id="linkShowBtn" aria-expanded="false" ' +
+		'aria-controls="linkQRArea" onclick="toggleLinkCode()">Show the code</button>' +
 		"</div>" +
-		'<div id="linkQRArea" hidden style="margin-top: var(--sp-4);">' +
-		'<div id="linkQR" style="text-align: center; margin-bottom: var(--sp-3);"></div>' +
-		'<div class="actions" style="margin-top: var(--sp-2);">' +
-		'<button class="btn ghost" onclick="hideLinkCode()">Hide the code</button>' +
-		"</div>" +
-		"</div>" +
+		'<div class="link-qr" id="linkQRArea" hidden>' +
+		'<div class="link-qr-code" id="linkQR"></div>' +
+		'<p class="link-qr-note">This code opens your library. Keep it to yourself: no ' +
+		"screenshots, no sharing. It disappears when you leave this page.</p>" +
 		"</div>" +
 		"</div>";
 
@@ -1463,7 +1828,7 @@ function renderSyncConfigured(_sync) {
 	html +=
 		'<div class="shelf">Add another computer</div><div class="group">' +
 		'<div class="field"><span class="rowlabel">One-time code</span>' +
-		'<div class="aside">Type it into Enqueue on the other computer (Settings, Phone, Join). ' +
+		'<div class="aside">Type it into Enqueue on the other computer (Settings, Sync, Join). ' +
 		"It works once and expires in 10 minutes.</div>" +
 		'<button class="btn tertiary" id="pairOfferBtn" onclick="createPairingOffer()">Make a code</button>' +
 		"</div>" +
@@ -1471,8 +1836,16 @@ function renderSyncConfigured(_sync) {
 		"</div>";
 
 	html += moreOptions(
-		'<div class="shelf">Start sync over</div><div class="group">' +
-			'<div class="field"><span class="rowlabel">Forget this sync setup</span>' +
+		(acct.signed_in
+			? '<div class="shelf">Your Enqueue sync account</div><div class="group">' +
+				'<div class="field"><span class="rowlabel">Delete the account</span>' +
+				'<div class="aside caution">Every phone and computer stops syncing, and the copy ' +
+				"on Enqueue sync is deleted. Your library stays on this Mac and your phone.</div>" +
+				'<button class="btn harm" onclick="confirmDeleteAccount()">Delete account</button>' +
+				"</div></div>"
+			: "") +
+			'<div class="shelf">Start sync over</div><div class="group">' +
+			'<div class="field"><span class="rowlabel">Start over with a new key</span>' +
 			'<div class="aside caution">Throws away the key your devices share. Anything already ' +
 			"sent can't be read again. Only for starting fresh.</div>" +
 			'<button class="btn harm" onclick="confirmResetSync()">Start over</button>' +
@@ -1480,6 +1853,206 @@ function renderSyncConfigured(_sync) {
 	);
 
 	return html;
+}
+
+const PROVIDER_NAMES = { google: "Google", apple: "Apple" };
+
+// A Mac on a relay of its own moves to Enqueue sync with the same sign-in: the library
+// goes up whole under the same key (account.py `_move_library`), nothing to write down.
+function renderSyncSwitch() {
+	return (
+		'<div class="shelf">Enqueue sync</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">Switch to Enqueue sync</span>' +
+		'<div class="aside">Sign in and your library moves to our sync service, still locked ' +
+		"with your key. Then link your phone again. Your own server keeps its copy until " +
+		"you remove it.</div>" +
+		signInButtons("beginSignIn") +
+		"</div></div>"
+	);
+}
+
+function accountAvatar(acct) {
+	if (acct.picture) {
+		return '<img class="account-avatar" src="/account/picture?t=' + Date.now() + '" alt="">';
+	}
+	const letter = (acct.name || acct.email || "?").trim().charAt(0).toUpperCase();
+	// Google sends the picture only inside a sign-in: with none kept yet, the initial
+	// is the way to fetch it (the same sign-in, renewing the session, nothing else).
+	if (acct.provider === "google") {
+		return (
+			'<button class="account-avatar initial" type="button" ' +
+			'title="Show your Google picture" aria-label="Show your Google picture" ' +
+			"onclick=\"beginSignIn('google', true)\">" +
+			esc(letter) +
+			"</button>"
+		);
+	}
+	return '<span class="account-avatar initial" aria-hidden="true">' + esc(letter) + "</span>";
+}
+
+function renderAccountSection(acct) {
+	const how = PROVIDER_NAMES[acct.provider] || "";
+	const name = acct.name && acct.name !== acct.email ? acct.name : "";
+	setTimeout(loadAccountDevices, 0);
+	return (
+		'<div class="shelf">Enqueue sync</div><div class="group">' +
+		'<div class="field account-row">' +
+		'<div class="account-who" id="accountWho">' +
+		accountAvatar(acct) +
+		'<div class="account-words">' +
+		'<span class="rowlabel">' +
+		esc(name || acct.email || "Signed in") +
+		"</span>" +
+		'<div class="aside">' +
+		(name && acct.email ? esc(acct.email) + " · " : "") +
+		(how ? "Signed in with " + esc(how) : "Signed in") +
+		"</div></div></div>" +
+		'<button class="btn tertiary" onclick="confirmSignOut()">Sign out</button>' +
+		"</div>" +
+		'<div class="field" id="accountPlan">' +
+		planRow(acct.plan) +
+		"</div></div>" +
+		'<div class="shelf">Devices</div>' +
+		'<div class="group" id="accountDevices"><div class="aside">Loading...</div></div>'
+	);
+}
+
+// The plan as the relay last said (account._keep_plan). Pro is bought on the phone,
+// never here: the Mac shows the plan and where to change it.
+function planBytes(n) {
+	const gb = n / 1024 ** 3;
+	if (gb >= 1) return (gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10) + " GB";
+	return Math.max(1, Math.round(n / 1024 ** 2)) + " MB";
+}
+
+function planRow(plan) {
+	plan = plan || {};
+	const pro = plan.tier === "pro";
+	const room = plan.storage_bytes ? planBytes(plan.storage_bytes) : "";
+	const used = room ? planBytes(plan.used_bytes || 0) + " of " + room + " used. " : "";
+	const until =
+		pro && plan.pro_until && plan.pro_until < 4e9
+			? " until " + deviceWhen(plan.pro_until)
+			: "";
+	return (
+		'<span class="rowlabel">' +
+		(pro ? "Pro" + esc(until) : "Free") +
+		"</span>" +
+		'<div class="aside">' +
+		esc(used) +
+		(pro
+			? "Up to five computers and five phones."
+			: "One computer and one phone. Go Pro in Enqueue on your phone, under Settings.") +
+		"</div>"
+	);
+}
+
+function deviceWhen(seconds) {
+	if (!seconds) return "";
+	return new Date(seconds * 1000).toLocaleDateString(undefined, {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+}
+
+async function loadAccountDevices() {
+	const box = document.getElementById("accountDevices");
+	if (!box) return;
+	let res;
+	try {
+		res = await api("/account/devices");
+	} catch (err) {
+		box.innerHTML = '<div class="aside">' + esc(String(err.message || err)) + "</div>";
+		return;
+	}
+	const devices = res.devices || [];
+	// Asking the account for its devices also fetches its picture the first time, and
+	// the plan as it stands now.
+	api("/account")
+		.then((me) => {
+			const avatar = document.querySelector("#accountWho .account-avatar.initial");
+			if (avatar && me.picture) avatar.outerHTML = accountAvatar(me);
+			const plan = document.getElementById("accountPlan");
+			if (plan) plan.innerHTML = planRow(me.plan);
+		})
+		.catch(() => {});
+	box.innerHTML =
+		'<div class="aside">Every phone and computer syncing with this account. Remove one ' +
+		"you no longer use and it stops syncing at once.</div>" +
+		devices
+			.map((dv) => {
+				const seen = dv.last_seen_at ? "last synced " + deviceWhen(dv.last_seen_at) : "not synced yet";
+				return (
+					'<div class="field"><span class="rowlabel">' +
+					esc(dv.name) +
+					(dv.this_mac ? " (this Mac)" : "") +
+					"</span>" +
+					'<div class="aside">Added ' +
+					esc(deviceWhen(dv.created_at)) +
+					", " +
+					esc(seen) +
+					"</div>" +
+					(dv.this_mac
+						? ""
+						: '<button class="btn ghost" onclick="removeAccountDevice(\'' +
+							esc(dv.id) +
+							"', '" +
+							esc(dv.name) +
+							'\')">Remove</button>') +
+					"</div>"
+				);
+			})
+			.join("");
+}
+
+async function removeAccountDevice(id, name) {
+	const yes = await ask(
+		"Remove " + name + "?",
+		"It stops syncing right away. What it already has stays on it. To use it again, link it again.",
+		"Remove",
+	);
+	if (!yes) return;
+	try {
+		await api("/account/devices/" + encodeURIComponent(id), { method: "DELETE" });
+	} catch (err) {
+		toast(String(err.message || err), true);
+		return;
+	}
+	toast(name + " removed.");
+	loadAccountDevices();
+}
+
+async function confirmSignOut() {
+	const yes = await ask(
+		"Sign out of Enqueue sync?",
+		"This Mac stops syncing. Your library stays here, and your phone keeps what it has.",
+		"Sign out",
+	);
+	if (!yes) return;
+	await api("/account/sign-out", { method: "POST" });
+	pendingSettings = null;
+	toast("Signed out. This Mac no longer syncs.");
+	await renderSettingsTab("sync");
+}
+
+async function confirmDeleteAccount() {
+	const yes = await ask(
+		"Delete your Enqueue sync account?",
+		"Every phone and computer stops syncing at once, and the copy on Enqueue sync is " +
+			"deleted. Your library stays on this Mac and on your phone. This can't be undone.",
+		"Delete account",
+	);
+	if (!yes) return;
+	try {
+		await api("/account", { method: "DELETE" });
+	} catch (err) {
+		toast(String(err.message || err), true);
+		return;
+	}
+	pendingSettings = null;
+	toast("Your Enqueue sync account is deleted.");
+	await renderSettingsTab("sync");
 }
 
 // Main device: mint a one-time pairing offer and show the code + phrase to type into the
@@ -1498,16 +2071,16 @@ async function createPairingOffer() {
 	} catch (err) {
 		if (btn) {
 			btn.disabled = false;
-			btn.textContent = "Create pairing code";
+			btn.textContent = "Make a code";
 		}
 		toast(String((err && err.message) || err), true);
 		return;
 	}
 	const mins = Math.round((res.expires_in || 600) / 60);
 	area.innerHTML =
-		'<div class="aside">On the new computer, open Settings -&gt; Sync -&gt; "Join Existing ' +
-		'Library" and enter the relay URL, this code, and this phrase. Both the code and phrase ' +
-		"are needed, they work once, and they expire in " +
+		'<div class="aside">On the other computer, open Settings, Sync, Join, and enter the ' +
+		"relay address, this code and this phrase. It needs both, they work once, and they " +
+		"expire in " +
 		mins +
 		" minutes. Do not share them.</div>" +
 		'<div class="field" style="margin-top: var(--sp-4);"><label>Relay URL</label>' +
@@ -1525,8 +2098,14 @@ async function createPairingOffer() {
 	area.hidden = false;
 	if (btn) {
 		btn.disabled = false;
-		btn.textContent = "Create another code";
+		btn.textContent = "Make another code";
 	}
+}
+
+function toggleLinkCode() {
+	const area = document.getElementById("linkQRArea");
+	if (area && !area.hidden) hideLinkCode();
+	else showLinkCode();
 }
 
 async function showLinkCode() {
@@ -1534,7 +2113,7 @@ async function showLinkCode() {
 	const area = document.getElementById("linkQRArea");
 	const qr = document.getElementById("linkQR");
 	btn.disabled = true;
-	btn.textContent = "Generating...";
+	btn.textContent = "Making the code...";
 	try {
 		// QR.3: the command returns ONLY the rendered SVG - there is deliberately no
 		// textual form of the payload anywhere (camera-scanning is the only transport).
@@ -1550,20 +2129,27 @@ async function showLinkCode() {
 		}
 		qr.replaceChildren(node);
 		area.hidden = false;
-		btn.textContent = "Show linking QR";
-		btn.disabled = false;
+		btn.textContent = "Hide the code";
+		btn.setAttribute("aria-expanded", "true");
+		btn.classList.replace("primary", "tertiary");
 	} catch (err) {
 		toast(String(err.message || err), true);
-		btn.textContent = "Show linking QR";
-		btn.disabled = false;
+		btn.textContent = "Show the code";
 	}
+	btn.disabled = false;
 }
 
 function hideLinkCode() {
 	const area = document.getElementById("linkQRArea");
-	area.hidden = true;
+	if (area) area.hidden = true;
 	const qr = document.getElementById("linkQR");
 	if (qr) qr.replaceChildren();
+	const btn = document.getElementById("linkShowBtn");
+	if (btn) {
+		btn.textContent = "Show the code";
+		btn.setAttribute("aria-expanded", "false");
+		btn.classList.replace("tertiary", "primary");
+	}
 }
 
 async function confirmResetSync() {
@@ -1594,9 +2180,17 @@ async function confirmResetSync() {
 }
 
 const BACKEND_MODELS = {
+	enqueue: "anthropic/claude-haiku-5.5",
 	ollama: "llama3.1:8b",
-	openrouter: "google/gemini-3-flash",
+	openrouter: "google/gemini-3.8-flash",
 	"opencode-go": "kimi-k3",
+};
+
+// The images model each service starts on (it must read pictures). OpenCode Go does not
+// say which of its models do, so it keeps what was set.
+const VISION_MODELS = {
+	ollama: "llava",
+	openrouter: "google/gemini-3.8-flash",
 };
 
 // The value is sent once and never read back. What returns is whether a key now
@@ -1662,6 +2256,8 @@ function back() {
 // holds the route, so a hidden-and-restored window lands back on the artifact
 // or grouping, not the wall. An empty hash is the wall.
 restoreRoute();
+// Another computer asking to join the library is approved from here (js/approve.js).
+watchApprovals();
 
 // ---- Events tab + the vault behind it (VAULT.6) --------------------------
 // The Events tab is real diagnostics: it lists the events the engine emitted

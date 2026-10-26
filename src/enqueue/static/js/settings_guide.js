@@ -19,7 +19,7 @@
 const SHELF_GUIDES = {
 	ai: {
 		"Where answers come from": "answers",
-		Models: "models",
+		"Which AI does each job": "models",
 		Summaries: "concepts",
 	},
 	features: { Capturing: "hotkey", Links: "link-previews", Search: "search-options" },

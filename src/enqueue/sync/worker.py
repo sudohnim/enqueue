@@ -77,6 +77,10 @@ def _pull_handler(_item: object) -> object:
 _worker = Worker("sync", _pull_handler)
 _stop = threading.Event()
 _threads: list[threading.Thread] = []
+# Which start the running loops belong to. A restart (a new relay or password) bumps
+# it, and the loops of an older start leave at their next turn: the change stream may
+# sit in a read on the old relay, which cannot be interrupted from here.
+_generation = 0
 
 
 def start() -> None:
@@ -88,8 +92,20 @@ def start() -> None:
     _threads.append(_spawn(_sse_loop, "sync-sse"))
 
 
+def restart() -> None:
+    """Listen to the relay and password now configured (switching to Enqueue sync)."""
+    global _generation
+    _generation += 1
+    _threads.clear()
+    start()
+
+
 def stop() -> None:
     _stop.set()
+
+
+def _current(generation: int) -> bool:
+    return not _stop.is_set() and generation == _generation
 
 
 def _spawn(fn, name: str) -> threading.Thread:
@@ -99,7 +115,8 @@ def _spawn(fn, name: str) -> threading.Thread:
 
 
 def _timer_loop() -> None:
-    while not _stop.wait(POLL_SECONDS):
+    mine = _generation
+    while not _stop.wait(POLL_SECONDS) and mine == _generation:
         # Honour the backoff armed by a failed pull: while the relay is down the
         # timer stays quiet instead of queuing a doomed pull every 5s.
         if time.monotonic() < _backoff_until:
@@ -108,9 +125,10 @@ def _timer_loop() -> None:
 
 
 def _sse_loop() -> None:
+    mine = _generation
     url = _relay_url()
     base = url.rstrip("/")
-    while not _stop.is_set():
+    while _current(mine):
         try:
             with httpx.stream(
                 "GET",
@@ -125,7 +143,7 @@ def _sse_loop() -> None:
                         return
                     continue
                 for line in resp.iter_lines():
-                    if _stop.is_set():
+                    if not _current(mine):
                         return
                     if line.startswith("event: object"):
                         _worker.submit("pull")

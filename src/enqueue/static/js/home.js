@@ -293,12 +293,144 @@ async function setWallGroup(mode) {
 	if (tagbar) tagbar.hidden = mode !== "tags";
 	const slot = document.getElementById("wallbody");
 	if (!slot) return;
-	slot.innerHTML = wallBodyHtml();
-	// The Type and Tags modes fold their shelves (L.4); the toggle headers are
-	// re-bound on every body render.
-	if (mode === "type" || mode === "tags")
-		mountCollapsible(".wallgroup", "enqueue.collapsedWall." + mode);
-	if (mode === "touched") watchWallEnd();
+	renderWallBody(slot);
+}
+
+// The wall body in the mode showing. Last touch draws from what home() fetched and
+// pages as it scrolls; Type and Tags ask the engine for their shelves over the whole
+// library (GET /artifacts/groups), each shelf paging on its own "Show more".
+function renderWallBody(slot) {
+	if (wallGroup === "touched" || (!wallKept.length && !wallFirst.length)) {
+		slot.innerHTML = wallBodyHtml();
+		mountCollapsible(".wallgroup", "enqueue.collapsedWall." + wallGroup);
+		if (wallGroup === "touched") watchWallEnd();
+		return;
+	}
+	const by = wallGroup === "type" ? "kind" : "tags";
+	const mode = wallGroup;
+	// The shelves as last drawn stand in while they are asked for again.
+	const kept = wallShelves[mode];
+	slot.innerHTML = kept ? groupedSectionsHtml(by, kept) : spinner("sm", "arranging...");
+	if (kept) bindGroupedWall(slot, by);
+	api("/artifacts/groups?by=" + by)
+		.then((d) => {
+			if (wallGroup !== mode || !slot.isConnected) return;
+			wallShelves[mode] = d.groups;
+			slot.innerHTML = groupedSectionsHtml(by, d.groups);
+			bindGroupedWall(slot, by);
+		})
+		.catch(() => {
+			// The engine is busy: the shelves of the first page, as before.
+			if (!kept && wallGroup === mode && slot.isConnected) {
+				slot.innerHTML = wallBodyHtml();
+				mountCollapsible(".wallgroup", "enqueue.collapsedWall." + mode);
+			}
+		});
+}
+
+// The shelves each grouped mode last drew, so a switch back shows them at once.
+const wallShelves = {};
+const SHELF_PAGE = 48;
+
+function shelfLabel(by, key) {
+	if (by === "tags") return key ? "#" + key : "Untagged";
+	const known = KIND_SHELVES.find(([k]) => k === key);
+	return known ? known[1] : key;
+}
+
+function groupedSectionsHtml(by, groups) {
+	if (by === "kind")
+		groups = groups.slice().sort((a, b) => {
+			const at = (k) => {
+				const i = KIND_SHELVES.findIndex(([kk]) => kk === k);
+				return i < 0 ? KIND_SHELVES.length : i;
+			};
+			return at(a.key) - at(b.key);
+		});
+	const collapsed = collapsedSet("enqueue.collapsedWall." + wallGroup);
+	return groups
+		.map((g) => {
+			const label = shelfLabel(by, g.key);
+			const isCollapsed = collapsed.has(label);
+			const rest = g.count - g.items.length;
+			return (
+				'<section class="wallgroup' +
+				(isCollapsed ? " collapsed" : "") +
+				'" data-key="' +
+				esc(label) +
+				'">' +
+				'<button class="grouptoggle" type="button" aria-expanded="' +
+				String(!isCollapsed) +
+				'" title="' +
+				esc(isCollapsed ? groupPreview(g.items) : "") +
+				'"><span class="shelf">' +
+				esc(label) +
+				'</span><span class="gmeta">' +
+				g.count +
+				'</span><span class="gchev" aria-hidden="true">' +
+				svg("chev") +
+				"</span></button>" +
+				'<div class="wall">' +
+				g.items.map((a, i) => card(a, i)).join("") +
+				"</div>" +
+				(rest > 0
+					? '<button class="shelfmore" type="button" data-key="' +
+						esc(g.key) +
+						'" data-offset="' +
+						g.items.length +
+						'" data-count="' +
+						g.count +
+						'">' +
+						shelfMoreLabel(g.count - g.items.length) +
+						"</button>"
+					: "") +
+				"</section>"
+			);
+		})
+		.join("");
+}
+
+function shelfMoreLabel(rest) {
+	return "Show " + (rest > SHELF_PAGE ? SHELF_PAGE + " more" : rest === 1 ? "1 more" : rest + " more");
+}
+
+function bindGroupedWall(slot, by) {
+	mountCollapsible(".wallgroup", "enqueue.collapsedWall." + wallGroup);
+	slot.querySelectorAll(".shelfmore").forEach((button) => {
+		button.addEventListener("click", () => moreOnShelf(button, by));
+	});
+}
+
+async function moreOnShelf(button, by) {
+	const key = button.dataset.key;
+	const offset = Number(button.dataset.offset);
+	const count = Number(button.dataset.count);
+	const filter =
+		by === "kind"
+			? "kind=" + encodeURIComponent(key)
+			: key
+				? "tags=" + encodeURIComponent(key)
+				: "untagged=true";
+	button.disabled = true;
+	button.textContent = "Loading...";
+	let page;
+	try {
+		page = await api("/artifacts?order=touched&limit=" + SHELF_PAGE + "&offset=" + offset + "&" + filter);
+	} catch (_) {
+		button.disabled = false;
+		button.textContent = "Couldn't load more. Try again";
+		return;
+	}
+	const grid = button.parentNode.querySelector(".wall");
+	grid.insertAdjacentHTML("beforeend", page.items.map((a, i) => card(a, i)).join(""));
+	const next = offset + page.items.length;
+	if (!page.more || next >= count) {
+		button.remove();
+		return;
+	}
+	button.dataset.offset = String(next);
+	button.disabled = false;
+	button.textContent = shelfMoreLabel(count - next);
 }
 
 // The saved-groupings modal (L.5): selecting "Custom" on the wall opens this
@@ -517,6 +649,29 @@ function card(a, i) {
 // throwing away your scroll position every time you tab back.
 let wallStamp = null;
 
+// What the wall was drawn from: how many items, and the most recently touched pinned and
+// unpinned one with when. An edit made on another device moves an item up without
+// adding one, so the time is part of it; counting alone left a phone's edit out of
+// order here until something changed on this Mac.
+function wallStampOf(kept, first) {
+	const top = (page) => {
+		const a = (page.items || [])[0] || {};
+		return (a.id || "") + "@" + (a.updated_at || "");
+	};
+	return kept.total + first.total + ":" + top(kept) + ":" + top(first);
+}
+
+// A pull lands while the window is open and in front, too: look again every half
+// minute while the wall is showing (two one-row requests).
+setInterval(() => {
+	if (place !== "wall") return;
+	// Never under someone's hands: typing in the search, or a menu or dialog open.
+	const at = document.activeElement;
+	if (at && (at.matches("input, textarea") || at.isContentEditable)) return;
+	if (document.querySelector(".acctmenu, dialog[open], .menu")) return;
+	refreshIfStale();
+}, 30000);
+
 // A capture made in the overlay lands in a different window, and this one has no
 // way to hear about it. Without this the home page sits stale until you navigate, so
 // saving something correctly looked like saving nothing. The wall refreshes only
@@ -525,17 +680,22 @@ let wallStamp = null;
 // stale - scroll is kept, nothing blinks.
 async function refreshIfStale() {
 	if (document.hidden || !view) return;
+	// The welcome sends people to the browser to sign in and back: never redraw the
+	// wall over it when they return, even if something synced meanwhile.
+	if (typeof welcomeOpen === "function" && welcomeOpen()) return;
 	if (place === "wall") {
-		const peek = await api("/artifacts?limit=1&order=ingested").catch(
-			() => null,
-		);
+		const peek = await Promise.all([
+			api("/artifacts?pinned=true&order=touched&limit=1"),
+			api("/artifacts?pinned=false&order=touched&limit=1"),
+		]).catch(() => null);
 		if (!peek) return;
-		const stamp = peek.total + ":" + ((peek.items[0] || {}).id || "");
+		const stamp = wallStampOf(peek[0], peek[1]);
 		if (stamp !== wallStamp) {
 			// Something new arrived while you were away: the eye startles.
 			const before = wallStamp ? parseInt(wallStamp, 10) : null;
+			const total = peek[0].total + peek[1].total;
 			await home({ keepScroll: true });
-			if (window.eyeMood && before !== null && peek.total > before) eyeMood.play("startle");
+			if (window.eyeMood && before !== null && total > before) eyeMood.play("startle");
 		}
 		return;
 	}
@@ -930,16 +1090,38 @@ async function home(opts) {
 	restorePill("wall");
 	setRoute("");
 	view.innerHTML = spinner("lg", "opening...");
-
-	const [kept, first] = await Promise.all([
-		api("/artifacts?pinned=true&order=touched&limit=200"),
-		api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
-	]);
+	// The first open on a new Mac can wait on a Keychain prompt hidden behind the
+	// window: after a while say so, rather than spin without a word.
+	const slow = setTimeout(() => {
+		const line = view.querySelector(".loader-caption");
+		const note =
+			"Still opening your library. If macOS is asking whether Enqueue may use your Keychain, choose Always Allow.";
+		if (line) line.textContent = note;
+		else view.insertAdjacentHTML("beforeend", '<p class="state" id="openSlow">' + esc(note) + "</p>");
+	}, 8000);
+	let kept, first;
+	try {
+		[kept, first] = await Promise.all([
+			api("/artifacts?pinned=true&order=touched&limit=200"),
+			api("/artifacts?pinned=false&order=touched&limit=" + PAGE),
+		]);
+	} catch (e) {
+		clearTimeout(slow);
+		view.innerHTML =
+			'<div class="homehead"><h1 class="display greeting">Your library did not open.</h1>' +
+			'<p class="state">' +
+			esc(e.message || "The engine did not answer.") +
+			'</p><button class="btn primary" type="button" onclick="home()">Try again</button></div>';
+		return;
+	}
+	clearTimeout(slow);
 	// /tags is paid for only in Tags mode (P.3d): every other grouping leaves
 	// the tag bar out of the DOM, and setWallGroup builds it on demand.
 	const tagcloud = wallGroup === "tags" ? await api("/tags") : { tags: [] };
 
 	if (!kept.total && !first.total) {
+		// A fresh library opens on the first-run welcome, once (js/welcome.js).
+		if (await maybeWelcome()) return;
 		// An empty library still gets the normal greeting (the living emblem + the
 		// time-of-day phrase), so a fresh install opens on the brand, not a wall of prose.
 		// One short line points at the capture pill already on screen; no second button.
@@ -949,8 +1131,8 @@ async function home(opts) {
 		view.innerHTML =
 			'<div class="homehead">' +
 			greetDateHtml() +
-			// The ? that opens the tour (js/tour.js), top right of the header.
-			Tour.triggerHtml() +
+			// Top right: the account (js/accountmenu.js) and the ? (js/welcome.js).
+			homeCornerHtml() +
 			'<div class="greetline">' +
 			'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
 			'<h1 class="display greeting">' +
@@ -960,6 +1142,7 @@ async function home(opts) {
 			'<div class="state">Nothing here yet. Just add your artifacts.</div>' +
 			"</div>";
 		makeEye(document.getElementById("greetEye"));
+		paintAccountChip();
 		return;
 	}
 
@@ -972,8 +1155,8 @@ async function home(opts) {
 	let html =
 		'<div class="homehead">' +
 		greetDateHtml() +
-		// The ? that opens the tour (js/tour.js), top right of the header.
-		Tour.triggerHtml() +
+		// Top right: the account (js/accountmenu.js) and the ? (js/welcome.js).
+		homeCornerHtml() +
 		'<div class="greetline">' +
 		// O.3: the eyeball PNG is split into a frame (the socket: outline, lashes,
 		// ground) and a small pupil image (only the purple iris, transparent
@@ -1007,25 +1190,26 @@ async function home(opts) {
 	// The "Collections" shelf is gone; saved groupings own that concept.
 
 	wall = { offset: first.items.length, more: first.more, loading: false };
-	wallStamp = first.total + ":" + ((first.items[0] || {}).id || "");
+	wallStamp = wallStampOf(kept, first);
 	wallKept = kept.items;
 	wallFirst = first.items;
 
 	// The wall body renders in the chosen grouping mode (K.6). Custom fetches
 	// /pivots after the shell is in place, so its slot starts empty.
-	html += '<div class="resurface" id="resurface" hidden></div>';
+	html += '<div class="reading" id="reading" role="status" aria-live="polite" hidden></div>';
+	html += '<div class="shiny" id="shiny" hidden></div>';
 	html += '<div class="wallbody" id="wallbody"></div>';
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
-	refreshResurface();
+	paintAccountChip();
+	refreshShiny();
+	refreshReading();
 
 	const bodySlot = view.querySelector(".wallbody");
 	// Custom is never a boot or persistent mode (L.5): it opens a modal on
 	// demand. The wall body always renders one of the client-side arrangements.
-	bodySlot.innerHTML = wallBodyHtml();
-	if (wallGroup === "type" || wallGroup === "tags" || wallGroup === "touched")
-		mountCollapsible(".wallgroup", "enqueue.collapsedWall." + wallGroup);
+	renderWallBody(bodySlot);
 	// The home search lives inside the greeting header and is re-created on every
 	// home render, so its keys are bound here, not once at startup. Enter searches;
 	// Escape clears so an emptied field is a way back to the wall.
@@ -1043,7 +1227,6 @@ async function home(opts) {
 			b.addEventListener("click", () => setWallGroup(b.dataset.mode));
 		});
 	}
-	if (wallGroup === "touched") watchWallEnd();
 	refreshGreeting();
 	if (keepAt !== null) window.scrollTo(0, keepAt);
 	else if (wasReading) window.scrollTo(0, 0);
@@ -1112,69 +1295,237 @@ async function refreshGreeting() {
 	}
 }
 
-// Resurfacing (resurface.py): one older note back on the wall each day, above the
-// cards. "Not today" hides it until tomorrow in this browser only.
-const RESURFACE_DISMISSED = "enqueue.resurface.dismissed";
+// The first big read (reading.py, GET /reading): after an import, a switch of AI model,
+// or a sync that brings a whole library onto this Mac, the assistant writes its few
+// lines about each item one by one for a while. One quiet line above the wall says how
+// far it is and why, and goes away when it is done. Checked on every wall render, and
+// polled only while the line is up.
+let readingTimer = null;
+const READING_POLL_MS = 8000;
+
+function readingWhy(r) {
+	if (r.state === "key")
+		return (
+			"Stopped: your AI service turned down the key. " +
+			'<a href="#" class="reading-fix">Check it in Settings</a>.'
+		);
+	if (r.state === "paused") {
+		const at = r.paused_until
+			? new Date(r.paused_until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+			: "";
+		return (
+			"Paused: your AI service hit its usage limit. It goes on by itself" +
+			(at ? " at " + esc(at) : "") +
+			"."
+		);
+	}
+	if (r.state === "retrying")
+		return "The assistant didn't answer just now, so it tries again in a moment.";
+	return (
+		"The assistant is writing a few lines about each thing you saved, so search " +
+		"finds it by what it's about. Search by words works the whole time."
+	);
+}
+
+async function refreshReading() {
+	clearTimeout(readingTimer);
+	readingTimer = null;
+	const slot = document.getElementById("reading");
+	if (!slot) return;
+	let r;
+	try {
+		r = await api("/reading");
+	} catch {
+		r = null;
+	}
+	// The wall may have been left while the request was out.
+	if (slot !== document.getElementById("reading")) return;
+	// Once up, the line stays until the reading is done, even when fewer than the
+	// threshold are left, so it does not blink off at 351 of 360.
+	const keep = r && (r.show || (!slot.hidden && r.remaining > 0 && r.state !== "idle"));
+	if (!keep) {
+		slot.hidden = true;
+		slot.innerHTML = "";
+		return;
+	}
+	const pct = r.total ? Math.round((100 * r.done) / r.total) : 0;
+	slot.innerHTML =
+		'<div class="reading-head">' +
+		'<span class="reading-title">Reading your library</span>' +
+		'<span class="reading-count">' +
+		r.done.toLocaleString() +
+		" of " +
+		r.total.toLocaleString() +
+		"</span></div>" +
+		'<div class="reading-bar' +
+		(r.state === "reading" ? "" : " still") +
+		'" aria-hidden="true"><span style="width:' +
+		pct +
+		'%"></span></div>' +
+		'<div class="reading-why">' +
+		readingWhy(r) +
+		"</div>";
+	slot.dataset.state = r.state;
+	slot.hidden = false;
+	const fix = slot.querySelector(".reading-fix");
+	if (fix)
+		fix.addEventListener("click", (e) => {
+			e.preventDefault();
+			currentSettingsTab = "ai";
+			showSettings();
+		});
+	readingTimer = setTimeout(refreshReading, READING_POLL_MS);
+}
+
+// Something shiny (shiny.py): two or three notes from different fields that make the
+// same point, side by side above the wall, with the idea they share and a question to
+// take it further. One set a day; "Find another" walks on to the next, and the wall
+// keeps showing the last one found until tomorrow. The model's words are written in
+// the background; until they land the card shows the link's own sentence and asks
+// again a few times. "Not today" hides it until tomorrow in this browser only.
+const SHINY_DISMISSED = "enqueue.shiny.dismissed";
+const SHINY_AT = "enqueue.shiny.at";
+const SHINY_RETRY_MS = 6000;
+const SHINY_RETRIES = 4;
+// Bumped by every new fetch, so a late retry for an earlier set never draws over it.
+let shinyGen = 0;
 
 function todayStamp() {
 	return new Date().toISOString().slice(0, 10);
 }
 
-async function refreshResurface() {
-	const slot = document.getElementById("resurface");
-	if (!slot) return;
+function shinyAt() {
 	try {
-		if (localStorage.getItem(RESURFACE_DISMISSED) === todayStamp()) return;
+		const at = JSON.parse(localStorage.getItem(SHINY_AT) || "null");
+		if (at && at.day === todayStamp() && Number.isInteger(at.n) && at.n > 0) return at.n;
 	} catch (_) {
-		// No storage (private window): the strip simply always shows.
+		// No storage, or something unreadable in it: start from the day's own set.
 	}
-	let r;
+	return 0;
+}
+
+function setShinyAt(n) {
 	try {
-		r = await api("/resurface");
+		localStorage.setItem(SHINY_AT, JSON.stringify({ day: todayStamp(), n }));
 	} catch (_) {
-		return;
+		// Remembered for this visit only.
 	}
-	if (!r || !r.item || !document.body.contains(slot)) return;
-	const a = r.item;
-	const why =
-		r.reason.kind === "related"
-			? "Connects to " + esc(r.reason.via_title || "something you just saved")
-			: "Saved " + esc(since(r.reason.created_at));
+}
+
+// The raven with something shiny in its beak: the tilted raven and a small violet gem
+// that catches the light now and then (still under reduced motion).
+function shinyRavenHtml() {
+	return (
+		'<span class="shiny-raven" aria-hidden="true">' +
+		'<img src="/static/raven-tilt.png" alt="" width="64" height="72">' +
+		'<svg class="shiny-gem" viewBox="0 0 24 24">' +
+		'<path class="gem-body" d="M6 8.5 9 5h6l3 3.5L12 19z"/>' +
+		'<path class="gem-facet" d="M6 8.5h12M9 5l3 3.5L15 5M12 8.5V19"/>' +
+		'<path class="gem-glint" d="M20.5 2.5v3M19 4h3"/>' +
+		"</svg></span>"
+	);
+}
+
+// What the card shows, so a wall refresh that brings the same set redraws nothing.
+let shinyDrawn = "";
+
+function drawShiny(slot, r, n) {
+	const food = r.food || {};
+	const parts = food.parts || {};
+	const sig = JSON.stringify([n, r.notes.map((a) => a.id), food, r.more]);
+	if (sig === shinyDrawn && slot.querySelector(".shiny-card")) return;
+	shinyDrawn = sig;
+	// The end of the day's sets is where a fresh look happens (POST /shiny/again): the
+	// connections found since the morning get their turn.
+	const next = r.more
+		? '<button class="shiny-another" type="button" data-to="next">Find another' + svg("chev") + "</button>"
+		: '<button class="shiny-another" type="button" data-to="again">Look for new ones</button>';
 	slot.innerHTML =
-		'<div class="resurface-card" tabindex="0" role="button" aria-label="' +
-		esc("From your library: " + (a.title || "Untitled")) +
-		'">' +
-		'<div class="resurface-text">' +
-		'<div class="resurface-why">From your library &middot; ' +
-		why +
-		"</div>" +
-		'<div class="resurface-title">' +
-		esc(a.title || "Untitled") +
-		"</div>" +
-		(a.excerpt ? '<div class="resurface-excerpt">' + esc(mdText(a.excerpt)) + "</div>" : "") +
-		"</div>" +
-		'<button class="resurface-dismiss" type="button">Not today</button>' +
-		"</div>";
+		'<section class="shiny-card" aria-label="Something shiny">' +
+		shinyRavenHtml() +
+		'<div class="shiny-body">' +
+		'<div class="shiny-head">' +
+		(food.idea ? '<p class="shiny-idea">' + esc(food.idea) + "</p>" : "<span></span>") +
+		'<button class="shiny-dismiss" type="button">Not today</button></div>' +
+		'<ul class="shiny-notes">' +
+		r.notes
+			.map(
+				(a) =>
+					'<li><button class="shiny-note" type="button" data-id="' +
+					esc(a.id) +
+					'"><span class="shiny-title">' +
+					esc(a.title || "Untitled") +
+					"</span>" +
+					(parts[a.id] ? '<span class="shiny-how">' + esc(parts[a.id]) + "</span>" : "") +
+					"</button></li>",
+			)
+			.join("") +
+		"</ul>" +
+		'<div class="shiny-foot">' +
+		(food.question ? '<p class="shiny-question">' + esc(food.question) + "</p>" : "<span></span>") +
+		next +
+		"</div></div></section>";
 	slot.hidden = false;
-	const card = slot.querySelector(".resurface-card");
-	const open = () => openArtifact(a.id, "resurface");
-	card.addEventListener("click", (e) => {
-		if (!e.target.closest(".resurface-dismiss")) open();
+	slot.querySelectorAll(".shiny-note").forEach((b) => {
+		b.addEventListener("click", () => openArtifact(b.dataset.id, "shiny"));
 	});
-	card.addEventListener("keydown", (e) => {
-		if (e.target === card && (e.key === "Enter" || e.key === " ")) {
-			e.preventDefault();
-			open();
-		}
-	});
-	slot.querySelector(".resurface-dismiss").addEventListener("click", () => {
+	slot.querySelector(".shiny-dismiss").addEventListener("click", () => {
 		try {
-			localStorage.setItem(RESURFACE_DISMISSED, todayStamp());
+			localStorage.setItem(SHINY_DISMISSED, todayStamp());
 		} catch (_) {
 			// Hidden for this visit only.
 		}
 		slot.hidden = true;
 	});
+	slot.querySelector(".shiny-another").addEventListener("click", async (event) => {
+		const button = event.currentTarget;
+		slot.querySelector(".shiny-card").classList.add("shiny-turning");
+		if (button.dataset.to === "again") {
+			button.disabled = true;
+			button.textContent = "Looking...";
+			try {
+				await api("/shiny/again", { method: "POST" });
+			} catch (_) {
+				// Nothing new to say: the first set comes back as it was.
+			}
+			setShinyAt(0);
+			await refreshShiny(0, 0);
+		} else {
+			setShinyAt(n + 1);
+			await refreshShiny(0, n + 1);
+		}
+		slot.querySelector(".shiny-another")?.focus();
+	});
+}
+
+async function refreshShiny(tries = 0, n = shinyAt()) {
+	const slot = document.getElementById("shiny");
+	if (!slot) return;
+	try {
+		if (localStorage.getItem(SHINY_DISMISSED) === todayStamp()) return;
+	} catch (_) {
+		// No storage (private window): the card simply always shows.
+	}
+	const gen = ++shinyGen;
+	let r;
+	try {
+		r = await api("/shiny?n=" + n);
+	} catch (_) {
+		return;
+	}
+	if (gen !== shinyGen || !document.body.contains(slot)) return;
+	// The set remembered for today is gone (a note trashed since): start over.
+	if ((!r || !r.notes || r.notes.length < 2) && n > 0) {
+		setShinyAt(0);
+		return refreshShiny(0, 0);
+	}
+	if (!r || !r.notes || r.notes.length < 2) return;
+	drawShiny(slot, r, n);
+	if (r.writing && tries < SHINY_RETRIES)
+		setTimeout(() => {
+			if (gen === shinyGen && document.body.contains(slot) && !slot.hidden)
+				refreshShiny(tries + 1, n);
+		}, SHINY_RETRY_MS);
 }
 
 /// Drag-and-drop ingestion.

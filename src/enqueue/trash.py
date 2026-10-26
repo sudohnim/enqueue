@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, vault, vaultops
+from . import db, vault, vaultops
 from .sync.client import push_artifact
 
 
@@ -217,6 +217,11 @@ def purge(artifact_id: str) -> dict:
             " AND (subject LIKE ? OR subject LIKE ?)",
             (f"{artifact_id}|%", f"%|{artifact_id}"),
         )
+        # Something shiny's words name every note of its set.
+        conn.execute(
+            "DELETE FROM derived_values WHERE scope = 'shiny' AND instr(subject, ?) > 0",
+            (artifact_id,),
+        )
         # A tag the purged artifact was the last user of has nothing left to
         # reference it; drop the orphan so the cloud never lists a dead tag.
         conn.execute(
@@ -255,9 +260,10 @@ def purge(artifact_id: str) -> dict:
         ).fetchone()
 
     if row["content_hash"] and not still_used and not embedded:
-        blob = config.BLOB_DIR / row["content_hash"]
+        from . import blobstore
+
         with contextlib.suppress(OSError):
-            blob.unlink(missing_ok=True)
+            blobstore.remove(row["content_hash"])
 
     # Propagate the tombstone so other devices drop their copy too.
     try:

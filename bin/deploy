@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Ship a build to its store, through the fastlane lanes (fastlane/Fastfile). Dequeue's
+# bin/deploy, for Enqueue. bin/release only builds; this is the step that uploads.
+#
+#   bin/deploy android dev     Play internal testing (testers get it at once)
+#   bin/deploy android prod    Play production (asks first; -y skips the question;
+#                              ANDROID_PROD_ROLLOUT=0.1 for a staged rollout)
+#   bin/deploy android code    print the versionCode the next upload would use
+#   bin/deploy android listing upload the store text, icon, feature graphic and screenshots
+#   bin/deploy desktop         the signed, notarized .dmg, published on GitHub (asks first)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+YES=0
+args=()
+for a in "$@"; do
+  case "$a" in
+    -y | --yes) YES=1 ;;
+    *) args+=("$a") ;;
+  esac
+done
+PLATFORM="${args[0]:-}"
+ENVIRONMENT="${args[1]:-}"
+
+usage() {
+  echo "usage: bin/deploy android <dev|prod|code|listing> [-y]" >&2
+  echo "       bin/deploy desktop" >&2
+  exit 2
+}
+
+case "$PLATFORM" in
+  android)
+    case "$ENVIRONMENT" in
+      dev) LANE=(android dev) ;;
+      prod) LANE=(android prod) ;;
+      code) LANE=(android next_code) ;;
+      listing) LANE=(android listing) ;;
+      *) usage ;;
+    esac
+    ;;
+  desktop) LANE=(mac release) ;;
+  *) usage ;;
+esac
+
+command -v bundle >/dev/null || { echo "error: bundler not found (gem install bundler)" >&2; exit 1; }
+export LC_ALL="${LC_ALL:-en_US.UTF-8}" LANG="${LANG:-en_US.UTF-8}"
+# Gems stay in the repo (gitignored), never in Homebrew's Ruby, which a user cannot write.
+export BUNDLE_PATH="${BUNDLE_PATH:-$ROOT/vendor/bundle}"
+(cd "$ROOT" && bundle check >/dev/null 2>&1) || (cd "$ROOT" && bundle install)
+
+if [[ "${LANE[*]}" == "android prod" && $YES -eq 0 ]]; then
+  rollout="${ANDROID_PROD_ROLLOUT:-}"
+  echo "This builds a new release and submits it to the Play PRODUCTION track"
+  echo "(it enters Google's review, then reaches ${rollout:+$rollout of }everyone)."
+  read -r -p "Ship to production? [y/N] " answer
+  [[ "$answer" =~ ^[Yy]$ ]] || { echo "Not shipped."; exit 1; }
+fi
+
+if [[ "${LANE[*]}" == "mac release" ]]; then
+  # Build first; publishing is public (a GitHub release every installed Mac updates
+  # from), so it waits for a yes after the build checked out.
+  echo "==> fastlane mac release"
+  (cd "$ROOT" && bundle exec fastlane mac release)
+  if [[ $YES -eq 0 ]]; then
+    echo "This publishes the .dmg on GitHub and points every installed Mac at it."
+    read -r -p "Publish? [y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || { echo "Built, not published."; exit 0; }
+  fi
+  echo "==> fastlane mac publish"
+  cd "$ROOT" && exec bundle exec fastlane mac publish
+fi
+
+echo "==> fastlane ${LANE[*]}"
+cd "$ROOT" && exec bundle exec fastlane "${LANE[@]}"
