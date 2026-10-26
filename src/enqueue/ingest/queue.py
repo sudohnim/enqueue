@@ -670,7 +670,7 @@ def _describe_image_if_needed(artifact_id: str) -> str:
             conn.execute("UPDATE artifacts SET status = 'failed' WHERE id = ?", (artifact_id,))
         return ""
 
-    ocr = _ocr_text(path)
+    ocr = _ocr_text(path.read_bytes())
     body = text if not ocr else f"{text}\n\n{ocr}"
     with db.transaction() as conn:
         conn.execute(
@@ -680,34 +680,28 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     return body
 
 
-def _ocr_text(path) -> str:
+def _ocr_text(data: bytes) -> str:
     """OCR text via tesseract when it is installed; empty string otherwise.
 
     The vision description already asks for visible text word for word, so OCR
-    is a bonus for exact-word retrieval, never a requirement. Tesseract keys
-    file format detection off the file extension, so the blob is copied to a
-    temp file with the right one before it is asked.
+    is a bonus for exact-word retrieval, never a requirement. The picture goes to
+    tesseract on its standard input, so its plaintext never lands in a temp file.
     """
     import shutil
     import subprocess
-    import tempfile
 
     if not shutil.which("tesseract"):
         return ""
-    suffix = path.suffix or ".png"
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
-            tmp.write(path.read_bytes())
-            tmp.flush()
-            out = subprocess.run(
-                ["tesseract", tmp.name, "stdout"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+        out = subprocess.run(
+            ["tesseract", "stdin", "stdout"],
+            input=data,
+            capture_output=True,
+            timeout=60,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return ""
-    return (out.stdout or "").strip()
+    return (out.stdout or b"").decode("utf-8", "replace").strip()
 
 
 def _facet_artifact(artifact_id: str) -> int:

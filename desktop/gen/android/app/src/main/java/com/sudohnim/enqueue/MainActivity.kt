@@ -217,9 +217,24 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun billingRestore(requestId: String) =
       runOnUiThread { billing.restore { billingReply(requestId, it) } }
+
+    // ---- Signing in to Enqueue sync (SignIn.kt) -------------------------------------
+    // Answers later through window.__enqSignInReply(id, {ok, idToken | reason}).
+
+    @JavascriptInterface
+    fun googleSignIn(requestId: String) =
+      runOnUiThread { signIn.google { signInReply(requestId, it) } }
   }
 
   private val billing by lazy { Billing(this) }
+  private val signIn by lazy { SignIn(this) }
+
+  private fun signInReply(requestId: String, payload: JSONObject) {
+    val wv = webView ?: return
+    val script =
+      "window.__enqSignInReply && window.__enqSignInReply(${JSONObject.quote(requestId)}, $payload)"
+    wv.post { wv.evaluateJavascript(script, null) }
+  }
 
   private fun billingReply(requestId: String, payload: JSONObject) {
     val wv = webView ?: return

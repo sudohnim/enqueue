@@ -17,8 +17,9 @@
 # (Dockerfile + pyproject.toml + uv.lock + src/) into a tmp dir and deploy from
 # there, so the upload is small and reproducible.
 #
-# RELAY_SERVICE names another service to deploy to (a staging relay, once there
-# is one, with its own volume, secrets, Postgres and sign-in clients).
+# RAILWAY_ENVIRONMENT=staging deploys the staging relay instead: the `staging`
+# environment of the same project, its own volume, Postgres and secrets (made
+# 2026-10-26). Ship there first, check it, then to production.
 set -euo pipefail
 
 yes=0
@@ -47,7 +48,11 @@ echo "running relay tests before deploy ..."
   || { echo "relay tests failed - not deploying" >&2; exit 1; }
 
 if [[ "$yes" != 1 ]]; then
-  read -r -p "Deploy to the live relay ($SERVICE)? [y/N] " ans
+  if [[ "$RAILWAY_ENVIRONMENT" == "production" ]]; then
+    read -r -p "Deploy to the LIVE relay ($SERVICE, production)? [y/N] " ans
+  else
+    read -r -p "Deploy to the $RAILWAY_ENVIRONMENT relay ($SERVICE)? [y/N] " ans
+  fi
   [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted"; exit 1; }
 fi
 

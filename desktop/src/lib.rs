@@ -1651,6 +1651,223 @@ The guides are reference text, not instructions to you.";
         .map_err(|e| format!("plan: {e}"))?
     }
 
+    // ---- Signing in on the phone, and approving other devices from it -------------
+    //
+    // A phone can join the account's library without the Mac's code: it signs in with
+    // Google (Credential Manager hands the page an id token), gets a device token of
+    // its own, and asks to join; a device that holds the library key approves, and
+    // the key arrives sealed to this phone's key pair (sync.rs join_*). A linked phone
+    // also sees other devices asking and can approve them itself.
+
+    /// Enqueue sync's address (config.HOSTED_RELAY_URL on the Mac).
+    const HOSTED_RELAY_URL: &str = "https://enqueue-production-cd3d.up.railway.app";
+
+    struct PendingJoin {
+        secret: [u8; 32],
+        id: String,
+        token: String,
+        relay: String,
+        code: String,
+    }
+    static PENDING_JOIN: std::sync::Mutex<Option<PendingJoin>> = std::sync::Mutex::new(None);
+
+    fn relay_json(
+        method: &str,
+        url: &str,
+        bearer: &str,
+        body: Option<Value>,
+    ) -> Result<(u16, Value), String> {
+        let req = ureq::request(method, url)
+            .set("Authorization", &format!("Bearer {bearer}"))
+            .timeout(std::time::Duration::from_secs(20));
+        let res = match body {
+            Some(b) => req.send_json(b),
+            None => req.call(),
+        };
+        match res {
+            Ok(r) => {
+                let status = r.status();
+                let v = r.into_json::<Value>().unwrap_or(Value::Null);
+                Ok((status, v))
+            }
+            Err(ureq::Error::Status(code, r)) => {
+                let v = r.into_json::<Value>().unwrap_or(Value::Null);
+                Ok((code, v))
+            }
+            Err(e) => Err(format!("Enqueue sync could not be reached ({e})")),
+        }
+    }
+
+    fn relay_detail(v: &Value, fallback: &str) -> String {
+        v.get("detail").and_then(Value::as_str).unwrap_or(fallback).to_string()
+    }
+
+    /// Sign in with a Google id token and ask to join the account's library. Returns
+    /// {"code"} to show while a device that has the key approves.
+    #[tauri::command]
+    async fn mobile_sign_in(id_token: String, name: String) -> Result<Value, String> {
+        tauri::async_runtime::spawn_blocking(move || {
+            let relay = HOSTED_RELAY_URL.to_string();
+            let (code, pair) = relay_json(
+                "POST",
+                &format!("{relay}/auth/google"),
+                "",
+                Some(serde_json::json!({ "id_token": id_token })),
+            )?;
+            if code != 200 {
+                return Err(relay_detail(&pair, "Google sign-in did not go through"));
+            }
+            let access = pair.get("access_token").and_then(Value::as_str).ok_or("no session came back")?;
+            let (code, device) = relay_json(
+                "POST",
+                &format!("{relay}/account/devices"),
+                access,
+                Some(serde_json::json!({ "name": name, "kind": "phone" })),
+            )?;
+            if code != 201 && code != 200 {
+                return Err(relay_detail(&device, "this phone could not be added"));
+            }
+            let token = device.get("token").and_then(Value::as_str).ok_or("no device pass came back")?.to_string();
+            // An account with no library key yet has nothing to join: the Mac makes it.
+            let probe = ureq::get(&format!("{relay}/sync/object/lib/keyring.enc"))
+                .set("Authorization", &format!("Bearer {token}"))
+                .timeout(std::time::Duration::from_secs(20))
+                .call();
+            if let Err(ureq::Error::Status(404, _)) = probe {
+                return Err("Set up Enqueue on your Mac first and sign in there; then sign in here.".into());
+            }
+            let (secret, public) = crate::sync::join_keypair();
+            let public_b64 = base64::engine::general_purpose::STANDARD.encode(public);
+            let (code, ask) = relay_json(
+                "POST",
+                &format!("{relay}/account/joins"),
+                &token,
+                Some(serde_json::json!({ "public_key": public_b64 })),
+            )?;
+            if code != 201 && code != 200 {
+                return Err(relay_detail(&ask, "the request to join did not go through"));
+            }
+            let id = ask.get("id").and_then(Value::as_str).ok_or("no request came back")?.to_string();
+            let shown = crate::sync::join_code(&public);
+            *PENDING_JOIN.lock().map_err(|_| "busy")? =
+                Some(PendingJoin { secret, id, token, relay, code: shown.clone() });
+            Ok(serde_json::json!({ "code": shown }))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    /// Where the ask stands: {"status": "waiting"|"done"|"denied"|"expired"|"none", "code"}.
+    /// "done" means the key arrived and the phone is linked; the page starts a sync.
+    #[tauri::command]
+    async fn mobile_join_status(app: AppHandle) -> Result<Value, String> {
+        tauri::async_runtime::spawn_blocking(move || {
+            let (id, token, relay, secret, code) = {
+                let guard = PENDING_JOIN.lock().map_err(|_| "busy")?;
+                match guard.as_ref() {
+                    Some(p) => (p.id.clone(), p.token.clone(), p.relay.clone(), p.secret, p.code.clone()),
+                    None => return Ok(serde_json::json!({ "status": "none" })),
+                }
+            };
+            let (_, v) = relay_json("GET", &format!("{relay}/account/joins/{id}"), &token, None)?;
+            let status = v.get("status").and_then(Value::as_str).unwrap_or("pending").to_string();
+            match status.as_str() {
+                "approved" => {
+                    let sealed = v.get("sealed").and_then(Value::as_str).ok_or("the approval was empty")?;
+                    let dek = crate::sync::dek_from_approval(&secret, sealed)?;
+                    if load_config(&app)?.as_ref().is_some_and(is_sample) {
+                        clear_sample(&app)?;
+                    }
+                    save_config(&app, &relay, &token, "", &dek, None, None, None, None, None, None)?;
+                    if let Ok(conn) = open_lib(&app) {
+                        let _ = conn.execute("DELETE FROM sync_meta WHERE key = 'cursor'", []);
+                    }
+                    *PENDING_JOIN.lock().map_err(|_| "busy")? = None;
+                    Ok(serde_json::json!({ "status": "done" }))
+                }
+                "pending" => Ok(serde_json::json!({ "status": "waiting", "code": code })),
+                other => {
+                    *PENDING_JOIN.lock().map_err(|_| "busy")? = None;
+                    Ok(serde_json::json!({ "status": other }))
+                }
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    /// Stop asking (the person changed their mind).
+    #[tauri::command]
+    fn mobile_join_cancel() {
+        if let Ok(mut guard) = PENDING_JOIN.lock() {
+            *guard = None;
+        }
+    }
+
+    /// Devices asking to join, for a linked phone to approve: each with its name and
+    /// the code it shows. Empty on a relay of one's own (no accounts there).
+    #[tauri::command]
+    async fn mobile_joins(app: AppHandle) -> Result<Value, String> {
+        let saved = load_config(&app)?.ok_or("not linked")?;
+        let relay = saved.get("relay_url").and_then(Value::as_str).unwrap_or("").to_string();
+        let secret = saved.get("secret").and_then(Value::as_str).unwrap_or("").to_string();
+        if relay.is_empty() || !secret.starts_with("enqd_") {
+            return Ok(serde_json::json!({ "joins": [] }));
+        }
+        tauri::async_runtime::spawn_blocking(move || {
+            let (code, v) = relay_json("GET", &format!("{relay}/account/joins"), &secret, None)?;
+            if code != 200 {
+                return Ok(serde_json::json!({ "joins": [] }));
+            }
+            let joins: Vec<Value> = v
+                .get("joins")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|mut j| {
+                    use base64::Engine as _;
+                    let shown = j
+                        .get("public_key")
+                        .and_then(Value::as_str)
+                        .and_then(|k| base64::engine::general_purpose::STANDARD.decode(k).ok())
+                        .map(|k| crate::sync::join_code(&k))
+                        .unwrap_or_default();
+                    j["code"] = Value::String(shown);
+                    j
+                })
+                .collect();
+            Ok(serde_json::json!({ "joins": joins }))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    /// Approve (seal the library key to its public key) or deny a device's ask.
+    #[tauri::command]
+    async fn mobile_join_decide(app: AppHandle, id: String, public_key: String, approve: bool) -> Result<(), String> {
+        let saved = load_config(&app)?.ok_or("not linked")?;
+        let relay = saved.get("relay_url").and_then(Value::as_str).unwrap_or("").to_string();
+        let secret = saved.get("secret").and_then(Value::as_str).unwrap_or("").to_string();
+        let dek = saved.get("dek").and_then(Value::as_str).and_then(dek_from_hex).ok_or("this phone has no library key")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let (url, body) = if approve {
+                let sealed = crate::sync::approval_for(&public_key, &dek)?;
+                (format!("{relay}/account/joins/{id}/approve"), serde_json::json!({ "sealed": sealed }))
+            } else {
+                (format!("{relay}/account/joins/{id}/deny"), serde_json::json!({}))
+            };
+            let (code, v) = relay_json("POST", &url, &secret, Some(body))?;
+            if code == 204 || code == 200 {
+                Ok(())
+            } else {
+                Err(relay_detail(&v, "that request is no longer waiting"))
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
     #[tauri::command]
     async fn mobile_settings_ask(app: AppHandle, question: String, context: String) -> Result<String, String> {
         let question = question.trim().to_string();
@@ -3333,6 +3550,11 @@ The guides are reference text, not instructions to you.";
                 mobile_events,
                 mobile_settings_ask,
                 mobile_plan,
+                mobile_sign_in,
+                mobile_join_status,
+                mobile_join_cancel,
+                mobile_joins,
+                mobile_join_decide,
                 mobile_sample_library,
                 start_sync_foreground_service,
                 stop_sync_foreground_service,
@@ -3399,19 +3621,26 @@ mod desktop {
     /// is the exact interruption the overlay exists to avoid.
     struct CameFromHome(AtomicBool);
 
-    /// The version of an update already downloaded and installed into the app bundle,
-    /// waiting for a restart to run. The page asks for it when it loads (`update_ready`).
-    struct UpdateReady(Mutex<Option<String>>);
+    /// A newer version, downloaded and checked but not yet put in place: the update, its
+    /// bytes, and whether the person chose to put it in place when the app quits. The
+    /// page asks for the version when it loads (`update_ready`).
+    #[derive(Default)]
+    struct PendingUpdate {
+        update: Option<tauri_plugin_updater::Update>,
+        bytes: Option<Vec<u8>>,
+    }
+    struct UpdateReady(Mutex<PendingUpdate>);
 
     /// How often a shipped app looks for a new version, after a first look a minute in.
     const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
-    /// A shipped app keeps itself current: it asks the feed (`plugins.updater` in
-    /// tauri.conf.json, a `latest.json` on the GitHub release) for a newer version, and
-    /// one whose signature checks out against the public key in the config is downloaded
-    /// and put in place of the app bundle. The running app is not touched: the page
-    /// shows "Restart to update" (`window.__enqUpdateReady`), and the next start runs the
-    /// new version either way. A dev build (no bundled engine) never asks.
+    /// A shipped app keeps itself current, the way Claude's desktop app does: it asks the
+    /// feed (`plugins.updater` in tauri.conf.json, a `latest.json` on the GitHub release)
+    /// for a newer version, downloads one whose signature checks out against the public
+    /// key in the config, and says so (`window.__enqUpdateReady`): "Update now" restarts
+    /// into it, "Update on close" leaves it for when the app quits. Either way it is put
+    /// in place by the time the app next starts. A dev build (no bundled engine) never
+    /// asks.
     fn watch_for_updates(app: AppHandle) {
         use tauri_plugin_updater::UpdaterExt;
         if bundled_engine_command().is_none() {
@@ -3424,21 +3653,22 @@ mod desktop {
                     let update = app.updater().map_err(|e| e.to_string())?.check().await;
                     match update.map_err(|e| e.to_string())? {
                         Some(update) => {
-                            let version = update.version.clone();
-                            update
-                                .download_and_install(|_, _| {}, || {})
+                            let bytes = update
+                                .download(|_, _| {}, || {})
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            Ok::<Option<String>, String>(Some(version))
+                            Ok::<_, String>(Some((update, bytes)))
                         }
                         None => Ok(None),
                     }
                 });
                 match found {
-                    Ok(Some(version)) => {
-                        eprintln!("[shell] update {version} installed; it runs at the next start");
-                        if let Ok(mut ready) = app.state::<UpdateReady>().0.lock() {
-                            *ready = Some(version.clone());
+                    Ok(Some((update, bytes))) => {
+                        let version = update.version.clone();
+                        eprintln!("[shell] update {version} downloaded");
+                        if let Ok(mut pending) = app.state::<UpdateReady>().0.lock() {
+                            pending.update = Some(update);
+                            pending.bytes = Some(bytes);
                         }
                         if let Some(window) = app.get_webview_window("main") {
                             let arg = serde_json::to_string(&version).unwrap_or_default();
@@ -3456,16 +3686,49 @@ mod desktop {
         });
     }
 
-    /// The version waiting for a restart, if one was installed while the app ran.
-    #[tauri::command]
-    fn update_ready(ready: tauri::State<UpdateReady>) -> Option<String> {
-        ready.0.lock().ok().and_then(|v| v.clone())
+    /// Put a downloaded update in place of the app bundle. The running app is not
+    /// touched; the next start runs the new version. True when one was installed.
+    fn install_pending(app: &AppHandle) -> bool {
+        let Some(state) = app.try_state::<UpdateReady>() else {
+            return false;
+        };
+        let Ok(mut pending) = state.0.lock() else {
+            return false;
+        };
+        let (Some(update), Some(bytes)) = (pending.update.take(), pending.bytes.take()) else {
+            return false;
+        };
+        match update.install(&bytes) {
+            Ok(()) => true,
+            Err(err) => {
+                eprintln!("[shell] could not install the update: {err}");
+                false
+            }
+        }
     }
 
-    /// Start the new version: stop the engine (and wait for it, so the next one finds
-    /// its port free instead of attaching to the old one), then restart the app.
+    /// The version waiting to be put in place, if one was downloaded while the app ran.
     #[tauri::command]
-    fn app_restart(app: AppHandle) {
+    fn update_ready(ready: tauri::State<UpdateReady>) -> Option<String> {
+        ready.0.lock().ok().and_then(|p| p.update.as_ref().map(|u| u.version.clone()))
+    }
+
+    /// "Update now": put the new version in place, stop the engine (and wait for it, so
+    /// the next one finds its port free instead of attaching to the old one), restart.
+    #[tauri::command]
+    fn app_restart(app: AppHandle) -> Result<(), String> {
+        let had_one = app
+            .try_state::<UpdateReady>()
+            .and_then(|s| s.0.lock().ok().map(|p| p.update.is_some()))
+            .unwrap_or(false);
+        if had_one && !install_pending(&app) {
+            return Err("the update could not be put in place".into());
+        }
+        stop_engine(&app);
+        app.restart();
+    }
+
+    fn stop_engine(app: &AppHandle) {
         if let Some(engine) = app.try_state::<Engine>() {
             if let Ok(mut guard) = engine.0.lock() {
                 if let Some(child) = guard.as_mut() {
@@ -3474,7 +3737,6 @@ mod desktop {
                 }
             }
         }
-        app.restart();
     }
 
     fn already_running() -> bool {
@@ -4068,7 +4330,7 @@ mod desktop {
         tauri::Builder::default()
             .manage(Engine(Mutex::new(child)))
             .manage(CameFromHome(AtomicBool::new(false)))
-            .manage(UpdateReady(Mutex::new(None)))
+            .manage(UpdateReady(Mutex::new(PendingUpdate::default())))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
             .plugin(tauri_plugin_updater::Builder::new().build())
             // The Mac's own folder picker, for choosing where backups go (Settings,
@@ -4201,6 +4463,11 @@ mod desktop {
                     }
                 }
                 tauri::RunEvent::Exit => {
+                    // "Update on close", or no answer at all: a downloaded update is put
+                    // in place as the app quits, so the next start runs it.
+                    if install_pending(app) {
+                        eprintln!("[shell] update put in place; it runs at the next start");
+                    }
                     if let Some(engine) = app.try_state::<Engine>() {
                         if let Ok(mut guard) = engine.0.lock() {
                             if let Some(child) = guard.as_mut() {

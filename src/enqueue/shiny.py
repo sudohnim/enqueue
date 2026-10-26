@@ -114,13 +114,8 @@ def _grow(first: dict, pairs: list[dict]) -> tuple[list[str], list[dict]]:
     return ids, links
 
 
-def pick(today: date | None = None, n: int = 0) -> dict | None:
-    """{"ids", "links", "more"} for today's set, or None when the library has no
-    relationship across fields yet (or `n` has gone past the last one). `links` are the
-    pairs inside the set, each with its kind, the judge's sentence (`point`) or the
-    shared name (`via`). `n` is "Find another": 0 is the day's own set, each next one
-    the next pair in the day's order; `more` says whether there is another after it."""
-    today = today or datetime.now(timezone.utc).date()
+def _order(today: date) -> list[tuple[list[str], list[dict]]]:
+    """The day's sets, best first, computed from the links as they stand."""
     conn = db.get_conn()
     try:
         pairs = _pairs(conn)
@@ -129,28 +124,110 @@ def pick(today: date | None = None, n: int = 0) -> dict | None:
     # A shared name is thin fare beside a shared idea: only when there is no idea link.
     ideas = [p for p in pairs if p["kind"] == "idea"]
     if not pairs:
-        return None
+        return []
     pool = ideas or pairs
     top, rest = pool[:ROTATE], pool[ROTATE:]
     start = today.toordinal() % len(top)
     # The day's order: the farthest pairs from today's turn on, then everything else.
     # A set whose notes were all in an earlier one is skipped, or "Find another" would
     # show the same three notes again by way of another of their pairs.
+    keep = ("a", "b", "kind", "point", "via")
     sets: list[tuple[list[str], list[dict]]] = []
     for first in top[start:] + top[:start] + rest:
         ids, links = _grow(first, pairs)
         if any(set(ids) <= set(shown) for shown, _ in sets):
             continue
-        sets.append((ids, links))
+        sets.append((ids, [{k: p[k] for k in keep} for p in links]))
+    return sets
+
+
+# The day's sets are chosen once and kept (derived_values, scope `shiny_day`), so the
+# card holds still all day: links keep arriving as the related judge works, and a set
+# recomputed on every wall refresh changed under the person every few seconds.
+def _kept(conn, day: str) -> list | None:
+    row = conn.execute(
+        "SELECT value FROM derived_values WHERE scope = 'shiny_day' AND subject = ?"
+        " AND attribute = 'sets' AND source = 'model'",
+        (day,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(row["value"])
+    except ValueError:
+        return None
+
+
+def _keep(day: str, sets: list) -> None:
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM derived_values WHERE scope = 'shiny_day'")
+        conn.execute(
+            "INSERT INTO derived_values"
+            " (scope, subject, attribute, value, grounded, source, model_version, created_at)"
+            " VALUES ('shiny_day', ?, 'sets', ?, 1, 'model', '', ?)",
+            (day, json.dumps(sets), db.now()),
+        )
+
+
+def _live(conn, ids: list[str]) -> set[str]:
+    rows = conn.execute(
+        f"SELECT a.id FROM artifacts a WHERE a.id IN (SELECT value FROM json_each(?)) AND {_LIVE}",
+        (json.dumps(ids),),
+    ).fetchall()
+    return {r["id"] for r in rows}
+
+
+def pick(today: date | None = None, n: int = 0) -> dict | None:
+    """{"ids", "links", "more"} for today's set, or None when the library has no
+    relationship across fields yet (or `n` has gone past the last one). `links` are the
+    pairs inside the set, each with its kind, the judge's sentence (`point`) or the
+    shared name (`via`). `n` is "Find another": 0 is the day's own set, each next one
+    the next pair in the day's order; `more` says whether there is another after it.
+    The order is chosen once a day and kept; a note trashed since drops its sets."""
+    today = today or datetime.now(timezone.utc).date()
+    day = today.isoformat()
+    conn = db.get_conn()
+    try:
+        sets = _kept(conn, day)
+    finally:
+        conn.close()
+    if sets is None:
+        sets = [[ids, links] for ids, links in _order(today)]
+        # Nothing to show yet is not kept: the first connection of the day shows at once.
+        if sets:
+            _keep(day, sets)
+    conn = db.get_conn()
+    try:
+        live = _live(conn, [i for ids, _ in sets for i in ids])
+    finally:
+        conn.close()
+    sets = [(ids, links) for ids, links in sets if all(i in live for i in ids)]
     if n < 0 or n >= len(sets):
         return None
     ids, links = sets[n]
-    keep = ("a", "b", "kind", "point", "via")
-    return {
-        "ids": ids,
-        "links": [{k: p[k] for k in keep} for p in links],
-        "more": n + 1 < len(sets),
-    }
+    return {"ids": ids, "links": links, "more": n + 1 < len(sets)}
+
+
+def look_again(today: date | None = None) -> None:
+    """Choose today's sets again from the links as they stand now (the card's "Look
+    again"): new connections found since the morning get their turn."""
+    today = today or datetime.now(timezone.utc).date()
+    _keep(today.isoformat(), [[ids, links] for ids, links in _order(today)])
+
+
+def prepare(day: date | None = None) -> bool:
+    """Once a day (backup.start_scheduler's beat): choose the day's sets and have the
+    model write the first one's words, so the card is ready when the wall opens. True
+    when it did anything."""
+    day = day or datetime.now(timezone.utc).date()
+    conn = db.get_conn()
+    try:
+        done = _kept(conn, day.isoformat()) is not None
+    finally:
+        conn.close()
+    if done:
+        return False
+    return today(day, 0, background=False) is not None
 
 
 def _faces(conn, ids: list[str]) -> dict[str, dict]:

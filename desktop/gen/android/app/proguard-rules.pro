@@ -33,3 +33,7 @@
 # RevenueCat (Billing.kt): its own consumer rules cover it; kept whole as Dequeue does,
 # since a stripped model class fails only at purchase time, on a release build.
 -keep class com.revenuecat.purchases.** { *; }
+
+# Credential Manager finds its Play Services provider by name (SignIn.kt).
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }

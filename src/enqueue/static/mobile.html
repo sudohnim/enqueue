@@ -243,6 +243,22 @@
   .welcome-sample-btn:disabled {
     opacity: 0.6;
   }
+  .welcome-join {
+    margin-top: var(--sp-5);
+    text-align: center;
+  }
+  .welcome-join-lead,
+  .welcome-join-wait {
+    color: var(--text-mute);
+    font-size: 15px;
+  }
+  .welcome-join-code {
+    margin: var(--sp-3) 0;
+    font-size: 34px;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
   .welcome-scan-btn {
     width: 100%;
     padding: 15px 28px;
@@ -2864,6 +2880,18 @@
   <div id="setup_camera" class="welcome-scan">
     <button id="scan_qr_btn" class="welcome-scan-btn">Scan the code</button>
     <p id="scan_status" class="welcome-scan-status"></p>
+  </div>
+  <!-- Or sign in: the phone asks to join the account's library and a device that has
+       the key approves it (mobile_sign_in, mobile_join_status). Android only. -->
+  <div id="setup_sign_in" class="welcome-sample" hidden>
+    <p>Or, signed in to Enqueue sync on your Mac?</p>
+    <button id="google_sign_in_btn" type="button" class="welcome-sample-btn">Sign in with Google</button>
+  </div>
+  <div id="setup_join" class="welcome-join" hidden>
+    <p class="welcome-join-lead">On your Mac, approve this phone. It shows the same code:</p>
+    <p class="welcome-join-code" id="join_code"></p>
+    <p class="welcome-join-wait" id="join_wait">Waiting for approval...</p>
+    <button id="join_cancel_btn" type="button" class="welcome-sample-btn">Cancel</button>
   </div>
   <div id="setup_no_camera" class="welcome-scan" style="display: none">
     <p>Enqueue needs the camera to scan the code.</p>
@@ -6152,6 +6180,143 @@
       setStatus("Link failed: " + errString(e), "error");
     }
   }
+
+  // ---- Signing in to Enqueue sync on the phone ------------------------------------
+  // Google hands the shell an id token (SignIn.kt); the phone signs in, asks to join
+  // the account's library and waits for a device that has the key to approve it,
+  // showing the same code. Then it is linked as if it had scanned the Mac's code.
+  const signInBridge =
+    window.EnqueueAndroid && typeof window.EnqueueAndroid.googleSignIn === "function"
+      ? window.EnqueueAndroid
+      : null;
+  const _signInWaiting = new Map();
+  let _signInSeq = 0;
+  window.__enqSignInReply = (id, payload) => {
+    const resolve = _signInWaiting.get(id);
+    if (!resolve) return;
+    _signInWaiting.delete(id);
+    resolve(payload || { ok: false, reason: "error" });
+  };
+  function googleIdToken() {
+    return new Promise((resolve) => {
+      const id = "sign" + ++_signInSeq;
+      _signInWaiting.set(id, resolve);
+      try {
+        signInBridge.googleSignIn(id);
+      } catch (_) {
+        _signInWaiting.delete(id);
+        resolve({ ok: false, reason: "unavailable" });
+      }
+    });
+  }
+  if (signInBridge) document.getElementById("setup_sign_in").hidden = false;
+
+  let joinPoll = null;
+  function showJoin(on) {
+    document.getElementById("setup_join").hidden = !on;
+    document.getElementById("setup_sign_in").hidden = on || !signInBridge;
+    document.getElementById("setup_camera").hidden = on;
+    document.getElementById("setup_sample").hidden = on;
+  }
+  function stopJoinPoll() {
+    if (joinPoll) clearInterval(joinPoll);
+    joinPoll = null;
+  }
+  async function linkedBySignIn() {
+    stopJoinPoll();
+    showJoin(false);
+    setSampleMode(false);
+    show("library");
+    document.getElementById("loading").hidden = false;
+    document.getElementById("shelves").replaceChildren();
+    document.getElementById("empty").hidden = true;
+    await invoke("mobile_sync", { config: "{}" });
+  }
+  async function checkJoin() {
+    let r;
+    try {
+      r = await invoke("mobile_join_status");
+    } catch (e) {
+      document.getElementById("join_wait").textContent = errString(e);
+      return;
+    }
+    if (r.status === "done") return linkedBySignIn();
+    if (r.status === "waiting") return;
+    stopJoinPoll();
+    showJoin(false);
+    setStatus(
+      r.status === "denied"
+        ? "The request was turned down on your other device."
+        : "The request ran out. Sign in again to ask once more.",
+      "error",
+    );
+  }
+  document.getElementById("google_sign_in_btn").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    setStatus("");
+    try {
+      const google = await googleIdToken();
+      if (!google.ok) {
+        if (google.reason !== "cancelled")
+          setStatus(
+            google.reason === "no_account"
+              ? "Add a Google account to this phone first."
+              : "Google sign-in did not go through. Try again.",
+            "error",
+          );
+        return;
+      }
+      const asked = await invoke("mobile_sign_in", { idToken: google.idToken, name: "Phone" });
+      document.getElementById("join_code").textContent = asked.code;
+      document.getElementById("join_wait").textContent = "Waiting for approval...";
+      showJoin(true);
+      stopJoinPoll();
+      joinPoll = setInterval(checkJoin, 3000);
+    } catch (e) {
+      setStatus(errString(e), "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  document.getElementById("join_cancel_btn").addEventListener("click", () => {
+    stopJoinPoll();
+    invoke("mobile_join_cancel").catch(() => {});
+    showJoin(false);
+  });
+
+  // A linked phone approves other devices asking to join (mobile_joins): asked when the
+  // app comes to the front and every 15 seconds while it stays there.
+  const joinsPrompted = new Set();
+  let joinsBusy = false;
+  async function checkJoinAsks() {
+    if (joinsBusy || document.hidden || sampleOn) return;
+    if (document.querySelector(".mconfirm-backdrop")) return;
+    joinsBusy = true;
+    try {
+      const { joins } = await invoke("mobile_joins");
+      const ask = (joins || []).find((j) => !joinsPrompted.has(j.id));
+      if (!ask) return;
+      joinsPrompted.add(ask.id);
+      const yes = await mobileSheet({
+        title: (ask.name || "A device") + " wants to join your library",
+        points: [
+          "It shows this code: " + ask.code + ".",
+          "Approve only if the code matches. It can then read everything in your library.",
+        ],
+        ok: "Approve",
+        cancel: "Deny",
+      });
+      await invoke("mobile_join_decide", { id: ask.id, publicKey: ask.public_key, approve: !!yes });
+      toast(yes ? "Approved. It is syncing now." : "Turned down.");
+    } catch (_) {
+      // Not linked to Enqueue sync, or offline: nothing to approve now.
+    } finally {
+      joinsBusy = false;
+    }
+  }
+  setInterval(checkJoinAsks, 15000);
+  document.addEventListener("visibilitychange", checkJoinAsks);
 
   document.getElementById("scan_qr_btn").addEventListener("click", async () => {
     if (scanActive) return;

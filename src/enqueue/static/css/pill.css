@@ -487,34 +487,37 @@ dialog.ask.name .namefield:focus {
 	border-color: transparent;
 }
 
-/* A new version of the Mac app is in place (js/update.js): it waits, bottom right, until
-   the person restarts or puts it off. */
+/* A new version of the Mac app is downloaded (js/update.js): a card at the bottom right,
+   above the pill's row, until the person updates or puts it off to quit time. */
 .update-ready {
 	position: fixed;
-	right: var(--sp-4);
-	bottom: 108px;
+	right: var(--sp-5);
+	bottom: var(--sp-5);
 	z-index: var(--z-menu);
+	width: 320px;
+	max-width: calc(100vw - 32px);
 	display: flex;
-	align-items: center;
+	flex-direction: column;
 	gap: var(--sp-3);
 	background: var(--surface-doc);
 	color: var(--text);
 	border-radius: var(--r-xl);
 	box-shadow: var(--shadow-lifted);
-	padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-	font-size: 15px;
-	animation: rise var(--dur) ease both;
+	padding: var(--sp-4);
+	animation: drop-in var(--dur) ease both;
 }
-.update-later {
-	background: none;
-	border: 0;
+.update-title {
+	font-weight: var(--w-medium);
+}
+.update-sub {
+	font-size: 14px;
+	line-height: 20px;
 	color: var(--text-mute);
-	font: inherit;
-	padding: var(--sp-2);
-	cursor: pointer;
 }
-.update-later:hover {
-	color: var(--text);
+.update-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--sp-2);
 }
 
 /* ---- drag-and-drop overlay ------------------------------------------------

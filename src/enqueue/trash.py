@@ -23,7 +23,7 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, vault, vaultops
+from . import db, vault, vaultops
 from .sync.client import push_artifact
 
 
@@ -260,9 +260,10 @@ def purge(artifact_id: str) -> dict:
         ).fetchone()
 
     if row["content_hash"] and not still_used and not embedded:
-        blob = config.BLOB_DIR / row["content_hash"]
+        from . import blobstore
+
         with contextlib.suppress(OSError):
-            blob.unlink(missing_ok=True)
+            blobstore.remove(row["content_hash"])
 
     # Propagate the tombstone so other devices drop their copy too.
     try:

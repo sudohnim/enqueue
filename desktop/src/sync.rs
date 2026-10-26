@@ -2189,8 +2189,99 @@ pub fn key_from_hex(s: &str) -> Result<[u8; DEK_LEN], String> {
     Ok(out)
 }
 
+// ---- Device approval (the phone's side of sync/join.py) --------------------------
+//
+// A phone signed in to Enqueue sync asks to join the account's library with a fresh
+// X25519 key pair; a device that holds the library key seals it to the public half
+// (libsodium's sealed box, what the Mac's PyNaCl `SealedBox` makes) and the phone opens
+// it. Both show a six-digit code made from the public key, so the person can see the
+// two ends are talking about the same ask. A phone that holds the key approves other
+// devices the same way. The key pair lives in memory only.
+
+/// A fresh key pair for asking to join: (secret, public).
+pub fn join_keypair() -> ([u8; 32], [u8; 32]) {
+    let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
+    let public = secret.public_key();
+    (secret.to_bytes(), *public.as_bytes())
+}
+
+/// The six digits both devices show for an ask ("482 913"), as crypto.join_code.
+pub fn join_code(public_key: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"enqueue join v1");
+    h.update(public_key);
+    let digest = h.finalize();
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&digest[..8]);
+    let n = u64::from_be_bytes(first) % 1_000_000;
+    let digits = format!("{n:06}");
+    format!("{} {}", &digits[..3], &digits[3..])
+}
+
+/// Seal `message` to a public key (libsodium crypto_box_seal).
+pub fn seal_to(public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
+    let key: [u8; 32] = public_key.try_into().map_err(|_| "a public key is 32 bytes".to_string())?;
+    crypto_box::PublicKey::from(key)
+        .seal(&mut crypto_box::aead::OsRng, message)
+        .map_err(|_| "could not seal".to_string())
+}
+
+/// Open a sealed box with our secret key.
+pub fn open_sealed(secret: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, String> {
+    crypto_box::SecretKey::from(*secret)
+        .unseal(sealed)
+        .map_err(|_| "the key that arrived could not be opened".to_string())
+}
+
+/// The library key out of an approval's sealed payload ({"dek": hex}).
+pub fn dek_from_approval(secret: &[u8; 32], sealed_b64: &str) -> Result<[u8; 32], String> {
+    use base64::Engine as _;
+    let sealed = base64::engine::general_purpose::STANDARD
+        .decode(sealed_b64.trim())
+        .map_err(|_| "the approval was not readable".to_string())?;
+    let plain = open_sealed(secret, &sealed)?;
+    let payload: Value = serde_json::from_slice(&plain).map_err(|_| "the key that arrived was not whole")?;
+    let hexed = payload.get("dek").and_then(Value::as_str).ok_or("the key that arrived was not whole")?;
+    let raw = hex::decode(hexed).map_err(|_| "the key that arrived was not whole")?;
+    raw.try_into().map_err(|_| "the key that arrived was not whole".to_string())
+}
+
+/// The sealed payload that approves a device: the library key for its public key.
+pub fn approval_for(public_key_b64: &str, dek: &[u8]) -> Result<String, String> {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let public = b64.decode(public_key_b64.trim()).map_err(|_| "not a public key".to_string())?;
+    let payload = serde_json::json!({ "dek": hex::encode(dek) }).to_string();
+    Ok(b64.encode(seal_to(&public, payload.as_bytes())?))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pynacl_sealed_key_opens_here_and_the_codes_agree() {
+        // Made with the Mac's crypto.seal_to / crypto.join_code (PyNaCl).
+        let mut secret = [0u8; 32];
+        for (i, b) in secret.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let public = hex::decode("8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f").unwrap();
+        let sealed = "H3mfBsZm12kdQIndHTYfNCz/dn8UxIuiVcNpmAcgF1wmvQDL9oYf2N1nochkJ+EH67v3w/aBrMOn+IJB+DFDbYVgL2frZARRpJMyjCUHYRyoWIiv8ORDoD82sAgG/7QtKlj5ZBdp+I4xDq6npHFsUItFws2CWSAFoc8v";
+        assert_eq!(dek_from_approval(&secret, sealed).unwrap(), [0xab; 32]);
+        assert_eq!(join_code(&public), "108 920");
+    }
+
+    #[test]
+    fn an_approval_made_here_opens_with_the_askers_key() {
+        use base64::Engine as _;
+        let (secret, public) = join_keypair();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(public);
+        let sealed = approval_for(&b64, &[7u8; 32]).unwrap();
+        assert_eq!(dek_from_approval(&secret, &sealed).unwrap(), [7u8; 32]);
+        let (other, _) = join_keypair();
+        assert!(dek_from_approval(&other, &sealed).is_err());
+    }
+
     mod vault_fingerprint {
         use super::super::*;
 

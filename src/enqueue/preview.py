@@ -28,12 +28,11 @@ import contextlib
 import os
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from . import config, db, netguard
+from . import blobstore, db, netguard
 from .ingest import queue as ingest_queue
 
 # Enough for any <head> worth reading. A page that has not declared itself by then
@@ -194,7 +193,6 @@ def _fetch_image(url: str) -> tuple[str, str] | None:
     again. Everything here is a limit: the type must be a real raster image, the size
     is capped, and nothing is written until the bytes have been seen.
     """
-    import hashlib
 
     if urlparse(url).scheme not in ("http", "https"):
         return None
@@ -232,23 +230,16 @@ def _fetch_image(url: str) -> tuple[str, str] | None:
     if not data:
         return None
 
-    digest = hashlib.sha256(data).hexdigest()
-    config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
-    blob = config.BLOB_DIR / digest
-    if not blob.exists():
-        blob.write_bytes(data)
+    digest = blobstore.write(data)
     return digest, mime
 
 
-def image(artifact_id: str) -> tuple[Path, str] | None:
-    """The stored picture for a link, as (path, mime)."""
+def image(artifact_id: str) -> tuple[bytes, str] | None:
+    """The stored picture for a link, as (bytes, mime)."""
     row = get(artifact_id)
-    if not row or not row.get("image_hash"):
+    if not row or not row.get("image_hash") or not blobstore.exists(row["image_hash"]):
         return None
-    path = config.BLOB_DIR / row["image_hash"]
-    if not path.exists():
-        return None
-    return path, row.get("image_mime") or "application/octet-stream"
+    return blobstore.read(row["image_hash"]), row.get("image_mime") or "application/octet-stream"
 
 
 def _why(exc: Exception) -> str:

@@ -61,12 +61,12 @@ def try_open(key: bytes, value: str | None) -> str | None:
 
 
 def _blob_file(content_hash: str | None):
-    from . import config
+    """The stored file, read and written through blobstore (sealed on disk)."""
+    from . import blobstore
 
-    if not content_hash:
+    if not content_hash or not blobstore.exists(content_hash):
         return None
-    path = config.BLOB_DIR / content_hash
-    return path if path.exists() else None
+    return blobstore.Handle(content_hash)
 
 
 def _remove_model_rows(conn, artifact_id: str) -> int:

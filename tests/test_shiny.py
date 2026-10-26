@@ -288,3 +288,24 @@ def test_find_another_never_shows_the_same_notes_again(store):
     assert sorted(first["ids"]) == ["a", "b", "c"]
     assert first["more"] is False  # b-c alone is already inside the first set
     assert shiny.pick(TODAY, 1) is None
+
+
+def test_the_days_set_holds_still_while_new_links_arrive(store, writer):
+    for aid in "abcd":
+        _note(aid)
+    _link("a", "b", "idea", 0.5, point="Both one.")
+    first = shiny.pick(TODAY)
+    _link("c", "d", "idea", 0.99, point="Both two.")  # farther, found later in the day
+    assert shiny.pick(TODAY)["ids"] == first["ids"]
+    assert shiny.pick(TODAY, 1) is None  # the new pair is not slipped in either
+    shiny.look_again(TODAY)  # the card's "Look again" takes it into account
+    shown = [set(shiny.pick(TODAY, n)["ids"]) for n in (0, 1)]
+    assert {"c", "d"} in shown
+
+
+def test_prepare_runs_once_a_day(store, writer):
+    _note("a")
+    _note("b")
+    _link("a", "b", "idea", 0.8, point="Both one.")
+    assert shiny.prepare(TODAY) is True
+    assert shiny.prepare(TODAY) is False

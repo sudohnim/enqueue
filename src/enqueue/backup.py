@@ -514,6 +514,14 @@ def start_scheduler() -> None:
                     drafts.thin()
                 except Exception:  # noqa: BLE001 - never stop the scheduler
                     pass
+            # Something shiny (shiny.py) chooses the day's sets and writes the first
+            # one's words once a day, on this hourly beat; it keeps its own day stamp.
+            try:
+                from . import shiny
+
+                shiny.prepare()
+            except Exception:  # noqa: BLE001 - never stop the scheduler
+                log.exception("something shiny could not be prepared")
             # The search index's daily upkeep (ingest/queue.py), on this hourly beat
             # whether or not backups are on; it keeps its own once-a-day stamp.
             try:

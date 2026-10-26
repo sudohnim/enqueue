@@ -60,7 +60,7 @@ On the Mac, open **Settings > Sync** and press **Show the code**; on the phone, 
 ### Updates
 
 The Mac app keeps itself up to date.
-It looks for a new version every few hours and puts it in place quietly; a note offers **Restart** to start it now, and otherwise it runs the next time you open Enqueue.
+It looks for a new version every few hours and downloads it quietly. A card at the bottom right offers **Update now** (Enqueue restarts into it) or **Update on close** (it is put in place when you quit, which also happens if you ignore the card).
 
 ## Capturing
 
@@ -336,6 +336,9 @@ To link a phone:
 1. On the Mac, open **Settings > Sync** and press **Sign in with Google** or **Sign in with Apple**. That turns on Enqueue sync, a relay we run. The first time, the Mac shows a recovery phrase to write down before the sign-in opens in your browser.
 2. Press **Show the code**. The Mac shows a QR code.
 3. In the phone app, scan it. The phone downloads your library.
+
+Or, on an Android phone, press **Sign in with Google** instead of scanning: the phone shows a six-digit code, your Mac asks whether to let it in with the same code, and once you approve, the library arrives.
+A linked phone can approve a new Mac or phone the same way.
 
 Signing in only says who you are. Your library is locked with a key that stays on your devices, so we cannot read what Enqueue sync holds.
 Every phone and computer gets a pass of its own, listed under **Devices**: remove one and it stops syncing at once.

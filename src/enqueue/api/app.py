@@ -9,6 +9,8 @@ bootstrap) and then blocks on the server.
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
@@ -103,6 +105,20 @@ def serve() -> None:
             print(f"[engine] {done}", flush=True)
     except Exception as exc:  # noqa: BLE001 - the library stays readable, as it was
         print(f"[engine] could not encrypt the library yet: {exc}", flush=True)
+
+    # The original files the same way (blobstore.py), in the background: a plain file
+    # still reads while it waits, and each is sealed only after it reads back.
+    def _seal_files() -> None:
+        from .. import blobstore
+
+        try:
+            n = blobstore.seal_all()
+            if n:
+                print(f"[engine] sealed {n} original files", flush=True)
+        except Exception as exc:  # noqa: BLE001 - the files stay readable, as they were
+            print(f"[engine] could not seal the original files yet: {exc}", flush=True)
+
+    threading.Thread(target=_seal_files, name="enqueue-seal-files", daemon=True).start()
 
     # QR.1: load the DEK from the Keychain/file so sync is unlocked with no
     # prompt after a restart. A missing DEK just means sync stays paused until

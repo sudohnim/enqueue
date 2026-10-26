@@ -1384,85 +1384,149 @@ main {
 }
 
 /* Something shiny: two or three notes from different fields that make the same point,
-   between the header and the wall. One card, the wall's tile recipe, the notes as
-   tiles inside it so they read as things to open. */
+   between the header and the wall. One tile, the wall's recipe: the raven with a gem
+   in its beak on the left, the shared idea as the headline, the notes as plain rows
+   (never tiles inside the tile), and one way on at the foot. */
 .shiny {
 	max-width: 720px;
 	margin: 0 auto var(--sp-5);
 }
 .shiny-card {
-	padding: 14px 16px 16px;
+	display: grid;
+	grid-template-columns: 64px 1fr;
+	gap: var(--sp-4);
+	padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-4);
 	background: var(--surface);
 	box-shadow: var(--hairline);
 	border-radius: var(--r-lg);
+	transition: opacity 180ms var(--ease);
+}
+/* While the next find is fetched, the current one steps back. */
+.shiny-card.shiny-turning {
+	opacity: 0.5;
+}
+.shiny-raven {
+	position: relative;
+	align-self: start;
+	width: 64px;
+	height: 72px;
+}
+.shiny-raven img {
+	width: 64px;
+	height: 72px;
+	object-fit: contain;
+}
+/* The gem sits at the tip of the tilted raven's beak. */
+.shiny-gem {
+	position: absolute;
+	top: -9px;
+	right: -14px;
+	width: 26px;
+	height: 26px;
+	overflow: visible;
+	transform: rotate(14deg);
+}
+.shiny-gem .gem-body {
+	fill: var(--accent);
+}
+.shiny-gem .gem-facet {
+	fill: none;
+	stroke: color-mix(in oklab, white 55%, transparent);
+	stroke-width: 1;
+	stroke-linejoin: round;
+}
+.shiny-gem .gem-glint {
+	fill: none;
+	stroke: var(--accent);
+	stroke-width: 1.4;
+	stroke-linecap: round;
+	transform-origin: 20.5px 4px;
+	animation: gem-glint 4.8s var(--ease) infinite;
+}
+@keyframes gem-glint {
+	0%,
+	82%,
+	100% {
+		opacity: 0;
+		transform: scale(0.4);
+	}
+	88% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.shiny-gem .gem-glint {
+		animation: none;
+		opacity: 1;
+	}
+}
+.shiny-body {
+	min-width: 0;
 }
 .shiny-head {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	justify-content: space-between;
 	gap: var(--sp-3);
 }
-.shiny-kicker {
-	font-size: 12px;
-	line-height: 16px;
-	font-weight: var(--w-strong);
-	color: var(--accent-text);
-}
 .shiny-idea {
-	margin: 6px 0 0;
-	font-size: 16px;
-	line-height: 22px;
-	font-weight: var(--w-strong);
+	margin: 2px 0 0;
+	font-size: 18px;
+	line-height: 25px;
+	font-weight: var(--w-medium);
 	color: var(--text);
 	text-wrap: pretty;
 }
 .shiny-notes {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-	gap: var(--sp-2);
-	margin-top: var(--sp-3);
+	list-style: none;
+	margin: var(--sp-3) 0 0;
+	padding: 0;
+}
+.shiny-notes li + li {
+	box-shadow: inset 0 1px 0 var(--line-soft);
 }
 .shiny-note {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
-	padding: 10px 12px;
+	gap: 1px;
+	width: 100%;
+	padding: var(--sp-2) 0;
 	border: 0;
-	border-radius: var(--r-md);
-	background: var(--surface-3);
+	background: none;
 	font: inherit;
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
-	transition: background var(--dur) var(--ease);
-}
-.shiny-note:hover {
-	background: var(--surface-hover);
 }
 .shiny-note:focus-visible {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
+	border-radius: var(--r-md);
 }
 .shiny-title {
-	font-size: 14px;
-	line-height: 20px;
-	font-weight: var(--w-strong);
+	font-size: 15px;
+	line-height: 21px;
+	font-weight: var(--w-medium);
 	overflow-wrap: anywhere;
+	transition: color var(--dur-fast) var(--ease);
 }
 .shiny-note:hover .shiny-title {
 	color: var(--accent-text);
 }
 .shiny-how {
-	font-size: 13px;
-	line-height: 18px;
-	color: var(--text-dim);
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--text-mute);
 }
 .shiny-foot {
 	display: flex;
-	align-items: flex-end;
+	align-items: center;
 	justify-content: space-between;
 	gap: var(--sp-3);
-	margin-top: var(--sp-3);
+	margin-top: var(--sp-2);
+	padding-top: var(--sp-3);
+	box-shadow: inset 0 1px 0 var(--line-soft);
 }
 .shiny-question {
 	margin: 0;
@@ -1471,24 +1535,45 @@ main {
 	font-style: italic;
 	color: var(--text-dim);
 }
-.shiny-another {
+.shiny-another,
+.shiny-dismiss {
 	display: inline-flex;
 	align-items: center;
 	gap: 2px;
 	flex-shrink: 0;
-	margin-left: auto;
-	padding: 4px 6px 4px 12px;
+	padding: 4px 10px;
 	border: 0;
 	border-radius: var(--r-full);
 	background: none;
 	font: inherit;
 	font-size: 13px;
-	font-weight: var(--w-strong);
-	color: var(--accent-text);
 	cursor: pointer;
+	transition:
+		background var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 }
-.shiny-another:hover {
-	background: var(--surface-3);
+.shiny-another {
+	color: var(--accent-text);
+	font-weight: var(--w-medium);
+}
+.shiny-dismiss {
+	color: var(--text-mute);
+}
+.shiny-another:hover,
+.shiny-dismiss:hover {
+	background: var(--line-soft);
+}
+.shiny-dismiss:hover {
+	color: var(--text);
+}
+.shiny-another:disabled {
+	cursor: default;
+	opacity: 0.7;
+}
+.shiny-another:focus-visible,
+.shiny-dismiss:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
 }
 .shiny-another svg {
 	width: 16px;
@@ -1498,27 +1583,15 @@ main {
 	stroke-width: 2;
 	rotate: 90deg;
 }
-/* While the next find is fetched, the current one steps back. */
-.shiny-card {
-	transition: opacity 180ms var(--ease);
-}
-.shiny-card.shiny-turning {
-	opacity: 0.5;
-}
-.shiny-dismiss {
-	flex-shrink: 0;
-	padding: 4px 10px;
-	border: 0;
-	border-radius: var(--r-full);
-	background: none;
-	font: inherit;
-	font-size: 13px;
-	color: var(--text-dim);
-	cursor: pointer;
-}
-.shiny-dismiss:hover {
-	background: var(--surface-3);
-	color: var(--text);
+/* A phone-width window gives the words the room: the raven steps out. */
+@media (max-width: 560px) {
+	.shiny-card {
+		grid-template-columns: 1fr;
+		padding: var(--sp-4);
+	}
+	.shiny-raven {
+		display: none;
+	}
 }
 
 /* What a search understood as filters ("PDFs · saved last month"), after its count. */
@@ -1955,7 +2028,7 @@ body.mv-dragging * {
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lifted);
   padding: var(--sp-2);
-  animation: rise var(--dur-fast) ease both;
+  animation: drop-in var(--dur-fast) ease both;
 }
 .acct-who,
 .acct-pitch {
@@ -2049,4 +2122,47 @@ body.mv-dragging * {
   height: 1px;
   margin: var(--sp-1) var(--sp-3);
   background: var(--line-soft);
+}
+
+/* `rise` (pill.css) carries the centred toast's translateX(-50%); a corner surface
+   needs its own, or it lands half its width to the left. */
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A Type or Tags shelf's next page (js/home.js moreOnShelf): a quiet line under its
+   tiles, left with them. */
+.shelfmore {
+  margin: var(--sp-3) 0 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--line-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: var(--w-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.shelfmore:hover {
+  background: var(--lavender-subtle);
+}
+.shelfmore:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.shelfmore:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wallgroup.collapsed .shelfmore {
+  display: none;
 }

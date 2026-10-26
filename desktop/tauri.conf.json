@@ -122,7 +122,12 @@
             "core:event:allow-unlisten",
             "barcode-scanner:default",
             "opener:default",
-            "clipboard-manager:allow-write-text"
+            "clipboard-manager:allow-write-text",
+            "allow-mobile-sign-in",
+            "allow-mobile-join-status",
+            "allow-mobile-join-cancel",
+            "allow-mobile-joins",
+            "allow-mobile-join-decide"
           ]
         }
       ]
