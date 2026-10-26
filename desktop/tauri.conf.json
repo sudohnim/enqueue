@@ -48,6 +48,8 @@
             "allow-open-external",
             "allow-window-drag",
             "allow-desktop-link-code",
+            "allow-update-ready",
+            "allow-app-restart",
             "dialog:allow-open",
             "core:event:allow-listen",
             "core:event:allow-unlisten"
@@ -143,5 +145,13 @@
     "category": "Productivity",
     "copyright": "",
     "shortDescription": "Capture anything, organise it later."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ4RjY4N0NEQjlBQjE3MkQKUldRdEY2dTV6WWYyMkZEa0hhQ0t2SU55dFA3cnBuTHdVR0ZYZWhaN0l6eEFSVXowbjZuTUdOS1IK",
+      "endpoints": [
+        "https://github.com/sudohnim/enqueue/releases/download/mac-updates/latest.json"
+      ]
+    }
   }
 }

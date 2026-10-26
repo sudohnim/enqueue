@@ -209,6 +209,10 @@
   .field textarea {
     resize: vertical;
   }
+  /* A model the service does not offer (settings.js checkModelField). */
+  .field input[aria-invalid="true"] {
+    box-shadow: 0 0 0 1.5px var(--warning);
+  }
   /* A checkbox is not a text field: the rule above stretched it into a 400px bar. */
   .field input[type="checkbox"] {
     width: auto;

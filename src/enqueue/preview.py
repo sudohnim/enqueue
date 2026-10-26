@@ -25,9 +25,7 @@ Two rules hold this together.
 from __future__ import annotations
 
 import contextlib
-import ipaddress
 import os
-import socket
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,7 +33,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from . import config, db
+from . import config, db, netguard
 from .ingest import queue as ingest_queue
 
 # Enough for any <head> worth reading. A page that has not declared itself by then
@@ -128,16 +126,8 @@ def _refuse_private(request: httpx.Request) -> None:
     stopped too.
     """
     host = request.url.host
-    try:
-        infos = socket.getaddrinfo(host, request.url.port or 443, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
-        return  # an unknown name fails on its own, with the usual message
-    for info in infos:
-        ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
-        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-            ip = ip.ipv4_mapped
-        if not ip.is_global:
-            raise PrivateAddress(f"{host} is not a public address", request=request)
+    if not netguard.is_public(host, request.url.port):
+        raise PrivateAddress(f"{host} is not a public address", request=request)
 
 
 def _read_capped(url: str) -> tuple[str, str]:
@@ -405,75 +395,53 @@ def _store(artifact_id: str, fields: dict) -> None:
 # ---- the browser fallback -------------------------------------------------------
 # Some publishers (Medium, behind its bot wall) refuse any client that is not a
 # browser, whatever it says about itself: the plain request above gets a 403 every
-# time. The `preview_browser` setting lets the person have a real browser open the
-# page instead - headless Chromium through crawl4ai, the way they would open it
-# themselves. It is off by default: it is heavier (a browser start per link) and it
-# runs the page's scripts.
+# time. Such a page, or one with nothing to say until its scripts run, is opened once
+# more in the Mac's own WebKit, off screen and in a process of its own
+# (webkit_page.py), the way the person would open it in Safari. On by default (the
+# `preview_browser` setting turns it off): it costs a few seconds per such link and
+# nothing on the others.
 #
 # The line this does not cross is the one drawn at USER_AGENT above: a real browser
-# loading a page is not a disguise, but faking one is. So none of crawl4ai's
-# anti-detection is turned on - no stealth patches, no navigator overrides, no
-# simulated mouse, no randomised user agent - and a page that still refuses a real
-# browser stays refused.
-BROWSER_TIMEOUT_MS = 30_000
+# loading a page is not a disguise, but faking one is. So it says it is WebKit, keeps
+# no cookies, and a page that still refuses a real browser stays refused.
+BROWSER_TIMEOUT_S = 30.0
+# At most this many pages open at once (a browser per page is not free).
+_BROWSERS = threading.BoundedSemaphore(2)
 
 
 class BrowserMissing(RuntimeError):
-    """The browser the fallback needs is not installed (bin/setup installs it)."""
+    """This machine has no preview browser (it is not a Mac)."""
 
 
 def browser_enabled() -> bool:
     from . import settings
 
-    return str(settings.get("preview_browser") or "off").lower() in ("on", "1", "true")
+    return str(settings.get("preview_browser") or "on").lower() in ("on", "1", "true")
 
 
 def browser_available() -> bool:
-    """Whether this copy of Enqueue carries the preview browser (the `browser` extra):
-    the Mac app ships without it, a development checkout has it."""
-    import importlib.util
+    """Whether this machine can open a page in the preview browser (a Mac)."""
+    from . import webkit_page
 
-    return importlib.util.find_spec("crawl4ai") is not None
+    return webkit_page.available()
 
 
 def _read_browser(url: str) -> tuple[str, str]:
-    """Return (content_type, html) for a page opened in headless Chromium."""
-    import asyncio
+    """Return (content_type, html) for a page opened in the preview browser."""
+    from . import webkit_page
 
-    # crawl4ai keeps a cache directory; keep it with the rest of our data, not in ~.
-    os.environ.setdefault("CRAWL4_AI_BASE_DIRECTORY", str(config.DATA_DIR))
-    try:
-        from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
-    except ImportError as exc:
-        raise BrowserMissing("crawl4ai is not installed") from exc
-
-    browser = BrowserConfig(headless=True, verbose=False, text_mode=True)
-    run = CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS, verbose=False, page_timeout=BROWSER_TIMEOUT_MS
-    )
-
-    async def go():
-        async with AsyncWebCrawler(config=browser) as crawler:
-            return await crawler.arun(url, config=run)
-
-    try:
-        result = asyncio.run(go())
-    except Exception as exc:  # noqa: BLE001 - classified below, then re-raised
-        if "Executable doesn't exist" in str(exc) or "playwright install" in str(exc):
-            raise BrowserMissing(str(exc)) from exc
-        raise
-    code = result.status_code or 0
-    if not result.success or code >= 400:
-        raise RuntimeError(f"the browser could not open the page ({code or 'no answer'})")
-    html = (result.html or "")[: MAX_BYTES * 4]
-    return "text/html", html
+    if not webkit_page.available():
+        raise BrowserMissing("no preview browser on this machine")
+    with _BROWSERS:
+        code, html = webkit_page.read(url, BROWSER_TIMEOUT_S)
+    if code >= 400:
+        raise RuntimeError(f"the browser could not open the page ({code})")
+    return "text/html", html[: MAX_BYTES * 4]
 
 
 def _why_browser(exc: Exception) -> str:
     if isinstance(exc, BrowserMissing):
-        if not browser_available():
-            return "this copy of Enqueue does not include the preview browser"
-        return "the browser for previews is not installed; run bin/setup, then try again"
+        return "this computer has no preview browser"
     if "(401)" in str(exc) or "(403)" in str(exc):
         return "the site turned the preview away, even in a browser"
     return "the site did not open in a browser either"
@@ -645,3 +613,34 @@ def text_for_index(artifact_id: str) -> str:
     if not row or row["status"] != "ok":
         return ""
     return "\n\n".join(filter(None, (row["title"], row["description"])))
+
+
+def retry_refused_once() -> int:
+    """One-shot: links whose preview failed before the WebKit preview browser are fetched
+    once more, on the background lane, so they heal without a "Try again" each.
+
+    Most of them are publishers that refused a plain request (Medium) or headless
+    Chromium (the NYT, The Atlantic); WebKit opens them. Guarded by the
+    `preview_webkit_retried` setting, so a link that still fails is not asked again.
+    """
+    from . import settings
+
+    if settings.get("preview_webkit_retried") or not (browser_enabled() and browser_available()):
+        return 0
+    conn = db.get_conn()
+    try:
+        ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT a.id FROM artifacts a JOIN link_previews p ON p.artifact_id = a.id"
+                " WHERE a.kind = 'link' AND a.local_only = 0 AND a.deleted_at IS NULL"
+                " AND a.vaulted_at IS NULL AND p.status = 'failed'"
+            )
+        ]
+    finally:
+        conn.close()
+    for artifact_id in ids:
+        force(artifact_id)
+        ingest_queue.submit_background(artifact_id)
+    settings.update({"preview_webkit_retried": True})
+    return len(ids)

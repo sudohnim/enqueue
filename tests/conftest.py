@@ -74,6 +74,52 @@ def _every_save_counts(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_model_catalog_fetch(monkeypatch):
+    """The model catalog fetches OpenRouter's list; no test reaches a network by accident.
+    Each test starts with no list kept (an unknown list refuses nothing);
+    tests/test_catalog.py serves its own."""
+    from enqueue import catalog
+
+    monkeypatch.setattr(catalog, "_CACHE", {})
+    monkeypatch.setattr(catalog, "refresh", lambda backend: None)
+    monkeypatch.setattr(catalog, "_refresh_behind", lambda backend: None)
+    monkeypatch.setattr(catalog, "_load", lambda: None)
+    monkeypatch.setattr(catalog, "_save", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_preview_browser(monkeypatch):
+    """The preview browser opens real pages in WebKit; no test does by accident.
+    tests/test_preview.py drives the real path with webkit_page.read stubbed."""
+    from enqueue import preview
+
+    def none(url):
+        raise preview.BrowserMissing("no browser in tests")
+
+    monkeypatch.setattr(preview, "_read_browser", none)
+
+
+@pytest.fixture(autouse=True)
+def _no_plan_refresh(monkeypatch):
+    """Reading the account refreshes the plan from the relay behind it; tests ask for it
+    on purpose (account.refresh_plan) instead of racing a thread."""
+    from enqueue import account
+
+    monkeypatch.setattr(account, "refresh_plan_soon", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_keychain_cache(monkeypatch):
+    """keyring._get keeps reads for minutes and keyring_file holds the loaded sync key;
+    each test fakes its own Keychain, so a key one test stored must not still read as
+    present in the next."""
+    from enqueue import keyring, keyring_file
+
+    monkeypatch.setattr(keyring, "_CACHE", {})
+    monkeypatch.setattr(keyring_file, "_dek", None)
+
+
+@pytest.fixture(autouse=True)
 def _no_query_lift(monkeypatch):
     """Query lifting calls the search model; no test reaches a network by accident.
     tests/test_query_lift.py exercises the real function directly."""

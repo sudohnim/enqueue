@@ -8,6 +8,8 @@
 # bin/deploy is the front door (`bin/deploy android dev|prod`, Dequeue's), and asks
 # before prod; bin/release alone only builds, so uploading is always a separate step.
 #   bundle exec fastlane android next_code  print the next versionCode, change nothing
+#   bundle exec fastlane mac release        the signed, notarized .dmg and update bundle
+#   bundle exec fastlane mac publish        both on GitHub, and the update feed pointed at them
 #   bundle exec fastlane mac release        Developer ID signed + notarized .dmg (no store)
 #
 # No iOS lane yet (the iPhone app is on feature/ios). One goes in `platform :ios`, after
@@ -217,5 +219,35 @@ platform :mac do
     UI.user_error!("No .dmg was built.") unless dmg
     sh("xcrun", "stapler", "validate", dmg)
     UI.success("Ready to publish: #{dmg}")
+  end
+
+  desc "Publish the built .dmg and update bundle on GitHub, then point installed Macs at it"
+  lane :publish do
+    require "json"
+    version = JSON.parse(File.read(File.join(REPO, "desktop", "tauri.conf.json")))["version"]
+    bundle = File.join(REPO, "desktop", "target", "release", "bundle")
+    dmg = Dir[File.join(bundle, "dmg", "*.dmg")].max_by { |f| File.mtime(f) }
+    update = File.join(bundle, "macos", "Enqueue.app.tar.gz")
+    feed = File.join(bundle, "macos", "latest.json")
+    [dmg, update, "#{update}.sig", feed].each do |f|
+      UI.user_error!("Missing #{f || "the .dmg"}: run `bundle exec fastlane mac release` first.") unless f && File.exist?(f)
+    end
+    UI.user_error!("latest.json is not for #{version}.") unless JSON.parse(File.read(feed))["version"] == version
+
+    # The download people install from, versioned; the feed's url points into it.
+    tag = "mac-v#{version}"
+    sh("gh", "release", "create", tag, dmg, update, "#{update}.sig",
+       "--title", "Enqueue #{version} for Mac",
+       "--notes", "Download the .dmg, open it, and drag Enqueue to Applications. Installed copies update themselves.")
+    # The feed every installed Mac reads (tauri.conf.json plugins.updater): one release
+    # that is never "latest", whose latest.json is replaced, so an Android release can
+    # never take its place.
+    unless system("gh", "release", "view", "mac-updates", out: File::NULL, err: File::NULL)
+      sh("gh", "release", "create", "mac-updates", "--prerelease", "--latest=false",
+         "--title", "Mac update feed",
+         "--notes", "Where installed copies of Enqueue for Mac look for a new version. Download the app from the newest mac-v release instead.")
+    end
+    sh("gh", "release", "upload", "mac-updates", feed, "--clobber")
+    UI.success("Published #{tag}; installed Macs will update within six hours.")
   end
 end

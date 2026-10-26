@@ -1625,7 +1625,7 @@
     else if (refused && !browser)
       why =
         esc(h) +
-        " turns previews away. Turning on <em>Open refused links in a browser</em> " +
+        " turns previews away. Turning on <em>Try harder on sites that block previews</em> " +
         'in <button class="inline-link" onclick="showSettings()">Settings</button> may get past it.';
     else why = "No preview: " + esc(p.error || "that page did not resolve") + ".";
     return (

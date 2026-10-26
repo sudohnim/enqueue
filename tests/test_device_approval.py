@@ -249,7 +249,7 @@ def test_a_new_mac_asks_to_join_and_gets_the_key_from_an_approval(mac):
     _sign_in(engine)
     me = engine.get("/account").json()
     assert me["sign_in"]["state"] == "join"
-    assert me["join"]["state"] == "waiting" and len(me["join"]["code"]) == 7
+    assert me["join"]["state"] == "waiting" and len(me["join"]["code"]) == 7, me["sign_in"]
     assert not keyring_file.is_initialized()  # no second key was made
 
     # The other computer: sees the ask with the same code, and approves it.

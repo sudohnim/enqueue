@@ -258,9 +258,9 @@ function fieldRow(name, label, opts) {
 		esc(String(f.value ?? "")) +
 		'"' +
 		(f.locked ? " disabled" : "") +
-		" onchange=\"stageSetting('" +
-		name +
-		"', this.value)\">" +
+		(f.model
+			? " oninput=\"clearModelField('" + name + "', this.value)\" onchange=\"stageModel('" + name + "', this.value)\">"
+			: " onchange=\"stageSetting('" + name + "', this.value)\">") +
 		(f.locked && f.pinned
 			? '<div class="pinned">' + f.pinned + "</div>"
 			: f.aside
@@ -561,15 +561,16 @@ function includedModelsGroup(d, picked) {
 
 function modelsGroup(d, picked) {
 	if (picked && picked.included) return includedModelsGroup(d, picked);
-	const known = (picked && picked.chat_models && picked.chat_models.chat_completions) || [];
+	const listed = picked && !picked.local && picked.name !== "ollama";
 	const unsupported = (picked && picked.chat_models && picked.chat_models.unsupported_shape) || [];
 	const chatModel = (d.settings.llm_model && d.settings.llm_model.value) || "";
 	let html = '<div class="shelf">Which AI does each job</div><div class="group">';
-	if (known.length)
+	if (listed)
 		html +=
-			'<datalist id="modelOptions">' +
-			known.map((m) => '<option value="' + esc(m) + '"></option>').join("") +
-			"</datalist>";
+			'<datalist id="modelOptions"></datalist><datalist id="visionOptions"></datalist>' +
+			'<div class="aside" id="modelListState">Getting the models ' +
+			esc(picked.label) +
+			" offers...</div>";
 	for (const [name, job] of MODEL_ROLES) {
 		const f = d.settings[name];
 		if (!f) continue;
@@ -577,12 +578,15 @@ function modelsGroup(d, picked) {
 			value: f.value,
 			locked: f.locked,
 			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
-			list: known.length ? "modelOptions" : "",
+			list: listed ? (name === "vision_model" ? "visionOptions" : "modelOptions") : "",
 			placeholder:
 				name === "summarize_model" || name === "search_model"
 					? "same as chatting" + (chatModel ? " (" + chatModel + ")" : "")
-					: "",
+					: listed
+						? "start typing to pick one"
+						: "",
 			aside: esc(job) + ".",
+			model: listed,
 		});
 		// SET2.2b/FIX.3: an OpenCode Go model behind /responses or /messages cannot be
 		// reached by the /chat/completions adapter. Warn before a call fails.
@@ -594,12 +598,100 @@ function modelsGroup(d, picked) {
 				esc(picked.chat_models.examples) +
 				".</div>";
 	}
+	if (listed) setTimeout(() => loadServiceModels(picked), 0);
 	return html + "</div>";
+}
+
+// The models the chosen service serves (GET /settings/models, catalog.py), filled into
+// the pickers once they are on screen. A model it does not serve is said under its
+// field and never staged, so a typo cannot be saved and break every answer after.
+let serviceModels = null;
+
+async function loadServiceModels(picked) {
+	serviceModels = null;
+	const state = document.getElementById("modelListState");
+	let listing;
+	try {
+		listing = await api("/settings/models?backend=" + encodeURIComponent(picked.name));
+	} catch {
+		listing = { known: false };
+	}
+	if (!document.getElementById("modelOptions")) return; // the page moved on
+	if (!listing.known) {
+		if (state) state.textContent = "Couldn't get the list from " + picked.label + ", so type the model's id as the service names it.";
+		return;
+	}
+	serviceModels = { label: picked.label, chat: new Set(listing.chat), vision: listing.vision ? new Set(listing.vision) : null };
+	const fill = (id, ids) => {
+		const el = document.getElementById(id);
+		if (el) el.innerHTML = ids.map((m) => '<option value="' + esc(m) + '"></option>').join("");
+	};
+	fill("modelOptions", listing.chat);
+	fill("visionOptions", listing.vision || listing.chat);
+	if (state) state.textContent = picked.label + " offers " + listing.chat.length + " models. Type part of a name to find one.";
+	for (const [name] of MODEL_ROLES) {
+		const input = document.getElementById("s_" + name);
+		if (input) checkModelField(name, input.value);
+	}
+}
+
+// Whether the service serves `value` for this job: true, or the sentence that says not.
+function modelOffered(name, value) {
+	const v = (value || "").trim();
+	if (!v || !serviceModels) return true;
+	const pool = name === "vision_model" ? serviceModels.vision : serviceModels.chat;
+	if (!pool || pool.has(v)) return true;
+	return (
+		serviceModels.label +
+		" doesn't offer <b>" +
+		esc(v) +
+		"</b>" +
+		(name === "vision_model" && serviceModels.chat.has(v) ? " for reading pictures" : "") +
+		". Pick one from the list."
+	);
+}
+
+function checkModelField(name, value) {
+	const input = document.getElementById("s_" + name);
+	if (!input) return true;
+	const verdict = modelOffered(name, value);
+	let note = document.getElementById("s_" + name + "_bad");
+	if (verdict === true) {
+		input.removeAttribute("aria-invalid");
+		if (note) note.remove();
+		return true;
+	}
+	input.setAttribute("aria-invalid", "true");
+	if (!note) {
+		note = document.createElement("div");
+		note.id = "s_" + name + "_bad";
+		note.className = "aside caution";
+		input.closest(".field").appendChild(note);
+	}
+	note.innerHTML = verdict;
+	return false;
+}
+
+// While typing, a complaint goes as soon as the name is right, and never appears early.
+function clearModelField(name, value) {
+	if (modelOffered(name, value) === true) checkModelField(name, value);
+}
+
+function stageModel(name, value) {
+	if (!checkModelField(name, value)) {
+		if (pendingSettings) delete pendingSettings[name];
+		refreshDirtyBar();
+		return;
+	}
+	stageSetting(name, value);
 }
 
 async function stageBackend(name) {
 	stageSetting("llm_backend", name);
 	if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
+	// The images model belongs to a service too: Ollama's llava left behind on OpenRouter
+	// never described a picture. Each service starts on a model of its own that reads them.
+	if (VISION_MODELS[name]) stageSetting("vision_model", VISION_MODELS[name]);
 	if (name === "enqueue") {
 		// One model for every job to start with; the dropdowns change any of them.
 		stageSetting("summarize_model", null);
@@ -689,14 +781,14 @@ async function renderSettingsFeatures() {
 		(ap.locked ? ' disabled aria-disabled="true"' : "") +
 		' onclick="stagePreviewToggle(this)"><span class="knob"></span></button>' +
 		"</div></div>" +
-		// The Mac app ships without the preview browser (pyproject.toml, the `browser`
-		// extra), so the switch is offered only where it can work.
+		// The preview browser is the Mac's own WebKit (webkit_page.py); a computer without
+		// one is not offered the switch.
 		(d.features?.preview_browser === false
 			? ""
 			: searchSwitchRow(
 					d.settings.preview_browser,
 					"preview_browser",
-					"When a site blocks the preview, Enqueue opens the page once in a hidden browser, the way you would. Slower.",
+					"When a site blocks the preview, Enqueue opens the page once in Safari's engine, out of sight, the way you would. A few seconds, only for those sites.",
 					"Some sites block previews; those links stay without one.",
 				)) +
 		"</div>";
@@ -2090,8 +2182,15 @@ async function confirmResetSync() {
 const BACKEND_MODELS = {
 	enqueue: "anthropic/claude-haiku-5.5",
 	ollama: "llama3.1:8b",
-	openrouter: "google/gemini-3-flash",
+	openrouter: "google/gemini-3.8-flash",
 	"opencode-go": "kimi-k3",
+};
+
+// The images model each service starts on (it must read pictures). OpenCode Go does not
+// say which of its models do, so it keeps what was set.
+const VISION_MODELS = {
+	ollama: "llava",
+	openrouter: "google/gemini-3.8-flash",
 };
 
 // The value is sent once and never read back. What returns is whether a key now

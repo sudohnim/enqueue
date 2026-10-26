@@ -14,7 +14,7 @@ import ipaddress
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from . import backup, config, db, settings
+from . import backup, db, settings
 
 DONE, TODO, WARN = "done", "todo", "warn"
 
@@ -225,16 +225,24 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "Settings for an online assistant are saved, but the one on this Mac doesn't use them.",
         )
 
-    if backend["name"] == "opencode-go":
-        known = config.GO_CHAT_COMPLETIONS_MODELS
-        gone = sorted({m for job, m in models.items() if job != "images" and m and m not in known})
+    if backend["name"] in ("opencode-go", "openrouter"):
+        from . import catalog
+
+        gone = sorted(
+            {
+                m
+                for job, m in models.items()
+                if m and catalog.unknown(backend["name"], m, vision=job == "images", recheck=False)
+            }
+        )
         if gone:
             say(
                 "model-unknown",
                 WARN,
                 "ai",
                 "models",
-                f"OpenCode Go doesn't offer {', '.join(gone)}. Pick another under More options.",
+                f"{backend['label']} doesn't offer {', '.join(gone)}, so that job isn't"
+                " running. Pick another under More options.",
             )
 
     if backend.get("included"):

@@ -192,6 +192,16 @@ def serve() -> None:
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not retitle links: {exc}")
 
+    # Links that failed to preview before the WebKit preview browser get one more try.
+    try:
+        from .. import preview as previews
+
+        retried = previews.retry_refused_once()
+        if retried:
+            print(f"[engine] trying {retried} unpreviewed links again in WebKit")
+    except Exception as exc:  # noqa: BLE001 - never block startup on this
+        print(f"[engine] could not retry link previews: {exc}")
+
     from .. import events
 
     events.emit("start", "engine ready")

@@ -35,7 +35,9 @@ def _refuse(exc: account.AccountError, code: int = 400) -> HTTPException:
 
 @router.get("/account")
 def read_account() -> dict:
-    """Who is signed in, and how the sign-in in progress is going. No network."""
+    """Who is signed in, and how the sign-in in progress is going. Answers from what
+    is kept here; the plan is refreshed behind it when it is a few minutes old."""
+    account.refresh_plan_soon()
     return account.state()
 
 

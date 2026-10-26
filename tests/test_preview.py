@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from enqueue import capture, db, preview
+from enqueue import capture, db, preview, webkit_page
 
 PAGE = """
 <html><head>
@@ -264,9 +264,12 @@ def _refused(url):
     )
 
 
+REAL_READ_BROWSER = preview._read_browser
+
+
 class TestBrowserFallback:
     """A site that refuses any client but a browser (Medium's bot wall) can be opened
-    once in headless Chromium, when the person turned that on."""
+    once in the Mac's own WebKit, unless the person turned that off."""
 
     def _setting(self, monkeypatch, value):
         from enqueue import settings
@@ -312,40 +315,33 @@ class TestBrowserFallback:
 
         assert preview.fetch(made["id"])["title"] == "Lumo's not a kitten anymore"
 
-    def test_a_missing_browser_is_named_with_its_fix(self, store, quiet_queue, monkeypatch):
-        made = capture.link("https://steve-yegge.medium.com/a-post")
-        self._setting(monkeypatch, "on")
-        monkeypatch.setattr(preview, "_read_capped", _refused)
+    def test_on_is_the_default(self, store):
+        assert preview.browser_enabled() is True
 
-        def missing(url):
-            raise preview.BrowserMissing("Executable doesn't exist")
-
-        monkeypatch.setattr(preview, "_read_browser", missing)
-
-        row = preview.fetch(made["id"])
-
-        assert row["status"] == "failed"
-        assert "bin/setup" in row["error"]
-
-    def test_an_app_built_without_the_browser_says_so(self, store, quiet_queue, monkeypatch):
-        # The Mac app ships without the `browser` extra: no "run bin/setup" for a person
-        # who has no repository, and Settings does not offer the switch.
+    def test_a_computer_without_the_browser_says_so(self, store, quiet_queue, monkeypatch):
         made = capture.link("https://steve-yegge.medium.com/another-post")
         self._setting(monkeypatch, "on")
         monkeypatch.setattr(preview, "_read_capped", _refused)
-        monkeypatch.setattr(preview, "browser_available", lambda: False)
-
-        def missing(url):
-            raise preview.BrowserMissing("crawl4ai is not installed")
-
-        monkeypatch.setattr(preview, "_read_browser", missing)
+        monkeypatch.setattr(preview, "_read_browser", REAL_READ_BROWSER)
+        monkeypatch.setattr(webkit_page, "available", lambda: False)
 
         row = preview.fetch(made["id"])
-        assert "does not include the preview browser" in row["error"]
+        assert row["error"] == "this computer has no preview browser"
 
         from enqueue.api import settings as api_settings
 
         assert api_settings.read_settings()["features"] == {"preview_browser": False}
+
+    def test_a_refusal_the_browser_also_gets_is_said(self, store, quiet_queue, monkeypatch):
+        made = capture.link("https://steve-yegge.medium.com/a-post")
+        self._setting(monkeypatch, "on")
+        monkeypatch.setattr(preview, "_read_capped", _refused)
+        monkeypatch.setattr(preview, "_read_browser", REAL_READ_BROWSER)
+        monkeypatch.setattr(webkit_page, "available", lambda: True)
+        monkeypatch.setattr(webkit_page, "read", lambda url, timeout_s: (403, "<html></html>"))
+
+        row = preview.fetch(made["id"])
+        assert row["error"] == "the site turned the preview away, even in a browser"
 
     def test_a_page_the_plain_fetch_read_keeps_it_when_the_browser_fails(
         self, store, quiet_queue, monkeypatch
@@ -378,3 +374,25 @@ class TestSharedTitle:
         finally:
             conn.close()
         assert title == "The Real Name"
+
+
+class TestRetryRefusedOnce:
+    """Links that failed before the WebKit preview browser are fetched once more."""
+
+    def test_failed_links_are_queued_once(self, store, quiet_queue, monkeypatch):
+        from enqueue import settings
+        from enqueue.ingest import queue as ingest_queue
+
+        monkeypatch.setattr(preview, "browser_available", lambda: True)
+        failed = capture.link("https://steve-yegge.medium.com/a-post")
+        fine = capture.link("https://example.com/fine")
+        preview._store(failed["id"], {"status": "failed", "error": "refused"})
+        preview._store(fine["id"], {"status": "ok", "title": "Fine"})
+        queued = []
+        monkeypatch.setattr(ingest_queue, "submit_background", queued.append)
+
+        assert preview.retry_refused_once() == 1
+        assert queued == [failed["id"]]
+        assert preview.take_forced(failed["id"]) is True
+        assert settings.get("preview_webkit_retried") is True
+        assert preview.retry_refused_once() == 0  # once

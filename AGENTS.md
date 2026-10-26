@@ -29,7 +29,7 @@ assets/         the logo, source art, and the README screenshots
 
 | Where | Once | Every time |
 | --- | --- | --- |
-| Mac (engine + window) | `bin/setup` (Rust >= 1.88, uv + Python 3.12, Node, Chromium for link previews; no sudo) | `bin/launch desktop` (rebuilds the shell, restarts engine and window, waits for health) |
+| Mac (engine + window) | `bin/setup` (Rust >= 1.88, uv + Python 3.12, Node, Chromium for `bin/screenshots`; no sudo) | `bin/launch desktop` (rebuilds the shell, restarts engine and window, waits for health) |
 | Android phone (USB debugging on) | `bin/setup --android` (checks SDK/NDK/JDK, installs the Tauri CLI and the target) | `bin/launch mobile` (one-shot build, `adb install`, launch, exit) |
 | Android emulator (headless) | an AVD named `enqueue` (the script prints how) | `bin/launch emulator` |
 | Engine alone | `uv sync` | `uv run enq serve` (127.0.0.1:8787; open it in a browser) |
@@ -58,7 +58,7 @@ The Keychain holds the library key (`enqueue-library-key`), the sync key (`enque
 Tests never touch any of it: `tests/conftest.py` points the process at a temporary folder and fakes the Keychain.
 
 **Releasing.** Store releases go through fastlane (`fastlane/`, run as `bundle exec fastlane <platform> <lane>` after `bundle install`; setup and keys in `fastlane/README.md`).
-`bin/deploy` is the front door (Dequeue's): `bin/deploy android dev` runs the `android dev` lane, which builds the signed `.aab` with a fresh versionCode and releases it to Play's internal testing track, completed, so testers get it; `bin/deploy android prod` runs `android prod` after asking; `bin/deploy desktop` runs `mac release`. `bin/release` alone only builds, so an upload is always its own step. The Play key is Dequeue's `google-play@sudohnim-play-billing` service account (`desktop/play-store-svc.json`, gitignored), invited to Enqueue per app in Play Console.
+`bin/deploy` is the front door (Dequeue's): `bin/deploy android dev` runs the `android dev` lane, which builds the signed `.aab` with a fresh versionCode and releases it to Play's internal testing track, completed, so testers get it; `bin/deploy android prod` runs `android prod` after asking; `bin/deploy desktop` runs `mac release`, then, after asking, `mac publish` (see "The Mac app updates itself" under Build notes). `bin/release` alone only builds, so an upload is always its own step. The Play key is Dequeue's `google-play@sudohnim-play-billing` service account (`desktop/play-store-svc.json`, gitignored), invited to Enqueue per app in Play Console.
 `android prod` does the same to production; `ANDROID_PROD_ROLLOUT=0.1` makes it a staged rollout.
 `android next_code` prints the versionCode the next upload would use and changes nothing.
 `mac release` builds the Developer ID signed, notarized and stapled `.dmg`; the Mac app ships outside the App Store, so nothing is uploaded.
@@ -69,7 +69,6 @@ The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own e
 
 ## Known gaps
 
-- **The Mac app has no auto-update.** A new version is a new `.dmg` to download; Tauri's updater (a signed update feed) is not wired up.
 - **Hosted sign-in with a passkey is not built.** The paid tier's "sign in and your library arrives" needs a domain, an account server and a signed app entitlement; the steps are under [Encryption and keys](#encryption-and-keys).
 - **The Mac's original files (`blobs/`) are not encrypted by Enqueue**; FileVault covers them.
 - **The default local model (`llama3.1:8b`) is weak** at structured output; a stronger one is needed for reliable summaries and answers. The plan (2026-10-16): first-run setup suggests a cheap OpenRouter pair, one model for ingestion and one for chat, picked by a bake-off on the eval notes (real cost with reprompts, quality-gate failures, both search evals) between `qwen/qwen3.7-flash`, `deepseek/deepseek-v4-flash` and `anthropic/claude-haiku-5.5` for ingestion, and `deepseek/deepseek-v4-pro`, `qwen/qwen3.7-plus` and `anthropic/claude-sonnet-5.5` for chat. Set the OpenRouter account to refuse providers that train on data before other people's notes pass through it.
@@ -79,7 +78,8 @@ The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own e
   Enqueue sync is free for one Mac and one phone up to about 1 GB; Pro raises storage and devices.
   Built (2026-10-20): plans, purchase and enforcement for sync (see "Enqueue Pro" under Gotchas).
   Built the same day: the included assistant (see "The assistant included with Enqueue" under Gotchas).
-  Still to build: curated model lists for the bring-your-own-key backends (OpenRouter is still a free-text field with suggestions); the Apple side of the purchase, with the iPhone app.
+  Built 2026-10-26: the bring-your-own-key model pickers list what the service serves and refuse anything else (`catalog.py`).
+  Still to build: the Apple side of the purchase, with the iPhone app.
 - **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
 - **The wall shows the newest 120 items**; there is no paging past that.
 - **macOS only on the desktop** (AppKit calls, the Keychain).
@@ -139,9 +139,9 @@ Usage does feed ranking one level up, per artifact rather than per facet: see "U
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
 The configured backends are `ollama` (default, local), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen) and `custom` backends were removed; a stored `opencode` config migrates to `opencode-go`. Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
-7. **crawl4ai is the opt-in browser fallback for link previews (2026-09-29).**
-It is a dependency, used only by `preview._read_browser` when the `preview_browser` setting is on (see "Link previews").
-The Chromium it drives is a separate download that `bin/setup` installs.
+7. **The preview browser is the Mac's own WebKit (2026-10-26; crawl4ai and Chromium before).**
+`webkit_page.py` opens a refused page in an off-screen WKWebView through `pyobjc-framework-WebKit` (29 MB in the app, where crawl4ai's Chromium was about 450 MB and never shipped), so it is on by default and in the Mac app (see "Link previews").
+Playwright stays a dev dependency only for `bin/screenshots`.
 marker and whisper.cpp are not currently planned.
 PDF parsing uses only pymupdf (fitz).
 
@@ -281,6 +281,8 @@ One line per file, describing its job.
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
 | `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421) and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403), so no other website can reach the engine, even through DNS rebinding. Requests with no Origin (CLI, the shell's health check) pass. Tests add `testserver` via conftest. |
 | `privacy.py` | What may go to which model. `is_remote(provider)` (endpoint not loopback), `shareable(items, provider)` drops local-only artifacts from anything shown to a remote model: chat passages, the gray-zone judge, model re-ranking. A chat scoped to a local-only artifact, and attribute extraction from one, use the local model. The phone's chat does the same through `sync::chat_sources`. |
+| `netguard.py` | `is_public(host, port)`: whether a host resolves only to public addresses. What a link preview may reach, for the plain fetch and the WebKit reader alike. |
+| `webkit_page.py` | The preview browser: one page in an off-screen WKWebView in a process of its own, HTML back once its scripts ran. See "Browser fallback" under Link previews. |
 | `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
@@ -301,6 +303,7 @@ One line per file, describing its job.
 | `libkey.py` | The library key: 32 random bytes made once, in the Keychain (`enqueue-library-key`), the root every other key is derived from (`derive`, HKDF-SHA256 per use); the recovery kit (`kit`/`from_kit`, 56 Crockford characters with a checksum) and whether the person said they saved it. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
 | `reading.py` | How far the assistant is through reading the library (`GET /reading`), for the wall's "Reading your library" line. See "Reading your library" under Gotchas. |
+| `catalog.py` | Which models an online service serves: OpenRouter's public list (`GET /api/v1/models`, no key), fetched at most every 12 hours into memory and `model-catalog.json`, OpenCode Go's from `config`. `GET /settings/models?backend=` feeds the Settings pickers; `settings.update` refuses a model the list lacks (a list a few minutes old is fetched again first, so a new model is not turned away); `/setup` says when a saved one is not offered (`model-unknown`), reading the kept list only. The images job needs a model that reads pictures. A list that cannot be fetched refuses nothing. Tests never fetch (`conftest._no_model_catalog_fetch`). |
 | `setup.py` | Where this installation stands: the three steps left to set up, the settings that need a look, and the one model answer about settings (`GET /setup`, `POST /setup/ask`). See "Settings explain themselves" under Gotchas. |
 | `sync/join.py` | Device approval: a new Mac asks to join the account's library and one that holds the key seals it to the asker's public key. See "A new computer is approved from one that has the key" under Gotchas. |
 | `account.py` | Enqueue sync from the Mac: sign in with Google (desktop PKCE, back to `/account/google/callback`) or Apple (the web flow, back through the relay to `/account/apple/done` with a one-time code), then a device token for this Mac becomes the sync secret (`sync/enable.py`). Keeps the relay's refresh token in the Keychain (`enqueue-account-session`) and who is signed in in settings; mints a token per phone (`desktop_link_code`) and per joining computer (`sync/pairing.py`); lists and removes devices, signs out, deletes the account. Routes in `api/account.py`. See "Enqueue sync" under Gotchas. |
@@ -411,7 +414,7 @@ One line per file, describing its job.
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
 | `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `approve` (device approval: the waiting screen and the approve prompt), `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `approve` (device approval: the waiting screen and the approve prompt), `update` (the Mac app's "Restart to update"), `accountmenu` (the account at the top right of the wall: who, the plan and storage used, devices, Settings, sign out; signed out, the way to sign in), `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay. Separate page with its own token copy. |
 | `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
 
@@ -653,7 +656,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
 | `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
 | `ENQ_MODEL_RETRIES` | `3` | TOTAL attempts per structured call (instructor's `max_retries`); 1 = one shot, no reprompt |
-| `ENQ_PREVIEW_BROWSER` | `off` | Open a refused or script-only link once in headless Chromium (crawl4ai) |
+| `ENQ_PREVIEW_BROWSER` | `on` | Open a refused or script-only link once more in the Mac's own WebKit (`webkit_page.py`) |
 | `ENQ_BACKUP_DIR` | (empty) | The cloud-drive folder backups go into; empty = backups off |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (...)` | User agent for preview fetches |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
@@ -1137,13 +1140,12 @@ Rules:
 Auto-preview is controlled by the `auto_preview` setting (default on).
 When on, the ingest worker fetches the preview in the background after capture.
 
-**Browser fallback (`preview_browser`, default off).**
+**Browser fallback (`preview_browser`, default on).**
 Some sites refuse any non-browser client (Medium's bot wall answers 403 to httpx every time, whatever the user agent).
-With the setting on, a refusal (401/403), or a page with no title and no description until its scripts run, is opened once more in headless Chromium through crawl4ai (`preview._read_browser`), and its HTML goes through the same `parse` and `_extract_body`.
-The line from rule "Not a browser string" still holds: a real browser loading a page is not a disguise, faking one is.
-So none of crawl4ai's anti-detection is enabled (no `enable_stealth`, `magic`, `simulate_user`, `override_navigator`, or random user agent); a page that still refuses a real browser stays refused.
-crawl4ai's cache lives under the data dir (`CRAWL4_AI_BASE_DIRECTORY`), not `~/.crawl4ai`.
-A missing Chromium fails with "run bin/setup" rather than silently.
+A refusal (401/403), or a page with no title and no description until its scripts run, is opened once more in the Mac's own WebKit (`preview._read_browser` -> `webkit_page.read`), and its HTML goes through the same `parse` and `_extract_body`.
+The reader is its own short-lived process (`python -m enqueue.webkit_page <url> <timeout>`, one JSON line back): WebKit needs a main-thread run loop the engine does not have, and a page that hangs or crashes WebKit takes only that process, which `read` kills at the deadline. At most two run at once (`_BROWSERS`).
+It keeps the plain fetch's lines: every navigation (redirects and frames too) is checked with `netguard.is_public`, the same check `_refuse_private` uses; a content rule list blocks the page's own requests to literal private addresses (one rule per range: WebKit's `url-filter` has no `|`, and a rule list that fails to compile fails the read); a non-persistent data store keeps no cookies; nothing plays; the user agent is WebKit's own, since a real browser loading a page is not a disguise and faking one is.
+A page that still refuses a real browser stays refused ("even in a browser"). A computer that is not a Mac has no preview browser and is not offered the switch (`features.preview_browser`).
 
 **A link's title before, or without, a preview (`capture.title_from_url`).**
 A link is titled from its address until its page says its own name, and for good when the publisher refuses the fetch (Medium does).
@@ -1238,10 +1240,20 @@ Setting up and running are under [Start here](#start-here). What else is worth k
 `bin/release desktop` runs `bin/bundle-engine`, then `cargo tauri build --config tauri.release.conf.json`, which copies `desktop/engine` into `Enqueue.app/Contents/Resources/engine`.
 The engine is a relocatable CPython 3.12 (python-build-standalone, the one uv manages) plus a `site/` folder; the shell finds it next to its own executable and runs `python3.12 -m enqueue serve` with `PYTHONPATH` set to it (`bundled_engine_command` in `desktop/src/lib.rs`), so the app needs no repo, no uv and no system Python. Without a bundled engine (a dev build) the shell runs `uv run enq serve` from the repo as before.
 - **Exactly the locked versions.** `site/` is installed from `uv export --frozen --no-dev` (uv.lock), then the project itself with `--no-deps`; resolving fresh would ship whatever was newest that day.
-- **No preview browser.** crawl4ai is the optional `browser` extra (kept in the dev group, so a checkout has it): it pulled two copies of Playwright's driver, litellm and scipy, over half the bundle (814 MB with it, 356 MB without), and needs a separate Chromium download the app could not do. The app reports `features.preview_browser = false` on `GET /settings`, Settings does not offer the switch, and a refused link says "this copy of Enqueue does not include the preview browser" (`preview.browser_available`). `bin/bundle-engine` fails if it leaks back in.
+- **The preview browser is the system's.** Link previews open refused pages in the Mac's own WebKit through `pyobjc-framework-WebKit` (about 29 MB); crawl4ai and its Chromium (over half the bundle, 814 MB against 356) are gone. Playwright is dev-only (`bin/screenshots`), and `bin/bundle-engine` fails if it leaks in.
 - **First launch** downloads the embedding model once (about 200 MB from Hugging Face) into the data folder; search says "Updating your search index" until it is ready.
 - **Signing.** With `APPLE_SIGNING_IDENTITY="Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"` every Mach-O in the engine is signed inside-out with the hardened runtime and `desktop/Entitlements.plist` (library validation off, dyld variables, JIT), then Tauri signs the app.
 - **Notarizing.** Once per Mac, `xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG` (it asks for an app-specific password from appleid.apple.com, which stays in the keychain); then `NOTARY_PROFILE=enqueue-notary bin/release desktop` submits the `.dmg`, waits, staples it and checks it with `spctl`.
+
+### The Mac app updates itself
+
+A shipped app (one with a bundled engine) asks a feed for a newer version a minute after it starts and every six hours (`watch_for_updates` in `desktop/src/lib.rs`, `tauri-plugin-updater`).
+An update whose signature checks out against the public key in `tauri.conf.json` (`plugins.updater.pubkey`) is downloaded and put in place of the app bundle; the running app is untouched, and the page offers Restart (`js/update.js`, `window.__enqUpdateReady`, the `update_ready` and `app_restart` commands). `app_restart` stops the engine and waits for it, so the new shell does not attach to the old engine on its port.
+**The feed** is `latest.json` on a GitHub release tagged `mac-updates` (prerelease, never "latest", so an Android release cannot take its place); its `url` points at `Enqueue.app.tar.gz` on the versioned release `mac-v<version>`, which also carries the `.dmg` people download.
+**The key.** The private half is `~/.tauri/enqueue-updater.key` (made 2026-10-26 with `cargo tauri signer generate`), its password in the Keychain as `enqueue-updater-key-password`; `bin/release desktop` reads both (`TAURI_UPDATER_KEY_FILE` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` override). Lose it and installed copies can never update again: a new key means a new public key in the app, which only a manual download brings. Keep a copy in a password manager.
+**A release** (`bin/deploy desktop`): `bin/release desktop` builds and signs, notarizes and staples the `.dmg`, staples the `.app` (notarizing the `.dmg` registered it), makes the update bundle again from the stapled app and signs it, and writes `latest.json` (`write_update_feed`); after a yes, `fastlane mac publish` creates `mac-v<version>` with the `.dmg` and bundle and replaces `latest.json` on `mac-updates`. Bump the version in `pyproject.toml`, `desktop/Cargo.toml` and `desktop/tauri.conf.json` first: an app updates only to a higher version.
+Only Apple silicon is built (`darwin-aarch64`): the bundled Python is arm64.
+Notarizing needs the `enqueue-notary` profile once per Mac (`xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG`).
 
 ### The Android release build
 

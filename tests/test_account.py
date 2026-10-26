@@ -343,3 +343,28 @@ def test_signing_in_again_as_someone_else_is_refused(world):
     )
     # The fake Google names the code as the subject: "g-other" is another account.
     assert page.status_code == 400 and "different account" in page.text
+
+
+def test_the_plan_and_storage_used_are_refreshed_from_the_relay(world):
+    engine = world["engine"]
+    _sign_in_google(engine)
+    token = keyring.sync_secret_get()
+    world["relay"].put(
+        "/sync/object/lib/x.enc",
+        content=b"x" * 4096,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    settings.update({"account_used_bytes": 0})
+
+    assert account.refresh_plan() is True
+    plan = engine.get("/account").json()["plan"]
+    assert plan["used_bytes"] >= 4096 and plan["storage_bytes"] > 0
+
+
+def test_a_settings_change_the_phone_does_not_read_is_not_pushed(world, monkeypatch):
+    pushed = []
+    monkeypatch.setattr(settings, "_resync_to_relay", lambda: pushed.append(1))
+    settings.update({"account_used_bytes": 123, "preview_webkit_retried": True})
+    assert pushed == []
+    settings.update({"llm_model": "llama3.1:8b"})
+    assert pushed == [1]

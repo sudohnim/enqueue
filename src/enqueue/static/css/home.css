@@ -1876,3 +1876,183 @@ body.mv-dragging * {
 .loosenote {
 	margin-top: var(--sp-5);
 }
+
+/* ---- The account, top right of the wall (js/accountmenu.js) ----------------------
+   The chip sits left of the ?, the same 32px circle; its menu drops under it, a
+   floating surface like the capture menu. */
+.homehead .homecorner {
+  position: absolute;
+  top: var(--sp-5);
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* Out-ranks tour.css's `.homehead .tour-open`, which pins the ? on its own. */
+.homehead .homecorner .tour-open {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+.acct-chip {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  cursor: pointer;
+}
+.acct-chip.signed-out {
+  background: var(--line-soft);
+  color: var(--text-mute);
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.acct-chip.signed-out:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.acct-chip svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.acct-chip:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+.acct-chip:hover .acct-face {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.acct-face {
+  flex: none;
+  width: var(--face);
+  height: var(--face);
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--surface-doc);
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--accent) 55%, transparent);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+.acct-face.initial {
+  display: inline-grid;
+  place-items: center;
+  background: var(--purple-bold-wash);
+  color: var(--accent-text);
+  font-size: calc(var(--face) * 0.42);
+  font-weight: var(--w-strong);
+}
+.acctmenu {
+  position: fixed;
+  z-index: var(--z-menu);
+  width: 288px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface-doc);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lifted);
+  padding: var(--sp-2);
+  animation: rise var(--dur-fast) ease both;
+}
+.acct-who,
+.acct-pitch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.acct-pitch {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+}
+.acct-words {
+  min-width: 0;
+}
+.acct-name {
+  font-weight: var(--w-medium);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-sub {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-mute);
+  overflow-wrap: anywhere;
+}
+.acct-who .acct-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-plan {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-2);
+  font-size: 14px;
+  color: var(--text-mute);
+}
+.acct-tier {
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-full);
+  background: var(--line-soft);
+  color: var(--text);
+  font-weight: var(--w-medium);
+}
+.acct-tier.pro {
+  background: var(--purple-bold-wash);
+  color: var(--accent-text);
+}
+.acct-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.acct-item:hover {
+  background: var(--lavender-subtle);
+  color: var(--accent);
+}
+.acct-item:focus-visible {
+  outline: none;
+  background: var(--surface-2);
+}
+.acct-item.strong {
+  color: var(--accent-text);
+  font-weight: var(--w-medium);
+}
+.acct-meta {
+  color: var(--text-mute);
+  font-size: 14px;
+}
+.acct-rule {
+  height: 1px;
+  margin: var(--sp-1) var(--sp-3);
+  background: var(--line-soft);
+}
