@@ -516,6 +516,50 @@ def _keep_plan(plan: dict | None) -> None:
     )
 
 
+# The plan and the storage it has used change as this and other devices write, so the
+# copy Settings and the account menu read is refreshed behind them: at most once per
+# PLAN_FRESH_S, when something reads the account (GET /account), never in the way.
+PLAN_FRESH_S = 300
+_plan_lock = threading.Lock()
+_plan = {"at": 0.0, "busy": False}
+
+
+def refresh_plan() -> bool:
+    """Ask the relay for the plan as it stands, with this Mac's device token."""
+    token = keyring.sync_secret_get() or ""
+    if not token.startswith("enqd_"):
+        return False
+    try:
+        with _client() as http:
+            resp = http.get("/account/plan", headers=_bearer(token))
+    except httpx.HTTPError:
+        return False
+    if resp.status_code != 200:
+        return False
+    _keep_plan(resp.json())
+    return True
+
+
+def refresh_plan_soon() -> None:
+    if not signed_in():
+        return
+    with _plan_lock:
+        if _plan["busy"] or time.time() - _plan["at"] < PLAN_FRESH_S:
+            return
+        _plan["busy"], _plan["at"] = True, time.time()
+
+    def run() -> None:
+        try:
+            refresh_plan()
+        except Exception:  # noqa: BLE001 - a stale plan line is all that is lost
+            pass
+        finally:
+            with _plan_lock:
+                _plan["busy"] = False
+
+    threading.Thread(target=run, name="account-plan", daemon=True).start()
+
+
 def _keep_my_name(listed: list[dict], mine: str | None) -> None:
     """This Mac goes by the name its owner gave it (it once registered the network's
     name, "macbookair.lan"): put it right whenever the list shows otherwise."""

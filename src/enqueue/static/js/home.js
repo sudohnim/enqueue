@@ -974,8 +974,8 @@ async function home(opts) {
 		view.innerHTML =
 			'<div class="homehead">' +
 			greetDateHtml() +
-			// The ? that opens the welcome on demand (js/welcome.js), top right.
-			welcomeTriggerHtml() +
+			// Top right: the account (js/accountmenu.js) and the ? (js/welcome.js).
+			homeCornerHtml() +
 			'<div class="greetline">' +
 			'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
 			'<h1 class="display greeting">' +
@@ -985,6 +985,7 @@ async function home(opts) {
 			'<div class="state">Nothing here yet. Just add your artifacts.</div>' +
 			"</div>";
 		makeEye(document.getElementById("greetEye"));
+		paintAccountChip();
 		return;
 	}
 
@@ -997,8 +998,8 @@ async function home(opts) {
 	let html =
 		'<div class="homehead">' +
 		greetDateHtml() +
-		// The ? that opens the welcome on demand (js/welcome.js), top right.
-		welcomeTriggerHtml() +
+		// Top right: the account (js/accountmenu.js) and the ? (js/welcome.js).
+		homeCornerHtml() +
 		'<div class="greetline">' +
 		// O.3: the eyeball PNG is split into a frame (the socket: outline, lashes,
 		// ground) and a small pupil image (only the purple iris, transparent
@@ -1044,6 +1045,7 @@ async function home(opts) {
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
+	paintAccountChip();
 	refreshResurface();
 	refreshReading();
 

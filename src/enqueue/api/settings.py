@@ -31,6 +31,22 @@ def read_settings() -> dict:
     }
 
 
+@router.get("/settings/models")
+def service_models(backend: str) -> dict:
+    """The models an online service serves, for the pickers: `chat` answer in text,
+    `vision` (when known) also read pictures. Fetched now when none is kept; empty
+    when the service has no list or cannot be reached (then anything may be typed)."""
+    from .. import catalog
+
+    listing = catalog.get(backend) or {}
+    return {
+        "backend": backend,
+        "chat": listing.get("chat", []),
+        "vision": listing.get("vision"),
+        "known": bool(listing),
+    }
+
+
 class KeyringInit(BaseModel):
     force: bool = False
 

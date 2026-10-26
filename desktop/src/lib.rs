@@ -3399,6 +3399,84 @@ mod desktop {
     /// is the exact interruption the overlay exists to avoid.
     struct CameFromHome(AtomicBool);
 
+    /// The version of an update already downloaded and installed into the app bundle,
+    /// waiting for a restart to run. The page asks for it when it loads (`update_ready`).
+    struct UpdateReady(Mutex<Option<String>>);
+
+    /// How often a shipped app looks for a new version, after a first look a minute in.
+    const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+    /// A shipped app keeps itself current: it asks the feed (`plugins.updater` in
+    /// tauri.conf.json, a `latest.json` on the GitHub release) for a newer version, and
+    /// one whose signature checks out against the public key in the config is downloaded
+    /// and put in place of the app bundle. The running app is not touched: the page
+    /// shows "Restart to update" (`window.__enqUpdateReady`), and the next start runs the
+    /// new version either way. A dev build (no bundled engine) never asks.
+    fn watch_for_updates(app: AppHandle) {
+        use tauri_plugin_updater::UpdaterExt;
+        if bundled_engine_command().is_none() {
+            return;
+        }
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(60));
+            loop {
+                let found = tauri::async_runtime::block_on(async {
+                    let update = app.updater().map_err(|e| e.to_string())?.check().await;
+                    match update.map_err(|e| e.to_string())? {
+                        Some(update) => {
+                            let version = update.version.clone();
+                            update
+                                .download_and_install(|_, _| {}, || {})
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Ok::<Option<String>, String>(Some(version))
+                        }
+                        None => Ok(None),
+                    }
+                });
+                match found {
+                    Ok(Some(version)) => {
+                        eprintln!("[shell] update {version} installed; it runs at the next start");
+                        if let Ok(mut ready) = app.state::<UpdateReady>().0.lock() {
+                            *ready = Some(version.clone());
+                        }
+                        if let Some(window) = app.get_webview_window("main") {
+                            let arg = serde_json::to_string(&version).unwrap_or_default();
+                            let _ = window.eval(&format!(
+                                "window.__enqUpdateReady && window.__enqUpdateReady({arg})"
+                            ));
+                        }
+                        return;
+                    }
+                    Ok(None) => {}
+                    Err(err) => eprintln!("[shell] could not look for an update: {err}"),
+                }
+                thread::sleep(UPDATE_EVERY);
+            }
+        });
+    }
+
+    /// The version waiting for a restart, if one was installed while the app ran.
+    #[tauri::command]
+    fn update_ready(ready: tauri::State<UpdateReady>) -> Option<String> {
+        ready.0.lock().ok().and_then(|v| v.clone())
+    }
+
+    /// Start the new version: stop the engine (and wait for it, so the next one finds
+    /// its port free instead of attaching to the old one), then restart the app.
+    #[tauri::command]
+    fn app_restart(app: AppHandle) {
+        if let Some(engine) = app.try_state::<Engine>() {
+            if let Ok(mut guard) = engine.0.lock() {
+                if let Some(child) = guard.as_mut() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        app.restart();
+    }
+
     fn already_running() -> bool {
         TcpStream::connect_timeout(
             &HOST_PORT.parse().expect("valid host"),
@@ -3990,7 +4068,9 @@ mod desktop {
         tauri::Builder::default()
             .manage(Engine(Mutex::new(child)))
             .manage(CameFromHome(AtomicBool::new(false)))
+            .manage(UpdateReady(Mutex::new(None)))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_updater::Builder::new().build())
             // The Mac's own folder picker, for choosing where backups go (Settings,
             // Storage). Allowed for the home window only (tauri.conf.json, home-links).
             .plugin(tauri_plugin_dialog::init())
@@ -4000,7 +4080,9 @@ mod desktop {
                 hotkey_changed,
                 open_external,
                 window_drag,
-                desktop_link_code
+                desktop_link_code,
+                update_ready,
+                app_restart
             ])
             .setup(move |app| {
                 // The webview loads the engine's URL, so it cannot be built until the
@@ -4094,6 +4176,8 @@ mod desktop {
                 }) {
                     eprintln!("[shell] could not bind {binding}: {err}");
                 }
+
+                watch_for_updates(app.handle().clone());
 
                 Ok(())
             })

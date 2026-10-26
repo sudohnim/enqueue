@@ -138,7 +138,7 @@ const Guides = (() => {
       need: "On by default. Off, a saved link stays a bare address until you ask for it.",
       steps: [
         "Resolve links when you save them: one request per link, at the moment you save.",
-        "Open refused links in a browser: for sites that turn a plain request away, the page is opened once in a hidden browser.",
+        "Try harder on sites that block previews: on by default. A site that turns a plain request away is opened once more in Safari's engine, out of sight, with no cookies kept. A few seconds, only for those sites.",
       ],
       know: [
         "Nothing is fetched for a link you marked local only.",
@@ -147,7 +147,7 @@ const Guides = (() => {
       ],
       also: [],
       words:
-        "link links preview previews fetch resolve url website page title picture image browser chromium medium refused user agent article",
+        "link links preview previews fetch resolve url website page title picture image browser safari webkit medium refused user agent article",
     },
     {
       id: "search-options",

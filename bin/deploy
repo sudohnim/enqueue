@@ -7,7 +7,7 @@
 #                              ANDROID_PROD_ROLLOUT=0.1 for a staged rollout)
 #   bin/deploy android code    print the versionCode the next upload would use
 #   bin/deploy android listing upload the store text, icon, feature graphic and screenshots
-#   bin/deploy desktop         the Developer ID signed, notarized .dmg (no store)
+#   bin/deploy desktop         the signed, notarized .dmg, published on GitHub (asks first)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -54,6 +54,20 @@ if [[ "${LANE[*]}" == "android prod" && $YES -eq 0 ]]; then
   echo "(it enters Google's review, then reaches ${rollout:+$rollout of }everyone)."
   read -r -p "Ship to production? [y/N] " answer
   [[ "$answer" =~ ^[Yy]$ ]] || { echo "Not shipped."; exit 1; }
+fi
+
+if [[ "${LANE[*]}" == "mac release" ]]; then
+  # Build first; publishing is public (a GitHub release every installed Mac updates
+  # from), so it waits for a yes after the build checked out.
+  echo "==> fastlane mac release"
+  (cd "$ROOT" && bundle exec fastlane mac release)
+  if [[ $YES -eq 0 ]]; then
+    echo "This publishes the .dmg on GitHub and points every installed Mac at it."
+    read -r -p "Publish? [y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || { echo "Built, not published."; exit 0; }
+  fi
+  echo "==> fastlane mac publish"
+  cd "$ROOT" && exec bundle exec fastlane mac publish
 fi
 
 echo "==> fastlane ${LANE[*]}"

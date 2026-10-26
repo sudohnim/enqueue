@@ -487,6 +487,36 @@ dialog.ask.name .namefield:focus {
 	border-color: transparent;
 }
 
+/* A new version of the Mac app is in place (js/update.js): it waits, bottom right, until
+   the person restarts or puts it off. */
+.update-ready {
+	position: fixed;
+	right: var(--sp-4);
+	bottom: 108px;
+	z-index: var(--z-menu);
+	display: flex;
+	align-items: center;
+	gap: var(--sp-3);
+	background: var(--surface-doc);
+	color: var(--text);
+	border-radius: var(--r-xl);
+	box-shadow: var(--shadow-lifted);
+	padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+	font-size: 15px;
+	animation: rise var(--dur) ease both;
+}
+.update-later {
+	background: none;
+	border: 0;
+	color: var(--text-mute);
+	font: inherit;
+	padding: var(--sp-2);
+	cursor: pointer;
+}
+.update-later:hover {
+	color: var(--text);
+}
+
 /* ---- drag-and-drop overlay ------------------------------------------------
      The whole window is a drop target, so there is no drop zone to find. When a
      file, image, or external text drag crosses in, the room dims slightly and a

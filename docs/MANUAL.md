@@ -57,6 +57,11 @@ Finishing or skipping it is remembered, and everything in it can be changed late
 The phone's first screen is its own short welcome: what Enqueue is, then how to link it.
 On the Mac, open **Settings > Sync** and press **Show the code**; on the phone, press **Scan the code** and point it at the screen.
 
+### Updates
+
+The Mac app keeps itself up to date.
+It looks for a new version every few hours and puts it in place quietly; a note offers **Restart** to start it now, and otherwise it runs the next time you open Enqueue.
+
 ## Capturing
 
 ### From anywhere on the Mac
@@ -158,7 +163,7 @@ What you can add to a capture is your own note about it, in the box under it.
 Your note is searchable, and it shapes the summary.
 
 - **Links.** Saving a link fetches its page once, to learn its title, picture and text, so you can find it by what it says. Nothing remote is ever loaded afterwards: the picture is stored on your Mac. Click the address to open the page in your browser.
-- **A site that refuses.** Some sites turn away anything that is not a browser. The page says so under your note. Turn on **Try harder on sites that block previews** in Settings > Capture and press **Try again** to have a hidden browser open it once.
+- **A site that refuses.** Some sites turn away anything that is not a browser. Enqueue then opens the page once more in Safari's engine, out of sight and with no cookies kept, which gets past most of them. A site that still refuses says so under your note. **Try harder on sites that block previews** in Settings > Capture turns this off.
 - **PDFs** open in a reader with find-in-document. Their text is searchable page by page.
 - **Images** are described by the vision model, when one is set, so you can find a photo by what is in it.
 - **Files** (text, markdown, CSV, JSON, HTML) are read and indexed. Anything else is kept and downloadable.
@@ -318,6 +323,7 @@ To link a phone:
 
 Signing in only says who you are. Your library is locked with a key that stays on your devices, so we cannot read what Enqueue sync holds.
 Every phone and computer gets a pass of its own, listed under **Devices**: remove one and it stops syncing at once.
+Your picture at the top right of the wall opens your account: your plan and the space it has used, your devices, and Sign out.
 To use a relay you run yourself instead, open **Use a relay of your own** on the same screen (see [Your own relay](#your-own-relay)).
 
 There is nothing to type on the phone.
@@ -388,7 +394,7 @@ Search and capture work without one.
 - **Ollama** (the default) runs the model on your Mac. Nothing leaves it.
 - **OpenRouter** or **OpenCode Go** use a model on someone else's computer. The text of the artifacts involved is sent there. An artifact marked **local only** never is.
 
-Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**.
+Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**; for OpenRouter and OpenCode Go you pick from the models the service offers, and a name it does not offer is refused, so a typo cannot quietly stop answers.
 The key is stored in the macOS Keychain, never in a file.
 
 If the provider says your usage limit is reached, Enqueue pauses its model calls until the limit resets and then carries on by itself.

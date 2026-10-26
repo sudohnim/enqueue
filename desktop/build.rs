@@ -53,6 +53,9 @@ fn main() {
                                 "allow-open-external",
                                 "allow-window-drag",
                                 "allow-desktop-link-code",
+                                "allow-update-ready",
+                                "allow-app-restart",
+                                "dialog:allow-open",
                                 "core:event:allow-listen",
                                 "core:event:allow-unlisten"
                             ]
@@ -72,6 +75,9 @@ fn main() {
                 "capture_dismiss",
                 "capture_drag",
                 "hotkey_changed",
+                "desktop_link_code",
+                "update_ready",
+                "app_restart",
                 "mobile_blob",
                 "mobile_capture",
                 "mobile_get",

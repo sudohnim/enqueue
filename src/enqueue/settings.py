@@ -104,9 +104,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # on, because a wall of unresolved URLs is the thing the preview exists to fix.
     "auto_preview": ("ENQ_AUTO_PREVIEW", "on", True),
     # Whether a link the site refuses to a plain request (Medium's bot wall), or whose
-    # page is empty until its scripts run, is opened once more in headless Chromium
-    # through crawl4ai (preview.py). Off by default: a browser start per such link.
-    "preview_browser": ("ENQ_PREVIEW_BROWSER", "off", True),
+    # page is empty until its scripts run, is opened once more in the Mac's own WebKit
+    # (preview.py, webkit_page.py). On by default: a few seconds per such link only.
+    "preview_browser": ("ENQ_PREVIEW_BROWSER", "on", True),
     # The folder backups go into (backup.py) - a cloud drive's folder, Proton Drive by
     # design. Empty means backups are off. The live library never moves there.
     "backup_dir": ("ENQ_BACKUP_DIR", "", True),
@@ -124,8 +124,14 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # (previews started riding the snapshot after most links had synced).
     "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
     "sync_relay_v2_pushed": ("ENQ_SYNC_RELAY_V2_PUSHED", False, True),
+    # One-shot flag: links whose preview failed were fetched once more when previews
+    # moved to the Mac's own WebKit (preview.retry_refused_once).
+    "preview_webkit_retried": ("ENQ_PREVIEW_WEBKIT_RETRIED", False, True),
     "sync_relay_v2_cleared": ("ENQ_SYNC_RELAY_V2_CLEARED", False, True),
 }
+
+# The settings a linked phone reads (sync/client.push_settings).
+PHONE_FIELDS = {"llm_backend", "llm_model", "llm_url", "llm_headers", "auto_preview", "trash_days"}
 
 # The settings that pick which account/model a call goes to.
 _PROVIDER_FIELDS = {"llm_backend", "llm_model", "summarize_model", "llm_url", "llm_headers"}
@@ -227,6 +233,29 @@ def all_settings() -> dict:
     return out
 
 
+MODEL_FIELDS = ("llm_model", "summarize_model", "search_model", "vision_model")
+
+
+def _refuse_unknown_models(changes: dict) -> None:
+    """A model id the chosen service does not serve is refused here, where the person
+    can see why, instead of saved and failing every answer after (catalog.py). A list
+    that cannot be fetched refuses nothing."""
+    from . import catalog
+
+    backend = changes.get("llm_backend") or get("llm_backend")
+    spec = config.BACKENDS.get(backend) or {}
+    for name in MODEL_FIELDS:
+        value = changes.get(name)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if catalog.unknown(backend, value.strip(), vision=name == "vision_model"):
+            job = "reading pictures" if name == "vision_model" else "this job"
+            raise ValueError(
+                f"{spec.get('label', backend)} doesn't offer {value.strip()} for {job}."
+                " Pick one from the list."
+            )
+
+
 def update(changes: dict) -> dict:
     """Write the settings the interface is allowed to write.
 
@@ -253,6 +282,8 @@ def update(changes: dict) -> dict:
     ):
         raise ValueError("drafts_keep is one of: thinned, 30d, off")
 
+    _refuse_unknown_models(changes)
+
     stored = _stored()
     for name, value in changes.items():
         # Trim surrounding whitespace on text settings: a model name or endpoint URL
@@ -270,8 +301,11 @@ def update(changes: dict) -> dict:
     settings_path().write_text(json.dumps(stored, indent=2), encoding="utf-8")
     # Not a secret, but not everyone's business either.
     settings_path().chmod(0o600)
-    # Propagate the change to a linked phone (LLM backend/model/url/auto-preview).
-    _resync_to_relay()
+    # Propagate the change to a linked phone, only when it touches what the phone reads
+    # (sync/client.push_settings): every push is a new object on the relay, and the
+    # plan, sign-in state and one-shot flags are written here too.
+    if set(changes) & PHONE_FIELDS:
+        _resync_to_relay()
     # A usage limit belongs to the account or model it was hit on; a switch to
     # another one should not keep waiting it out (providers/pause.py).
     # Choosing a backup folder makes the first backup right away, so the person sees

@@ -23,15 +23,12 @@ dependencies = [
   "sqlite-vec>=0.1.9",
   "pynacl>=1.6.2",
   "sqlcipher3-wheels>=0.5.7",
+  # The preview browser (webkit_page.py): the Mac's own WebKit, through its bindings.
+  "pyobjc-framework-WebKit>=12; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
 index = ["fastembed>=0.4"]
-# The "Try harder on sites that block previews" fallback (preview._read_browser):
-# headless Chromium through crawl4ai. Over half the size of the engine (two copies of
-# Playwright's driver, litellm, scipy), so the Mac app ships without it and the setting
-# is not offered there; a development checkout has it through the dev group.
-browser = ["crawl4ai>=0.9.4"]
 # The hosted relay's accounts (relay/accounts.py): verifying Google and Apple sign-in
 # tokens, and Postgres. Only the relay's container installs it; the Mac app does not.
 # boto3: the object bytes in Cloudflare R2 (relay/blobs.py), on when R2_* is set.
@@ -42,7 +39,8 @@ enq = "enqueue.cli:app"
 
 [dependency-groups]
 dev = [
-    "crawl4ai>=0.9.4",
+    # bin/screenshots drives headless Chromium (bin/setup installs it).
+    "playwright>=1.47",
     "pyjwt[crypto]>=2.9",
     "psycopg[binary]>=3.2",
     "black>=24.0",
