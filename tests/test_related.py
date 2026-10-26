@@ -118,7 +118,16 @@ def test_artifact_detail_carries_related(sqlite_store):
     body = TestClient(create_app()).get("/artifacts/a").json()
 
     assert [r["id"] for r in body["related"]] == ["b"]
-    assert set(body["related"][0]) == {"id", "title", "kind", "score", "via", "point"}
+    assert set(body["related"][0]) == {
+        "id",
+        "title",
+        "kind",
+        "score",
+        "via",
+        "point",
+        "link",
+        "distance",
+    }
 
 
 def _entity(aid: str, name: str, model: str | None = None) -> None:
@@ -446,3 +455,28 @@ def test_ingest_never_calls_the_judge(idea_pair):
 
     assert judge.calls == []
     assert related.is_pending("prince")
+
+
+def test_an_idea_link_records_how_far_apart_the_subjects_are(idea_pair):
+    idea_pair(_Judge())
+
+    related.compute("prince", judge=True)
+
+    row = _rows("prince")["war"]
+    assert row["link"] == "idea"
+    assert 0.0 < row["distance"] <= 1.0
+
+
+def test_an_analogy_comes_before_a_closer_note_on_the_same_subject(idea_pair):
+    idea_pair(_Judge())
+    _note("prince2", "A sixteenth-century manual on holding power in an Italian city.")
+    from enqueue.index.store import get_store
+
+    get_store().upsert_facets()
+
+    related.compute("prince", judge=True)
+
+    links = _links("prince")
+    assert links[:2] == ["war", "prince2"]  # the far idea first, the same subject after
+    assert _rows("prince")["prince2"]["link"] == "subject"
+    assert _rows("prince")["prince2"]["distance"] < _rows("prince")["war"]["distance"]

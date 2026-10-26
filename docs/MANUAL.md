@@ -32,7 +32,7 @@ You capture a thing the moment you meet it, without choosing a folder, a tag, or
 Later, when a subject is on your mind, you search or ask, and Enqueue brings back everything that speaks to it, including things that never used your words.
 
 Everything you save is an **artifact**: a note, a link, a PDF, an image, or a file.
-The **?** at the top right of the home page (and of the phone's library) opens a seven-card tour of all this, with small demos you can try; nothing typed there is saved.
+The **?** at the top right of the home page (and of the phone's library) opens a short tour of all this (eight cards on the Mac, seven on the phone), with small demos you can try; nothing typed there is saved.
 Your library lives on your Mac, in one folder (`~/Library/Application Support/Enqueue`).
 
 ## Getting it running
@@ -101,6 +101,18 @@ The home screen is the wall: everything you saved, the most recently touched fir
 - Click a tile to open it.
 
 The greeting changes through the day, and so does the colour of the page: lavender by day, deeper at night.
+
+### Something shiny
+
+Once the assistant has found notes from different fields that make the same point (see [Related](#related)), a **Something shiny** card sits above the wall.
+It sets two or three of them side by side: the idea they share, how each one shows it, and a question to take it further.
+Comparing unlike cases is how the idea under them comes clear, and the farther apart the fields, the better; this does the comparing you would rarely think to do.
+There is a new one each day, and the farthest pairs come first.
+Want more? **Find another** shows the next set, as many as the assistant has found; after the last, **Back to the first** starts over. The wall keeps showing the one you stopped at until tomorrow.
+Click a note to open it; **Not today** hides the card until tomorrow.
+Nothing is hidden, moved or deleted by it.
+The words are written by your chat model from the notes' summaries, never their text; a set that holds a local-only note is written by the model on your computer.
+Without a model, the card shows the plain sentence the link was judged with.
 
 ## Notes
 
@@ -235,11 +247,15 @@ The line also says when the reading is held up: the online service hit its usage
 ## Related
 
 Under an artifact, **Related** lists up to five others, each with the reason it is there.
+It is the answer to "what else is this like?".
 There are three kinds of link:
 
 - **The same subject.** The reason is the other artifact's own "what it is about" line.
 - **The same name.** Both mention the same person, place or thing: "Both mention Yosemite."
 - **The same point, from another field.** A book on statecraft beside one on war, because both say incentives predict behaviour better than character. The reason is one plain sentence beginning "Both".
+
+Same-point links come first, marked **Same idea, another field**, and the farther apart the two fields, the higher it sits: a note on a willow in a storm beside one on shipping software says more than two notes on the same book.
+The rest follow, closest first.
 
 Nothing is invented to fill the list.
 A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.

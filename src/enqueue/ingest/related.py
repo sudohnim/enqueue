@@ -40,6 +40,13 @@ first version had no ceiling, sent every note back through the whole ingest pipe
 to make one call, and ran a weekly usage limit dry). A usage limit or outage leaves
 the artifact pending and the worker waits it out. A pair with a local-only item is
 judged by the local model only.
+
+Each link keeps its `kind` (subject, mention, idea) and `distance`: 1 minus the closest
+subject-line similarity between the two, so how far apart their fields are. Analogies
+(idea links) are kept and shown first, the farthest first, because the further a
+shared idea reaches the more it is worth (Gentner's far analogies, as told in Epstein's
+*Range*): a note on a willow in a storm beside one on releasing software says more than
+two notes on the same book. The rest follow, closest first.
 """
 
 from __future__ import annotations
@@ -73,7 +80,7 @@ _PER_STATEMENT = 80
 IDEA_MIN = 0.72
 IDEA_CANDIDATES = 8
 # Bump when the way links are chosen changes: every artifact is recomputed once.
-VERSION = "6"
+VERSION = "7"
 # The most model calls the judge makes in a day (UTC). Each call judges one artifact's
 # candidates. 0 turns the judge off: cached verdicts still link, nothing new is asked.
 JUDGE_DAILY = int(os.getenv("ENQ_RELATED_JUDGE_DAILY", "40"))
@@ -125,6 +132,9 @@ def compute(artifact_id: str, judge: bool = False) -> int:
         # other artifact -> (similarity, this artifact's line, the other's facet id)
         best: dict[str, tuple[float, str, str]] = {}
         ideas: dict[str, tuple[float, str, str]] = {}
+        # other artifact -> its closest subject line to any of ours, below the bar too:
+        # how near the two subjects are, which is what makes an idea link far or near.
+        near: dict[str, float] = {}
         cache: dict = {}
         for facet in mine:
             subject = facet["level"] == SUBJECT_LEVEL
@@ -137,6 +147,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                     continue
                 if hit["level"] < SUBJECT_LEVEL:
                     continue
+                if subject:
+                    near[other] = max(near.get(other, 0.0), hit["score"])
                 if hit["score"] < (RELATED_MIN if subject else IDEA_MIN):
                     continue
                 if hit_is_stale(conn, hit, cache):
@@ -182,11 +194,20 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                     log.warning("related judge failed for %s: %s", artifact_id, exc)
                     missing = []  # would fail the same way again; asked anew on a change
 
+        # A subject this one's lines never came close to is at least as far as the
+        # farthest subject they did reach.
+        floor = min(near.values(), default=0.0)
+        distance = {o: round(max(0.0, 1.0 - near.get(o, floor)), 4) for o in [*best, *why, *via]}
+        kinds = {other: "subject" for other in best}
+        kinds.update({c["id"]: "idea" for c in candidates if c["id"] in why})
+        for other in via:
+            kinds.setdefault(other, "mention")
         scores = {other: found[0] for other, found in best.items()}
         scores.update({c["id"]: c["score"] for c in candidates if c["id"] in why})
         for other in via:
             scores.setdefault(other, MENTION_SCORE)
-        top = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:RELATED_LIMIT]
+        top = sorted(scores.items(), key=lambda kv: _rank(kinds[kv[0]], distance[kv[0]], kv[1]))
+        top = top[:RELATED_LIMIT]
         theirs = _statements(conn, [best[other][2] for other, _ in top if other in best])
 
         now = db.now()
@@ -204,9 +225,19 @@ def compute(artifact_id: str, judge: bool = False) -> int:
             for (a, b), point in zip(((artifact_id, other), (other, artifact_id)), points):
                 conn.execute(
                     "INSERT OR REPLACE INTO related"
-                    " (artifact_id, related_id, score, model_version, created_at, via, point)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (a, b, round(score, 4), model, now, via.get(other), point),
+                    " (artifact_id, related_id, score, model_version, created_at, via, point,"
+                    " kind, distance) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        a,
+                        b,
+                        round(score, 4),
+                        model,
+                        now,
+                        via.get(other),
+                        point,
+                        kinds[other],
+                        distance[other],
+                    ),
                 )
         _set_pending(conn, artifact_id, bool(missing))
         conn.commit()
@@ -217,6 +248,15 @@ def compute(artifact_id: str, judge: bool = False) -> int:
         return len(top)
     finally:
         conn.close()
+
+
+def _rank(kind: str, distance: float, score: float) -> tuple:
+    """Sort key for links: analogies first, the farthest first, since a shared idea
+    from another field is the one a person would not have found on their own; then
+    the rest, closest first."""
+    if kind == "idea":
+        return (0, -distance, -score)
+    return (1, -score, 0.0)
 
 
 def _pair_keys(conn, artifact_id: str, others: list[str]) -> dict[str, tuple[str, str]]:
@@ -562,13 +602,19 @@ def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
 
 
 def for_artifact(conn, artifact_id: str) -> list[dict]:
-    """Live related artifacts, closest first, each with `point` (its summary line that
-    matched) and `via` (a shared name); either may be None, never both."""
+    """Live related artifacts, each with `point` (its summary line that matched, or
+    the judge's sentence), `via` (a shared name), `link` (subject, mention or idea)
+    and `distance` (how far apart the two subjects are). Analogies come first, the
+    farthest first; then the rest, closest first."""
     rows = conn.execute(
-        "SELECT a.id, a.title, a.kind, r.score, r.via, r.point FROM related r JOIN artifacts a"
+        "SELECT a.id, a.title, a.kind, r.score, r.via, r.point, r.kind AS link, r.distance"
+        " FROM related r JOIN artifacts a"
         " ON a.id = r.related_id WHERE r.artifact_id = ?"
-        " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
-        " ORDER BY r.score DESC LIMIT ?",
-        (artifact_id, RELATED_LIMIT),
+        " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
+        (artifact_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    out = sorted(
+        (dict(r) for r in rows),
+        key=lambda r: _rank(r["link"] or "", r["distance"] or 0.0, r["score"]),
+    )
+    return out[:RELATED_LIMIT]

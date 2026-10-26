@@ -160,8 +160,8 @@ const WELCOME_RENDER = {
 			"</span>" +
 			'<span class="welcome-tourcard-words">' +
 			'<span class="welcome-tourcard-title">See how it works</span>' +
-			'<span class="welcome-tourcard-copy">Seven short cards you can try: capture, ' +
-			"search, ask, summaries, views and privacy. About a minute.</span>" +
+			'<span class="welcome-tourcard-copy">Eight short cards you can try: capture, ' +
+			"search, ask, summaries, something shiny, views and privacy. About a minute.</span>" +
 			"</span>" +
 			'<span class="welcome-tourcard-go" aria-hidden="true">' +
 			'<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>' +

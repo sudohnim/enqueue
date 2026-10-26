@@ -1,7 +1,7 @@
 /* The tour (TOUR.1): "How Enqueue works", opened from the ? on the home header.
-   Seven cards, each with a small working demo instead of a screenshot. One stylesheet
-   and one script (js/tour.js) for the desktop home and the phone, drawn from the tokens
-   both already load, so the two never tell different stories.
+   Eight cards on the Mac (seven on the phone), each with a small working demo instead
+   of a screenshot. One stylesheet and one script (js/tour.js) for the desktop home
+   and the phone, drawn from the tokens both already load, so the two never tell different stories.
 
    It is a stage, not a dialog card: the whole window on the flat canvas, speaking in
    the greeting's own voice (the display face at greeting size, last word in the accent). */
@@ -675,6 +675,62 @@ textarea.tour-line {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+/* ---- something shiny (desktop only): far-apart notes, one idea ------------------- */
+.tour-shiny {
+  display: grid;
+  gap: 10px;
+}
+.tour-shiny-kicker {
+  font-size: 13px;
+  font-weight: var(--w-strong);
+  color: var(--accent-text);
+}
+.tour-shiny-body {
+  display: grid;
+  gap: 10px;
+  min-height: 236px;
+  align-content: start;
+}
+.tour-shiny-idea {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: var(--w-strong);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  text-wrap: pretty;
+}
+.tour-shiny-notes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.tour-shiny-notes .tour-tile {
+  padding: 10px 12px;
+  align-content: start;
+}
+.tour-shiny-notes .tour-tile-title {
+  font-size: 14px;
+}
+.tour-shiny-notes .tour-tile-meta {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+.tour-shiny-question {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  font-style: italic;
+  color: var(--text-dim);
+}
+.tour-shiny-foot {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ---- 6. views -------------------------------------------------------------------- */

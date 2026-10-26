@@ -1383,56 +1383,129 @@ main {
 	color: var(--accent);
 }
 
-/* Resurfacing: one older note between the header and the wall. The card recipe,
-   one row wide, so it reads as part of the wall rather than a banner over it. */
-.resurface {
+/* Something shiny: two or three notes from different fields that make the same point,
+   between the header and the wall. One card, the wall's tile recipe, the notes as
+   tiles inside it so they read as things to open. */
+.shiny {
 	max-width: 720px;
 	margin: 0 auto var(--sp-5);
 }
-.resurface-card {
-	display: flex;
-	align-items: center;
-	gap: var(--sp-4);
-	padding: 14px 16px;
+.shiny-card {
+	padding: 14px 16px 16px;
 	background: var(--surface);
 	box-shadow: var(--hairline);
 	border-radius: var(--r-lg);
-	cursor: pointer;
-	text-align: left;
-	transition:
-		background var(--dur) var(--ease),
-		box-shadow 260ms var(--ease);
 }
-.resurface-card:hover {
-	background: var(--surface-hover);
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+.shiny-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--sp-3);
 }
-.resurface-text {
-	flex: 1;
-	min-width: 0;
-}
-.resurface-why {
+.shiny-kicker {
 	font-size: 12px;
 	line-height: 16px;
-	color: var(--ink-faint);
+	font-weight: var(--w-strong);
+	color: var(--accent-text);
 }
-.resurface-title {
-	margin-top: 2px;
+.shiny-idea {
+	margin: 6px 0 0;
+	font-size: 16px;
+	line-height: 22px;
 	font-weight: var(--w-strong);
 	color: var(--text);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	text-wrap: pretty;
 }
-.resurface-excerpt {
-	margin-top: 2px;
+.shiny-notes {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: var(--sp-2);
+	margin-top: var(--sp-3);
+}
+.shiny-note {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 10px 12px;
+	border: 0;
+	border-radius: var(--r-md);
+	background: var(--surface-3);
+	font: inherit;
+	color: var(--text);
+	text-align: left;
+	cursor: pointer;
+	transition: background var(--dur) var(--ease);
+}
+.shiny-note:hover {
+	background: var(--surface-hover);
+}
+.shiny-note:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.shiny-title {
+	font-size: 14px;
+	line-height: 20px;
+	font-weight: var(--w-strong);
+	overflow-wrap: anywhere;
+}
+.shiny-note:hover .shiny-title {
+	color: var(--accent-text);
+}
+.shiny-how {
 	font-size: 13px;
+	line-height: 18px;
 	color: var(--text-dim);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
-.resurface-dismiss {
+.shiny-foot {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: var(--sp-3);
+	margin-top: var(--sp-3);
+}
+.shiny-question {
+	margin: 0;
+	font-size: 14px;
+	line-height: 20px;
+	font-style: italic;
+	color: var(--text-dim);
+}
+.shiny-another {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+	margin-left: auto;
+	padding: 4px 6px 4px 12px;
+	border: 0;
+	border-radius: var(--r-full);
+	background: none;
+	font: inherit;
+	font-size: 13px;
+	font-weight: var(--w-strong);
+	color: var(--accent-text);
+	cursor: pointer;
+}
+.shiny-another:hover {
+	background: var(--surface-3);
+}
+.shiny-another svg {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	rotate: 90deg;
+}
+/* While the next find is fetched, the current one steps back. */
+.shiny-card {
+	transition: opacity 180ms var(--ease);
+}
+.shiny-card.shiny-turning {
+	opacity: 0.5;
+}
+.shiny-dismiss {
 	flex-shrink: 0;
 	padding: 4px 10px;
 	border: 0;
@@ -1443,7 +1516,7 @@ main {
 	color: var(--text-dim);
 	cursor: pointer;
 }
-.resurface-dismiss:hover {
+.shiny-dismiss:hover {
 	background: var(--surface-3);
 	color: var(--text);
 }

@@ -660,9 +660,10 @@
     );
   }
 
-  // Related, under the note: other notes about the same subject or naming the same
-  // thing (ingest/related.py), closest first, each with the reason it is here - the
-  // shared name, and the line of its summary that matched. Hidden when there are none.
+  // Related, under the note: what else this is like (ingest/related.py). Analogies come
+  // first, the farthest field first, labelled as such; then notes on the same subject
+  // or naming the same thing. Each says why it is here - the shared idea, the shared
+  // name, or the line of its summary that matched. Hidden when there are none.
   function relatedWhy(r) {
     const parts = [];
     if (r.via) parts.push("Both mention " + r.via + ".");
@@ -687,6 +688,7 @@
             '"><span class="relatedtitle">' +
             esc(r.title || "(untitled)") +
             "</span>" +
+            (r.link === "idea" ? '<span class="relatedkind">Same idea, another field</span>' : "") +
             (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
             "</button>"
           );
