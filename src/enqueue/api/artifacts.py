@@ -32,15 +32,15 @@ def connections(artifact_id: str) -> dict:
     return {"passages": passage_links.for_artifact(artifact_id)}
 
 
-@router.get("/brainfood")
-def brainfood() -> dict:
-    """Today's brain food (brainfood.py): two or three notes from different fields, as
+@router.get("/shiny")
+def shiny_card(n: int = 0) -> dict:
+    """Today's Something shiny (shiny.py): two or three notes from different fields, as
     wall items, and the idea they share. `notes` is empty when there is none yet."""
-    from .. import brainfood as brainfood_mod
+    from .. import shiny as shiny_mod
 
-    food = brainfood_mod.today()
+    food = shiny_mod.today(n=max(0, n))
     if food is None:
-        return {"notes": [], "food": None, "links": [], "writing": False}
+        return {"notes": [], "food": None, "links": [], "writing": False, "more": False, "n": n}
     conn = db.get_conn()
     try:
         rows = conn.execute(
@@ -63,6 +63,8 @@ def brainfood() -> dict:
         "food": food["food"],
         "links": food["links"],
         "writing": food["writing"],
+        "more": food["more"],
+        "n": food["n"],
     }
 
 

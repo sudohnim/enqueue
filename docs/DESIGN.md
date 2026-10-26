@@ -137,7 +137,7 @@ Tiles pad 16-18px; settings groups 24px; the capture card 14-16px; the phone gut
 | `--r-lg` | 12px | Buttons, inputs, Save |
 | `--r-xl` | 16px | List rows, the capture field, event log |
 | `--r-2xl` | 20px | Settings groups, dialogs |
-| tiles | 12px (`--r-lg`) | Wall tiles (desktop and phone), the brain-food card |
+| tiles | 12px (`--r-lg`) | Wall tiles (desktop and phone), the Something shiny card |
 | sheets | 22px | The capture overlay card |
 | `--r-full` | pill | The capture pill, search, mode tabs, tag chips, status badges |
 

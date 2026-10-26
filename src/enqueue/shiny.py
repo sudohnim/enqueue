@@ -1,4 +1,4 @@
-"""Brain food: one relationship drawn across notes from different fields, each day.
+"""Something shiny: one relationship drawn across notes from different fields, each day.
 
 Instead of bringing one forgotten note back, the wall shows two or three notes that
 make the same point from far-apart fields, and what that shared point is. This is the
@@ -11,11 +11,12 @@ first: the ingest model judged that the two notes make the same point. Only when
 there are none, mention links between notes on different subjects (a shared name is
 thin fare beside a shared idea). Pairs on the same subject never count. The
 pick favours the farthest pairs (`related.distance`), rotating daily through the top
-ROTATE so one strong pair does not hold the slot. A third note joins when one of the
+ROTATE so one strong pair does not hold the slot. "Find another" walks on through the
+day's order, past the top ROTATE into every other pair, each with its own words. A third note joins when one of the
 pair has another idea link. The same day always gives the same set.
 
 The words come from one call to the chat model per set, cached in `derived_values`
-(scope `brain_food`): the shared idea, how each note shows it, and a question to take
+(scope `shiny`): the shared idea, how each note shows it, and a question to take
 further. The call runs in the background; until it lands, or with no model, the card
 shows the judge's own sentence for the link. A set with a local-only note goes to the
 local model only. The model is shown titles and summary lines, never the notes' text.
@@ -96,10 +97,29 @@ def _pairs(conn) -> list[dict]:
     return pairs
 
 
-def pick(today: date | None = None) -> dict | None:
-    """{"ids", "links"} for today's set, or None when the library has no relationship
-    across fields yet. `links` are the pairs inside the set, each with its kind, the
-    judge's sentence (`point`) or the shared name (`via`)."""
+def _grow(first: dict, pairs: list[dict]) -> tuple[list[str], list[dict]]:
+    """A pair, and a third note when one of the two has another idea link: the
+    farthest one to a note outside. The note both links pass through sits in the
+    middle, so the chain reads across."""
+    ids = [first["a"], first["b"]]
+    links = [first]
+    for p in pairs:
+        if len(ids) >= MAX_NOTES:
+            break
+        if p["kind"] != "idea" or (p["a"] in ids) == (p["b"] in ids):
+            continue
+        hub = p["a"] if p["a"] in ids else p["b"]
+        ids = [i for i in ids if i != hub] + [hub, p["b"] if hub == p["a"] else p["a"]]
+        links.append(p)
+    return ids, links
+
+
+def pick(today: date | None = None, n: int = 0) -> dict | None:
+    """{"ids", "links", "more"} for today's set, or None when the library has no
+    relationship across fields yet (or `n` has gone past the last one). `links` are the
+    pairs inside the set, each with its kind, the judge's sentence (`point`) or the
+    shared name (`via`). `n` is "Find another": 0 is the day's own set, each next one
+    the next pair in the day's order; `more` says whether there is another after it."""
     today = today or datetime.now(timezone.utc).date()
     conn = db.get_conn()
     try:
@@ -110,22 +130,27 @@ def pick(today: date | None = None) -> dict | None:
     ideas = [p for p in pairs if p["kind"] == "idea"]
     if not pairs:
         return None
-    top = (ideas or pairs)[:ROTATE]
-    first = top[today.toordinal() % len(top)]
-    ids = [first["a"], first["b"]]
-    links = [first]
-    # A third note: the farthest idea link from either of the two to a note outside.
-    for p in pairs:
-        if len(ids) >= MAX_NOTES:
-            break
-        if p["kind"] != "idea" or (p["a"] in ids) == (p["b"] in ids):
+    pool = ideas or pairs
+    top, rest = pool[:ROTATE], pool[ROTATE:]
+    start = today.toordinal() % len(top)
+    # The day's order: the farthest pairs from today's turn on, then everything else.
+    # A set whose notes were all in an earlier one is skipped, or "Find another" would
+    # show the same three notes again by way of another of their pairs.
+    sets: list[tuple[list[str], list[dict]]] = []
+    for first in top[start:] + top[:start] + rest:
+        ids, links = _grow(first, pairs)
+        if any(set(ids) <= set(shown) for shown, _ in sets):
             continue
-        hub = p["a"] if p["a"] in ids else p["b"]
-        # The note both links pass through sits in the middle, so the chain reads across.
-        ids = [i for i in ids if i != hub] + [hub, p["b"] if hub == p["a"] else p["a"]]
-        links.append(p)
+        sets.append((ids, links))
+    if n < 0 or n >= len(sets):
+        return None
+    ids, links = sets[n]
     keep = ("a", "b", "kind", "point", "via")
-    return {"ids": ids, "links": [{k: p[k] for k in keep} for p in links]}
+    return {
+        "ids": ids,
+        "links": [{k: p[k] for k in keep} for p in links],
+        "more": n + 1 < len(sets),
+    }
 
 
 def _faces(conn, ids: list[str]) -> dict[str, dict]:
@@ -155,7 +180,7 @@ def _key(ids: list[str], faces: dict[str, dict]) -> tuple[str, str]:
 
 def _cached(conn, key: tuple[str, str]) -> dict | None:
     row = conn.execute(
-        "SELECT value FROM derived_values WHERE scope = 'brain_food' AND subject = ?"
+        "SELECT value FROM derived_values WHERE scope = 'shiny' AND subject = ?"
         " AND attribute = ? AND source = 'model'",
         key,
     ).fetchone()
@@ -198,7 +223,7 @@ def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) ->
         local = bool(privacy.local_only_ids(ids))
         provider = get_provider(local_only=local, role="chat")
         food = provider.complete(
-            system=prompts.BRAIN_FOOD,
+            system=prompts.SHINY,
             user="Notes:\n\n"
             + "\n\n".join(blocks)
             + "\n\nWhat was already noticed about them:\n"
@@ -211,29 +236,30 @@ def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) ->
         value = json.dumps({"idea": food.idea, "parts": parts, "question": food.question})
         with db.transaction() as conn:
             conn.execute(
-                "DELETE FROM derived_values WHERE scope = 'brain_food' AND subject = ?",
+                "DELETE FROM derived_values WHERE scope = 'shiny' AND subject = ?",
                 (key[0],),
             )
             conn.execute(
                 "INSERT INTO derived_values"
                 " (scope, subject, attribute, value, grounded, source, model_version,"
-                " created_at) VALUES ('brain_food', ?, ?, ?, 1, 'model', ?, ?)",
+                " created_at) VALUES ('shiny', ?, ?, ?, 1, 'model', ?, ?)",
                 (key[0], key[1], value, getattr(provider, "model", ""), db.now()),
             )
     except Exception as exc:  # noqa: BLE001 - the card falls back to the link's own words
-        log.info("brain food not written: %s", exc)
+        log.info("something shiny not written: %s", exc)
         _failed[key[0]] = day
     finally:
         with _lock:
             _writing.discard(key[0])
 
 
-def today(day: date | None = None, background: bool = True) -> dict | None:
-    """Today's set with its words, or None. `food` is the model's words when written;
-    `writing` says they are on the way. `background=False` writes them in this thread
-    (tests)."""
+def today(day: date | None = None, n: int = 0, background: bool = True) -> dict | None:
+    """Today's set (or the `n`th "Find another") with its words, or None. `food` is the
+    model's words when written; `writing` says they are on the way; `more` whether
+    there is another set after this one. `background=False` writes the words in this
+    thread (tests)."""
     day = day or datetime.now(timezone.utc).date()
-    chosen = pick(day)
+    chosen = pick(day, n)
     if chosen is None:
         return None
     ids = chosen["ids"]
@@ -266,4 +292,11 @@ def today(day: date | None = None, background: bool = True) -> dict | None:
         first = chosen["links"][0]
         idea = first["point"] or (f"Both mention {first['via']}." if first["via"] else "")
         food = {"idea": idea, "parts": {}, "question": FALLBACK_QUESTION}
-    return {"ids": ids, "links": chosen["links"], "food": food, "writing": writing}
+    return {
+        "ids": ids,
+        "links": chosen["links"],
+        "food": food,
+        "writing": writing,
+        "more": chosen["more"],
+        "n": n,
+    }

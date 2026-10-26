@@ -217,9 +217,9 @@ def purge(artifact_id: str) -> dict:
             " AND (subject LIKE ? OR subject LIKE ?)",
             (f"{artifact_id}|%", f"%|{artifact_id}"),
         )
-        # Brain food's words name every note of its set.
+        # Something shiny's words name every note of its set.
         conn.execute(
-            "DELETE FROM derived_values WHERE scope = 'brain_food' AND instr(subject, ?) > 0",
+            "DELETE FROM derived_values WHERE scope = 'shiny' AND instr(subject, ?) > 0",
             (artifact_id,),
         )
         # A tag the purged artifact was the last user of has nothing left to

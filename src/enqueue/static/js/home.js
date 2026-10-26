@@ -1039,12 +1039,12 @@ async function home(opts) {
 	// The wall body renders in the chosen grouping mode (K.6). Custom fetches
 	// /pivots after the shell is in place, so its slot starts empty.
 	html += '<div class="reading" id="reading" role="status" aria-live="polite" hidden></div>';
-	html += '<div class="brainfood" id="brainfood" hidden></div>';
+	html += '<div class="shiny" id="shiny" hidden></div>';
 	html += '<div class="wallbody" id="wallbody"></div>';
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
-	refreshBrainFood();
+	refreshShiny();
 	refreshReading();
 
 	const bodySlot = view.querySelector(".wallbody");
@@ -1221,73 +1221,117 @@ async function refreshReading() {
 	readingTimer = setTimeout(refreshReading, READING_POLL_MS);
 }
 
-// Brain food (brainfood.py): two or three notes from different fields that make the
+// Something shiny (shiny.py): two or three notes from different fields that make the
 // same point, side by side above the wall, with the idea they share and a question to
-// take it further. One set a day. The model's words are written in the background;
-// until they land the card shows the link's own sentence and asks again a few times.
-// "Not today" hides it until tomorrow in this browser only.
-const BRAINFOOD_DISMISSED = "enqueue.brainfood.dismissed";
-const BRAINFOOD_RETRY_MS = 6000;
-const BRAINFOOD_RETRIES = 4;
+// take it further. One set a day; "Find another" walks on to the next, and the wall
+// keeps showing the last one found until tomorrow. The model's words are written in
+// the background; until they land the card shows the link's own sentence and asks
+// again a few times. "Not today" hides it until tomorrow in this browser only.
+const SHINY_DISMISSED = "enqueue.shiny.dismissed";
+const SHINY_AT = "enqueue.shiny.at";
+const SHINY_RETRY_MS = 6000;
+const SHINY_RETRIES = 4;
+// Bumped by every new fetch, so a late retry for an earlier set never draws over it.
+let shinyGen = 0;
 
 function todayStamp() {
 	return new Date().toISOString().slice(0, 10);
 }
 
-async function refreshBrainFood(tries = 0) {
-	const slot = document.getElementById("brainfood");
+function shinyAt() {
+	try {
+		const at = JSON.parse(localStorage.getItem(SHINY_AT) || "null");
+		if (at && at.day === todayStamp() && Number.isInteger(at.n) && at.n > 0) return at.n;
+	} catch (_) {
+		// No storage, or something unreadable in it: start from the day's own set.
+	}
+	return 0;
+}
+
+function setShinyAt(n) {
+	try {
+		localStorage.setItem(SHINY_AT, JSON.stringify({ day: todayStamp(), n }));
+	} catch (_) {
+		// Remembered for this visit only.
+	}
+}
+
+async function refreshShiny(tries = 0, n = shinyAt()) {
+	const slot = document.getElementById("shiny");
 	if (!slot) return;
 	try {
-		if (localStorage.getItem(BRAINFOOD_DISMISSED) === todayStamp()) return;
+		if (localStorage.getItem(SHINY_DISMISSED) === todayStamp()) return;
 	} catch (_) {
 		// No storage (private window): the card simply always shows.
 	}
+	const gen = ++shinyGen;
 	let r;
 	try {
-		r = await api("/brainfood");
+		r = await api("/shiny?n=" + n);
 	} catch (_) {
 		return;
 	}
-	if (!r || !r.notes || r.notes.length < 2 || !document.body.contains(slot)) return;
+	if (gen !== shinyGen || !document.body.contains(slot)) return;
+	// The set remembered for today is gone (a note trashed since): start over.
+	if ((!r || !r.notes || r.notes.length < 2) && n > 0) {
+		setShinyAt(0);
+		return refreshShiny(0, 0);
+	}
+	if (!r || !r.notes || r.notes.length < 2) return;
 	const food = r.food || {};
 	const parts = food.parts || {};
+	const next = r.more ? "Find another" : "Back to the first";
 	slot.innerHTML =
-		'<section class="brainfood-card" aria-label="Brain food">' +
-		'<div class="brainfood-head"><span class="brainfood-kicker">Brain food</span>' +
-		'<button class="brainfood-dismiss" type="button">Not today</button></div>' +
-		(food.idea ? '<p class="brainfood-idea">' + esc(food.idea) + "</p>" : "") +
-		'<div class="brainfood-notes">' +
+		'<section class="shiny-card" aria-label="Something shiny">' +
+		'<div class="shiny-head"><span class="shiny-kicker">Something shiny</span>' +
+		'<button class="shiny-dismiss" type="button">Not today</button></div>' +
+		(food.idea ? '<p class="shiny-idea">' + esc(food.idea) + "</p>" : "") +
+		'<div class="shiny-notes">' +
 		r.notes
 			.map(
 				(a) =>
-					'<button class="brainfood-note" type="button" data-id="' +
+					'<button class="shiny-note" type="button" data-id="' +
 					esc(a.id) +
-					'"><span class="brainfood-title">' +
+					'"><span class="shiny-title">' +
 					esc(a.title || "Untitled") +
 					"</span>" +
-					(parts[a.id] ? '<span class="brainfood-how">' + esc(parts[a.id]) + "</span>" : "") +
+					(parts[a.id] ? '<span class="shiny-how">' + esc(parts[a.id]) + "</span>" : "") +
 					"</button>",
 			)
 			.join("") +
 		"</div>" +
-		(food.question ? '<p class="brainfood-question">' + esc(food.question) + "</p>" : "") +
-		"</section>";
+		'<div class="shiny-foot">' +
+		(food.question ? '<p class="shiny-question">' + esc(food.question) + "</p>" : "") +
+		// Hidden when there is only the one set: nothing else to find.
+		(r.more || n > 0
+			? '<button class="shiny-another" type="button">' + next + (r.more ? svg("chev") : "") + "</button>"
+			: "") +
+		"</div></section>";
 	slot.hidden = false;
-	slot.querySelectorAll(".brainfood-note").forEach((b) => {
-		b.addEventListener("click", () => openArtifact(b.dataset.id, "brainfood"));
+	slot.querySelectorAll(".shiny-note").forEach((b) => {
+		b.addEventListener("click", () => openArtifact(b.dataset.id, "shiny"));
 	});
-	slot.querySelector(".brainfood-dismiss").addEventListener("click", () => {
+	slot.querySelector(".shiny-dismiss").addEventListener("click", () => {
 		try {
-			localStorage.setItem(BRAINFOOD_DISMISSED, todayStamp());
+			localStorage.setItem(SHINY_DISMISSED, todayStamp());
 		} catch (_) {
 			// Hidden for this visit only.
 		}
 		slot.hidden = true;
 	});
-	if (r.writing && tries < BRAINFOOD_RETRIES)
+	const another = slot.querySelector(".shiny-another");
+	if (another)
+		another.addEventListener("click", () => {
+			const to = r.more ? n + 1 : 0;
+			setShinyAt(to);
+			slot.querySelector(".shiny-card").classList.add("shiny-turning");
+			refreshShiny(0, to).then(() => slot.querySelector(".shiny-another")?.focus());
+		});
+	if (r.writing && tries < SHINY_RETRIES)
 		setTimeout(() => {
-			if (document.body.contains(slot) && !slot.hidden) refreshBrainFood(tries + 1);
-		}, BRAINFOOD_RETRY_MS);
+			if (gen === shinyGen && document.body.contains(slot) && !slot.hidden)
+				refreshShiny(tries + 1, n);
+		}, SHINY_RETRY_MS);
 }
 
 /// Drag-and-drop ingestion.
