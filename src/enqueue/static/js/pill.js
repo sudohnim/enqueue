@@ -34,7 +34,8 @@ function restorePill(where) {
 	const settings = place === "settings";
 	const inside = place === "inside" || settings;
 
-	// Wall: Plus + Eye (chat) + Settings. Search lives in the home header (and
+	// Wall: Plus + Eye (chat). Settings live in the account menu, top right
+	// (js/accountmenu.js). Search lives in the home header (and
 	// on Cmd+K), so the pill does not repeat it. Saved groupings moved into the
 	// wall's grouping selector (K.6), so the pill carries no grid button either.
 	// Inside: Back + Eye (context-aware).
@@ -64,9 +65,6 @@ function restorePill(where) {
 			"</span></button>" +
 			'<button class="round" aria-label="Chat with AI" onclick="openEye()">' +
 			'<span class="pill-eye eye" id="pillEye"></span>' +
-			"</button>" +
-			'<button class="round" aria-label="Settings" onclick="showSettings()">' +
-			svg("gear") +
 			"</button>";
 	}
 	pill.innerHTML = html;

@@ -1,6 +1,6 @@
-// The account at the top right of the wall, beside the ?: who is signed in to Enqueue
-// sync, the plan and what it has used, the devices, and the way out. Signed out, the
-// same place offers the sign-in, which lives in Settings, Sync.
+// The account at the top right of the wall: who is signed in to Enqueue sync, the plan
+// and what it has used, the devices, Settings, How to use (the welcome), and the way
+// out. Signed out, the same place offers the sign-in, which lives in Settings, Sync.
 //
 // The chip draws at once from the account as last read (`accountMenuMe`) and catches
 // up from GET /account, which refreshes the plan from the relay behind it
@@ -14,7 +14,6 @@ function homeCornerHtml() {
 		'<span id="accountChip" class="account-chip-slot">' +
 		accountChipInner(accountMenuMe) +
 		"</span>" +
-		welcomeTriggerHtml() +
 		"</div>"
 	);
 }
@@ -144,6 +143,7 @@ function toggleAccountMenu(chip) {
 			'<span>Devices</span><span class="acct-meta" id="acctDevices">...</span></button>' +
 			'<button type="button" role="menuitem" class="acct-item" onclick="accountMenuGo()">' +
 			"<span>Settings</span></button>" +
+			accountMenuHowTo() +
 			'<div class="acct-rule"></div>' +
 			'<button type="button" role="menuitem" class="acct-item" onclick="accountMenuSignOut()">' +
 			"<span>Sign out</span></button>";
@@ -154,7 +154,8 @@ function toggleAccountMenu(chip) {
 			'<button type="button" role="menuitem" class="acct-item strong" onclick="accountMenuGo(\'sync\')">' +
 			"<span>Sign in to Enqueue sync</span></button>" +
 			'<button type="button" role="menuitem" class="acct-item" onclick="accountMenuGo()">' +
-			"<span>Settings</span></button>";
+			"<span>Settings</span></button>" +
+			accountMenuHowTo();
 	}
 	document.body.appendChild(menu);
 	const box = chip.getBoundingClientRect();
@@ -187,6 +188,19 @@ async function accountMenuDevices() {
 	} catch {
 		// keep the plan as drawn
 	}
+}
+
+// The welcome on demand (js/welcome.js): the tour, then setting up what is left.
+function accountMenuHowTo() {
+	return (
+		'<button type="button" role="menuitem" class="acct-item" onclick="accountMenuHowToOpen()">' +
+		"<span>How to use</span></button>"
+	);
+}
+
+function accountMenuHowToOpen() {
+	closeAccountMenu();
+	openWelcome();
 }
 
 function accountMenuGo(tab) {

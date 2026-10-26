@@ -19,22 +19,11 @@ const WELCOME_STEPS = [
 	{ id: "phone", label: "Phone" },
 ];
 let welcomeAt = 0;
-// Opened from the ? on the home header, on a library already in use: the same steps,
+// Opened from How to use in the account menu, on a library already in use: the same steps,
 // each showing where this Mac stands, and the way out says Close, not Skip.
 let welcomeOnDemand = false;
 
 // The ? at the top right of the home header, which opens the welcome on demand.
-function welcomeTriggerHtml() {
-	return (
-		'<button type="button" class="tour-open" onclick="openWelcome()" ' +
-		'aria-label="Set up Enqueue" title="Set up Enqueue">' +
-		// The tour's ? glyph (js/tour.js), drawn the same way.
-		'<svg viewBox="0 0 24 24" aria-hidden="true">' +
-		'<path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4.3"/>' +
-		'<path d="M12 17.6v.01"/></svg></button>'
-	);
-}
-
 function openWelcome() {
 	if (typeof teardown === "function") teardown();
 	welcomeOnDemand = true;

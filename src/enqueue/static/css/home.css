@@ -1805,7 +1805,7 @@ body.mv-dragging * {
 }
 
 /* ---- The account, top right of the wall (js/accountmenu.js) ----------------------
-   The chip sits left of the ?, the same 32px circle; its menu drops under it, a
+   The chip is a 32px circle; its menu drops under it, a
    floating surface like the capture menu. */
 .homehead .homecorner {
   position: absolute;
@@ -1814,12 +1814,6 @@ body.mv-dragging * {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-}
-/* Out-ranks tour.css's `.homehead .tour-open`, which pins the ? on its own. */
-.homehead .homecorner .tour-open {
-  position: relative;
-  top: auto;
-  right: auto;
 }
 .acct-chip {
   display: grid;

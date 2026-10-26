@@ -517,6 +517,29 @@ function card(a, i) {
 // throwing away your scroll position every time you tab back.
 let wallStamp = null;
 
+// What the wall was drawn from: how many items, and the most recently touched pinned and
+// unpinned one with when. An edit made on another device moves an item up without
+// adding one, so the time is part of it; counting alone left a phone's edit out of
+// order here until something changed on this Mac.
+function wallStampOf(kept, first) {
+	const top = (page) => {
+		const a = (page.items || [])[0] || {};
+		return (a.id || "") + "@" + (a.updated_at || "");
+	};
+	return kept.total + first.total + ":" + top(kept) + ":" + top(first);
+}
+
+// A pull lands while the window is open and in front, too: look again every half
+// minute while the wall is showing (two one-row requests).
+setInterval(() => {
+	if (place !== "wall") return;
+	// Never under someone's hands: typing in the search, or a menu or dialog open.
+	const at = document.activeElement;
+	if (at && (at.matches("input, textarea") || at.isContentEditable)) return;
+	if (document.querySelector(".acctmenu, dialog[open], .menu")) return;
+	refreshIfStale();
+}, 30000);
+
 // A capture made in the overlay lands in a different window, and this one has no
 // way to hear about it. Without this the home page sits stale until you navigate, so
 // saving something correctly looked like saving nothing. The wall refreshes only
@@ -529,16 +552,18 @@ async function refreshIfStale() {
 	// wall over it when they return, even if something synced meanwhile.
 	if (typeof welcomeOpen === "function" && welcomeOpen()) return;
 	if (place === "wall") {
-		const peek = await api("/artifacts?limit=1&order=ingested").catch(
-			() => null,
-		);
+		const peek = await Promise.all([
+			api("/artifacts?pinned=true&order=touched&limit=1"),
+			api("/artifacts?pinned=false&order=touched&limit=1"),
+		]).catch(() => null);
 		if (!peek) return;
-		const stamp = peek.total + ":" + ((peek.items[0] || {}).id || "");
+		const stamp = wallStampOf(peek[0], peek[1]);
 		if (stamp !== wallStamp) {
 			// Something new arrived while you were away: the eye startles.
 			const before = wallStamp ? parseInt(wallStamp, 10) : null;
+			const total = peek[0].total + peek[1].total;
 			await home({ keepScroll: true });
-			if (window.eyeMood && before !== null && peek.total > before) eyeMood.play("startle");
+			if (window.eyeMood && before !== null && total > before) eyeMood.play("startle");
 		}
 		return;
 	}
@@ -1033,7 +1058,7 @@ async function home(opts) {
 	// The "Collections" shelf is gone; saved groupings own that concept.
 
 	wall = { offset: first.items.length, more: first.more, loading: false };
-	wallStamp = first.total + ":" + ((first.items[0] || {}).id || "");
+	wallStamp = wallStampOf(kept, first);
 	wallKept = kept.items;
 	wallFirst = first.items;
 
