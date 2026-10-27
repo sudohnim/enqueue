@@ -1,6 +1,6 @@
 # Enqueue manual
 
-How to use Enqueue, on the Mac and on the phone.
+How to use Enqueue, on the Mac and on the phone (Android and iPhone).
 The engineering side (the code, how it fits together, every command) is [AGENTS.md](../AGENTS.md).
 
 - [The idea](#the-idea)
@@ -42,6 +42,7 @@ You need a Mac, and the code (`git clone`, then `cd enqueue`).
 
 - **The Mac app.** Run `bin/setup` once (it installs what is missing and changes nothing that is there), then `bin/launch desktop`. The window opens when the engine is ready.
 - **An Android phone.** Turn on USB debugging, plug it in, run `bin/setup --android` once, then `bin/launch mobile`. It installs the app and starts it; unplug and it keeps working.
+- **An iPhone.** Run `bin/setup --ios` once (it needs Xcode), plug the iPhone in, then `bin/launch ios`. `bin/launch simulator` runs it in the iOS Simulator instead, which has no camera, so linking needs a real phone.
 - **A model.** Search and capture work without one. For summaries and answers, run [Ollama](https://ollama.com/) on the Mac, or choose an online one in **Settings > Assistant**.
 
 Then link the phone to the Mac: see [Sync](#sync).
@@ -308,13 +309,13 @@ For the few things you want hidden even from someone holding your unlocked Mac.
 - In the vault it is encrypted with a key made from a 6-digit PIN that only you know. It stays encrypted when it syncs: your other device holds it, and still cannot read it without the PIN.
 - The door is deliberately unmarked: **Settings > Activity > Diagnostics**. The first time, you choose the PIN. A wrong PIN looks like a diagnostic that failed.
 - The vault locks itself again after a few idle minutes, and whenever you leave it.
-- On the phone, the **Open with fingerprint** switch inside the vault lets a fingerprint open it instead of the PIN. The vault offers it once, right after the PIN opens it or locks an item away. With it on, locking an item away asks for your fingerprint; with it off, the PIN. The PIN always still works. Adding a new fingerprint to the phone, or changing the PIN on another device, turns this off until you enter the PIN again.
+- On the phone, the **Open with fingerprint** switch (**Open with Face ID** on an iPhone) inside the vault lets a fingerprint or your face open it instead of the PIN. The vault offers it once, right after the PIN opens it or locks an item away. With it on, locking an item away asks for your fingerprint; with it off, the PIN. The PIN always still works. Adding a new fingerprint to the phone, or changing the PIN on another device, turns this off until you enter the PIN again.
 
 There is no way to recover a forgotten vault PIN.
 
 ## The phone
 
-The Android app is your library in your pocket: read, capture, write, ask.
+The phone app (Android and iPhone) is your library in your pocket: read, capture, write, ask.
 
 - **Reading.** Rows open to the note, the image (pinch to zoom), the link's preview, or the PDF.
 - **Writing.** Tap a note to write in it. **+ > Note** starts a new one. Both save as you type.
@@ -322,7 +323,12 @@ The Android app is your library in your pocket: read, capture, write, ask.
 - **Asking.** The eye answers from the copy on the phone.
 - **Small edits.** Star, delete, restore, and rewrite a summary line. Tagging and views are for the desk.
 - **Offline.** Everything is on the phone and saves there first. What you did reaches your Mac when there is a connection again.
-- **Fingerprint lock.** The switch in **Settings > Lock** makes Enqueue ask for your fingerprint when it opens, and again after a minute away. Your phone's own screen lock works too. Enqueue offers it once the first time you open the library; turning it off asks you to confirm. Quick capture from the home screen still works without it, since it can only add a thought.
+- **Fingerprint lock (Android).** The switch in **Settings > Lock** makes Enqueue ask for your fingerprint when it opens, and again after a minute away. Your phone's own screen lock works too. Enqueue offers it once the first time you open the library; turning it off asks you to confirm. Quick capture from the home screen still works without it, since it can only add a thought.
+- **Face ID lock (iPhone).** The same switch on an iPhone asks for Face ID (or Touch ID), with your passcode as the fallback.
+- **Settings.** The button at the top right of the library opens **Settings** and **How to use**.
+- **Quick capture.** Press and hold the app icon and choose **Quick capture** to start a note at once.
+- **Back on iPhone.** Swipe in from the left edge.
+- **Sync while closed (iPhone).** iOS wakes Enqueue now and then to send and fetch changes; it decides when.
 
 The phone does not write summaries or build the search index itself; those come from the Mac through sync.
 
@@ -400,7 +406,7 @@ Nobody but you can read your library: not the relay, not your cloud drive, not u
 There is no password reset either, because nobody else holds a key.
 
 - **On the Mac.** Once you have saved your recovery kit, the library itself is encrypted (the next time Enqueue starts). The original files you saved are protected by your Mac's own disk encryption (FileVault).
-- **On the phone.** The library copy, its settings and its cached files are encrypted with a key that never leaves the phone, held by the Android Keystore. Lose the phone and link a new one; the Mac has everything.
+- **On the phone.** The library copy, its settings and its cached files are encrypted with a key that never leaves the phone: the Android Keystore, or the iPhone's Keychain (kept on that phone only). Lose the phone and link a new one; the Mac has everything.
 - **In backups.** Every file is encrypted before it reaches the folder.
 - **Through the relay.** Everything is encrypted on your device first. The relay sees only how many things there are, roughly how big (sizes are rounded up), and when they change.
 - **The recovery kit** (**Settings > Library**) is 56 letters and digits. It opens your backups and your library on a new Mac, and brings sync back with them. Keep it where you keep passwords: without it, a lost Mac means a lost library.

@@ -274,6 +274,10 @@ evals/search/blobs/
 .pi-subagents/*
 desktop/engine/
 
+# iOS build output (the Xcode project is desktop/gen/apple, on the iOS branch). The
+# Rust library Xcode links is ~200 MB, over GitHub's file limit: never commit it.
+desktop/gen/apple/Externals/
+desktop/gen/apple/build/
 # fastlane: the Play service account key never enters the repo; reports are per run
 desktop/play-store-svc.json
 fastlane/report.xml
@@ -282,3 +286,8 @@ fastlane/test_output
 fastlane/.env*
 /vendor/bundle/
 /.bundle/
+# App Store review contact (name, email, phone): personal, filled in locally; the repo is public.
+fastlane/metadata/ios/review_information/first_name.txt
+fastlane/metadata/ios/review_information/last_name.txt
+fastlane/metadata/ios/review_information/email_address.txt
+fastlane/metadata/ios/review_information/phone_number.txt

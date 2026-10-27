@@ -4,6 +4,8 @@
 #   bin/launch desktop          rebuild the shell, restart engine + macOS window, front
 #   bin/launch mobile           build + install + run on a PLUGGED-IN Android phone
 #   bin/launch emulator         build + install + run on a headless Android emulator (AVD)
+#   bin/launch ios              build + install + run on a PLUGGED-IN iPhone
+#   bin/launch simulator        build + install + run in the iOS Simulator
 #
 # Desktop always rebuilds first (cargo is incremental, so it is near-instant when
 # nothing changed) - the window you see is always the current code.
@@ -34,7 +36,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  echo "usage: bin/launch <desktop|mobile|emulator>" >&2
+  echo "usage: bin/launch <desktop|mobile|emulator|ios|simulator>" >&2
   exit 2
 }
 
@@ -312,6 +314,91 @@ launch_emulator() {
   prune_stale_android_targets
 }
 
+# --- iOS ---------------------------------------------------------------------------
+# Same shape as the Android paths: a ONE-SHOT build, install, launch, then EXIT (never
+# `cargo tauri ios dev`, which is a watch loop). The Xcode project is desktop/gen/apple;
+# the signing team is bundle.iOS.developmentTeam in tauri.conf.json. Toolchain: bin/setup --ios.
+IOS_BUNDLE_ID="com.sudohnim.enqueue"
+
+ios_built_app() {
+  # `cargo tauri ios build` moves the app out of the archive into build/<arch>/, and
+  # fails ("Directory not empty") when the last build's copy is still there.
+  local dir="$REPO/desktop/gen/apple/build/$1"
+  rm -rf "$dir/Enqueue.app"
+  (cd "$REPO/desktop" && cargo tauri ios build --debug "${@:2}") >&2
+  [[ -d "$dir/Enqueue.app" ]] || { echo "no app produced at $dir/Enqueue.app" >&2; exit 1; }
+  echo "$dir/Enqueue.app"
+}
+
+ios_booted_simulator() {
+  xcrun simctl list devices booted | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -1
+}
+
+launch_simulator() {
+  command -v xcrun >/dev/null 2>&1 || { echo "Xcode is not installed (run bin/setup --ios)" >&2; exit 1; }
+  js_gate "mobile"
+  # The booted simulator, else the one named by ENQUEUE_SIM (default: iPhone 17 Pro).
+  local udid
+  udid="$(ios_booted_simulator)"
+  if [[ -z "$udid" ]]; then
+    local name="${ENQUEUE_SIM:-iPhone 17 Pro}"
+    echo "Booting simulator '$name'..."
+    xcrun simctl boot "$name" || { echo "could not boot '$name' (xcrun simctl list devices)" >&2; exit 1; }
+    udid="$(ios_booted_simulator)"
+  fi
+  open -a Simulator >/dev/null 2>&1 || true
+
+  local app
+  app="$(ios_built_app arm64-sim --target aarch64-sim)"
+  xcrun simctl install "$udid" "$app"
+  xcrun simctl launch "$udid" "$IOS_BUNDLE_ID" >/dev/null
+  echo ""
+  echo "Ready. Simulator $udid (app installed + launched). This command has EXITED."
+  echo "  xcrun simctl io $udid screenshot /tmp/shot.png"
+  echo "The simulator has no camera: linking by QR needs a real iPhone (bin/launch ios)."
+}
+
+launch_ios() {
+  command -v xcrun >/dev/null 2>&1 || { echo "Xcode is not installed (run bin/setup --ios)" >&2; exit 1; }
+  # A real iPhone, connected and trusted. A simulator is deliberately not accepted
+  # here, for the same reason `bin/launch mobile` refuses an emulator.
+  local devices="${TMPDIR:-/tmp}/enqueue-ios-devices.json"
+  xcrun devicectl list devices --json-output "$devices" >/dev/null 2>&1 || true
+  local device
+  device="$(python3 - "$devices" <<'PY'
+import json, sys
+try:
+    found = json.load(open(sys.argv[1]))["result"]["devices"]
+except Exception:
+    found = []
+for d in found:
+    hw, conn = d.get("hardwareProperties", {}), d.get("connectionProperties", {})
+    if hw.get("platform") == "iOS" and hw.get("reality") == "physical" \
+            and conn.get("tunnelState") != "unavailable":
+        print(d["identifier"])
+        break
+PY
+)"
+  if [[ -z "$device" ]]; then
+    echo "no iPhone connected." >&2
+    echo "Plug it in, unlock it, tap Trust, and turn on Developer Mode" >&2
+    echo "(Settings > Privacy & Security > Developer Mode), then retry." >&2
+    echo "" >&2
+    xcrun devicectl list devices >&2 || true
+    exit 1
+  fi
+  js_gate "mobile"
+
+  local app
+  app="$(ios_built_app arm64 --export-method debugging)"
+  echo "Installing on $device ..."
+  xcrun devicectl device install app --device "$device" "$app"
+  xcrun devicectl device process launch --device "$device" "$IOS_BUNDLE_ID" >/dev/null || \
+    echo "installed; open Enqueue on the phone (it must be unlocked to launch from here)."
+  echo ""
+  echo "Ready. Installed on $device. This command has EXITED."
+}
+
 [[ $# -ge 1 ]] || usage
 platform="$1"
 shift
@@ -319,5 +406,7 @@ case "$platform" in
   desktop) launch_desktop "$@" ;;
   mobile)  launch_mobile "$@" ;;
   emulator) launch_emulator "$@" ;;
+  ios)      launch_ios "$@" ;;
+  simulator) launch_simulator "$@" ;;
   *)       usage ;;
 esac

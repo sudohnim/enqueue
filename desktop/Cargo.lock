@@ -16,18 +16,22 @@ dependencies = [
  "image",
  "jni 0.21.1",
  "ndk-context",
+ "objc2",
  "qrcode",
  "regex",
  "rqrr",
  "rusqlite",
+ "security-framework",
  "serde_json",
  "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-barcode-scanner",
+ "tauri-plugin-billing",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
+ "tauri-plugin-native",
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "ureq",
@@ -4545,9 +4549,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "swift-rs"
-version = "1.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4057c98e2e852d51fdcfca832aac7b571f6b351ad159f9eda5db1655f8d0c4d7"
+version = "1.0.9"
 dependencies = [
  "base64 0.21.7",
  "serde",
@@ -4852,6 +4854,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-billing"
+version = "0.1.0"
+dependencies = [
+ "tauri",
+ "tauri-plugin",
+]
+
+[[package]]
 name = "tauri-plugin-clipboard-manager"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4921,6 +4931,14 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "tauri-plugin-native"
+version = "0.1.0"
+dependencies = [
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

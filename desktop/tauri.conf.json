@@ -127,7 +127,18 @@
             "allow-mobile-join-status",
             "allow-mobile-join-cancel",
             "allow-mobile-joins",
-            "allow-mobile-join-decide"
+            "allow-mobile-join-decide",
+            "billing:allow-start",
+            "billing:allow-status",
+            "billing:allow-offerings",
+            "billing:allow-purchase",
+            "billing:allow-restore",
+            "native:allow-status",
+            "native:allow-applock",
+            "native:allow-create",
+            "native:allow-read",
+            "native:allow-clear",
+            "native:allow-quick"
           ]
         }
       ]
@@ -149,7 +160,11 @@
     ],
     "category": "Productivity",
     "copyright": "",
-    "shortDescription": "Capture anything, organise it later."
+    "shortDescription": "Capture anything, organise it later.",
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "developmentTeam": "572NMYL3ZG"
+    }
   },
   "plugins": {
     "updater": {

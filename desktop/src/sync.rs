@@ -2199,6 +2199,7 @@ pub fn key_from_hex(s: &str) -> Result<[u8; DEK_LEN], String> {
 // devices the same way. The key pair lives in memory only.
 
 /// A fresh key pair for asking to join: (secret, public).
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn join_keypair() -> ([u8; 32], [u8; 32]) {
     let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
     let public = secret.public_key();
@@ -2206,6 +2207,7 @@ pub fn join_keypair() -> ([u8; 32], [u8; 32]) {
 }
 
 /// The six digits both devices show for an ask ("482 913"), as crypto.join_code.
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn join_code(public_key: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
@@ -2220,6 +2222,7 @@ pub fn join_code(public_key: &[u8]) -> String {
 }
 
 /// Seal `message` to a public key (libsodium crypto_box_seal).
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn seal_to(public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
     let key: [u8; 32] = public_key.try_into().map_err(|_| "a public key is 32 bytes".to_string())?;
     crypto_box::PublicKey::from(key)
@@ -2228,6 +2231,7 @@ pub fn seal_to(public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Open a sealed box with our secret key.
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn open_sealed(secret: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, String> {
     crypto_box::SecretKey::from(*secret)
         .unseal(sealed)
@@ -2235,6 +2239,7 @@ pub fn open_sealed(secret: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, String> 
 }
 
 /// The library key out of an approval's sealed payload ({"dek": hex}).
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn dek_from_approval(secret: &[u8; 32], sealed_b64: &str) -> Result<[u8; 32], String> {
     use base64::Engine as _;
     let sealed = base64::engine::general_purpose::STANDARD
@@ -2248,6 +2253,7 @@ pub fn dek_from_approval(secret: &[u8; 32], sealed_b64: &str) -> Result<[u8; 32]
 }
 
 /// The sealed payload that approves a device: the library key for its public key.
+#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn approval_for(public_key_b64: &str, dek: &[u8]) -> Result<String, String> {
     use base64::Engine as _;
     let b64 = base64::engine::general_purpose::STANDARD;

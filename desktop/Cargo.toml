@@ -45,24 +45,26 @@ tauri-plugin-opener = { version = "2", default-features = false }
 tauri-plugin-clipboard-manager = { version = "2", default-features = false }
 
 # The phone's library copy is a SQLCipher database (its key from the Keystore-guarded
-# store key, lib.rs `open_lib`); everywhere else SQLite as it ships.
+# store key, lib.rs `open_lib`); everywhere else SQLite as it ships. JNI for the
+# foreground service, the Kotlin bridge and the store key (QR.5b) - Android only.
 [target.'cfg(target_os = "android")'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
-
-# JNI for foreground service (QR.5b) - mobile only
-[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 jni = { version = "0.21", default-features = false }
 ndk-context = { version = "0.1", default-features = false }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 # QR.4a: native QR scanner via ML Kit (tauri-plugin-barcode-scanner) - mobile only
 tauri-plugin-barcode-scanner = { version = "2.4.5", default-features = false }
+# Enqueue Pro on iPhone: RevenueCat over StoreKit (plugins/tauri-plugin-billing).
+tauri-plugin-billing = { path = "plugins/tauri-plugin-billing" }
+# The iPhone twin of the Android bridge (plugins/tauri-plugin-native).
+tauri-plugin-native = { path = "plugins/tauri-plugin-native" }
 
 # The global-shortcut plugin and the engine/AppKit machinery are desktop-only;
 # none of it compiles or makes sense on Android/iOS (no local Python engine there).
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
 # A shipped Mac app updates itself from a signed feed (lib.rs watch_for_updates).
 tauri-plugin-updater = "2"
 
@@ -88,3 +90,19 @@ debug = false
 opt-level = "s"
 lto = true
 strip = true
+
+# swift-rs builds Tauri's Swift layer for iOS. Vendored with one change (see
+# "Enqueue patch" in vendor/swift-rs/src-rs/build.rs): under Xcode 27 the default
+# Swift build engine hides the entry points the Rust side links against. Drop this
+# once upstream swift-rs or Tauri handles it.
+# The page draws under the status bar and the home indicator itself (viewport-fit=cover
+# and env(safe-area-inset-*)), so the iOS scroll view must not inset it too.
+[target.'cfg(target_os = "ios")'.dependencies]
+# The same SQLCipher library copy as Android, and its store key in the Keychain
+# (lib.rs `store_key`), kept on this device only.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+security-framework = "3"
+objc2 = "0.6"
+
+[patch.crates-io]
+swift-rs = { path = "vendor/swift-rs" }

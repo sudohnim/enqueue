@@ -1251,7 +1251,7 @@
   }
 
   /* Reader toolbar */
-  header {
+  header:not(:where(.dpanel-top)) {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1858,6 +1858,40 @@
   /* The Details panel. What it looks like, and everything inside it, is
      css/details.css (.dpanel, shared with the desktop). This is only where the phone
      puts it: a card floating inside the screen's edges, sliding in from the right. */
+  .acct-menu {
+    position: absolute;
+    top: 46px;
+    right: 0;
+    z-index: var(--z-menu);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 200px;
+    padding: var(--sp-2);
+    background: var(--surface-doc);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-lifted);
+    text-align: left;
+    animation: menu-in var(--dur-fast) var(--ease) both;
+  }
+  .acct-menu[hidden] {
+    display: none;
+  }
+  .acct-menu button {
+    min-height: 44px;
+    padding: 0 var(--sp-3);
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 16px;
+    text-align: left;
+  }
+  .acct-menu button:active {
+    background: var(--lavender-subtle);
+    color: var(--accent);
+  }
   .details-panel {
     position: fixed;
     top: calc(env(safe-area-inset-top) + 10px);
@@ -1957,6 +1991,24 @@
       inset 0 0 0 1px rgb(255 255 255 / 0.7),
       0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
       0 16px 36px -14px rgba(43, 11, 74, 0.42);
+  }
+  /* The setup screen's one action. It had no rule of its own, so it showed as the
+     platform's default button (grey with blue text on iOS). */
+  #scan_qr_btn {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 48px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--purple-bold);
+    color: #ffffff;
+    font-family: inherit;
+    font-weight: var(--w-strong);
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  #scan_qr_btn:active {
+    transform: scale(0.97);
   }
   .pill .keep,
   .pill .round {
@@ -2779,25 +2831,6 @@
   >
     <span class="pill-eye eye" id="pillEye"></span>
   </button>
-  <button
-    class="round"
-    id="pill_menu"
-    aria-label="Settings"
-    onclick="openSettings()"
-  >
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3"></circle>
-      <path
-        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-      ></path>
-    </svg>
-  </button>
 </div>
 
 <div id="pill_menu_panel" class="pill-menu" hidden role="menu">
@@ -2910,10 +2943,14 @@
   <div id="pull_ind" aria-hidden="true"><img src="raven-mark.png" alt="" /></div>
   <header class="lib-hero">
     <button class="back" id="to_setup" hidden>&larr; Setup</button>
-    <!-- The ? that opens the tour (TOUR.1, js/tour.js): the same deck as the desktop. -->
-    <button type="button" class="tour-open" data-tour-open aria-label="How Enqueue works" title="How Enqueue works">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4.3" /><path d="M12 17.6v.01" /></svg>
+    <!-- The account menu, as on the desktop: Settings and How to use (the tour). -->
+    <button type="button" class="tour-open" id="acct_chip" aria-haspopup="menu" aria-expanded="false" aria-label="Account" title="Account">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="3.6" /><path d="M5.5 19.2c1.3-3 3.7-4.4 6.5-4.4s5.2 1.4 6.5 4.4" /></svg>
     </button>
+    <div id="acct_menu" class="acct-menu" role="menu" aria-label="Account" hidden>
+      <button type="button" role="menuitem" id="acct_settings">Settings</button>
+      <button type="button" role="menuitem" id="acct_howto">How to use</button>
+    </div>
     <img class="lib-raven" src="raven-mark.png" alt="" aria-hidden="true" />
     <div class="lib-date" id="lib_date"></div>
     <h1 id="lib_greeting">Library</h1>
@@ -3723,7 +3760,48 @@
       if (document.hidden && !fingerprintPromptOpen()) invoke("mobile_vault_lock").catch(() => {});
     }, 1500);
   };
+  // On iPhone the same calls go to the native plugin (desktop/plugins/tauri-plugin-native).
+  const iosLock =
+    !lockBridge && !!(window.__TAURI__ && window.__TAURI__.core) && /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const hasLock = !!lockBridge || iosLock;
+  let iosLockState = null;
+  async function refreshIosLock() {
+    if (!iosLock) return;
+    try {
+      iosLockState = await window.__TAURI__.core.invoke("plugin:native|status");
+    } catch (e) {
+      iosLockState = null;
+    }
+  }
+  refreshIosLock();
+  const IOS_LOCK = {
+    setAppLock: (on) => ["applock", { on }],
+    vaultSecretCreate: (title) => ["create", { title }],
+    vaultSecretRead: (title) => ["read", { title }],
+  };
+  // What the phone calls its biometric check, for the page's words.
+  // "your fingerprint" on Android, "Face ID" on iPhone.
+  const bioWord = () => (iosLock ? bioName() : "your fingerprint");
+  const lockName = () => (iosLock ? bioName() + " lock" : "Fingerprint lock");
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  function bioName() {
+    const st = lockStatus();
+    return (st && st.biometry) || "fingerprint";
+  }
   function lockAsk(method, ...args) {
+    if (iosLock) {
+      const [cmd, payload] = IOS_LOCK[method](...args);
+      const id = "lock" + ++_lockSeq;
+      _lockWaiting.set(id, () => {});
+      return window.__TAURI__.core
+        .invoke("plugin:native|" + cmd, payload)
+        .catch(() => ({ ok: false, reason: "error" }))
+        .then(async (r) => {
+          _lockWaiting.delete(id);
+          await refreshIosLock();
+          return r;
+        });
+    }
     return new Promise((resolve) => {
       if (!lockBridge) return resolve({ ok: false, reason: "unavailable" });
       const id = "lock" + ++_lockSeq;
@@ -3737,6 +3815,7 @@
     });
   }
   function lockStatus() {
+    if (iosLock) return iosLockState;
     if (!lockBridge) return null;
     try {
       return JSON.parse(lockBridge.lockStatus());
@@ -3793,8 +3872,8 @@
       yes.focus();
     });
   }
-  // ---- Enqueue Pro (Billing.kt) ---------------------------------------------------
-  // The phone buys Pro for its Enqueue sync account through Google Play. The relay
+  // ---- Enqueue Pro (Billing.kt, BillingPlugin.swift) --------------------------------
+  // The phone buys Pro for its Enqueue sync account through Google Play or the App Store. The relay
   // learns of it from RevenueCat and is what enforces the plan; the page only shows it.
   // Each bridge call answers later through window.__enqBillingReply(id, {...}).
   const billingBridge =
@@ -3809,7 +3888,26 @@
     _billWaiting.delete(id);
     resolve(payload || { ok: false, reason: "error" });
   };
+  // On iPhone the same calls go to the billing plugin (desktop/plugins/tauri-plugin-billing,
+  // RevenueCat over StoreKit), which answers in the same shapes as Billing.kt.
+  const iosBilling =
+    !billingBridge && !!(window.__TAURI__ && window.__TAURI__.core) && /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const IOS_BILLING = {
+    billingStart: (accountId) => ["start", { accountId }],
+    billingStatus: () => ["status", {}],
+    billingOfferings: () => ["offerings", {}],
+    billingPurchase: (packageId) => ["purchase", { packageId }],
+    billingRestore: () => ["restore", {}],
+  };
   function billingAsk(method, ...args) {
+    if (iosBilling) {
+      const route = IOS_BILLING[method];
+      if (!route) return Promise.resolve({ ok: false, reason: "unavailable" });
+      const [cmd, payload] = route(...args);
+      return window.__TAURI__.core
+        .invoke("plugin:billing|" + cmd, payload)
+        .catch((e) => ({ ok: false, reason: "error", message: String(e) }));
+    }
     return new Promise((resolve) => {
       if (!billingBridge) return resolve({ ok: false, reason: "unavailable" });
       const id = "bill" + ++_billSeq;
@@ -3824,7 +3922,7 @@
   }
   function billingReady() {
     try {
-      return !!billingBridge && billingBridge.billingAvailable();
+      return iosBilling || (!!billingBridge && billingBridge.billingAvailable());
     } catch (e) {
       return false;
     }
@@ -3836,6 +3934,7 @@
   }
   let planAccount = null; // the account RevenueCat was started for
   let planManage = null;
+  let planSamplePro = false; // Pro bought in the sample library, before linking
   async function paintPlan() {
     const box = document.getElementById("settings_plan");
     if (!box) return;
@@ -3844,6 +3943,30 @@
       plan = await invoke("mobile_plan");
     } catch (e) {
       plan = null; // offline: leave the plan out rather than show a stale one
+    }
+    if ((!plan || !plan.account_id) && sampleOn && billingReady()) {
+      // The sample library offers Pro too: App Review tries the app here, and must be
+      // able to find and buy the subscription. The purchase sits on an anonymous
+      // RevenueCat user until this phone links to an Enqueue sync account, which then
+      // takes it over (billingStart with the account id logs RevenueCat in).
+      box.hidden = false;
+      if (planAccount !== "") {
+        const started = await billingAsk("billingStart", "");
+        if (!started.ok) {
+          box.hidden = true;
+          return;
+        }
+        planAccount = "";
+        planManage = started.manage || null;
+        planSamplePro = !!started.pro;
+      }
+      document.getElementById("settings_plan_line").textContent = planSamplePro
+        ? "Pro. It moves to your Enqueue sync account when you link your Mac."
+        : "Free. Pro adds up to five computers and five phones, 50 GB of sync storage and a bigger allowance for the built-in assistant.";
+      document.getElementById("settings_plan_go").hidden = planSamplePro;
+      document.getElementById("settings_plan_restore").hidden = planSamplePro;
+      document.getElementById("settings_plan_manage").hidden = !(planSamplePro && planManage);
+      return;
     }
     if (!plan || !plan.account_id) {
       box.hidden = true;
@@ -3922,8 +4045,30 @@
       });
       const fine = document.createElement("p");
       fine.className = "mset-sub";
-      fine.textContent =
-        "Billed by Google Play. Renews until you cancel it in the Play Store's subscriptions.";
+      if (iosBilling) {
+        // App Review wants the terms on the paywall itself: price and period (the
+        // buttons), auto-renewal, how to cancel, and the Terms of Use and privacy policy.
+        fine.textContent =
+          "Billed to your Apple Account. Renews automatically each month unless cancelled at least 24 hours before the end of the period, in Settings, your name, Subscriptions. ";
+        const terms = document.createElement("a");
+        terms.href = "#";
+        terms.textContent = "Terms of Use";
+        terms.addEventListener("click", (e) => {
+          e.preventDefault();
+          openExternal("https://www.apple.com/legal/internet-services/itunes/dev/stdeula/");
+        });
+        const privacy = document.createElement("a");
+        privacy.href = "#";
+        privacy.textContent = "Privacy Policy";
+        privacy.addEventListener("click", (e) => {
+          e.preventDefault();
+          openExternal("https://sudohnim.com/privacy");
+        });
+        fine.append(terms, " · ", privacy);
+      } else {
+        fine.textContent =
+          "Billed by Google Play. Renews until you cancel it in the Play Store's subscriptions.";
+      }
       const row = document.createElement("div");
       row.className = "mconfirm-row";
       const no = document.createElement("button");
@@ -3957,6 +4102,7 @@
     }
     if (bought.pro) toast("You're on Pro. Thank you.");
     planManage = bought.manage || planManage;
+    if (planAccount === "") planSamplePro = !!bought.pro;
     // RevenueCat tells the relay a moment later: paint again once it has.
     setTimeout(paintPlan, 4000);
   }
@@ -3966,14 +4112,24 @@
       toast(restored.message || "Nothing could be restored.", true);
       return;
     }
-    toast(restored.pro ? "Pro is back on this account." : "No Pro purchase found for this Google account.");
+    if (planAccount === "") planSamplePro = !!restored.pro;
+    toast(
+      restored.pro
+        ? "Pro is back on this account."
+        : iosBilling
+          ? "No Pro purchase found for this Apple Account."
+          : "No Pro purchase found for this Google account.",
+    );
     setTimeout(paintPlan, 4000);
   }
   document.getElementById("settings_plan_go")?.addEventListener("click", goPro);
   document.getElementById("settings_plan_restore")?.addEventListener("click", restorePro);
   document.getElementById("settings_plan_manage")?.addEventListener("click", () => {
     openExternal(
-      planManage || "https://play.google.com/store/account/subscriptions?package=com.sudohnim.enqueue",
+      planManage ||
+        (iosBilling
+          ? "https://apps.apple.com/account/subscriptions"
+          : "https://play.google.com/store/account/subscriptions?package=com.sudohnim.enqueue"),
     ).catch(() => {});
   });
 
@@ -3993,12 +4149,20 @@
   }
 
   // ---- the app lock: Settings > Lock ----
-  const NEEDS_PHONE_LOCK = "Add a fingerprint or a screen lock in your phone's settings first.";
-  const APP_LOCK_POINTS = [
-    "Enqueue asks for your fingerprint when it opens, and again after a minute away.",
-    "If the sensor can't read your finger, your phone's screen lock works too.",
-    "Quick capture from the home screen stays open, so you can still jot a thought.",
-  ];
+  const NEEDS_PHONE_LOCK = iosLock
+    ? "Set a passcode in your iPhone's settings first."
+    : "Add a fingerprint or a screen lock in your phone's settings first.";
+  const APP_LOCK_POINTS = () =>
+    iosLock
+      ? [
+          "Enqueue asks for " + bioName() + " when it opens, and again after a minute away.",
+          "If " + bioName() + " doesn't work, your passcode does.",
+        ]
+      : [
+          "Enqueue asks for your fingerprint when it opens, and again after a minute away.",
+          "If the sensor can't read your finger, your phone's screen lock works too.",
+          "Quick capture from the home screen stays open, so you can still jot a thought.",
+        ];
   const APP_LOCK_OFFERED = "enq.lockOffered";
 
   function paintAppLock() {
@@ -4009,6 +4173,7 @@
     if (!group || !row || !sub || !st || st.deviceLock === "unavailable") return;
     const blocked = !st.appLock && st.deviceLock === "none";
     group.hidden = false;
+    row.querySelector(".mswitch-label").textContent = lockName();
     row.setAttribute("aria-checked", String(!!st.appLock));
     row.setAttribute("aria-disabled", String(blocked));
     sub.textContent = st.appLock
@@ -4019,12 +4184,12 @@
   }
   // Explain what the lock does, then let the phone confirm it is the owner.
   async function turnOnAppLock(title) {
-    const yes = await mobileSheet({ title, points: APP_LOCK_POINTS, ok: "Turn on", cancel: "Not now" });
+    const yes = await mobileSheet({ title, points: APP_LOCK_POINTS(), ok: "Turn on", cancel: "Not now" });
     if (!yes) return false;
     const r = await lockAsk("setAppLock", true);
     if (r.ok) {
       setFlag(APP_LOCK_OFFERED); // on by choice: never offer it again
-      toast("Fingerprint lock is on.");
+      toast(lockName() + " is on.");
     } else if (r.reason === "none") {
       toast(NEEDS_PHONE_LOCK, true);
     }
@@ -4036,11 +4201,11 @@
     if (!st) return;
     if (!st.appLock) {
       if (st.deviceLock === "none") return toast(NEEDS_PHONE_LOCK, true);
-      await turnOnAppLock("Lock Enqueue with your fingerprint");
+      await turnOnAppLock("Lock Enqueue with " + bioWord());
       return;
     }
     const yes = await mobileSheet({
-      title: "Turn off fingerprint lock?",
+      title: "Turn off " + lockName().toLowerCase() + "?",
       points: ["Anyone holding your unlocked phone will be able to open Enqueue and read your library."],
       ok: "Turn off",
       cancel: "Keep it on",
@@ -4048,7 +4213,7 @@
     });
     if (!yes) return;
     const r = await lockAsk("setAppLock", false);
-    if (r.ok) toast("Fingerprint lock is off.");
+    if (r.ok) toast(lockName() + " is off.");
     paintAppLock();
   }
   // Offer the lock once, the first time the library is on screen on a phone that can
@@ -4056,7 +4221,7 @@
   // after an answer either way.
   let _appLockOfferQueued = false;
   function maybeOfferAppLock() {
-    if (_appLockOfferQueued || !lockBridge || flag(APP_LOCK_OFFERED)) return;
+    if (_appLockOfferQueued || !hasLock || flag(APP_LOCK_OFFERED)) return;
     _appLockOfferQueued = true;
     setTimeout(async () => {
       _appLockOfferQueued = false;
@@ -4071,16 +4236,18 @@
         document.getElementById("mpin");
       if (busy) return;
       setFlag(APP_LOCK_OFFERED);
-      const on = await turnOnAppLock("Lock Enqueue with your fingerprint?");
+      const on = await turnOnAppLock("Lock Enqueue with " + bioWord() + "?");
       if (!on) toast("You can turn it on any time in Settings > Lock.");
     }, 1500);
   }
 
   // ---- the vault's fingerprint switch (inside the vault only) ----
-  const VAULT_FINGER_POINTS = [
-    "Your fingerprint opens the vault instead of the 6-digit code.",
+  const VAULT_FINGER_POINTS = () => [
+    cap(bioWord()) + " opens the vault instead of the 6-digit code.",
     "The code still works, and you still need to remember it. There is no recovery.",
-    "Adding a fingerprint to this phone turns this off until you enter the code again.",
+    iosLock
+      ? "Changing " + bioName() + " on this iPhone turns this off until you enter the code again."
+      : "Adding a fingerprint to this phone turns this off until you enter the code again.",
   ];
   const VAULT_FINGER_OFFERED = "enq.diagOffered"; // named for the decoy, not the vault
 
@@ -4104,45 +4271,47 @@
     const on = await vaultFingerprintIsOn();
     const blocked = !on && st.fingerprint === "none";
     box.hidden = false;
+    row.querySelector(".mswitch-label").textContent = "Open with " + (iosLock ? bioName() : "fingerprint");
     row.setAttribute("aria-checked", String(on));
     row.setAttribute("aria-disabled", String(blocked));
     sub.textContent = on
       ? "On. Your code still works."
       : blocked
-        ? "Add a fingerprint in your phone's settings first."
+        ? "Add " + (iosLock ? bioName() : "a fingerprint") + " in your phone's settings first."
         : "Off. The vault opens with your code.";
   }
   async function forgetVaultFingerprint() {
     try {
       if (lockBridge) lockBridge.vaultSecretClear();
+      else if (iosLock) await window.__TAURI__.core.invoke("plugin:native|clear");
     } catch (e) {
       /* the record below is what unlock reads */
     }
     await invoke("mobile_vault_bio_clear").catch(() => {});
   }
   async function turnOnVaultFingerprint(title) {
-    const yes = await mobileSheet({ title, points: VAULT_FINGER_POINTS, ok: "Turn on", cancel: "Not now" });
+    const yes = await mobileSheet({ title, points: VAULT_FINGER_POINTS(), ok: "Turn on", cancel: "Not now" });
     if (!yes) return false;
     const r = await lockAsk(
       "vaultSecretCreate",
-      "Use your fingerprint",
+      iosLock ? "Turn on " + bioName() + " for this" : "Use your fingerprint",
       "Touch the sensor to turn it on",
       "Cancel",
     );
     if (!r.ok || !r.secret) {
       if (r.reason === "lockout") toast("Too many tries. Wait a moment and try again.", true);
-      else if (r.reason !== "cancelled") toast("Couldn't turn on fingerprint. Try again.", true);
+      else if (r.reason !== "cancelled") toast("Couldn't turn on " + bioName() + ". Try again.", true);
       return false;
     }
     try {
       await invoke("mobile_vault_bio_enroll", { secret: r.secret });
     } catch (e) {
       await forgetVaultFingerprint();
-      toast("Couldn't turn on fingerprint. Open the vault with your code and try again.", true);
+      toast("Couldn't turn on " + bioName() + ". Open the vault with your code and try again.", true);
       return false;
     }
     setFlag(VAULT_FINGER_OFFERED);
-    toast("Fingerprint is on. Your code still works.");
+    toast(cap(bioName()) + " is on. Your code still works.");
     paintVaultFingerprint();
     return true;
   }
@@ -4151,20 +4320,20 @@
     if (!st) return;
     if (!(await vaultFingerprintIsOn())) {
       if (st.fingerprint === "none") {
-        return toast("Add a fingerprint in your phone's settings first.", true);
+        return toast("Add " + (iosLock ? bioName() : "a fingerprint") + " in your phone's settings first.", true);
       }
-      await turnOnVaultFingerprint("Open the vault with your fingerprint");
+      await turnOnVaultFingerprint("Open the vault with " + bioWord());
       return;
     }
     const yes = await mobileSheet({
-      title: "Stop using your fingerprint?",
+      title: "Stop using " + bioWord() + "?",
       points: ["The vault will open with your 6-digit code only."],
       ok: "Turn off",
       cancel: "Keep it on",
     });
     if (!yes) return;
     await forgetVaultFingerprint();
-    toast("Fingerprint is off. The vault opens with your code.");
+    toast(cap(bioName()) + " is off. The vault opens with your code.");
     paintVaultFingerprint();
   }
   // Offer it once, right after the code opened the vault: the moment the ~7 second
@@ -4189,14 +4358,14 @@
       document.getElementById("mpin");
     if (busy) return; // not marked as offered: the next code entry asks
     setFlag(VAULT_FINGER_OFFERED);
-    await turnOnVaultFingerprint("Open the vault with your fingerprint next time?");
+    await turnOnVaultFingerprint("Open the vault with " + bioWord() + " next time?");
   }
 
   // Try to open the vault with a fingerprint. Resolves true when the key is live;
   // false means "ask for the code" (not switched on, cancelled, or no longer valid).
   // `title` is the prompt's heading: the vault's door is a decoy, so the caller names it.
   async function tryVaultFingerprint(status, title) {
-    if (!lockBridge || !status || !status.setup || !status.fingerprint) return false;
+    if (!hasLock || !status || !status.setup || !status.fingerprint) return false;
     const r = await lockAsk("vaultSecretRead", title, "Confirm it's you", "Use code");
     if (r.ok && r.secret) {
       try {
@@ -4206,13 +4375,13 @@
         // "changed": the code was changed on another device. Either way the record
         // can no longer open the vault.
         await forgetVaultFingerprint();
-        toast("Fingerprint was turned off because the code changed. Enter your code.", true);
+        toast(cap(bioName()) + " was turned off because the code changed. Enter your code.", true);
         return false;
       }
     }
     if (r.reason === "invalidated") {
       await forgetVaultFingerprint();
-      toast("Your phone's fingerprints changed. Enter your code, then turn fingerprint on again.", true);
+      toast(iosLock ? bioName() + " changed on this iPhone. Enter your code, then turn " + bioName() + " on again." : "Your phone's fingerprints changed. Enter your code, then turn fingerprint on again.", true);
     } else if (r.reason === "lockout") {
       toast("Too many tries. Enter your code.", true);
     }
@@ -4308,6 +4477,31 @@
   // The pill gear opens Settings (MOBILEUI.6 / gear-wiring fix). Before this, the gear
   // was wired to pillToggleMenu (the add-artifact menu) and "settings" was not even a
   // section show() knew about, so the Settings screen was unreachable.
+  const acctChip = document.getElementById("acct_chip");
+  const acctMenu = document.getElementById("acct_menu");
+  const acctMenuOpen = () => !acctMenu.hidden;
+  function closeAcctMenu() {
+    acctMenu.hidden = true;
+    acctChip.setAttribute("aria-expanded", "false");
+  }
+  acctChip.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (acctMenuOpen()) return closeAcctMenu();
+    acctMenu.hidden = false;
+    acctChip.setAttribute("aria-expanded", "true");
+  });
+  document.addEventListener("click", (e) => {
+    if (acctMenuOpen() && !e.target.closest("#acct_menu")) closeAcctMenu();
+  });
+  document.getElementById("acct_settings").addEventListener("click", () => {
+    closeAcctMenu();
+    openSettings();
+  });
+  document.getElementById("acct_howto").addEventListener("click", () => {
+    closeAcctMenu();
+    Tour.open();
+  });
+
   function openSettings() {
     // Navigating within the app does NOT re-lock the vault: the argon2 unlock is a
     // deliberate ~7s, so re-deriving it on every screen change was the hard lag. The
@@ -6460,6 +6654,10 @@
       pillCloseMenu(false);
       return true;
     }
+    if (acctMenuOpen()) {
+      closeAcctMenu();
+      return true;
+    }
     if (typeof closeGuide === "function" && closeGuide()) return true; // the guide sheet
     const dp = document.getElementById("details_panel");
     if (dp && dp.classList.contains("open")) {
@@ -6481,6 +6679,32 @@
     renderLibrary();
     return true;
   };
+  // iPhone has no Back button: a swipe in from the left edge does what Back does.
+  if (iosLock) {
+    let edge = null;
+    window.addEventListener(
+      "touchstart",
+      (e) => {
+        const t = e.touches[0];
+        edge = e.touches.length === 1 && t.clientX <= 24 ? { x: t.clientX, y: t.clientY } : null;
+      },
+      { capture: true, passive: true },
+    );
+    window.addEventListener(
+      "touchend",
+      (e) => {
+        if (!edge) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - edge.x;
+        const dy = Math.abs(t.clientY - edge.y);
+        edge = null;
+        if (dx < 70 || dy > dx / 2) return;
+        e.stopPropagation(); // the reader's tab swipe must not also turn a tab
+        window.__enqBack();
+      },
+      { capture: true },
+    );
+  }
   // A pop of the web history (the page's own history.back()) returns to the library.
   window.addEventListener("popstate", () => {
     if (writer.skipPop) {
@@ -7613,6 +7837,16 @@
   }
   window.__enqDrainQuickInbox = drainQuickInbox;
   drainQuickInbox();
+  // iPhone: the Home Screen action "Quick capture" opens the writing page for a new
+  // note (plugins/tauri-plugin-native). A cold launch leaves it waiting for the page.
+  window.__enqQuickCapture = () => {
+    if (!writerOpen()) openWriter(null);
+  };
+  if (iosLock)
+    window.__TAURI__.core
+      .invoke("plugin:native|quick")
+      .then((r) => r && r.pending && window.__enqQuickCapture())
+      .catch(() => {});
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) drainQuickInbox();
   });
@@ -8351,9 +8585,6 @@ return;
         '<span class="disc">' + svg("plus") + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="openChat()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
-        "</button>" +
-        '<button class="round" aria-label="Settings" onclick="openSettings()">' +
-        svg("gear") +
         "</button>";
     }
     const parsed = new DOMParser().parseFromString(html, "text/html");
