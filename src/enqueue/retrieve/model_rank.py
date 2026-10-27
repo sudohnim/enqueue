@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from sqlite3 import OperationalError
+from ..sqlite import OperationalError
 
 from pydantic import BaseModel
 

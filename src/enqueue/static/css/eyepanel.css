@@ -267,10 +267,6 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.eye-empty .eye-iris {
-  fill: var(--accent);
-  stroke: none;
-}
 .eye-empty .line {
   font-size: 14px;
   max-width: 30ch;

@@ -207,8 +207,8 @@ White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture field
 
 - The pill did not move with the October revision. It reads its own grounds (`--pill-ground`, `--pill-tile`, `--pill-well`, set by `js/ground.js` from the September ladder and still drifting with the day) and the September hairline and inks, pinned on `.pill` in `css/pill.css` and in `mobile.html`. Change the page's tokens and the pill stays as it is.
 
-- One icon system: three equal 46px circles. Capture is the one solid violet disc (24px plus, 2.25px stroke); ask and settings sit on soft lavender discs of the same size (the accent at 8%), as line icons in `--text-dim` (the eye 30px, the gear 26px, about a 1.5px line), so all three carry equal weight.
-- On desktop (capture, ask, settings; Home + ask inside an artifact; search lives in the header and on ⌘K) and phone (capture, ask, settings) alike, the ask eye is drawn in that same line (an almond and three lashes), with a violet iris in a clipped socket that still follows the cursor (desktop) or glances on its own (phone), constricts on tap and blinks. It is not the `eye-only.png` art, whose thick black outline outweighed everything around it.
+- One icon system: equal 46px circles. Capture is the one solid violet disc (24px plus, 2.25px stroke); ask sits on a soft lavender disc of the same size (the accent at 8%), a line icon in `--text-dim` (the eye 30px, about a 1.5px line), so the two carry equal weight. Settings is not in the pill: it lives in the account menu at the top right of the wall (desktop) and the library (phone), with How to use.
+- On desktop (capture, ask; Home + ask inside an artifact; search lives in the header and on ⌘K) and phone (capture, ask) alike, the ask eye is drawn in that same line (an almond and three lashes), with a violet iris in a clipped socket that follows the cursor (desktop) or a finger while it touches (phone), glances on its own, constricts on tap and blinks. One script draws it on both (`js/eye.js`). It is not the `eye-only.png` art, whose thick black outline outweighed everything around it.
 - Glass: the canvas tinted toward white (`color-mix(--bg 62%, white 70%)`), 20px backdrop blur, a white inner rim and a violet hairline ring, so the edge holds even over the tiles; a violet drop shadow.
 - Pressed: the lavender disc deepens to 14% and squashes to 0.94. No outlines anywhere.
 
@@ -339,7 +339,7 @@ The Android status bar and navigation bar are reserved by `MainActivity` (system
 The pill only: --pill-ground #eee8f6  --pill-tile #f8f5fb  --pill-well #e3d9ef (day values)
 ```
 
-`static/css/tokens.css` is the source of truth; `capture.html` copies the subset it uses, and `bin/check-contrast` fails on any drift between the two and on any ink or boundary below its WCAG tier (washes are composited over the lavender canvas, not white).
+`static/css/tokens.css` is the source of truth, linked by the home page, the capture overlay and the phone alike; `bin/check-contrast` fails on any ink or boundary below its WCAG tier (washes are composited over the lavender canvas, not white).
 
 ## 11. Provenance
 

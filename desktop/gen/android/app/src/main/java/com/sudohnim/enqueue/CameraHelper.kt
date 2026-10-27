@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import java.io.File
@@ -138,45 +136,12 @@ class CameraHelper(
 
   companion object {
     private var instance: CameraHelper? = null
-    private var storedActivity: Activity? = null
 
     fun getInstance(activity: Activity): CameraHelper {
-      storedActivity = activity
       if (instance == null) {
         instance = CameraHelper(activity)
       }
       return instance!!
-    }
-
-    fun clearInstance() {
-      instance = null
-      storedActivity = null
-    }
-
-    // Capture image from any thread by posting to UI thread
-    fun captureImageOnUiThread(): CompletableFuture<String> {
-      val future = CompletableFuture<String>()
-      val activity = storedActivity
-      if (activity == null) {
-        future.completeExceptionally(IllegalStateException("Activity not initialized. Call getInstance() first."))
-        return future
-      }
-      Handler(Looper.getMainLooper()).post {
-        try {
-          val helper = getInstance(activity)
-          val captureFuture = helper.captureImage()
-          captureFuture.whenComplete { result, ex ->
-            if (ex != null) {
-              future.completeExceptionally(ex)
-            } else {
-              future.complete(result)
-            }
-          }
-        } catch (e: Exception) {
-          future.completeExceptionally(e)
-        }
-      }
-      return future
     }
   }
 }

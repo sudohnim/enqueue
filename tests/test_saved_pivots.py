@@ -109,114 +109,6 @@ def test_api_save_without_name_is_400(store):
     assert resp.status_code == 400
 
 
-def test_exclude_appends_to_the_stored_spec_and_undo_removes_it(store):
-    """L.6b: the exclude endpoint writes `excluded_ids` into the stored spec, and
-    undo takes the id back out. The artifact itself is never touched."""
-    from fastapi.testclient import TestClient
-
-    from enqueue import api
-
-    client = TestClient(api.app)
-    pivot_id = client.post("/pivots", json={"name": "By author", "spec": _SPEC}).json()["id"]
-
-    resp = client.post(f"/pivots/{pivot_id}/exclude", json={"artifact_id": "a"})
-    assert resp.status_code == 200
-    assert resp.json()["excluded_ids"] == ["a"]
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["a"]
-
-    # Excluding the same id again stays idempotent (no duplicate entries).
-    client.post(f"/pivots/{pivot_id}/exclude", json={"artifact_id": "a"})
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["a"]
-
-    undo = client.post(f"/pivots/{pivot_id}/exclude", json={"artifact_id": "a", "undo": True})
-    assert undo.status_code == 200
-    assert undo.json()["excluded_ids"] == []
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == []
-
-    # Excluding never deletes the grouping itself - it is still fetchable.
-    assert client.get("/pivots/" + pivot_id).status_code == 200
-
-
-def test_exclude_on_an_unknown_pivot_is_404(store):
-    from fastapi.testclient import TestClient
-
-    from enqueue import api
-
-    client = TestClient(api.app)
-    resp = client.post("/pivots/nope/exclude", json={"artifact_id": "a"})
-    assert resp.status_code == 404
-
-
-def test_exclude_many_appends_to_the_stored_spec_and_undo_removes_it(store):
-    """P.3b: the bulk exclude endpoint writes several ids into `excluded_ids`
-    in one request, so removing a whole group is one round trip instead of one
-    POST per artifact. Duplicate ids in the list collapse. Undo takes them all
-    back out. The artifact rows themselves are never touched."""
-    from fastapi.testclient import TestClient
-
-    from enqueue import api
-
-    client = TestClient(api.app)
-    pivot_id = client.post("/pivots", json={"name": "By author", "spec": _SPEC}).json()["id"]
-
-    # Excluding two ids in one request appends both, in the order sent.
-    resp = client.post(f"/pivots/{pivot_id}/exclude-many", json={"artifact_ids": ["a", "b"]})
-    assert resp.status_code == 200
-    assert resp.json()["excluded_ids"] == ["a", "b"]
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["a", "b"]
-
-    # Duplicates in the payload collapse (the stored spec never repeats an id).
-    # The bulk endpoint preserves the order of survivors: ids already excluded
-    # that are not in the new list keep their place, then every new id is
-    # appended in the order it was sent.
-    client.post(f"/pivots/{pivot_id}/exclude-many", json={"artifact_ids": ["a", "a", "c"]})
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == ["b", "a", "c"]
-
-    # Undo removes every id in the list (whether or not it was excluded).
-    undo = client.post(
-        f"/pivots/{pivot_id}/exclude-many",
-        json={"artifact_ids": ["a", "b", "c"], "undo": True},
-    )
-    assert undo.status_code == 200
-    assert undo.json()["excluded_ids"] == []
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["excluded_ids"] == []
-
-    # The grouping itself is never deleted by an exclude-many call.
-    assert client.get("/pivots/" + pivot_id).status_code == 200
-
-
-def test_exclude_many_on_an_unknown_pivot_is_404(store):
-    from fastapi.testclient import TestClient
-
-    from enqueue import api
-
-    client = TestClient(api.app)
-    resp = client.post("/pivots/nope/exclude-many", json={"artifact_ids": ["a"]})
-    assert resp.status_code == 404
-
-
-def test_include_appends_to_the_stored_spec_and_undo_removes_it(store):
-    """L.6c: the include endpoint writes `included_ids` into the stored spec, and
-    undo takes the id back out."""
-    from fastapi.testclient import TestClient
-
-    from enqueue import api
-
-    client = TestClient(api.app)
-    pivot_id = client.post("/pivots", json={"name": "By author", "spec": _SPEC}).json()["id"]
-
-    resp = client.post(f"/pivots/{pivot_id}/include", json={"artifact_id": "c"})
-    assert resp.status_code == 200
-    assert resp.json()["included_ids"] == ["c"]
-    assert client.get(f"/pivots/{pivot_id}").json()["spec"]["included_ids"] == ["c"]
-
-    undo = client.post(f"/pivots/{pivot_id}/include", json={"artifact_id": "c", "undo": True})
-    assert undo.status_code == 200
-    assert undo.json()["included_ids"] == []
-
-    assert client.post("/pivots/nope/include", json={"artifact_id": "c"}).status_code == 404
-
-
 def test_artifact_detail_loads_all_specs_in_one_query(store, monkeypatch):
     """P.2e: view membership on GET /artifacts/{id} is one query, not one per view."""
     from enqueue import api, db, notes
@@ -249,9 +141,9 @@ def test_artifact_detail_loads_all_specs_in_one_query(store, monkeypatch):
     assert len(pivots_sql) == 1, f"expected one saved_pivots SELECT, saw: {pivots_sql}"
 
 
-def test_result_cache_round_trips_and_clears_on_spec_edit(store):
-    """The materialized result cache: set_result stores the group structure, get reads
-    it back, and any spec edit (update_spec) drops it so the next open recomputes."""
+def test_result_cache_round_trips(store):
+    """The materialized result cache: set_result stores the group structure and get
+    reads it back."""
 
     pivot_id = pivots_saved.save("Cached view", _SPEC)
     assert pivots_saved.get(pivot_id)["result"] is None  # nothing run yet
@@ -265,10 +157,6 @@ def test_result_cache_round_trips_and_clears_on_spec_edit(store):
     got = pivots_saved.get(pivot_id)
     assert got["result"] == structure
     assert got["result_at"]  # a timestamp was stamped
-
-    # Editing the spec invalidates the cache - membership may have changed.
-    pivots_saved.update_spec(pivot_id, {**_SPEC, "excluded_ids": ["a"]})
-    assert pivots_saved.get(pivot_id)["result"] is None
 
 
 def test_set_result_on_missing_view_is_a_noop(store):
@@ -459,10 +347,8 @@ class TestManualViews:
         result = pivots_saved.remove_from_result(pid, ["a"])
         assert [(g["key"], g["artifact_ids"]) for g in result["groups"]] == [("To read", [])]
 
-    def test_membership_and_the_listing_know_a_hand_arranged_view(self, store):
-        pid = pivots_saved.save_manual("Reading", [{"key": "To read", "artifact_ids": ["a"]}])
+    def test_the_listing_knows_a_hand_arranged_view(self, store):
+        pivots_saved.save_manual("Reading", [{"key": "To read", "artifact_ids": ["a"]}])
         pivots_saved.save("By the assistant", _SPEC)
-        assert pivots_saved.manual_membership("a") == [{"id": pid, "name": "Reading"}]
-        assert pivots_saved.manual_membership("zzz") == []
         kinds = {v["name"]: v["manual"] for v in pivots_saved.listing()}
         assert kinds == {"Reading": True, "By the assistant": False}

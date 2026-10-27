@@ -103,7 +103,6 @@ fn main() {
                 "mobile_vault_bio_clear",
                 "mobile_set_vault",
                 "mobile_vault_list",
-                "mobile_vault_get",
                 "mobile_vault_blob",
                 "mobile_events",
                 "mobile_settings_ask",
@@ -117,8 +116,6 @@ fn main() {
                 "mobile_drafts",
                 "mobile_draft_restore",
                 "mobile_drafts_keep",
-                "start_sync_foreground_service",
-                "stop_sync_foreground_service",
             ]),
         ),
     )

@@ -43,9 +43,21 @@ trap 'rm -f "$REQS"' EXIT
 (cd "$REPO" && uv export --frozen --no-dev --no-hashes --no-emit-project --quiet -o "$REQS")
 uv pip install --python "$DEST/python/bin/python3.12" --target "$DEST/site" --quiet -r "$REQS"
 uv pip install --python "$DEST/python/bin/python3.12" --target "$DEST/site" --quiet --no-deps "$REPO"
-if [ -d "$DEST/site/crawl4ai" ] || [ -d "$DEST/site/playwright" ]; then
-  echo "[bundle-engine] Playwright leaked into the bundle"; exit 1
-fi
+
+# What the engine never imports: pyobjc-core's own test suite, CPython's Tk, IDLE,
+# ensurepip, headers and pip, and babel's CLDR locales (courlan imports babel, but only
+# a language filter reads a locale, and Enqueue never sets one).
+rm -rf "$DEST/site/PyObjCTest" "$DEST/python/include" "$DEST/python/lib/"{tcl8,tcl8.6,tk8.6,itcl4.2.4,thread2.8.9} \
+  "$DEST/python/lib/python3.12/"{ensurepip,idlelib,tkinter,turtledemo,site-packages}
+find "$DEST/site/babel/locale-data" -name '*.dat' ! -name root.dat ! -name en.dat -delete
+
+# The Mac app ships none of these: the preview browser is the Mac's own WebKit, and the
+# relay's packages (the hosted extra) and the test tools stay out.
+for leaked in crawl4ai playwright PyObjCTest boto3 botocore psycopg moto jwt; do
+  if [ -e "$DEST/site/$leaked" ]; then
+    echo "[bundle-engine] $leaked leaked into the bundle"; exit 1
+  fi
+done
 
 # Drop bytecode + caches: the app runs read-only and re-writing .pyc next to the source
 # would fail anyway (PYTHONDONTWRITEBYTECODE is set by the shell too).
@@ -55,6 +67,6 @@ find "$DEST" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null ||
 # here, loudly, not as a blank window on a user's Mac.
 echo "[bundle-engine] smoke test..."
 PYTHONPATH="$DEST/site" "$DEST/python/bin/python3.12" -c \
-  "import onnxruntime, sqlite_vec, fastembed, enqueue.cli; print('  imports OK')"
+  "import onnxruntime, sqlite_vec, fastembed, trafilatura, WebKit, enqueue.cli; print('  imports OK')"
 
 echo "[bundle-engine] done: $DEST ($(du -sh "$DEST" | cut -f1))"

@@ -1,6 +1,6 @@
 """The pivot HTTP surface: plan, run, and the user correction.
 
-Phase P5. The client turns a request into a spec (POST /pivot/plan), runs it
+Phase P5. The assistant turns a request into a spec (pivot.plan), the client runs it
 (POST /pivot/run) and gets each group's cards without a second round trip, and
 fixes a wrong value (POST /derived/override) so the re-run shows the corrected
 value. These tests hit the same HTTP boundary the UI does.
@@ -125,9 +125,7 @@ class TestPlanThenRun:
 
         client = TestClient(app)
 
-        planned = client.post("/pivot/plan", json={"request": "organize my book notes by author"})
-        assert planned.status_code == 200
-        spec = planned.json()["spec"]
+        spec = pivot.plan("organize my book notes by author")
         assert spec["group_by"] == "author"
         assert spec["subset"]["kind"] == "ids"
         assert [step["op"] for step in spec["steps"]] == ["extract"]

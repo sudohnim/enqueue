@@ -65,9 +65,6 @@
   .src:hover {
     border-color: var(--line-strong);
   }
-  .scopebar {
-    margin-top: var(--sp-3);
-  }
 
   /* The highest-stakes line in the product: the collection does not hold this. It sits
      at the same weight as the claim it qualifies rather than as small print under it. */

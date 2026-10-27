@@ -161,11 +161,6 @@ def purge_artifact(artifact_id: str) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
-@router.post("/trash/purge")
-def purge_trash() -> dict:
-    return trash.purge_expired()
-
-
 @router.delete("/trash")
 def empty_trash() -> dict:
     """Destroy everything waiting, now, without waiting out the window.
@@ -513,14 +508,6 @@ def drafts_thin() -> dict:
     from .. import drafts
 
     return {"removed": drafts.thin(), **drafts.stats()}
-
-
-@router.get("/artifacts/{artifact_id}/versions/{version_id}")
-def get_version(artifact_id: str, version_id: str) -> dict:
-    body = notes.version_body(artifact_id, version_id)
-    if body is None:
-        raise HTTPException(status_code=404, detail="no such version") from None
-    return {"id": version_id, "body": body}
 
 
 @router.get("/artifacts/{artifact_id}/blob")

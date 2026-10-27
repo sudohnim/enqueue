@@ -60,6 +60,8 @@
 <script src="js/details.js"></script>
 <script src="js/guides.js"></script>
 <script src="js/tour.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/eye.js"></script>
 <script src="js/eyemood.js"></script>
 <script src="js/ground.js"></script>
 
@@ -768,13 +770,6 @@
     height: 55%;
     border-left: 1px solid var(--line);
   }
-  .thumb-placeholder {
-    width: 44px;
-    height: 44px;
-    border-radius: var(--r-sm);
-    flex-shrink: 0;
-    background: var(--surface-2);
-  }
   .card {
     display: flex;
     flex-direction: column;
@@ -799,35 +794,6 @@
     border-radius: 50%;
     margin-top: 7px;
     flex-shrink: 0;
-  }
-  .row-body {
-    min-width: 0;
-    flex: 1;
-  }
-  .row-title {
-    font-size: 15px;
-    font-weight: var(--w-medium);
-    color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  .row-snippet {
-    font-size: 13px;
-    color: var(--text-mute);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    margin-top: 2px;
-  }
-  .row-time {
-    font-size: 11px;
-    color: var(--ink-faint);
-    margin-top: 4px;
   }
   .empty {
     font-size: 14px;
@@ -1224,7 +1190,6 @@
     background: var(--purple-bold);
     color: var(--on-purple-bold);
   }
-
 
   .kind-hint {
     font-size: 12px;
@@ -2067,7 +2032,7 @@
   }
   /* The living eye, drawn: the line art is 30px; the socket is the almond's
      interior (an ellipse clip) and the iris a violet disc with a dark pupil and a
-     catch-light, which glances, constricts and blinks (makeEyeAlive). */
+     catch-light, which glances, constricts and blinks (js/eye.js). */
   .pill .pill-eye {
     display: grid;
     place-items: center;
@@ -2230,77 +2195,6 @@
     color: var(--danger);
   }
 
-  /* Unsynced state indicator (MOB.7) */
-  .row-unsynced {
-    position: relative;
-  }
-  .row-unsynced::after {
-    content: "";
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--warning);
-    box-shadow: 0 0 0 2px var(--bg);
-  }
-
-  /* Raven flight animation (ANIM.4, MOB.7) */
-  #captureFlight {
-    position: fixed;
-    pointer-events: none;
-    z-index: 100;
-    width: 220px;
-    height: 220px;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-  }
-  .capture-flight {
-    animation: raven-flight 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    will-change: transform, opacity;
-  }
-  .capture-flight.reduced {
-    animation: raven-fade 1.6s ease forwards;
-  }
-  @keyframes raven-flight {
-    0% {
-      transform: translate(calc(-50% - 100vw), -50%) scale(1);
-      opacity: 1;
-    }
-    31.6% {
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 1;
-    }
-    84.2% {
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 1;
-    }
-    100% {
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 0;
-    }
-  }
-  @keyframes raven-fade {
-    0% {
-      opacity: 0;
-    }
-    12.5% {
-      opacity: 1;
-    }
-    87.5% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .capture-flight {
-      animation: raven-fade 1.6s ease forwards;
-    }
-  }
 
   /* First-sync loading (the ANIM.1 raven) and image thumbnails (MOB.4). */
   #loading {
@@ -2643,14 +2537,6 @@
   .card-link .card-content {
     flex: 1;
   }
-  .card-preview-image {
-    width: 64px;
-    height: 64px;
-    border-radius: var(--r-sm);
-    object-fit: cover;
-    flex-shrink: 0;
-    background: var(--surface-2);
-  }
   .card-site {
     min-width: 0;
     overflow: hidden;
@@ -2762,14 +2648,6 @@
     /* The PreviewView is 260x260 centered at 50%/44% (same as .frame). */
     box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.85);
   }
-  #scan_overlay .scan-frame-cutout {
-    position: absolute;
-    left: 50%;
-    top: 44%;
-    width: 260px;
-    height: 260px;
-    transform: translate(-50%, -50%);
-  }
   #scan_overlay .frame {
     position: absolute;
     left: 50%;
@@ -2806,7 +2684,6 @@
 </style>
 </head>
 <body>
-
 
 <div id="pill" class="pill" role="group" aria-label="Main actions">
   <button
@@ -6323,12 +6200,6 @@
     });
   }
 
-  async function refreshLibrary() {
-    const raw = await invoke("mobile_list", {});
-    const arts = parse(raw);
-    renderLibrary(arts);
-  }
-
   // QR.4a/QR.4b: native QR scanner via tauri-plugin-barcode-scanner (ML Kit on Android)
   // Replaces getUserMedia + jsQR camera feed with native scanner.
   let scanActive = false;
@@ -6769,23 +6640,6 @@
     show("library");
     renderLibrary();
   });
-  // Raven flight animation (ANIM.4, MOB.7)
-  function captureFlight() {
-    // The eye approves: one slow, satisfied blink as the raven flies off with it.
-    if (window.eyeMood) eyeMood.play("approve");
-    const existing = document.getElementById("captureFlight");
-    if (existing) existing.remove();
-    const img = document.createElement("img");
-    img.id = "captureFlight";
-    img.src = "capture-bird.png";
-    img.alt = "";
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    img.className = reduced ? "capture-flight reduced" : "capture-flight";
-    document.body.appendChild(img);
-    setTimeout(() => img.remove(), reduced ? 1600 : 1900);
-  }
 
   // ---- The writing page ----------------------------------------------------
   // One full-screen page for writing a note: a new one (the pill's Note) or an
@@ -7489,25 +7343,6 @@
   // the next snapshot). Restoring keeps the text it replaces as a draft.
   const draftsView = { id: null, title: "", body: "", list: [], keep: true, sel: null, mode: "changes" };
 
-  function draftsDay(when) {
-    const d = new Date(when);
-    const today = new Date();
-    const y = new Date();
-    y.setDate(today.getDate() - 1);
-    if (d.toDateString() === today.toDateString()) return "Today";
-    if (d.toDateString() === y.toDateString()) return "Yesterday";
-    const sameYear = d.getFullYear() === today.getFullYear();
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      ...(sameYear ? {} : { year: "numeric" }),
-    });
-  }
-
-  function draftsTime(when) {
-    return new Date(when).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  }
-
   // What a draft changed against the one before it: words added and removed, and the
   // first run of words it added (else removed), as the desktop's list shows.
   function draftChange(older, newer) {
@@ -7560,7 +7395,7 @@
         document.getElementById("details_drafts_open").hidden = n < 2;
         document.getElementById("details_drafts_count").textContent = n + " drafts";
         document.getElementById("details_drafts_last").textContent = n
-          ? "last at " + draftsTime(d.drafts[0].at) + " ›"
+          ? "last at " + Diff.time(d.drafts[0].at) + " ›"
           : "";
         paintKeepSwitch(document.getElementById("details_drafts_keep"), d.keep);
         sec.hidden = false;
@@ -7624,7 +7459,7 @@
     let html = "";
     let day = null;
     v.list.forEach((d, i) => {
-      const label = draftsDay(d.at);
+      const label = Diff.day(d.at);
       if (label !== day) {
         day = label;
         html += '<div class="drafts-day">' + esc(label) + "</div>";
@@ -7637,7 +7472,7 @@
         '<button type="button" class="drow' +
         (now ? ' now" disabled' : '" data-draft="' + esc(d.id) + '"') +
         '><span class="drow-time">' +
-        (now ? "Now" : esc(draftsTime(d.at))) +
+        (now ? "Now" : esc(Diff.time(d.at))) +
         '</span><span class="drow-words">' +
         esc(words) +
         '</span><span class="drow-delta">' +
@@ -7667,7 +7502,7 @@
     const v = draftsView;
     const d = v.list.find((x) => x.id === v.sel);
     if (!d) return renderDraftsList();
-    document.getElementById("drafts_title").textContent = draftsDay(d.at) + ", " + draftsTime(d.at);
+    document.getElementById("drafts_title").textContent = Diff.day(d.at) + ", " + Diff.time(d.at);
     document.getElementById("drafts_sub").textContent =
       v.mode === "changes" ? "compared with now" : "as it was";
     document.getElementById("drafts_list").hidden = true;
@@ -8042,8 +7877,6 @@ ${notes}`
     }
   }
 
-  let cropInteraction = { dragging: false, handle: null, startX: 0, startY: 0 };
-
   function setupCropInteraction(canvas) {
     // Simplified: double-tap to toggle crop mode
     let lastTap = 0;
@@ -8308,26 +8141,7 @@ return;
   }
   waitForEventApi();
 
-  // Mobile makeEye: populate the pill-eye with the living eye markup (simplified from icons.js)
-  const EYE_ASSET_V = "?v=2";
-  // Minimal svg function for mobile (mirrors icons.js gear icon)
-    const MOBILE_ICONS = {
-    gear: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 0 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
-    plus: '<path d="M12 5v14M5 12h14"></path>',
-    star: '<path d="M12 4.2l2.3 4.9 5.2.7-3.8 3.7 1 5.3-4.7-2.6-4.7 2.6 1-5.3-3.8-3.7 5.2-.7z"></path>',
-    move: '<path d="M3 8h13"></path><path d="M12 4l4 4-4 4"></path><path d="M21 16H8"></path><path d="M12 12l-4 4 4 4"></path>',
-    pencil: '<path d="M4 20l4.5-1 10-10-3.5-3.5-10 10z"></path><path d="M14 6.5l3.5 3.5"></path>',
-    note: '<path d="M4 4h11l5 5v11H4z"></path><path d="M15 4v5h5"></path>',
-    trash: '<path d="M4 7h16"></path><path d="M9.5 7V5h5v2"></path><path d="M6.5 7l1 13h9l1-13"></path>',
-    lock: '<rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path>',
-    close: '<path d="M6 6l12 12M18 6L6 18"></path>',
-    info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5"></path><path d="M12 8h.01"></path>'
-  };
-  const svg = (k) =>
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
-    MOBILE_ICONS[k] +
-    "</svg>";
-  // Build an <svg> element from an icon's markup. The MOBILE_ICONS entries are full
+  // Build an <svg> element from an icon's markup (ICONS, js/icons.js). The entries are full
   // inner-SVG markup (one or more <path>/<circle> elements), NOT a bare `d` value, so
   // this parses that markup with the SVG namespace rather than shoving it into a
   // single path's `d` (which produced "Expected moveto" errors and empty glyphs, and
@@ -8352,7 +8166,7 @@ return;
     svgEl.setAttribute("stroke-linecap", "round");
     svgEl.setAttribute("stroke-linejoin", "round");
     svgEl.setAttribute("aria-hidden", "true");
-    const markup = MOBILE_ICONS[name];
+    const markup = ICONS[name];
     if (markup) {
       const parsed = new DOMParser().parseFromString(svg(name), "image/svg+xml").documentElement;
       if (parsed && parsed.nodeName.toLowerCase() !== "parsererror") {
@@ -8371,176 +8185,6 @@ return;
     }
     return svgEl;
   }
-  // The pill's eye is DRAWN, in the same 1.7px line as the other pill icons: an
-  // almond and three lashes in currentColor. Only the iris is a separate element,
-  // inside a clipped socket, so it can still glance, constrict and blink. (The old
-  // pill eye was the eye-only.png art, a thick black outline twice the weight of
-  // everything around it.)
-  const PILL_EYE_LINE =
-    '<svg class="eye-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M2.6 12.8C5.2 8.6 8.4 6.6 12 6.6s6.8 2 9.4 6.2c-2.6 4.2-5.8 6.2-9.4 6.2s-6.8-2-9.4-6.2z"/>' +
-    '<path d="M8 7.3 7 5.2M12 6.6V4.3M16 7.3l1-2.1"/></svg>';
-  function makePillEye(el) {
-    const wrap = document.createElement("div");
-    wrap.className = "eye-blinkwrap";
-    wrap.innerHTML = PILL_EYE_LINE;
-    const socket = document.createElement("div");
-    socket.className = "eye-socket";
-    const pupil = document.createElement("div");
-    pupil.className = "eye-pupil";
-    socket.appendChild(pupil);
-    wrap.appendChild(socket);
-    el.replaceChildren(wrap);
-    makeEyeAlive(el, pupil, socket);
-    // A held mood carries over to a freshly rendered pill eye.
-    if (window.eyeMood) eyeMood.refresh();
-  }
-  function makeEye(el) {
-    if (!el) return;
-    if (el.classList.contains("pill-eye")) return makePillEye(el);
-    const wrap = document.createElement("div");
-    wrap.className = "eye-blinkwrap";
-    const socket = document.createElement("div");
-    socket.className = "eye-socket";
-    const pupil = document.createElement("img");
-    pupil.className = "eye-pupil";
-    pupil.src = "/eye-pupil.png" + EYE_ASSET_V;
-    pupil.alt = "";
-    pupil.draggable = false;
-    socket.appendChild(pupil);
-    const frame = document.createElement("img");
-    frame.className = "eye-frame";
-    frame.src = "/eye-frame.png" + EYE_ASSET_V;
-    frame.alt = "";
-    frame.draggable = false;
-    wrap.appendChild(socket);
-    wrap.appendChild(frame);
-    el.replaceChildren(wrap);
-  }
-
-  // Autonomous eye motion (touch-native version of icons.js EYE.4). No cursor
-  // follow; blink + idle saccade + tap-constrict carry the life. All gated on
-  // reduced-motion, and every callback self-cleans once its element is detached
-  // (the pill re-renders on navigation, so old eyes must not keep firing).
-  const EYE_LIFE = {
-    idleMin: 3200,
-    idleMax: 6200,
-    glanceMs: 300,
-    glanceReturnMs: 320,
-    blinkMin: 4000,
-    blinkMax: 16000,
-    blinkCloseMs: 95,
-    blinkOpenMs: 120,
-    constrictMs: 180,
-  };
-  function eyeLifeOK() {
-    return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  }
-  function eyeRand(a, b) {
-    return a + Math.random() * (b - a);
-  }
-  function makeEyeAlive(el, pupil, socket) {
-    const st = { blink: 0, idle: 0, glance: 0, glanceBack: 0, constrict: 0 };
-    const clearAll = () => {
-      clearTimeout(st.blink);
-      clearTimeout(st.idle);
-      clearTimeout(st.glance);
-      clearTimeout(st.glanceBack);
-      clearTimeout(st.constrict);
-    };
-    function armBlink() {
-      clearTimeout(st.blink);
-      if (!eyeLifeOK()) return;
-      st.blink = setTimeout(blink, eyeRand(EYE_LIFE.blinkMin, EYE_LIFE.blinkMax));
-    }
-    function blink() {
-      if (!el.isConnected) return clearAll();
-      if (!eyeLifeOK()) return armBlink();
-      el.classList.add("eye-blinking");
-      st.blink = setTimeout(
-        () => {
-          el.classList.remove("eye-blinking");
-          armBlink();
-        },
-        eyeRand(EYE_LIFE.blinkCloseMs, EYE_LIFE.blinkCloseMs + EYE_LIFE.blinkOpenMs),
-      );
-    }
-    function armIdle() {
-      clearTimeout(st.idle);
-      if (!eyeLifeOK()) return;
-      st.idle = setTimeout(saccade, eyeRand(EYE_LIFE.idleMin, EYE_LIFE.idleMax));
-    }
-    function saccade() {
-      if (!el.isConnected) return clearAll();
-      // A mood (eyemood.js) or a finger being followed owns the iris; wait.
-      if (!eyeLifeOK() || el.dataset.mood || st.following) return armIdle();
-      const sock = socket.getBoundingClientRect();
-      // A small glance, scaled from the rendered socket (184px is the source width
-      // the desktop reach is tuned against). The oversized pupil + socket clip keep
-      // it inside the lid, so the iris slides to look aside, never past the frame.
-      const reach = 22 * (sock.width / 184);
-      const ang = Math.random() * Math.PI * 2;
-      const len = reach * eyeRand(0.6, 0.95);
-      const gx = (Math.cos(ang) * len).toFixed(2);
-      const gy = (Math.sin(ang) * len).toFixed(2);
-      el.classList.add("eye-saccade");
-      pupil.style.transform = "translate(calc(-50% + " + gx + "px), calc(-50% + " + gy + "px))";
-      st.glance = setTimeout(() => {
-        pupil.style.transform = "";
-        st.glanceBack = setTimeout(() => {
-          el.classList.remove("eye-saccade");
-          armIdle();
-        }, EYE_LIFE.glanceReturnMs);
-      }, EYE_LIFE.glanceMs);
-    }
-    el.addEventListener(
-      "pointerdown",
-      () => {
-        if (!eyeLifeOK() || el.dataset.mood) return;
-        // Clear any glance offset so the constrict scale reads from center, then
-        // pinch the iris - a tiny tactile response to the tap.
-        pupil.style.transform = "";
-        el.classList.add("eye-constrict");
-        clearTimeout(st.constrict);
-        st.constrict = setTimeout(() => el.classList.remove("eye-constrict"), EYE_LIFE.constrictMs);
-      },
-      { passive: true },
-    );
-    // Follows you: a phone has no cursor, so the eye watches your finger while you
-    // touch, drag or scroll anywhere on screen, then settles back a beat after you
-    // lift it. The lean saturates with distance so a far touch still reads as
-    // "over there" without pinning the iris to the lid.
-    let settleTimer = 0;
-    function followFinger(ev) {
-      if (!el.isConnected) return;
-      if (!eyeLifeOK() || el.dataset.mood || ev.pointerType === "mouse") return;
-      st.following = true;
-      clearTimeout(settleTimer);
-      const r = el.getBoundingClientRect();
-      const sock = socket.getBoundingClientRect();
-      const dx = ev.clientX - (r.left + r.width / 2);
-      const dy = ev.clientY - (r.top + r.height * 0.53);
-      const d = Math.hypot(dx, dy) || 1;
-      const k = Math.min(1, d / 220);
-      pupil.style.transform =
-        "translate(calc(-50% + " + ((dx / d) * k * sock.width * 0.22).toFixed(2) +
-        "px), calc(-50% + " + ((dy / d) * k * sock.height * 0.2).toFixed(2) + "px))";
-    }
-    function settle() {
-      clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => {
-        st.following = false;
-        if (!el.dataset.mood) pupil.style.transform = "";
-      }, 700);
-    }
-    document.addEventListener("pointerdown", followFinger, { passive: true });
-    document.addEventListener("pointermove", followFinger, { passive: true });
-    document.addEventListener("pointerup", settle, { passive: true });
-    document.addEventListener("pointercancel", settle, { passive: true });
-    armBlink();
-    armIdle();
-  }
-
   // Pill (MOB2.3) - mirrors desktop pill.js logic
   let pillPlace = "library";
   let pillMenu = null;
@@ -8575,14 +8219,14 @@ return;
     if (inside) {
       html =
         '<button class="keep" aria-label="Home" onclick="home()">' +
-        '<span class="disc">' + svg("plus") + '</span></button>' +
+        '<span class="disc">' + createIcon("plus").outerHTML + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="openChat()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>";
     } else {
       html =
         '<button class="keep" id="pill_add" aria-label="Add" aria-expanded="false" onclick="pillToggleMenu(event)">' +
-        '<span class="disc">' + svg("plus") + '</span></button>' +
+        '<span class="disc">' + createIcon("plus").outerHTML + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="openChat()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>";
@@ -8681,7 +8325,6 @@ return;
   document.getElementById("search").focus();
 
   // Chat functions (MOB2.7)
-  let chatHistory = [];
   let chatInProgress = false;
 
   // Settings (MOB2.8)
@@ -9141,43 +8784,6 @@ return;
       invoke("mobile_outbox_push").catch(() => {}); // nudge propagation to desktop
     } catch (e) {
       toast("Could not send. " + errString(e), true);
-    } finally {
-      chatInProgress = false;
-      document.getElementById("chat_loading").hidden = true;
-    }
-  }
-
-  function appendMessage(role, content, citations) {
-    chatHistory.push({ role, content, citations: citations || [] });
-    renderChatHistory();
-  }
-
-  async function sendChat() {
-    const input = document.getElementById("chat_input");
-    const query = input.value.trim();
-    if (!query || chatInProgress) return;
-
-    input.value = "";
-    chatInProgress = true;
-    appendMessage("user", query);
-
-    document.getElementById("chat_loading").hidden = false;
-
-    try {
-      const historyJson = JSON.stringify(chatHistory.slice(-10)); // last 10 messages
-      const result = await invoke("mobile_chat", {
-        query,
-        history: historyJson,
-      });
-      const data = JSON.parse(result);
-
-      if (data.error) {
-        appendMessage("assistant", "Error: " + data.error);
-      } else {
-        appendMessage("assistant", data.answer, data.citations);
-      }
-    } catch (e) {
-      appendMessage("assistant", "Error: " + errString(e));
     } finally {
       chatInProgress = false;
       document.getElementById("chat_loading").hidden = true;

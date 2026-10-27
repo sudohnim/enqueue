@@ -386,15 +386,3 @@ def get(artifact_id: str) -> dict:
         }
     finally:
         conn.close()
-
-
-def version_body(artifact_id: str, version_id: str) -> str | None:
-    conn = db.get_conn()
-    try:
-        row = conn.execute(
-            "SELECT body FROM artifact_versions WHERE id = ? AND artifact_id = ?",
-            (version_id, artifact_id),
-        ).fetchone()
-        return row["body"] if row else None
-    finally:
-        conn.close()

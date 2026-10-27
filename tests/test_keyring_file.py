@@ -99,18 +99,6 @@ def test_a_wrong_recovery_phrase_raises(store):
         keyring_file.unlock_with_recovery("0" * 40)
 
 
-def test_regenerate_recovery_invalidates_the_old_phrase(store):
-    old = keyring_file.initialize()
-    dek = keyring_file.dek()
-    assert dek is not None
-    new = keyring_file.regenerate_recovery(dek)
-
-    keyring_file._dek = None
-    with pytest.raises(keyring_file.UnlockError):
-        keyring_file.unlock_with_recovery(old)
-    assert keyring_file.unlock_with_recovery(new) == dek
-
-
 def test_the_recovery_phrase_never_touches_disk(store):
     phrase = keyring_file.initialize()
     raw = keyring_file._path().read_text(encoding="utf-8")

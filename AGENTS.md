@@ -89,6 +89,7 @@ The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own e
   Built the same day: the included assistant (see "The assistant included with Enqueue" under Gotchas).
   Built 2026-10-26: the bring-your-own-key model pickers list what the service serves and refuse anything else (`catalog.py`).
   Still to build: the Apple side of the purchase, with the iPhone app.
+- **A smaller embedding model is an option, not done.** bge-small-en-v1.5 (384 dimensions), measured 2026-10-27 beside today's bge-base on the CPU: a query in 4.8 ms against 13.8, 32 long passages in 2.5 s against 8.1, about half the memory, a 66 MB download against 218, and half the vector index. Its published English retrieval scores are about two points lower. It needs a migration of the vec0 tables (built at 768), new floor bars from `enq eval-embedders`, and both eval gates and their baselines.
 - **Search is exact (brute force)** over 768-dim vectors: fast at this scale, needs an approximate index at a few hundred thousand chunks.
 - **macOS only on the desktop** (AppKit calls, the Keychain).
 
@@ -110,7 +111,7 @@ What exists in code:
 - Engine sync: `sync/client.py` (push/pull, `push_keyring`), `sync/snapshot.py` (LWW read/serialize/apply), `sync/worker.py` (SSE + timer pull), `sync/guard.py` (`SYNC_PLAINTEXT_PROTOTYPE = False`, now allows non-local relays because bytes are encrypted).
 - E2E keyring (QR.1, passwordless): `keyring_file.py` writes `keyring.json` with the DEK wrapped ONLY under a recovery-phrase-KEK (the old password-KEK slot is removed - QR.1). The raw DEK persists in the macOS Keychain (`keyring.py`, service `enqueue-sync-dek`) or a mode-0600 file on non-macOS, and auto-loads on startup, so there is no per-launch unlock and no library password in the normal flow. The recovery phrase is recovery-code-only, for total-device-loss. `crypto.py` is the XSalsa20-Poly1305 boundary. The DEK is also wrapped under the library key (`dek_by_library`), so the recovery kit brings sync back on a new Mac.
 - Mobile (Rust, `desktop/src/sync.rs` + `lib.rs` mobile module): pulls the encrypted library into a local SQLite copy and decrypts on-device.
-**Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code + `mobile_pairing_setup` + the SU.7 `keyring-unlock` flow) is superseded - do not extend it.
+**Pairing model = QR-linked, hosted-relay, passwordless (decided 2026-08-16, superseding the earlier "Option A" paste-code+password model, which live SU.5 testing showed was too painful - USB-only relay, lock-on-restart, forgotten-password lockout). Now BUILT and device-verified (2026-08-19).** The model: (1) a HOSTED relay reachable over the internet (not localhost/USB), still storing only opaque ciphertext; (2) the desktop persists the DEK in the macOS Keychain (service `enqueue-sync-dek`) and auto-loads it on launch (no per-launch unlock, no password); (3) device linking is a Signal-style QR - the desktop `desktop_link_code` shows a locally-rendered QR, the phone camera scans it and receives the key in one step; (4) NO library password in the normal flow - the recovery phrase is a recovery-code-only artifact for total-device-loss. The QR carries key material, but it is camera-scanned + ephemeral + locally rendered (the WhatsApp/Signal/Proton device-linking threat model), never pasted, never sent to any external service. The Option A surface (paste-code, `mobile_pairing_setup`, the SU.7 keyring unlock) is removed - do not bring it back.
 **QR wire format (pinned - both sides parse exactly this):** compact UTF-8 JSON `{"v":1,"relay_url":"https://...","relay_secret":"...","dek":"<base64>"}`, where `dek` is RFC 4648 base64 (with padding) of the raw 32-byte DEK, and `v` is the format version (a parser seeing any other `v` refuses with a clear message). CAMERA-ONLY: there is no copyable/pasteable form of the payload anywhere, by decision - the raw DEK must never touch the clipboard or clipboard history. A Rust round-trip test (`rqrr` decode) pins the format.
 **DEK-encoding gotcha (bit us on 2026-08-19):** the macOS Keychain stores `enqueue-sync-dek` ALREADY base64-encoded (44 chars = 32 raw bytes), so `desktop_link_code`/`load_link_credentials` must pass it into the QR VERBATIM. Re-encoding double-encodes it (the phone then base64-decodes to 44 bytes, not 32); `mobile_link_qr` must ERROR on a non-32-byte DEK, never silently zero it (a zero DEK links "successfully" but fails every decrypt).
 **Phone storage (2026-10-14, was MOB.3b's plain file):** the mobile DEK/secret is in `sync_config.sealed`, sealed under the phone's store key, which an Android Keystore key guards (`StoreKey.kt`, reached from Rust through the activity class cached at `JNI_OnLoad`: `store_key` in `lib.rs`). The phone's `library.db` is SQLCipher and its file cache is sealed under the same key (`blob_read`/`blob_write`).
@@ -166,7 +167,7 @@ The wall has no ephemeral view surface; only a saved pivot persists a view.
 
 10. **The SSE lens surface and curate are removed.**
 `POST /lens` (Server-Sent Events), `POST /curate`, and the lens-cache endpoints were deleted in Phase M, along with the retrieve modules that powered them (`retrieve/expand.py`, `retrieve/rerank.py`, `retrieve/score.py`, `retrieve/lens.py`, `retrieve/judgments.py`, `retrieve/curate.py`), the lens settings, and the `lens_judgments` table (migration 0020).
-Search is the retrieval path; the assistant organises material into views through `POST /pivot/plan` and `POST /pivot/run`.
+Search is the retrieval path; the assistant organises material into views (it plans a spec in chat, `pivot.plan`) and the page runs one with `POST /pivot/run`.
 Do not add SSE plumbing back unless asked.
 
 11. **The phone app is built; a browser extension is a future milestone.**
@@ -294,10 +295,10 @@ One line per file, describing its job.
 | `webkit_page.py` | The preview browser: one page in an off-screen WKWebView in a process of its own, HTML back once its scripts ran. See "Browser fallback" under Link previews. |
 | `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
-| `db.py` | SQLite access + Alembic migration at startup. `get_conn()`, `transaction()`, `count()`. |
+| `db.py` | SQLite access + Alembic migration at startup. `get_conn()` and `transaction()` for writes, `reader()` (one cached read-only connection per thread, sqlite-vec loaded) for searches, `count()`. |
 | `greeting.py` | The wall's greeting: one model phrase per four-hour bucket, generated in the background. |
 | `schemas.py` | Pydantic models for every model call. Validators are the quality floor. |
-| `prompts.py` | System prompts. Authoritative copies are in docs/CURATION.md. |
+| `prompts.py` | System prompts, the one copy. |
 | `keyring.py` | macOS Keychain for the API key. `/usr/bin/security`. No-op on non-macOS. |
 | `capture.py` | Captures: links, file uploads. Content-addressed dedupe. PDF text extraction and page rendering. |
 | `notes.py` | Notes: create, edit (versioned), annotate. Secret scanning before model calls. |
@@ -347,7 +348,7 @@ One line per file, describing its job.
 
 | File | Job |
 | --- | --- |
-| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d). `embed()` for passages, `embed_query()` for searches (adds `EMBED_QUERY_PREFIX`), `token_count()` for the chunker. |
+| `index/embed.py` | Local embeddings via fastembed. Dense (BAAI/bge-base-en-v1.5, 768d), on the CPU, loaded on first use and let go after `ENQ_EMBED_IDLE` seconds idle (see "Keeping it quick and small"). `embed()` for passages, `embed_query()` for searches (adds `EMBED_QUERY_PREFIX`), `token_count()` for the chunker. |
 | `index/store.py` | `VectorStore` interface + `get_store()` factory. One instance per process. |
 | `index/store_sqlite.py` | sqlite-vec backend: vec0 + FTS5 tables (unicode61 keyword + trigram substring), hybrid search fused with RRF. `search_legs()` returns the fused list plus the raw dense/keyword/trigram legs from one pass on one connection; callers that need both (the relevance floor in `/search` and `chats.passages`) must use it rather than re-running `search_dense`/`search_keyword`. |
 | `index/fusion.py` | Reciprocal rank fusion as a pure function. |
@@ -414,7 +415,7 @@ One line per file, describing its job.
 | `bin/check-eval-cross` | Cross-domain search gate (CI `eval` job): runs `enq eval-cross`, fails if a layer makes results worse than the one below it (enriched vs chunks, lifted vs enriched) or if any query that passed in `evals/results/cross-domain.json` now fails. `--update-baseline` rewrites the baseline. |
 | `bin/release desktop` / `bin/release android` | Shippable builds: the Mac `.app` + `.dmg` with the engine inside (signed and notarized when the Apple settings are given), or the signed Android release `.apk`/`.aab` (`ANDROID_VERSION_CODE` overrides the versionCode). The fastlane lanes wrap both. |
 | `bin/android-env` | Sourced, not run: the Android toolchain every build uses (SDK, NDK, JDK, and OpenSSL's `llvm-ar`/`llvm-ranlib`). |
-| `bin/bundle-engine` | Vendors the relocatable engine into `desktop/engine` for the Mac app; `bin/release desktop` runs it. |
+| `bin/bundle-engine` | Vendors the relocatable engine into `desktop/engine` for the Mac app (325 MB); `bin/release desktop` runs it. It strips what the engine never imports and fails if a relay or test package leaks in. |
 | `bin/deploy` | Ship a build through fastlane: `android dev` (Play internal testing), `android prod` (Play production, asks first; `-y` skips), `android code` (the next versionCode, read only), `desktop` (the notarized `.dmg`). Gems go to `vendor/bundle`. |
 | `bin/deploy-relay` | Deploy the one hosted relay (Railway service `enqueue`) after the relay tests pass, asking first (`-y` skips), and wait for `/health`. |
 
@@ -423,9 +424,9 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`; shared with the phone), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
-| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons`, `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `approve` (device approval: the waiting screen and the approve prompt), `update` (the Mac app's update card: Update now, Update on close), `accountmenu` (the account at the top right of the wall: who, the plan and storage used, devices, Settings, How to use, sign out; signed out, the way to sign in), `settings`, with the boot call last. One global scope; no ES modules. |
-| `static/capture.html` | The capture overlay. Separate page with its own token copy. |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`, and the raven's flight after a capture, `.capture-flight`; shared with the phone and the capture overlay), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
+| `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons` (the icon paths; the phone uses them too), `eye` (the living eye, mouse or finger, and `captureFlight`; shared with the phone), `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `approve` (device approval: the waiting screen and the approve prompt), `update` (the Mac app's update card: Update now, Update on close), `accountmenu` (the account at the top right of the wall: who, the plan and storage used, devices, Settings, How to use, sign out; signed out, the way to sign in), `settings`, with the boot call last. One global scope; no ES modules. |
+| `static/capture.html` | The capture overlay, a page of its own. It shares only `css/tokens.css` and `css/bird.css` (the flight), never the home page's layout stylesheets, so a change over there cannot break it. |
 | `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
 
 ---
@@ -479,13 +480,13 @@ Structured-output gotchas (CHATBUG.1, 2026-08-20): `config.MODEL_RETRIES` is ins
 
 The desktop engine and the Android app share one E2E model: per-artifact snapshots, last-writer-wins, pushed as opaque ciphertext to a dumb relay, pulled and decrypted on-device.
 
-- **Engine side (Python):** `sync/client.py` (`push_artifact` on every write, `push_all()` for an initial full-library backfill), `sync/snapshot.py` (LWW serialize/apply), `sync/worker.py` (SSE + timer pull). Every desktop write path (`notes.py`, `capture.py`, `trash.py` delete/restore, `api/artifacts.py` pin/tag/annotate) calls `push_artifact(id)`. Purge is local-only and final (no row left to snapshot).
+- **Engine side (Python):** `sync/client.py` (`push_artifact` on every write, `push_all()` for the backfill when sync is turned on, `push_everything()` when a library moves relay), `sync/snapshot.py` (LWW serialize/apply), `sync/worker.py` (SSE + timer pull). Every desktop write path (`notes.py`, `capture.py`, `trash.py` delete/restore, `api/artifacts.py` pin/tag/annotate) calls `push_artifact(id)`. Purge is local-only and final (no row left to snapshot).
 - **Mutations propagate both ways (MOBFIX.5, was create-only).** The relay object is now an UPSERT: `relay/storage.py::put()` overwrites in place by name and assigns a FRESH cursor on overwrite (so a device already past the old cursor re-pulls the update), and `relay/app.py` always returns 201. The object name is still id-based (`dev/{device}/artifacts/{id}.enc`), so a later `push_artifact` for the same id rewrites the same object and the newer snapshot lands; the pull's LWW-by-`(updated_at, device_id)` then decides the winner. A mutation only propagates if it BUMPS `updated_at` - the whole current snapshot travels, so the mutation "type" is just a label. On the mobile side the same applies: every write helper must bump `updated_at` and enqueue to `mutation_outbox` (see `queue_mutation_push` in `desktop/src/lib.rs`); the invoke alone does not sync. NOTE: the hosted Railway relay must be running the upsert `storage.py` (redeploy with `bin/deploy-relay` if it still 409s).
 - **Mobile side (Rust):** `desktop/src/sync.rs` reimplements the same crypto (XSalsa20-Poly1305 secretbox: nonce(24)||ct||tag; Argon2id KEK) and the relay pull/apply, so it cross-compiles for Android. `desktop/src/lib.rs` `#[cfg(mobile)] mod mobile` holds the Tauri commands: `mobile_link_qr` (persists relay_url + secret + DEK-as-hex via `save_config` into the app-data `sync_config` file), `mobile_sync` (spawns `sync_library` on a background thread, emits `sync-started`/`sync-progress`/`sync-done`/`sync-error`; falls back to the saved config when called with `config:"{}"`), `mobile_status`, `mobile_list`, `mobile_capture`/`mobile_capture_image`/`mobile_save_cropped_image` (write locally + `capture_outbox`), `mobile_outbox_push` (kicks the background outbox worker and returns at once), the write helpers `mobile_update_note`/`mobile_delete`/`mobile_restore`/`mobile_toggle_pin` (each bumps `updated_at` + enqueues a mutation via `queue_mutation_push`), the summary edits `mobile_facet_edit`/`mobile_facet_delete` (bump + queue via `push_artifact_now`), the conversation commands `mobile_chats_list`/`mobile_chat_get`/`mobile_chat_send` (`mobile_chat_send` keyword-retrieves over the local copy and calls `call_llm_mobile` directly - which sends the synced `llm_headers`, e.g. `x-opencode-session`, and surfaces a non-2xx body instead of swallowing it), and `mobile_events` (the local activity log). **The phone is local-first (2026-09-30):** no phone command waits on the network. Every write lands in the phone's SQLite and an outbox row (`capture_outbox` for new items, `mutation_outbox` for changes) and returns; the relay gets it from ONE background worker (`kick_outbox` -> `drain_outbox`, guarded by `OUTBOX_RUNNING`/`OUTBOX_AGAIN` so a burst of kicks costs one or two passes). A drain pushes each artifact once however many rows it has queued (a snapshot is the whole current state) and clears the rows it covered up to a cutoff taken before the snapshot. Offline, rows simply wait: the next write, `sync-done`, app resume or the `online` event (`window.mobileSyncAndReconcile`) kicks the worker again. Before this, `mobile_capture` and the photo saves pushed to the relay inline and `mobile_outbox_push` ran the whole drain as a plain (main-thread) Tauri command, so every save froze the UI for a network round trip. Plain `#[tauri::command] fn` runs on the MAIN thread in Tauri v2: never do network I/O in one, and make hot write paths `async fn` (`mobile_capture`, `mobile_update_note`, `mobile_save_cropped_image`) so even the local write stays off the UI thread. `mobile_sync` and the SSE listener share the `SYNC_RUNNING` guard, so only one pull runs at a time.
 New Tauri commands need registration in THREE places: `build.rs`'s `commands(&[...])`, the `tauri.conf.json` capability (`allow-<command-dashed>`), AND the `generate_handler!`; a missing ACL reads as "not allowed. Command not found", not a missing handler.
 - **Settings propagate desktop -> mobile, live (MOB2.9, was "as of linking" only).** The desktop pushes its effective LLM config - backend/model/url AND the provider `llm_api_key` from the Keychain - as a DEK-encrypted `lib/settings/{ts}-{device}.enc` object (`sync/client.py::push_settings`), triggered on every settings change (`settings._resync_to_relay`), on api-key store/forget (`api/settings.py`), and once at engine startup (`api/app.py`). The mobile pull (`desktop/src/sync.rs`) decrypts the newest by `updated_at` into `sync_meta['settings']`; `mobile_chat` and `mobile_settings_get` prefer it over the phone-local config, so the phone runs chat with the desktop's provider + key without re-entering anything. The Settings screen is read-only (`managed_by_desktop: true`) and reports only `llm_api_key_present`, never the value. The api_key leaving the Mac is intentional and E2E-encrypted - the phone needs it to call the provider directly. Tags/annotations are deliberately NOT mobile-writable (curation is desktop work); the phone reader is edit/delete/pin only.
 - **Camera / QR scanner:** `tauri-plugin-barcode-scanner` (ML Kit on Android), vendored under `desktop/plugins/`. It renders the CameraX preview BEHIND a transparent WebView, so the scan handler in `mobile.html` makes the page transparent while scanning. `getUserMedia` is a dead end here: the wry Android WebView does not composite a MediaStream to a `<video>` element - do NOT try to bring it back.
-- **Resilience + reachability:** an Android foreground service (not WorkManager) keeps a sync alive under screen-lock and backgrounding, started when a sync begins and stopped at caught-up cursor; sync re-triggers on app resume and network-regained. `desktop_link_code` REFUSES to render a QR for a loopback/127.0.0.1/localhost/LAN-private relay URL (a phone that leaves the house could never reach it) - set a hosted URL first. A transient sync failure must show a cached library + an offline banner, NEVER the setup screen (the phone stays linked; the config persists), and the `sync-error` handler must not `alert()`.
+- **Resilience + reachability:** a sync runs while the app is open and re-triggers on app resume and network-regained; iOS also pulls in a background refresh (see [The iOS app](#the-ios-app)). An Android foreground service was written once and never started (its JNI looked up the wrong class); it was removed on 2026-10-27. `desktop_link_code` REFUSES to render a QR for a loopback/127.0.0.1/localhost/LAN-private relay URL (a phone that leaves the house could never reach it) - set a hosted URL first. A transient sync failure must show a cached library + an offline banner, NEVER the setup screen (the phone stays linked; the config persists), and the `sync-error` handler must not `alert()`.
 - **Gotcha (bit us 2026-08-19):** a null `getElementById(...).addEventListener` in `mobile.html` throws at init and aborts the WHOLE inline script, so the on-load `bootstrap()`/sync never runs and the library just spins. Guard every listener wiring with `?.` when the element may have been removed.
 
 ---
@@ -811,7 +812,6 @@ GET    /artifacts/{id}              detail, body, annotations, facets, versions
 GET    /artifacts/{id}/text         readable text, with page numbers for PDFs
 GET    /artifacts/{id}/connections  per passage, the other notes that say something close
 GET    /artifacts/{id}/blob         original bytes
-GET    /artifacts/{id}/versions/{vid}  one saved body
 GET    /artifacts/{id}/find?q=      phrase locations in a PDF (page fractions)
 GET    /artifacts/{id}/preview-image  link's stored picture
 GET    /artifacts/{id}/page/{n}     rendered PNG of a PDF page
@@ -819,13 +819,11 @@ GET    /titles                      every live artifact's id, title and kind, fo
 GET    /search?q=                   hybrid search, no model calls; kind/time words become filters (returned as `filters`)
 GET    /chats                       conversations, pinned first
 GET    /chats/ready                 whether there is anything to answer from
-GET    /chats/passages?q=           what an answer would be allowed to read
 GET    /chats/{id}                  transcript, citations, topics
 GET    /pivots                      saved views
 GET    /pivots/{id}                 one saved view
 GET    /settings                    all settings + storage + backends
 GET    /secrets                     credential scan hits
-GET    /index/counts                search index table counts
 GET    /trash                       what is in the trash
 GET    /events?limit=N              the activity log, newest first, each with its full record
 GET    /setup                       what is connected, what is left to set up, settings that need a look
@@ -845,7 +843,6 @@ DELETE /artifacts/{id}               move to trash
 POST   /artifacts/{id}/restore       restore from trash
 DELETE /trash/{id}                   purge one (irreversible)
 DELETE /trash                        empty trash (irreversible)
-POST   /trash/purge                  purge expired only
 POST   /capture/link                 save a URL, nothing fetched
 POST   /capture/upload               multipart file upload
 POST   /artifacts/{id}/preview       fetch what a saved link is (opt-in)
@@ -853,14 +850,10 @@ POST   /chats                        start a conversation (optionally with text)
 POST   /chats/{id}/messages          one turn
 PATCH  /chats/{id}                   rename / pin
 DELETE /chats/{id}                   the one deletable object
-POST   /pivot/plan                    plan a saved view from a request
 POST   /pivot/run                     re-run a saved view spec
 POST   /pivots                        create a saved view
 PATCH  /pivots/{id}                   rename a saved view
 DELETE /pivots/{id}                   forget a saved view
-POST   /pivots/{id}/exclude           remove an artifact from a view
-POST   /pivots/{id}/exclude-many      remove (or, with undo, restore) several artifacts in one request (P.3b)
-POST   /pivots/{id}/include           add an artifact to a view
 POST   /pivots/manual                 create a view arranged by hand (optionally from another view's groups)
 PUT    /pivots/{id}/layout            replace a hand-arranged view's headers and order
 POST   /pivots/{id}/remove            remove artifacts from a locked view (recorded; no recompute)
@@ -925,7 +918,7 @@ Each layer has its own vec0 + FTS5 tables (`chunks`, `facets`, `entities`, `sect
 1. **Dense** - query embedding against chunk vectors.
 2. **Keyword** - FTS5 BM25 over chunk text, title column weighted 10x (`bm25(fts_chunks, 1.0, 10.0, 1.0)`).
 3. **Trigram** - the `fts_chunks_tri` trigram table for substrings and partial words.
-4. **Fuzzy** - `SequenceMatcher` over short fields (titles, entity names, current annotation lines) for one-edit typos trigram cannot see (R.7).
+4. **Fuzzy** - rapidfuzz's Indel ratio (difflib's ratio, in C) over short fields (titles, entity names, current annotation lines) for one-edit typos trigram cannot see (R.7).
 5. **Exact phrase** - quoted phrases pinned (R.10).
 6. **Facets** - the conceptual channel, hits weighted by trust (`score * trust * 2.0`).
 7. **Entities** - the named-thing channel.
@@ -1021,7 +1014,7 @@ That would settle a few hits per search early and still leave the rest to the mo
 
 **Fuzzy leg (R.7).**
 `FUZZY_BASE_SCORE = 0.02` sits between a single-leg rank-1 RRF hit (~0.016) and a dual-leg one (~0.033), so a typo match wins only when the hybrid was weak.
-It is a full Python scan of titles, entity names and current annotations, gated by `_needs_fuzzy` (PERF.1), and pruned by upper bounds on `SequenceMatcher.ratio`.
+It scans titles, entity names and current annotations, gated by `_needs_fuzzy` (PERF.1), with rapidfuzz's `score_cutoff` doing the pruning. It was `difflib.SequenceMatcher` until 2026-10-27 (a quarter of a search); on the eval corpus the two agree on every typo pair at and above the bar.
 
 **Recency (R.8).**
 A note touched today scores 1.5x, one from 180 days ago is unchanged; relevance still dominates.
@@ -1252,6 +1245,7 @@ Setting up and running are under [Start here](#start-here). What else is worth k
 `bin/release desktop` runs `bin/bundle-engine`, then `cargo tauri build --config tauri.release.conf.json`, which copies `desktop/engine` into `Enqueue.app/Contents/Resources/engine`.
 The engine is a relocatable CPython 3.12 (python-build-standalone, the one uv manages) plus a `site/` folder; the shell finds it next to its own executable and runs `python3.12 -m enqueue serve` with `PYTHONPATH` set to it (`bundled_engine_command` in `desktop/src/lib.rs`), so the app needs no repo, no uv and no system Python. Without a bundled engine (a dev build) the shell runs `uv run enq serve` from the repo as before.
 - **Exactly the locked versions.** `site/` is installed from `uv export --frozen --no-dev` (uv.lock), then the project itself with `--no-deps`; resolving fresh would ship whatever was newest that day.
+- **Only what the engine imports.** `bin/bundle-engine` removes pyobjc-core's test suite, CPython's Tk, IDLE, ensurepip, headers and pip, and babel's CLDR locales except English (courlan imports babel, but only a language filter reads a locale, and Enqueue never sets one): 401 MB down to 325 MB on 2026-10-27. It fails if Playwright, crawl4ai or the relay's packages (`hosted` extra: boto3, psycopg, pyjwt) come back. SQLAlchemy stays: Alembic needs it for the startup migration.
 - **The preview browser is the system's.** Link previews open refused pages in the Mac's own WebKit through `pyobjc-framework-WebKit` (about 29 MB); crawl4ai and its Chromium (over half the bundle, 814 MB against 356) are gone. Playwright is dev-only (`bin/screenshots`), and `bin/bundle-engine` fails if it leaks in.
 - **First launch** downloads the embedding model once (about 200 MB from Hugging Face) into the data folder; search says "Updating your search index" until it is ready.
 - **Signing.** With `APPLE_SIGNING_IDENTITY="Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"` every Mach-O in the engine is signed inside-out with the hardened runtime and `desktop/Entitlements.plist` (library validation off, dyld variables, JIT), then Tauri signs the app.
@@ -1445,6 +1439,7 @@ The engine froze whole (`/health` too, 0% CPU) when one thread opened a connecti
 It showed after turning on "Try harder" for link previews, which only added load: a throwaway engine under capture and search load froze every time with the preview browser on or off, the same two stacks each time.
 `db.connect` opens under a process-wide lock (`_OPEN_CLOSE`) and returns a `_Connection` whose `close()` (and finalizer) takes the same lock; with it the same load ran 16,000 rounds clean.
 Every connection to the library must come from `db.connect` (it already must, for the key).
+Search reads through `db.reader()`: one connection per thread, opened once through `db.connect` with sqlite-vec loaded and `query_only` set, whose `close()` keeps it open. A search used to open about seven connections, each loading the extension and setting WAL, nearly half its time. The cached connection follows `config.DB_PATH`, and `db.forget_readers()` (called after a restore or `encrypt_library` replaces the file) makes every thread open a new one.
 A frozen engine's stacks: `kill -USR1 <pid>` writes every thread's Python stack to the log; `sample <pid>` shows where they wait inside SQLite.
 
 ### A Keychain that cannot answer is not a missing key (2026-10-21)
@@ -1496,6 +1491,9 @@ Settings shows the included backend first; its model pickers are dropdowns of th
 `tests/test_relay_ai.py` (with a fake OpenRouter), `tests/test_included_ai.py` and `tests/test_setup.py` pin it.
 
 ### Keeping it quick and small (2026-10-20 sweep)
+
+- **The search path, 2026-10-27** (the 70-note cross-domain library, judge stubbed): one cached read connection per thread (`db.reader()`) and rapidfuzz in the fuzzy leg took a search from a 21 ms median (28 ms mean) to about 5 ms (10 ms).
+- **The embedding model, 2026-10-27.** It runs on the CPU only (CoreML measured no faster: 18 ms a query either way, 9.6 s against 10.9 s for 32 passages), with ONNX's memory arena off and batches of at most 16 (the default 256 peaked at 1.1 GB), and is let go after `ENQ_EMBED_IDLE` seconds (300) with no use; the next search loads it again in about half a second. Live memory after embedding fell from 702 to 294 MB, and to 250 MB once let go. The vectors are identical (max difference 0.0), so the index is unchanged.
 
 - **Keychain reads are cached** (`keyring._get`, `_CACHE`): each read is a `security` subprocess (~30 ms), and the library key was read on every database connection, 15 times per search (470 of 627 ms). Hits are kept 5 minutes, misses 30 seconds; `_set`/`_clear` update the cache, so a key changed in Settings applies at once. A search went from about 0.65 s to 0.1 s; `/setup` from 350 ms to 10 ms.
 - **The gray-zone judge is not waited for when it cannot make it** (`candidates._judge_wait`): a moving average of the search model's real judge calls (over 0.3 s, so cached ones do not count); when it is above `SEARCH_JUDGE_WAIT_S` the search answers at once and the judge finishes behind it. A thinking model on a busy service made every new search wait the full 2.5 s for nothing.
@@ -1549,7 +1547,7 @@ What it took, each of which breaks the build or the screen if undone:
 
 - **`desktop/vendor/swift-rs` is a patched copy** (`[patch.crates-io]` in `desktop/Cargo.toml`). Xcode 27 made the Swift Build engine SwiftPM's default; it prelinks each static library into one object, which turns Tauri's `@_cdecl` entry points (`_register_plugin`, `_init_plugin_*`, `_on_webview_created`) into local symbols, and the app fails to link with "Undefined symbols". The patch is one argument, `--build-system native`, under Xcode 27. Drop the copy when swift-rs or Tauri handles it. swift-rs below 1.0.9 does not build under Xcode 27 at all.
 - **Tauri refuses to build without the simulator runtime matching the SDK** ("Xcode Simulator SDK 27.0 is not installed"): `xcodebuild -downloadPlatform iOS`.
-- **`jni` and `ndk-context` are Android-only dependencies**, and the foreground sync service has no-op twins off Android (`jni_start_sync_foreground_service`). Anything new that touches JNI must be `#[cfg(target_os = "android")]`, not `#[cfg(mobile)]`.
+- **`jni` and `ndk-context` are Android-only dependencies.** Anything new that touches JNI must be `#[cfg(target_os = "android")]`, not `#[cfg(mobile)]`.
 - **The web view must not inset the page.** WKWebView insets its content by the safe area on its own, which left a black band under the page and made `env(safe-area-inset-*)` read 0. The mobile `setup` sets the scroll view's `contentInsetAdjustmentBehavior` to never and has the web view recompute its insets (`objc2`, iOS only); the page then pads itself as it does on Android.
 - **`cargo tauri ios build` fails with "Directory not empty"** when the last build's `gen/apple/build/<arch>/Enqueue.app` is still there; `bin/launch` removes it first.
 - `Info.plist` carries `NSCameraUsageDescription` (the QR scanner crashes on a device without it); it is also in `project.yml`, which regenerates the plist. The icons in `Assets.xcassets` are cut from `assets/logo.png` (full bleed, no alpha) with `cargo tauri icon`.
@@ -1723,7 +1721,7 @@ The card (`drawShiny` in `js/home.js`) is one tile: the tilted raven with a viol
 The page was lightened in October 2026 (lavender ground and tiles, light type; docs/DESIGN.md) and the capture pill deliberately was not: its own lavender glass and bold eye are what hold it over the tiles.
 `.pill` (in `css/pill.css` and again in `mobile.html`) redefines `--bg`, `--surface`, `--surface-3`, `--line` and the inks for everything inside it, reading `--pill-ground` / `--pill-tile` / `--pill-well`, which `js/ground.js` sets from `PILL_KEYS` (the earlier day ladder) beside the page's own `KEYS`.
 A token change on `:root` therefore does not reach the pill; change the pill on `.pill`, and only on purpose.
-`bin/check-contrast` reads the night ground from `KEYS` only, and `capture.html` still carries its own copy of the tokens, which the same script checks against `tokens.css`.
+`bin/check-contrast` reads the night ground from `KEYS` only. `capture.html` links `tokens.css`, so it has no copy of the tokens to keep in step.
 
 ### The Details panel is one component for both apps
 

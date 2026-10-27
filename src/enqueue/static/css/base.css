@@ -415,7 +415,6 @@
     align-items: center;
   }
 
-
   /* ---- loader (ANIM.1) ---------------------------------------------------
      The single loading mark across the app: the raven hovers, beating its wings
      (css/bird.css). Large is a full-view wait with the caption stacked below,
@@ -465,61 +464,6 @@
     display: none;
   }
 
-  /* ---- capture-success flight (ANIM.4) ----------------------------------
-     The raven flies in from the left edge to screen centre, holds, and fades on
-     a successful capture. GPU transform/opacity only, will-change while the bird
-     lives (it is removed when the run ends), pointer-events none so it never
-     blocks a click. Reduced motion drops the fly and keeps a plain fade. */
-  .capture-flight {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    width: 220px;
-    height: auto;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    z-index: 100;
-    opacity: 0;
-    will-change: transform, opacity;
-  }
-  .capture-flight:not(.reduced) {
-    animation: raven-flight 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-  .capture-flight.reduced {
-    animation: raven-fade 1.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-  @keyframes raven-flight {
-    0% {
-      transform: translate(calc(-50% - 100vw), -50%);
-      opacity: 0;
-    }
-    10% {
-      opacity: 1;
-    }
-    31.6% {
-      transform: translate(-50%, -50%);
-    }
-    84.2% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  @keyframes raven-fade {
-    0% {
-      opacity: 0;
-    }
-    10% {
-      opacity: 1;
-    }
-    84.2% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
 
 /* Vault + Events (VAULT.6) ------------------------------------------------- */
 .event-log {
@@ -620,15 +564,6 @@
 	white-space: pre-wrap;
 	line-height: 1.5;
 }
-.event-json {
-	margin: 0;
-	padding: 8px;
-	background: var(--surface-2, #eef0f3);
-	border-radius: var(--r-sm, 6px);
-	font-size: 12px;
-	overflow-x: auto;
-	white-space: pre;
-}
 .event-link {
 	color: var(--accent-text, #60079f);
 	text-decoration: underline;
@@ -660,42 +595,6 @@
 	color: var(--danger, #b3261e);
 	font-size: var(--type-caption, 13px);
 	margin-bottom: var(--sp-2);
-}
-.vault-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-	gap: var(--sp-4);
-}
-.vault-card {
-	border-radius: var(--r-lg);
-	padding: var(--sp-4);
-	background: var(--surface);
-	box-shadow: var(--hairline);
-	cursor: pointer;
-	display: flex;
-	flex-direction: column;
-	gap: var(--sp-2);
-}
-.vault-card:hover {
-	background: var(--surface-2, #eef0f3);
-}
-.vault-card-kind {
-	font-size: var(--type-caption, 12px);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	color: var(--ink-subtle, #686b82);
-}
-.vault-card-title {
-	font-weight: var(--w-strong);
-	color: var(--ink, #101114);
-}
-.vault-unvault {
-	margin-top: var(--sp-2);
-	align-self: flex-start;
-}
-.vault-blob {
-	max-width: 100%;
-	border-radius: var(--r-md, 10px);
 }
 
 /* Centered modal backdrop for the vault PIN (dims the whole app, holds focus) */

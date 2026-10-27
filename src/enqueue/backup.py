@@ -621,6 +621,7 @@ def restore(source: str | os.PathLike, kit: str | None = None) -> dict:
         shutil.copy2(db_file, config.DB_PATH)
     else:
         os.replace(incoming, config.DB_PATH)
+    db.forget_readers()
     restored_blobs = 0
     config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
     if key is not None and (folder / "files").is_dir():

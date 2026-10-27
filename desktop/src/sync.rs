@@ -4,6 +4,9 @@
 //! the device), reusing the same crypto (MOB.3a) and the same snapshot + LWW model
 //! (the sync design (AGENTS.md)).
 
+// The desktop build compiles this module for its tests; only the phone calls most of it.
+#![cfg_attr(not(mobile), allow(dead_code))]
+
 use std::io::Read;
 
 use rusqlite::{Connection, OptionalExtension};
@@ -11,22 +14,15 @@ use serde_json::Value;
 
 /// libsodium `crypto_pwhash` MODERATE preset (DEC-D5), matching `src/enqueue/crypto.py`.
 /// memlimit is 256 MiB expressed in KiB; opslimit is the iteration count.
-#[allow(dead_code)]
 const ARGON2_M_COST: u32 = 256 * 1024;
-#[allow(dead_code)]
 const ARGON2_T_COST: u32 = 3;
-#[allow(dead_code)]
 const ARGON2_P_COST: u32 = 1;
 
-#[allow(dead_code)]
 const DEK_LEN: usize = 32;
-#[allow(dead_code)]
 const NONCE_LEN: usize = 24; // XSalsa20-Poly1305 secretbox nonce
-#[allow(dead_code)]
 const TAG_LEN: usize = 16; // Poly1305 tag
 
 /// Argon2id key derivation, byte-for-byte the desktop's `crypto.derive_kek`.
-#[allow(dead_code)]
 pub fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; DEK_LEN], String> {
     use argon2::{Algorithm, Argon2, Params, Version};
     let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, Some(DEK_LEN))
@@ -42,7 +38,6 @@ pub fn derive_kek(secret: &str, salt: &[u8]) -> Result<[u8; DEK_LEN], String> {
 /// XSalsa20-Poly1305 secretbox decrypt - PyNaCl `nacl.secret.SecretBox` (NOT XChaCha:
 /// the shipped code uses `crypto_secretbox`, whose wire format is nonce(24) || ct ||
 /// tag(16)).
-#[allow(dead_code)]
 fn secretbox_decrypt(key: &[u8; DEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     use xsalsa20poly1305::aead::{Aead, KeyInit};
     use xsalsa20poly1305::{Nonce, XSalsa20Poly1305};
@@ -58,8 +53,6 @@ fn secretbox_decrypt(key: &[u8; DEK_LEN], ciphertext: &[u8]) -> Result<Vec<u8>, 
 
 /// XSalsa20-Poly1305 secretbox encrypt (the inverse of `secretbox_decrypt`), for the
 /// capture push path (MOB.7): fresh nonce prepended, same wire format as the desktop.
-#[allow(dead_code)]
-#[allow(dead_code)]
 pub fn secretbox_encrypt(key: &[u8; DEK_LEN], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use xsalsa20poly1305::aead::{Aead, KeyInit};
     use xsalsa20poly1305::{Nonce, XSalsa20Poly1305};
@@ -134,15 +127,12 @@ pub fn object_name(ident: &str, dek: &[u8; DEK_LEN]) -> String {
 
 /// Unwrap a DEK wrapped with a KEK (inverse of `secretbox_encrypt`).
 /// Uses the same XSalsa20-Poly1305 secretbox decrypt.
-#[allow(dead_code)]
-#[allow(dead_code)]
 pub fn unwrap(wrapped: &[u8], kek: &[u8; DEK_LEN]) -> Result<Vec<u8>, String> {
     secretbox_decrypt(kek, wrapped)
 }
 
 /// The mobile device's UUID4, generated once and stored in the app data dir (the sync design (AGENTS.md)
 /// Section 1: a device id is a UUID, never from hardware).
-#[allow(dead_code)]
 pub fn device_id(dir: &std::path::Path) -> String {
     let path = dir.join("device_id");
     if let Ok(existing) = std::fs::read_to_string(&path) {
@@ -158,7 +148,6 @@ pub fn device_id(dir: &std::path::Path) -> String {
 
 /// Read one artifact's snapshot from the local SQLite (the read copy), for the capture
 /// push (MOB.7). Mirrors `read_artifact_snapshot`.
-#[allow(dead_code)]
 pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Value>, String> {
     let artifact: Option<Value> = conn
         .query_row(
@@ -273,7 +262,6 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
 /// Push one snapshot to the relay (MOB.7): serialize, encrypt, PUT under this device's
 /// namespace. The relay upserts by name (MOBFIX.5), so a re-PUT of an edited or deleted
 /// snapshot overwrites in place and returns 201; a 409 (older relay) is still tolerated.
-#[allow(dead_code)]
 /// PUT an encrypted object to the relay, retrying transient transport failures.
 ///
 /// A phone's network flaps (cellular <-> wifi handoff, IPv6/IPv4 races), so a
@@ -311,7 +299,6 @@ fn put_object_with_retry(url: &str, secret: &str, body: &[u8], label: &str) -> R
     Err(format!("push transport error after {ATTEMPTS} attempts: {last}"))
 }
 
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn push_snapshot(
     relay_url: &str,
     secret: &str,
@@ -331,8 +318,7 @@ pub fn push_snapshot(
 
 /// Unwrap the DEK from the desktop's `keyring.json` plus the recovery phrase
 /// (mirrors `keyring_file.unlock_with_recovery`, per MOB.3a).
-#[allow(dead_code)]
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn unlock_dek(keyring_json: &str, phrase: &str) -> Result<[u8; DEK_LEN], String> {
     let record: Value =
         serde_json::from_str(keyring_json).map_err(|e| format!("keyring json: {e}"))?;
@@ -359,18 +345,15 @@ pub fn unlock_dek(keyring_json: &str, phrase: &str) -> Result<[u8; DEK_LEN], Str
     Ok(out)
 }
 
-#[allow(dead_code)]
 fn str_at(v: Option<&Value>) -> Option<String> {
     v.and_then(Value::as_str).map(str::to_string)
 }
 
-#[allow(dead_code)]
 fn int_at(v: Option<&Value>) -> Option<i64> {
     v.and_then(Value::as_i64)
 }
 
 /// The LWW key `(updated_at, _device_id)`, compared lexicographically (the sync design (AGENTS.md)).
-#[allow(dead_code)]
 fn lww_key(snapshot: &Value) -> (String, String) {
     let a = &snapshot["artifact"];
     (
@@ -381,7 +364,6 @@ fn lww_key(snapshot: &Value) -> (String, String) {
 
 /// The artifacts read-copy schema, mirroring the desktop's final migrations (0001
 /// baseline + pinned/deleted_at/pages/title_explicit/_device_id).
-#[allow(dead_code)]
 pub fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
@@ -634,7 +616,6 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(dead_code)]
 fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let artifact = &snapshot["artifact"];
     let id = artifact["id"].as_str().ok_or("snapshot: missing id")?;
@@ -845,7 +826,6 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
 /// Apply a conversation snapshot: the mirror of the engine's apply_chat_snapshot.
 /// Same (updated_at, _device_id) LWW and terminal-tombstone rules as apply_snapshot,
 /// then the chat row upserts and its messages/citations/topics are replaced wholesale.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 fn apply_chat_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
     let chat = &snapshot["chat"];
     let id = chat["id"].as_str().ok_or("chat snapshot: missing id")?;
@@ -961,7 +941,6 @@ fn apply_chat_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String
     Ok(())
 }
 
-#[allow(dead_code)]
 /// Set once a pull from the very start has applied everything (see sync_library).
 /// A new value pulls everything again once on every phone.
 const FULL_PULL_KEY: &str = "full_pull_v1";
@@ -978,7 +957,6 @@ fn read_cursor(conn: &Connection) -> Result<u64, String> {
     Ok(v.and_then(|s| s.parse().ok()).unwrap_or(0))
 }
 
-#[allow(dead_code)]
 fn write_cursor(conn: &Connection, cursor: u64) -> Result<(), String> {
     conn.execute(
         "INSERT INTO sync_meta (key,value) VALUES ('cursor',?1) \
@@ -990,7 +968,6 @@ fn write_cursor(conn: &Connection, cursor: u64) -> Result<(), String> {
 }
 
 /// The result of a sync attempt, reduced to a status the UI (MOB.3b) can show.
-#[allow(dead_code)]
 pub struct SyncOutcome {
     pub status: String, // "synced" | "locked" | "error"
     pub pulled: usize,
@@ -999,7 +976,6 @@ pub struct SyncOutcome {
 
 /// Pull the library from the relay into the local read copy. `dek` is None when the
 /// keyring has not been unlocked; then the sync reports "locked" instead of crashing.
-#[allow(dead_code)]
 /// PERF.2: fetch and decrypt many artifact snapshots concurrently.
 ///
 /// The pull used to do one blocking `GET /sync/object/{name}` per changed object,
@@ -1086,7 +1062,6 @@ fn fetch_snapshots_parallel(
     (out, missed)
 }
 
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn sync_library(
     relay_url: &str,
     sync_secret: &str,
@@ -1322,7 +1297,6 @@ pub fn sync_library(
 }
 
 /// Artifact ids present in the local read copy, newest first, excluding trashed rows.
-#[allow(dead_code)]
 pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
     let mut stmt = conn
         .prepare("SELECT id FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL ORDER BY updated_at DESC")
@@ -1339,7 +1313,6 @@ pub fn list_artifact_ids(conn: &Connection) -> Result<Vec<String>, String> {
 
 /// Conversation rows for the eye panel's list: id, title, pinned, updated_at, and the
 /// topics it circles. Pinned first then newest; tombstones excluded.
-#[allow(dead_code)]
 pub fn list_chats(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
@@ -1380,7 +1353,6 @@ pub fn list_chats(conn: &Connection) -> Result<Vec<Value>, String> {
 
 /// One conversation's transcript for the reader: the chat plus its messages in order,
 /// each with the artifact ids it cited (and their local titles when present).
-#[allow(dead_code)]
 pub fn get_chat(conn: &Connection, id: &str) -> Result<Value, String> {
     let chat: Option<(String, String, Option<String>, Option<String>, i64)> = conn
         .query_row(
@@ -1458,7 +1430,6 @@ pub fn get_chat(conn: &Connection, id: &str) -> Result<Value, String> {
 
 /// Serialize a conversation for the relay: the mirror of the engine's
 /// read_chat_snapshot. Children ordered so the canonical JSON is byte-stable.
-#[allow(dead_code)]
 pub fn build_chat_snapshot(conn: &Connection, id: &str) -> Result<Option<Value>, String> {
     let chat: Option<Value> = conn
         .query_row("SELECT * FROM chats WHERE id = ?1", [id], |r| {
@@ -1554,7 +1525,6 @@ pub fn build_chat_snapshot(conn: &Connection, id: &str) -> Result<Option<Value>,
 }
 
 /// Push a conversation snapshot to the relay under this device's chat namespace.
-#[allow(dead_code)]
 pub fn push_chat_snapshot(
     base: &str,
     secret: &str,
@@ -1572,7 +1542,6 @@ pub fn push_chat_snapshot(
 
 /// The library rows for the Library surface (MOB.4): id, kind, title, body (for the
 /// snippet), timestamps, and capture metadata. Newest first, trashed excluded.
-#[allow(dead_code)]
 pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
@@ -1621,7 +1590,6 @@ pub fn list_artifacts(conn: &Connection) -> Result<Vec<Value>, String> {
 }
 
 /// One artifact plus its annotations, for the Reader surface (MOB.5).
-#[allow(dead_code)]
 pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
     let artifact: Option<Value> = conn
         .query_row(
@@ -1724,7 +1692,6 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
 
 /// Rewrite one facet from the phone: mark it edited + full-trust, and bump the artifact's
 /// updated_at so the edit wins LWW and reaches the desktop when the artifact is pushed.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn edit_facet_local(conn: &Connection, facet_id: &str, statement: &str) -> Result<String, String> {
     let aid: Option<String> = conn
         .query_row("SELECT artifact_id FROM facets WHERE id = ?1", [facet_id], |r| r.get(0))
@@ -1740,7 +1707,6 @@ pub fn edit_facet_local(conn: &Connection, facet_id: &str, statement: &str) -> R
 }
 
 /// Remove one facet from the phone. Returns its artifact id for the caller to push.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn delete_facet_local(conn: &Connection, facet_id: &str) -> Result<String, String> {
     let aid: Option<String> = conn
         .query_row("SELECT artifact_id FROM facets WHERE id = ?1", [facet_id], |r| r.get(0))
@@ -1755,7 +1721,6 @@ pub fn delete_facet_local(conn: &Connection, facet_id: &str) -> Result<String, S
 /// Record one activity-log event (persisted, mirrors the engine's events table). The
 /// `data` blob is opened on demand in the Activity view; `duration_ms` is the action's
 /// wall time when known. Best effort: a logging failure never fails the real action.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn log_event(
     conn: &Connection,
     kind: &str,
@@ -1784,7 +1749,6 @@ pub fn log_event(
 }
 
 /// The most recent events, newest first, each with its parsed `data`.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn read_events(conn: &Connection, limit: i64) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
@@ -1818,7 +1782,6 @@ pub fn read_events(conn: &Connection, limit: i64) -> Result<Vec<Value>, String> 
 /// Keyword search over titles, bodies, and annotations (MOB.6). No embeddings, no
 /// model - a plain case-insensitive substring match, the same honesty as the desktop's
 /// keyword leg. Returns library rows, newest first.
-#[allow(dead_code)]
 pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
     // A question ("do I have any docker notes?") used to be matched as one literal
     // substring, so it found nothing and the answer path returned canned "no match"
@@ -1838,7 +1801,6 @@ pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, St
 /// What the phone's chat may send to the model: the keyword matches minus anything
 /// marked local-only. The phone has no local model, so a local-only note's text is
 /// never put in a prompt (the desktop keeps the same promise in privacy.py).
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn chat_sources(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
     let mut private = conn
         .prepare("SELECT 1 FROM artifacts WHERE id = ?1 AND local_only = 1")
@@ -1856,7 +1818,6 @@ pub fn chat_sources(conn: &Connection, query: &str) -> Result<Vec<Value>, String
 /// A prompt with every credential blanked, the phone's twin of the desktop's
 /// `ingest/secrets.py::redact`: the same shapes, replaced by `***` before the text
 /// goes to the model, so a key in a note never leaves the phone.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn redact_secrets(text: &str) -> String {
     use std::sync::OnceLock;
     static PATTERNS: OnceLock<Vec<regex::Regex>> = OnceLock::new();
@@ -1973,7 +1934,6 @@ fn search_like(conn: &Connection, terms: &[String]) -> Result<Vec<Value>, String
 
 /// A rough mirror of `notes.py:title_from_body` for the capture path: the first
 /// markdown heading, else the first non-empty line, `*_`` stripped, capped at 120.
-#[allow(dead_code)]
 pub fn title_hint(body: &str) -> String {
     for line in body.lines() {
         let line = line.trim();
@@ -1999,7 +1959,6 @@ pub fn title_hint(body: &str) -> String {
 /// which the capture uses as the link's title instead of keeping it as a note. Any
 /// other shape (words around the address, an address mid-sentence) returns None.
 /// Mirrors `sharedTitle` in capture.html.
-#[allow(dead_code)]
 pub fn shared_link_title(text: &str, is_link: impl Fn(&str) -> bool) -> Option<String> {
     let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
     match lines.as_slice() {
@@ -2012,8 +1971,6 @@ pub fn shared_link_title(text: &str, is_link: impl Fn(&str) -> bool) -> Option<S
 
 /// The content-addressed blob name: HMAC-SHA256 of the content hash keyed by the DEK
 /// (mirrors `crypto.blob_name`), so a blob's address leaks nothing about its contents.
-#[allow(dead_code)]
-#[allow(dead_code)]
 pub fn blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
     let mut data = b"blob:".to_vec();
     data.extend_from_slice(content_hash.as_bytes());
@@ -2033,7 +1990,6 @@ pub fn legacy_blob_name(content_hash: &str, dek: &[u8; DEK_LEN]) -> String {
 /// phone - notes and links carry no blob, but an image/pdf/file needs its bytes on
 /// the relay for any other device to fetch them (MOB.5). Idempotent: a re-push of
 /// the same content-addressed name returns 409, which is accepted.
-#[cfg_attr(not(mobile), allow(dead_code))] // phone-only caller
 pub fn push_blob(
     relay_url: &str,
     secret: &str,
@@ -2049,7 +2005,6 @@ pub fn push_blob(
 
 /// Fetch + decrypt one file blob (an image/PDF/file) from the relay (MOB.5). The blob
 /// is fetched on demand, cached by the caller.
-#[allow(dead_code)]
 pub fn fetch_blob(
     relay_url: &str,
     secret: &str,
@@ -2096,7 +2051,6 @@ pub fn fetch_blob(
 ///      blob vaulted on the desktop before the phone cached it returned "no blob";
 ///   2. a cache holding the pre-vault PLAINTEXT (the image was opened on the phone before
 ///      it was vaulted) does not unwrap, and must be refetched as vault-ciphertext.
-#[allow(dead_code)]
 pub fn resolve_vaulted_blob<F: Fn() -> Result<Vec<u8>, String>>(
     cached: Option<Vec<u8>>,
     vault_key: &[u8; DEK_LEN],
@@ -2121,7 +2075,6 @@ pub fn resolve_vaulted_blob<F: Fn() -> Result<Vec<u8>, String>>(
 // unlock off until the new code is entered on this phone.
 
 /// What ties a fingerprint record to the current code: a digest of the code's wrap.
-#[allow(dead_code)]
 pub fn vault_meta_tag(salt_hex: &str, wrap_hex: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
@@ -2132,7 +2085,6 @@ pub fn vault_meta_tag(salt_hex: &str, wrap_hex: &str) -> String {
 }
 
 /// Seal the vault key under the Keystore-held secret. Returns the record to store.
-#[allow(dead_code)]
 pub fn vault_bio_seal(
     vault_key: &[u8; DEK_LEN],
     secret: &[u8; DEK_LEN],
@@ -2144,7 +2096,6 @@ pub fn vault_bio_seal(
 
 /// Open a fingerprint record. Errors are the two things the page tells apart:
 /// "changed" (the code was changed since this record was made) and "incorrect".
-#[allow(dead_code)]
 pub fn vault_bio_open(
     record: &str,
     secret: &[u8; DEK_LEN],
@@ -2170,7 +2121,6 @@ pub fn vault_bio_open(
 
 /// Point an existing record at a new code wrap. Used when the code is changed ON this
 /// phone: the vault key is the same, so the fingerprint keeps working.
-#[allow(dead_code)]
 pub fn vault_bio_retag(record: &str, tag: &str) -> Result<String, String> {
     let mut v: Value = serde_json::from_str(record).map_err(|e| e.to_string())?;
     v["tag"] = Value::String(tag.to_string());
@@ -2178,7 +2128,6 @@ pub fn vault_bio_retag(record: &str, tag: &str) -> Result<String, String> {
 }
 
 /// A 32-byte value handed over as 64 hex characters.
-#[allow(dead_code)]
 pub fn key_from_hex(s: &str) -> Result<[u8; DEK_LEN], String> {
     let bytes = hex::decode(s.trim()).map_err(|_| "bad secret".to_string())?;
     if bytes.len() != DEK_LEN {
@@ -2199,7 +2148,6 @@ pub fn key_from_hex(s: &str) -> Result<[u8; DEK_LEN], String> {
 // devices the same way. The key pair lives in memory only.
 
 /// A fresh key pair for asking to join: (secret, public).
-#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn join_keypair() -> ([u8; 32], [u8; 32]) {
     let secret = crypto_box::SecretKey::generate(&mut crypto_box::aead::OsRng);
     let public = secret.public_key();
@@ -2207,7 +2155,6 @@ pub fn join_keypair() -> ([u8; 32], [u8; 32]) {
 }
 
 /// The six digits both devices show for an ask ("482 913"), as crypto.join_code.
-#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn join_code(public_key: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
@@ -2222,7 +2169,6 @@ pub fn join_code(public_key: &[u8]) -> String {
 }
 
 /// Seal `message` to a public key (libsodium crypto_box_seal).
-#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn seal_to(public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
     let key: [u8; 32] = public_key.try_into().map_err(|_| "a public key is 32 bytes".to_string())?;
     crypto_box::PublicKey::from(key)
@@ -2231,7 +2177,6 @@ pub fn seal_to(public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Open a sealed box with our secret key.
-#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn open_sealed(secret: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, String> {
     crypto_box::SecretKey::from(*secret)
         .unseal(sealed)
@@ -2239,7 +2184,6 @@ pub fn open_sealed(secret: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>, String> 
 }
 
 /// The library key out of an approval's sealed payload ({"dek": hex}).
-#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn dek_from_approval(secret: &[u8; 32], sealed_b64: &str) -> Result<[u8; 32], String> {
     use base64::Engine as _;
     let sealed = base64::engine::general_purpose::STANDARD
@@ -2253,7 +2197,6 @@ pub fn dek_from_approval(secret: &[u8; 32], sealed_b64: &str) -> Result<[u8; 32]
 }
 
 /// The sealed payload that approves a device: the library key for its public key.
-#[cfg_attr(not(mobile), allow(dead_code))] // used by the phone
 pub fn approval_for(public_key_b64: &str, dek: &[u8]) -> Result<String, String> {
     use base64::Engine as _;
     let b64 = base64::engine::general_purpose::STANDARD;
@@ -2806,7 +2749,6 @@ fn keep_draft(conn: &Connection, artifact_id: &str, body: &str, when: &str, fres
 
 /// Update a note's body, keeping a draft and respecting title_explicit (MOB2.4).
 /// Returns the updated artifact.
-#[allow(dead_code)]
 pub fn update_note_body(conn: &Connection, artifact_id: &str, new_body: &str, new_title: Option<&str>) -> Result<Value, String> {
     update_note_body_with(conn, artifact_id, new_body, new_title, false)
 }
@@ -2967,7 +2909,6 @@ pub fn set_keep_drafts(conn: &Connection, artifact_id: &str, on: bool) -> Result
 }
 
 /// Add an annotation to an artifact (MOB2.4).
-#[allow(dead_code)]
 pub fn add_annotation(conn: &Connection, artifact_id: &str, text: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     let ann_id = uuid::Uuid::new_v4().to_string();
@@ -2985,26 +2926,8 @@ pub fn add_annotation(conn: &Connection, artifact_id: &str, text: &str) -> Resul
     get_artifact(conn, artifact_id)
 }
 
-/// Remove an annotation (MOB2.4).
-#[allow(dead_code)]
-pub fn remove_annotation(conn: &Connection, artifact_id: &str, annotation_id: &str) -> Result<Value, String> {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
-    
-    conn.execute(
-        "DELETE FROM annotations WHERE id = ?1 AND artifact_id = ?2",
-        rusqlite::params![annotation_id, artifact_id],
-    ).map_err(|e| e.to_string())?;
-    
-    conn.execute(
-        "UPDATE artifacts SET updated_at = ? WHERE id = ?",
-        rusqlite::params![now, artifact_id],
-    ).map_err(|e| e.to_string())?;
-    
-    get_artifact(conn, artifact_id)
-}
 
 /// Toggle pin status (MOB2.4).
-#[allow(dead_code)]
 pub fn toggle_pin(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
@@ -3023,7 +2946,6 @@ pub fn toggle_pin(conn: &Connection, artifact_id: &str) -> Result<Value, String>
 }
 
 /// Toggle trash status (MOB2.4). Trash/restore, no purge.
-#[allow(dead_code)]
 pub fn toggle_trash(conn: &Connection, artifact_id: &str) -> Result<Value, String> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
     
@@ -3044,7 +2966,6 @@ pub fn toggle_trash(conn: &Connection, artifact_id: &str) -> Result<Value, Strin
 }
 
 /// List trashed artifacts (MOB2.4).
-#[allow(dead_code)]
 pub fn list_trashed(conn: &Connection) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(

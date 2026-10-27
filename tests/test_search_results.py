@@ -578,14 +578,15 @@ class TestQueryBatching:
         from enqueue.retrieve import candidates
 
         seen: list[str] = []
-        real = candidates.db.get_conn
+        real = candidates.db.reader
+        candidates.db.forget_readers()  # a fresh reader, so the trace ends with this test
 
         def traced(*args, **kwargs):
             conn = real(*args, **kwargs)
             conn.set_trace_callback(lambda sql: seen.append(sql))
             return conn
 
-        monkeypatch.setattr(candidates.db, "get_conn", traced)
+        monkeypatch.setattr(candidates.db, "reader", traced)
         return seen
 
     def test_no_per_row_probes_in_the_rollup(self, sqlite_store, monkeypatch):

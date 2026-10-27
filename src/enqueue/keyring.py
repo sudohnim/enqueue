@@ -332,8 +332,3 @@ def dek_clear() -> bool:
             return True
         except OSError:
             return False
-
-
-def dek_available() -> bool:
-    """Whether a DEK is stored (Keychain or file)."""
-    return _dek_get() is not None

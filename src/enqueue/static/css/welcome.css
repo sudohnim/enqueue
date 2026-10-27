@@ -264,27 +264,6 @@
 	}
 }
 
-/* The opening plate reads as a few sentences, not as settings rows. */
-.settings-page .group.welcome-hello {
-	padding: var(--sp-5) var(--sp-6);
-}
-.welcome-hello p {
-	margin: 0 0 var(--sp-3);
-	max-width: 56ch;
-	font-size: 16px;
-	line-height: 24px;
-	color: var(--text-dim);
-}
-.welcome-hello p:last-child {
-	margin-bottom: 0;
-}
-.welcome-hello .welcome-lead {
-	font-size: 22px;
-	line-height: 28px;
-	font-weight: var(--w-heading);
-	letter-spacing: -0.014em;
-	color: var(--text);
-}
 .welcome-note {
 	margin: var(--sp-4) 0 0;
 	max-width: 60ch;

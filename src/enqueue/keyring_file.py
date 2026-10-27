@@ -221,20 +221,6 @@ def load_dek_from_keychain() -> bytes | None:
     return _dek
 
 
-def regenerate_recovery(dek: bytes) -> str:
-    """Make a new recovery phrase and rewrap, invalidating the old one."""
-    record = _read()
-    if record is None:
-        raise UnlockError("sync has not been initialized")
-    phrase = _crockford_base32(nacl.utils.random(20))
-    salt = nacl.utils.random(16)
-    kek = crypto.derive_kek(phrase, salt)
-    record["recovery_salt"] = salt.hex()
-    record["dek_by_recovery"] = crypto.wrap(dek, kek).hex()
-    _write(record)
-    return phrase
-
-
 def vault_wrap_get() -> dict | None:
     """The stored vault-key wrap (`vault_salt` + `vault_by_pin`), or None if no
     vault has been set up. Lives alongside `dek_by_recovery` in keyring.json - the
@@ -252,17 +238,6 @@ def vault_wrap_set(salt_hex: str, wrapped_hex: str) -> None:
     record = _read() or {}
     record["vault_salt"] = salt_hex
     record["vault_by_pin"] = wrapped_hex
-    _write(record)
-
-
-def vault_wrap_clear() -> None:
-    """Forget the vault wrap. The vaulted CONTENT stays encrypted-at-rest and
-    becomes permanently unreadable - callers must confirm before calling this."""
-    record = _read()
-    if not record:
-        return
-    record.pop("vault_salt", None)
-    record.pop("vault_by_pin", None)
     _write(record)
 
 

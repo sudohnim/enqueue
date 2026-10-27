@@ -25,10 +25,10 @@ dependencies = [
   "sqlcipher3-wheels>=0.5.7",
   # The preview browser (webkit_page.py): the Mac's own WebKit, through its bindings.
   "pyobjc-framework-WebKit>=12; sys_platform == 'darwin'",
+  "rapidfuzz>=3.14.6",
 ]
 
 [project.optional-dependencies]
-index = ["fastembed>=0.4"]
 # The hosted relay's accounts (relay/accounts.py): verifying Google and Apple sign-in
 # tokens, and Postgres. Only the relay's container installs it; the Mac app does not.
 # boto3: the object bytes in Cloudflare R2 (relay/blobs.py), on when R2_* is set.

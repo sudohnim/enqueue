@@ -170,10 +170,6 @@ def llm_api_key(base_url: str | None = None) -> str:
     return keyring.get() or "ollama"
 
 
-# Kept so existing imports keep working. Prefer `llm_api_key()`: this is bound once at
-# import and will not see a key stored later.
-LLM_API_KEY = os.getenv("ENQ_LLM_API_KEY", "ollama")
-
 # Total attempts handed to instructor's `max_retries` (NOT retries-after-first - that
 # was the old, wrong reading: `max_retries=1` gives ONE attempt and no reprompt, which
 # defeats instructor's whole point). Reprompting only fires when validation FAILS, so a
@@ -229,7 +225,6 @@ APPLE_SERVICES_ID = os.getenv("ENQ_APPLE_SERVICES_ID", "com.sudohnim.enqueue.sig
 
 # Facet eligibility. See docs/CURATION.md.
 MIN_WORDS_FOR_FACETS = 40
-SKIP_FACETS_FOR_FOLDERS = {"snippets", "biz_"}
 # How much artifact text the facet generator feeds the model. A link or PDF keeps
 # its extracted text in page_text (the body is empty), which can run long; this caps
 # the prompt so it fits a modest local context window and the model reads the article's

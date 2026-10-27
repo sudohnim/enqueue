@@ -174,37 +174,6 @@ function spinner(size, caption) {
 	return '<div class="' + cls + '" role="status">' + bird + cap + "</div>";
 }
 
-// ANIM.4: the capture-success flight. The raven flies in from the left edge to
-// centre, holds, and fades - a rehearsed one-off on a successful capture. A
-// second capture restarts it (the old bird is replaced, never stacked), and the
-// bird is pointer-events: none so it never blocks a click or the next capture.
-// Returns a promise that resolves when the flight ends, so the capture overlay
-// can hold its dismiss until the bird has been seen.
-function captureFlight() {
-	// The eye approves: one slow, satisfied blink as the raven flies off with it.
-	if (window.eyeMood) eyeMood.play("approve");
-	const old = document.getElementById("captureFlight");
-	if (old) old.remove();
-
-	const img = document.createElement("img");
-	img.id = "captureFlight";
-	img.className = "capture-flight";
-	img.src = "/static/capture-bird.png?v=" + Date.now();
-	img.alt = "";
-	img.setAttribute("aria-hidden", "true");
-	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-		img.classList.add("reduced");
-	}
-	document.body.appendChild(img);
-
-	return new Promise((resolve) => {
-		setTimeout(() => {
-			// No-op if a second capture already removed this bird and mounted its own.
-			img.remove();
-			resolve();
-		}, 1900);
-	});
-}
 
 // DI.1: settings is one tabbed surface, not four stacked full pages. Each tab
 // renders only the form content below the shared tab bar, and switching tabs

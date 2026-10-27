@@ -98,17 +98,21 @@ class _Connection(sqlite3.Connection):
             pass
 
 
-def connect(path=None, *, timeout: float = 10, key: bytes | None = None, readonly=False):
+def connect(
+    path=None, *, timeout: float = 10, key: bytes | None = None, readonly=False, factory=None
+):
     """Open a database file; an encrypted one with `key` (default: this library's disk
     key). Refuses an encrypted file it has no key for, rather than reading noise."""
     path = path or config.DB_PATH
     target = f"file:{path}?mode=ro" if readonly else str(path)
     with _OPEN_CLOSE:
-        conn = sqlite3.connect(target, timeout=timeout, uri=readonly, factory=_Connection)
+        conn = sqlite3.connect(
+            target, timeout=timeout, uri=readonly, factory=factory or _Connection
+        )
     if is_encrypted(path):
         key = key or disk_key()
         if key is None:
-            conn.close()
+            _Connection.close(conn)
             raise sqlite3.DatabaseError(
                 "the library is encrypted and this Mac does not have its key: restore it"
                 " with the recovery kit (enq restore)"
@@ -166,6 +170,7 @@ def encrypt_library() -> str:
     for suffix in ("-wal", "-shm"):
         path.with_name(path.name + suffix).unlink(missing_ok=True)
     os.replace(tmp, path)
+    forget_readers()
     os.chmod(path, 0o600)
     return f"encrypted the library at rest ({sum(before.values())} rows checked)"
 
@@ -280,6 +285,54 @@ def get_conn() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     set_wal(conn)
     return conn
+
+
+class _Reader(_Connection):
+    """A thread's cached read connection: callers' close() keeps it open for the next
+    read; `forget_readers` closes it for real."""
+
+    def close(self) -> None:
+        pass
+
+    def shut(self) -> None:
+        _Connection.close(self)
+
+    def __del__(self) -> None:
+        try:
+            self.shut()
+        except Exception:  # noqa: BLE001 - never raise from a finalizer
+            pass
+
+
+_readers = threading.local()
+_reader_generation = 0
+
+
+def reader() -> sqlite3.Connection:
+    """This thread's read-only connection, opened once with sqlite-vec loaded. A search
+    used to open about seven connections, each loading the extension and setting WAL,
+    which was nearly half its time. Writes go through get_conn or transaction."""
+    _ensure_migrated()
+    key = (str(config.DB_PATH), _reader_generation)
+    conn = getattr(_readers, "conn", None)
+    if conn is not None and _readers.key == key:
+        return conn
+    if conn is not None:
+        conn.shut()
+    conn = connect(factory=_Reader)
+    conn.row_factory = sqlite3.Row
+    set_wal(conn)
+    conn.execute("PRAGMA query_only = ON")
+    _load_vec(conn)
+    _readers.conn, _readers.key = conn, key
+    return conn
+
+
+def forget_readers() -> None:
+    """Make every thread open a fresh read connection: after the file was replaced or
+    rekeyed (restore, encrypt_library)."""
+    global _reader_generation
+    _reader_generation += 1
 
 
 @contextmanager

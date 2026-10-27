@@ -16,25 +16,6 @@ function draftsCountLabel(n) {
 	return n > 1 ? n + " drafts" : "";
 }
 
-function draftsDay(when) {
-	const d = new Date(when);
-	const today = new Date();
-	const y = new Date();
-	y.setDate(today.getDate() - 1);
-	if (d.toDateString() === today.toDateString()) return "Today";
-	if (d.toDateString() === y.toDateString()) return "Yesterday";
-	const sameYear = d.getFullYear() === today.getFullYear();
-	return d.toLocaleDateString(undefined, {
-		month: "short",
-		day: "numeric",
-		...(sameYear ? {} : { year: "numeric" }),
-	});
-}
-
-function draftsTime(when) {
-	return new Date(when).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
 function draftsPanel() {
 	let panel = document.getElementById("draftsPanel");
 	if (panel) return panel;
@@ -117,7 +98,7 @@ function renderDraftsList() {
 	s.drafts.forEach((d, i) => {
 		const now = i === 0 && d.current;
 		if (!now) {
-			const label = draftsDay(d.at);
+			const label = Diff.day(d.at);
 			if (label !== day) {
 				day = label;
 				html += '<div class="draft-day">' + esc(label) + "</div>";
@@ -133,7 +114,7 @@ function renderDraftsList() {
 			' aria-pressed="' +
 			String(s.selected === d.id) +
 			'"><span class="draft-time">' +
-			(now ? "Now" : esc(draftsTime(d.at))) +
+			(now ? "Now" : esc(Diff.time(d.at))) +
 			'</span><span class="draft-words">' +
 			esc(now ? "The note as it is" : words) +
 			'</span><span class="draft-delta">' +
@@ -230,7 +211,7 @@ function renderCompare() {
 			else if (b.dataset.act === "restore") restoreDraft();
 		});
 	}
-	const when = entry ? draftsDay(entry.at) + ", " + draftsTime(entry.at) : "This draft";
+	const when = entry ? Diff.day(entry.at) + ", " + Diff.time(entry.at) : "This draft";
 	head.innerHTML =
 		'<span class="compare-what"><b>' +
 		esc(when) +

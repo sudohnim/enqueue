@@ -51,10 +51,6 @@ class KeyringInit(BaseModel):
     force: bool = False
 
 
-class KeyringUnlock(BaseModel):
-    recovery_phrase: str
-
-
 class SyncJoin(BaseModel):
     relay_url: str
     secret: str
@@ -153,27 +149,6 @@ def store_sync_secret(req: SyncSecret) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     return settings.sync_state()
-
-
-@router.post("/settings/sync/push-all")
-def sync_push_all() -> dict:
-    """BACKFILL.1: Push all non-deleted, non-local artifacts to the relay.
-
-    Iterates every artifact in the local DB, pushes its snapshot (and blob if any)
-    to the relay. Idempotent: relay returns 409 for already-present objects.
-    Returns the number of artifacts successfully pushed (201 responses).
-
-    Runs in a background thread so the request returns immediately. The sync
-    worker's lifecycle events (sync-started/sync-done/sync-error) track progress.
-    """
-    from ..sync.client import push_all
-
-    def _bg():
-        count = push_all()
-        print(f"[sync] backfill pushed {count} artifacts", flush=True)
-
-    threading.Thread(target=_bg, daemon=True).start()
-    return {"started": True, "message": "full-library push started in background"}
 
 
 @router.delete("/settings/sync-secret")
@@ -307,35 +282,6 @@ def sync_pair_claim(req: PairClaim) -> dict:
         # 409 for the "already initialized" refusal, 400 for everything else the user can fix.
         code = 409 if "already has a sync keyring" in str(exc) else 400
         raise HTTPException(status_code=code, detail=str(exc)) from None
-
-
-@router.post("/settings/keyring-unlock")
-def keyring_unlock(req: KeyringUnlock) -> dict:
-    """Unlock the sync keyring in memory with the recovery phrase.
-
-    The recovery phrase is never logged or written to disk. On success the sync
-    worker resumes pushing/pulling; on a wrong phrase it is refused with a
-    human error and the keyring stays locked. If there is no keyring to unlock,
-    the request is refused with a pointer to initialize one.
-    """
-    if not keyring_file.is_initialized():
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "There is no sync keyring to unlock. Initialize sync on the " "Sync tab first."
-            ),
-        )
-    try:
-        keyring_file.unlock_with_recovery(req.recovery_phrase)
-    except keyring_file.UnlockError as exc:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "That recovery phrase did not unlock the sync keyring. Please "
-                "check it and try again - the keyring stays locked."
-            ),
-        ) from exc
-    return {"ok": True, "message": "sync keyring unlocked"}
 
 
 @router.patch("/settings")

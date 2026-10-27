@@ -46,30 +46,6 @@ def chat_ready() -> dict:
     return chats.readiness()
 
 
-@router.get("/chats/passages")
-def chat_passages(q: str, scope_kind: str = "everything", scope_id: str | None = None) -> dict:
-    """Exactly what an answer to this question would be allowed to read.
-
-    An answer is only ever as good as this list, so it is inspectable. When the
-    curator says the collection holds nothing, this is how you tell a retrieval
-    failure from an honest one.
-    """
-    found = chats.passages(q, scope_kind, scope_id)
-    return {
-        "query": q,
-        "passages": [
-            {
-                "artifact_id": p["artifact_id"],
-                "title": p["title"],
-                "why": p.get("why"),
-                "score": p.get("score"),
-                "excerpt": " ".join(p["text"].split())[:240],
-            }
-            for p in found
-        ],
-    }
-
-
 @router.post("/chats", status_code=201)
 def create_chat(req: ChatCreate) -> dict:
     if req.text:

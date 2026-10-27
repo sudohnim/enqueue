@@ -522,51 +522,6 @@ def push_settings() -> None:
         print(f"[sync] settings push failed: {exc}", flush=True)
 
 
-def pull_settings() -> None:
-    """Pull the latest settings object from the relay and apply it (MOB2.9)."""
-    url = _relay_url()
-    if not url:
-        return
-    assert_local_relay(url)
-
-    dek = keyring_file.dek()
-    if dek is None:
-        return
-
-    base = url.rstrip("/")
-    headers = {"Authorization": f"Bearer {_secret()}"}
-    cursor = _read_cursor()
-
-    with httpx.Client(timeout=30) as client:
-        listing = client.get(f"{base}/sync/objects", params={"since": cursor}, headers=headers)
-        if listing.status_code != 200:
-            return
-
-        for obj in listing.json()["objects"]:
-            name = obj["name"]
-            if not name.startswith("lib/settings/"):
-                continue
-            resp = client.get(f"{base}/sync/object/{name}", headers=headers)
-            if resp.status_code != 200:
-                continue
-            s = deserialize(crypto.open_payload(resp.content, dek))
-            if "updated_at" in s:
-                with db.transaction() as conn:
-                    for key, val in s.items():
-                        if key in (
-                            "llm_backend",
-                            "llm_model",
-                            "llm_url",
-                            "llm_headers",
-                            "auto_preview",
-                            "trash_days",
-                        ):
-                            conn.execute(
-                                "UPDATE settings SET value = ? WHERE key = ?",
-                                (str(val), key),
-                            )
-
-
 def push_keyring() -> None:
     """PUT the keyring.json to the relay as lib/keyring.enc (MOB2.10).
 

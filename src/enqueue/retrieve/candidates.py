@@ -11,21 +11,21 @@ import math
 import re
 import threading
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from contextvars import ContextVar, copy_context
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 from functools import lru_cache
-from sqlite3 import OperationalError
+from ..sqlite import OperationalError
 
 from pydantic import BaseModel
+from rapidfuzz.distance import Indel
 
 from .. import config, db
 from ..index.store import get_store
 from ..opens import usage_boost
 from ..providers.base import get_provider
 
-# R.7 fuzzy leg: min SequenceMatcher ratio for a typo match, and its score (RRF k=60 scale).
+# R.7 fuzzy leg: min similarity ratio for a typo match, and its score (RRF k=60 scale).
 FUZZY_RATIO = 0.75
 FUZZY_BASE_SCORE = 0.02
 
@@ -202,7 +202,7 @@ def _facets_for_judge(artifact_ids: list[str]) -> dict[str, list[str]]:
     """Facet statements per artifact, for the gray-zone judge prompt."""
     if not artifact_ids:
         return {}
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         rows = conn.execute(
             "SELECT artifact_id, statement FROM facets"
@@ -220,7 +220,7 @@ def _facets_for_judge(artifact_ids: list[str]) -> dict[str, list[str]]:
 
 def _judge_cache_read(query: str, artifact_id: str, model_version: str) -> bool | None:
     """Cached gray-zone verdict, or None. A missing derived_values table reads as no cache."""
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         row = conn.execute(
             "SELECT value FROM derived_values"
@@ -349,7 +349,7 @@ def _rerank(q: str, fused: list[dict]) -> list[dict]:
     """Re-order by cross-encoder score. Any failure keeps the fused order."""
     if not fused:
         return fused
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         batched = artifact_texts(conn, [h["artifact_id"] for h in fused])
         texts = [batched[h["artifact_id"]] for h in fused]
@@ -368,38 +368,15 @@ def _rerank(q: str, fused: list[dict]) -> list[dict]:
 
 
 def _fuzzy_ratio(query: str, candidate: str, floor: float = 0.0) -> float:
-    """Best SequenceMatcher ratio over the whole string and each query-length word window.
-
-    Comparisons whose cheap upper bound (length, shared characters) cannot reach
-    `floor` or beat the best so far are skipped. The result is exact at or above
-    `floor`; below it, it only stays below. floor=0 is always exact.
-    """
+    """Best similarity (rapidfuzz's Indel ratio, difflib's ratio in C) over the whole
+    string and each query-length word window. Exact at or above `floor`; below it, 0."""
     ql, cl = query.lower(), candidate.lower()
-    q_len = len(ql)
-    q_chars = Counter(ql)
-    best = 0.0
-
-    def consider(text: str) -> None:
-        nonlocal best
-        total = q_len + len(text)
-        if not total:
-            best = max(best, 1.0)
-            return
-        bar = max(best, floor)
-        if 2.0 * min(q_len, len(text)) / total < bar:
-            return
-        shared = sum((q_chars & Counter(text)).values())
-        if 2.0 * shared / total < bar:
-            return
-        best = max(best, SequenceMatcher(None, ql, text).ratio())
-
-    consider(cl)
-    q_words = ql.split()
+    best = Indel.normalized_similarity(ql, cl, score_cutoff=floor)
+    n = len(ql.split())
     c_words = cl.split()
-    n = len(q_words)
-    if n and len(c_words) > n:
-        for i in range(len(c_words) - n + 1):
-            consider(" ".join(c_words[i : i + n]))
+    for i in range(len(c_words) - n + 1 if n and len(c_words) > n else 0):
+        window = " ".join(c_words[i : i + n])
+        best = max(best, Indel.normalized_similarity(ql, window, score_cutoff=max(best, floor)))
     return best
 
 
@@ -411,7 +388,7 @@ def _fuzzy_hits(query: str, limit: int) -> list[dict]:
     q = query.strip()
     if len(q) < 3:
         return []
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         rows = conn.execute(
             "SELECT id, title FROM artifacts"
@@ -459,7 +436,7 @@ def _merge_fuzzy(results: list[dict], fuzzy: list[dict], limit: int) -> list[dic
     missing = [f["artifact_id"] for f in fuzzy if f["artifact_id"] not in by_aid]
     meta: dict = {}
     if missing:
-        conn = db.get_conn()
+        conn = db.reader()
         try:
             meta = {
                 r["id"]: r
@@ -520,7 +497,7 @@ def _word_form(text: str) -> str:
 def _exact_phrase_hits(phrase: str, limit: int) -> list[dict]:
     """R.10: artifacts containing `phrase` verbatim, via both FTS chunk tables."""
     query = f'"{phrase.replace(chr(34), chr(34) * 2)}"'
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         chunk_scores: dict[str, float] = {}
         for table in ("fts_chunks", "fts_chunks_tri"):
@@ -591,7 +568,7 @@ def _title_hits(query: str, limit: int) -> list[dict]:
     needle = _word_form(query)
     if not needle:
         return []
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         rows = conn.execute(
             "SELECT id, title, kind, updated_at FROM artifacts WHERE title IS NOT NULL"
@@ -722,7 +699,7 @@ def candidates(
     matched_facet: dict[str, str] = {}
 
     store = get_store()
-    conn = db.get_conn()
+    conn = db.reader()
     cache: dict = {}
     try:
         for query in queries:
@@ -916,7 +893,7 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
             if hit["score"] > dense_sims.get(aid, 0.0):
                 dense_sims[aid] = hit["score"]
 
-    conn = db.get_conn()
+    conn = db.reader()
     cache: dict = {}
     _prefetch_staleness(
         conn,
@@ -1026,7 +1003,7 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
     """Pure `#tag` query: the tagged set, newest touch first, constant score."""
     if not ids:
         return []
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         rows = conn.execute(
             "SELECT id, title, kind FROM artifacts"
@@ -1056,7 +1033,7 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
 
 def _all_results(limit: int = 20) -> list[dict]:
     """Empty query: every artifact, newest touch first, constant score."""
-    conn = db.get_conn()
+    conn = db.reader()
     try:
         rows = conn.execute(
             "SELECT id, title, kind FROM artifacts"

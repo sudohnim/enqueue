@@ -693,7 +693,7 @@ class SqliteVecStore(VectorStore):
     def similar_chunks(self, chunk_id: str, limit: int = 10) -> list[dict]:
         """Chunks nearest one indexed chunk, by its stored vector: `chunk_id`,
         `artifact_id`, `score` (cosine). The chunk itself is left out."""
-        conn = self._connect()
+        conn = db.reader()
         try:
             row = conn.execute(
                 "SELECT embedding FROM vec_chunks WHERE chunk_id = ?", (chunk_id,)
@@ -725,7 +725,7 @@ class SqliteVecStore(VectorStore):
         against the query, and the keyword leg kept to its chunks, fused with RRF.
         For a question asked of one long document (chats._scoped_passages)."""
         own = "SELECT id FROM chunks WHERE artifact_id = ?"
-        conn = self._connect()
+        conn = db.reader()
         try:
             dense = [
                 row[0]
@@ -758,7 +758,7 @@ class SqliteVecStore(VectorStore):
     ) -> list[dict]:
         """Vector leg only. `score` is cosine similarity in [0, 1]. `as_query=False`
         embeds `text` as a passage, for passage-to-passage similarity."""
-        conn = self._connect()
+        conn = db.reader()
         try:
             return self._dense(conn, name, text, limit, as_query)
         finally:
@@ -766,7 +766,7 @@ class SqliteVecStore(VectorStore):
 
     def search_keyword(self, name: str, text: str, limit: int = 30) -> list[dict]:
         """FTS5 BM25 leg only."""
-        conn = self._connect()
+        conn = db.reader()
         try:
             return self._keyword(conn, name, text, limit)
         finally:
@@ -774,7 +774,7 @@ class SqliteVecStore(VectorStore):
 
     def search_trigram(self, name: str, text: str, limit: int = 30) -> list[dict]:
         """FTS5 trigram leg only (chunks only)."""
-        conn = self._connect()
+        conn = db.reader()
         try:
             return self._trigram(conn, name, text, limit)
         finally:
@@ -829,7 +829,7 @@ class SqliteVecStore(VectorStore):
         self, name: str, text: str, limit: int = 30, prefetch: int = 100
     ) -> dict[str, list[dict]]:
         """The fused `search` result plus the raw legs it came from, on one connection."""
-        conn = self._connect()
+        conn = db.reader()
         try:
             dense = self._dense(conn, name, text, prefetch)
             keyword = self._keyword(conn, name, text, prefetch)

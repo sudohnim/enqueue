@@ -13,7 +13,7 @@ Fail-soft: any failure means no lifts, and search runs exactly as it would have.
 from __future__ import annotations
 
 import json
-from sqlite3 import OperationalError
+from ..sqlite import OperationalError
 
 from pydantic import BaseModel
 

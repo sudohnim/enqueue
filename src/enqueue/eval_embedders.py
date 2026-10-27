@@ -71,7 +71,7 @@ def using(model: str, bars: dict | None = None):
     config.EMBED_DOC_PREFIX = spec["doc_prefix"]
     if bars:
         cand.KEEP_ABOVE, cand.DROP_BELOW = bars["keep_above"], bars["drop_below"]
-    embed._model.cache_clear()
+    embed.unload()
     embed.embed_one.cache_clear()
     get_store.cache_clear()
     try:
@@ -85,7 +85,7 @@ def using(model: str, bars: dict | None = None):
             cand.KEEP_ABOVE,
             cand.DROP_BELOW,
         ) = saved
-        embed._model.cache_clear()
+        embed.unload()
         embed.embed_one.cache_clear()
         get_store.cache_clear()
 

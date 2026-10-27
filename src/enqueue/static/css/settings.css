@@ -24,11 +24,6 @@
   .settings-eye {
     margin: -6px -2px -10px -10px;
   }
-  .settings-lede {
-    margin-top: var(--sp-2);
-    margin-bottom: var(--sp-6);
-    max-width: 64ch;
-  }
   .settings-layout {
     display: grid;
     grid-template-columns: 196px minmax(0, 1fr);
@@ -156,12 +151,7 @@
     margin-top: var(--sp-4);
     padding-top: var(--sp-4);
   }
-  /* The Settings AI tab splits into Connection and Behavior (N.7b): a hairline
-     break so the eye sees two chunks instead of eight fields in one scroll. */
-  .settings-divider {
-    border-top: 1px solid var(--line-soft);
-    margin: var(--sp-5) 0 0;
-  }
+
   .field label,
   .field .rowlabel {
     display: block;
@@ -387,7 +377,6 @@
     font-weight: var(--w-medium);
   }
 
-
   /* Inside the settings pane the section labels are real headings in the display
      face (the pane is a column of titled tiles), and the pane does not repeat the
      section name the sidebar already shows. */
@@ -502,26 +491,7 @@
       animation: none;
     }
   }
-  .backup-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--sp-6);
-    margin-top: var(--sp-5);
-    padding-top: var(--sp-5);
-    border-top: 1px solid var(--line-soft);
-  }
-  @media (max-width: 900px) {
-    .backup-grid {
-      grid-template-columns: minmax(0, 1fr);
-      gap: var(--sp-4);
-    }
-  }
-  .backup-label {
-    margin-bottom: var(--sp-2);
-    font-size: 13px;
-    font-weight: var(--w-medium);
-    color: var(--text-dim);
-  }
+
   .backup-bars {
     display: flex;
     align-items: flex-end;
@@ -542,43 +512,7 @@
     height: 100%;
     background: var(--accent);
   }
-  .backup-legend {
-    display: flex;
-    justify-content: space-between;
-    max-width: 330px;
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--text-mute);
-  }
-  .backup-where {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    margin-bottom: var(--sp-2);
-  }
-  .backup-where .chip {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-  /* The recovery kit: a row like the status above it, its dot amber until it is kept. */
-  .backup-kit {
-    align-items: flex-start;
-    margin-top: var(--sp-5);
-    padding-top: var(--sp-5);
-    border-top: 1px solid var(--line-soft);
-  }
-  .backup-kit .backup-dot {
-    margin-top: 4px;
-  }
-  .backup-kit .backup-words {
-    flex: 1;
-    min-width: 0;
-  }
-  .backup-kit .backup-label {
-    margin-bottom: 2px;
-  }
+
   .kit-view[hidden] {
     display: none;
   }
@@ -601,15 +535,6 @@
   .kit-actions {
     display: flex;
     gap: var(--sp-2);
-  }
-  .backup-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-4);
-    margin-top: var(--sp-5);
-    padding-top: var(--sp-4);
-    border-top: 1px solid var(--line-soft);
   }
 
   /* ---- Settings, as light as the home page (2026-10-15) ----------------------------
@@ -892,7 +817,6 @@
   /* A row whose own pieces are laid out already (the switches, the drafts choices). */
   .settings-page .field:has(> .togglerow),
   .settings-page .field[role="radiogroup"],
-  .settings-page .field.drafts-foot,
   .settings-page .field:has(> .callout) {
     display: block;
   }

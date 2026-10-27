@@ -33,8 +33,8 @@ flowchart LR
     AI --> Accounts
   end
 
-  subgraph Phone["Android phone"]
-    App["mobile.html + Rust"]
+  subgraph Phone["Android or iPhone"]
+    App["mobile.html + Rust<br/>Kotlin or Swift shell"]
     PhoneDB[("library.db<br/>SQLCipher copy")]
     App --> PhoneDB
   end
@@ -57,7 +57,7 @@ flowchart LR
 - **The Mac holds the library and does the thinking.** The engine serves the window over loopback only, keeps everything in one SQLCipher file (the items and the vector + keyword index), keeps original files in `blobs/`, and keeps every key in the Keychain.
 - **The relay is a dumb, zero-knowledge mailbox.** It stores sealed bytes under hashed names, keeps a cursor per library so each device asks "what changed since N", and pushes a "something changed" stream. With R2 on, the bytes live in the bucket and `relay.db` holds only the index. It cannot open anything.
 - **Accounts only say who you are.** Google or Apple sign-in gives each device its own token; Postgres holds accounts, devices, plans and the included assistant's monthly use, never a key.
-- **The phone holds an encrypted copy.** It reads, captures and does light edits, asks questions over a keyword search of its copy, and never runs the model over the library.
+- **The phone holds an encrypted copy.** It reads, captures and does light edits, asks questions over a keyword search of its copy, and never runs the model over the library. Android and iPhone share the page and the Rust; only a thin native shell differs (Kotlin on Android; Swift plugins on iOS for purchases, the Face ID lock and Quick capture).
 - **Models are called from where the text is.** The Mac calls Ollama locally, a service with your own key, or the included assistant through the relay; anything marked local-only only ever goes to the local model. Embeddings are always computed on the Mac.
 
 ## The life of an artifact

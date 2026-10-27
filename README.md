@@ -12,7 +12,7 @@
 <p align="center">
   <a href="docs/MANUAL.md">Manual</a> ·
   <a href="AGENTS.md#start-here">Build from source</a> ·
-  <a href="https://github.com/sudohnim/enqueue/releases">Android app</a>
+  <a href="https://github.com/sudohnim/enqueue/releases">Mac and Android apps</a>
 </p>
 
 <p align="center">
@@ -98,9 +98,9 @@ No account, no password.
 ```
 your Mac                                   your phone
 ┌──────────────────────────────┐          ┌───────────────────────┐
-│ desktop window  (Tauri)      │          │ Android app  (Tauri)  │
-│        │                     │          │   its own copy of     │
-│ engine (Python, localhost)   │◄────────►│   the library         │
+│ desktop window  (Tauri)      │          │ Android or iPhone app │
+│        │                     │          │ (Tauri), its own copy │
+│ engine (Python, localhost)   │◄────────►│ of the library        │
 │   one SQLite file + files    │  relay:  └───────────────────────┘
 │   search index inside it     │  encrypted
 └──────────────────────────────┘  end to end
@@ -111,7 +111,8 @@ The details are in [AGENTS.md](AGENTS.md).
 
 ## Get it
 
-Enqueue runs from source on macOS today.
+The Mac app is on the [Releases](https://github.com/sudohnim/enqueue/releases) page, signed and notarized, and it updates itself.
+To run it from source instead:
 
 ```bash
 git clone https://github.com/sudohnim/enqueue.git
@@ -124,7 +125,7 @@ bin/launch desktop
 For the AI features, either run [Ollama](https://ollama.com) locally or add a hosted model's key in Settings.
 Capture, notes and search work without any model at all.
 
-The Android app is on the [Releases](https://github.com/sudohnim/enqueue/releases) page.
+The Android app is on the same page; the iPhone app is in testing.
 
 - **[The manual](docs/MANUAL.md)**: everything the app does, and how.
 - **[AGENTS.md](AGENTS.md)**: building and running on a Mac, Android and iOS, testing, configuration, and the engineering reference.
@@ -136,10 +137,9 @@ The Android app is on the [Releases](https://github.com/sudohnim/enqueue/release
 Enqueue is one person's daily tool, built in the open.
 It is not polished software from a company, and it says so:
 
-- macOS for the desktop, Android for the phone. No Windows, Linux or iOS yet.
-- There is no installer for the Mac yet; you run it from this repository.
+- macOS for the desktop; Android and iPhone for the phone. No Windows or Linux.
 - Small local models write weak summaries. A capable model, local or hosted, makes search by idea far better.
-- The library on your Mac is not encrypted by Enqueue itself; your disk's encryption (FileVault) is what protects it there. What leaves the Mac is encrypted.
+- The library on your Mac is encrypted by Enqueue once you save your recovery kit; until then your disk's encryption (FileVault) is what protects it. What leaves the Mac is always encrypted.
 
 ## License
 

@@ -932,8 +932,6 @@
     background: var(--tint-warn);
   }
 
-
-
 /* The toggle that opens the details panel stays lit while the panel is open. */
 #drawerToggle[aria-expanded="true"] {
   color: var(--accent-text);

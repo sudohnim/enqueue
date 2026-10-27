@@ -184,7 +184,27 @@ const Diff = (() => {
     return String(x || "").trimEnd() === String(y || "").trimEnd();
   }
 
-  return { markdown, html, same, align, INS, INS_END, DEL, DEL_END };
+  // When a draft was kept, as the drafts list shows it: "Today", "Yesterday", "Mar 4".
+  function day(when) {
+    const d = new Date(when);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    const sameYear = d.getFullYear() === today.getFullYear();
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(sameYear ? {} : { year: "numeric" }),
+    });
+  }
+
+  function time(when) {
+    return new Date(when).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
+  return { markdown, html, same, align, day, time, INS, INS_END, DEL, DEL_END };
 })();
 
 if (typeof module !== "undefined") module.exports = Diff;

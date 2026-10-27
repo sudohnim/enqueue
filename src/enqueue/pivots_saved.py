@@ -146,16 +146,6 @@ def set_layout(pivot_id: str, groups: list[dict]) -> dict:
     return result
 
 
-def manual_membership(artifact_id: str) -> list[dict]:
-    """The hand-arranged views holding this artifact, as `{id, name}` (for the
-    artifact page's Views row; recipe views answer that from their spec)."""
-    return [
-        {"id": saved["id"], "name": saved["name"]}
-        for saved in all_specs()
-        if artifact_id in saved.get("manual_ids", ())
-    ]
-
-
 def listing() -> list[dict]:
     """Every saved view, newest first, without the spec.
 
@@ -261,14 +251,6 @@ def set_result(pivot_id: str, result: dict) -> None:
             "UPDATE saved_pivots SET result_json = ?, result_at = ? WHERE id = ?",
             (json.dumps(result), db.now(), pivot_id),
         )
-
-
-def clear_result(conn, pivot_id: str) -> None:
-    """Invalidate a view's cached result (on a spec edit) within the caller's txn."""
-    conn.execute(
-        "UPDATE saved_pivots SET result_json = NULL, result_at = NULL WHERE id = ?",
-        (pivot_id,),
-    )
 
 
 def remove_from_result(pivot_id: str, artifact_ids: list[str]) -> dict | None:
@@ -470,33 +452,6 @@ def all_specs() -> list[dict]:
             data["manual_ids"] = {aid for g in groups for aid in g.get("artifact_ids") or []}
         out.append(data)
     return out
-
-
-def update_spec(pivot_id: str, spec: dict) -> dict:
-    """Replace the stored spec of a saved view, returning the updated row.
-
-    This is how the exclude/include actions (L.6b/L.6c) persist: they read the
-    stored spec, adjust `excluded_ids` / `included_ids`, and write it back so
-    the next re-run sees the new membership. An unknown view is a KeyError;
-    the spec is trusted to be runnable (the caller read it from storage).
-    """
-    with db.transaction() as conn:
-        row = conn.execute("SELECT id FROM saved_pivots WHERE id = ?", (pivot_id,)).fetchone()
-        if row is None:
-            raise KeyError(pivot_id)
-        conn.execute(
-            "UPDATE saved_pivots SET spec_json = ? WHERE id = ?",
-            (json.dumps(spec), pivot_id),
-        )
-        # The membership changed, so the cached grouping is stale - drop it so the
-        # next open recomputes rather than serving the pre-edit result.
-        clear_result(conn, pivot_id)
-        updated = conn.execute(
-            "SELECT id, name, created_at FROM saved_pivots WHERE id = ?", (pivot_id,)
-        ).fetchone()
-        result = dict(updated)
-    _resync_pivots()
-    return result
 
 
 def rename(pivot_id: str, name: str) -> dict:

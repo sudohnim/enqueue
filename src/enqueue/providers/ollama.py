@@ -188,4 +188,3 @@ def _refused_json_mode(exc: BaseException) -> bool:
 
 
 # Old name, kept for imports.
-OllamaProvider = OpenAICompatibleProvider

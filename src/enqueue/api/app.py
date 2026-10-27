@@ -282,8 +282,9 @@ def _start_sync_worker() -> None:
 def _warm_embeddings() -> None:
     """Load the embedding model in the background so the first search is not cold.
 
-    The dense model loads lazily on its first use, which is ~2.9 s on this machine
-    (ONNX plus the CoreML session). Nothing at startup touches it when the index is
+    The dense model loads lazily on its first use, about half a second on the CPU, and
+    is let go again after ENQ_EMBED_IDLE seconds unused (index/embed.py). Nothing at
+    startup touches it when the index is
     already current, so that whole cost landed on the person's first search. A person
     looks at the wall before they search, so warming here on a daemon thread hides it
     behind that gap. It never blocks the engine: a failure is a slower first query,

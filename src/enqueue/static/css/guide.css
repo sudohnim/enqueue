@@ -288,30 +288,6 @@
   min-width: 0;
 }
 
-/* ---- left to set up ------------------------------------------------------------- */
-.setup-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-5);
-}
-.setup-strip:empty {
-  display: none;
-}
-@media (max-width: 980px) {
-  .setup-strip {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.setup-card {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-3);
-  padding: 14px var(--sp-4);
-  border-radius: var(--r-xl);
-  background: var(--surface);
-  box-shadow: var(--hairline);
-}
 .setup-dot {
   flex: none;
   width: 22px;
@@ -319,17 +295,6 @@
   margin-top: 1px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px var(--line-strong);
-}
-.setup-card[data-state="warn"] .setup-dot {
-  box-shadow: inset 0 0 0 1.5px var(--warning);
-  background: var(--tint-warn);
-}
-.setup-card[data-state="done"] .setup-dot {
-  display: grid;
-  place-items: center;
-  box-shadow: none;
-  background: var(--success);
-  color: #ffffff;
 }
 .setup-dot svg {
   width: 13px;
@@ -339,22 +304,6 @@
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.setup-words {
-  min-width: 0;
-}
-.setup-title {
-  display: block;
-  font-size: 14px;
-  font-weight: var(--w-medium);
-  line-height: 20px;
-  color: var(--text);
-}
-.setup-detail {
-  display: block;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--text-mute);
 }
 .setup-go {
   margin-top: 2px;

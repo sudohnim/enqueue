@@ -318,18 +318,6 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
-.choice-dot {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: 3px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--line-strong);
-  transition: box-shadow var(--dur-fast) var(--ease);
-}
-.choice[aria-checked="true"] .choice-dot {
-  box-shadow: inset 0 0 0 5px var(--accent);
-}
 .choice b {
   display: block;
   font-size: 14px;
@@ -341,17 +329,4 @@
   font-size: 12.5px;
   line-height: 18px;
   color: var(--text-mute);
-}
-.drafts-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-.drafts-foot .aside {
-  margin: 0;
-}
-.drafts-foot b {
-  font-weight: var(--w-medium);
-  color: var(--text-dim);
 }

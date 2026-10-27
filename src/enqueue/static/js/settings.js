@@ -2577,14 +2577,6 @@ async function vaultDiagnostics() {
 	openVault(); // clears the spinner once the vault view is up
 }
 
-async function vaultLock() {
-	try {
-		await api("/vault/lock", { method: "POST" });
-	} catch (_) {
-		/* best effort */
-	}
-	home();
-}
 
 // Leaving the vault for any normal surface locks it, so re-entering always needs
 // the PIN again. Fire-and-forget + idempotent; called from home() and showSettings().
@@ -2600,14 +2592,6 @@ function maybeLockVault() {
 	}
 }
 
-async function unvaultArtifact(id) {
-	try {
-		await api("/artifacts/" + id + "/unvault", { method: "POST" });
-	} catch (err) {
-		return toast(String((err && err.message) || err), true);
-	}
-	openVault();
-}
 
 // The reader lock is a single toggle: lit means "in the vault, click to remove",
 // unlit means "click to move here". Removing returns to the vault view; adding
@@ -2667,34 +2651,6 @@ async function openVault() {
 	vaultBusy(false);
 }
 
-async function openVaultReader(id) {
-	let d;
-	try {
-		d = await api("/vault/" + id);
-	} catch (err) {
-		return toast(String((err && err.message) || err), true);
-	}
-	const a = d.artifact;
-	const isImg = ["image", "pdf", "file"].includes(a.kind);
-	view.innerHTML =
-		'<div class="pagecol">' +
-		'<button class="btn ghost back" onclick="openVault()">' +
-		svg("back") +
-		"Vault</button>" +
-		'<div class="h1">' +
-		esc(a.title || "Untitled") +
-		"</div>" +
-		(isImg
-			? '<img class="vault-blob" alt="" src="/vault/' + a.id + '/blob" />'
-			: '<div class="reader-body">' +
-				(typeof md === "function" ? md(a.body || "") : esc(a.body || "")) +
-				"</div>") +
-		'<div class="settings-actions" style="margin-top: var(--sp-4);">' +
-		'<button class="btn ghost" onclick="unvaultArtifact(&#39;' +
-		a.id +
-		'&#39;)">Remove from vault</button></div></div>';
-	window.scrollTo(0, 0);
-}
 
 // Lock this artifact into the vault from its own page. Unlocks the vault first
 // (setup on first use) if needed, then vaults and returns home - the artifact

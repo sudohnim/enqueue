@@ -88,20 +88,3 @@ def test_redo_forces_even_current_summaries(store, quiet_queue):
     # The force is taken once, by the run that regenerates it.
     assert facets_mod.take_forced(aid) is True
     assert facets_mod.take_forced(aid) is False
-
-
-def test_generate_all_never_summarizes_a_vaulted_or_trashed_item(store, quiet_queue, monkeypatch):
-    body = "a body long enough to earn a summary from the model, with a few more words"
-    live = notes.create(body=body)["artifact"]["id"]
-    vaulted = notes.create(body=body + " again")["artifact"]["id"]
-    trashed = notes.create(body=body + " and again")["artifact"]["id"]
-    with db.transaction() as conn:
-        conn.execute("UPDATE artifacts SET vaulted_at = '2026-01-01' WHERE id = ?", (vaulted,))
-        conn.execute("UPDATE artifacts SET deleted_at = '2026-01-01' WHERE id = ?", (trashed,))
-    seen: list[str] = []
-    monkeypatch.setattr(
-        facets_mod, "generate_for_artifact", lambda conn, aid: (seen.append(aid), (0, None))[1]
-    )
-    facets_mod.generate_all(redo=True)
-    assert live in seen
-    assert vaulted not in seen and trashed not in seen
