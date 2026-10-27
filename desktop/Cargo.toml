@@ -57,6 +57,8 @@ ndk-context = { version = "0.1", default-features = false }
 tauri-plugin-barcode-scanner = { version = "2.4.5", default-features = false }
 # Enqueue Pro on iPhone: RevenueCat over StoreKit (plugins/tauri-plugin-billing).
 tauri-plugin-billing = { path = "plugins/tauri-plugin-billing" }
+# The iPhone twin of the Android bridge (plugins/tauri-plugin-native).
+tauri-plugin-native = { path = "plugins/tauri-plugin-native" }
 
 # The global-shortcut plugin and the engine/AppKit machinery are desktop-only;
 # none of it compiles or makes sense on Android/iOS (no local Python engine there).

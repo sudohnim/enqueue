@@ -41,6 +41,13 @@ targets:
       properties:
         LSRequiresIPhoneOS: true
         NSCameraUsageDescription: Enqueue uses the camera to scan the linking code shown on your desktop.
+        BGTaskSchedulerPermittedIdentifiers: [com.sudohnim.enqueue.sync]
+        UIBackgroundModes: [fetch]
+        UIApplicationShortcutItems:
+          - UIApplicationShortcutItemType: com.sudohnim.enqueue.capture
+            UIApplicationShortcutItemTitle: Quick capture
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeCompose
+        NSFaceIDUsageDescription: Enqueue uses Face ID to unlock the app and the vault, when you turn that on.
         ITSAppUsesNonExemptEncryption: false
         UILaunchStoryboardName: LaunchScreen
         # iOS 27 refuses to launch an app built with its SDK that has no scene life cycle;

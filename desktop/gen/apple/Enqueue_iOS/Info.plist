@@ -17,13 +17,34 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.3.1</string>
 	<key>CFBundleVersion</key>
-	<string>0.3.1.3</string>
+	<string>0.3.1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Enqueue uses the camera to scan the linking code shown on your desktop.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.sudohnim.enqueue.sync</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.sudohnim.enqueue.capture</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Quick capture</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeCompose</string>
+		</dict>
+	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Enqueue uses Face ID to unlock the app and the vault, when you turn that on.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

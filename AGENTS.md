@@ -46,7 +46,7 @@ The phone starts empty; link it to the Mac over a relay both can reach (Settings
 1. **Get it on the phone.** `bin/setup --ios` once (it checks Xcode, the iOS Rust targets and the simulator runtime), then plug the iPhone in, unlock it, trust the Mac, turn on Developer Mode (Settings > Privacy & Security), and run `bin/launch ios`. The signing team is `bundle.iOS.developmentTeam` in `desktop/tauri.conf.json`; a tester on another Apple account changes it to their own team (Xcode > Settings > Accounts shows the id) and does not commit that change.
 2. **Link it.** On the Mac that holds the library: Settings > Phone shows a QR (the relay must be a public `https://` address). In the app, Scan QR. The library downloads; captures, edits, deletes and pins made on the phone come back to the Mac.
 3. **What to try.** Read every kind of item (note, link, PDF, image); write and edit a note (tabs and drafts too); capture a thought; ask the eye a question; delete and restore; lock the phone, wait, open the app again; quit the app and open it again; turn on airplane mode, change something, turn it off.
-4. **What is not there on iOS yet** (expected, not bugs): quick capture from the home screen, the app lock and fingerprint vault unlock, the Back gesture, and sync while the app is closed. See [The iOS app](#the-ios-app).
+4. **What iOS adds** (worth trying): Quick capture from the Home Screen (press and hold the icon), the Face ID lock (Settings > Lock), Face ID for the vault, the swipe from the left edge as Back, and sync while the app is closed. See [The iOS app](#the-ios-app).
 5. **Reporting.** A screenshot of the screen, what you did just before, and the app's log: Xcode > Window > Devices and Simulators > the phone > Open Console, filtered to `Enqueue`, or Safari > Develop > the phone > the page for the web view's console. There is no `bin/cdp-eval` on iOS.
 
 **The gate.** `bin/verify` is lint (black 100, ruff), a JS parse of every page, pytest, the contrast check, the desktop Rust tests when Rust changed, and an Android build when anything under `desktop/` changed.
@@ -72,7 +72,7 @@ Tests never touch any of it: `tests/conftest.py` points the process at a tempora
 `android prod` does the same to production; `ANDROID_PROD_ROLLOUT=0.1` makes it a staged rollout.
 `android next_code` prints the versionCode the next upload would use and changes nothing.
 `mac release` builds the Developer ID signed, notarized and stapled `.dmg`; the Mac app ships outside the App Store, so nothing is uploaded.
-There is no iOS lane yet; one goes in `platform :ios` after Dequeue's (`~/dequeue/frontend/fastlane`).
+`ios beta` uploads a build to TestFlight and `ios metadata` the App Store listing (see [The iOS app](#the-ios-app)).
 The Play lanes need the service account key at `desktop/play-store-svc.json` (gitignored, or `PLAY_JSON_KEY`), and that account invited to the Enqueue app in Play Console.
 The Actions tab's `release` workflow (run by hand with a tag) still builds an APK; it is debug-signed unless the `RELEASE_*` secrets are set.
 The Mac app is `bin/release desktop`: a `.app` and `.dmg` that carry their own engine (see "The Mac app bundle" under Build notes), signed with the Developer ID certificate when `APPLE_SIGNING_IDENTITY` is set and notarized when `NOTARY_PROFILE` names a `notarytool` keychain profile.
@@ -1554,7 +1554,23 @@ What it took, each of which breaks the build or the screen if undone:
 - **`cargo tauri ios build` fails with "Directory not empty"** when the last build's `gen/apple/build/<arch>/Enqueue.app` is still there; `bin/launch` removes it first.
 - `Info.plist` carries `NSCameraUsageDescription` (the QR scanner crashes on a device without it); it is also in `project.yml`, which regenerates the plist. The icons in `Assets.xcassets` are cut from `assets/logo.png` (full bleed, no alpha) with `cargo tauri icon`.
 
-Not there yet: linking is untested (the simulator has no camera, so the QR needs a real iPhone); the page's `EnqueueAndroid` bridge has no iOS twin, so quick capture from the home screen, the app lock, vault fingerprint unlock and a back gesture do not exist there (every call to the bridge is guarded, so the page runs without it); a sync runs only while the app is open; there is no CI job and `bin/verify` does not build iOS.
+- **iOS 27 needs a scene life cycle.** `Info.plist` declares `UIApplicationSceneManifest` with `TaoSceneDelegate`, and `UIApplicationSupportsMultipleScenes` must be true: tao puts its window on a scene only then, and with false the screen stays black.
+- **A `<header>` rule in `mobile.html` must not reach the Details panel.** The reader toolbar's rule pulls a header up by the status bar's height; it is written `header:not(:where(.dpanel-top))`, because `.dpanel-top` is a `<header>` too (its title went under the status bar), and `:where` keeps the rule weaker than `.lib-hero`.
+
+**The native plugin** (`desktop/plugins/tauri-plugin-native`, Swift) is the iOS twin of the `EnqueueAndroid` bridge; the page reaches it as `plugin:native|<command>` wherever it would call the bridge (`iosLock` in `mobile.html`):
+
+- **App lock** (`status`, `applock`): a native cover over the window, up before the page paints, lifted by Face ID or the passcode; it asks again after a minute away and covers the app switcher's snapshot. A phone with no passcode left switches it off. The cover's raven is `RavenMark` in `Assets.xcassets`.
+- **Vault Face ID** (`create`, `read`, `clear`): 32 random bytes in a Keychain item only the current set of Face IDs can read (`biometryCurrentSet`); a new enrollment makes it unreadable, answered as "invalidated". The answers have Biometrics.kt's shapes, and `status` adds `biometry` ("Face ID", "Touch ID"), which the page uses in place of "fingerprint".
+- **Quick capture** (`quick`): a Home Screen action (`UIApplicationShortcutItems`) that opens the writing page. UIKit hands it to the scene delegate, which tao owns, so `QuickAction` wraps `UISceneConfiguration`'s delegate class setter and puts in a subclass that also reads it. That must happen before the scene connects: Rust calls `enqueue_native_early` at the start of `run()`.
+- **Sync while closed**: a `BGAppRefreshTask` (`com.sudohnim.enqueue.sync`, registered in `enqueue_native_early`, scheduled when the app leaves the screen) calls `enqueue_background_sync` in `lib.rs`, which pushes the outbox and pulls (`sync_now`). iOS decides when it runs; the Simulator never runs it.
+- **Back**: a swipe in from the left edge calls `window.__enqBack()`, as Android's Back does.
+- `NSFaceIDUsageDescription`, `BGTaskSchedulerPermittedIdentifiers` and `UIBackgroundModes: fetch` are in `Info.plist` and `project.yml`.
+
+**Billing** is `desktop/plugins/tauri-plugin-billing` (RevenueCat over StoreKit, `plugin:billing|start|status|offerings|purchase|restore`, in Billing.kt's shapes); App Store Connect has the subscription `enqueue_pro_monthly` in the group "Enqueue Pro", linked in RevenueCat to the entitlement `pro`. The sample library's Settings shows the paywall too, so App Review can reach it.
+**Releasing**: `bundle exec fastlane ios beta` builds, signs and uploads to TestFlight (the build number is kept in `fastlane/.ios-build-number`, since App Store Connect refuses one it has seen); `fastlane ios metadata` uploads the listing from `fastlane/metadata/ios` and the screenshots from `fastlane/screenshots/ios`. The review contact files are gitignored.
+**The gate**: `bin/verify` builds the simulator app when Swift, plist or plugin files change and runs `cargo check` for the iOS target on other Rust changes (`check_ios_compile`); CI's `ios` job runs `bin/verify --ios` on macOS.
+
+Not there yet: linking, vault Face ID and the background sync are untested on a real iPhone (the simulator has no camera and never runs background tasks).
 At rest it matches Android: the library copy is SQLCipher (`bundled-sqlcipher-vendored-openssl` in the iOS table of `desktop/Cargo.toml`), and the store key that keys it and seals the secrets and the file cache is a Keychain item (`security-framework`, service `com.sudohnim.enqueue.store`, readable after first unlock on this device only, so never in iCloud Keychain or a restored backup; `store_key` in `lib.rs`). A plain library, plain secret files and a store-key file from an earlier iOS build are converted the first time the library opens.
 There is no CDP on iOS: verify by screenshot (`xcrun simctl io booted screenshot`), or Safari's Web Inspector by hand.
 

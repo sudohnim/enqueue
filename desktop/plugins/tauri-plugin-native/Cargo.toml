@@ -1,0 +1,13 @@
+[package]
+name = "tauri-plugin-native"
+version = "0.1.0"
+edition = "2021"
+description = "Enqueue's iPhone twin of the Android bridge: app lock, vault Face ID, quick capture"
+links = "tauri-plugin-native"
+publish = false
+
+[dependencies]
+tauri = { version = "2" }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

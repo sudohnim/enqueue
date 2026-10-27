@@ -132,7 +132,13 @@
             "billing:allow-status",
             "billing:allow-offerings",
             "billing:allow-purchase",
-            "billing:allow-restore"
+            "billing:allow-restore",
+            "native:allow-status",
+            "native:allow-applock",
+            "native:allow-create",
+            "native:allow-read",
+            "native:allow-clear",
+            "native:allow-quick"
           ]
         }
       ]

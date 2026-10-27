@@ -7,8 +7,8 @@ the desktop Rust tests and the Android compile check.
 
 CI (.github/workflows/ci.yml) runs the same checks as parallel jobs, each only when
 its files change: `--fast` plus pytest, both eval gates, `bin/verify --desktop-tests`
-(cargo test --lib) and `bin/verify --android` (the full debug apk build). Those two
-flags run one check unconditionally, since a clean CI checkout has no local changes to
+(cargo test --lib), `bin/verify --android` (the full debug apk build) and
+`bin/verify --ios` (the simulator app, on macOS). Those flags run one check unconditionally, since a clean CI checkout has no local changes to
 gate on, and fail rather than skip when the toolchain is missing.
 
 home.html has no inline scripts since M.8: its JS lives in static/js/*.js,
@@ -325,6 +325,56 @@ def check_desktop_tests(force=False):
     print(f"{SRC}: desktop tests FAILED", file=sys.stderr)
     return False
 
+def check_ios_compile(force_full=False):
+    """Build the iPhone app for the simulator when desktop/ changed. Swift, plist and
+    Xcode project files (desktop/gen/apple, desktop/plugins/*/ios) and the build config
+    need the full `cargo tauri ios build`; other Rust changes a `cargo check` for
+    aarch64-apple-ios-sim. Skipped off macOS or without Xcode and the target."""
+    desktop_dir = os.path.join(HERE, "desktop")
+    if sys.platform != "darwin" or shutil.which("xcrun") is None:
+        print(f"{SRC}: iOS compile check SKIPPED - needs macOS with Xcode")
+        return not force_full
+    targets = subprocess.run(
+        ["rustup", "target", "list", "--installed"], capture_output=True, text=True
+    ).stdout
+    if "aarch64-apple-ios-sim" not in targets:
+        print(f"{SRC}: iOS compile check SKIPPED - run bin/setup --ios")
+        return not force_full
+    changed = [
+        line[3:].strip().split(" -> ")[-1]
+        for line in subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=HERE,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.splitlines()
+        if line.strip()
+    ]
+    native = ("desktop/gen/apple/", "desktop/tauri.conf.json", "desktop/build.rs", "desktop/Cargo")
+    full = force_full or any(
+        f.startswith(native) or (f.startswith("desktop/plugins/") and "/ios/" in f)
+        for f in changed
+    )
+    if not full and not any(f.startswith("desktop/") for f in changed):
+        print(f"{SRC}: iOS compile check SKIPPED - nothing under desktop/ changed")
+        return True
+    if full:
+        print(f"{SRC}: running cargo tauri ios build --debug --target aarch64-sim")
+        shutil.rmtree(
+            os.path.join(desktop_dir, "gen/apple/build/arm64-sim/Enqueue.app"), ignore_errors=True
+        )
+        cmd = ["cargo", "tauri", "ios", "build", "--debug", "--target", "aarch64-sim"]
+    else:
+        print(f"{SRC}: running cargo check --lib --target aarch64-apple-ios-sim")
+        cmd = ["cargo", "check", "--lib", "--target", "aarch64-apple-ios-sim"]
+    if subprocess.run(cmd, cwd=desktop_dir, timeout=1800).returncode == 0:
+        print(f"{SRC}: iOS compile check OK")
+        return True
+    print(f"{SRC}: iOS compile check FAILED", file=sys.stderr)
+    return False
+
+
 def check_lint():
     """black and ruff, the same checks CI runs."""
     ok = True
@@ -351,6 +401,8 @@ def main():
         sys.exit(0 if check_desktop_tests(force=True) else 1)
     if "--android" in args:
         sys.exit(0 if check_android_compile(force_full=True) else 1)
+    if "--ios" in args:
+        sys.exit(0 if check_ios_compile(force_full=True) else 1)
 
     pass_flag = True
 
@@ -405,6 +457,10 @@ def main():
 
         print("")
         if not check_android_compile():
+            pass_flag = False
+
+        print("")
+        if not check_ios_compile():
             pass_flag = False
 
     print("")

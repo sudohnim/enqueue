@@ -165,3 +165,29 @@ jobs:
         run: cargo tauri --version || cargo binstall --no-confirm --locked "tauri-cli@^2"
       - name: Android build
         run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" bin/verify --android
+
+  # The iPhone app built for the simulator: the only check that compiles the Swift
+  # plugins (billing, native), the iOS Rust paths and the Xcode project.
+  ios:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          key: ios
+          cache-bin: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - name: Tauri CLI and XcodeGen
+        run: |
+          cargo tauri --version || cargo binstall --no-confirm --locked "tauri-cli@^2"
+          brew install xcodegen
+      - name: iOS build
+        run: bin/verify --ios

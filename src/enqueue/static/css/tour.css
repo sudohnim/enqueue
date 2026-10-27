@@ -20,13 +20,16 @@
   box-shadow: none;
   color: var(--text-mute);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition:
     background var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
-.tour-open:hover {
-  background: var(--surface-hover);
-  color: var(--text);
+@media (hover: hover) {
+  .tour-open:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
 }
 .tour-open:focus-visible,
 .tour-btn:focus-visible,
