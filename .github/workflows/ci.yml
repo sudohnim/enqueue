@@ -185,9 +185,14 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-binstall
+      # The arm64 build: under Rosetta the x86_64 one builds the simulator app for
+      # x86_64, which the project excludes ("ARCHS: parameter null or not set").
       - name: Tauri CLI and XcodeGen
         run: |
-          cargo tauri --version || cargo binstall --no-confirm --locked "tauri-cli@^2"
+          if ! file "$(command -v cargo-tauri || echo none)" | grep -q arm64; then
+            cargo binstall --no-confirm --force --locked --targets aarch64-apple-darwin "tauri-cli@^2"
+          fi
+          file "$(command -v cargo-tauri)" | grep -q arm64
           brew install xcodegen
       - name: iOS build
         run: bin/verify --ios
