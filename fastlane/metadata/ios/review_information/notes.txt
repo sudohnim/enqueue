@@ -1,0 +1,5 @@
+Enqueue is the phone half of a Mac app: the library lives on the person's Mac and reaches the phone end-to-end encrypted, linked by scanning a code the Mac shows.
+
+To try it without a Mac: on the first screen, tap "Try it with a sample library". A made-up library opens with notes, links and photos, so search, reading, capture and the details panel can all be tried. Nothing in it leaves the phone.
+
+No account is needed. Enqueue Pro (an auto-renewable subscription) adds devices, storage and a larger monthly allowance for the built-in assistant; it is bought in Settings, Plan.

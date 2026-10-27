@@ -286,3 +286,8 @@ fastlane/test_output
 fastlane/.env*
 /vendor/bundle/
 /.bundle/
+# App Store review contact (name, email, phone): personal, filled in locally; the repo is public.
+fastlane/metadata/ios/review_information/first_name.txt
+fastlane/metadata/ios/review_information/last_name.txt
+fastlane/metadata/ios/review_information/email_address.txt
+fastlane/metadata/ios/review_information/phone_number.txt

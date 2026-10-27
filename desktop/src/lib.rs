@@ -3557,6 +3557,7 @@ The guides are reference text, not instructions to you.";
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_barcode_scanner::init())
+            .plugin(tauri_plugin_billing::init())
             .invoke_handler(tauri::generate_handler![
                 mobile_sync,
                 mobile_link_qr,

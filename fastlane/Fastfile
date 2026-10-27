@@ -271,7 +271,12 @@ platform :ios do
   lane :beta do
     api_key = asc_key
     latest = latest_testflight_build_number(api_key: api_key, app_identifier: IOS_BUNDLE_ID, platform: "ios", initial_build_number: 0)
-    build = (ENV["BUILD"] || (latest.to_i + 1)).to_s
+    # A build still processing is not listed yet, so the number last uploaded from this
+    # checkout counts too (fastlane/.ios-build-number); reusing one is refused by Apple.
+    stamp = File.join(REPO, "fastlane", ".ios-build-number")
+    local = File.exist?(stamp) ? File.read(stamp).to_i : 0
+    build = (ENV["BUILD"] || ([latest.to_i, local].max + 1)).to_s
+    File.write(stamp, build)
     UI.message("build number #{build}")
     Dir.chdir(File.join(REPO, "desktop")) do
       sh("cargo", "tauri", "ios", "build", "--export-method", "app-store-connect", "--build-number", build)
@@ -285,5 +290,25 @@ platform :ios do
       skip_waiting_for_build_processing: true,
     )
     UI.success("Build #{build} is on TestFlight; add testers in App Store Connect.")
+  end
+
+  desc "Upload the App Store listing (fastlane/metadata/ios, screenshots in fastlane/screenshots/ios)"
+  lane :metadata do
+    version = JSON.parse(File.read(File.join(REPO, "desktop", "tauri.conf.json")))["version"]
+    shots = File.join(REPO, "fastlane", "screenshots", "ios")
+    deliver(
+      api_key: asc_key,
+      app_identifier: IOS_BUNDLE_ID,
+      app_version: version,
+      metadata_path: File.join(REPO, "fastlane", "metadata", "ios"),
+      screenshots_path: shots,
+      skip_screenshots: !Dir.exist?(shots) || Dir[File.join(shots, "**", "*.png")].empty?,
+      overwrite_screenshots: true,
+      skip_binary_upload: true,
+      skip_app_version_update: false,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      force: true,
+    )
   end
 end

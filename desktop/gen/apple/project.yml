@@ -43,6 +43,15 @@ targets:
         NSCameraUsageDescription: Enqueue uses the camera to scan the linking code shown on your desktop.
         ITSAppUsesNonExemptEncryption: false
         UILaunchStoryboardName: LaunchScreen
+        # iOS 27 refuses to launch an app built with its SDK that has no scene life cycle;
+        # tao (0.35) provides the delegate. tao puts its window on a scene only when
+        # multiple scenes are declared; with false the window stays off screen (black).
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: TaoSceneDelegate
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

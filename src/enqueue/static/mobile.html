@@ -3811,8 +3811,8 @@
       yes.focus();
     });
   }
-  // ---- Enqueue Pro (Billing.kt) ---------------------------------------------------
-  // The phone buys Pro for its Enqueue sync account through Google Play. The relay
+  // ---- Enqueue Pro (Billing.kt, BillingPlugin.swift) --------------------------------
+  // The phone buys Pro for its Enqueue sync account through Google Play or the App Store. The relay
   // learns of it from RevenueCat and is what enforces the plan; the page only shows it.
   // Each bridge call answers later through window.__enqBillingReply(id, {...}).
   const billingBridge =
@@ -3827,7 +3827,26 @@
     _billWaiting.delete(id);
     resolve(payload || { ok: false, reason: "error" });
   };
+  // On iPhone the same calls go to the billing plugin (desktop/plugins/tauri-plugin-billing,
+  // RevenueCat over StoreKit), which answers in the same shapes as Billing.kt.
+  const iosBilling =
+    !billingBridge && !!(window.__TAURI__ && window.__TAURI__.core) && /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const IOS_BILLING = {
+    billingStart: (accountId) => ["start", { accountId }],
+    billingStatus: () => ["status", {}],
+    billingOfferings: () => ["offerings", {}],
+    billingPurchase: (packageId) => ["purchase", { packageId }],
+    billingRestore: () => ["restore", {}],
+  };
   function billingAsk(method, ...args) {
+    if (iosBilling) {
+      const route = IOS_BILLING[method];
+      if (!route) return Promise.resolve({ ok: false, reason: "unavailable" });
+      const [cmd, payload] = route(...args);
+      return window.__TAURI__.core
+        .invoke("plugin:billing|" + cmd, payload)
+        .catch((e) => ({ ok: false, reason: "error", message: String(e) }));
+    }
     return new Promise((resolve) => {
       if (!billingBridge) return resolve({ ok: false, reason: "unavailable" });
       const id = "bill" + ++_billSeq;
@@ -3842,7 +3861,7 @@
   }
   function billingReady() {
     try {
-      return !!billingBridge && billingBridge.billingAvailable();
+      return iosBilling || (!!billingBridge && billingBridge.billingAvailable());
     } catch (e) {
       return false;
     }
@@ -3854,6 +3873,7 @@
   }
   let planAccount = null; // the account RevenueCat was started for
   let planManage = null;
+  let planSamplePro = false; // Pro bought in the sample library, before linking
   async function paintPlan() {
     const box = document.getElementById("settings_plan");
     if (!box) return;
@@ -3862,6 +3882,30 @@
       plan = await invoke("mobile_plan");
     } catch (e) {
       plan = null; // offline: leave the plan out rather than show a stale one
+    }
+    if ((!plan || !plan.account_id) && sampleOn && billingReady()) {
+      // The sample library offers Pro too: App Review tries the app here, and must be
+      // able to find and buy the subscription. The purchase sits on an anonymous
+      // RevenueCat user until this phone links to an Enqueue sync account, which then
+      // takes it over (billingStart with the account id logs RevenueCat in).
+      box.hidden = false;
+      if (planAccount !== "") {
+        const started = await billingAsk("billingStart", "");
+        if (!started.ok) {
+          box.hidden = true;
+          return;
+        }
+        planAccount = "";
+        planManage = started.manage || null;
+        planSamplePro = !!started.pro;
+      }
+      document.getElementById("settings_plan_line").textContent = planSamplePro
+        ? "Pro. It moves to your Enqueue sync account when you link your Mac."
+        : "Free. Pro adds up to five computers and five phones, 50 GB of sync storage and a bigger allowance for the built-in assistant.";
+      document.getElementById("settings_plan_go").hidden = planSamplePro;
+      document.getElementById("settings_plan_restore").hidden = planSamplePro;
+      document.getElementById("settings_plan_manage").hidden = !(planSamplePro && planManage);
+      return;
     }
     if (!plan || !plan.account_id) {
       box.hidden = true;
@@ -3940,8 +3984,30 @@
       });
       const fine = document.createElement("p");
       fine.className = "mset-sub";
-      fine.textContent =
-        "Billed by Google Play. Renews until you cancel it in the Play Store's subscriptions.";
+      if (iosBilling) {
+        // App Review wants the terms on the paywall itself: price and period (the
+        // buttons), auto-renewal, how to cancel, and the Terms of Use and privacy policy.
+        fine.textContent =
+          "Billed to your Apple Account. Renews automatically each month unless cancelled at least 24 hours before the end of the period, in Settings, your name, Subscriptions. ";
+        const terms = document.createElement("a");
+        terms.href = "#";
+        terms.textContent = "Terms of Use";
+        terms.addEventListener("click", (e) => {
+          e.preventDefault();
+          openExternal("https://www.apple.com/legal/internet-services/itunes/dev/stdeula/");
+        });
+        const privacy = document.createElement("a");
+        privacy.href = "#";
+        privacy.textContent = "Privacy Policy";
+        privacy.addEventListener("click", (e) => {
+          e.preventDefault();
+          openExternal("https://sudohnim.com/privacy");
+        });
+        fine.append(terms, " · ", privacy);
+      } else {
+        fine.textContent =
+          "Billed by Google Play. Renews until you cancel it in the Play Store's subscriptions.";
+      }
       const row = document.createElement("div");
       row.className = "mconfirm-row";
       const no = document.createElement("button");
@@ -3975,6 +4041,7 @@
     }
     if (bought.pro) toast("You're on Pro. Thank you.");
     planManage = bought.manage || planManage;
+    if (planAccount === "") planSamplePro = !!bought.pro;
     // RevenueCat tells the relay a moment later: paint again once it has.
     setTimeout(paintPlan, 4000);
   }
@@ -3984,14 +4051,24 @@
       toast(restored.message || "Nothing could be restored.", true);
       return;
     }
-    toast(restored.pro ? "Pro is back on this account." : "No Pro purchase found for this Google account.");
+    if (planAccount === "") planSamplePro = !!restored.pro;
+    toast(
+      restored.pro
+        ? "Pro is back on this account."
+        : iosBilling
+          ? "No Pro purchase found for this Apple Account."
+          : "No Pro purchase found for this Google account.",
+    );
     setTimeout(paintPlan, 4000);
   }
   document.getElementById("settings_plan_go")?.addEventListener("click", goPro);
   document.getElementById("settings_plan_restore")?.addEventListener("click", restorePro);
   document.getElementById("settings_plan_manage")?.addEventListener("click", () => {
     openExternal(
-      planManage || "https://play.google.com/store/account/subscriptions?package=com.sudohnim.enqueue",
+      planManage ||
+        (iosBilling
+          ? "https://apps.apple.com/account/subscriptions"
+          : "https://play.google.com/store/account/subscriptions?package=com.sudohnim.enqueue"),
     ).catch(() => {});
   });
 

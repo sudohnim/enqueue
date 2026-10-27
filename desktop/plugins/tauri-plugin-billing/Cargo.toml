@@ -1,0 +1,13 @@
+[package]
+name = "tauri-plugin-billing"
+version = "0.1.0"
+edition = "2021"
+description = "Enqueue Pro on iPhone: RevenueCat over StoreKit, answering in Billing.kt's shapes"
+links = "tauri-plugin-billing"
+publish = false
+
+[dependencies]
+tauri = { version = "2" }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

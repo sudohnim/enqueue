@@ -37,15 +37,18 @@ class Billing(private val activity: Activity) {
   /** Configure once for this account, or switch to it when another was configured. */
   fun start(accountId: String, reply: (JSONObject) -> Unit) {
     if (!available) return reply(fail("unavailable"))
+    // An empty account is the sample library: an anonymous RevenueCat user, which the
+    // Enqueue sync account takes over (logIn) once the phone links.
+    val account = accountId.ifBlank { null }
     if (!Purchases.isConfigured) {
       Purchases.configure(
         PurchasesConfiguration.Builder(activity.applicationContext, apiKey)
-          .appUserID(accountId)
+          .appUserID(account)
           .build(),
       )
       return customer(reply)
     }
-    if (Purchases.sharedInstance.appUserID == accountId) return customer(reply)
+    if (account == null || Purchases.sharedInstance.appUserID == accountId) return customer(reply)
     Purchases.sharedInstance.logInWith(
       accountId,
       onError = { reply(error(it)) },
