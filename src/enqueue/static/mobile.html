@@ -4336,6 +4336,9 @@
     "drafts",
   ];
 
+  // Which layout the pill shows: "library" (+) or "inside" (Home).
+  let pillPlace = "library";
+
   function show(id) {
     if (id === "reader") {
       const from = SCREENS.find((s) => {
@@ -4373,6 +4376,9 @@
         id === "settings" ||
         id === "vault" ||
         id === "drafts";
+    // The pill's left button is "+" on the library and Home on every other screen.
+    const where = id === "library" ? "library" : "inside";
+    if (pillEl && !pillEl.hidden && where !== pillPlace) pillRestorePill(where);
     // Sections are siblings in one scroll container, so switching from a
     // scrolled library would land the new section mid-page (Settings appeared
     // "at the bottom"). Reset scroll to the top on every switch.
@@ -8280,7 +8286,6 @@ return;
     return svgEl;
   }
   // Pill (MOB2.3) - mirrors desktop pill.js logic
-  let pillPlace = "library";
   let pillMenu = null;
 
   function pillCloseMenu(restoreFocus) {
@@ -8313,7 +8318,7 @@ return;
     if (inside) {
       html =
         '<button class="keep" aria-label="Home" onclick="home()">' +
-        '<span class="disc">' + createIcon("plus").outerHTML + '</span></button>' +
+        '<span class="disc">' + createIcon("home").outerHTML + '</span></button>' +
         '<button class="round" aria-label="Chat with AI" onclick="openChat()">' +
         '<span class="pill-eye eye" id="pillEye"></span>' +
         "</button>";

@@ -110,7 +110,7 @@ Comparing unlike cases is how the idea under them comes clear, and the farther a
 There is a new one each day, and the farthest pairs come first.
 Want more? **Find another** shows the next set, as many as the assistant has found; after the last, **Back to the first** starts over. The wall keeps showing the one you stopped at until tomorrow.
 Click a note to open it; **Not today** hides the card until tomorrow.
-Ravens keep shiny things: click the raven beside the greeting and it brings you one now, the next set if a card is up, or a fresh look at what it has found. Its beak glints when you point at it. With nothing found yet, it shakes its head and says so.
+Ravens keep shiny things: click the raven beside the greeting and it hunts for a fresh connection there and then, one you have not seen in the last month. Its beak glints when you point at it. With nothing worth showing, it shakes its head and says so rather than show a weak pair.
 Nothing is hidden, moved or deleted by it.
 The words are written by your chat model from the notes' summaries, never their text; a set that holds a local-only note is written by the model on your computer.
 Without a model, the card shows the plain sentence the link was judged with.

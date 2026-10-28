@@ -177,14 +177,15 @@ def test_without_a_model_the_card_shows_the_links_own_words(store, writer):
     assert len(writer.calls) == 1  # a failed set is not asked again the same day
 
 
-def test_a_set_with_a_local_only_note_uses_the_local_model(store, writer):
+def test_a_set_with_a_local_only_note_reaches_no_model(store, writer):
     _note("a", local_only=True)
     _note("b")
     _link("a", "b", "idea", 0.8, point="Both one.")
 
-    shiny.today(TODAY, background=False)
+    out = shiny.today(TODAY, background=False)
 
-    assert writer.local == [True]
+    assert writer.calls == []
+    assert out["food"]["idea"] == "Both one."
 
 
 def test_purging_a_note_drops_its_cached_words(store, writer):
@@ -309,3 +310,170 @@ def test_prepare_runs_once_a_day(store, writer):
     _link("a", "b", "idea", 0.8, point="Both one.")
     assert shiny.prepare(TODAY) is True
     assert shiny.prepare(TODAY) is False
+
+
+# ---- the raven's hunt ------------------------------------------------------------------
+
+
+def _idea(aid: str, line: str = "Things last by bending.") -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
+            " VALUES (?, ?, 2, ?, 'm', 0.5)",
+            (f"i-{aid}", aid, line),
+        )
+
+
+class _Hunter:
+    model = "chat-model"
+
+    def __init__(self, keep):
+        self.keep, self.calls = keep, []
+
+    def complete(self, system, user, response_model, **kwargs):
+        self.calls.append(user)
+        seed = user.split("id: ", 1)[1].split("\n", 1)[0]
+        keep = self.keep(seed, user)
+        if not keep:
+            return response_model()
+        return response_model(
+            keep=keep,
+            idea="Things last by bending instead of holding firm.",
+            parts=[{"id": i, "how": f"{i} bends to last."} for i in (seed, keep)],
+            question="Where are you holding firm when bending would last longer?",
+        )
+
+
+@pytest.fixture
+def hunter(monkeypatch):
+    from enqueue.providers import base
+
+    box = {}
+
+    def make(keep, candidates):
+        box["h"] = _Hunter(keep)
+        monkeypatch.setattr(base, "get_provider", lambda **kw: box["h"])
+        monkeypatch.setattr(
+            shiny,
+            "_candidates",
+            lambda conn, seed: [
+                {"id": c, "score": 0.7, "distance": 0.6, "mine": "m", "theirs": "t"}
+                for c in candidates(seed)
+            ],
+        )
+        return box["h"]
+
+    return make
+
+
+def _library(*ids):
+    for aid in ids:
+        _note(aid)
+        _idea(aid)
+
+
+def test_the_raven_finds_a_fresh_connection_and_remembers_it(store, hunter):
+    import random
+
+    _library("a", "b")
+    h = hunter(
+        lambda seed, user: "b" if seed == "a" else "a", lambda seed: ["b" if seed == "a" else "a"]
+    )
+
+    out = shiny.hunt(TODAY, random.Random(1))
+
+    assert sorted(out["ids"]) == ["a", "b"]
+    assert out["food"]["idea"].startswith("Things last")
+    assert set(out["food"]["parts"]) == {"a", "b"}
+    assert len(h.calls) == 1
+    # Shown once, it is never hunted again within REMEMBER_DAYS.
+    assert shiny.hunt(TODAY, random.Random(2)) == {"none": "nothing"}
+
+
+def test_a_pair_the_daily_card_showed_is_not_hunted(store, hunter, writer):
+    import random
+
+    _library("a", "b")
+    _link("a", "b", "idea", 0.8, point="Both one.")
+    shiny.today(TODAY, background=False)
+    hunter(lambda seed, user: "b", lambda seed: ["b" if seed == "a" else "a"])
+
+    assert shiny.hunt(TODAY, random.Random(1)) == {"none": "nothing"}
+
+
+def test_the_raven_fails_closed_when_nothing_truly_matches(store, hunter):
+    import random
+
+    _library("a", "b", "c")
+    h = hunter(lambda seed, user: "", lambda seed: [i for i in ("a", "b", "c") if i != seed])
+
+    assert shiny.hunt(TODAY, random.Random(1)) == {"none": "nothing"}
+    assert len(h.calls) == shiny.HUNT_SEEDS
+
+
+def test_a_seed_rests_and_local_only_notes_never_seed(store, hunter):
+    import random
+
+    _library("a", "b")
+    _note("p", local_only=True)
+    _idea("p")
+    seeds = []
+    hunter(lambda seed, user: seeds.append(seed) or "", lambda seed: ["x"])
+
+    shiny.hunt(TODAY, random.Random(1))
+    shiny.hunt(TODAY, random.Random(2))
+
+    assert "p" not in seeds
+    assert len(seeds) == len(set(seeds))  # each seed rests after its turn
+
+
+def test_the_hunt_endpoint_serves_the_card(store, hunter):
+    from fastapi.testclient import TestClient
+
+    from enqueue.api import app
+
+    _library("a", "b")
+    hunter(
+        lambda seed, user: "b" if seed == "a" else "a", lambda seed: ["b" if seed == "a" else "a"]
+    )
+
+    out = TestClient(app).post("/shiny/hunt").json()
+
+    assert out["hunted"] is True
+    assert sorted(n["id"] for n in out["notes"]) == ["a", "b"]
+
+
+def test_candidates_share_an_idea_from_a_far_subject(store, monkeypatch):
+    from enqueue import config
+    from enqueue.index.store import get_store
+    from enqueue.providers.base import model_for
+
+    monkeypatch.setattr(config, "VECTOR_STORE", "sqlite-vec")
+    get_store.cache_clear()
+    index = get_store()
+    index.ensure()
+    idea = "Whoever moves first sets the terms the others must answer."
+    lines = {
+        "prince": ("A sixteenth-century manual on holding power in an Italian city.", idea),
+        "war": ("A catalogue of military campaigns and how each was won.", idea),
+        "twin": ("A sixteenth-century manual on holding power in an Italian city.", idea),
+    }
+    for aid, (subject, line) in lines.items():
+        _note(aid)
+        with db.transaction() as conn:
+            for level, text in ((1, subject), (3, line)):
+                conn.execute(
+                    "INSERT INTO facets (id, artifact_id, level, statement, model_version,"
+                    " trust) VALUES (?, ?, ?, ?, ?, 0.5)",
+                    (f"{aid}-{level}", aid, level, text, model_for("ingest")),
+                )
+    index.upsert_facets()
+    conn = db.get_conn()
+    try:
+        found = [c["id"] for c in shiny._candidates(conn, "prince")]
+    finally:
+        conn.close()
+        get_store.cache_clear()
+
+    assert "war" in found
+    assert "twin" not in found  # the same subject is no surprise

@@ -742,6 +742,10 @@ document.addEventListener("visibilitychange", refreshIfStale);
 // #g/<id> = a saved grouping run, #s/<query> = search results.
 function setRoute(token) {
 	navArrive(token || "");
+	// The pill's left button is "+" on the wall and Home on every other screen.
+	const where = !token ? "wall" : token === "settings" ? "settings" : "inside";
+	if (typeof restorePill === "function" && where !== place && !pill.classList.contains("wide"))
+		restorePill(where);
 	const want = token ? "#" + token : "";
 	if (location.hash === want) return;
 	// replaceState, not location.hash: browser-history entries for every artifact
@@ -1460,6 +1464,13 @@ function mountShinyCall(el) {
 	}, 2600);
 }
 
+// The raven hunts for a fresh connection (POST /shiny/hunt), one model call or two; the
+// day's card stays as it was underneath and comes back tomorrow.
+const SHINY_HUNT_SAYS = {
+	nothing: "Nothing new glints right now. Save a few more and ask the raven again.",
+	paused: "The assistant is on a short break. Ask the raven again in a few minutes.",
+	model: "The raven couldn't look just now. Try again in a moment.",
+};
 async function callShiny(el) {
 	const slot = document.getElementById("shiny");
 	if (!slot || el.classList.contains("shiny-calling")) return;
@@ -1470,31 +1481,52 @@ async function callShiny(el) {
 	} catch (_) {
 		// Nothing was hidden in this browser.
 	}
-	// A set on screen with more after it: the raven brings the next one. Otherwise it
-	// looks again, so the connections found since the morning get their turn.
 	const shown = !slot.hidden && slot.querySelector(".shiny-card");
-	const n = shown && slot.querySelector('.shiny-another[data-to="next"]') ? shinyAt() + 1 : 0;
 	if (shown) shown.classList.add("shiny-turning");
-	if (!n) {
-		try {
-			await api("/shiny/again", { method: "POST" });
-		} catch (_) {
-			// The kept sets answer below as they were.
-		}
+	shinyGen++; // a late daily refresh must not draw over the hunt
+	let r = null;
+	try {
+		r = await api("/shiny/hunt", { method: "POST" });
+	} catch (_) {
+		r = { none: "model" };
 	}
-	setShinyAt(n);
-	shinyDrawn = "";
-	await refreshShiny(0, n);
 	el.classList.remove("shiny-calling");
-	const card = !slot.hidden && slot.querySelector(".shiny-card");
-	if (card) {
-		card.classList.remove("shiny-turning");
-		flyCoin(el, card.querySelector(".shiny-raven"));
+	if (r && r.notes && r.notes.length >= 2) {
+		keepHunt(r);
+		shinyDrawn = "";
+		drawShiny(slot, r, -1);
+		flyCoin(el, slot.querySelector(".shiny-card .shiny-raven"));
 		return;
 	}
+	if (shown) shown.classList.remove("shiny-turning");
 	el.classList.add("shiny-shrug");
 	setTimeout(() => el.classList.remove("shiny-shrug"), 700);
-	toast("Nothing glints yet. Save a few more and ask the raven again.");
+	toast(SHINY_HUNT_SAYS[(r && r.none) || "nothing"] || SHINY_HUNT_SAYS.nothing);
+}
+
+// A hunted card stays up through wall refreshes for the rest of the day, in this tab.
+const SHINY_HUNTED = "enqueue.shiny.hunted";
+function keepHunt(r) {
+	try {
+		sessionStorage.setItem(SHINY_HUNTED, JSON.stringify({ day: todayStamp(), r }));
+	} catch (_) {
+		// Kept until the next wall refresh only.
+	}
+}
+function keptHunt() {
+	try {
+		const kept = JSON.parse(sessionStorage.getItem(SHINY_HUNTED) || "null");
+		return kept && kept.day === todayStamp() ? kept.r : null;
+	} catch (_) {
+		return null;
+	}
+}
+function dropHunt() {
+	try {
+		sessionStorage.removeItem(SHINY_HUNTED);
+	} catch (_) {
+		// Nothing kept.
+	}
 }
 
 // The coin leaves the greeting raven's beak and lands in the card raven's.
@@ -1552,7 +1584,9 @@ function drawShiny(slot, r, n) {
 	shinyDrawn = sig;
 	// The end of the day's sets is where a fresh look happens (POST /shiny/again): the
 	// connections found since the morning get their turn.
-	const next = r.more
+	const next = r.hunted
+		? '<button class="shiny-another" type="button" data-to="hunt">Find another' + svg("chev") + "</button>"
+		: r.more
 		? '<button class="shiny-another" type="button" data-to="next">Find another' + svg("chev") + "</button>"
 		: '<button class="shiny-another" type="button" data-to="again">Look for new ones</button>';
 	slot.innerHTML =
@@ -1587,6 +1621,7 @@ function drawShiny(slot, r, n) {
 	slot.querySelector(".shiny-dismiss").addEventListener("click", () => {
 		try {
 			localStorage.setItem(SHINY_DISMISSED, todayStamp());
+			dropHunt();
 		} catch (_) {
 			// Hidden for this visit only.
 		}
@@ -1594,6 +1629,11 @@ function drawShiny(slot, r, n) {
 	});
 	slot.querySelector(".shiny-another").addEventListener("click", async (event) => {
 		const button = event.currentTarget;
+		if (button.dataset.to === "hunt") {
+			const raven = document.getElementById("greetEye");
+			if (raven) return callShiny(raven);
+		}
+		dropHunt();
 		slot.querySelector(".shiny-card").classList.add("shiny-turning");
 		if (button.dataset.to === "again") {
 			button.disabled = true;
@@ -1621,6 +1661,8 @@ async function refreshShiny(tries = 0, n = shinyAt()) {
 	} catch (_) {
 		// No storage (private window): the card simply always shows.
 	}
+	const hunted = keptHunt();
+	if (hunted) return drawShiny(slot, hunted, -1);
 	const gen = ++shinyGen;
 	let r;
 	try {

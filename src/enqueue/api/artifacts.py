@@ -42,6 +42,18 @@ def shiny_again() -> dict:
     return shiny_card(0)
 
 
+@router.post("/shiny/hunt")
+def shiny_hunt() -> dict:
+    """The greeting raven's fresh connection (shiny.hunt), as the card. `none` says why
+    there is none: nothing passed, the model service is paused, or the call failed."""
+    from .. import shiny as shiny_mod
+
+    found = shiny_mod.hunt()
+    if "none" in found:
+        return {"notes": [], "food": None, "links": [], "writing": False, "none": found["none"]}
+    return _shiny_out(found | {"writing": False, "more": False, "n": -1, "hunted": True})
+
+
 @router.get("/shiny")
 def shiny_card(n: int = 0) -> dict:
     """Today's Something shiny (shiny.py): two or three notes from different fields, as
@@ -51,6 +63,10 @@ def shiny_card(n: int = 0) -> dict:
     food = shiny_mod.today(n=max(0, n))
     if food is None:
         return {"notes": [], "food": None, "links": [], "writing": False, "more": False, "n": n}
+    return _shiny_out(food)
+
+
+def _shiny_out(food: dict) -> dict:
     conn = db.get_conn()
     try:
         rows = conn.execute(
@@ -75,6 +91,7 @@ def shiny_card(n: int = 0) -> dict:
         "writing": food["writing"],
         "more": food["more"],
         "n": food["n"],
+        "hunted": bool(food.get("hunted")),
     }
 
 

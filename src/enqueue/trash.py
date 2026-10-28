@@ -219,7 +219,8 @@ def purge(artifact_id: str) -> dict:
         )
         # Something shiny's words name every note of its set.
         conn.execute(
-            "DELETE FROM derived_values WHERE scope = 'shiny' AND instr(subject, ?) > 0",
+            "DELETE FROM derived_values WHERE scope IN ('shiny', 'shiny_shown', 'shiny_seed')"
+            " AND instr(subject, ?) > 0",
             (artifact_id,),
         )
         # A tag the purged artifact was the last user of has nothing left to
