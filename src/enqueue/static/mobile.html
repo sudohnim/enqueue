@@ -245,6 +245,30 @@
   .welcome-sample-btn:disabled {
     opacity: 0.6;
   }
+  .welcome-sample-btn.apple-sign-in {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    background: #000;
+    color: #fff;
+    font-weight: var(--w-medium);
+  }
+  .apple-sign-in svg {
+    width: 15px;
+    height: 18px;
+  }
+  .welcome-delete-link {
+    margin-top: var(--sp-2);
+    padding: var(--sp-2);
+    border: 0;
+    background: none;
+    color: var(--text-mute);
+    font: inherit;
+    font-size: 13px;
+    text-decoration: underline;
+  }
   .welcome-join {
     margin-top: var(--sp-5);
     text-align: center;
@@ -2792,10 +2816,12 @@
     <p id="scan_status" class="welcome-scan-status"></p>
   </div>
   <!-- Or sign in: the phone asks to join the account's library and a device that has
-       the key approves it (mobile_sign_in, mobile_join_status). Android only. -->
+       the key approves it (mobile_sign_in, mobile_join_status). Google on Android,
+       Apple on iPhone. -->
   <div id="setup_sign_in" class="welcome-sample" hidden>
     <p>Or, signed in to Enqueue sync on your Mac?</p>
-    <button id="google_sign_in_btn" type="button" class="welcome-sample-btn">Sign in with Google</button>
+    <button id="sign_in_btn" type="button" class="welcome-sample-btn">Sign in with Google</button>
+    <button id="setup_account_delete" type="button" class="welcome-delete-link">Delete an Enqueue account</button>
   </div>
   <div id="setup_join" class="welcome-join" hidden>
     <p class="welcome-join-lead">On your Mac, approve this phone. It shows the same code:</p>
@@ -3202,6 +3228,7 @@
       <div class="mset-stack">
         <button id="settings_plan_go" type="button" class="mset-primary" hidden>Go Pro</button>
         <button id="settings_plan_manage" type="button" class="mset-secondary" hidden>Manage subscription</button>
+        <button id="settings_account_delete" type="button" class="mset-secondary" hidden>Delete your account</button>
         <button id="settings_plan_restore" type="button" class="mset-secondary" hidden>Restore purchase</button>
       </div>
     </div>
@@ -3616,6 +3643,10 @@
   //
   // A prompt answers later, so each call carries an id and the shell answers through
   // window.__enqLockReply(id, {ok, reason, secret?}).
+  // iPadOS reports itself as a Mac; a Mac never loads this page, so touch means iPad.
+  const onIOS =
+    /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   const lockBridge =
     window.EnqueueAndroid && typeof window.EnqueueAndroid.lockStatus === "function"
       ? window.EnqueueAndroid
@@ -3639,7 +3670,7 @@
   };
   // On iPhone the same calls go to the native plugin (desktop/plugins/tauri-plugin-native).
   const iosLock =
-    !lockBridge && !!(window.__TAURI__ && window.__TAURI__.core) && /iPhone|iPad|iPod/.test(navigator.userAgent);
+    !lockBridge && !!(window.__TAURI__ && window.__TAURI__.core) && onIOS;
   const hasLock = !!lockBridge || iosLock;
   let iosLockState = null;
   async function refreshIosLock() {
@@ -3768,7 +3799,7 @@
   // On iPhone the same calls go to the billing plugin (desktop/plugins/tauri-plugin-billing,
   // RevenueCat over StoreKit), which answers in the same shapes as Billing.kt.
   const iosBilling =
-    !billingBridge && !!(window.__TAURI__ && window.__TAURI__.core) && /iPhone|iPad|iPod/.test(navigator.userAgent);
+    !billingBridge && !!(window.__TAURI__ && window.__TAURI__.core) && onIOS;
   const IOS_BILLING = {
     billingStart: (accountId) => ["start", { accountId }],
     billingStatus: () => ["status", {}],
@@ -3812,6 +3843,14 @@
   let planAccount = null; // the account RevenueCat was started for
   let planManage = null;
   let planSamplePro = false; // Pro bought in the sample library, before linking
+  // Starting the store can wait forever with no network or no Play Billing (an emulator,
+  // a phone offline when Settings opens): give up after ten seconds.
+  function billingStart(account) {
+    return Promise.race([
+      billingAsk("billingStart", account),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, reason: "timeout" }), 10000)),
+    ]);
+  }
   async function paintPlan() {
     const box = document.getElementById("settings_plan");
     if (!box) return;
@@ -3826,9 +3865,8 @@
       // able to find and buy the subscription. The purchase sits on an anonymous
       // RevenueCat user until this phone links to an Enqueue sync account, which then
       // takes it over (billingStart with the account id logs RevenueCat in).
-      box.hidden = false;
       if (planAccount !== "") {
-        const started = await billingAsk("billingStart", "");
+        const started = await billingStart("");
         if (!started.ok) {
           box.hidden = true;
           return;
@@ -3843,6 +3881,8 @@
       document.getElementById("settings_plan_go").hidden = planSamplePro;
       document.getElementById("settings_plan_restore").hidden = planSamplePro;
       document.getElementById("settings_plan_manage").hidden = !(planSamplePro && planManage);
+      document.getElementById("settings_account_delete").hidden = true;
+      box.hidden = false;
       return;
     }
     if (!plan || !plan.account_id) {
@@ -3850,6 +3890,7 @@
       return;
     }
     box.hidden = false;
+    document.getElementById("settings_account_delete").hidden = !signInProvider;
     const pro = plan.tier === "pro";
     const room = sizeWords(plan.limits.storage_bytes);
     const used = sizeWords(plan.used_bytes || 0);
@@ -3869,7 +3910,7 @@
     document.getElementById("settings_plan_manage").hidden = true;
     if (!canBuy) return;
     if (planAccount !== plan.account_id) {
-      const started = await billingAsk("billingStart", plan.account_id);
+      const started = await billingStart(plan.account_id);
       if (!started.ok) return;
       planAccount = plan.account_id;
       planManage = started.manage || null;
@@ -4706,15 +4747,6 @@
     }
   }
 
-  // A note that opens with its own title as a heading would show it twice on its
-  // card (the title, then the same words as the excerpt's first line): drop that line.
-  function withoutTitleLine(body, title) {
-    const m = body.match(/^\s*#{1,6}\s+([^\n]+)\n*/);
-    if (m && m[1].trim().toLowerCase() === String(title || "").trim().toLowerCase())
-      return body.slice(m[0].length);
-    return body;
-  }
-
   function renderNoteCard(li, a) {
     li.className =
       "card card-note" + (a.status === "pending" ? " card-unsynced" : "");
@@ -4732,7 +4764,7 @@
 
     const excerpt = document.createElement("div");
     excerpt.className = "card-excerpt";
-    excerpt.textContent = mdText(withoutTitleLine(a.body || "", a.title));
+    excerpt.textContent = mdText(a.body || "", a.title);
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -4802,7 +4834,7 @@
     // preview's description.
     const snippet = document.createElement("div");
     snippet.className = "card-snippet";
-    snippet.textContent = mdText(a.body || "") || a.preview_description || "";
+    snippet.textContent = mdText(a.body || "", a.title) || a.preview_description || "";
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -4981,7 +5013,7 @@
 
     const snippet = document.createElement("div");
     snippet.className = "card-snippet";
-    snippet.textContent = mdText(a.body || "");
+    snippet.textContent = mdText(a.body || "", a.title);
 
     const meta = document.createElement("div");
     meta.className = "card-meta";
@@ -6262,6 +6294,17 @@
     _signInWaiting.delete(id);
     resolve(payload || { ok: false, reason: "error" });
   };
+  // An identity token from the phone's own sign-in: {ok, idToken, provider, name?}.
+  const signInProvider = signInBridge ? "google" : iosLock ? "apple" : null;
+  async function idToken() {
+    if (signInProvider === "apple") {
+      const r = await window.__TAURI__.core
+        .invoke("plugin:native|apple")
+        .catch(() => ({ ok: false, reason: "error" }));
+      return { ...r, provider: "apple" };
+    }
+    return { ...(await googleIdToken()), provider: "google" };
+  }
   function googleIdToken() {
     return new Promise((resolve) => {
       const id = "sign" + ++_signInSeq;
@@ -6274,12 +6317,22 @@
       }
     });
   }
-  if (signInBridge) document.getElementById("setup_sign_in").hidden = false;
+  if (signInProvider) {
+    document.getElementById("setup_sign_in").hidden = false;
+    if (signInProvider === "apple") {
+      // Apple's own look (its Human Interface Guidelines): black, the Apple mark, the words.
+      const button = document.getElementById("sign_in_btn");
+      button.classList.add("apple-sign-in");
+      button.innerHTML =
+        '<svg viewBox="0 0 17 20" aria-hidden="true"><path fill="currentColor" d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2 1-3.2-1 .1-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>' +
+        "Sign in with Apple";
+    }
+  }
 
   let joinPoll = null;
   function showJoin(on) {
     document.getElementById("setup_join").hidden = !on;
-    document.getElementById("setup_sign_in").hidden = on || !signInBridge;
+    document.getElementById("setup_sign_in").hidden = on || !signInProvider;
     document.getElementById("setup_camera").hidden = on;
     document.getElementById("setup_sample").hidden = on;
   }
@@ -6316,23 +6369,29 @@
       "error",
     );
   }
-  document.getElementById("google_sign_in_btn").addEventListener("click", async (event) => {
+  // Why a sign-in did not go through, in words; null when the person cancelled.
+  function signInTrouble(r) {
+    if (r.reason === "cancelled") return null;
+    if (r.reason === "no_account") return "Add a Google account to this phone first.";
+    return (r.provider === "apple" ? "Sign in with Apple" : "Google sign-in") + " did not go through. Try again.";
+  }
+  document.getElementById("sign_in_btn").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
     setStatus("");
     try {
-      const google = await googleIdToken();
-      if (!google.ok) {
-        if (google.reason !== "cancelled")
-          setStatus(
-            google.reason === "no_account"
-              ? "Add a Google account to this phone first."
-              : "Google sign-in did not go through. Try again.",
-            "error",
-          );
+      const signed = await idToken();
+      if (!signed.ok) {
+        const trouble = signInTrouble(signed);
+        if (trouble) setStatus(trouble, "error");
         return;
       }
-      const asked = await invoke("mobile_sign_in", { idToken: google.idToken, name: "Phone" });
+      const asked = await invoke("mobile_sign_in", {
+        idToken: signed.idToken,
+        name: iosLock ? "iPhone" : "Phone",
+        provider: signed.provider,
+        userName: signed.name || null,
+      });
       document.getElementById("join_code").textContent = asked.code;
       document.getElementById("join_wait").textContent = "Waiting for approval...";
       showJoin(true);
@@ -6344,6 +6403,41 @@
       button.disabled = false;
     }
   });
+  // Deleting the Enqueue sync account from the phone (App Store rule 5.1.1(v): an app
+  // that makes an account deletes it too). Signing in again confirms it is the owner.
+  async function deleteAccount(event) {
+    const yes = await mobileSheet({
+      title: "Delete your Enqueue account?",
+      points: [
+        "Your synced library is deleted from Enqueue sync, and every device is signed out.",
+        "The library on your Mac stays on your Mac. This phone goes back to its first screen.",
+        "A Pro subscription is not cancelled by this: cancel it in your " +
+          (iosLock ? "App Store" : "Google Play") + " subscriptions.",
+      ],
+      ok: "Delete",
+      cancel: "Keep it",
+      danger: true,
+    });
+    if (!yes) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const signed = await idToken();
+      if (!signed.ok) {
+        const trouble = signInTrouble(signed);
+        if (trouble) toast(trouble, true);
+        return;
+      }
+      await invoke("mobile_delete_account", { idToken: signed.idToken, provider: signed.provider });
+      location.reload();
+    } catch (e) {
+      toast(errString(e), true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+  document.getElementById("settings_account_delete").addEventListener("click", deleteAccount);
+  document.getElementById("setup_account_delete").addEventListener("click", deleteAccount);
   document.getElementById("join_cancel_btn").addEventListener("click", () => {
     stopJoinPoll();
     invoke("mobile_join_cancel").catch(() => {});

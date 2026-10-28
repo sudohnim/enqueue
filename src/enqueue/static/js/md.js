@@ -239,7 +239,7 @@
   // block children - headings, nested lists - into a line-clamped box, where they
   // paint over each other instead of clamping with an ellipsis. Strip the syntax
   // first so the box only ever holds a text run, which clamps cleanly.
-  function mdText(src) {
+  function mdText(src, title) {
     let t = src;
     // A tab's marker line (js/tabs.js) is plumbing: the preview reads the tabs' text
     // one after another, without the comment that starts each.
@@ -271,8 +271,13 @@
     // carry the list and paragraph structure the preview needs.
     t = t.replace(/[^\S\n]+/g, " ");
     // A paragraph break is at most one blank line.
-    t = t.replace(/\n{3,}/g, "\n\n");
-    return t.trim();
+    t = t.replace(/\n{3,}/g, "\n\n").trim();
+    // A note's first line is often its title, which the card already shows.
+    const cut = t.indexOf("\n");
+    const first = (cut < 0 ? t : t.slice(0, cut)).trim().toLowerCase();
+    if (title && first === title.trim().toLowerCase())
+      t = cut < 0 ? "" : t.slice(cut).trim();
+    return t;
   }
 
   // Turn the edited document back into markdown. Only the tags md() can produce need

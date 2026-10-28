@@ -10,6 +10,32 @@
 <tr>
 <td>
 
+`native:allow-apple`
+
+</td>
+<td>
+
+Enables the apple command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`native:deny-apple`
+
+</td>
+<td>
+
+Denies the apple command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `native:allow-applock`
 
 </td>

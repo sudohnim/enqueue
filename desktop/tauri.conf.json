@@ -118,6 +118,7 @@
             "opener:default",
             "clipboard-manager:allow-write-text",
             "allow-mobile-sign-in",
+            "allow-mobile-delete-account",
             "allow-mobile-join-status",
             "allow-mobile-join-cancel",
             "allow-mobile-joins",
@@ -132,7 +133,8 @@
             "native:allow-create",
             "native:allow-read",
             "native:allow-clear",
-            "native:allow-quick"
+            "native:allow-quick",
+            "native:allow-apple"
           ]
         }
       ]

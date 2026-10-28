@@ -162,6 +162,11 @@
     --warning: #a4650e;
     --info: #2b5692;
 
+    /* The coin in Something shiny's beak: graphics only, never text. */
+    --gold: #e8b021;
+    --gold-deep: #9a6410;
+    --gold-light: #fff1b8;
+
     /* Callout washes carry --text or --text-dim only. --text-mute measures 4.33-4.50
        on these and fails 4.5, which is why it is not permitted on any of them. */
     --tint-info: rgba(59, 107, 181, 0.14);

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-apple"
+description = "Enables the apple command without any pre-configured scope."
+commands.allow = ["apple"]
+
+[[permission]]
+identifier = "deny-apple"
+description = "Denies the apple command without any pre-configured scope."
+commands.deny = ["apple"]

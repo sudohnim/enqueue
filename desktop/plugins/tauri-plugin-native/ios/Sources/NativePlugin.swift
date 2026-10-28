@@ -1,3 +1,4 @@
+import AuthenticationServices
 import BackgroundTasks
 import Foundation
 import LocalAuthentication
@@ -127,6 +128,24 @@ class NativePlugin: Plugin {
       invoke.resolve(reply)
     }
   }
+
+  /// Sign in with Apple, for Enqueue sync on the phone (Google's sign-in is Android's).
+  /// Answers {ok, idToken, name} or {ok: false, reason: "cancelled" | "error"}; the
+  /// name comes only the first time a person signs in to the app.
+  @objc public func apple(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      let request = ASAuthorizationAppleIDProvider().createRequest()
+      request.requestedScopes = [.fullName, .email]
+      let controller = ASAuthorizationController(authorizationRequests: [request])
+      let delegate = AppleSignIn(invoke: invoke, window: self.manager.viewController?.view.window)
+      self.appleSignIn = delegate
+      controller.delegate = delegate
+      controller.presentationContextProvider = delegate
+      controller.performRequests()
+    }
+  }
+
+  private var appleSignIn: AppleSignIn?
 
   /// Whether the app was opened from its Quick capture action and the page has not
   /// opened the writing page for it yet. Asking clears it.
@@ -348,6 +367,38 @@ enum QuickAction {
     class_addMethod(made, perform, imp_implementationWithBlock(block), "v@:@@@?")
     objc_registerClassPair(made)
     return made
+  }
+}
+
+final class AppleSignIn: NSObject, ASAuthorizationControllerDelegate,
+  ASAuthorizationControllerPresentationContextProviding
+{
+  private let invoke: Invoke
+  private let window: UIWindow?
+
+  init(invoke: Invoke, window: UIWindow?) {
+    self.invoke = invoke
+    self.window = window
+  }
+
+  func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+    window ?? ASPresentationAnchor()
+  }
+
+  func authorizationController(
+    controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization
+  ) {
+    guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+      let data = credential.identityToken, let token = String(data: data, encoding: .utf8)
+    else { return invoke.resolve(["ok": false, "reason": "error"]) }
+    let name = [credential.fullName?.givenName, credential.fullName?.familyName]
+      .compactMap { $0 }.joined(separator: " ")
+    invoke.resolve(["ok": true, "idToken": token, "name": name])
+  }
+
+  func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+    let cancelled = (error as? ASAuthorizationError)?.code == .canceled
+    invoke.resolve(["ok": false, "reason": cancelled ? "cancelled" : "error"])
   }
 }
 

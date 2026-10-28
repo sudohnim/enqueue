@@ -111,6 +111,7 @@ Comparing unlike cases is how the idea under them comes clear, and the farther a
 There is a new one each day, and the farthest pairs come first.
 Want more? **Find another** shows the next set, as many as the assistant has found; after the last, **Back to the first** starts over. The wall keeps showing the one you stopped at until tomorrow.
 Click a note to open it; **Not today** hides the card until tomorrow.
+Ravens keep shiny things: click the raven beside the greeting and it brings you one now, the next set if a card is up, or a fresh look at what it has found. Its beak glints when you point at it. With nothing found yet, it shakes its head and says so.
 Nothing is hidden, moved or deleted by it.
 The words are written by your chat model from the notes' summaries, never their text; a set that holds a local-only note is written by the model on your computer.
 Without a model, the card shows the plain sentence the link was judged with.
@@ -328,7 +329,8 @@ The phone app (Android and iPhone) is your library in your pocket: read, capture
 - **Settings.** The button at the top right of the library opens **Settings** and **How to use**.
 - **Quick capture.** Press and hold the app icon and choose **Quick capture** to start a note at once.
 - **Back on iPhone.** Swipe in from the left edge.
-- **Sync while closed (iPhone).** iOS wakes Enqueue now and then to send and fetch changes; it decides when.
+- **Sync while closed.** On Android, Enqueue sends and fetches changes about every half hour when there is a connection.
+On the iPhone, iOS wakes Enqueue now and then to do the same; it decides when.
 
 The phone does not write summaries or build the search index itself; those come from the Mac through sync.
 
@@ -343,7 +345,8 @@ To link a phone:
 2. Press **Show the code**. The Mac shows a QR code.
 3. In the phone app, scan it. The phone downloads your library.
 
-Or, on an Android phone, press **Sign in with Google** instead of scanning: the phone shows a six-digit code, your Mac asks whether to let it in with the same code, and once you approve, the library arrives.
+Or press **Sign in with Google** (Android) or **Sign in with Apple** (iPhone) instead of scanning: the phone shows a six-digit code, your Mac asks whether to let it in with the same code, and once you approve, the library arrives.
+To delete your Enqueue account from the phone, open **Settings > Plan** and press **Delete your account**, or press **Delete an Enqueue account** on the first screen. This removes the account, every device and the synced library on our relay; your Mac keeps its own copy.
 A linked phone can approve a new Mac or phone the same way.
 
 Signing in only says who you are. Your library is locked with a key that stays on your devices, so we cannot read what Enqueue sync holds.

@@ -108,6 +108,7 @@ fn main() {
                 "mobile_settings_ask",
                 "mobile_plan",
                 "mobile_sign_in",
+                "mobile_delete_account",
                 "mobile_join_status",
                 "mobile_join_cancel",
                 "mobile_joins",

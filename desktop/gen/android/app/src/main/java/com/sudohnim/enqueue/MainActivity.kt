@@ -369,6 +369,7 @@ class MainActivity : TauriActivity() {
     MainActivity.initUiHandler(this)
     currentActivity = this
     CameraHelper.getInstance(this)
+    SyncWorker.schedule(applicationContext)
     applySystemBarInsets()
     bio = Biometrics(this)
     applyRecentsPrivacy()

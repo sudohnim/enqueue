@@ -2,7 +2,7 @@
 //
 // Eight cards on the Mac and seven on the phone, about a minute, each with a small
 // WORKING demo rather than a screenshot: you type into the capture box, pick a search,
-// ask the eye, rewrite a summary line, find another shiny thing, gather a view. Nothing in it touches the library - the demos run on a handful of
+// ask the eye, rewrite a summary line, ask the raven for another shiny thing, gather a view. Nothing in it touches the library - the demos run on a handful of
 // made-up artifacts, and say so where you type.
 //
 // One script and one stylesheet (css/tour.css) for the desktop home and the phone. The
@@ -406,7 +406,8 @@
   }
 
   // Something shiny: notes from far-apart fields that make the same point, side by
-  // side, and "Find another" for the next set. Made-up notes, like every demo here.
+  // side. The raven brings the next set, as the greeting's raven does on the wall
+  // (callShiny in js/home.js). Made-up notes, like every demo here.
   const SHINY = [
     {
       idea: "Small, regular stress makes a thing stronger.",
@@ -441,7 +442,18 @@
     const head = el("div", "tour-shiny-head");
     head.append(el("span", "tour-shiny-kicker", "Something shiny"));
     const body = el("div", "tour-shiny-body");
-    const another = button("plate", "Find another");
+    const another = el("button", "tour-shiny-raven");
+    another.type = "button";
+    another.setAttribute("aria-label", "Ask the raven for another");
+    const raven = el("img");
+    raven.src = "/static/raven-tilt.png";
+    raven.alt = "";
+    another.append(raven);
+    another.insertAdjacentHTML(
+      "beforeend",
+      '<svg class="tour-shiny-glint" viewBox="-7 -7 14 14" aria-hidden="true">' +
+        '<path d="M0-6C.5-1.2 1.2-.5 6 0 1.2.5.5 1.2 0 6-.5 1.2-1.2.5-6 0-1.2-.5-.5-1.2 0-6z"/></svg>',
+    );
     let at = 0;
     function show() {
       const set = SHINY[at];
@@ -460,7 +472,11 @@
     }
     another.addEventListener("click", () => {
       at = (at + 1) % SHINY.length;
-      show();
+      if (still()) return show();
+      another.classList.remove("pecked");
+      void another.offsetWidth;
+      another.classList.add("pecked");
+      setTimeout(show, 220);
     });
     const foot = el("div", "tour-shiny-foot");
     foot.append(another);
@@ -587,7 +603,7 @@
         : {
             title: ["Something", "shiny."],
             copy: ["Now and then the raven turns up things you saved in far-apart fields that make the same point. They sit side by side above your wall, with the idea they share and a question to take it further. The farther apart the fields, the better the idea."],
-            note: [press + " Find another for the next one."],
+            note: [press + " the raven for the next one. On your wall it is the raven beside the greeting: ask it any time."],
             demo: demoShiny,
           },
       {

@@ -73,6 +73,8 @@ targets:
         CFBundleVersion: "0.3.0"
     entitlements:
       path: Enqueue_iOS/Enqueue_iOS.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full

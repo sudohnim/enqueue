@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-delete-account"
+description = "Enables the mobile_delete_account command without any pre-configured scope."
+commands.allow = ["mobile_delete_account"]
+
+[[permission]]
+identifier = "deny-mobile-delete-account"
+description = "Denies the mobile_delete_account command without any pre-configured scope."
+commands.deny = ["mobile_delete_account"]

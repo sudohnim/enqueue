@@ -735,6 +735,72 @@ textarea.tour-line {
   display: flex;
   justify-content: flex-end;
 }
+/* The raven that brings the next set: its beak glints to say it can be pressed. */
+.tour-shiny-raven {
+  position: relative;
+  width: 44px;
+  height: 50px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 40%;
+  transform-origin: 50% 90%;
+}
+.tour-shiny-raven img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.tour-shiny-raven:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.tour-shiny-glint {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: var(--gold);
+  stroke: var(--gold-light);
+  stroke-width: 0.7;
+  filter: drop-shadow(0 0 2px var(--gold-light)) drop-shadow(0 0 4px var(--gold));
+  animation: tour-glint 2.4s var(--ease) infinite;
+  pointer-events: none;
+}
+.tour-shiny-raven:hover .tour-shiny-glint,
+.tour-shiny-raven:focus-visible .tour-shiny-glint {
+  animation-duration: 1.2s;
+}
+.tour-shiny-raven.pecked {
+  animation: tour-peck 0.44s var(--ease);
+}
+@keyframes tour-glint {
+  0%,
+  45%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.55) rotate(0deg);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.1) rotate(45deg);
+  }
+}
+@keyframes tour-peck {
+  40% {
+    transform: rotate(-9deg) translateY(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-shiny-glint {
+    animation: none;
+    opacity: 1;
+    transform: rotate(45deg);
+  }
+}
 
 /* ---- 6. views -------------------------------------------------------------------- */
 .tour-views {

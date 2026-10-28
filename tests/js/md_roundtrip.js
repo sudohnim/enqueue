@@ -149,6 +149,13 @@ for (const [name, [text, want]] of Object.entries(normalised)) {
 // A card's preview of a tabbed note reads the tabs' text, never their marker lines.
 const preview = mdText("<!-- tab: Steps -->\n- book flights\n\n<!-- tab: Places -->\nLisbon");
 if (preview !== "• book flights\n\nLisbon") fail("a preview drops tab markers", "", preview);
-const total = Object.keys(exact).length + Object.keys(normalised).length + 1;
+// A card already shows the title, so a first line that repeats it is dropped.
+const t1 = mdText("Buy milk", "Buy milk");
+if (t1 !== "") fail("a one-line note's preview is empty", "", t1);
+const t2 = mdText("# Trip\n\nPack light", "Trip");
+if (t2 !== "Pack light") fail("a preview drops the title heading", "", t2);
+const t3 = mdText("Pack light", "Trip");
+if (t3 !== "Pack light") fail("a preview keeps a first line that is not the title", "", t3);
+const total = Object.keys(exact).length + Object.keys(normalised).length + 4;
 console.log(`${total - failed}/${total} markdown round trips hold`);
 process.exit(failed ? 1 : 0);

@@ -1166,7 +1166,8 @@ async function home(opts) {
 		// EYE.1), so the same living eye mounts anywhere; this container is the
 		// greeting emblem only. The eye is decorative, so it is hidden from the
 		// accessibility tree; the greeting phrase carries the meaning.
-		'<div class="greet-emblem eye" id="greetEye" aria-hidden="true"></div>' +
+		// Ravens keep shiny things: pressing this one asks it for one now (callShiny).
+		'<button class="greet-emblem eye shiny-call" id="greetEye" type="button" aria-label="Find something shiny"></button>' +
 		'<h1 class="display greeting">' +
 		greetingInner(fallback) +
 		"</h1>" +
@@ -1202,6 +1203,7 @@ async function home(opts) {
 
 	view.innerHTML = html;
 	makeEye(document.getElementById("greetEye"));
+	mountShinyCall(document.getElementById("greetEye"));
 	paintAccountChip();
 	refreshShiny();
 	refreshReading();
@@ -1412,18 +1414,131 @@ function setShinyAt(n) {
 	}
 }
 
-// The raven with something shiny in its beak: the tilted raven and a small violet gem
-// that catches the light now and then (still under reduced motion).
+// The raven with something shiny in its beak: a gold coin, and stars that twinkle
+// round it like light off a diamond (held still under reduced motion).
+const COIN =
+	'<circle class="coin-edge" cx="16" cy="16" r="7.5"/>' +
+	'<circle class="coin-face" cx="16" cy="15.4" r="6.6"/>' +
+	'<circle class="coin-ring" cx="16" cy="15.4" r="4.6"/>' +
+	'<path class="coin-shine" d="M12.2 12.6a5 5 0 0 1 3-2.3"/>';
+const SPARK = "M0-6C.5-1.2 1.2-.5 6 0 1.2.5.5 1.2 0 6-.5 1.2-1.2.5-6 0-1.2-.5-.5-1.2 0-6z";
 function shinyRavenHtml() {
+	const star = (x, y, s) =>
+		`<g transform="translate(${x} ${y}) scale(${s})"><path class="spark" d="${SPARK}"/></g>`;
 	return (
 		'<span class="shiny-raven" aria-hidden="true">' +
 		'<img src="/static/raven-tilt.png" alt="" width="64" height="72">' +
-		'<svg class="shiny-gem" viewBox="0 0 24 24">' +
-		'<path class="gem-body" d="M6 8.5 9 5h6l3 3.5L12 19z"/>' +
-		'<path class="gem-facet" d="M6 8.5h12M9 5l3 3.5L15 5M12 8.5V19"/>' +
-		'<path class="gem-glint" d="M20.5 2.5v3M19 4h3"/>' +
+		'<svg class="shiny-coin" viewBox="0 0 32 32">' +
+		COIN +
+		star(29, 4, 1.15) +
+		star(3, 7, 0.75) +
+		star(28.5, 27, 0.7) +
 		"</svg></span>"
 	);
+}
+
+// The greeting's raven fetches Something shiny on demand. It carries no label: a
+// glint at its beak shows on hover and focus, and once a day when no set is showing.
+const SHINY_NUDGED = "enqueue.shiny.nudged";
+function mountShinyCall(el) {
+	if (!el) return;
+	el.insertAdjacentHTML(
+		"beforeend",
+		'<svg class="shiny-hint" viewBox="-7 -7 14 14" aria-hidden="true"><path d="' + SPARK + '"/></svg>',
+	);
+	el.addEventListener("click", () => callShiny(el));
+	setTimeout(() => {
+		const slot = document.getElementById("shiny");
+		if (!el.isConnected || !slot || !slot.hidden) return;
+		try {
+			if (localStorage.getItem(SHINY_NUDGED) === todayStamp()) return;
+			localStorage.setItem(SHINY_NUDGED, todayStamp());
+		} catch (_) {
+			return;
+		}
+		el.classList.add("shiny-nudge");
+	}, 2600);
+}
+
+async function callShiny(el) {
+	const slot = document.getElementById("shiny");
+	if (!slot || el.classList.contains("shiny-calling")) return;
+	el.classList.remove("shiny-nudge", "shiny-shrug");
+	el.classList.add("shiny-calling");
+	try {
+		localStorage.removeItem(SHINY_DISMISSED);
+	} catch (_) {
+		// Nothing was hidden in this browser.
+	}
+	// A set on screen with more after it: the raven brings the next one. Otherwise it
+	// looks again, so the connections found since the morning get their turn.
+	const shown = !slot.hidden && slot.querySelector(".shiny-card");
+	const n = shown && slot.querySelector('.shiny-another[data-to="next"]') ? shinyAt() + 1 : 0;
+	if (shown) shown.classList.add("shiny-turning");
+	if (!n) {
+		try {
+			await api("/shiny/again", { method: "POST" });
+		} catch (_) {
+			// The kept sets answer below as they were.
+		}
+	}
+	setShinyAt(n);
+	shinyDrawn = "";
+	await refreshShiny(0, n);
+	el.classList.remove("shiny-calling");
+	const card = !slot.hidden && slot.querySelector(".shiny-card");
+	if (card) {
+		card.classList.remove("shiny-turning");
+		flyCoin(el, card.querySelector(".shiny-raven"));
+		return;
+	}
+	el.classList.add("shiny-shrug");
+	setTimeout(() => el.classList.remove("shiny-shrug"), 700);
+	toast("Nothing glints yet. Save a few more and ask the raven again.");
+}
+
+// The coin leaves the greeting raven's beak and lands in the card raven's.
+function flyCoin(from, raven) {
+	const target = raven && raven.querySelector(".shiny-coin");
+	if (!target) return;
+	const b = target.getBoundingClientRect();
+	const seen = b.top >= 0 && b.bottom <= innerHeight;
+	if (!seen) raven.scrollIntoView({ behavior: eyeMotionOK() ? "smooth" : "auto", block: "center" });
+	const land = () => {
+		raven.classList.add("coin-landed");
+		setTimeout(() => raven.classList.remove("coin-landed"), 900);
+	};
+	if (!seen || !eyeMotionOK()) return land();
+	const a = from.getBoundingClientRect();
+	const sx = a.left + a.width * 0.84 - 16;
+	const sy = a.top + a.height * 0.3 - 16;
+	const dx = b.left - sx;
+	const dy = b.top - sy;
+	const coin = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	coin.setAttribute("viewBox", "0 0 32 32");
+	coin.setAttribute("aria-hidden", "true");
+	coin.classList.add("shiny-coin", "coin-flight");
+	coin.innerHTML = COIN;
+	coin.style.left = sx + "px";
+	coin.style.top = sy + "px";
+	document.body.appendChild(coin);
+	raven.classList.add("coin-waiting");
+	const lift = Math.min(dy, 0) - 56;
+	coin
+		.animate(
+			[
+				{ transform: "translate(0, 0) scale(0.5) rotate(0deg)", opacity: 0 },
+				{ transform: `translate(${dx * 0.5}px, ${lift}px) scale(1.25) rotate(220deg)`, opacity: 1, offset: 0.45 },
+				{ transform: `translate(${dx}px, ${dy}px) scale(1) rotate(360deg)`, opacity: 1 },
+			],
+			{ duration: 760, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+		)
+		.finished.catch(() => {})
+		.then(() => {
+			coin.remove();
+			raven.classList.remove("coin-waiting");
+			land();
+		});
 }
 
 // What the card shows, so a wall refresh that brings the same set redraws nothing.
