@@ -2,4 +2,6 @@ Enqueue is the phone half of a Mac app: the library lives on the person's Mac an
 
 To try it without a Mac: on the first screen, tap "Try it with a sample library". A made-up library opens with notes, links and photos, so search, reading, capture and the details panel can all be tried. Nothing in it leaves the phone.
 
-No account is needed. Enqueue Pro (an auto-renewable subscription) adds devices, storage and a larger monthly allowance for the built-in assistant; it is bought in Settings, Plan.
+No account is needed. Signing in is optional: "Sign in with Apple" on the first screen links the phone to the person's Mac without scanning; the Mac must approve it with a six-digit code, so it cannot complete without a Mac. An account can be deleted in the app: Settings, Plan, "Delete your account", or "Delete an Enqueue account" on the first screen.
+
+Enqueue Pro (an auto-renewable subscription, monthly) adds devices, storage and a larger monthly allowance for the built-in assistant; it is bought in Settings, Plan, which is also reachable in the sample library. The paywall shows the price, the period, how to cancel, and links to the Terms of Use (Apple's standard EULA) and the Privacy Policy; the App Store description links both too.

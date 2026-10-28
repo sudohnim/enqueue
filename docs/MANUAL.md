@@ -135,6 +135,9 @@ Markdown works as you type:
 | `> ` | a quote |
 | three backticks | a code block |
 | `**bold**`, `*italic*`, `` `code` `` | bold, italic, code |
+| `~~words~~` | struck through |
+
+A table written in markdown (`| a | b |`, then `| --- | --- |`) shows as a table, and one pasted from another app arrives as one.
 
 In a list:
 

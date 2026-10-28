@@ -1841,6 +1841,7 @@ Adding a feature worth showing means editing `cards()` and its demo, not adding 
 
 `static/js/md.js` renders a note (desktop editor, phone reader) and `htmlToMd` writes the desktop editor back; a note opened and saved with no edits must come back byte for byte, or it changes shape on its own each time it is touched.
 `tests/js/md_roundtrip.js` (run by `tests/test_md_roundtrip.py`, needs node) pins it: nested and mixed lists, empty bullets (an item, not a list break), dividers (a line of three or more dashes renders as `<hr data-dashes=N>` and is written back with the same count), ordered lists keeping their start, multi-line quotes, code fences, and blocks written with NO blank line between them - md() marks those `data-tight` and the serializer writes them back tight, so lines typed on the phone do not grow blank lines after a desktop save.
+Tables are GFM (`| a | b |` over a dash line), kept as written: the dash line rides in `data-sep`; a numbered list written `1.` on every item keeps it (`data-same`); and markdown source another tool exports, a backslash escape (`\~`), an HTML entity (`&gt;`) or a line-ending backslash, shows as what it means inside a `span.md-src` whose `data-md` holds the source, written back while its text is unchanged.
 Add a case there for every rendering bug fixed.
 
 ### The clipboard is read and written as markdown
@@ -1850,7 +1851,7 @@ Pasting used to type the text in with `insertText`: every line became its own pa
 Now one plain line is still typed at the caret, and anything with lines or a list is pasted as markdown: the note is serialized with the caret marked (U+E000), the paste is spliced in (`spliceMd`: text at the caret, a list as lines of its own at the depth of the item it lands in), and the whole editor is rendered again from that, so the screen shows exactly what a reload would.
 It goes in through `execCommand("insertHTML")` to stay one undo step, and falls back to setting the HTML when the browser's result does not serialize back to the same markdown.
 `clipTextToMd` maps other apps' bullets ("•", "◦", "1)") to markdown markers, any indent width to two spaces a level, and drops blank lines between items.
-Clipboard HTML is read only when it holds a list (a web page's list has no markers in its plain text); everything else still pastes as text, so styled HTML cannot bring in tags the serializer has no words for.
+Clipboard HTML is read only when it holds a list or a table (a web page's list has no markers in its plain text, and a table's plain text puts every cell on its own line); everything else still pastes as text, so styled HTML cannot bring in tags the serializer has no words for.
 Copying used to hand over bare `<li>` elements with no list around them and plain text with no markers: items now get their `<ul>`/`<ol>` back (a numbered one keeps its number), and the plain text is markdown whenever the selection holds a list.
 A page that pastes must define `esc` (md() needs it): the home has it in `util.js`, `capture.html` and `mobile.html` define their own.
 `tests/js/clip.js` pins the text side; the DOM side needs a browser.

@@ -70,7 +70,21 @@
           1) +
         "\x00",
     );
-    t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+    // Inline code is held (\x01) so the escape and table rules never reach inside.
+    const spans = [];
+    const hold = (h) => "\x01" + (spans.push(h) - 1) + "\x01";
+    t = t.replace(/`([^`\n]+)`/g, (m, code) => hold("<code>" + code + "</code>"));
+    // Escapes, entities and hard breaks show as meant; data-md keeps the source.
+    const source = (src, shown) =>
+      hold('<span class="md-src" data-md="' + src + '" data-shown="' + shown + '">' + shown + "</span>");
+    t = t.replace(/\\(&(?:lt|gt|amp|quot|#39);|[!-/:-@[-`{-~])/g, (m, ch) => source(m, ch));
+    t = t.replace(/&amp;(#\d{1,6}|gt|lt|amp|quot|apos|nbsp);/g, (m, name) => {
+      const shown =
+        { gt: "&gt;", lt: "&lt;", amp: "&amp;", quot: "&quot;", apos: "&#39;", nbsp: "&#160;" }[name] ||
+        esc(String.fromCodePoint(Math.min(+name.slice(1), 0x10ffff)));
+      return source(m, shown);
+    });
+    t = t.replace(/\\$/gm, (m) => source(m, ""));
     // Images come before links: `![alt](src)` contains a `[...](...)`, so the link
     // rule would eat it otherwise. Only same-origin blob paths (/artifacts/{id}/blob,
     // what the paste handler writes) and data: images are allowed as a src - never an
@@ -86,6 +100,7 @@
     );
     t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+    t = t.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
     t = autolink(t);
 
     const out = [];
@@ -139,12 +154,16 @@
         const item = { content: it.content };
         list.items.push(item);
         if (list.items.length === 1 && it.number && it.number !== 1) list.start = it.number;
+        // "1." on every item (Notion's way) is kept, not renumbered on save.
+        if (list.items.length === 1) list.same = it.number;
+        else if (list.same !== it.number) list.same = 0;
       }
       const renderList = (list, top) => {
         let h =
           "<" +
           list.tag +
           (list.start ? ' start="' + list.start + '"' : "") +
+          (list.tag === "ol" && list.same && list.items.length > 1 ? " data-same" : "") +
           (top ? listTight : "") +
           ">";
         for (const it of list.items) {
@@ -158,6 +177,27 @@
       };
       root.lists.forEach((list, i) => out.push(renderList(list, i === 0)));
       items.length = 0;
+    };
+    // GFM tables; data-sep keeps the dash line so the table writes back unchanged.
+    const TABLE_ROW = /^\|.*\|$/;
+    const TABLE_SEP = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+    const cells = (row) => row.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+    const table = (head, sep, rows, tightAttr) => {
+      const aligns = cells(sep).map((c) =>
+        /^:-+:$/.test(c) ? "center" : /-:$/.test(c) ? "right" : /^:-/.test(c) ? "left" : "",
+      );
+      const cell = (tag, c, i) =>
+        "<" + tag + (aligns[i] ? ' style="text-align:' + aligns[i] + '"' : "") + ">" + (c || "<br>") + "</" + tag + ">";
+      const n = cells(head).length;
+      const row = (r, tag) => {
+        const cs = cells(r);
+        while (cs.length < n) cs.push("");
+        return "<tr>" + cs.slice(0, n).map((c, i) => cell(tag, c, i)).join("") + "</tr>";
+      };
+      return (
+        '<table data-sep="' + sep + '"' + tightAttr + "><thead>" + row(head, "th") + "</thead><tbody>" +
+        rows.map((r) => row(r, "td")).join("") + "</tbody></table>"
+      );
     };
     const rawLines = t.split("\n");
     const LIST_ITEM = /^\s*(?:[-*+]|\d+\.)(?:\s|$)/;
@@ -189,6 +229,15 @@
       // editor never holds one (it shows one tab at a time); anywhere else - the phone's
       // reader, a draft compared - the tab's name stands as a small label over it.
       const tabMark = line.match(/^&lt;!--\s*tab:\s*(.*?)\s*--&gt;$/);
+      if (TABLE_ROW.test(line) && at + 1 < rawLines.length && TABLE_SEP.test(rawLines[at + 1].trim())) {
+        flushList();
+        let end = at + 2;
+        while (end < rawLines.length && TABLE_ROW.test(rawLines[end].trim())) end++;
+        out.push(table(line, rawLines[at + 1].trim(), rawLines.slice(at + 2, end), tight()));
+        prevBlank = false;
+        at = end - 1;
+        continue;
+      }
       if (tabMark) {
         flushList();
         out.push(
@@ -232,7 +281,10 @@
     }
     flushList();
     flushQuote();
-    return out.join("").replace(/\x00(\d+)\x00/g, (m, i) => held[+i]);
+    return out
+      .join("")
+      .replace(/\x00(\d+)\x00/g, (m, i) => held[+i])
+      .replace(/\x01(\d+)\x01/g, (m, i) => spans[+i]);
   }
 
   // The wall preview must be a plain, clamped snippet. Rendered markdown brings
@@ -245,6 +297,9 @@
     // one after another, without the comment that starts each.
     t = t.replace(/^[^\S\n]*<!--\s*tab:.*?-->[^\S\n]*$/gm, "");
     t = t.replace(/```[\s\S]*?```/g, " ");
+    // A table reads as its cells; the dash line under the header goes.
+    t = t.replace(/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/gm, "");
+    t = t.replace(/^\|(.*)\|$/gm, (m, row) => row.split("|").map((c) => c.trim()).join(" · "));
     t = t.replace(/`([^`\n]+)`/g, "$1");
     // An embedded image reduces to its alt text (usually empty) in a text preview -
     // stripped before the link rule so its leading "!" never leaks into the snippet.
@@ -284,13 +339,27 @@
   // handling, which is what keeps this tractable: the editor and the parser are two
   // halves of one contract rather than a general HTML converter.
   function htmlToMd(root) {
-    const inline = (node) => {
-      if (node.nodeType === 3) return node.nodeValue;
+    const textOf = (n) => (n.nodeType === 3 ? n.nodeValue : (n.childNodes ? [...n.childNodes].map(textOf).join("") : ""));
+    const elems = (n, tags) =>
+      [...n.childNodes].flatMap((c) => (c.nodeType !== 1 ? [] : tags.includes(c.tagName) ? [c] : elems(c, tags)));
+    // `cell`: inside a table cell, where a pipe or a line break would end it.
+    const inline = (node, cell) => {
+      if (node.nodeType === 3) return cell ? node.nodeValue.replace(/\|/g, "\\|") : node.nodeValue;
       if (node.nodeType !== 1) return "";
-      const kids = [...node.childNodes].map(inline).join("");
+      const kids = [...node.childNodes].map((n) => inline(n, cell)).join("");
+      if (/(^|\s)md-src(\s|$)/.test(node.getAttribute("class") || "")) {
+        // Source md() kept, written back while its text is unchanged.
+        const shown = node.getAttribute("data-shown") || "";
+        return textOf(node).replace(/\u200b/g, "") === shown ? node.getAttribute("data-md") || "" : kids;
+      }
+      if (cell && /^(P|DIV|LI|H[1-6])$/.test(node.tagName)) return kids.trim() + " ";
       switch (node.tagName) {
+        case "DEL":
+        case "S":
+        case "STRIKE":
+          return kids.trim() ? "~~" + kids + "~~" : "";
         case "BR":
-          return "\n";
+          return cell ? " " : "\n";
         case "STRONG":
         case "B":
           return kids.trim() ? "**" + kids + "**" : "";
@@ -346,11 +415,12 @@
           else parts.push(cc);
         }
         const text = parts
-          .map(inline)
+          .map((n) => inline(n))
           .join("")
           .replace(/\u00a0/g, " ")
           .trim();
-        out.push((pad + (ordered ? n++ + ". " : "- ") + text).trimEnd());
+        out.push((pad + (ordered ? n + ". " : "- ") + text).trimEnd());
+        if (!node.hasAttribute("data-same")) n++;
         for (const sub of nested) out.push(...listToMd(sub, depth + 1));
       }
       return out;
@@ -401,6 +471,22 @@
         case "HR":
           lines.push("-".repeat(Math.max(3, +node.getAttribute("data-dashes") || 3)), "");
           break;
+        case "TABLE": {
+          // The first row is the header.
+          const rows = elems(node, ["TR"]).map((tr) =>
+            elems(tr, ["TD", "TH"])
+              .map((c) => inline(c, true).replace(/\u200b/g, "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()),
+          );
+          if (!rows.length) break;
+          const n = Math.max(...rows.map((r) => r.length));
+          const line = (r) => "| " + [...r, ...Array(n - r.length).fill("")].join(" | ") + " |";
+          const sep = node.getAttribute("data-sep") || "";
+          const kept = sep && sep.replace(/^\||\|$/g, "").split("|").length === n;
+          lines.push(line(rows[0]), kept ? sep : "|" + " --- |".repeat(n));
+          for (const r of rows.slice(1)) lines.push(line(r));
+          lines.push("");
+          break;
+        }
         case "BLOCKQUOTE":
           // One quote, one "> " line per line of it.
           for (const l of inline(node).trim().split("\n")) lines.push(("> " + l).trimEnd());
@@ -498,10 +584,10 @@
   // (a Google Docs <b>, nested <div>s) are opened up until the blocks htmlToMd()
   // knows are at the top.
   function clipHtmlToMd(html) {
-    if (!html || !/<li[\s>]/i.test(html) || typeof DOMParser === "undefined") return null;
+    if (!html || !/<(li|table)[\s>]/i.test(html) || typeof DOMParser === "undefined") return null;
     const doc = new DOMParser().parseFromString(html, "text/html");
     const root = doc.createElement("div");
-    const BLOCK = new Set(["UL", "OL", "H1", "H2", "H3", "PRE", "BLOCKQUOTE", "HR"]);
+    const BLOCK = new Set(["UL", "OL", "H1", "H2", "H3", "PRE", "BLOCKQUOTE", "HR", "TABLE"]);
     const SKIP = new Set(["META", "STYLE", "SCRIPT", "TITLE", "LINK", "HEAD"]);
     const holdsBlocks = (el) =>
       !!el.querySelector("ul,ol,p,div,h1,h2,h3,h4,h5,h6,pre,blockquote,hr,table");

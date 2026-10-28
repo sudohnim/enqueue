@@ -85,6 +85,12 @@ const roundTrip = (text) => htmlToMd(parse(md(text)));
 // ---- cases: each must come back exactly as written ----------------------------
 const exact = {
   // A tab's marker (js/tabs.js) comes back as written, between the tabs' text.
+  "a table": "| **Metric** | **Value** |\n| --- | --- |\n| Debt | $18.8T |\n| Rate | 13% |",
+  "an aligned table under a line": "Data:\n| a | b |\n|:--|--:|\n| 1 | 2 |",
+  "a pipe escaped in a cell": "| a | b |\n| --- | --- |\n| x \\| y | z |",
+  "escapes, entities and a hard break": "about \\~14% and &gt;$1T\n\n\\\n**bold**",
+  "struck words": "~~75% (~~$450B+)",
+  "a numbered list of ones": "1. a\n1. b\n1. c",
   "tab markers": "# Trip\n\n<!-- tab: Steps -->\n\n- book hotels\n\n<!-- tab: The prompt -->\n\nGOAL: rest",
   "nested bullets": "- a\n  - b\n    - c\n- d",
   "a trip plan": "- 24 - Th\n  - depart EWR at 11\n- 25 - Fr\n  - arrive 11am\n  - find drag show?",
@@ -156,6 +162,9 @@ const t2 = mdText("# Trip\n\nPack light", "Trip");
 if (t2 !== "Pack light") fail("a preview drops the title heading", "", t2);
 const t3 = mdText("Pack light", "Trip");
 if (t3 !== "Pack light") fail("a preview keeps a first line that is not the title", "", t3);
-const total = Object.keys(exact).length + Object.keys(normalised).length + 4;
+// A table's preview reads as its cells.
+const tp = mdText("| a | b |\n| --- | --- |\n| 1 | 2 |");
+if (tp !== "a · b\n\n1 · 2") fail("a table preview reads as cells", "", tp);
+const total = Object.keys(exact).length + Object.keys(normalised).length + 5;
 console.log(`${total - failed}/${total} markdown round trips hold`);
 process.exit(failed ? 1 : 0);

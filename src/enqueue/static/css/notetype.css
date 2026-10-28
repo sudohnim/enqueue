@@ -197,3 +197,36 @@
 .notetype > .md-tab:first-child {
   margin-top: 0;
 }
+/* A table: hairline rows on the ground, a quiet header, sideways scroll when wide. */
+:is(.notetype, .md) table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: var(--sp-4) 0 0;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: normal;
+}
+:is(.notetype, .md) th,
+:is(.notetype, .md) td {
+  padding: 8px 14px 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: top;
+  min-width: 96px;
+}
+:is(.notetype, .md) th {
+  border-bottom-color: var(--line);
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+:is(.notetype, .md) th strong {
+  font-weight: inherit;
+}
+:is(.notetype, .md) tr:last-child td {
+  border-bottom: 0;
+}
+:is(.notetype, .md) del {
+  color: var(--text-mute);
+}
