@@ -263,33 +263,16 @@ class TestBackendUrlDerivation:
         assert provider.base_url == config.BACKENDS["opencode-go"]["url"]
         assert "127.0.0.1" not in provider.base_url
 
-    def test_custom_uses_the_stored_url(self, monkeypatch):
+    def test_local_only_reaches_no_model(self, monkeypatch):
+        from enqueue.providers.base import LocalOnly
+
         monkeypatch.setattr(
             settings,
             "get",
-            lambda name: {
-                "llm_backend": "custom",
-                "llm_model": "some-model",
-                "llm_url": "https://myhost.example/v1",
-            }.get(name),
+            lambda name: {"llm_backend": "opencode-go", "llm_model": "kimi-k3"}.get(name),
         )
-
-        provider = get_provider()
-        assert provider.base_url == "https://myhost.example/v1"
-
-    def test_local_only_always_routes_to_ollama(self, monkeypatch):
-        monkeypatch.setattr(
-            settings,
-            "get",
-            lambda name: {
-                "llm_backend": "opencode-go",
-                "llm_model": "kimi-k3",
-                "llm_url": "https://myhost.example/v1",
-            }.get(name),
-        )
-
-        provider = get_provider(local_only=True)
-        assert provider.base_url == config.BACKENDS["ollama"]["url"]
+        with pytest.raises(LocalOnly):
+            get_provider(local_only=True)
 
     def test_vision_provider_derives_the_url_the_same_way(self, monkeypatch):
         monkeypatch.setattr(

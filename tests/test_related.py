@@ -6,7 +6,7 @@ import pytest
 
 from enqueue import db
 from enqueue.ingest import related
-from enqueue.retrieve import candidates as cand
+from enqueue.providers.base import model_for
 
 SHARED = "Structures last by yielding under stress rather than resisting it."
 
@@ -34,7 +34,7 @@ def _note(aid: str, statement: str, model: str | None = None, level: int = 1) ->
         conn.execute(
             "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
             " VALUES (?, ?, ?, ?, ?, 0.5)",
-            (f"f-{aid}", aid, level, statement, model or cand._get_model(False)),
+            (f"f-{aid}", aid, level, statement, model or model_for("ingest")),
         )
 
 
@@ -135,7 +135,7 @@ def _entity(aid: str, name: str, model: str | None = None) -> None:
         conn.execute(
             "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
             " VALUES (?, ?, ?, 'a fact', ?, 0.5)",
-            (f"e-{aid}-{name}", aid, name, model or cand._get_model(False)),
+            (f"e-{aid}-{name}", aid, name, model or model_for("ingest")),
         )
 
 
@@ -236,7 +236,7 @@ def _mention(aid: str, name: str) -> None:
         conn.execute(
             "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
             " VALUES (?, ?, ?, 'A fact.', ?, 0.5)",
-            (f"e-{aid}-{name}", aid, name, cand._get_model(False)),
+            (f"e-{aid}-{name}", aid, name, model_for("ingest")),
         )
 
 
@@ -300,10 +300,10 @@ def idea_pair(sqlite_store, monkeypatch):
             conn.execute(
                 "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
                 " VALUES (?, ?, 3, ?, ?, 0.5)",
-                (f"idea-{aid}", aid, IDEA, cand._get_model(False)),
+                (f"idea-{aid}", aid, IDEA, model_for("ingest")),
             )
     sqlite_store.upsert_facets()
-    model = cand._get_model(False)
+    model = model_for("ingest")
 
     def use(judge):
         from enqueue.providers import base
@@ -373,7 +373,7 @@ def test_a_changed_subject_asks_again(idea_pair):
     assert len(judge.calls) == 2
 
 
-def test_a_private_pair_only_goes_to_the_local_model(idea_pair, monkeypatch):
+def test_a_private_pair_is_settled_without_a_model(idea_pair, monkeypatch):
     from enqueue.providers import base
 
     asked = []
@@ -381,8 +381,7 @@ def test_a_private_pair_only_goes_to_the_local_model(idea_pair, monkeypatch):
     judge = idea_pair(_Judge())
 
     def provider(local_only=False, **kwargs):
-        if kwargs.get("role") == "ingest":
-            asked.append(local_only)
+        asked.append(local_only)
         return judge
 
     monkeypatch.setattr(base, "get_provider", provider)
@@ -391,7 +390,8 @@ def test_a_private_pair_only_goes_to_the_local_model(idea_pair, monkeypatch):
 
     related.compute("prince", judge=True)
 
-    assert asked == [True]
+    assert asked == []
+    assert "war" not in _links("prince")
 
 
 # ---- the judge worker: one artifact at a time, inside a daily budget -----------------

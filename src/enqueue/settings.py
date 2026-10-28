@@ -75,7 +75,7 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # The vision model used to describe images at ingest (K.11). Separate from
     # the text model: most backends answer text and images with different models.
     "vision_model": ("ENQ_VISION_MODEL", config.VISION_MODEL, True),
-    "llm_url": ("ENQ_OLLAMA_URL", config.OLLAMA_URL, True),
+    "llm_url": ("ENQ_LLM_URL", "", True),
     # The relay the sync client pushes to and pulls from (SYNC.3). Empty means
     # sync is not configured. Plaintext on purpose: the relay URL is not a secret.
     "sync_relay_url": ("ENQ_SYNC_RELAY_URL", "", True),
@@ -139,11 +139,25 @@ _PROVIDER_FIELDS = {"llm_backend", "llm_model", "summarize_model", "llm_url", "l
 WRITABLE = {name for name, (_, _, may_write) in FIELDS.items() if may_write}
 
 
+# The local model is gone: a library set up on it starts on the included assistant.
+_OLLAMA_ERA = (
+    "llm_backend",
+    "llm_model",
+    "summarize_model",
+    "search_model",
+    "vision_model",
+    "llm_url",
+)
+
+
 def _stored() -> dict:
     try:
-        return json.loads(settings_path().read_text(encoding="utf-8"))
+        stored = json.loads(settings_path().read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    if stored.get("llm_backend") == "ollama":
+        stored = {k: v for k, v in stored.items() if k not in _OLLAMA_ERA}
+    return stored
 
 
 def get(name: str) -> Any:
@@ -189,7 +203,7 @@ def backends() -> list[dict]:
             "url": spec["url"],
             "local": spec["local"],
             "needs_key": bool(spec["key_var"]),
-            "key_present": bool(spec["key_var"]) and bool(key) and key != "ollama",
+            "key_present": bool(spec["key_var"]) and bool(key) and key != "no-key",
             **({"chat_models": _go_chat_models(name)} if name == "opencode-go" else {}),
             **(_included(spec) if spec.get("included") else {}),
         }
@@ -354,7 +368,7 @@ def api_key_state() -> dict:
     from . import keyring
 
     from_env = os.getenv("ENQ_LLM_API_KEY", "").strip()
-    if from_env and from_env != "ollama":
+    if from_env:
         return {
             "api_key_present": True,
             "api_key_where": "environment",

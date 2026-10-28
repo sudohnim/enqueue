@@ -657,10 +657,17 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     if found is None:
         return ""
     path, mime, _ = found
+    if row["local_only"]:
+        # No model sees a local-only picture; its own words still come from OCR.
+        body = _ocr_text(path.read_bytes())
+        if body:
+            with db.transaction() as conn:
+                conn.execute(
+                    "UPDATE artifacts SET body = ?, status = 'ok' WHERE id = ?", (body, artifact_id)
+                )
+        return body
     try:
-        text = get_vision_provider(local_only=bool(row["local_only"])).describe_image(
-            path.read_bytes(), mime
-        )
+        text = get_vision_provider().describe_image(path.read_bytes(), mime)
     except Exception:  # noqa: BLE001 - derived text; never fails the capture
         log.warning("image describe failed for %s", artifact_id)
         # The failure used to be silent: the artifact stayed 'text_only' and

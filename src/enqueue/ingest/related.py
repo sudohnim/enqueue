@@ -39,7 +39,7 @@ artifacts one at a time (`judge_next`), each one model call, and stops for the d
 first version had no ceiling, sent every note back through the whole ingest pipeline
 to make one call, and ran a weekly usage limit dry). A usage limit or outage leaves
 the artifact pending and the worker waits it out. A pair with a local-only item is
-judged by the local model only.
+settled as "no link" without a model.
 
 Each link keeps its `kind` (subject, mention, idea) and `distance`: 1 minus the closest
 subject-line similarity between the two, so how far apart their fields are. Analogies
@@ -441,7 +441,7 @@ def _judge(
 ) -> dict[str, str]:
     """Ask the ingest model about each candidate; cache and return {other id: the
     sentence for a yes, "" for a no}. A candidate the answer does not cover stays
-    unjudged (absent). A pair with a local-only item only ever goes to the local model."""
+    unjudged (absent). A pair with a local-only item is a "no" without a model call."""
     from .. import privacy
     from ..providers.base import get_provider
 
@@ -472,7 +472,14 @@ def _judge(
         batch = [c for c in candidates if (artifact_id in private or c["id"] in private) == local]
         if not batch:
             continue
-        provider = get_provider(local_only=local, role="ingest")
+        if local:
+            # No model reads a local-only item: its pairs are settled as "no link".
+            for c in batch:
+                out[c["id"]] = ""
+                _verdict_write(conn, keys[c["id"]], model, "")
+            conn.commit()
+            continue
+        provider = get_provider(role="ingest")
         blocks = [
             f"candidate id: {c['id']}\n{face(c['id'])}\n"
             f"line from the item: {c['mine']}\nline from this candidate: {c['theirs']}"

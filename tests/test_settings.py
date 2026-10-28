@@ -57,7 +57,7 @@ class TestTheKeyNeverTouchesDisk:
         by_name = {b["name"]: b for b in settings.backends()}
         assert by_name["openrouter"]["key_present"] is True
         assert by_name["opencode-go"]["key_present"] is True
-        assert by_name["ollama"]["key_present"] is False  # needs no key
+        assert "ollama" not in by_name  # there is no model on this Mac
 
     def test_backends_with_no_key_report_absent(self, store, monkeypatch):
         monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)

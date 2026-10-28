@@ -1,8 +1,8 @@
 """What may be sent to which model.
 
 Marking an artifact local-only is a promise that its text never leaves the machine
-(AGENTS.md, Provider layer). Ingest keeps it by routing a local-only artifact to the
-local model (`get_provider(local_only=True)`). Every other call that puts artifact text
+(AGENTS.md, Provider layer). Ingest keeps it by reading no local-only artifact with a
+model (`get_provider(local_only=True)` raises LocalOnly). Every other call that puts artifact text
 in a prompt - chat answers, the gray-zone judge, model re-ranking, attribute
 extraction - reads several artifacts at once with one model, so it filters instead:
 `shareable` drops local-only artifacts from what a remote model is shown.

@@ -305,13 +305,13 @@ async function renderSettingsAI() {
 						"this Mac stays here."
 					: "<b>Sign in under Sync first.</b> It comes with Enqueue sync, no key needed.") +
 				"</div>"
-			: picked && !picked.local
+			: picked
 			? '<div class="aside caution">Online: when you ask something, the notes it needs are sent to ' +
 				esc(picked.label) +
 				". Anything you marked as only on this Mac stays here." +
 				(picked.needs_key && !picked.key_present ? " <b>Add your account key below.</b>" : "") +
 				"</div>"
-			: '<div class="aside">On this Mac. Private: nothing leaves your computer.</div>') +
+			: "") +
 		"</div>";
 	if (chosen.value === "custom") {
 		const f = d.settings.llm_url;
@@ -561,7 +561,7 @@ function includedModelsGroup(d, picked) {
 
 function modelsGroup(d, picked) {
 	if (picked && picked.included) return includedModelsGroup(d, picked);
-	const listed = picked && !picked.local && picked.name !== "ollama";
+	const listed = !!picked;
 	const unsupported = (picked && picked.chat_models && picked.chat_models.unsupported_shape) || [];
 	const chatModel = (d.settings.llm_model && d.settings.llm_model.value) || "";
 	let html = '<div class="shelf">Which AI does each job</div><div class="group">';
@@ -689,8 +689,7 @@ function stageModel(name, value) {
 async function stageBackend(name) {
 	stageSetting("llm_backend", name);
 	if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
-	// The images model belongs to a service too: Ollama's llava left behind on OpenRouter
-	// never described a picture. Each service starts on a model of its own that reads them.
+	// The images model belongs to a service too: each starts on one of its own that reads them.
 	if (VISION_MODELS[name]) stageSetting("vision_model", VISION_MODELS[name]);
 	if (name === "enqueue") {
 		// One model for every job to start with; the dropdowns change any of them.
@@ -2181,7 +2180,6 @@ async function confirmResetSync() {
 
 const BACKEND_MODELS = {
 	enqueue: "anthropic/claude-haiku-5.5",
-	ollama: "llama3.1:8b",
 	openrouter: "google/gemini-3.8-flash",
 	"opencode-go": "kimi-k3",
 };
@@ -2189,7 +2187,6 @@ const BACKEND_MODELS = {
 // The images model each service starts on (it must read pictures). OpenCode Go does not
 // say which of its models do, so it keeps what was set.
 const VISION_MODELS = {
-	ollama: "llava",
 	openrouter: "google/gemini-3.8-flash",
 };
 

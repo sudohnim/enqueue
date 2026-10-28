@@ -1,7 +1,7 @@
 """The answer worker: compute submitted answers into their pending turns.
 
 Hard rule, mirrored from the ingest queue: a submitted question returns before
-the model runs, always. Asking must never wait on the local model grinding for
+the model runs, always. Asking must never wait on a model grinding for
 twenty seconds with a browser holding the connection open - the shape that made
 an answer die the moment the person navigated away. So submitting writes a
 pending turn and hands the work to this worker; the answer is computed here,
@@ -9,7 +9,7 @@ off the request thread, and written into the stored message, which is the only
 place an answer lives (Rule 1: the work outlives the page).
 
 One worker thread, not a pool, for the same reason the ingest queue is one: the
-single local model serialises the work anyway, and concurrency would only add a
+provider's rate limit serialises the work anyway, and concurrency would only add a
 class of bug. The queue is in memory. If the engine dies with work outstanding,
 that work is orphaned by definition - no worker will ever finish it - so startup
 sweeps every row still pending to `failed` (`sweep_orphaned_pending`). Rule 2: a

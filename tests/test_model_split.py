@@ -4,6 +4,7 @@ gray-zone judge reading facets, and model-reported confidence stored as facet tr
 """
 
 from __future__ import annotations
+import pytest
 
 from enqueue import db, notes, settings
 from enqueue.ingest import facets as facets_mod
@@ -14,7 +15,7 @@ from enqueue.providers import base as provider_base
 def test_summarize_provider_splits_from_the_interactive_model(store, monkeypatch):
     """summarize=True uses summarize_model when set, and falls back to llm_model when
     not - so a single-model setup is unchanged and a split setup routes each path."""
-    settings.update({"llm_backend": "ollama", "llm_model": "chat-model", "summarize_model": ""})
+    settings.update({"llm_backend": "openrouter", "llm_model": "chat-model", "summarize_model": ""})
     assert provider_base.get_provider(summarize=True).model == "chat-model"
 
     settings.update({"summarize_model": "summary-model"})
@@ -26,7 +27,9 @@ def test_facets_stay_valid_when_only_the_interactive_model_changes(store, quiet_
     """The staleness fix: a facet is stale only when the SUMMARY model that would
     rewrite it changes - not when the chat/judge model swaps. Switching llm_model
     (e.g. to a fast judge model) must not silently void every facet in search."""
-    settings.update({"llm_backend": "ollama", "llm_model": "summary-model", "summarize_model": ""})
+    settings.update(
+        {"llm_backend": "openrouter", "llm_model": "summary-model", "summarize_model": ""}
+    )
 
     class _Prov:
         model = "summary-model"
@@ -72,7 +75,7 @@ def test_facets_stay_valid_when_only_the_interactive_model_changes(store, quiet_
 def test_confidence_is_stored_as_trust(store, quiet_queue, monkeypatch):
     """The live-trust change: the model's per-facet confidence lands in the trust
     column, so a speculative facet no longer weighs the same as a solid one."""
-    settings.update({"llm_backend": "ollama", "llm_model": "m", "summarize_model": ""})
+    settings.update({"llm_backend": "openrouter", "llm_model": "m", "summarize_model": ""})
 
     class _Prov:
         model = "m"
@@ -151,7 +154,7 @@ def test_gray_zone_judge_is_given_the_facets(store, quiet_queue, monkeypatch):
 def test_each_role_reads_its_own_model_and_falls_back_to_chat(store):
     """chat/ingest/search each resolve their own setting; blank ingest/search use chat."""
     settings.update(
-        {"llm_backend": "ollama", "llm_model": "glm", "summarize_model": "", "search_model": ""}
+        {"llm_backend": "openrouter", "llm_model": "glm", "summarize_model": "", "search_model": ""}
     )
     assert [provider_base.model_for(r) for r in ("chat", "ingest", "search")] == ["glm"] * 3
 
@@ -162,13 +165,20 @@ def test_each_role_reads_its_own_model_and_falls_back_to_chat(store):
     assert provider_base.get_provider(role="search").model == "fast"
 
 
-def test_local_only_ignores_every_role(store):
-    """A local-only artifact stays on the local model whatever the roles say."""
-    from enqueue import config
-
+def test_local_only_reaches_no_model_in_any_role(store):
+    """A local-only artifact is never sent to a model, whatever the roles say."""
     settings.update({"llm_model": "glm", "summarize_model": "kimi", "search_model": "fast"})
     for role in ("chat", "ingest", "search"):
-        assert provider_base.get_provider(local_only=True, role=role).model == config.LLM_MODEL
+        with pytest.raises(provider_base.LocalOnly):
+            provider_base.get_provider(local_only=True, role=role)
+
+
+def test_a_library_set_up_on_the_local_model_starts_on_the_included_one(store):
+    from enqueue import config
+
+    settings.update({"llm_backend": "ollama", "llm_model": "llama3.1:8b"})
+    assert settings.get("llm_backend") == config.LLM_BACKEND == "enqueue"
+    assert settings.get("llm_model") == config.LLM_MODEL
 
 
 def test_gray_zone_judge_uses_the_search_model(store, monkeypatch):

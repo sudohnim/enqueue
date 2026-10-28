@@ -43,24 +43,11 @@ EMBED_KEEP_ABOVE = EMBED_MODELS[EMBED_MODEL]["keep_above"]
 EMBED_DROP_BELOW = EMBED_MODELS[EMBED_MODEL]["drop_below"]
 EMBED_MAX_TOKENS = 512  # the shortest a candidate reads; more is silently dropped
 
-# 127.0.0.1, never localhost. This machine runs a second Ollama in Docker bound to
-# the IPv6 wildcard, and localhost resolves to IPv6 first. See AGENTS.md, "127.0.0.1, not localhost".
-OLLAMA_URL = os.getenv("ENQ_OLLAMA_URL", "http://127.0.0.1:11434/v1")
-
 # Named endpoints, so switching backend is a choice rather than a URL to remember.
 # Everything here speaks the OpenAI-compatible protocol, which is the only reason one
-# adapter covers all of them.
-#
-# Anything other than `ollama` sends the text of your artifacts to somebody else's
-# computer. That is a real change in what this product is, so it is a deliberate
-# selection and never a default, and `local_only` artifacts never take this path.
+# adapter covers all of them. Every one is somebody else's computer, so `local_only`
+# artifacts never reach any of them (providers.base.LocalOnly).
 BACKENDS = {
-    "ollama": {
-        "label": "This Mac (Ollama)",
-        "url": "http://127.0.0.1:11434/v1",
-        "local": True,
-        "key_var": None,
-    },
     "openrouter": {
         "label": "OpenRouter",
         "url": "https://openrouter.ai/api/v1",
@@ -123,25 +110,12 @@ GO_UNSUPPORTED_SHAPE_MODELS = frozenset(
 
 GO_CHAT_COMPLETIONS_EXAMPLES = "glm-5.2, kimi-k3, deepseek-v4-pro, mimo-v2.5, hy3"
 
-LLM_BACKEND = os.getenv("ENQ_LLM_BACKEND", "ollama")
-
-# llama3.1:8b because it is already pulled. It is a placeholder and it is bad at this:
-# measured, three of four rerank judgments fail their validators. That is accepted for
-# now. A real model gets pointed at when the POC is actually being judged.
-#
-# Nothing about swapping it is a code change. The adapter speaks the OpenAI-compatible
-# protocol, so any endpoint that does too, including a hosted GLM, is these three
-# variables:
-#
-#   ENQ_OLLAMA_URL=https://host/v1  ENQ_LLM_MODEL=glm-5.2  ENQ_LLM_API_KEY=...
-LLM_MODEL = os.getenv("ENQ_LLM_MODEL", "llama3.1:8b")
-
-# The vision model used to describe images at ingest (K.11). Distinct from the
-# text model: most backends answer text with one model and images with another
-# (Ollama: llava or moondream; a hosted endpoint: an OpenRouter vision model).
-# When the configured backend has no such model, the describe step degrades
-# gracefully and the image stays unsearchable rather than failing the capture.
-VISION_MODEL = os.getenv("ENQ_VISION_MODEL", "llava")
+# A new library starts on the assistant included with Enqueue (the free plan's cheap
+# models through the relay; included_ai.py), which needs no key of its own.
+LLM_BACKEND = os.getenv("ENQ_LLM_BACKEND", "enqueue")
+LLM_MODEL = os.getenv("ENQ_LLM_MODEL", "anthropic/claude-haiku-5.5")
+# The model that describes images at ingest (K.11); the default reads pictures.
+VISION_MODEL = os.getenv("ENQ_VISION_MODEL", "anthropic/claude-haiku-5.5")
 
 
 def llm_api_key(base_url: str | None = None) -> str:
@@ -151,8 +125,8 @@ def llm_api_key(base_url: str | None = None) -> str:
     Mac's own Enqueue sync device token, never a key the person pasted, and only while
     the Mac is signed in (the relay answers 401 otherwise, which says to sign in).
 
-    Order: the environment, then the macOS Keychain, then a placeholder that Ollama
-    ignores. It is a function because the Keychain can change while the engine is
+    Order: the environment, then the macOS Keychain, then a placeholder the service
+    refuses. It is a function because the Keychain can change while the engine is
     running - someone sets a key in Settings and expects the next question to work
     without restarting anything.
     """
@@ -167,7 +141,7 @@ def llm_api_key(base_url: str | None = None) -> str:
 
     from . import keyring
 
-    return keyring.get() or "ollama"
+    return keyring.get() or "no-key"
 
 
 # Total attempts handed to instructor's `max_retries` (NOT retries-after-first - that

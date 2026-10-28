@@ -14,7 +14,7 @@ import ipaddress
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from . import backup, db, settings
+from . import config, backup, db, settings
 
 DONE, TODO, WARN = "done", "todo", "warn"
 
@@ -27,7 +27,7 @@ def _backend() -> dict:
     for b in settings.backends():
         if b["name"] == name:
             return b
-    return {"name": name, "label": str(name), "local": True, "needs_key": False}
+    return next(b for b in settings.backends() if b["name"] == config.LLM_BACKEND)
 
 
 def _models() -> dict[str, str]:
@@ -69,12 +69,6 @@ def _days_since(stamp: str | None) -> float | None:
 
 def _model_step(backend: dict, models: dict) -> dict:
     step = {"id": "model", "tab": "ai", "guide": "answers", "title": "Connect an assistant"}
-    if backend.get("local"):
-        return step | {
-            "state": DONE,
-            "title": "Assistant connected",
-            "detail": "On this Mac",
-        }
     if backend.get("included"):
         if not backend.get("signed_in"):
             return step | {
@@ -197,7 +191,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             " its own.",
         )
 
-    if pause.key_refused() and not backend.get("local"):
+    if pause.key_refused():
         say(
             "key-refused",
             WARN,
@@ -205,24 +199,6 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "api-key",
             "The online assistant turned down your key, so nothing is being read or"
             " answered. Paste a new one under Your key.",
-        )
-
-    key = settings.api_key_state()
-    if backend.get("local") and key["api_key_present"] and key["api_key_where"] == "keychain":
-        say(
-            "key-unused",
-            "note",
-            "ai",
-            "api-key",
-            "A key is saved, but the assistant on this Mac doesn't use it.",
-        )
-    if backend.get("local") and str(settings.get("llm_headers") or "").strip():
-        say(
-            "headers-unused",
-            "note",
-            "ai",
-            "answers",
-            "Settings for an online assistant are saved, but the one on this Mac doesn't use them.",
         )
 
     if backend["name"] in ("opencode-go", "openrouter"):
@@ -329,7 +305,7 @@ def status() -> dict:
         # What the eye may be told about this installation. Nothing secret.
         "facts": {
             "answers_come_from": backend["label"],
-            "answers_leave_this_mac": not backend.get("local"),
+            "answers_leave_this_mac": True,
             "api_key_stored": settings.api_key_state()["api_key_present"],
             "models": models,
             "backup_folder_chosen": backup.configured_dir() is not None,

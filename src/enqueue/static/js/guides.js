@@ -25,21 +25,20 @@ const Guides = (() => {
       title: "Where answers come from",
       voice: "Someone has to do the reading.",
       what:
-        "The model that reads what you save and answers when you ask. It can run on this Mac, or be a service you hold a key for.",
+        "The model that reads what you save and answers when you ask: the one included with Enqueue, or a service you hold a key for.",
       need:
         "Saving and searching by your own words work with no model at all. Summaries, finding things by what they mean, and asking questions need one.",
       steps: [
-        "Choose a service under Answers come from.",
-        "For an online assistant, paste its key into Your account key.",
+        "Choose a service under Answers come from. Included with Enqueue needs you signed in under Sync.",
+        "For a service of your own, paste its key into Your account key.",
         "Pick a model under Models, then press Save.",
       ],
       know: [
-        "On this Mac means Ollama: nothing you save leaves the machine, and it needs Ollama running.",
-        "With a service, the text it reads is sent to that service. Anything you marked local only never is.",
+        "The text it reads is sent to that service (through Enqueue, for the included one, which keeps none of it). Anything you marked local only never is, and no model reads it.",
       ],
       also: ["models", "api-key", "concepts"],
       words:
-        "model ai backend provider service ollama openrouter opencode connect connection llm privacy private leave machine local remote cloud who reads sent where",
+        "model ai backend provider service included free openrouter opencode connect connection llm privacy private leave machine local remote cloud who reads sent where",
     },
     {
       id: "models",
@@ -54,14 +53,14 @@ const Guides = (() => {
         "Set Chat to the model you want answers from.",
         "Optional: a stronger model for summaries makes search better, at the cost of a slower save.",
         "Optional: a fast, cheap model for Search. It runs on every search.",
-        "Images needs a model that can see, such as llava on Ollama.",
+        "Images needs a model that can see; the included ones all can.",
       ],
       know: [
         "Changing the model for summaries makes the ones you have count as old. They are rewritten in the background, a few at a time.",
       ],
       also: ["answers", "concepts"],
       words:
-        "model models chat ingestion ingest search images vision llava summarize summary which model faster cheaper stronger describe pictures photos role",
+        "model models chat ingestion ingest search images vision summarize summary which model faster cheaper stronger describe pictures photos role",
     },
     {
       id: "api-key",
@@ -70,7 +69,7 @@ const Guides = (() => {
       voice: "A key I keep, and never read aloud.",
       what:
         "The password a model service gives you so it knows the calls are yours. Enqueue keeps it in the macOS Keychain, not in any file.",
-      need: "Only when answers come from a service. A model on this Mac needs no key.",
+      need: "Only for a service of your own. The assistant included with Enqueue needs no key.",
       steps: [
         "Get a key from the service you chose (on their site, often under API keys).",
         "Paste it into Your account key and press Save beside it.",

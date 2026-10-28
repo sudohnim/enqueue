@@ -275,9 +275,12 @@ OFF = "off"
 
 
 def summary_off(conn, artifact_id: str) -> bool:
+    """Switched off, or local-only: no model ever reads a local-only artifact."""
     return bool(
         conn.execute(
-            "SELECT 1 FROM facet_skips WHERE artifact_id = ? AND reason = ?", (artifact_id, OFF)
+            "SELECT 1 FROM facet_skips WHERE artifact_id = ? AND reason = ?"
+            " UNION SELECT 1 FROM artifacts WHERE id = ? AND local_only = 1",
+            (artifact_id, OFF, artifact_id),
         ).fetchone()
     )
 

@@ -18,8 +18,8 @@ pair has another idea link. The same day always gives the same set.
 The words come from one call to the chat model per set, cached in `derived_values`
 (scope `shiny`): the shared idea, how each note shows it, and a question to take
 further. The call runs in the background; until it lands, or with no model, the card
-shows the judge's own sentence for the link. A set with a local-only note goes to the
-local model only. The model is shown titles and summary lines, never the notes' text.
+shows the judge's own sentence for the link. A set with a local-only note keeps that
+sentence: no model reads it. The model is shown titles and summary lines, never the notes' text.
 """
 
 from __future__ import annotations

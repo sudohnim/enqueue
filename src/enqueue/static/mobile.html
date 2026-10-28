@@ -3487,7 +3487,7 @@
   }
   function settingsCanAsk() {
     const c = typeof settingsCache !== "undefined" ? settingsCache : null;
-    return !!(c && c.llm_backend && (c.llm_api_key_present || c.llm_backend === "ollama"));
+    return !!(c && c.llm_backend && (c.llm_api_key_present || c.llm_backend === "enqueue"));
   }
   // Where this phone stands, as the model is told it. Nothing secret.
   function settingsFacts() {
@@ -8452,7 +8452,6 @@ return;
     enqueue: "Included with Enqueue",
     openrouter: "OpenRouter",
     "opencode-go": "OpenCode Go",
-    ollama: "Ollama on your Mac",
   };
 
   function renderAiRows(s) {

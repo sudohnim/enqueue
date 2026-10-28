@@ -640,22 +640,6 @@ def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
     return hit.get("body_version") != cache[aid][0]
 
 
-def _get_model(local_only: bool) -> str:
-    """The SUMMARY model a facet/entity would be written with now (not the chat model)."""
-    from .. import config, settings
-    from ..providers.base import get_provider
-
-    # Through get_provider first so tests can mock it.
-    try:
-        provider = get_provider(local_only=local_only, summarize=True)
-        return provider.model
-    except Exception:  # noqa: BLE001 - fall back to the raw settings read below
-        pass
-    if local_only:
-        return config.LLM_MODEL
-    return settings.get("summarize_model") or settings.get("llm_model") or config.LLM_MODEL
-
-
 def _prefetch_staleness(conn, cache, ids) -> None:
     """Fill the `hit_is_stale` cache for unseen ids in one query (P.2c)."""
     unseen = list(dict.fromkeys(aid for aid in ids if aid not in cache))

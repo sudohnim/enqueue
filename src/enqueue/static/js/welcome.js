@@ -183,8 +183,6 @@ const WELCOME_RENDER = {
 		const included = d.backends.find((b) => b.included);
 		const isIncluded = !!included && chosen === included.name;
 		const pick = online.find((b) => b.name === chosen) || online[0];
-		const local = (d.backends.find((b) => b.local) || {}).name || "ollama";
-		const isLocal = !online.some((b) => b.name === chosen) && !isIncluded;
 		return (
 			'<div class="shelf">Choose your assistant</div>' +
 			'<div class="group">' +
@@ -202,19 +200,10 @@ const WELCOME_RENDER = {
 							: '<button class="btn tertiary" onclick="welcomeGo(2)">Sign in first</button>') +
 					"</div>"
 				: "") +
-			'<div class="field"><span class="rowlabel">On this Mac</span>' +
-			'<div class="aside">Private: nothing leaves your computer. Needs the free ' +
-			"<b>Ollama</b> app, from ollama.com.</div>" +
-			(isLocal
-				? '<span class="welcome-chosen">Chosen</span>'
-				: '<button class="btn tertiary" onclick="welcomeUseLocal(' +
-					esc(JSON.stringify(local)) +
-					')">Use this Mac</button>') +
-			"</div>" +
 			'<div class="field"><span class="rowlabel">An online service, with your own key</span>' +
-			'<div class="aside">Faster and smarter on most Macs. When you ask something, the ' +
+			'<div class="aside">Bring a key from a service you already pay for. When you ask something, the ' +
 			"notes it needs are sent to the service you pick.</div>" +
-			(isLocal || isIncluded ? "" : '<span class="welcome-chosen">Chosen</span>') +
+			(isIncluded ? "" : '<span class="welcome-chosen">Chosen</span>') +
 			"</div>" +
 			'<div class="field welcome-online"><label for="w_backend">Service</label>' +
 			'<select id="w_backend">' +
@@ -234,7 +223,7 @@ const WELCOME_RENDER = {
 			'<div class="field welcome-online"><label for="w_key">Your key</label>' +
 			'<div class="aside">The service gives you one when you sign up. Kept safely in ' +
 			"this Mac's Keychain." +
-			(!isLocal && d.storage.api_key_present ? " A key is saved already." : "") +
+			(d.storage.api_key_present ? " A key is saved already." : "") +
 			"</div>" +
 			'<div class="keyrow"><input id="w_key" type="password" autocomplete="off" ' +
 			'spellcheck="false" placeholder="Paste your key">' +
@@ -383,15 +372,7 @@ async function welcomeUseIncluded() {
 	renderWelcome();
 }
 
-async function welcomeUseLocal(name) {
-	try {
-		await welcomeSettings({ llm_backend: name, llm_model: BACKEND_MODELS[name] || null });
-	} catch (err) {
-		return toast(String(err.message || err), true);
-	}
-	toast("The assistant runs on this Mac.");
-	renderWelcome();
-}
+
 
 async function welcomeUseOnline() {
 	const name = document.getElementById("w_backend").value;

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enqueue import settings
 from enqueue.retrieve import lift as lift_mod
+from enqueue.providers.base import model_for
 
 REAL_LIFT = lift_mod.lift  # captured before the autouse fixture stubs it
 
@@ -115,7 +116,7 @@ def test_lifted_claims_reach_facets_in_search(store, monkeypatch):
         conn.execute(
             "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
             " VALUES ('f', 'w', 3, ?, ?, 1.0)",
-            (claim, cand._get_model(False)),
+            (claim, model_for("ingest")),
         )
     s.upsert_facets()
     monkeypatch.setattr(cand, "judge_gray_zone", lambda q, hits: {h["artifact_id"] for h in hits})

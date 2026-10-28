@@ -114,18 +114,10 @@ class TestSteps:
 
 
 class TestAlerts:
-    def test_a_key_and_headers_nothing_uses_are_pointed_out(self, world):
-        world["key"] = {"api_key_present": True, "api_key_where": "keychain"}
-        world["values"]["llm_headers"] = "x-opencode-session: abc"
-        assert {"key-unused", "headers-unused"} <= _alerts()
-        world["backend"] = dict(REMOTE)
-        assert not {"key-unused", "headers-unused"} & _alerts()
-
     def test_a_refused_key_is_said_for_an_online_assistant(self, world, monkeypatch):
         from enqueue.providers import pause
 
         monkeypatch.setattr(pause, "key_refused", lambda: True)
-        assert "key-refused" not in _alerts()  # the assistant on this Mac has no key
         world["backend"] = dict(REMOTE)
         assert "key-refused" in _alerts()
 

@@ -491,8 +491,8 @@ def push_settings() -> None:
     import datetime
 
     s = {
-        "llm_backend": _val("llm_backend", "ollama"),
-        "llm_model": _val("llm_model", "llama3.1:8b"),
+        "llm_backend": _val("llm_backend", config.LLM_BACKEND),
+        "llm_model": _val("llm_model", config.LLM_MODEL),
         "llm_url": _val("llm_url", ""),
         "llm_api_key": config.llm_api_key() or "",
         # Extra provider headers (e.g. OpenCode's required `x-opencode-session`). The

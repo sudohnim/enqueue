@@ -18,7 +18,7 @@ the key goes. What happens here, in order:
 Nothing of a prompt or an answer is kept or logged: the notes pass through this process
 on their way to the model and are gone when the reply is sent. Streaming is refused,
 since no client streams and a stream's cost arrives only at its end. Things the person
-marked as only on their Mac never get here: the engine sends those to the local model.
+marked as only on their Mac never get here: no model reads those.
 """
 
 from __future__ import annotations

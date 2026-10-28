@@ -126,7 +126,7 @@ def extract(artifact_id: str, attribute: str, instruction: str) -> dict:
         conn.close()
 
     try:
-        # A local-only artifact's text goes only to the local model (privacy.py).
+        # A local-only artifact's text goes to no model (LocalOnly; privacy.py).
         from . import privacy
 
         provider = get_provider(local_only=privacy.is_local_only(artifact_id))

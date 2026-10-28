@@ -145,7 +145,7 @@ class TestDescribeAtIngest:
 
         ingest_queue.process(artifact_id)
 
-        assert seen["local_only"]
+        assert seen == {}  # no model is asked to describe a local-only picture
 
     def test_already_described_image_is_not_charged_again(self, store, quiet_queue, monkeypatch):
         from enqueue.ingest import queue as ingest_queue
@@ -300,12 +300,11 @@ class TestRequeueImages:
 
 
 class TestVisionProvider:
-    def test_local_only_routes_to_the_local_backend(self, store, quiet_queue):
-        from enqueue.providers.base import get_vision_provider
+    def test_no_model_sees_a_local_only_image(self, store, quiet_queue):
+        from enqueue.providers.base import LocalOnly, get_vision_provider
 
-        provider = get_vision_provider(local_only=True)
-        assert provider.model == config.VISION_MODEL
-        assert provider.base_url == config.BACKENDS["ollama"]["url"]
+        with pytest.raises(LocalOnly):
+            get_vision_provider(local_only=True)
 
     def test_describe_sends_a_vision_message(self, store, quiet_queue, monkeypatch):
         from enqueue.prompts import IMAGE_DESCRIBE

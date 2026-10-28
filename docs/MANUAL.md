@@ -43,16 +43,15 @@ You need a Mac, and the code (`git clone`, then `cd enqueue`).
 - **The Mac app.** Run `bin/setup` once (it installs what is missing and changes nothing that is there), then `bin/launch desktop`. The window opens when the engine is ready.
 - **An Android phone.** Turn on USB debugging, plug it in, run `bin/setup --android` once, then `bin/launch mobile`. It installs the app and starts it; unplug and it keeps working.
 - **An iPhone.** Run `bin/setup --ios` once (it needs Xcode), plug the iPhone in, then `bin/launch ios`. `bin/launch simulator` runs it in the iOS Simulator instead, which has no camera, so linking needs a real phone.
-- **A model.** Search and capture work without one. For summaries and answers, run [Ollama](https://ollama.com/) on the Mac, or choose an online one in **Settings > Assistant**.
+- **A model.** Search and capture work without one. For summaries and answers, sign in under **Settings > Sync** to use the assistant included with Enqueue, or add a key for an online service in **Settings > Assistant**.
 
 Then link the phone to the Mac: see [Sync](#sync).
 
 ### The first time
 
 A new, empty library opens on a short welcome instead of the wall.
-It walks through five steps, and each one can be skipped: what Enqueue is, choosing the assistant (on this Mac with Ollama, or an online service with your own key), turning on sync, saving the recovery kit, and linking your phone.
+It walks through five steps, and each one can be skipped: what Enqueue is, choosing the assistant (the one included with Enqueue, or an online service with your own key), turning on sync, saving the recovery kit, and linking your phone.
 The sync step is the same as **Settings > Sync**, so signing in with Google or Apple, writing down the recovery phrase and joining another computer all work there.
-An assistant included with Enqueue is planned; until then the welcome says so and asks you to pick one.
 Finishing or skipping it is remembered, and everything in it can be changed later in Settings.
 
 The phone's first screen is its own short welcome: what Enqueue is, then how to link it.
@@ -422,8 +421,10 @@ There is no password reset either, because nobody else holds a key.
 Enqueue needs a language model for three things: summaries, answers, and gathering views.
 Search and capture work without one.
 
-- **Ollama** (the default) runs the model on your Mac. Nothing leaves it.
-- **OpenRouter** or **OpenCode Go** use a model on someone else's computer. The text of the artifacts involved is sent there. An artifact marked **local only** never is.
+- **Included with Enqueue** (the default) needs you signed in to Enqueue sync and no key. Free covers fast models from Anthropic, OpenAI and Google; Pro adds more. The text an answer needs passes through Enqueue to the model and is not kept.
+- **OpenRouter** or **OpenCode Go** use your own key.
+
+Every model runs on someone else's computer, and the text of the artifacts involved is sent there. An artifact marked **local only** is never sent to any model: it gets no summary, and chat leaves it out.
 
 Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**; for OpenRouter and OpenCode Go you pick from the models the service offers, and a name it does not offer is refused, so a typo cannot quietly stop answers.
 The key is stored in the macOS Keychain, never in a file.

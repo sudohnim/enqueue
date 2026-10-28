@@ -87,7 +87,7 @@ No account, no password.
 ## Yours, and only yours
 
 - **On your machine.** The library is a single SQLite file in `~/Library/Application Support/Enqueue`, with your original files beside it, untouched. Any tool can read it. If Enqueue vanished tomorrow, you would still have everything.
-- **Your choice of model.** Run the AI on your own Mac with Ollama and nothing leaves it. Or point it at a hosted model and decide, per item, what may never be sent.
+- **AI included, or bring your own.** Fast models come with the free plan, no key needed, and you can plug in your own key instead. Mark any item local only and no model ever reads it.
 - **Sync that cannot be read.** Mac and phone sync through a relay that only ever holds scrambled data. The key never leaves your devices.
 - **Backups in your own cloud.** A daily copy goes into your Proton Drive, encrypted end to end. A 400 MB library backs up as about 6 MB.
 - **A vault for the rest.** Lock an item behind a PIN and it leaves search, answers, and the wall, encrypted even on your own devices.
@@ -122,7 +122,7 @@ uv sync
 bin/launch desktop
 ```
 
-For the AI features, either run [Ollama](https://ollama.com) locally or add a hosted model's key in Settings.
+For the AI features, sign in under Settings > Sync for the included assistant, or add your own model key in Settings.
 Capture, notes and search work without any model at all.
 
 The Android app is on the same page; the iPhone app is in testing.
@@ -138,7 +138,6 @@ Enqueue is one person's daily tool, built in the open.
 It is not polished software from a company, and it says so:
 
 - macOS for the desktop; Android and iPhone for the phone. No Windows or Linux.
-- Small local models write weak summaries. A capable model, local or hosted, makes search by idea far better.
 - The library on your Mac is encrypted by Enqueue once you save your recovery kit; until then your disk's encryption (FileVault) is what protects it. What leaves the Mac is always encrypted.
 
 ## License

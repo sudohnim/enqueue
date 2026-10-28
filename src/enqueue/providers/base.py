@@ -24,6 +24,21 @@ class ProviderError(RuntimeError):
     """
 
 
+class LocalOnly(ProviderError):
+    """A local-only item: its text is never sent to a model."""
+
+
+def _backend(local_only: bool) -> dict:
+    from .. import config, settings
+
+    if local_only:
+        raise LocalOnly("Kept on this Mac: local-only items are not sent to a model.")
+    name = settings.get("llm_backend")
+    if name == "opencode":  # stored Zen configs resolve to Go
+        name = "opencode-go"
+    return config.BACKENDS.get(name) or config.BACKENDS[config.LLM_BACKEND]
+
+
 def _chain(exc: BaseException) -> list[BaseException]:
     """The exception and everything it was raised from, outermost first.
 
@@ -107,10 +122,7 @@ def _name_one(cause: BaseException, base_url: str, model: str) -> str | None:
         go_note = _go_model_error_from_auth(cause, base_url, model)
         if go_note:
             return go_note
-        return (
-            f"the endpoint at {base_url} rejected the API key. Set a valid key in "
-            "Settings, or switch the backend to Ollama to stay on this machine"
-        )
+        return f"the endpoint at {base_url} rejected the API key. Set a valid key in " "Settings"
     if isinstance(cause, openai.PermissionDeniedError):
         return (
             f"the endpoint at {base_url} refused this key access to {model!r}. The key "
@@ -232,37 +244,14 @@ class Provider(Protocol):
 
 
 def get_vision_provider(local_only: bool = False) -> Provider:
-    """The vision-capable provider that describes images at ingest (K.11).
-
-    Same routing rule as `get_provider`: local-only images go to the local
-    backend whatever the default is. The model is the separate vision setting - a
-    backend that answers text and images with different models (Ollama's llava,
-    an OpenRouter vision model) gets both here.
-    """
-    from .. import config, settings
+    """The vision-capable provider that describes images at ingest (K.11), on the
+    configured backend with the separate vision model. Raises LocalOnly for a
+    local-only image."""
+    from .. import settings
     from .ollama import OpenAICompatibleProvider
 
-    name = "ollama" if local_only else settings.get("llm_backend")
-    if (
-        name == "opencode"
-    ):  # Stored Zen configs resolve to Go (Zen is still live, just not in this codebase).
-        name = "opencode-go"
-    backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
-
-    # SET.1: the endpoint is implied by the backend. A named backend uses its own
-    # URL, and a stored `llm_url` (a stale localhost from before) never overrides
-    # it. Only `custom` reads the user-typed URL. Local-only always routes to the
-    # local Ollama.
-    if local_only:
-        url = config.BACKENDS["ollama"]["url"]
-    elif name == "custom":
-        url = settings.get("llm_url") or backend["url"]
-    else:
-        url = backend["url"]
-    return OpenAICompatibleProvider(
-        model=settings.get("vision_model") if not local_only else config.VISION_MODEL,
-        base_url=url,
-    )
+    backend = _backend(local_only)
+    return OpenAICompatibleProvider(model=settings.get("vision_model"), base_url=backend["url"])
 
 
 # Model roles, each backed by one setting. An empty ingest/search setting falls back to
@@ -288,31 +277,13 @@ def model_for(role: str) -> str:
 def get_provider(local_only: bool = False, summarize: bool = False, role: str = "chat") -> Provider:
     """The configured provider for a role. All roles share backend, key and headers.
 
-    Local-only artifacts always route to the local backend and model: marking
-    something local-only is a promise its text never leaves the machine.
+    A local-only artifact raises LocalOnly: marking something local-only is a promise
+    its text never leaves the machine, and there is no model on it.
     `summarize=True` is the older spelling of `role="ingest"`.
     """
-    from .. import config, settings
     from .ollama import OpenAICompatibleProvider
 
-    name = "ollama" if local_only else settings.get("llm_backend")
-    if (
-        name == "opencode"
-    ):  # Stored Zen configs resolve to Go (Zen is still live, just not in this codebase).
-        name = "opencode-go"
-    backend = config.BACKENDS.get(name, config.BACKENDS["ollama"])
-
-    # SET.1: the endpoint is implied by the backend. A named backend uses its own
-    # URL, and a stored `llm_url` (a stale localhost from before) never overrides
-    # it. Only `custom` reads the user-typed URL. Local-only always routes to the
-    # local Ollama.
-    if local_only:
-        url = config.BACKENDS["ollama"]["url"]
-    elif name == "custom":
-        url = settings.get("llm_url") or backend["url"]
-    else:
-        url = backend["url"]
-    if summarize:
-        role = "ingest"
-    model = config.LLM_MODEL if local_only else model_for(role)
-    return OpenAICompatibleProvider(model=model, base_url=url)
+    backend = _backend(local_only)
+    return OpenAICompatibleProvider(
+        model=model_for("ingest" if summarize else role), base_url=backend["url"]
+    )

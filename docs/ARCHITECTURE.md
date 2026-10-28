@@ -42,7 +42,7 @@ flowchart LR
   subgraph Outside["Outside services"]
     Sign["Google / Apple<br/>sign-in"]
     RC["RevenueCat<br/>Pro purchases"]
-    Models["Models<br/>Ollama, OpenRouter,<br/>OpenCode Go"]
+    Models["Models<br/>included (relay), OpenRouter,<br/>OpenCode Go"]
   end
 
   Engine <-->|sealed snapshots| SyncAPI
@@ -58,7 +58,7 @@ flowchart LR
 - **The relay is a dumb, zero-knowledge mailbox.** It stores sealed bytes under hashed names, keeps a cursor per library so each device asks "what changed since N", and pushes a "something changed" stream. With R2 on, the bytes live in the bucket and `relay.db` holds only the index. It cannot open anything.
 - **Accounts only say who you are.** Google or Apple sign-in gives each device its own token; Postgres holds accounts, devices, plans and the included assistant's monthly use, never a key.
 - **The phone holds an encrypted copy.** It reads, captures and does light edits, asks questions over a keyword search of its copy, and never runs the model over the library. Android and iPhone share the page and the Rust; only a thin native shell differs (Kotlin on Android; Swift plugins on iOS for purchases, the Face ID lock and Quick capture).
-- **Models are called from where the text is.** The Mac calls Ollama locally, a service with your own key, or the included assistant through the relay; anything marked local-only only ever goes to the local model. Embeddings are always computed on the Mac.
+- **Models are called from where the text is.** The Mac calls the included assistant through the relay, or a service with your own key; anything marked local-only goes to no model. Embeddings are always computed on the Mac.
 
 ## The life of an artifact
 

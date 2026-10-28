@@ -33,7 +33,7 @@ const ASKS = [
   ["which model should i use", "models"],
   ["images are not described", "models"],
   ["does my data leave this machine", "answers"],
-  ["ollama", "answers"],
+  ["included assistant", "answers"],
   ["rebuild concepts", "concepts"],
   ["summaries are old", "concepts"],
   ["search is missing things", "index"],

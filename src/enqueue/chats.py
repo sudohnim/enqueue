@@ -312,7 +312,7 @@ def passages(question: str, scope_kind: str, scope_id: str | None) -> list[dict]
     on its own and interleaves them, so both sides reach the answer; slots left over
     are filled from the whole question. When the chat model is remote, local-only
     artifacts are left out: their text never leaves the machine (privacy.py). A chat
-    scoped to one local-only artifact is answered by the local model instead.
+    scoped to one local-only artifact is not answered: no model reads it.
     """
     if scope_kind == "artifact":
         if scope_id is None:

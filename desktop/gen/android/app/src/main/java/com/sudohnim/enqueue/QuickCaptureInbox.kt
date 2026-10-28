@@ -14,7 +14,8 @@ import java.util.UUID
  * through `mobile_capture` (mobile.html `drainQuickInbox`), acknowledging each one only
  * after it is saved. A capture is written to a temp file and renamed into place, so the
  * page never reads half of one, and it stays here until acknowledged, so a failed save
- * is retried the next time the app comes to the front.
+ * is retried the next time the app comes to the front. It is sealed with the Keystore
+ * key (StoreKey); a plain .txt from an older build is still read once.
  */
 object QuickCaptureInbox {
   private const val DIR = "quick_capture"
@@ -29,8 +30,8 @@ object QuickCaptureInbox {
     val dir = dir(context)
     val tmp = File(dir, "$id.tmp")
     return runCatching {
-      tmp.writeText(text, Charsets.UTF_8)
-      tmp.renameTo(File(dir, "$id.txt"))
+      tmp.writeBytes(StoreKey.seal(text.toByteArray(Charsets.UTF_8)))
+      tmp.renameTo(File(dir, "$id.enc"))
     }.getOrElse {
       tmp.delete()
       false
@@ -42,11 +43,14 @@ object QuickCaptureInbox {
   fun list(context: Context): String {
     val out = JSONArray()
     dir(context)
-      .listFiles { f -> f.isFile && f.name.endsWith(".txt") }
+      .listFiles { f -> f.isFile && (f.name.endsWith(".enc") || f.name.endsWith(".txt")) }
       ?.sortedBy { it.name }
       ?.forEach { f ->
-        runCatching { f.readText(Charsets.UTF_8) }.onSuccess { text ->
-          out.put(JSONObject().put("id", f.name.removeSuffix(".txt")).put("text", text))
+        runCatching {
+          if (f.name.endsWith(".enc")) String(StoreKey.open(f.readBytes()), Charsets.UTF_8)
+          else f.readText(Charsets.UTF_8)
+        }.onSuccess { text ->
+          out.put(JSONObject().put("id", f.nameWithoutExtension).put("text", text))
         }
       }
     return out.toString()
@@ -55,6 +59,8 @@ object QuickCaptureInbox {
   /** The page saved this capture: forget it. */
   @Synchronized
   fun ack(context: Context, id: String) {
-    if (ID.matches(id)) File(dir(context), "$id.txt").delete()
+    if (!ID.matches(id)) return
+    File(dir(context), "$id.enc").delete()
+    File(dir(context), "$id.txt").delete()
   }
 }

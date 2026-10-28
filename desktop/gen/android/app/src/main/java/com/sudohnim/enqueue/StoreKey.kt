@@ -70,13 +70,13 @@ object StoreKey {
     return gen.generateKey()
   }
 
-  private fun seal(plain: ByteArray): ByteArray {
+  internal fun seal(plain: ByteArray): ByteArray {
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(Cipher.ENCRYPT_MODE, keystoreKey())
     return cipher.iv + cipher.doFinal(plain)
   }
 
-  private fun open(sealed: ByteArray): ByteArray {
+  internal fun open(sealed: ByteArray): ByteArray {
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
       Cipher.DECRYPT_MODE,
