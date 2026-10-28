@@ -38,7 +38,7 @@ assets/         the logo, source art, and the README screenshots
 | Relay, locally | | `uv run enq relay` (127.0.0.1:8788, secret `dev-secret`) |
 
 Engine output goes to `$TMPDIR/enqueue-app.log`.
-A model is optional: capture and search work without one; summaries and answers use the assistant included with Enqueue (signed in under Sync) or an online service with your own key (Settings > Assistant). There is no model on the Mac (removed 2026-10-28).
+A model is optional: capture and search work without one; summaries and answers use the assistant included with Enqueue (signed in under Sync) an online service with your own key, or Ollama on this Mac (Settings > Assistant). Enqueue ships no model; the Ollama helper finds Ollama, starts it and downloads one (`local_model.py`).
 The phone starts empty; link it to the Mac over a relay both can reach (Settings > Sync shows a QR the phone scans; see [The relay](#the-relay)).
 
 **Testing on an iPhone.** For whoever holds the iPhone, and their agent:
@@ -64,7 +64,7 @@ Green proves it parses, passes and compiles; only running it on the Mac or a dev
 | `recovery-kit.json`, `backup.json`, `device_id`, `sync_cursor` | small state |
 | `repo`, `capture-position` | pointers the desktop shell reads |
 
-The Keychain holds the library key (`enqueue-library-key`), the sync key (`enqueue-sync-dek`), the relay secret and the model API key.
+The Keychain holds the library key (`enqueue-library-key`), the sync key (`enqueue-sync-dek`), the relay secret and the model API keys (one per service, `enqueue-llm-api-key.<backend>`).
 Tests never touch any of it: `tests/conftest.py` points the process at a temporary folder and fakes the Keychain.
 
 **Releasing.** Store releases go through fastlane (`fastlane/`, run as `bundle exec fastlane <platform> <lane>` after `bundle install`; setup and keys in `fastlane/README.md`).
@@ -123,7 +123,7 @@ It was `~/.enqueue-poc` for the proof of concept; a product keeps its data where
 `~/.enqueue-poc` is left as a link to the new folder. The desktop shell reads its pointers (`repo`, `capture-position`) from the new folder and falls back to the old (`data_dir`/`library_file` in `desktop/src/lib.rs`); `bin/launch` writes them to the new one.
 The path has a space in it: quote it in every script.
 
-4. **`instructor.Mode.JSON` is used for every adapter.**
+4. **`instructor.Mode.JSON` is used for every OpenAI-protocol backend.**
 All providers pass `mode=instructor.Mode.JSON` unconditionally.
 This is correct for now, not a bug to fix.
 The adapter calls it out in a comment because the default is `TOOLS`, which needs function-calling support many endpoints lack.
@@ -146,7 +146,7 @@ Usage does feed ranking one level up, per artifact rather than per facet: see "U
 
 6. **There is no Lumo. The cloud backend is OpenRouter.**
 The old docs name Proton's Lumo as a backend; it does not exist in the code.
-The configured backends are `enqueue` (default: the assistant included with Enqueue, through the relay), `openrouter`, and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen), `custom` and `ollama` backends were removed; a stored `opencode` config migrates to `opencode-go`, and a stored `ollama` one is read as the defaults (`settings._stored`). Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
+The configured backends are `enqueue` (default: the assistant included with Enqueue, through the relay), `openrouter`, `anthropic` and `openai` (a person's own key, added 2026-10-28), and `opencode-go` (OpenCode Go subscription, `https://opencode.ai/zen/go/v1`). The old `opencode` (Zen), `custom` and `ollama` backends were removed; a stored `opencode` config migrates to `opencode-go`, and a stored `ollama` one is read as the defaults (`settings._stored`). Only Go chat-completions models work (the adapter speaks `/chat/completions` only; `/responses` and `/messages` models are refused with a clear message - see `config.py` GO_* sets and `providers/base.py`). Treat OpenRouter as the general cloud path. Remove any Lumo reference you find.
 
 7. **The preview browser is the Mac's own WebKit (2026-10-26; crawl4ai and Chromium before).**
 `webkit_page.py` opens a refused page in an off-screen WKWebView through `pyobjc-framework-WebKit` (29 MB in the app, where crawl4ai's Chromium was about 450 MB and never shipped), so it is on by default and in the Mac app (see "Link previews").
@@ -312,7 +312,8 @@ One line per file, describing its job.
 | `libkey.py` | The library key: 32 random bytes made once, in the Keychain (`enqueue-library-key`), the root every other key is derived from (`derive`, HKDF-SHA256 per use); the recovery kit (`kit`/`from_kit`, 56 Crockford characters with a checksum) and whether the person said they saved it. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
 | `reading.py` | How far the assistant is through reading the library (`GET /reading`), for the wall's "Reading your library" line. See "Reading your library" under Gotchas. |
-| `catalog.py` | Which models an online service serves: OpenRouter's public list (`GET /api/v1/models`, no key), fetched at most every 12 hours into memory and `model-catalog.json`, OpenCode Go's from `config`. `GET /settings/models?backend=` feeds the Settings pickers; `settings.update` refuses a model the list lacks (a list a few minutes old is fetched again first, so a new model is not turned away); `/setup` says when a saved one is not offered (`model-unknown`), reading the kept list only. The images job needs a model that reads pictures. A list that cannot be fetched refuses nothing. Tests never fetch (`conftest._no_model_catalog_fetch`). |
+| `catalog.py` | Which models an online service serves: OpenRouter's public list (`GET /api/v1/models`, no key), fetched at most every 12 hours into memory and `model-catalog.json`, OpenCode Go's from `config`; OpenAI's and Anthropic's from their `/v1/models` with the person's key (`KEYED`); Ollama's from `/api/tags` on this Mac, asked each time, never kept. `suggest` picks the model a service starts on from its own list (a cheap one: Haiku, an OpenAI "luna"/"mini"; for Ollama the best of `local_model.CHOICES` it holds), returned as `suggested`/`suggested_vision`; Settings and the welcome switch to it once a key is saved (`applySuggested` in `settings.js`). `GET /settings/models?backend=` feeds the Settings pickers; `settings.update` refuses a model the list lacks (a list a few minutes old is fetched again first, so a new model is not turned away); `/setup` says when a saved one is not offered (`model-unknown`), reading the kept list only. The images job needs a model that reads pictures. A list that cannot be fetched refuses nothing. Tests never fetch (`conftest._no_model_catalog_fetch`). |
+| `local_model.py` | Ollama on this Mac, for the `local` backend: installed (`/Applications/Ollama.app` or the CLI), running (`/api/version`), the models it holds that answer (`/api/tags`, `/api/show` capabilities), `start()` (`open -a Ollama`), and the models Enqueue offers (`CHOICES`, the recommended one by `hw.memsize`), downloaded in the background through `/api/pull` (`pull`, `pull_state`, `cancel`). Routes `GET /settings/local`, `POST /settings/local/start`, `POST`/`DELETE /settings/local/pull`; the panel is `renderLocalPanel` in `static/js/settings.js`. Tests point `BASE` at a closed port (`conftest`). |
 | `setup.py` | Where this installation stands: the three steps left to set up, the settings that need a look, and the one model answer about settings (`GET /setup`, `POST /setup/ask`). See "Settings explain themselves" under Gotchas. |
 | `sync/join.py` | Device approval: a new Mac asks to join the account's library and one that holds the key seals it to the asker's public key. See "A new computer is approved from one that has the key" under Gotchas. |
 | `account.py` | Enqueue sync from the Mac: sign in with Google (desktop PKCE, back to `/account/google/callback`) or Apple (the web flow, back through the relay to `/account/apple/done` with a one-time code), then a device token for this Mac becomes the sync secret (`sync/enable.py`). Keeps the relay's refresh token in the Keychain (`enqueue-account-session`) and who is signed in in settings; mints a token per phone (`desktop_link_code`) and per joining computer (`sync/pairing.py`); lists and removes devices, signs out, deletes the account. Routes in `api/account.py`. See "Enqueue sync" under Gotchas. |
@@ -359,6 +360,7 @@ One line per file, describing its job.
 | --- | --- |
 | `providers/base.py` | `Provider` protocol, `get_provider()`, error translation to sentences. |
 | `providers/ollama.py` | `OpenAICompatibleProvider`. One adapter for all OpenAI-protocol endpoints; falls back to `Mode.MD_JSON` on a 400. |
+| `providers/anthropic.py` | `AnthropicProvider`: the Messages API through the official `anthropic` SDK, for the `anthropic` backend. See "Anthropic" under Provider layer. |
 | `providers/pause.py` | The engine-wide pause on model calls after a 429 usage limit (until `retry-after`); `lift()` on a key or model change. |
 
 ### Migrations
@@ -423,7 +425,7 @@ One line per file, describing its job.
 | File | Job |
 | --- | --- |
 | `static/home.html` | The home shell: meta, font preloads, the `#topbar`/`#view`/`#pill`/`#dropover` skeleton, ordered `<link>` to `css/*.css` and `<script src="/static/js/...">` tags. Split from the old single-file museum.html in M.8: one global scope, no build step, no ES modules. |
-| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`, and the raven's flight after a capture, `.capture-flight`; shared with the phone and the capture overlay), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
+| `static/css/` | The home interface stylesheets, split by surface (M.8): `tokens.css` (palette, the font faces, the weight tokens; never write a numeric `font-weight` in a stylesheet), `base.css` (type/buttons/callouts/rows), `home.css` (topbar/searchbar/homehead/eye/wall/cards/groupbar/tagbar), `artifact.css` (artifact+drawer+editor+docpane), `reader.css` (reader+findbox+folio), `chat.css` (transcript), `search.css` (the results page: one reading column, the field on top, each result's kind and age, title, why it matched and the lines holding the searched words, marked; Maybe related apart), `settings.css`, `pill.css` (pill+menu+toast+dialog+dropover+animations), `eyepanel.css` (the ask panel), `linkpop.css`, `tour.css` (the tour; shared with the phone), `welcome.css` (the first-run welcome), `bird.css` (the flying raven loader, `.flybird`, and the raven's flight after a capture, `.capture-flight`; shared with the phone and the capture overlay), `details.css` (the Details panel, `.dpanel`; shared with the phone), `notetype.css` (a note's own typography, `.notetype`: the desktop's note sheet, the phone's reader and both drafts comparisons; loaded after `artifact.css`; a note is written straight on the lavender ground on both apps, with no sheet, and its code and quotations sink into the deeper `--surface-3`). |
 | `static/js/` | The home interface JS, split by surface (M.8). Load order: `util`, `icons` (the icon paths; the phone uses them too), `eye` (the living eye, mouse or finger, and `captureFlight`; shared with the phone), `eyemood` (the pill eye's moods), `ground` (the page colour drifting through the day), `md` (markdown render + serialize), `linkpop` (the copy/open bar for links in content), `suggest` (name matching for the search candidates; shared with the phone), `details` (the Details panel's voice and reactions; shared with the phone), `tour` (the ? tour), `dialogs`, `pill`, `morph`, `home`, `artifact`, `search`, `pivot`, `manual` (views arranged by hand: the page, the drag, the picker), `chat`, `trash`, `drafts`, `notetabs`, `settings_guide`, `welcome` (the first-run welcome), `approve` (device approval: the waiting screen and the approve prompt), `update` (the Mac app's update card: Update now, Update on close), `accountmenu` (the account at the top right of the wall: who, the plan and storage used, devices, Settings, How to use, sign out; signed out, the way to sign in), `settings`, with the boot call last. One global scope; no ES modules. |
 | `static/capture.html` | The capture overlay, a page of its own. It shares only `css/tokens.css` and `css/bird.css` (the flight), never the home page's layout stylesheets, so a change over there cannot break it. |
 | `static/fonts/` | Hanken Grotesk, variable woff2 (upright and italic; latin, latin-ext, vietnamese), served locally. No CDN. The one face; weights come from `--w-*` tokens (docs/DESIGN.md section 3). |
@@ -659,7 +661,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 
 | Variable | Default | What it controls |
 | --- | --- | --- |
-| `ENQ_LLM_BACKEND` | `enqueue` | Which backend to use: enqueue (included), openrouter, opencode-go |
+| `ENQ_LLM_BACKEND` | `enqueue` | Which backend to use: enqueue (included), openrouter, anthropic, openai, opencode-go |
 | `ENQ_LLM_MODEL` | `anthropic/claude-haiku-5.5` | The interactive model id (chat, routing, gray-zone judge); the other roles fall back to it. |
 | `ENQ_SUMMARIZE_MODEL` | (empty) | The ingestion model (facets, entities), `role="ingest"`. Empty falls back to `llm_model`. See "Model roles". |
 | `ENQ_SEARCH_MODEL` | (empty) | The search model (gray-zone relevance judge), `role="search"`. Empty falls back to `llm_model`. |
@@ -687,6 +689,9 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 
 The API key goes in the macOS Keychain via `/usr/bin/security`, never in settings.json.
 `keyring.py` handles this.
+Each service keeps its own key (`enqueue-llm-api-key.<backend>`; `keyring.get(backend)`, `config.llm_api_key(base_url)` finds the backend by its URL), so switching service never sends one service's key to another, and switching back finds the old key.
+A key saved before the split (`enqueue-llm-api-key`) counts for openrouter and opencode-go only, the services there were then.
+`PUT /settings/api-key` takes the `backend` a person picked but did not save yet; Settings sends it, and the key row follows the picked service (`paintKeyRow` in `static/js/settings.js`).
 On non-macOS, `keyring.available()` returns false and the key must come from the environment.
 The key is resolved per-call (not at import) so a key stored in Settings takes effect immediately.
 
@@ -696,10 +701,13 @@ The key is resolved per-call (not at import) so a key stored in Settings takes e
 | --- | --- | --- | --- |
 | enqueue | the relay's `/ai/v1` | no | no (this Mac's device token) |
 | openrouter | `https://openrouter.ai/api/v1` | no | yes |
+| anthropic | `https://api.anthropic.com` | no | yes (its own adapter) |
+| local | `http://127.0.0.1:11434/v1` (Ollama) | yes | no |
+| openai | `https://api.openai.com/v1` | no | yes |
 | opencode-go | `https://opencode.ai/zen/go/v1` | no | yes + `x-opencode-session` header |
 
-All backends speak the OpenAI-compatible protocol.
-One adapter (`OpenAICompatibleProvider`) covers all of them; it sends `ENQ_LLM_HEADERS` (the `llm_headers` setting) as extra headers.
+Every backend but `anthropic` speaks the OpenAI-compatible protocol (`protocol` in `config.BACKENDS` picks the adapter, `providers.base._provider`).
+One adapter (`OpenAICompatibleProvider`) covers them; it sends `ENQ_LLM_HEADERS` (the `llm_headers` setting) as extra headers.
 `opencode-go` returns `400 MissingSessionID` without an `x-opencode-session: <uuid>` header - set it via `llm_headers`. The header lives in the setting, the api_key in the Keychain; both sync to the phone (`sync/client.py::push_settings` includes `llm_headers`) so mobile chat can reach the same endpoint. Mobile parses and sends them in `call_llm_mobile` (`desktop/src/lib.rs`).
 
 ### Important: 127.0.0.1, never localhost
@@ -712,7 +720,7 @@ This applies to the engine and every local address it calls.
 
 ## Provider layer
 
-One narrow interface, one adapter.
+One narrow interface, two adapters: `OpenAICompatibleProvider` for every OpenAI-protocol backend, `AnthropicProvider` for Anthropic.
 
 ```python
 class Provider(Protocol):
@@ -722,7 +730,7 @@ class Provider(Protocol):
 ```
 
 `get_provider(local_only=False, summarize=False)` returns the configured provider.
-Local-only artifacts reach no model: `get_provider(local_only=True)` raises `LocalOnly`, and ingest treats them like a switched-off summary (`facets.summary_off`).
+Local-only artifacts reach only a model on this Mac: `get_provider(local_only=True)` raises `LocalOnly` unless the chosen backend is `local` (`base.local_model_on`), and otherwise ingest treats them like a switched-off summary (`facets.summary_off`); the related judge, Something shiny and image OCR follow the same switch. Choosing a backend runs `backfill_summaries`, so local-only items are read once Ollama answers. The phone cannot reach the Mac's model: with `local` chosen, `sync.client.phone_settings` gives the phone the included assistant.
 This is the one rule that is not a preference: marking something local-only is a promise that its text never leaves the machine.
 
 **Model roles.** `get_provider(role=...)` picks one of three models, all on the same backend, key and headers (`providers/base.py` `ROLE_SETTINGS`, `model_for`):
@@ -736,6 +744,8 @@ The adapter builds its OpenAI/instructor client lazily on the first model call, 
 The adapter uses `instructor.Mode.JSON` for all endpoints.
 The old AGENTS.md specified different modes per adapter, but the code does not.
 See the questions section above.
+
+**Anthropic (`providers/anthropic.py`, 2026-10-28).** The official SDK, not Anthropic's OpenAI-compatible endpoint. A structured call asks for `output_config.format` with `anthropic.transform_schema(response_model.model_json_schema())` (constraints the API cannot enforce are dropped from the schema and checked here), then validates with `model_validate_json(text, context=...)`, so the validators that read `context` (proper nouns, offered ids) run as they do under instructor. A reply they refuse is sent back with the error, up to `MODEL_RETRIES` attempts in all. No `temperature`/`top_p`/`top_k` (a 400 on current models), no `thinking` setting (each model's default), `max_tokens` 16000. A `refusal` stop or a cut-off reply is a `ProviderError`. `providers.base._is` names the OpenAI or the Anthropic SDK's error, so `why`, `is_transient`, `key_rejected` and the usage-limit pause treat both alike. The phone calls `/v1/messages` with `x-api-key` and `anthropic-version` (`call_llm_mobile`). Model lists: `catalog.KEYED` asks OpenAI and Anthropic with the person's key (only models with structured outputs from Anthropic; OpenAI's chat ids by prefix), so with no key nothing is refused.
 
 Adapter gotchas:
 

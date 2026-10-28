@@ -462,17 +462,8 @@ def pull() -> dict:
     return {"pulled": pulled, "skipped": skipped}
 
 
-def push_settings() -> None:
-    """PUT the settings object to the relay (MOB2.9)."""
-    url = _relay_url()
-    if not url:
-        return
-    assert_local_relay(url)
-
-    dek = keyring_file.dek()
-    if dek is None:
-        return
-
+def phone_settings() -> dict:
+    """The settings the phone runs chat with."""
     # The effective LLM config the desktop is actually using, resolved through the
     # env -> settings.json -> default chain (all_settings) plus the provider key,
     # which lives in the Keychain and is never in settings.json. It rides the same
@@ -503,6 +494,27 @@ def push_settings() -> None:
         "trash_days": _val("trash_days", "30"),
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
+    if (config.BACKENDS.get(s["llm_backend"]) or {}).get("local"):
+        # The phone cannot reach a model on this Mac: it uses the included assistant.
+        from .. import included_ai
+
+        s.update(llm_backend="enqueue", llm_model=included_ai.DEFAULT_MODEL, llm_api_key="")
+    return s
+
+
+def push_settings() -> None:
+    """PUT the settings object to the relay (MOB2.9)."""
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+
+    dek = keyring_file.dek()
+    if dek is None:
+        return
+
+    s = phone_settings()
+    import datetime
 
     data = crypto.seal_payload(serialize(s), dek)
     timestamp = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)

@@ -85,6 +85,10 @@ def _no_model_catalog_fetch(monkeypatch):
     monkeypatch.setattr(catalog, "_refresh_behind", lambda backend: None)
     monkeypatch.setattr(catalog, "_load", lambda: None)
     monkeypatch.setattr(catalog, "_save", lambda: None)
+    # Ollama on this Mac is never asked: a closed port answers at once.
+    from enqueue import local_model
+
+    monkeypatch.setattr(local_model, "BASE", "http://127.0.0.1:9")
 
 
 @pytest.fixture(autouse=True)

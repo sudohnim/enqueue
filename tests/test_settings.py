@@ -32,7 +32,7 @@ class TestTheKeyNeverTouchesDisk:
         # passes or fails depending on whether the launcher exported one.
         monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)
         monkeypatch.setattr(keyring, "available", lambda: True)
-        monkeypatch.setattr(keyring, "get", lambda: "sk-live-abcdefgh9999")
+        monkeypatch.setattr(keyring, "get", lambda backend=None: "sk-live-abcdefgh9999")
 
         state = settings.api_key_state()
         assert state["api_key_present"] is True
@@ -53,7 +53,7 @@ class TestTheKeyNeverTouchesDisk:
         """I7.1: key_present reflects the resolved key (Keychain or env), so the
         panel warning cannot contradict what api_key_state reports."""
         monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)
-        monkeypatch.setattr(keyring, "get", lambda: "sk-live-abcdefgh9999")
+        monkeypatch.setattr(keyring, "get", lambda backend=None: "sk-live-abcdefgh9999")
         by_name = {b["name"]: b for b in settings.backends()}
         assert by_name["openrouter"]["key_present"] is True
         assert by_name["opencode-go"]["key_present"] is True
@@ -61,7 +61,7 @@ class TestTheKeyNeverTouchesDisk:
 
     def test_backends_with_no_key_report_absent(self, store, monkeypatch):
         monkeypatch.delenv("ENQ_LLM_API_KEY", raising=False)
-        monkeypatch.setattr(keyring, "get", lambda: None)
+        monkeypatch.setattr(keyring, "get", lambda backend=None: None)
         by_name = {b["name"]: b for b in settings.backends()}
         assert by_name["openrouter"]["key_present"] is False
         assert by_name["opencode-go"]["key_present"] is False
@@ -77,7 +77,7 @@ class TestTheKeyNeverTouchesDisk:
         # login Keychain and passes or fails depending on what the developer happens
         # to have stored. Found the hard way: it failed against a key left behind by
         # a manual check in the running app.
-        monkeypatch.setattr(keyring, "get", lambda: None)
+        monkeypatch.setattr(keyring, "get", lambda backend=None: None)
 
         assert keyring.hint("sk-abcdefghijkl") == "...ijkl"
         assert keyring.hint("tiny") == "..."

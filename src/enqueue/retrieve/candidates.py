@@ -892,7 +892,12 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
     for hit, score in _weighted_hits(conn, facet_hits, cache):
         aid = hit["artifact_id"]
         if aid not in best or score > best[aid]["score"]:
-            best[aid] = {"score": score, "chunk_id": None, "why": f"facet L{hit.get('level')}"}
+            best[aid] = {
+                "score": score,
+                "chunk_id": None,
+                "why": f"facet L{hit.get('level')}",
+                "facet_id": hit.get("facet_id"),
+            }
     for hit, score in _weighted_hits(conn, entity_hits, cache):
         aid = hit["artifact_id"]
         if aid not in best or score > best[aid]["score"]:
@@ -951,6 +956,15 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
             if not info["chunk_id"] and not (info.get("entity") or (None, None))[1]
         ]
         texts = artifact_texts(conn, entity_aids, max_words=40)
+        # The summary line a meaning hit matched, so the page can say why it is here.
+        lines: dict[str, str] = {}
+        fids = [info["facet_id"] for _, info in ranked if info.get("facet_id")]
+        if fids:
+            for row in conn.execute(
+                "SELECT id, statement FROM facets WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps(fids),),
+            ):
+                lines[row["id"]] = row["statement"]
 
         out = []
         for aid, info in ranked:
@@ -974,6 +988,12 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
                     "kind": kind,
                     "why": info["why"],
                     "snippet": " ".join(snippet.split())[:200],
+                    # The passage with its lines kept, for the page to cut around the words.
+                    "text": "\n".join(" ".join(line.split()) for line in snippet.splitlines())[
+                        :900
+                    ],
+                    "matched": lines.get(info.get("facet_id") or "")
+                    or (": ".join(x for x in (info.get("entity") or ()) if x) or None),
                     "dense_similarity": round(dense_sims.get(aid, 0.0), 6),
                     "had_lexical_hit": aid in lexical_aids,
                 }
@@ -1008,6 +1028,10 @@ def _results_for_ids(ids: set[str], limit: int = 20) -> list[dict]:
                     "kind": row["kind"],
                     "why": "tag",
                     "snippet": " ".join(snippet.split())[:200],
+                    # The passage with its lines kept, for the page to cut around the words.
+                    "text": "\n".join(" ".join(line.split()) for line in snippet.splitlines())[
+                        :900
+                    ],
                 }
             )
         return out
@@ -1037,6 +1061,10 @@ def _all_results(limit: int = 20) -> list[dict]:
                     "kind": row["kind"],
                     "why": "all",
                     "snippet": " ".join(snippet.split())[:200],
+                    # The passage with its lines kept, for the page to cut around the words.
+                    "text": "\n".join(" ".join(line.split()) for line in snippet.splitlines())[
+                        :900
+                    ],
                 }
             )
         return out

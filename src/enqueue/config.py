@@ -44,15 +44,36 @@ EMBED_DROP_BELOW = EMBED_MODELS[EMBED_MODEL]["drop_below"]
 EMBED_MAX_TOKENS = 512  # the shortest a candidate reads; more is silently dropped
 
 # Named endpoints, so switching backend is a choice rather than a URL to remember.
-# Everything here speaks the OpenAI-compatible protocol, which is the only reason one
-# adapter covers all of them. Every one is somebody else's computer, so `local_only`
-# artifacts never reach any of them (providers.base.LocalOnly).
+# Everything here speaks the OpenAI-compatible protocol except Anthropic, which has
+# its own adapter (`protocol`). Every one but `local` is somebody else's computer, so
+# `local_only` artifacts reach only that one (providers.base.LocalOnly).
 BACKENDS = {
     "openrouter": {
         "label": "OpenRouter",
         "url": "https://openrouter.ai/api/v1",
         "local": False,
         "key_var": "ENQ_LLM_API_KEY",
+    },
+    "anthropic": {
+        "label": "Anthropic",
+        "url": "https://api.anthropic.com",
+        "local": False,
+        "key_var": "ENQ_LLM_API_KEY",
+        "protocol": "anthropic",
+    },
+    "openai": {
+        "label": "OpenAI",
+        "url": "https://api.openai.com/v1",
+        "local": False,
+        "key_var": "ENQ_LLM_API_KEY",
+    },
+    # Ollama on this Mac (local_model.py): the one backend that leaves nothing, so
+    # local-only artifacts may use it.
+    "local": {
+        "label": "This Mac (Ollama)",
+        "url": "http://127.0.0.1:11434/v1",
+        "local": True,
+        "key_var": None,
     },
     "opencode-go": {
         "label": "OpenCode Go",
@@ -141,7 +162,8 @@ def llm_api_key(base_url: str | None = None) -> str:
 
     from . import keyring
 
-    return keyring.get() or "no-key"
+    backend = next((n for n, b in BACKENDS.items() if base_url == b["url"]), None)
+    return keyring.get(backend) or "no-key"
 
 
 # Total attempts handed to instructor's `max_retries` (NOT retries-after-first - that

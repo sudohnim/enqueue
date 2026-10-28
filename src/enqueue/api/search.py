@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException
 
 from ..index import bootstrap
@@ -39,7 +41,33 @@ def search(q: str, limit: int = 20) -> dict:
         events.emit("search", f'"{q}" -> {len(hits)} hits')
     except Exception:  # noqa: BLE001
         pass
+    _dated(hits)
     return {"query": q, "hits": hits, "filters": understood}
+
+
+def _dated(hits: list[dict]) -> None:
+    """Each hit's last touch, and a link's site, for the result's meta line."""
+    from urllib.parse import urlsplit
+
+    from .. import db
+
+    if not hits:
+        return
+    conn = db.reader()
+    rows = conn.execute(
+        "SELECT a.id, a.updated_at, a.source_url, p.site_name FROM artifacts a"
+        " LEFT JOIN link_previews p ON p.artifact_id = a.id"
+        " WHERE a.id IN (SELECT value FROM json_each(?))",
+        (json.dumps([h["artifact_id"] for h in hits]),),
+    ).fetchall()
+    by_id = {r["id"]: r for r in rows}
+    for h in hits:
+        r = by_id.get(h["artifact_id"])
+        if r is None:
+            continue
+        h["updated_at"] = r["updated_at"]
+        host = urlsplit(r["source_url"] or "").hostname or ""
+        h["site"] = r["site_name"] or host.removeprefix("www.") or None
 
 
 @router.get("/titles")

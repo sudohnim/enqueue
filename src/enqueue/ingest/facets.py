@@ -275,14 +275,15 @@ OFF = "off"
 
 
 def summary_off(conn, artifact_id: str) -> bool:
-    """Switched off, or local-only: no model ever reads a local-only artifact."""
-    return bool(
-        conn.execute(
-            "SELECT 1 FROM facet_skips WHERE artifact_id = ? AND reason = ?"
-            " UNION SELECT 1 FROM artifacts WHERE id = ? AND local_only = 1",
-            (artifact_id, OFF, artifact_id),
-        ).fetchone()
-    )
+    """Switched off, or local-only while no model runs on this Mac."""
+    from ..providers.base import local_model_on
+
+    sql = "SELECT 1 FROM facet_skips WHERE artifact_id = ? AND reason = ?"
+    args: tuple = (artifact_id, OFF)
+    if not local_model_on():
+        sql += " UNION SELECT 1 FROM artifacts WHERE id = ? AND local_only = 1"
+        args += (artifact_id,)
+    return bool(conn.execute(sql, args).fetchone())
 
 
 def set_summary(artifact_id: str, on: bool) -> None:

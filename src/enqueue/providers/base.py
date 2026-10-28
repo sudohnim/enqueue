@@ -28,15 +28,25 @@ class LocalOnly(ProviderError):
     """A local-only item: its text is never sent to a model."""
 
 
-def _backend(local_only: bool) -> dict:
+def _chosen() -> dict:
     from .. import config, settings
 
-    if local_only:
-        raise LocalOnly("Kept on this Mac: local-only items are not sent to a model.")
     name = settings.get("llm_backend")
     if name == "opencode":  # stored Zen configs resolve to Go
         name = "opencode-go"
     return config.BACKENDS.get(name) or config.BACKENDS[config.LLM_BACKEND]
+
+
+def local_model_on() -> bool:
+    """Whether answers come from a model on this Mac, which local-only items may use."""
+    return bool(_chosen()["local"])
+
+
+def _backend(local_only: bool) -> dict:
+    backend = _chosen()
+    if local_only and not backend["local"]:
+        raise LocalOnly("Kept on this Mac: local-only items are not sent to a model.")
+    return backend
 
 
 def _chain(exc: BaseException) -> list[BaseException]:
@@ -57,26 +67,34 @@ def _chain(exc: BaseException) -> list[BaseException]:
     return chain
 
 
+def _is(cause: BaseException, kind: str) -> bool:
+    """Whether `cause` is the OpenAI or the Anthropic SDK's error of that name."""
+    import anthropic
+    import openai
+
+    return isinstance(cause, (getattr(openai, kind), getattr(anthropic, kind)))
+
+
 def is_transient(exc: BaseException) -> bool:
     """Whether a failed model call is worth retrying later as-is: a rate limit or usage
     cap, a timeout, an unreachable host, or a server error. A bad key, a missing model
     or output that failed validation will fail the same way again."""
-    import openai
-
     from .pause import ModelPaused
 
     for link in _chain(exc):
         if isinstance(link, ModelPaused):
             return True  # the usage limit resets on its own; the work is owed, not failed
-        if isinstance(
-            link,
-            openai.RateLimitError
-            | openai.APITimeoutError
-            | openai.APIConnectionError
-            | openai.InternalServerError,
+        if any(
+            _is(link, k)
+            for k in (
+                "RateLimitError",
+                "APITimeoutError",
+                "APIConnectionError",
+                "InternalServerError",
+            )
         ):
             return True
-        if isinstance(link, openai.APIStatusError):
+        if _is(link, "APIStatusError"):
             code = link.response.status_code
             return code in (408, 409, 429) or code >= 500
     return False
@@ -85,10 +103,8 @@ def is_transient(exc: BaseException) -> bool:
 def key_rejected(exc: BaseException, base_url: str, model: str) -> bool:
     """Whether a failed call was the provider refusing the API key itself (a 401),
     as opposed to OpenCode Go's 401 for a model name it does not know."""
-    import openai
-
     for link in _chain(exc):
-        if isinstance(link, openai.AuthenticationError):
+        if _is(link, "AuthenticationError"):
             return _go_model_error_from_auth(link, base_url, model) is None
     return False
 
@@ -111,10 +127,9 @@ def why(exc: BaseException, base_url: str, model: str) -> str:
 
 def _name_one(cause: BaseException, base_url: str, model: str) -> str | None:
     """The sentence for one exception, or None if this one says nothing useful."""
-    import openai
     from pydantic import ValidationError
 
-    if isinstance(cause, openai.AuthenticationError):
+    if _is(cause, "AuthenticationError"):
         # OpenCode Go returns 401 (not 404) with a ModelError body when the model
         # name is not recognized; the SDK maps any 401 to AuthenticationError so
         # without this check a wrong model name reads as "rejected the API key"
@@ -123,28 +138,28 @@ def _name_one(cause: BaseException, base_url: str, model: str) -> str | None:
         if go_note:
             return go_note
         return f"the endpoint at {base_url} rejected the API key. Set a valid key in " "Settings"
-    if isinstance(cause, openai.PermissionDeniedError):
+    if _is(cause, "PermissionDeniedError"):
         return (
             f"the endpoint at {base_url} refused this key access to {model!r}. The key "
             "may not cover that model"
         )
-    if isinstance(cause, openai.RateLimitError):
+    if _is(cause, "RateLimitError"):
         return (
             f"the endpoint at {base_url} is rate limiting, or the account is out of "
             "credit. Try again later"
         )
-    if isinstance(cause, openai.NotFoundError):
+    if _is(cause, "NotFoundError"):
         return (
             f"the endpoint at {base_url} has no model named {model!r}. Check the model "
             "name, and check that the URL is the API base path"
         )
-    if isinstance(cause, openai.BadRequestError):
+    if _is(cause, "BadRequestError"):
         return f"the endpoint at {base_url} rejected the request for {model!r}: {cause}"
-    if isinstance(cause, openai.APITimeoutError):
+    if _is(cause, "APITimeoutError"):
         return f"the endpoint at {base_url} did not answer in time"
-    if isinstance(cause, openai.APIConnectionError):
+    if _is(cause, "APIConnectionError"):
         return f"could not reach the model endpoint at {base_url}. Is it running?"
-    if isinstance(cause, openai.APIStatusError):
+    if _is(cause, "APIStatusError"):
         return f"the endpoint at {base_url} answered {cause.response.status_code}"
 
     # The one that is not an error at the transport layer at all. A host that answers
@@ -243,15 +258,23 @@ class Provider(Protocol):
     def describe_image(self, image: bytes, mime: str) -> str: ...
 
 
+def _provider(backend: dict, model: str) -> Provider:
+    if backend.get("protocol") == "anthropic":
+        from .anthropic import AnthropicProvider
+
+        return AnthropicProvider(model=model, base_url=backend["url"])
+    from .ollama import OpenAICompatibleProvider
+
+    return OpenAICompatibleProvider(model=model, base_url=backend["url"])
+
+
 def get_vision_provider(local_only: bool = False) -> Provider:
     """The vision-capable provider that describes images at ingest (K.11), on the
     configured backend with the separate vision model. Raises LocalOnly for a
     local-only image."""
     from .. import settings
-    from .ollama import OpenAICompatibleProvider
 
-    backend = _backend(local_only)
-    return OpenAICompatibleProvider(model=settings.get("vision_model"), base_url=backend["url"])
+    return _provider(_backend(local_only), settings.get("vision_model"))
 
 
 # Model roles, each backed by one setting. An empty ingest/search setting falls back to
@@ -281,9 +304,4 @@ def get_provider(local_only: bool = False, summarize: bool = False, role: str = 
     its text never leaves the machine, and there is no model on it.
     `summarize=True` is the older spelling of `role="ingest"`.
     """
-    from .ollama import OpenAICompatibleProvider
-
-    backend = _backend(local_only)
-    return OpenAICompatibleProvider(
-        model=model_for("ingest" if summarize else role), base_url=backend["url"]
-    )
+    return _provider(_backend(local_only), model_for("ingest" if summarize else role))

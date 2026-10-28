@@ -11,7 +11,8 @@ store Safari and Mail use: encrypted at rest, unlocked with the login password, 
 readable by nothing else without the user approving it. No new dependency, because it
 ships with the operating system.
 
-Two secrets live here: the provider API key (service `enqueue-llm-api-key`) and the
+Two secrets live here: the provider API key (service `enqueue-llm-api-key.<backend>`, one per
+service) and the
 per-library sync secret (service `enqueue-sync-secret`). They are separate entries on
 purpose, so forgetting one never takes the other with it.
 
@@ -199,16 +200,35 @@ def hint(secret: str | None = None) -> str | None:
 # ---- provider API key ----------------------------------------------------
 
 
-def get() -> str | None:
-    return _get(SERVICE)
+# Each service keeps its own key, so a key never reaches another service. A key saved
+# before keys were split belongs to one of the services there were then.
+_UNSPLIT = ("openrouter", "opencode-go")
 
 
-def set(secret: str) -> None:
-    _set(SERVICE, secret)
+def _for(backend: str | None) -> str:
+    if backend is None:
+        from . import settings
+
+        backend = settings.get("llm_backend")
+    return backend or ""
 
 
-def clear() -> bool:
-    return _clear(SERVICE)
+def get(backend: str | None = None) -> str | None:
+    """The key for a service (the chosen one when none is named)."""
+    backend = _for(backend)
+    return _get(f"{SERVICE}.{backend}") or (_get(SERVICE) if backend in _UNSPLIT else None)
+
+
+def set(secret: str, backend: str | None = None) -> None:
+    _set(f"{SERVICE}.{_for(backend)}", secret)
+
+
+def clear(backend: str | None = None) -> bool:
+    backend = _for(backend)
+    cleared = _clear(f"{SERVICE}.{backend}")
+    if backend in _UNSPLIT:
+        cleared = _clear(SERVICE) or cleared
+    return cleared
 
 
 # ---- per-library sync secret ---------------------------------------------

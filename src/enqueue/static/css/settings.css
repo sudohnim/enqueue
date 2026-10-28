@@ -733,7 +733,8 @@
   }
 
   /* A row: label and its sentence on the left, the control on the right. */
-  .settings-page .group > .field {
+  .settings-page .group > .field,
+  .settings-page .group > #s_local_panel > .field {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--sp-6);
@@ -882,7 +883,8 @@
   }
 
   @media (max-width: 640px) {
-    .settings-page .group > .field {
+    .settings-page .group > .field,
+    .settings-page .group > #s_local_panel > .field {
       grid-template-columns: minmax(0, 1fr);
     }
     .settings-page .field > input,
@@ -1113,3 +1115,76 @@
       animation: none;
     }
   }
+
+/* Ollama on this Mac (renderLocalPanel in js/settings.js): the models to download,
+   a download's progress, the model in use. */
+.local-choices {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+}
+.local-choice {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.local-choice:has(input:checked) {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.local-choice b {
+  font-size: 15px;
+  font-weight: var(--w-medium);
+  color: var(--text);
+}
+.local-choice input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+.local-tag {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-text);
+  font-size: 12px;
+}
+.local-go {
+  display: flex;
+  justify-content: flex-end;
+}
+.local-pull {
+  padding: var(--sp-3) 0;
+}
+.local-bar {
+  height: 6px;
+  margin: 10px 0 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.local-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  transition: transform var(--dur-fast) linear;
+}
+.local-pull-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.local-more summary {
+  padding: var(--sp-2) 0;
+  font-size: 14px;
+  color: var(--accent-text);
+  cursor: pointer;
+}

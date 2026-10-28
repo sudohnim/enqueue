@@ -42,7 +42,7 @@ flowchart LR
   subgraph Outside["Outside services"]
     Sign["Google / Apple<br/>sign-in"]
     RC["RevenueCat<br/>Pro purchases"]
-    Models["Models<br/>included (relay), OpenRouter,<br/>OpenCode Go"]
+    Models["Models<br/>included (relay), Anthropic, OpenAI,<br/>OpenRouter, OpenCode Go"]
   end
 
   Engine <-->|sealed snapshots| SyncAPI

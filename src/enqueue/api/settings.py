@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import threading
 
-from .. import db, greeting, keyring, keyring_file, preview, settings
+from .. import config, db, greeting, keyring, keyring_file, preview, settings
 from ..providers import pause
 from ..sync.enable import enable
 
@@ -39,12 +39,57 @@ def service_models(backend: str) -> dict:
     from .. import catalog
 
     listing = catalog.get(backend) or {}
+    chat, vision = catalog.suggest(backend, listing)
     return {
         "backend": backend,
         "chat": listing.get("chat", []),
         "vision": listing.get("vision"),
         "known": bool(listing),
+        "suggested": chat,
+        "suggested_vision": vision,
     }
+
+
+@router.get("/settings/local")
+def local_status() -> dict:
+    """Ollama on this Mac: installed, running, its models, what to download."""
+    from .. import local_model
+
+    return local_model.status()
+
+
+@router.post("/settings/local/start")
+def local_start() -> dict:
+    from .. import local_model
+
+    if not local_model.start():
+        raise HTTPException(status_code=409, detail="Ollama is not installed on this Mac.")
+    return {"started": True}
+
+
+class LocalPull(BaseModel):
+    model: str
+
+
+@router.post("/settings/local/pull")
+def local_pull(req: LocalPull) -> dict:
+    from .. import local_model
+
+    try:
+        local_model.pull(req.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return local_model.status()
+
+
+@router.delete("/settings/local/pull")
+def local_pull_cancel() -> dict:
+    from .. import local_model
+
+    local_model.cancel()
+    return local_model.status()
 
 
 class KeyringInit(BaseModel):
@@ -69,6 +114,7 @@ class SettingsUpdate(BaseModel):
 
 class ApiKey(BaseModel):
     key: str
+    backend: str | None = None  # a service picked but not saved yet; else the chosen one
 
 
 @router.put("/settings/api-key")
@@ -80,7 +126,9 @@ def store_api_key(req: ApiKey) -> dict:
     """
 
     try:
-        keyring.set(req.key)
+        if req.backend is not None and req.backend not in config.BACKENDS:
+            raise ValueError(f"no service named {req.backend!r}")
+        keyring.set(req.key, req.backend)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     except RuntimeError as exc:
@@ -90,16 +138,17 @@ def store_api_key(req: ApiKey) -> dict:
     settings._resync_to_relay()
     # A usage limit belonged to the old key: stop waiting it out.
     pause.lift("new API key")
-    return settings.api_key_state()
+    return settings.api_key_state(req.backend)
 
 
 @router.delete("/settings/api-key")
-def forget_api_key() -> dict:
-
-    keyring.clear()
+def forget_api_key(backend: str | None = None) -> dict:
+    if backend is not None and backend not in config.BACKENDS:
+        raise HTTPException(status_code=400, detail=f"no service named {backend!r}")
+    keyring.clear(backend)
     settings._resync_to_relay()
     pause.lift("API key removed")
-    return settings.api_key_state()
+    return settings.api_key_state(backend)
 
 
 class SyncSecret(BaseModel):

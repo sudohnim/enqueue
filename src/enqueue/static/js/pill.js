@@ -204,7 +204,7 @@ document.addEventListener("keydown", (e) => {
 	e.preventDefault();
 	// The home header's search (it wears the Cmd+K keycap) is the search; the pill
 	// field is only the fallback on screens without it.
-	const hs = document.getElementById("homesearch");
+	const hs = document.getElementById("homesearch") || document.getElementById("searchfield");
 	if (hs) {
 		hs.focus();
 		hs.select();

@@ -422,11 +422,12 @@ Enqueue needs a language model for three things: summaries, answers, and gatheri
 Search and capture work without one.
 
 - **Included with Enqueue** (the default) needs you signed in to Enqueue sync and no key. Free covers fast models from Anthropic, OpenAI and Google; Pro adds more. The text an answer needs passes through Enqueue to the model and is not kept.
-- **OpenRouter** or **OpenCode Go** use your own key.
+- **Anthropic**, **OpenAI**, **OpenRouter** or **OpenCode Go** use your own key. Each keeps its own key, so switching back and forth does not lose one. Once the key is saved, Enqueue lists the service's models and starts on a small one.
+- **This Mac (Ollama)** runs a model on your Mac. Enqueue finds Ollama (or links to it), opens it, and downloads the model that suits your Mac's memory. Nothing you save leaves the Mac. Your phone cannot reach it and uses the included assistant.
 
-Every model runs on someone else's computer, and the text of the artifacts involved is sent there. An artifact marked **local only** is never sent to any model: it gets no summary, and chat leaves it out.
+Every model but Ollama runs on someone else's computer, and the text of the artifacts involved is sent there. An artifact marked **local only** is never sent to any of them: it gets a summary only from Ollama on this Mac, and otherwise chat leaves it out.
 
-Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**; for OpenRouter and OpenCode Go you pick from the models the service offers, and a name it does not offer is refused, so a typo cannot quietly stop answers.
+Choose in **Settings > Assistant**: where answers come from, and your account key for an online assistant. The model for each job is under **More options**; for a service of your own you pick from the models it offers, and a name it does not offer is refused, so a typo cannot quietly stop answers.
 The key is stored in the macOS Keychain, never in a file.
 
 If the provider says your usage limit is reached, Enqueue pauses its model calls until the limit resets and then carries on by itself.

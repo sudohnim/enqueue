@@ -297,21 +297,7 @@ async function renderSettingsAI() {
 			)
 			.join("") +
 		"</select>" +
-		(picked && picked.included
-			? '<div class="aside">' +
-				(picked.signed_in
-					? "Comes with Enqueue sync, no key needed. When you ask something, the notes it needs " +
-						"pass through Enqueue to the model and are not kept. Anything you marked as only on " +
-						"this Mac stays here."
-					: "<b>Sign in under Sync first.</b> It comes with Enqueue sync, no key needed.") +
-				"</div>"
-			: picked
-			? '<div class="aside caution">Online: when you ask something, the notes it needs are sent to ' +
-				esc(picked.label) +
-				". Anything you marked as only on this Mac stays here." +
-				(picked.needs_key && !picked.key_present ? " <b>Add your account key below.</b>" : "") +
-				"</div>"
-			: "") +
+		backendNoteHtml(picked) +
 		"</div>";
 	if (chosen.value === "custom") {
 		const f = d.settings.llm_url;
@@ -321,11 +307,16 @@ async function renderSettingsAI() {
 			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
 		});
 	}
+	settingsBackends = d.backends;
+	settingsSaved = d.settings;
 	const keyed = d.storage.api_key_present;
 	html +=
+		'<div id="s_local_panel"' +
+		(picked && picked.name === "local" ? "" : " hidden") +
+		"></div>" +
 		'<div class="field"' +
-		(picked && picked.included ? " hidden" : "") +
-		'><label for="s_key">Your key for the online assistant</label>' +
+		(picked && !picked.needs_key ? ' style="display: none"' : "") +
+		' id="s_key_field"><label for="s_key">Your key for the online assistant</label>' +
 		(d.storage.api_key_editable
 			? '<div class="keyrow">' +
 				'<input id="s_key" type="password" autocomplete="off" spellcheck="false" ' +
@@ -333,7 +324,9 @@ async function renderSettingsAI() {
 				(keyed ? "Saved (" + esc(d.storage.api_key_hint || "") + ")" : "Paste your key") +
 				'">' +
 				'<button class="btn tertiary sm" onclick="saveKey()">Save</button>' +
-				(keyed ? '<button class="btn ghost harm sm" onclick="forgetKey()">Remove</button>' : "") +
+				'<button id="s_key_forget" class="btn ghost harm sm" onclick="forgetKey()"' +
+				(keyed ? "" : ' style="display: none"') +
+				">Remove</button>" +
 				"</div>" +
 				'<div class="aside">The service gives you one when you sign up. Kept safely on this Mac, never in a file.</div>'
 			: '<div class="aside caution">' +
@@ -343,6 +336,7 @@ async function renderSettingsAI() {
 				"</div>") +
 		'<div id="keyState" class="aside caution"></div></div>' +
 		"</div>";
+	if (picked && picked.name === "local") setTimeout(renderLocalPanel, 0);
 
 	html +=
 		'<div class="shelf">Summaries</div><div class="group">' +
@@ -686,9 +680,270 @@ function stageModel(name, value) {
 	stageSetting(name, value);
 }
 
+function backendNoteHtml(picked) {
+	if (picked && picked.local)
+		return (
+			'<div id="s_backend_note" class="aside">On this Mac: nothing you save leaves it, and items ' +
+			"marked only on this Mac get summaries too. Your phone uses the assistant included with Enqueue.</div>"
+		);
+	return picked && picked.included
+			? '<div id="s_backend_note" class="aside">' +
+				(picked.signed_in
+					? "Comes with Enqueue sync, no key needed. When you ask something, the notes it needs " +
+						"pass through Enqueue to the model and are not kept. Anything you marked as only on " +
+						"this Mac stays here."
+					: "<b>Sign in under Sync first.</b> It comes with Enqueue sync, no key needed.") +
+				"</div>"
+			: picked
+			? '<div id="s_backend_note" class="aside caution">Online: when you ask something, the notes it needs are sent to ' +
+				esc(picked.label) +
+				". Anything you marked as only on this Mac stays here." +
+				(picked.needs_key && !picked.key_present ? " <b>Add your account key below.</b>" : "") +
+				"</div>"
+			: "";
+}
+
+// The settings as last saved, for what a staged change is compared with.
+let settingsSaved = {};
+
+function currentSetting(name) {
+	if (pendingSettings && name in pendingSettings) return pendingSettings[name];
+	return (settingsSaved[name] || {}).value;
+}
+
+// Ask the service for its models and start on its suggested ones, unless the models
+// already set are ones it offers. Returns the chat model chosen, or null.
+async function applySuggested(name) {
+	let listing;
+	try {
+		listing = await api("/settings/models?backend=" + encodeURIComponent(name));
+	} catch {
+		return null;
+	}
+	if (!listing.known || !listing.suggested) return null;
+	const chat = new Set(listing.chat);
+	const vision = listing.vision ? new Set(listing.vision) : chat;
+	let chosen = null;
+	if (!chat.has(currentSetting("llm_model"))) stageSetting("llm_model", (chosen = listing.suggested));
+	for (const role of ["summarize_model", "search_model"]) {
+		const m = currentSetting(role);
+		if (m && !chat.has(m)) stageSetting(role, null);
+	}
+	if (listing.suggested_vision && !vision.has(currentSetting("vision_model")))
+		stageSetting("vision_model", listing.suggested_vision);
+	return chosen;
+}
+
+// Ollama on this Mac (GET /settings/local, local_model.py): find it, start it, download
+// a model, pick one. Polls while a download runs or Ollama is starting.
+let localPoll = null;
+
+function stopLocalPoll() {
+	clearTimeout(localPoll);
+	localPoll = null;
+}
+
+function localPollSoon(ms) {
+	stopLocalPoll();
+	localPoll = setTimeout(renderLocalPanel, ms);
+}
+
+function gb(bytes) {
+	return (bytes / 2 ** 30).toFixed(1) + " GB";
+}
+
+function localRow(title, aside, action) {
+	return (
+		'<div class="field"><span class="rowlabel">' +
+		title +
+		"</span>" +
+		(action || "") +
+		'<div class="aside">' +
+		aside +
+		"</div></div>"
+	);
+}
+
+function localChoicesHtml(s, intro) {
+	const held = new Set(s.models.map((m) => m.name));
+	const left = s.choices.filter((c) => !held.has(c.model));
+	const pick = left.some((c) => c.model === s.recommended) ? s.recommended : (left[0] || {}).model;
+	const rows = left
+		.map(
+			(c) =>
+				'<label class="local-choice"><input type="radio" name="localModel" value="' +
+				esc(c.model) +
+				'"' +
+				(c.model === pick ? " checked" : "") +
+				"><span><b>" +
+				esc(c.label) +
+				"</b>" +
+				(c.model === s.recommended ? ' <span class="local-tag">Best for this Mac</span>' : "") +
+				"<br>" +
+				esc(c.size_gb + " GB download. " + c.note + " Needs " + c.memory_gb + " GB of memory.") +
+				"</span></label>",
+		)
+		.join("");
+	if (!rows) return "";
+	return (
+		'<div class="local-choices"><div class="aside">' +
+		intro +
+		"</div>" +
+		rows +
+		'<div class="local-go"><button class="btn tertiary" onclick="localPull()">Download</button></div></div>'
+	);
+}
+
+async function renderLocalPanel() {
+	const el = document.getElementById("s_local_panel");
+	if (!el || el.hidden) return stopLocalPoll();
+	let s;
+	try {
+		s = await api("/settings/local");
+	} catch (err) {
+		el.innerHTML = '<div class="aside caution">' + esc(String(err.message || err)) + "</div>";
+		return;
+	}
+	if (!document.getElementById("s_local_panel")) return stopLocalPoll();
+	const pull = s.pull;
+	let html = "";
+	if (!s.installed) {
+		html = localRow(
+			"Ollama is not on this Mac",
+			"Ollama is a free app that runs models on your Mac. Install it, open it once, then come back.",
+			'<span class="keyrow"><button class="btn tertiary sm" onclick="openOutside(\'' +
+				esc(s.download_url) +
+				'\')">Get Ollama</button><button class="btn ghost sm" onclick="renderLocalPanel()">Check again</button></span>',
+		);
+	} else if (!s.running) {
+		html = localRow(
+			"Ollama is not running",
+			"It is installed. Open it and Enqueue finds it.",
+			'<span class="keyrow"><button class="btn tertiary sm" onclick="localStart()">Open Ollama</button>' +
+				'<button class="btn ghost sm" onclick="renderLocalPanel()">Check again</button></span>',
+		);
+	} else if (pull && pull.state === "pulling") {
+		const pct = pull.total ? Math.round((100 * pull.completed) / pull.total) : 0;
+		html =
+			'<div class="local-pull"><div class="rowlabel">Downloading ' +
+			esc(pull.model) +
+			'</div><div class="local-bar"><span style="transform: scaleX(' +
+			pct / 100 +
+			')"></span></div><div class="local-pull-foot"><span class="aside">' +
+			(pull.total ? gb(pull.completed) + " of " + gb(pull.total) : esc(pull.status)) +
+			'. Search and capture work while it downloads.</span><button class="btn ghost sm" onclick="localCancel()">Cancel</button></div></div>';
+		localPollSoon(1000);
+	} else {
+		const note =
+			pull && pull.state === "failed"
+				? '<div class="aside caution">The download stopped: ' + esc(pull.error || "unknown error") + "</div>"
+				: pull && pull.state === "cancelled"
+					? '<div class="aside">Download cancelled.</div>'
+					: "";
+		if (!s.models.length) {
+			html = note + localChoicesHtml(s, "Ollama is running. Pick a model to download.");
+		} else {
+			const current = currentSetting("llm_model");
+			html =
+				note +
+				localRow(
+					"Model",
+					"Ollama is running. " + s.models.length + " model" + (s.models.length === 1 ? "" : "s") + " on this Mac.",
+					'<select id="s_local_model" onchange="localChoose(this.value)">' +
+						s.models
+							.map(
+								(m) =>
+									'<option value="' +
+									esc(m.name) +
+									'"' +
+									(m.name === current ? " selected" : "") +
+									">" +
+									esc(m.name + " (" + gb(m.size) + ")") +
+									"</option>",
+							)
+							.join("") +
+						"</select>",
+				);
+			const more = localChoicesHtml(s, "");
+			if (more) html += '<details class="local-more"><summary>Download another model</summary>' + more + "</details>";
+			if (pull && pull.state === "done" && !s.models.some((m) => m.name === current)) localChoose(pull.model);
+			else if (!s.models.some((m) => m.name === current)) localChoose(s.models[0].name, true);
+		}
+	}
+	el.innerHTML = html;
+}
+
+// Choose a model on this Mac for every job; one that reads pictures does images too.
+async function localChoose(name, quiet) {
+	const s = await api("/settings/local");
+	const m = s.models.find((x) => x.name === name);
+	if (!m) return;
+	stageSetting("llm_backend", "local");
+	stageSetting("llm_model", name);
+	stageSetting("summarize_model", null);
+	stageSetting("search_model", null);
+	// The pictures job needs a model that reads them: this one, or another held here.
+	const sees = m.vision ? m : s.models.find((x) => x.vision);
+	if (sees) stageSetting("vision_model", sees.name);
+	if (quiet) return refreshDirtyBar();
+	await saveSettings();
+}
+
+async function localStart() {
+	try {
+		await api("/settings/local/start", { method: "POST" });
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	toast("Opening Ollama...");
+	localPollSoon(2500);
+}
+
+async function localPull() {
+	const picked = document.querySelector('input[name="localModel"]:checked');
+	if (!picked) return;
+	try {
+		await api("/settings/local/pull", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ model: picked.value }),
+		});
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	renderLocalPanel();
+}
+
+async function localCancel() {
+	await api("/settings/local/pull", { method: "DELETE" });
+	renderLocalPanel();
+}
+
+// Each service keeps its own key: the key row follows the service picked.
+let settingsBackends = [];
+
+function paintKeyRow(name) {
+	const b = settingsBackends.find((x) => x.name === name);
+	const field = document.getElementById("s_key_field");
+	const input = document.getElementById("s_key");
+	if (!b || !field) return;
+	field.style.display = b.needs_key ? "" : "none";
+	const local = document.getElementById("s_local_panel");
+	if (local) local.hidden = name !== "local";
+	if (name === "local") renderLocalPanel();
+	else stopLocalPoll();
+	if (input) input.placeholder = b.key_present ? "Saved (" + (b.key_hint || "") + ")" : "Paste your " + b.label + " key";
+	const forget = document.getElementById("s_key_forget");
+	if (forget) forget.style.display = b.key_present ? "" : "none";
+	const note = document.getElementById("s_backend_note");
+	if (note) note.outerHTML = backendNoteHtml(b);
+}
+
 async function stageBackend(name) {
 	stageSetting("llm_backend", name);
+	paintKeyRow(name);
 	if (BACKEND_MODELS[name]) stageSetting("llm_model", BACKEND_MODELS[name]);
+	else applySuggested(name);
 	// The images model belongs to a service too: each starts on one of its own that reads them.
 	if (VISION_MODELS[name]) stageSetting("vision_model", VISION_MODELS[name]);
 	if (name === "enqueue") {
@@ -2178,6 +2433,8 @@ async function confirmResetSync() {
 	}
 }
 
+// The model a service starts on. Anthropic, OpenAI and this Mac's models are read
+// from the service's own list once it can be asked (applySuggested).
 const BACKEND_MODELS = {
 	enqueue: "anthropic/claude-haiku-5.5",
 	openrouter: "google/gemini-3.8-flash",
@@ -2202,13 +2459,23 @@ async function saveKey() {
 		await api("/settings/api-key", {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ key }),
+			body: JSON.stringify({ key, backend: (pendingSettings && pendingSettings.llm_backend) || null }),
 		});
 	} catch (err) {
 		state.textContent = String(err.message || err);
 		return;
 	}
 	field.value = "";
+	const name = (pendingSettings && pendingSettings.llm_backend) || (settingsSaved.llm_backend || {}).value;
+	const b = settingsBackends.find((x) => x.name === name);
+	if (b) Object.assign(b, { key_present: true, key_hint: "..." + key.slice(-4) });
+	paintKeyRow(name);
+	// With the key in, the service can be asked for its models: start on one of them.
+	const picked = await applySuggested(name);
+	if (isDirty()) {
+		await saveSettings();
+		return toast(picked ? "Key stored. Answers now come from " + picked + "." : "Key stored in the Keychain.");
+	}
 	renderSettingsTab(currentSettingsTab);
 	toast("Key stored in the Keychain.");
 }
@@ -2220,10 +2487,17 @@ async function forgetKey() {
 		"Forget",
 	);
 	if (!yes) return;
+	const staged = pendingSettings && pendingSettings.llm_backend;
 	try {
-		await api("/settings/api-key", { method: "DELETE" });
+		await api("/settings/api-key" + (staged ? "?backend=" + encodeURIComponent(staged) : ""), { method: "DELETE" });
 	} catch (err) {
 		return toast(String(err.message || err), true);
+	}
+	const b = staged && settingsBackends.find((x) => x.name === staged);
+	if (b) {
+		Object.assign(b, { key_present: false, key_hint: null });
+		paintKeyRow(staged);
+		return toast("Key forgotten.");
 	}
 	renderSettingsTab(currentSettingsTab);
 	toast("Key forgotten.");

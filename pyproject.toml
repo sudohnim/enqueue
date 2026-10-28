@@ -26,6 +26,7 @@ dependencies = [
   # The preview browser (webkit_page.py): the Mac's own WebKit, through its bindings.
   "pyobjc-framework-WebKit>=12; sys_platform == 'darwin'",
   "rapidfuzz>=3.14.6",
+  "anthropic>=2.3.0",
 ]
 
 [project.optional-dependencies]

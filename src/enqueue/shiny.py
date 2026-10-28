@@ -295,7 +295,7 @@ def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) ->
     """Ask the chat model for the set's words and cache them. Never raises."""
     from . import privacy
     from .providers import pause
-    from .providers.base import get_provider
+    from .providers.base import get_provider, local_model_on
 
     try:
         if pause.active():
@@ -313,7 +313,7 @@ def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) ->
                 + "\n".join(f"- {line}" for line in face["lines"][:6])
             )
         said = [p["point"] or (f"Both mention {p['via']}." if p["via"] else "") for p in links]
-        if privacy.local_only_ids(ids):
+        if privacy.local_only_ids(ids) and not local_model_on():
             raise LookupError("a local-only note is read by no model")
         provider = get_provider(role="chat")
         food = provider.complete(
@@ -427,15 +427,21 @@ def _recent(conn, scope: str, days: int, today: date) -> set[str]:
     return {r["subject"] for r in rows}
 
 
+def _local_on() -> bool:
+    from .providers.base import local_model_on
+
+    return local_model_on()
+
+
 def _seeds(conn, rng: random.Random, today: date) -> list[str]:
     """Notes to hunt from: with idea lines, not local-only, not used lately. Each seed is
     drawn from a pool picked at random (new notes, old ones, anything), so a press can
     land anywhere in the library."""
     rows = conn.execute(
         "SELECT a.id, a.created_at, a.updated_at FROM artifacts a"
-        f" WHERE {_LIVE} AND a.local_only = 0 AND EXISTS (SELECT 1 FROM facets f"
+        f" WHERE {_LIVE} AND (a.local_only = 0 OR ?) AND EXISTS (SELECT 1 FROM facets f"
         " WHERE f.artifact_id = a.id AND f.level IN (?, ?))",
-        IDEA_LEVELS,
+        (_local_on(), *IDEA_LEVELS),
     ).fetchall()
     resting = _recent(conn, "shiny_seed", SEED_REST_DAYS, today)
     rows = [r for r in rows if r["id"] not in resting]
@@ -493,8 +499,9 @@ def _candidates(conn, seed: str) -> list[dict]:
     local = {
         r["id"]
         for r in conn.execute(
-            "SELECT id FROM artifacts WHERE local_only = 1 AND id IN (SELECT value FROM json_each(?))",
-            (json.dumps(list(best)),),
+            "SELECT id FROM artifacts WHERE local_only = 1 AND NOT ?"
+            " AND id IN (SELECT value FROM json_each(?))",
+            (_local_on(), json.dumps(list(best))),
         )
     }
     floor = min(near.values(), default=0.0)

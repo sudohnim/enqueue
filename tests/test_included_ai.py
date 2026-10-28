@@ -8,7 +8,7 @@ from enqueue import config, included_ai, keyring, settings
 
 def test_the_included_backend_uses_the_device_token_and_nothing_else(store, monkeypatch):
     monkeypatch.setattr(keyring, "sync_secret_get", lambda: "enqd_mac-token")
-    monkeypatch.setattr(keyring, "get", lambda: "sk-or-my-own-key")
+    monkeypatch.setattr(keyring, "get", lambda backend=None: "sk-or-my-own-key")
     assert config.llm_api_key(config.INCLUDED_AI_URL) == "enqd_mac-token"
     assert config.llm_api_key("https://openrouter.ai/api/v1") == "sk-or-my-own-key"
     # A relay of one's own holds a library secret, which is never sent as a model key.

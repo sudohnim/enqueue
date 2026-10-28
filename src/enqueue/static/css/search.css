@@ -1,0 +1,241 @@
+/* Search results (js/search.js doSearch): one reading column. The field stays on top
+   with the query in it; each result is its kind and age, its title, why it is here
+   when it was found by meaning, and the lines that hold the searched words. Results
+   sit on the ground between hairlines, not in boxes; a tile lights under the pointer
+   or the keyboard. What search could not double-check waits under Maybe related. */
+.sr {
+	max-width: 720px;
+	margin: 0 auto;
+	padding: var(--sp-3) 0 140px;
+}
+.sr-field {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 56px;
+	padding: 0 20px;
+	border-radius: var(--r-full);
+	background: var(--surface-2);
+	box-shadow: var(--hairline);
+	transition: box-shadow var(--dur-fast) var(--ease);
+}
+.sr-field:focus-within {
+	box-shadow:
+		var(--hairline),
+		0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.sr-field svg {
+	width: 20px;
+	height: 20px;
+	flex: none;
+	fill: none;
+	stroke: var(--ink-faint);
+	stroke-width: 2;
+	stroke-linecap: round;
+}
+.sr-field input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: 0;
+	background: none;
+	font: inherit;
+	font-size: 18px;
+	color: var(--text);
+}
+.sr-field input::-webkit-search-cancel-button {
+	-webkit-appearance: none;
+}
+.sr-field kbd {
+	flex: none;
+	padding: 3px 7px;
+	border-radius: 6px;
+	background: var(--line-soft);
+	font-family: var(--sans);
+	font-size: 12px;
+	color: var(--ink-faint);
+}
+.sr-count {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin: var(--sp-4) 0 var(--sp-3);
+	font-size: 14px;
+	color: var(--ink-faint);
+}
+.sr-chip {
+	padding: 3px 10px;
+	border-radius: var(--r-full);
+	background: var(--surface);
+	box-shadow: var(--hairline);
+	font-size: 13px;
+	color: var(--text-dim);
+}
+.sr-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.sr-item {
+	position: relative;
+	margin: 0 -24px;
+	padding: 22px 24px;
+	border-radius: var(--r-lg);
+	cursor: pointer;
+	transition: background var(--dur-fast) var(--ease);
+}
+.sr-item + .sr-item::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 24px;
+	right: 24px;
+	border-top: 1px solid var(--line-soft);
+}
+.sr-item:hover,
+.sr-item:focus-visible {
+	background: var(--surface);
+	outline: 0;
+}
+.sr-item:focus-visible {
+	box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.sr-item:hover::before,
+.sr-item:focus-visible::before,
+.sr-item:hover + .sr-item::before,
+.sr-item:focus-visible + .sr-item::before {
+	opacity: 0;
+}
+.sr-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	line-height: 18px;
+	color: var(--ink-faint);
+}
+.sr-meta span[aria-hidden] {
+	opacity: 0.6;
+}
+.sr-title {
+	margin: 8px 0 0;
+	font-family: var(--display);
+	font-size: 22px;
+	line-height: 28px;
+	font-weight: var(--w-strong);
+	letter-spacing: -0.015em;
+	color: var(--text);
+	overflow-wrap: anywhere;
+}
+.sr-why {
+	margin-top: 6px;
+	font-size: 14px;
+	line-height: 21px;
+	color: var(--text-dim);
+}
+.sr-why b {
+	margin-right: 6px;
+	font-weight: var(--w-medium);
+	color: var(--accent-text, var(--accent));
+}
+.sr-excerpt {
+	margin: 8px 0 0;
+	font-size: 16px;
+	line-height: 26px;
+	color: var(--text-dim);
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+.sr mark {
+	padding: 0 2px;
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--accent) 15%, transparent);
+	color: var(--text);
+	-webkit-box-decoration-break: clone;
+	box-decoration-break: clone;
+}
+.sr-maybe {
+	margin-top: var(--sp-6);
+	padding-top: var(--sp-4);
+	border-top: 1px solid var(--line);
+}
+.sr-maybe-head {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: var(--sp-2);
+	font-size: 14px;
+	font-weight: var(--w-medium);
+	color: var(--text-dim);
+}
+.sr-maybe-head span {
+	font-weight: var(--w-regular);
+	color: var(--ink-faint);
+}
+.sr-mini {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+	margin: 0 -12px;
+	padding: 10px 12px;
+	border-radius: var(--r-md);
+	cursor: pointer;
+}
+.sr-mini:hover,
+.sr-mini:focus-visible {
+	background: var(--surface);
+	outline: 0;
+}
+.sr-mini:focus-visible {
+	box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.sr-mini b {
+	flex: none;
+	max-width: 50%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 16px;
+	font-weight: var(--w-medium);
+	color: var(--text);
+}
+.sr-mini > span:last-child {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 14px;
+	color: var(--ink-faint);
+}
+.sr-empty {
+	margin-top: var(--sp-6);
+	font-size: 16px;
+	line-height: 26px;
+	color: var(--text-dim);
+}
+.sr-empty p {
+	margin: 0 0 var(--sp-2);
+}
+@media (max-width: 800px) {
+	.sr {
+		padding-left: var(--sp-4);
+		padding-right: var(--sp-4);
+	}
+	.sr-item {
+		margin: 0 -12px;
+		padding: 18px 12px;
+	}
+	.sr-item + .sr-item::before {
+		left: 12px;
+		right: 12px;
+	}
+	.sr-title {
+		font-size: 20px;
+		line-height: 26px;
+	}
+}

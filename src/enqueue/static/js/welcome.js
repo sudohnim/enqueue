@@ -85,6 +85,8 @@ function welcomeLeaveStep() {
 }
 
 async function renderWelcome() {
+	// Opened from How to use, it is a page off the wall: the pill offers Home.
+	if (welcomeOnDemand && place !== "settings") restorePill("settings");
 	const step = WELCOME_STEPS[welcomeAt];
 	const last = welcomeAt === WELCOME_STEPS.length - 1;
 	const body = await WELCOME_RENDER[step.id]();
@@ -380,13 +382,18 @@ async function welcomeUseOnline() {
 	const state = document.getElementById("w_state");
 	const key = field.value.trim();
 	try {
-		await welcomeSettings({ llm_backend: name, llm_model: BACKEND_MODELS[name] || null });
 		if (key)
 			await api("/settings/api-key", {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ key }),
+				body: JSON.stringify({ key, backend: name }),
 			});
+		// With the key in, the service names its own models; start on its suggested one.
+		const listing = await api("/settings/models?backend=" + encodeURIComponent(name)).catch(() => ({}));
+		const changes = { llm_backend: name, llm_model: listing.suggested || BACKEND_MODELS[name] || null };
+		if (listing.suggested) Object.assign(changes, { summarize_model: null, search_model: null });
+		if (listing.suggested_vision) changes.vision_model = listing.suggested_vision;
+		await welcomeSettings(changes);
 	} catch (err) {
 		state.textContent = String(err.message || err);
 		return;

@@ -110,11 +110,11 @@ def trip_from(exc: BaseException) -> bool:
     The pause runs until the provider's retry-after (at least MIN_WAIT), or
     DEFAULT_WAIT when it gives none. A later 429 can only extend the pause.
     """
-    import openai
+    from .base import _is
 
     global _until, _reason
     link: BaseException | None = exc
-    while link is not None and not isinstance(link, openai.RateLimitError):
+    while link is not None and not _is(link, "RateLimitError"):
         link = link.__cause__ or link.__context__
     if link is None:
         return False

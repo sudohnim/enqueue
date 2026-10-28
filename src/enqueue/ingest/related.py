@@ -443,7 +443,7 @@ def _judge(
     sentence for a yes, "" for a no}. A candidate the answer does not cover stays
     unjudged (absent). A pair with a local-only item is a "no" without a model call."""
     from .. import privacy
-    from ..providers.base import get_provider
+    from ..providers.base import get_provider, local_model_on
 
     ids = [artifact_id, *(c["id"] for c in candidates)]
     faces = {
@@ -466,7 +466,7 @@ def _judge(
         title = (row["title"] if row else None) or "(untitled)"
         return f"[{row['kind'] if row else 'item'}] {title}\nabout: " + " ".join(about[aid][:2])
 
-    private = privacy.local_only_ids(ids)
+    private = set() if local_model_on() else privacy.local_only_ids(ids)
     out: dict[str, str] = {}
     for local in (False, True):
         batch = [c for c in candidates if (artifact_id in private or c["id"] in private) == local]

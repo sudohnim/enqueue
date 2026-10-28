@@ -192,10 +192,12 @@ def backends() -> list[dict]:
     `key_present` is whether the backend's key actually resolves, from either
     source - the environment or the Keychain - because `api_key_state` already
     consults both and the panel's warning must not contradict it (I7.1).
-    Resolved once per call: the Keychain read is a subprocess, so per-backend
-    resolution would pay for it five times over.
+    Each service has its own key; Keychain reads are cached (keyring._get).
     """
-    key = config.llm_api_key()
+    from . import keyring
+
+    from_env = bool(os.getenv("ENQ_LLM_API_KEY"))
+    keys = {n: keyring.get(n) for n, spec in config.BACKENDS.items() if spec["key_var"]}
     return [
         {
             "name": name,
@@ -203,7 +205,8 @@ def backends() -> list[dict]:
             "url": spec["url"],
             "local": spec["local"],
             "needs_key": bool(spec["key_var"]),
-            "key_present": bool(spec["key_var"]) and bool(key) and key != "no-key",
+            "key_present": bool(spec["key_var"]) and (from_env or bool(keys.get(name))),
+            "key_hint": keyring.hint(keys.get(name)),
             **({"chat_models": _go_chat_models(name)} if name == "opencode-go" else {}),
             **(_included(spec) if spec.get("included") else {}),
         }
@@ -337,6 +340,9 @@ def update(changes: dict) -> dict:
             from .ingest import queue as ingest_queue
 
             ingest_queue.refresh_on_model_change()
+            if "llm_backend" in changes:
+                # Local-only items get read once a model on this Mac answers.
+                ingest_queue.backfill_summaries()
         except Exception:  # noqa: BLE001 - the setting is saved; the rewrite can wait
             pass
     return all_settings()
@@ -363,7 +369,7 @@ def storage() -> dict:
     }
 
 
-def api_key_state() -> dict:
+def api_key_state(backend: str | None = None) -> dict:
     """What is known about the key without revealing it."""
     from . import keyring
 
@@ -377,7 +383,7 @@ def api_key_state() -> dict:
             "keychain_available": keyring.available(),
         }
 
-    stored = keyring.get()
+    stored = keyring.get(backend)
     return {
         "api_key_present": bool(stored),
         "api_key_where": "keychain" if stored else None,

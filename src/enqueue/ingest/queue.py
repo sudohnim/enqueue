@@ -637,7 +637,7 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     succeeded, and `enq index --images` re-runs this for every image later.
     """
     from .. import capture, db
-    from ..providers.base import get_vision_provider
+    from ..providers.base import get_vision_provider, local_model_on
 
     conn = db.get_conn()
     try:
@@ -657,7 +657,7 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     if found is None:
         return ""
     path, mime, _ = found
-    if row["local_only"]:
+    if row["local_only"] and not local_model_on():
         # No model sees a local-only picture; its own words still come from OCR.
         body = _ocr_text(path.read_bytes())
         if body:
@@ -1101,7 +1101,7 @@ def refresh_on_model_change() -> int:
     the model settings change. Returns the number queued.
     """
     from .. import db
-    from ..providers.base import get_provider
+    from ..providers.base import get_provider, local_model_on
     from . import facets as facets_mod
 
     try:
@@ -1126,11 +1126,11 @@ def refresh_on_model_change() -> int:
             for r in conn.execute(
                 "SELECT a.id FROM artifacts a"
                 " WHERE a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
-                "   AND a.kind != 'chat' AND a.local_only = 0"
+                "   AND a.kind != 'chat' AND (a.local_only = 0 OR ?)"
                 "   AND NOT EXISTS (SELECT 1 FROM facet_skips s WHERE s.artifact_id = a.id)"
                 "   AND EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id"
                 "               AND f.edited = 0 AND f.model_version != ?)",
-                (model,),
+                (local_model_on(), model),
             )
         ]
     for aid in ids:

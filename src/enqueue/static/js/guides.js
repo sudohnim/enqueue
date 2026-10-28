@@ -38,7 +38,7 @@ const Guides = (() => {
       ],
       also: ["models", "api-key", "concepts"],
       words:
-        "model ai backend provider service included free openrouter opencode connect connection llm privacy private leave machine local remote cloud who reads sent where",
+        "model ai backend provider service included free openrouter opencode anthropic claude openai chatgpt gpt connect connection llm privacy private leave machine local remote cloud who reads sent where",
     },
     {
       id: "models",
@@ -71,7 +71,7 @@ const Guides = (() => {
         "The password a model service gives you so it knows the calls are yours. Enqueue keeps it in the macOS Keychain, not in any file.",
       need: "Only for a service of your own. The assistant included with Enqueue needs no key.",
       steps: [
-        "Get a key from the service you chose (on their site, often under API keys).",
+        "Get a key from the service you chose: Anthropic at console.anthropic.com, OpenAI at platform.openai.com, OpenRouter at openrouter.ai.",
         "Paste it into Your account key and press Save beside it.",
         "Forget removes it from the Keychain.",
       ],

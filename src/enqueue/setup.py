@@ -81,6 +81,15 @@ def _model_step(backend: dict, models: dict) -> dict:
             "title": "Assistant connected",
             "detail": "Included with Enqueue",
         }
+    if backend["name"] == "local":
+        from . import catalog
+
+        held = catalog.cached("local")
+        if held is None:
+            return step | {"state": TODO, "detail": "Ollama is not running on this Mac"}
+        if not held["chat"]:
+            return step | {"state": TODO, "detail": "Download a model to this Mac"}
+        return step | {"state": DONE, "title": "Assistant connected", "detail": backend["label"]}
     if backend.get("needs_key") and not backend.get("key_present"):
         return step | {
             "state": TODO,
@@ -201,7 +210,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             " answered. Paste a new one under Your key.",
         )
 
-    if backend["name"] in ("opencode-go", "openrouter"):
+    if backend["name"] in ("opencode-go", "openrouter", "anthropic", "openai", "local"):
         from . import catalog
 
         gone = sorted(
