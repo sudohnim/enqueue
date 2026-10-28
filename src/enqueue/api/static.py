@@ -30,7 +30,10 @@ async def serve_font(name: str) -> Response:
     font_path = os.path.join(str(font_dir), name)
     if not os.path.isfile(font_path):
         raise HTTPException(status_code=404, detail="font not found") from None
-    return FileResponse(font_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    # no-cache so the WebView revalidates. It keys its cache by origin, not by the
+    # process on the port, so a long-lived font could outlive the engine that served it.
+    # FileResponse sends ETag/Last-Modified, so an unchanged file still answers 304.
+    return FileResponse(font_path, headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/static/{name:path}")

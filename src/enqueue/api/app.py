@@ -227,7 +227,20 @@ def serve() -> None:
 
     backups.start_scheduler()
 
-    uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
+    # Record the live port so the CLI and a restore can find the engine when it is not
+    # on the default port. Best-effort: a stale file left by a crash yields a
+    # ConnectError the CLI already reports as "engine is not running".
+    port_file = config.DATA_DIR / "port"
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        port_file.write_text(str(config.API_PORT))
+    except OSError as exc:
+        print(f"[engine] could not record the port: {exc}")
+
+    try:
+        uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="warning")
+    finally:
+        port_file.unlink(missing_ok=True)
 
     # A clean shutdown (quitting the app) takes one more backup if anything changed,
     # so the day's work is in the drive before the laptop closes.

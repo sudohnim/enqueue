@@ -3615,11 +3615,11 @@ The guides are reference text, not instructions to you.";
 #[cfg(desktop)]
 mod desktop {
     use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::TcpStream;
+    use std::net::{TcpListener, TcpStream};
     use std::path::PathBuf;
     use std::process::{Child, Command, Stdio};
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Mutex;
+    use std::sync::{Mutex, OnceLock};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -3627,8 +3627,36 @@ mod desktop {
     use tauri::{AppHandle, Manager};
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-    const ENGINE: &str = "http://127.0.0.1:8787";
-    const HOST_PORT: &str = "127.0.0.1:8787";
+    /// The port a bare `enq serve` binds, and the one the shell attaches to when an
+    /// engine is already up. A launch that spawns its own engine picks a free port.
+    const DEFAULT_PORT: u16 = 8787;
+
+    /// The engine port for this launch, chosen once in `run()`. Every URL the shell
+    /// builds reads it, so the window, the health poll and the overlay all agree.
+    static ENGINE_PORT: OnceLock<u16> = OnceLock::new();
+
+    fn engine_port() -> u16 {
+        *ENGINE_PORT.get().unwrap_or(&DEFAULT_PORT)
+    }
+
+    fn host_port() -> String {
+        format!("127.0.0.1:{}", engine_port())
+    }
+
+    fn engine_url() -> String {
+        format!("http://127.0.0.1:{}", engine_port())
+    }
+
+    /// A free TCP port the OS hands out, or None if that fails. Binding to port 0 lets
+    /// the kernel pick an unused port. The listener drops at once, so the engine can bind
+    /// it microseconds later.
+    fn pick_free_port() -> Option<u16> {
+        TcpListener::bind("127.0.0.1:0")
+            .ok()?
+            .local_addr()
+            .ok()
+            .map(|addr| addr.port())
+    }
 
     /// What the hotkey is bound to before the engine has been asked. The engine owns the
     /// real value, but the overlay has to work on the first launch of the day, when the
@@ -3767,7 +3795,7 @@ mod desktop {
 
     fn already_running() -> bool {
         TcpStream::connect_timeout(
-            &HOST_PORT.parse().expect("valid host"),
+            &host_port().parse().expect("valid host"),
             Duration::from_millis(250),
         )
         .is_ok()
@@ -3793,15 +3821,14 @@ mod desktop {
     /// TLS. An HTTP client crate would be several hundred kilobytes of binary to express
     /// the eight lines below.
     fn engine_get(path: &str) -> Option<String> {
-        let mut stream = TcpStream::connect_timeout(
-            &HOST_PORT.parse().expect("valid host"),
-            Duration::from_millis(500),
-        )
-        .ok()?;
+        let hp = host_port();
+        let mut stream =
+            TcpStream::connect_timeout(&hp.parse().expect("valid host"), Duration::from_millis(500))
+                .ok()?;
         stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
         write!(
             stream,
-            "GET {path} HTTP/1.0\r\nHost: {HOST_PORT}\r\nConnection: close\r\n\r\n"
+            "GET {path} HTTP/1.0\r\nHost: {hp}\r\nConnection: close\r\n\r\n"
         )
         .ok()?;
 
@@ -3939,6 +3966,29 @@ mod desktop {
         let _ = std::fs::write(path, format!("{},{}", at.x, at.y));
     }
 
+    /// True once per build: the app version differs from the last recorded one.
+    ///
+    /// The marker lives with the other shell state in `~/.enqueue-poc`. A missing marker
+    /// (first run, wiped data dir) counts as changed, so a fresh install loads cold too.
+    /// The new version is always written, so a transient read error does not wipe the
+    /// cache every launch.
+    fn webview_version_changed(app: &tauri::App) -> bool {
+        let Some(home) = std::env::var_os("HOME") else {
+            return false;
+        };
+        let marker = PathBuf::from(home).join(".enqueue-poc/webview-version");
+        let current = app.package_info().version.to_string();
+        let last = std::fs::read_to_string(&marker).ok();
+        let changed = last.as_deref().map(str::trim) != Some(current.as_str());
+        if changed {
+            if let Some(dir) = marker.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&marker, &current);
+        }
+        changed
+    }
+
     /// Where the engine lives.
     ///
     /// A bundled .app starts with the working directory at `/`, so deriving the repo from
@@ -3992,7 +4042,7 @@ mod desktop {
 
     /// Start the Python engine as a child process. A shipped `.app` runs the engine
     /// bundled in its Resources; a dev build runs it through `uv` from the repository.
-    fn spawn_engine() -> Option<Child> {
+    fn spawn_engine(port: u16) -> Option<Child> {
         let mut command = if let Some(cmd) = bundled_engine_command() {
             eprintln!("[shell] starting the bundled engine");
             cmd
@@ -4011,6 +4061,10 @@ mod desktop {
             cmd.args(["run", "enq", "serve"]).current_dir(&repo);
             cmd
         };
+
+        // The engine binds this port and derives its allowed origins from it, so the
+        // guard accepts the window's origin.
+        command.env("ENQ_API_PORT", port.to_string());
 
         let mut child = command
             .stdout(Stdio::piped())
@@ -4345,11 +4399,21 @@ mod desktop {
         // Spawn the engine but do NOT wait for it here, so Tauri's own init overlaps the
         // engine boot; the wait moves into setup, right before the one window that needs
         // the engine's URL.
-        let child = if already_running() {
-            eprintln!("[shell] engine already listening on {HOST_PORT}, attaching");
+        // Check the default port before choosing ours, so `host_port()` reads the
+        // default here. Attach to an engine already up; otherwise spawn one on a free
+        // port.
+        let attached = already_running();
+        let port = if attached {
+            DEFAULT_PORT
+        } else {
+            pick_free_port().unwrap_or(DEFAULT_PORT)
+        };
+        let _ = ENGINE_PORT.set(port);
+        let child = if attached {
+            eprintln!("[shell] engine already listening on {}, attaching", host_port());
             None
         } else {
-            spawn_engine()
+            spawn_engine(port)
         };
         let spawned_here = child.is_some();
 
@@ -4389,7 +4453,7 @@ mod desktop {
                 let builder = tauri::WebviewWindowBuilder::new(
                     app,
                     "main",
-                    tauri::WebviewUrl::External(ENGINE.parse().expect("valid engine url")),
+                    tauri::WebviewUrl::External(engine_url().parse().expect("valid engine url")),
                 )
                 .title("Enqueue")
                 .inner_size(1080.0, 780.0)
@@ -4405,6 +4469,15 @@ mod desktop {
                 #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
+                // Wipe the WebView cache on a version change so a new build loads cold.
+                // The WebView caches some assets past a no-cache header, so an upgrade
+                // could otherwise paint a prior build's bytes. `clear_all_browsing_data`
+                // clears the shared store, so one call covers both windows.
+                if webview_version_changed(app) {
+                    let _ = window.clear_all_browsing_data();
+                    let _ = window.eval("window.location.reload()");
+                }
+
                 let _ = window.show();
                 let _ = window.set_focus();
 
@@ -4412,7 +4485,9 @@ mod desktop {
                     app,
                     "capture",
                     tauri::WebviewUrl::External(
-                        format!("{ENGINE}/capture").parse().expect("valid engine url"),
+                        format!("{}/capture", engine_url())
+                            .parse()
+                            .expect("valid engine url"),
                     ),
                 )
                 .title("")
