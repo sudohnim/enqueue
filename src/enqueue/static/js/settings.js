@@ -2098,6 +2098,13 @@ function renderSyncConfigured(sync) {
 				'<button class="btn harm" onclick="confirmDeleteAccount()">Delete account</button>' +
 				"</div></div>"
 			: "") +
+			'<div class="shelf">Join your other devices</div><div class="group">' +
+			'<div class="field"><span class="rowlabel">Join with your account\'s key</span>' +
+			'<div class="aside">For a Mac whose key does not match your other devices, so neither ' +
+			"can read the other's changes. This Mac's key is set aside, you sign in again, and " +
+			"you approve this Mac from one of your other devices. Nothing in your library is lost.</div>" +
+			'<button class="btn tertiary" onclick="confirmJoinAccountKey()">Join</button>' +
+			"</div></div>" +
 			'<div class="shelf">Start sync over</div><div class="group">' +
 			'<div class="field"><span class="rowlabel">Start over with a new key</span>' +
 			'<div class="aside caution">Throws away the key your devices share. Anything already ' +
@@ -2404,6 +2411,24 @@ function hideLinkCode() {
 		btn.setAttribute("aria-expanded", "false");
 		btn.classList.replace("tertiary", "primary");
 	}
+}
+
+async function confirmJoinAccountKey() {
+	const yes = await ask(
+		"Join with your account's key?",
+		"This Mac signs out and sets its own sync key aside. Then sign in again and approve " +
+			"this Mac from another of your devices. Your library stays on this Mac and is sent " +
+			"again under the shared key.",
+		"Join",
+	);
+	if (!yes) return;
+	try {
+		await api("/account/join-key", { method: "POST" });
+	} catch (err) {
+		return toast(String(err.message || err), true);
+	}
+	toast("Signed out. Sign in again to join.");
+	await renderSettingsTab("sync");
 }
 
 async function confirmResetSync() {

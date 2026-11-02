@@ -11,10 +11,12 @@ fresh cursor (MOBFIX.5), which is how the mutation reaches other devices.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import re
 
 import httpx
+import nacl.exceptions
 
 from .. import blobstore, config, crypto, db, keyring, keyring_file, settings
 
@@ -106,6 +108,46 @@ def backfill_link_previews() -> int:
     return len(ids)
 
 
+UNPUSHED_FILE = "sync_unpushed.json"
+_unpushed_lock = __import__("threading").Lock()
+
+
+def _unpushed() -> list[str]:
+    try:
+        return list(json.loads((config.DATA_DIR / UNPUSHED_FILE).read_text()))
+    except (OSError, ValueError):
+        return []
+
+
+def _save_unpushed(ids: list[str]) -> None:
+    try:
+        (config.DATA_DIR / UNPUSHED_FILE).write_text(json.dumps(ids))
+    except OSError:
+        pass
+
+
+def _owe_push(artifact_id: str) -> None:
+    with _unpushed_lock:
+        ids = _unpushed()
+        if artifact_id not in ids:
+            _save_unpushed(ids + [artifact_id])
+
+
+def _paid_push(artifact_id: str) -> None:
+    with _unpushed_lock:
+        ids = _unpushed()
+        if artifact_id in ids:
+            _save_unpushed([i for i in ids if i != artifact_id])
+
+
+def retry_unpushed() -> int:
+    """Push again what a failed push left owed. Returns how many were tried."""
+    ids = _unpushed()
+    for artifact_id in ids:
+        push_artifact(artifact_id)
+    return len(ids)
+
+
 def push_artifact(artifact_id: str) -> None:
     """PUT one artifact's snapshot to the relay, when sync is configured.
 
@@ -122,9 +164,8 @@ def push_artifact(artifact_id: str) -> None:
         snapshot = read_artifact_snapshot(conn, artifact_id)
     finally:
         conn.close()
-    if snapshot is None:
-        return
-    if snapshot["artifact"].get("local_only"):
+    if snapshot is None or snapshot["artifact"].get("local_only"):
+        _paid_push(artifact_id)
         return
 
     dek = keyring_file.dek()
@@ -147,15 +188,25 @@ def push_artifact(artifact_id: str) -> None:
                 f"{url.rstrip('/')}/sync/object/{name}", content=data, headers=headers
             )
     except httpx.HTTPError as exc:
-        # The relay is unreachable. Report and move on; the local edit already landed.
+        # The relay is unreachable. The local edit already landed; the push is owed and
+        # sent again after the next pull that reaches the relay (retry_unpushed).
         print(f"[sync] push failed for {artifact_id}: {exc}", flush=True)
+        _owe_push(artifact_id)
         return
     # 201 = stored or overwritten (the relay upserts by name, MOBFIX.5). 409 is
     # no longer expected but stays accepted for an older relay. Anything else is
     # a real error worth surfacing, but never fatal to the edit.
     if resp.status_code not in (201, 409):
         print(f"[sync] push rejected for {artifact_id}: {resp.status_code}", flush=True)
+        if resp.status_code >= 500 or resp.status_code == 429:
+            _owe_push(artifact_id)  # the relay's trouble, not this snapshot's
+        else:
+            _paid_push(artifact_id)
+        from .. import telemetry
+
+        telemetry.report("sync", "PushRejected", f"relay answered {resp.status_code}")
         return
+    _paid_push(artifact_id)
 
     # Push the blobs the snapshot refers to (the sync design (AGENTS.md): fetched on demand by the
     # reader/thumbnails). The blob name is HMAC(content_hash, DEK), so it reveals
@@ -345,6 +396,54 @@ def push_chat(chat_id: str) -> None:
         print(f"[sync] chat push rejected for {chat_id}: {resp.status_code}", flush=True)
 
 
+def _writer(name: str) -> str:
+    """The device that wrote a relay object (`dev/<device>/...`)."""
+    return name.split("/")[1] if name.startswith("dev/") else ""
+
+
+UNREADABLE_FILE = "sync_unreadable.json"
+
+
+def unreadable_devices() -> dict:
+    """Devices whose changes this Mac could not open: {device: {"count", "last"}}."""
+    try:
+        return json.loads((config.DATA_DIR / UNREADABLE_FILE).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _note_unreadable(unreadable: dict[str, int], readable: set[str]) -> None:
+    """Remember which devices seal under another key, and forget one that reads again."""
+    known = unreadable_devices()
+    changed = False
+    for device in readable:
+        if device in known and device not in unreadable:
+            known.pop(device)
+            changed = True
+    if unreadable:
+        from datetime import datetime, timezone
+
+        from .. import events, telemetry
+
+        now = datetime.now(timezone.utc).isoformat()
+        for device, count in unreadable.items():
+            entry = known.setdefault(device, {"count": 0})
+            entry.update(count=entry["count"] + count, last=now)
+        changed = True
+        total = sum(unreadable.values())
+        events.emit(
+            "sync.unreadable",
+            f"{total} change{'s' if total != 1 else ''} from another device could not be opened",
+            data={"devices": sorted(unreadable)},
+        )
+        telemetry.report("sync", "KeyMismatch", f"{total} objects sealed under another key")
+    if changed:
+        try:
+            (config.DATA_DIR / UNREADABLE_FILE).write_text(json.dumps(known))
+        except OSError:
+            pass
+
+
 def pull() -> dict:
     """List changed objects since the cursor, download and apply snapshots (SYNC.5).
 
@@ -374,6 +473,8 @@ def pull() -> dict:
 
         pulled = 0
         skipped = 0
+        unreadable: dict[str, int] = {}
+        readable: set[str] = set()
         # Artifacts whose pulled snapshot carried facets (e.g. a phone-edited summary):
         # apply_snapshot writes the facet rows, but the dense/sparse facet index is
         # separate and stays stale until reindexed. Collect them and reindex once the
@@ -413,7 +514,15 @@ def pull() -> dict:
             if resp.status_code != 200:
                 continue
             try:
-                snapshot = deserialize(crypto.open_payload(resp.content, dek))
+                try:
+                    snapshot = deserialize(crypto.open_payload(resp.content, dek))
+                except nacl.exceptions.CryptoError:
+                    # Sealed under another key: a device of this library that holds a
+                    # different one. Its changes can never be read here; say so.
+                    unreadable.setdefault(_writer(name), 0)
+                    unreadable[_writer(name)] += 1
+                    continue
+                readable.add(_writer(name))
                 with db.transaction() as conn:
                     # The object's path says what it is: a conversation snapshot applies
                     # through the chat limb, everything else is an artifact.
@@ -440,6 +549,7 @@ def pull() -> dict:
                 print(f"[sync] pull skipped {name}: {type(exc).__name__}: {exc}", flush=True)
 
     _write_cursor(new_cursor)
+    _note_unreadable(unreadable, readable)
 
     # Reindex any facets a pull brought in, after the write transactions have closed.
     # Best effort: a stale index is a search miss, never a data loss, so one failed
@@ -459,7 +569,7 @@ def pull() -> dict:
     if applied:
         _ingest_pulled(applied)
 
-    return {"pulled": pulled, "skipped": skipped}
+    return {"pulled": pulled, "skipped": skipped, "unreadable": sum(unreadable.values())}
 
 
 def phone_settings() -> dict:

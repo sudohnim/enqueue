@@ -291,6 +291,20 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "relay",
             "Your relay is on this Mac or your home network, so your phone can only sync at home.",
         )
+    if sync["relay_configured"]:
+        from .sync.client import unreadable_devices
+
+        if unreadable_devices():
+            say(
+                "sync-key-mismatch",
+                WARN,
+                "sync",
+                "relay",
+                "Another of your devices locks its changes with a different key, so they"
+                " cannot be read here, and it cannot read this Mac's. On that device, open"
+                " Settings, Sync, More options, choose Join with your account's key, sign"
+                " in again and approve it from this Mac.",
+            )
     if sync["keyring_legacy"]:
         say(
             "keyring-legacy",

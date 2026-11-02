@@ -35,6 +35,11 @@ BACKOFF_MAX_SECONDS = 300.0
 # monotonic timestamp before which the timer loop skips submitting a pull.
 _backoff_until = 0.0
 _fail_streak = 0
+# When the current run of failed pulls began (monotonic), and whether it was reported.
+_failing_since = 0.0
+_stuck_reported = False
+# A pull that has failed this long is reported as stuck (telemetry.py).
+STUCK_SECONDS = 600.0
 
 
 def _pull_handler(_item: object) -> object:
@@ -46,10 +51,21 @@ def _pull_handler(_item: object) -> object:
     arm an exponential backoff the timer loop honours. Any OTHER exception is a
     real defect and is left to propagate so the Worker logs it in full.
     """
-    global _backoff_until, _fail_streak
+    global _backoff_until, _fail_streak, _failing_since, _stuck_reported
     try:
         result = pull()
     except (httpx.TimeoutException, httpx.TransportError, HTTPError) as exc:
+        now = time.monotonic()
+        if not _fail_streak:
+            _failing_since, _stuck_reported = now, False
+        elif not _stuck_reported and now - _failing_since >= STUCK_SECONDS:
+            from .. import telemetry
+
+            _stuck_reported = True
+            minutes = int((now - _failing_since) // 60)
+            telemetry.report(
+                "sync", "PullStuck", f"no pull for {minutes} min: {type(exc).__name__}"
+            )
         _fail_streak += 1
         delay = min(POLL_SECONDS * 2**_fail_streak, BACKOFF_MAX_SECONDS)
         _backoff_until = time.monotonic() + delay
@@ -63,6 +79,12 @@ def _pull_handler(_item: object) -> object:
         log.info("sync pull recovered after %d failed attempt(s)", _fail_streak)
     _fail_streak = 0
     _backoff_until = 0.0
+    try:
+        from .client import retry_unpushed
+
+        retry_unpushed()
+    except Exception:  # noqa: BLE001 - a retry never fails the pull
+        log.debug("owed pushes not sent", exc_info=True)
     try:
         pulled = (result or {}).get("pulled", 0)
         if pulled:

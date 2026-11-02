@@ -204,7 +204,9 @@ def _receive(private, sealed: bytes) -> None:
         raise JoinError("Could not fetch the library's keyring. Try again.")
     keyring.dek_store(dek)
     keyring_file._wrap_by_library(dek)
-    keyring_file.load_dek_from_keychain()
+    # Use it now: the key held in memory (one this Mac made before) would otherwise
+    # keep sealing until a restart, under a key no other device can open.
+    keyring_file.use(dek)
     # Whatever this Mac already holds goes up once, beside what it pulls down.
     settings.update({"sync_backfill_done": False})
     enable(_token(), _relay())

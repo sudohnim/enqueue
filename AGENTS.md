@@ -1446,6 +1446,16 @@ Now a missed fetch counts like a failed apply and the cursor stays put until eve
 Phones on older builds pull everything once after updating (`FULL_PULL_KEY` in `sync_library`), which re-applies what is already there as no-ops and catches whatever they stepped past.
 Bump `FULL_PULL_KEY` to make every phone do that again.
 
+### Two Macs on two keys, and sync that fails quietly (2026-11-02)
+
+The work Mac went on sealing under a key of its own from 2026-10-26 11:46 while the home Mac kept the account's: 166 of its objects were unreadable at home, and neither Mac saw the other's changes, because a pull skips an object it cannot open and moves on.
+`join._receive` stored the key it received but then called `load_dek_from_keychain()`, which returns the key already held in memory, so a Mac that had made a key of its own kept sealing with it until a restart; it now calls `keyring_file.use(dek)`.
+The way out the sign-in refusal named ("start sync over") made yet another key, which the sign-in refused again; **Join with your account's key** (Settings, Sync, More options; `POST /account/join-key`, `account.join_account_key`) signs out and sets this Mac's keyring aside (`keyring.before-join-<time>.json`, never deleted: it holds the vault's PIN wrap), so the next sign-in asks to join and, once approved, pushes everything again under the shared key.
+A pull now counts objects sealed under another key per writing device (`sync_unreadable.json`, `client.unreadable_devices`), logs `sync.unreadable`, sends a `KeyMismatch` error report and raises the `sync-key-mismatch` setup alert; a later readable object from that device clears it.
+A push the relay never took (no network, or a 5xx or 429) is owed in `sync_unpushed.json` and sent again after the next pull that reaches the relay (`retry_unpushed`, from the sync worker); before, it waited for the next edit of that item. A rejection the relay will repeat is reported (`PushRejected`) and not retried.
+A pull that keeps failing for `worker.STUCK_SECONDS` (10 minutes) is reported once per run of failures (`PullStuck`).
+`tests/test_sync_health.py` pins all of it.
+
 ### One thread at a time opens or closes the library (2026-10-22)
 
 The engine froze whole (`/health` too, 0% CPU) when one thread opened a connection to the library while another closed one under load: SQLite's file locks (`findReusableFd` on open, `unixLock` in `sqlite3WalClose` on close) each waited on the same inode mutex forever, one of them holding Python's global lock.

@@ -134,6 +134,13 @@ def remove_device(device_id: str) -> dict:
     return {"devices": account.devices()}
 
 
+@router.post("/account/join-key")
+def join_key() -> dict:
+    """Drop this Mac's own sync key and sign out, so the next sign-in asks to join."""
+    account.join_account_key()
+    return {"ok": True}
+
+
 @router.post("/account/sign-out")
 def sign_out() -> dict:
     account.sign_out()

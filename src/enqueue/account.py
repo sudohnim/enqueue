@@ -260,8 +260,8 @@ def _adopt(pair: dict, refresh: bool = False) -> None:
             _drop_device(device["device_id"], pair["access_token"])
             raise AccountError(
                 "This account already has a library, and this Mac holds the key to a "
-                "different one. To join the account's library, start sync over on this "
-                "Mac (Settings, Sync, More options), then sign in again."
+                "different one. To join the account's library, open Settings, Sync, More "
+                "options, and choose Join with your account's key."
             )
     settings.update(
         {
@@ -647,6 +647,13 @@ def sign_out() -> None:
     except (AccountError, httpx.HTTPError):
         pass
     _forget_here()
+
+
+def join_account_key() -> None:
+    """This Mac's key opens a different library than the account's: sign out, drop the
+    key (set aside, not deleted) and start a sign-in that asks to join."""
+    sign_out()
+    keyring_file.forget()
 
 
 def delete_account() -> None:

@@ -187,6 +187,30 @@ def _wrap_by_library(dek: bytes) -> None:
     _write(record)
 
 
+def forget() -> None:
+    """Drop this Mac's sync key so it can join the account's library instead.
+
+    keyring.json is set aside, never deleted (it also holds the vault's PIN wrap), and
+    the key leaves the Keychain and memory. What this Mac holds is pushed again under
+    the account's key once it has joined (sync_backfill_done is cleared by the join).
+    """
+    global _dek
+    from datetime import datetime
+
+    path = _path()
+    if path.exists():
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path.rename(path.with_name(f"keyring.before-join-{stamp}.json"))
+    keyring.dek_clear()
+    _dek = None
+
+
+def use(dek: bytes) -> None:
+    """Seal and open with this key from now on (a key just received from another device)."""
+    global _dek
+    _dek = dek
+
+
 def load_dek_from_keychain() -> bytes | None:
     """Load the DEK from Keychain/file into memory on engine startup (QR.1).
 
