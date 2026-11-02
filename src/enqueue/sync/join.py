@@ -207,8 +207,10 @@ def _receive(private, sealed: bytes) -> None:
     # Use it now: the key held in memory (one this Mac made before) would otherwise
     # keep sealing until a restart, under a key no other device can open.
     keyring_file.use(dek)
-    # Whatever this Mac already holds goes up once, beside what it pulls down.
+    # Whatever this Mac already holds goes up once, beside what it pulls down, and the
+    # pull starts over: anything it read past under another key could not be opened.
     settings.update({"sync_backfill_done": False})
+    client._write_cursor(0)
     enable(_token(), _relay())
 
     def _pull() -> None:

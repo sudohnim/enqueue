@@ -122,3 +122,23 @@ def test_joining_the_accounts_key_sets_this_macs_aside(store, monkeypatch):
     account.join_account_key()
     assert not keyring_file.is_initialized() and keyring_file.dek() is None
     assert list(config.DATA_DIR.glob("keyring.before-join-*.json"))
+
+
+def test_a_join_pulls_everything_again(store, monkeypatch):
+    from enqueue.sync import join
+
+    client._write_cursor(1996)
+    keyring_file.initialize()
+    from enqueue.sync import enable as enable_mod
+
+    monkeypatch.setattr(enable_mod, "enable", lambda *a, **k: None)
+    monkeypatch.setattr(join, "_token", lambda: "t")
+    monkeypatch.setattr(join, "_relay", lambda: "http://127.0.0.1:9")
+    monkeypatch.setattr(client, "pull", lambda: {"pulled": 0})
+    shared = nacl.utils.random(32)
+    monkeypatch.setattr(
+        crypto, "open_sealed", lambda _p, _s: ('{"dek": "%s"}' % shared.hex()).encode()
+    )
+    join._receive(None, b"sealed")
+    assert client._read_cursor() == 0
+    assert keyring_file.dek() == shared

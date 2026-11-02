@@ -580,9 +580,10 @@ def _apply_derived_layers(
         )
 
     now = snapshot["artifact"]["updated_at"]
+    # Replace: a stale local cache rebuilt other sections and pushed them back.
     for s in snapshot.get("section_cache") or []:
         conn.execute(
-            "INSERT OR IGNORE INTO derived_values (scope, subject, attribute, value, grounded,"
+            "INSERT OR REPLACE INTO derived_values (scope, subject, attribute, value, grounded,"
             " source, model_version, created_at)"
             " VALUES ('section_summary', ?, ?, ?, 1, 'model', ?, ?)",
             (artifact_id, s["hash"], s["summary"], s["model"], now),

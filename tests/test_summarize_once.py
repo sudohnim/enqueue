@@ -40,7 +40,7 @@ class _Model:
         name = response_model.__name__
         self.calls.append(name)
         if name == "_RawSectionSummary":
-            return response_model(summary="A day of walking and eating in Lisbon.")
+            return response_model(summary=f"A day of walking in Lisbon, as {self.model} read it.")
         if name == "_RawFacetSet":
             return response_model(
                 facets=[
@@ -220,6 +220,29 @@ def test_a_note_from_the_phone_is_summarized_by_one_desktop(macs, monkeypatch):
     _pull(from_work)
     q.process(aid)
     assert personal.model.calls == []
+
+
+def test_two_macs_that_both_summarized_settle_without_pushing_back(macs, monkeypatch):
+    personal, work = macs
+    personal.use()
+    aid = notes.create(body=BODY)["artifact"]["id"]
+    phone = _snapshot(aid)
+    for key in ("entities", "sections", "section_cache", "chunk_contexts", "related_verdicts"):
+        phone.pop(key)
+    q.process(aid)
+
+    work.use()
+    _pull(phone)
+    q.process(aid)
+    from_work = _snapshot(aid)
+
+    personal.use()
+    pushed: list[str] = []
+    monkeypatch.setattr(facets_mod, "sync_facets", lambda a, bump=False: pushed.append(a))
+    _pull(from_work)
+    q.process(aid)
+    assert pushed == []
+    assert _layers(aid)["sections"] == from_work["sections"]
 
 
 def test_a_phone_snapshot_never_wipes_what_a_desktop_wrote(macs):
