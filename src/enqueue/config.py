@@ -206,6 +206,10 @@ HOSTED_RELAY_URL = os.getenv(
 # The assistant included with Enqueue sync (relay/ai.py, included_ai.py): an
 # OpenAI-compatible endpoint on the hosted relay, reached with this Mac's device token.
 INCLUDED_AI_URL = HOSTED_RELAY_URL + "/ai/v1"
+# Error reports (telemetry.py), to PostHog's US servers. The project key is public by
+# design (it can only send events); empty means nothing is sent.
+POSTHOG_HOST = os.getenv("ENQ_POSTHOG_HOST", "https://us.i.posthog.com").rstrip("/")
+POSTHOG_KEY = os.getenv("ENQ_POSTHOG_KEY", "phc_ABrGucMK5dgs3pkcshBUfoujVNw2oBrPGbxrTbdJHmR6")
 BACKENDS["enqueue"] = {
     "label": "Included with Enqueue",
     "url": INCLUDED_AI_URL,

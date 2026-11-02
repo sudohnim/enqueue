@@ -81,6 +81,8 @@
             "allow-mobile-outbox-push",
             "allow-mobile-pick-image",
             "allow-mobile-save-cropped-image",
+            "allow-mobile-capture-file",
+            "allow-mobile-report",
             "allow-mobile-chat",
             "allow-mobile-settings-get",
             "allow-mobile-settings-set",

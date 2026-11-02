@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-capture-file"
+description = "Enables the mobile_capture_file command without any pre-configured scope."
+commands.allow = ["mobile_capture_file"]
+
+[[permission]]
+identifier = "deny-mobile-capture-file"
+description = "Denies the mobile_capture_file command without any pre-configured scope."
+commands.deny = ["mobile_capture_file"]

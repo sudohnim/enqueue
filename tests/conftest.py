@@ -89,6 +89,10 @@ def _no_model_catalog_fetch(monkeypatch):
     from enqueue import local_model
 
     monkeypatch.setattr(local_model, "BASE", "http://127.0.0.1:9")
+    # Usage counts never leave a test run (tests/test_telemetry.py sets its own key).
+    from enqueue import config as _config
+
+    monkeypatch.setattr(_config, "POSTHOG_KEY", "")
 
 
 @pytest.fixture(autouse=True)

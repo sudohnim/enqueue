@@ -7744,6 +7744,30 @@
   // saved, so none is lost or filed twice. Runs at boot, whenever the app comes to the
   // front, and right after a save while the app is running (MainActivity pokes it).
   let qinboxBusy = false;
+  // A script error on the page goes to mobile_report (lib.rs), which cleans its message
+  // and sends it on as an error report. The same error from the same place goes once.
+  (() => {
+    const sent = new Set();
+    const send = (kind, message, source, line) => {
+      const key = [kind, message, source, line].join("|");
+      if (sent.has(key) || sent.size >= 20) return;
+      sent.add(key);
+      invoke("mobile_report", {
+        kind: String(kind || "Error"),
+        message: String(message || ""),
+        source: source || "",
+        line: line || 0,
+      }).catch(() => {});
+    };
+    window.addEventListener("error", (e) => {
+      if (e.error || e.message) send(e.error && e.error.name, e.message, e.filename, e.lineno);
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const r = e.reason || {};
+      send(r.name || "UnhandledRejection", r.message || String(e.reason), "", 0);
+    });
+  })();
+
   async function drainQuickInbox() {
     const bridge = window.EnqueueAndroid;
     if (qinboxBusy || !bridge || typeof bridge.quickCaptures !== "function") return;
@@ -7752,9 +7776,15 @@
     try {
       const items = JSON.parse(bridge.quickCaptures() || "[]");
       for (const item of items) {
-        if (item.text.trim()) {
+        // A file from the share sheet (ShareActivity) carries its bytes; text is a capture.
+        const call = item.data
+          ? ["mobile_capture_file", { base64: item.data, mime: item.mime, name: item.name }]
+          : (item.text || "").trim()
+            ? ["mobile_capture", { text: item.text }]
+            : null;
+        if (call) {
           try {
-            await invoke("mobile_capture", { text: item.text });
+            await invoke(...call);
           } catch (e) {
             console.warn("quick capture not filed yet:", errString(e));
             break; // keep it (and the rest, in order) for the next try

@@ -492,6 +492,7 @@ def phone_settings() -> dict:
         "llm_headers": _val("llm_headers", ""),
         "auto_preview": _val("auto_preview", True),
         "trash_days": _val("trash_days", "30"),
+        "telemetry": _val("telemetry", "on"),
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     if (config.BACKENDS.get(s["llm_backend"]) or {}).get("local"):

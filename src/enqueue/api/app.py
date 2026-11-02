@@ -154,6 +154,9 @@ def serve() -> None:
     _bootstrap_index()
 
     _start_sync_worker()
+    from .. import telemetry
+
+    telemetry.install()
 
     # Resume any summaries a previous run left owing (a model rate-limit / 500):
     # the sweeper re-submits them on backoff until they generate. Then backfill the

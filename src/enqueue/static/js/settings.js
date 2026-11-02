@@ -2535,10 +2535,50 @@ watchApprovals();
 // this session. It is also the vault's front door - the "Diagnostics" button
 // prompts for the 6-digit PIN and, on success, opens the vault. A mundane,
 // genuinely-useful tab is the whole point: it invites no suspicion.
+// Error reports (telemetry.py): applied at once, no Save, like a privacy switch should.
+async function setTelemetry(button) {
+	const on = button.getAttribute("aria-checked") !== "true";
+	button.setAttribute("aria-checked", String(on));
+	try {
+		await api("/settings", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ changes: { telemetry: on ? "on" : "off" } }),
+		});
+	} catch (err) {
+		button.setAttribute("aria-checked", String(!on));
+		return toast(String(err.message || err), true);
+	}
+	toast(on ? "Error reports on." : "Error reports off. Nothing more is sent.");
+}
+
+function telemetryCard(t) {
+	const on = ["on", "true", "1"].includes(String(t.value).toLowerCase());
+	return (
+		'<div class="shelf">Error reports</div><div class="group">' +
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">Send error reports</span>' +
+		(t.locked
+			? '<div class="pinned">set outside Enqueue (' + esc(t.env_var) + ")</div>"
+			: '<div class="aside">When something breaks, where in Enqueue it broke, so it can be fixed. ' +
+				"Never what you saved, searched for or asked, and never who you are.</div>") +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(on) +
+		'" aria-label="Send error reports"' +
+		(t.locked ? ' disabled aria-disabled="true"' : "") +
+		' onclick="setTelemetry(this)"><span class="knob"></span></button>' +
+		"</div></div></div>"
+	);
+}
+
 async function renderSettingsEvents() {
 	let events = [];
+	let usage = "";
 	try {
-		events = (await api("/events?limit=200")).events || [];
+		const [e, d] = await Promise.all([api("/events?limit=200"), api("/settings")]);
+		events = e.events || [];
+		if (d.settings.telemetry) usage = telemetryCard(d.settings.telemetry);
 	} catch (_) {
 		/* an empty log is fine */
 	}
@@ -2547,6 +2587,7 @@ async function renderSettingsEvents() {
 		: '<p class="aside">No events yet.</p>';
 	ensureEventsPoller();
 	return (
+		usage +
 		'<div class="settings-card">' +
 		'<div class="settings-card-label">Activity</div>' +
 		'<p class="aside" style="margin-bottom: var(--sp-3);">What Enqueue has been doing. Click a line for the details.</p>' +

@@ -362,3 +362,30 @@ def secret_report() -> dict:
         return {"count": len(rows), "hits": [dict(r) for r in rows]}
     finally:
         conn.close()
+
+
+class PageError(BaseModel):
+    message: str = ""
+    kind: str = "Error"
+    source: str = ""
+    line: int = 0
+    function: str = ""
+
+
+@router.post("/report")
+def page_error(req: PageError) -> dict:
+    """A JavaScript error on the page, sent on as an error report (telemetry.py)."""
+    from .. import telemetry
+
+    source = req.source.rsplit("/static/", 1)[-1] if "/static/" in req.source else "page"
+    frames = [
+        {
+            "filename": "static/" + source[:120],
+            "function": req.function[:80] or "?",
+            "lineno": req.line,
+            "platform": "javascript",
+            "in_app": True,
+        }
+    ]
+    telemetry.report("page", req.kind or "Error", req.message, frames)
+    return {"ok": True}

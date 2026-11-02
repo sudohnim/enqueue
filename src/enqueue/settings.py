@@ -118,6 +118,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "drafts_keep": ("ENQ_DRAFTS_KEEP", "thinned", True),
     # Days a deleted artifact survives before it is destroyed for good.
     "trash_days": ("ENQ_TRASH_DAYS", 30, True),
+    # Whether error reports go to PostHog (telemetry.py): where the code broke, never
+    # what is in the library. On by default, with a switch in Settings > Activity.
+    "telemetry": ("ENQ_TELEMETRY", "on", True),
     # BACKFILL.2: one-shot flag so auto-backfill runs only once on sync-enable.
     "sync_backfill_done": ("ENQ_SYNC_BACKFILL_DONE", False, True),
     # One-shot flag: saved links were re-pushed once so their previews reach the phone
@@ -131,7 +134,15 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
 }
 
 # The settings a linked phone reads (sync/client.push_settings).
-PHONE_FIELDS = {"llm_backend", "llm_model", "llm_url", "llm_headers", "auto_preview", "trash_days"}
+PHONE_FIELDS = {
+    "llm_backend",
+    "llm_model",
+    "llm_url",
+    "llm_headers",
+    "auto_preview",
+    "trash_days",
+    "telemetry",
+}
 
 # The settings that pick which account/model a call goes to.
 _PROVIDER_FIELDS = {"llm_backend", "llm_model", "summarize_model", "llm_url", "llm_headers"}

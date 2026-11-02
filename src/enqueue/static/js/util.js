@@ -200,3 +200,32 @@ document.addEventListener("copy", (e) => {
 	if (clip.html) e.clipboardData.setData("text/html", clip.html);
 	e.preventDefault();
 });
+
+// A script error on the page goes to the engine, which cleans its message and sends it
+// on as an error report (telemetry.py). The same error from the same place goes once.
+(() => {
+	const sent = new Set();
+	const send = (kind, message, source, line, fn) => {
+		const key = [kind, message, source, line].join("|");
+		if (sent.has(key) || sent.size >= 20) return;
+		sent.add(key);
+		fetch("/report", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				kind: String(kind || "Error"),
+				message: String(message || ""),
+				source: source || "",
+				line: line || 0,
+				function: fn || "",
+			}),
+		}).catch(() => {});
+	};
+	window.addEventListener("error", (e) => {
+		if (e.error || e.message) send(e.error && e.error.name, e.message, e.filename, e.lineno);
+	});
+	window.addEventListener("unhandledrejection", (e) => {
+		const r = e.reason || {};
+		send(r.name || "UnhandledRejection", r.message || String(e.reason), "", 0);
+	});
+})();

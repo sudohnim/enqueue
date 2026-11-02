@@ -88,6 +88,7 @@ You can change the shortcut in Settings > Capture.
 - **+ > Note** opens a page to write on.
 - **+ > Link**, **Upload** and **Camera** save a link, a file from the phone, or a photo.
 - Long-press the app icon and choose **Quick capture** for a one-thought box that floats over whatever app you are in.
+- **Share to Enqueue (Android).** In any app, press Share and choose Enqueue. A page is saved as a link with its title, text as a note, and a picture or PDF as itself. You stay in the app you were in.
 
 Capturing never waits: the thing is saved at once, and the reading, summarising and indexing happen behind it.
 
@@ -415,6 +416,12 @@ There is no password reset either, because nobody else holds a key.
 - **In backups.** Every file is encrypted before it reaches the folder.
 - **Through the relay.** Everything is encrypted on your device first. The relay sees only how many things there are, roughly how big (sizes are rounded up), and when they change.
 - **The recovery kit** (**Settings > Library**) is 56 letters and digits. It opens your backups and your library on a new Mac, and brings sync back with them. Keep it where you keep passwords: without it, a lost Mac means a lost library.
+
+### Error reports
+
+When something breaks, Enqueue sends a report of where in its code it broke, so it can be fixed.
+It never sends what you saved, searched for or asked, and it never knows who you are.
+Turn it off in **Settings > Activity**; your phone follows your Mac.
 
 ### Models
 
