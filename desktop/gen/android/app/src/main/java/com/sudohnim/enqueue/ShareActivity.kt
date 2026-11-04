@@ -13,9 +13,9 @@ import android.widget.Toast
  * Enqueue in the system share sheet: a link, some text, a picture or a PDF shared from
  * another app is saved without opening Enqueue, and the person stays where they were.
  *
- * It has no screen. It writes what was shared to QuickCaptureInbox and closes; the page
- * files it into the library at once when the app is running (MainActivity.drainQuickCaptures),
- * else the next time it opens, as it does for the launcher's quick capture.
+ * It has no screen. It writes what was shared to QuickCaptureInbox and closes; it is
+ * filed into the library at once (MainActivity.drainQuickCaptures) and sent to the
+ * relay by a sync job (SyncWorker.syncSoon), as the launcher's quick capture is.
  */
 class ShareActivity : Activity() {
   private companion object {
@@ -31,7 +31,10 @@ class ShareActivity : Activity() {
         .onFailure { Log.w("EnqueueShare", "could not keep a share", it) }
         .getOrDefault(R.string.share_failed)
       runOnUiThread {
-        if (result == R.string.quick_capture_saved) MainActivity.drainQuickCaptures()
+        if (result == R.string.quick_capture_saved) {
+          MainActivity.drainQuickCaptures(this)
+          SyncWorker.syncSoon(applicationContext)
+        }
         Toast.makeText(applicationContext, result, Toast.LENGTH_SHORT).show()
         finish()
       }

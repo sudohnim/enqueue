@@ -259,6 +259,21 @@
     width: 15px;
     height: 18px;
   }
+  /* Google's own look: a light button, its four-colour G as given, dark words. */
+  .welcome-sample-btn.google-sign-in {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 44px;
+    color: var(--text);
+    font-weight: var(--w-medium);
+  }
+  .google-sign-in svg {
+    width: 18px;
+    height: 18px;
+    stroke: none;
+  }
   .welcome-delete-link {
     margin-top: var(--sp-2);
     padding: var(--sp-2);
@@ -6332,6 +6347,16 @@
       button.innerHTML =
         '<svg viewBox="0 0 17 20" aria-hidden="true"><path fill="currentColor" d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2 1-3.2-1 .1-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z"/></svg>' +
         "Sign in with Apple";
+    } else {
+      const button = document.getElementById("sign_in_btn");
+      button.classList.add("google-sign-in");
+      button.innerHTML =
+        '<svg viewBox="0 0 18 18" aria-hidden="true">' +
+        '<path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62z"/>' +
+        '<path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.33A9 9 0 0 0 9 18z"/>' +
+        '<path fill="#FBBC05" d="M3.96 10.71A5.41 5.41 0 0 1 3.68 9c0-.59.1-1.17.28-1.71V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l3-2.33z"/>' +
+        '<path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3 2.33C4.67 5.16 6.66 3.58 9 3.58z"/>' +
+        "</svg>Sign in with Google";
     }
   }
 
@@ -7768,39 +7793,13 @@
     });
   })();
 
-  async function drainQuickInbox() {
+  // Kotlin files the inbox (QuickCaptureInbox.fileAll, one filer at a time, shared
+  // with the sync job) and calls __enqQuickFiled when something landed.
+  function drainQuickInbox() {
     const bridge = window.EnqueueAndroid;
-    if (qinboxBusy || !bridge || typeof bridge.quickCaptures !== "function") return;
-    qinboxBusy = true;
-    let filed = 0;
-    try {
-      const items = JSON.parse(bridge.quickCaptures() || "[]");
-      for (const item of items) {
-        // A file from the share sheet (ShareActivity) carries its bytes; text is a capture.
-        const call = item.data
-          ? ["mobile_capture_file", { base64: item.data, mime: item.mime, name: item.name }]
-          : (item.text || "").trim()
-            ? ["mobile_capture", { text: item.text }]
-            : null;
-        if (call) {
-          try {
-            await invoke(...call);
-          } catch (e) {
-            console.warn("quick capture not filed yet:", errString(e));
-            break; // keep it (and the rest, in order) for the next try
-          }
-          filed++;
-        }
-        bridge.ackQuickCapture(item.id);
-      }
-    } catch (e) {
-      console.warn("quick capture inbox:", e);
-    } finally {
-      qinboxBusy = false;
-    }
-    if (filed) renderLibrary();
+    if (bridge && typeof bridge.fileQuickCaptures === "function") bridge.fileQuickCaptures();
   }
-  window.__enqDrainQuickInbox = drainQuickInbox;
+  window.__enqQuickFiled = () => renderLibrary();
   drainQuickInbox();
   // iPhone: the Home Screen action "Quick capture" opens the writing page for a new
   // note (plugins/tauri-plugin-native). A cold launch leaves it waiting for the page.

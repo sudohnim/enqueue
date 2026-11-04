@@ -1,5 +1,6 @@
 package com.sudohnim.enqueue
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -50,19 +51,21 @@ class MainActivity : TauriActivity() {
       return currentActivity ?: throw IllegalStateException("Activity not initialized")
     }
 
-    /**
-     * The launcher popup just saved a capture: if the app is running, have the page file
-     * it into the library now rather than the next time it comes to the front.
-     */
-    fun drainQuickCaptures() {
+    /** File the inbox off the main thread; the page shows what landed. */
+    fun drainQuickCaptures(context: Context) {
+      val app = context.applicationContext
+      Thread {
+        runCatching { QuickCaptureInbox.fileAll(app) }
+          .onFailure { android.util.Log.w("EnqueueInbox", "could not file captures", it) }
+          .onSuccess { if (it > 0) quickCapturesFiled() }
+      }.start()
+    }
+
+    /** Captures from the inbox reached the library: if the page is up, redraw it. */
+    fun quickCapturesFiled() {
       val activity = currentActivity?.takeIf { !it.isDestroyed } ?: return
       val wv = activity.webView ?: return
-      wv.post {
-        wv.evaluateJavascript(
-          "window.__enqDrainQuickInbox && window.__enqDrainQuickInbox()",
-          null,
-        )
-      }
+      wv.post { wv.evaluateJavascript("window.__enqQuickFiled && window.__enqQuickFiled()", null) }
     }
   }
 
@@ -112,13 +115,9 @@ class MainActivity : TauriActivity() {
   private var webView: WebView? = null
 
   inner class EnqueueBridge {
-    /** Captures the launcher popup saved, oldest first: a JSON array of {id, text}. */
+    /** File the popup's and the share sheet's captures; the page hears __enqQuickFiled. */
     @JavascriptInterface
-    fun quickCaptures(): String = QuickCaptureInbox.list(this@MainActivity)
-
-    /** The page filed this popup capture into the library: forget it. */
-    @JavascriptInterface
-    fun ackQuickCapture(id: String) = QuickCaptureInbox.ack(this@MainActivity, id)
+    fun fileQuickCaptures() = drainQuickCaptures(this@MainActivity)
 
     /**
      * The page's ground drifts with the time of day (js/ground.js). The status and

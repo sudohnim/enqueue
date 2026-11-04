@@ -8,15 +8,16 @@ import java.io.File
 import java.util.UUID
 
 /**
- * Captures saved by the launcher popup (QuickCaptureActivity), waiting for the page.
+ * Captures saved by the launcher popup (QuickCaptureActivity), waiting to be filed.
  *
- * The popup runs without the WebView, so it cannot reach the library itself: it writes
- * each capture here, one file per capture, and the page files them into the library
- * through `mobile_capture` (mobile.html `drainQuickInbox`), acknowledging each one only
- * after it is saved. A capture is written to a temp file and renamed into place, so the
- * page never reads half of one, and it stays here until acknowledged, so a failed save
- * is retried the next time the app comes to the front. It is sealed with the Keystore
- * key (StoreKey); a plain .txt from an older build is still read once.
+ * The popup runs without the WebView, so it writes each capture here, one file per
+ * capture, and starts a sync job (SyncWorker.syncSoon). [fileAll] files them into the
+ * library through Rust (`fileOne` in lib.rs), from that job or when the page asks
+ * (mobile.html `drainQuickInbox`), and forgets each one only after it is saved. One
+ * filer runs at a time, so the job and the page never file a capture twice. A capture
+ * is written to a temp file and renamed into place, so a filer never reads half of one,
+ * and it stays here until saved, so a failed save is retried. It is sealed with the
+ * Keystore key (StoreKey); a plain .txt from an older build is still read once.
  *
  * The share sheet (ShareActivity) puts captures here too: text the same way, and a
  * shared file (a picture, a PDF) as a sealed `.file` holding its type, name and bytes.
@@ -83,7 +84,26 @@ object QuickCaptureInbox {
     return out.toString()
   }
 
-  /** The page saved this capture: forget it. */
+  /** File every waiting capture into the library, oldest first; returns how many. */
+  @Synchronized
+  fun fileAll(context: Context): Int {
+    StoreKey.appContext = context.applicationContext
+    System.loadLibrary("enqueue_lib")
+    val items = JSONArray(list(context))
+    val dir = context.dataDir.absolutePath
+    var filed = 0
+    for (i in 0 until items.length()) {
+      val item = items.getJSONObject(i)
+      if (!fileOne(dir, item.toString())) break // keep it, and the rest, for the next try
+      ack(context, item.getString("id"))
+      filed++
+    }
+    return filed
+  }
+
+  @JvmStatic private external fun fileOne(dir: String, record: String): Boolean
+
+  /** This capture is saved: forget it. */
   @Synchronized
   fun ack(context: Context, id: String) {
     if (!ID.matches(id)) return

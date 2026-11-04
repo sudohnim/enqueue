@@ -977,6 +977,7 @@
     width: 18px;
     height: 18px;
     flex: none;
+    stroke: none; /* base.css outlines every svg; a brand mark is drawn as given */
   }
 
   /* The phone's code: under its row, across the plate, on white so it scans. */

@@ -24,8 +24,8 @@ import androidx.core.view.updatePadding
  *
  * Translucent and in its own task (AndroidManifest), so saving or dismissing returns the
  * person straight to where they were. Save writes the text to QuickCaptureInbox and
- * closes at once; the page files it into the library, immediately when the app is
- * already running (MainActivity.drainQuickCaptures), else the next time it opens.
+ * closes at once; it is filed into the library at once (MainActivity.drainQuickCaptures)
+ * and sent to the relay by a sync job (SyncWorker.syncSoon), app open or not.
  * Dismissing keeps the draft for next time, like the desktop overlay's Escape.
  */
 class QuickCaptureActivity : ComponentActivity() {
@@ -98,7 +98,8 @@ class QuickCaptureActivity : ComponentActivity() {
     }
     saved = true
     getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(DRAFT).apply()
-    MainActivity.drainQuickCaptures()
+    MainActivity.drainQuickCaptures(this)
+    SyncWorker.syncSoon(applicationContext)
     Toast.makeText(applicationContext, R.string.quick_capture_saved, Toast.LENGTH_SHORT).show()
     finish()
   }
