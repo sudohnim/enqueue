@@ -19,17 +19,35 @@ from . import config
 app = typer.Typer(add_completion=False, help="Enqueue: capture anything, organise it later.")
 
 
+def _base_url() -> str:
+    """Where the engine listens.
+
+    The engine records its port in `DATA_DIR/port`, so the CLI finds it even when it is
+    not on the default port. An explicit ENQ_API_PORT wins. With neither, 8787 is used.
+    """
+    import os
+
+    if os.getenv("ENQ_API_PORT"):
+        return config.API_URL
+    try:
+        port = (config.DATA_DIR / "port").read_text().strip()
+    except OSError:
+        return config.API_URL
+    return f"http://{config.API_HOST}:{port}" if port.isdigit() else config.API_URL
+
+
 def _call(method: str, path: str, **kwargs) -> dict:
+    base = _base_url()
     try:
         response = httpx.request(
             method,
-            f"{config.API_URL}{path}",
+            f"{base}{path}",
             timeout=kwargs.pop("timeout", 600),
             **kwargs,
         )
     except ConnectError:
         typer.secho(
-            f"engine is not running at {config.API_URL}\nstart it with:  enq serve",
+            f"engine is not running at {base}\nstart it with:  enq serve",
             fg=typer.colors.RED,
         )
         raise typer.Exit(1) from None
