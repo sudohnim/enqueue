@@ -132,3 +132,41 @@ class TestExport:
         # completeness is vacuous over an empty library, but the files must exist
         check = export.verify(out)
         assert check["ok"] is True
+
+
+def test_tags_and_the_pictures_inside_a_note_come_along(store, quiet_queue):
+    from enqueue import tags
+
+    pic = capture.upload(b"\x89PNG fake", "willow.png", "image/png", embedded=True)["id"]
+    note = notes.create(f"# Willow\n\n![](/artifacts/{pic}/blob)\n")["artifact"]["id"]
+    tags.add(note, "trees")
+    out = store / "export"
+
+    export.export(out)
+
+    (page,) = (out / "artifacts").glob("willow-*.md")
+    text = page.read_text()
+    assert "Tags: #trees" in text
+    (copy,) = (out / "files").glob("*-willow.png")
+    assert f"![](../files/{copy.name})" in text and copy.read_bytes() == b"\x89PNG fake"
+    assert export.verify(out)["ok"]
+
+
+def test_the_app_starts_an_export_and_reports_it(store, quiet_queue):
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from enqueue.api.app import create_app
+
+    notes.create("# One\n\nA note.")
+    client = TestClient(create_app())
+
+    assert client.post("/export", json={"path": str(store)}).status_code == 202
+    for _ in range(50):
+        state = client.get("/export").json()
+        if state["state"] != "running":
+            break
+        time.sleep(0.1)
+    assert state == {"state": "done", "path": str(store / "Enqueue"), "items": 1}
+    assert client.post("/export", json={"path": str(store / "nope")}).status_code == 404

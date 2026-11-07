@@ -69,5 +69,6 @@ def progress() -> dict:
         "remaining": remaining,
         "state": state,
         "paused_until": end.isoformat() if end is not None else None,
+        "limit": pause.limit(),
         "show": remaining >= SHOW_FROM and state != "idle",
     }

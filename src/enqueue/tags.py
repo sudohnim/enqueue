@@ -40,21 +40,24 @@ def add(artifact_id: str, name: str) -> dict:
         exists = conn.execute("SELECT 1 FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
         if exists is None:
             raise KeyError(artifact_id)
-
-        conn.execute(
-            "INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?,?,?)",
-            (str(uuid.uuid4()), tag_name, now),
-        )
-        tag_id = conn.execute("SELECT id FROM tags WHERE name = ?", (tag_name,)).fetchone()["id"]
-        conn.execute(
-            "INSERT OR IGNORE INTO artifact_tags (artifact_id, tag_id, created_at)"
-            " VALUES (?,?,?)",
-            (artifact_id, tag_id, now),
-        )
+        attach(conn, artifact_id, tag_name, now)
         # Tagging is touching the artifact, and the wall is ordered by last touch.
         conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (now, artifact_id))
     push_artifact(artifact_id)
     return {"artifact_id": artifact_id, "name": tag_name}
+
+
+def attach(conn, artifact_id: str, tag_name: str, now: str) -> None:
+    """Attach a normalized tag inside the caller's transaction, touching nothing else."""
+    conn.execute(
+        "INSERT OR IGNORE INTO tags (id, name, created_at) VALUES (?,?,?)",
+        (str(uuid.uuid4()), tag_name, now),
+    )
+    tag_id = conn.execute("SELECT id FROM tags WHERE name = ?", (tag_name,)).fetchone()["id"]
+    conn.execute(
+        "INSERT OR IGNORE INTO artifact_tags (artifact_id, tag_id, created_at) VALUES (?,?,?)",
+        (artifact_id, tag_id, now),
+    )
 
 
 def remove(artifact_id: str, name: str) -> dict:

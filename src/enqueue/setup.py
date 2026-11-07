@@ -186,11 +186,38 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
 
     out: list[dict] = []
 
-    def say(ident, level, tab, guide, text):
-        out.append({"id": ident, "level": level, "tab": tab, "guide": guide, "text": text})
+    def say(ident, level, tab, guide, text, upgrade=False):
+        out.append(
+            {
+                "id": ident,
+                "level": level,
+                "tab": tab,
+                "guide": guide,
+                "text": text,
+                "upgrade": upgrade,
+            }
+        )
 
+    free = (settings.get("account_tier") or "free") != "pro"
     paused = pause.status()
-    if paused:
+    if paused and paused["limit"] == "included_ai":
+        from datetime import datetime
+
+        day = datetime.fromisoformat(paused["until"]).astimezone().strftime("%B %-d")
+        say(
+            "ai-used-up",
+            WARN,
+            "ai",
+            "answers",
+            f"{pause.INCLUDED_USED_UP}. It comes back on {day}."
+            + (
+                " Upgrade for more, or add a key of your own."
+                if free
+                else " A key of your own works without a limit."
+            ),
+            upgrade=free,
+        )
+    elif paused:
         say(
             "model-paused",
             WARN,
@@ -305,6 +332,7 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
                 " Settings, Sync, More options, choose Join with your account's key, sign"
                 " in again and approve it from this Mac.",
             )
+    _storage_alerts(say, free)
     if sync["keyring_legacy"]:
         say(
             "keyring-legacy",
@@ -314,6 +342,44 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             "Sync still uses an older setup. Start sync over to move to the new one.",
         )
     return out
+
+
+# The share of the plan's sync storage at which Settings starts to warn.
+NEARLY_FULL = 0.8
+
+
+def _storage_alerts(say, free: bool) -> None:
+    """Enqueue sync's storage, full or close to it, as the relay last said."""
+    from . import account
+
+    if not account.signed_in():
+        return
+    used = int(settings.get("account_used_bytes") or 0)
+    room = int(settings.get("account_storage_bytes") or 0)
+    if settings.get("account_sync_full") or (room and used >= room):
+        say(
+            "sync-full",
+            WARN,
+            "sync",
+            "",
+            "Enqueue sync is full. New changes stay on this Mac until there is room."
+            + (
+                " Upgrade for 50 times the room, or delete what you no longer need."
+                if free
+                else " Delete what you no longer need."
+            ),
+            upgrade=free,
+        )
+    elif room and used >= NEARLY_FULL * room:
+        say(
+            "sync-nearly-full",
+            WARN,
+            "sync",
+            "",
+            f"Enqueue sync is {round(100 * used / room)}% full."
+            + (" Upgrade for 50 times the room." if free else ""),
+            upgrade=free,
+        )
 
 
 def status() -> dict:

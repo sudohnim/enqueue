@@ -179,6 +179,13 @@ try:
 except ValueError:
     MODEL_RETRIES = 3
 
+# Seconds one model request may take before it counts as failed (and is tried again).
+# A hosted service that has not answered by then is stuck; a model on this Mac may be
+# loading. The SDKs' own default was 10 minutes, which held one question for 30.
+MODEL_TIMEOUT_S = float(os.getenv("ENQ_MODEL_TIMEOUT", "180"))
+LOCAL_MODEL_TIMEOUT_S = 600.0
+
+
 # The vector store backend. sqlite-vec is the default: the index lives inside
 # the SQLite file (one encrypted file later), search is exact, and there is no
 # single-process directory lock. Read as ENQ_VECTOR_STORE; `get_store()`

@@ -499,15 +499,19 @@ function includedModelsGroup(d, picked) {
 	let html = '<div class="shelf">Which AI does each job</div><div class="group">';
 	if (!pro)
 		html +=
-			'<div class="aside">Free includes fast models. Enqueue Pro adds Claude Sonnet, GPT-6.1 Sol ' +
-			"and the other mid-level models, with a higher monthly allowance. Go Pro in Enqueue on " +
-			"your phone, under Settings.</div>";
+			'<div class="aside">Free comes with quick, simple AI. Pro gives you smarter AI and lets ' +
+			"you use it more each month, because it helps pay for it. " +
+			'<button type="button" class="linkbtn" onclick="openUpgrade()">Upgrade</button></div>';
 	for (const [name, job] of MODEL_ROLES) {
 		const f = d.settings[name];
 		if (!f) continue;
 		const vision = name === "vision_model";
 		const sameAsChat = name === "summarize_model" || name === "search_model";
 		const current = f.value || "";
+		// Blank reads the library with the bake-off's pick (included_ai.DEFAULT_INGEST_MODEL).
+		const recommended =
+			name === "summarize_model" && picked.models.find((m) => m.id === picked.default_ingest_model);
+		const blankLabel = recommended ? "Recommended: " + recommended.label : "Same as answering";
 		const options = picked.models.filter((m) => !vision || m.vision);
 		const known = options.some((m) => m.id === current);
 		html +=
@@ -526,7 +530,9 @@ function includedModelsGroup(d, picked) {
 			(sameAsChat
 				? '<option value=""' +
 					(current ? "" : " selected") +
-					">Same as answering</option>"
+					">" +
+					esc(blankLabel) +
+					"</option>"
 				: "") +
 			(current && !known && !sameAsChat
 				? '<option value="' + esc(current) + '" selected disabled>' + esc(current) + " (not offered)</option>"
@@ -1063,6 +1069,8 @@ async function renderSettingsFeatures() {
 		) +
 		"</div>";
 
+	html += await renderExtensionSection();
+
 	const ua = d.settings.user_agent;
 	html += moreOptions(
 		'<div class="group">' +
@@ -1090,6 +1098,7 @@ async function renderSettingsStorage() {
 	const s0 = d.storage;
 	html += await renderBackupSection();
 	html += await renderDraftsSection(d);
+	html += await renderMoveSection();
 	const items = (s0.counts && s0.counts.artifacts) || 0;
 	const chats = (s0.counts && s0.counts.chats) || 0;
 	html +=
@@ -1179,6 +1188,162 @@ async function renderDraftsSection(d) {
 		"</div></div>"
 	);
 }
+
+// The browser extension (browser-extension/): it saves only with this Mac's connect code.
+async function renderExtensionSection() {
+	let st;
+	try {
+		st = await api("/extension");
+	} catch (err) {
+		return "";
+	}
+	return (
+		'<div class="shelf">Browser extension</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">Save from Chrome, Edge, Brave, Arc or Firefox</span>' +
+		'<div class="aside">The extension saves the page you are on, a link, the words you picked or a ' +
+		"picture. It needs a connect code from this Mac, and it can only add things. In Safari, use " +
+		"Share, Enqueue.</div>" +
+		'<div class="actions"><button class="btn tertiary" onclick="showExtensionCode(this)">' +
+		(st.connected ? "Show a new connect code" : "Show a connect code") +
+		"</button></div>" +
+		'<div id="extensionCode"></div>' +
+		(st.connected
+			? '<div class="aside">A browser is connected. A new code disconnects it until you paste the new one.</div>'
+			: "") +
+		"</div></div>"
+	);
+}
+
+async function showExtensionCode(button) {
+	button.disabled = true;
+	let code;
+	try {
+		code = (await api("/extension/code", { method: "POST" })).code;
+	} catch (err) {
+		button.disabled = false;
+		return toast(String((err && err.message) || err), true);
+	}
+	const box = document.getElementById("extensionCode");
+	box.innerHTML =
+		'<div class="keyrow"><input readonly value="' + esc(code) + '" aria-label="Connect code" onclick="this.select()">' +
+		'<button class="btn tertiary" onclick="navigator.clipboard.writeText(' + esc(JSON.stringify(code)) +
+		');toast(\'Copied. Paste it into the extension.\')">Copy</button></div>';
+	button.disabled = false;
+}
+
+// Bringing notes in from another app, and taking the whole library out (portable.py).
+async function renderMoveSection() {
+	let imp, exp;
+	try {
+		[imp, exp] = await Promise.all([api("/import"), api("/export")]);
+	} catch (err) {
+		return "";
+	}
+	const picker = !!(window.__TAURI__ && window.__TAURI__.core);
+	const typed = (id, verb, fn) =>
+		'<div class="keyrow"><input id="' + id + '" placeholder="~/Downloads/..." ' +
+		"onkeydown=\"if(event.key==='Enter')" + fn + '(this.value)">' +
+		'<button class="btn tertiary" onclick="' + fn + "(document.getElementById('" + id + "').value)\">" +
+		verb + "</button></div>";
+	const busy = (st) => st.state === "running";
+	if (busy(imp) || busy(exp)) setTimeout(watchMove, 1500);
+	return (
+		'<div class="shelf">Move notes in and out</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">Import notes</span>' +
+		'<div class="aside">From Obsidian, Notion, Bear, Standard Notes, Fabric, or any folder of ' +
+		"Markdown. Export from the other app first, then choose its folder or .zip.</div>" +
+		(picker
+			? '<div class="actions"><button class="btn tertiary" onclick="chooseImport(true)"' + (busy(imp) ? " disabled" : "") +
+				">Choose a folder…</button>" +
+				'<button class="btn tertiary" onclick="chooseImport(false)"' + (busy(imp) ? " disabled" : "") +
+				">Choose a .zip…</button></div>"
+			: typed("import_input", "Import", "startImport")) +
+		'<div class="aside" id="importState">' + esc(moveLine(imp, "import")) + "</div></div>" +
+		'<div class="field"><span class="rowlabel">Export as Markdown</span>' +
+		'<div class="aside">Every item as a Markdown file any notes app opens, with pictures and ' +
+		"originals in a files folder. Export to the same place again to bring it up to date. " +
+		"Locked items stay out.</div>" +
+		(picker
+			? '<div class="actions"><button class="btn tertiary" onclick="chooseExport()"' + (busy(exp) ? " disabled" : "") +
+				">Export to a folder…</button></div>"
+			: typed("export_input", "Export", "startExport")) +
+		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div></div>"
+	);
+}
+
+function moveLine(st, what) {
+	const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+	if (st.state === "failed") return (what === "import" ? "The import" : "The export") + " stopped: " + st.error;
+	if (what === "import") {
+		if (!st.notes && !st.files && st.state !== "running") return "";
+		const line = plural(st.notes, "note") + " and " + plural(st.files, "file");
+		const skipped = st.skipped ? ", " + st.skipped + " skipped (already here, or empty)" : "";
+		return (st.state === "running" ? "Importing… " + line + " so far" : "Imported " + line) + skipped + ".";
+	}
+	if (st.state === "running") return "Exporting… " + plural(st.items || 0, "item") + " so far.";
+	return st.state === "done" ? "Exported " + plural(st.items, "item") + " to " + st.path + "." : "";
+}
+
+async function watchMove() {
+	if (currentSettingsTab !== "storage") return;
+	let imp, exp;
+	try {
+		[imp, exp] = await Promise.all([api("/import"), api("/export")]);
+	} catch (err) {
+		return;
+	}
+	const a = document.getElementById("importState");
+	const b = document.getElementById("exportState");
+	if (a) a.textContent = moveLine(imp, "import");
+	if (b) b.textContent = moveLine(exp, "export");
+	if (imp.state === "running" || exp.state === "running") setTimeout(watchMove, 1500);
+	else await renderSettingsTab("storage");
+}
+
+async function choosePath(options) {
+	try {
+		const picked = await window.__TAURI__.core.invoke("plugin:dialog|open", { options });
+		return typeof picked === "string" && picked ? picked : null;
+	} catch (err) {
+		toast("Could not open the picker: " + String(err.message || err), true);
+		return null;
+	}
+}
+
+async function chooseImport(folder) {
+	const path = await choosePath(
+		folder
+			? { directory: true, multiple: false, title: "Choose the exported folder" }
+			: {
+					multiple: false,
+					title: "Choose the exported .zip",
+					filters: [{ name: "Export", extensions: ["zip", "bear2bk"] }],
+				},
+	);
+	if (path) startImport(path);
+}
+
+async function chooseExport() {
+	const path = await choosePath({ directory: true, multiple: false, title: "Choose where the export goes" });
+	if (path) startExport(path);
+}
+
+async function startMove(route, path) {
+	if (!(path || "").trim()) return;
+	try {
+		await api(route, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ path: path.trim() }),
+		});
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await renderSettingsTab("storage");
+}
+
+const startImport = (path) => startMove("/import", path);
+const startExport = (path) => startMove("/export", path);
 
 function stageDraftPolicy(value) {
 	stageSetting("drafts_keep", value);
@@ -1712,7 +1877,9 @@ async function pollSignIn() {
 		if (progress.state === "failed") {
 			window.syncSetupStep = null;
 			window.accountSignInUrl = null;
-			toast(progress.error || "Sign-in did not finish.", true);
+			if (progress.limit === "computers" && me.plan && me.plan.tier !== "pro")
+				openUpgrade("computers");
+			else toast(progress.error || "Sign-in did not finish.", true);
 			await renderSettingsTab("sync");
 			return;
 		}
@@ -2178,8 +2345,8 @@ function renderAccountSection(acct) {
 	);
 }
 
-// The plan as the relay last said (account._keep_plan). Pro is bought on the phone,
-// never here: the Mac shows the plan and where to change it.
+// The plan as the relay last said (account._keep_plan). Pro is bought on the phone or,
+// on the free plan, through the web checkout the relay names (checkout_url).
 function planBytes(n) {
 	const gb = n / 1024 ** 3;
 	if (gb >= 1) return (gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10) + " GB";
@@ -2201,11 +2368,91 @@ function planRow(plan) {
 		"</span>" +
 		'<div class="aside">' +
 		esc(used) +
+		(pro ? "Up to five computers and five phones." : "One computer and one phone.") +
+		"</div>" +
 		(pro
-			? "Up to five computers and five phones."
-			: "One computer and one phone. Go Pro in Enqueue on your phone, under Settings.") +
-		"</div>"
+			? ""
+			: '<div class="actions"><button class="btn primary" onclick="openUpgrade()">Upgrade</button></div>')
 	);
+}
+
+// Whether the plan's sync storage is "full", "nearly" full (80%, setup.NEARLY_FULL), or "".
+function planFill(plan) {
+	const room = plan.storage_bytes || 0;
+	const used = plan.used_bytes || 0;
+	if (plan.sync_full || (room && used >= room)) return "full";
+	return room && used >= 0.8 * room ? "nearly" : "";
+}
+
+// What the upgrade sheet says first when a limit opened it.
+const UPGRADE_FOR = {
+	"ai-used-up": "This month's included AI is used up. Pro gives you more of it.",
+	"sync-full": "Enqueue sync is full. New changes stay on this Mac until there is room.",
+	"sync-nearly-full": "Enqueue sync is almost full.",
+	computers: "Your free plan covers one computer, and another one is already signed in.",
+};
+
+// The pitch for Pro, the same words as the phone's paywall (paywallSheet in mobile.html).
+const PRO_PITCH = [
+	"Enqueue is made by one person. Almost everything in it is free, and stays free.",
+	"Pro pays for the two things that cost me money each month: keeping your notes in step across your devices, and the AI that reads them for you.",
+	"With Pro you can use up to five computers and five phones, keep 50 times as much, and get a smarter assistant you can ask more often.",
+	"If Enqueue is useful to you, Pro keeps the lights on.",
+];
+
+// The upgrade sheet, from the account menu and Settings, Sync. It buys through the web
+// checkout when the relay names one, and points to the phone when it does not.
+async function openUpgrade(why) {
+	let plan = (accountMenuMe && accountMenuMe.plan) || {};
+	try {
+		accountMenuMe = await api("/account");
+		plan = accountMenuMe.plan || plan;
+	} catch {
+		// show the sheet from the plan as last read
+	}
+	const buy = plan.checkout_url;
+	const box = modalShell(
+		'<h2 id="upgradeTitle">Help me pay for the storage</h2>' +
+			(UPGRADE_FOR[why] ? '<p class="upgrade-why">' + esc(UPGRADE_FOR[why]) + "</p>" : "") +
+			PRO_PITCH.map((line) => "<p>" + esc(line) + "</p>").join("") +
+			(buy ? "" : '<p class="upgrade-where">Upgrade in Enqueue on your phone, under Settings, Plan.</p>') +
+			'<div class="asked">' +
+			'<button class="btn secondary" value="no">Not now</button>' +
+			(buy ? '<button class="btn primary" value="yes">Upgrade for $4.99 a month</button>' : "") +
+			"</div>",
+		{ labelledBy: "upgradeTitle", backdrop: true, focusSel: buy ? '[value="yes"]' : null },
+	);
+	box.classList.add("upgrade");
+	if (!buy) return;
+	box.querySelector('[value="yes"]').onclick = () => {
+		box.finish(true);
+		goPro(buy);
+	};
+}
+
+// Opens the checkout in the browser, then asks the relay every 5 seconds for up to 15
+// minutes: the purchase reaches it through RevenueCat's webhook, not through this page.
+async function goPro(url) {
+	const bridge = window.__TAURI__ && window.__TAURI__.core;
+	try {
+		if (bridge) await bridge.invoke("open_external", { url });
+		else window.open(url, "_blank", "noopener");
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	toast("Finish in your browser. Pro shows here once it goes through.");
+	for (let i = 0; i < 180; i++) {
+		await new Promise((r) => setTimeout(r, 5000));
+		let plan;
+		try {
+			plan = await api("/account/plan/refresh", { method: "POST" });
+		} catch (err) {
+			continue;
+		}
+		const row = document.getElementById("accountPlan");
+		if (row) row.innerHTML = planRow(plan);
+		if (plan.tier === "pro") return toast("You're on Pro. Thank you.");
+	}
 }
 
 function deviceWhen(seconds) {

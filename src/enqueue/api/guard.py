@@ -14,7 +14,8 @@ Two checks close that:
   the reply. A request that changes something must come from one of the engine's own
   origins (`config.ALLOWED_ORIGINS`, port included, so another local server is refused
   too), or carry no Origin at all (the CLI, the desktop shell's health check, curl);
-  a foreign one gets 403.
+  a foreign one gets 403. The browser extension is the one exception: with its connect
+  code it may reach the capture routes (extension.py).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from urllib.parse import urlsplit
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import config
+from .. import config, extension
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -60,6 +61,7 @@ class LocalOnlyGuard:
             scope["method"] not in SAFE_METHODS
             and origin is not None
             and origin.rstrip("/").lower() not in config.ALLOWED_ORIGINS
+            and not extension.allows(origin, scope["path"], headers.get("x-enqueue-key"))
         ):
             await PlainTextResponse("Cross-site request refused.", status_code=403)(
                 scope, receive, send

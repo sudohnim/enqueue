@@ -226,7 +226,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     let mut facets = Vec::new();
     let mut fstmt = conn
         .prepare(
-            "SELECT id,level,statement,model_version,body_version,trust,edited \
+            "SELECT id,level,statement,model_version,body_version,trust,edited,bridge \
              FROM facets WHERE artifact_id = ?1 ORDER BY level, statement, id",
         )
         .map_err(|e| e.to_string())?;
@@ -240,6 +240,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
                 "body_version": r.get::<_, Option<String>>(4)?,
                 "trust": r.get::<_, Option<f64>>(5)?,
                 "edited": r.get::<_, i64>(6)?,
+                "bridge": r.get::<_, i64>(7)?,
             }))
         })
         .map_err(|e| e.to_string())?;
@@ -525,6 +526,9 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     // standalone card), same duplicate-safe pattern. The library/list queries filter
     // `embedded_at IS NULL` so it never shows as its own artifact on the phone.
     let _ = conn.execute("ALTER TABLE artifacts ADD COLUMN embedded_at TEXT", []);
+    // Migration: bridge (a summary line restating the idea in another field's words;
+    // the desktop's migration 0043), same duplicate-safe pattern.
+    let _ = conn.execute("ALTER TABLE facets ADD COLUMN bridge INTEGER NOT NULL DEFAULT 0", []);
     // Migration: keep_drafts (the person's per-note switch, set on either device; the
     // desktop's migration 0040), same duplicate-safe pattern.
     let _ = conn.execute(
@@ -775,8 +779,8 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             for f in facets {
                 conn.execute(
                     "INSERT INTO facets\
-                     (id,artifact_id,level,statement,model_version,body_version,trust,edited) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                     (id,artifact_id,level,statement,model_version,body_version,trust,edited,bridge) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                     rusqlite::params![
                         str_at(f.get("id")),
                         id,
@@ -786,6 +790,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
                         str_at(f.get("body_version")),
                         f.get("trust").and_then(|v| v.as_f64()),
                         int_at(f.get("edited")).unwrap_or(0),
+                        int_at(f.get("bridge")).unwrap_or(0),
                     ],
                 )
                 .map_err(|e| format!("insert facet: {e}"))?;

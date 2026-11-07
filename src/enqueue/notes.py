@@ -44,10 +44,19 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def create(body: str = "", title: str | None = None, local_only: bool = False) -> dict:
-    """Create a note. An empty note is legitimate: capture costs nothing."""
+def create(
+    body: str = "",
+    title: str | None = None,
+    local_only: bool = False,
+    at: str | None = None,
+    background: bool = False,
+) -> dict:
+    """Create a note. An empty note is legitimate: capture costs nothing.
+
+    `at` dates a note written elsewhere (an import); `background` reads it after the
+    person's own work."""
     artifact_id = str(uuid.uuid4())
-    now = db.now()
+    now = at or db.now()
     if title and title.strip():
         resolved = title.strip()
         explicit = True
@@ -71,7 +80,7 @@ def create(body: str = "", title: str | None = None, local_only: bool = False) -
             _record_secrets(conn, artifact_id, body)
 
     if body:
-        ingest_queue.submit(artifact_id)
+        (ingest_queue.submit_background if background else ingest_queue.submit)(artifact_id)
     from .sync.client import push_artifact
 
     push_artifact(artifact_id)

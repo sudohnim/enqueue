@@ -69,9 +69,17 @@ def _read_manifest(root: Path) -> dict | None:
         return None
 
 
-def _render_artifact(row: dict, notes: list[dict], page0: str | None, copy_rel: str | None) -> str:
+# A picture inside a note points at the engine; the export points at its copy instead.
+EMBED = re.compile(r"/artifacts/([0-9a-f-]{36})/blob")
+
+
+def _render_artifact(
+    row: dict, notes: list[dict], page0: str | None, copy_rel: str | None, tags: list[str]
+) -> str:
     parts = [f"# {row['title']}", ""]
     meta = [f"Saved: {row['created_at']}", f"Kind: {row['kind']}"]
+    if tags:
+        meta.append("Tags: " + " ".join(f"#{t}" for t in tags))
     if row.get("source_url"):
         meta.append(f"Source: {row['source_url']}")
     if copy_rel:
@@ -162,6 +170,19 @@ def export(directory: str | Path) -> dict:
             r["artifact_id"]: r["text"]
             for r in conn.execute("SELECT artifact_id, text FROM page_text WHERE page = 0")
         }
+        tags: dict[str, list[str]] = {}
+        for r in conn.execute(
+            "SELECT x.artifact_id, t.name FROM artifact_tags x JOIN tags t ON t.id = x.tag_id"
+            " ORDER BY t.name"
+        ):
+            tags.setdefault(r["artifact_id"], []).append(r["name"])
+        pictures = {
+            r["id"]: dict(r)
+            for r in conn.execute(
+                "SELECT id, content_hash, filename, title FROM artifacts"
+                " WHERE embedded_at IS NOT NULL AND deleted_at IS NULL"
+            )
+        }
     finally:
         conn.close()
 
@@ -184,7 +205,15 @@ def export(directory: str | Path) -> dict:
         if row["kind"] in ("pdf", "image", "file"):
             copy_rel = f"files/{_id8(aid)}-{_sanitize_filename(row['filename'] or row['title'])}"
 
-        text = _render_artifact(dict(row), notes_by_artifact.get(aid, []), page0.get(aid), copy_rel)
+        item = dict(row)
+        if item["kind"] == "note" and item.get("body"):
+            item["body"] = EMBED.sub(
+                lambda m: _picture(root, pictures.get(m.group(1)), m.group(0), referenced, copied),
+                item["body"],
+            )
+        text = _render_artifact(
+            item, notes_by_artifact.get(aid, []), page0.get(aid), copy_rel, tags.get(aid, [])
+        )
         if _put(root / rel, text):
             written.append(rel)
         else:
@@ -225,6 +254,17 @@ def export(directory: str | Path) -> dict:
         "pruned": pruned,
         "directory": str(root),
     }
+
+
+def _picture(root: Path, pic: dict | None, original: str, referenced: set, copied: list) -> str:
+    """Copy a picture a note shows into files/; the note's link to it, relative."""
+    if pic is None or not blobstore.exists(pic["content_hash"]):
+        return original
+    rel = f"files/{_id8(pic['id'])}-{_sanitize_filename(pic['filename'] or pic['title'])}"
+    if _copy_blob(pic["content_hash"], root / rel):
+        copied.append(rel)
+    referenced.add(rel)
+    return "../" + rel
 
 
 def verify(directory: str | Path) -> dict:

@@ -43,6 +43,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from urllib.parse import quote
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -104,6 +105,9 @@ class AccountSettings:
     # The Authorization value set on RevenueCat's webhook, which it sends back; the
     # webhook refuses everything while it is unset.
     revenuecat_webhook_auth: str | None = None
+    # RevenueCat Web Billing's Web Purchase Link (https://pay.rev.cat/<token>): where a
+    # Mac buys Pro. The account id goes on the end, so the purchase lands on it.
+    purchase_link: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -122,6 +126,7 @@ class AccountSettings:
             apple_client_id=os.getenv("APPLE_CLIENT_ID") or None,
             apple_bundle_id=os.getenv("APPLE_BUNDLE_ID", "com.sudohnim.enqueue"),
             revenuecat_webhook_auth=os.getenv("REVENUECAT_WEBHOOK_AUTH") or None,
+            purchase_link=os.getenv("REVENUECAT_WEB_PURCHASE_LINK") or None,
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or None,
         )
 
@@ -702,8 +707,8 @@ class Accounts:
                 raise HTTPException(
                     status.HTTP_402_PAYMENT_REQUIRED,
                     (
-                        "Enqueue sync's free plan covers one computer. Remove the other one"
-                        " under Devices, or go Pro on your phone."
+                        "Your free plan covers one computer. Upgrade to Pro, or remove the"
+                        " other computer under Devices."
                         if tier_of(account, now) == "free"
                         else f"Enqueue sync covers {limit} computers. Remove one under Devices."
                     ),
@@ -857,9 +862,15 @@ class Accounts:
     def plan(self, account: dict) -> dict:
         tier = tier_of(account)
         lib = account.get("library_id")
+        link = self.s.purchase_link
         return {
             "account_id": account["id"],
             "tier": tier,
+            "checkout_url": (
+                f"{link.rstrip('/')}/{quote(account['id'], safe='')}"
+                if link and tier == "free"
+                else None
+            ),
             "pro_until": account.get("pro_until") if tier == "pro" else None,
             "limits": PLANS[tier],
             "used_bytes": self.storage.used_bytes(lib) if lib else 0,

@@ -1,0 +1,1533 @@
+{
+  "facets": {
+    "xd_bend_not_break": [
+      {
+        "level": 0,
+        "statement": "A short parable in which a storm snaps a rigid oak at the trunk while a neighboring willow bends, sheds twigs, and stands again.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "The piece contrasts rigid strength that fails all at once with pliant weakness that survives repeated stress by yielding.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A body that gives with an impact avoids the fractures that braced stiffness invites under the same force.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "A budget built with slack absorbs shocks, while one optimized to its limit collapses on the first unexpected expense.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "A system that degrades partially under overload outlasts one engineered to hold perfectly until it fails all at once.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "Conceding minor points early keeps a negotiation alive where refusing to move on anything collapses it entirely.",
+        "trust": 0.75
+      },
+      {
+        "level": 2,
+        "statement": "Deliberately accepting small peripheral losses is the price of keeping the whole structure intact under extreme load.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Distributing strain as many small yields prevents the single catastrophic failure that accumulated resistance eventually produces.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Durability comes from the capacity to deform and recover, not from the capacity to resist indefinitely.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Losses chosen in advance and on one's own terms are smaller than losses imposed by total failure.",
+        "trust": 0.75
+      },
+      {
+        "level": 3,
+        "statement": "Strength measured under calm conditions predicts survival poorly when the real test is sustained or repeated force.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Adaptability is a more reliable survival strategy than strength when the threat exceeds what anything can resist.",
+        "trust": 0.9
+      },
+      {
+        "level": 4,
+        "statement": "What conventional measures rank as weak may be the more robust design for a hostile environment.",
+        "trust": 0.8
+      }
+    ],
+    "xd_baton_zone": [
+      {
+        "level": 0,
+        "statement": "A description of the baton-passing technique used in the exchange zone of a relay race.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "An account of why relay races are lost at the baton exchange rather than on the open straights.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A clean handoff requires a short window in which both parties carry full responsibility at once.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Projects fail most often at the boundary between teams, not while any single team is doing its part.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Shift changes and on-call rotations need an overlap where the outgoing person stays engaged until the incoming one confirms.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "The party releasing something should confirm the other party's grip before letting go.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "The receiver of a transfer should already be in motion before it begins, never starting from rest.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "Transfers of responsibility fail when each party assumes the other has already taken hold.",
+        "trust": 0.95
+      },
+      {
+        "level": 3,
+        "statement": "A transfer is complete only when receipt is confirmed, not when delivery is attempted.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Failure concentrates at the boundaries between actors rather than within the actors themselves.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "In any pipeline, the most dangerous stage is the junction where one stage's output becomes the next stage's input.",
+        "trust": 0.75
+      },
+      {
+        "level": 4,
+        "statement": "Responsibility should be designed so that no moment exists in which nobody is accountable.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "The seams between people deserve more design attention than the people themselves.",
+        "trust": 0.75
+      }
+    ],
+    "xd_mise_en_place": [
+      {
+        "level": 0,
+        "statement": "A short account of how line cooks wash, cut, measure, and arrange all ingredients before dinner service begins.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "In a professional kitchen, speed during service is decided entirely in the quiet hour before it.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "Mise en place is the kitchen discipline of finishing every cut and measurement before the first order arrives.",
+        "trust": 1.0
+      },
+      {
+        "level": 2,
+        "statement": "Once the rush begins, no capacity remains for deliberation, only for carrying out what was already decided.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "One member's skipped preparation becomes the whole group's delay once interdependent work is underway.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Refactoring and test coverage finished in quiet weeks are what make fast, safe shipping possible during a launch crunch.",
+        "trust": 0.75
+      },
+      {
+        "level": 3,
+        "statement": "Performance under time pressure is manufactured in advance rather than improvised in the moment.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Preparation looks unproductive only because its payoff lands in a different hour than its effort.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "The throughput of an interdependent group is capped by its least-prepared member, not its best.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Preparation is not a preamble to the real work; it is the real work.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Slowness invested early buys speed at the only moment when speed actually matters.",
+        "trust": 0.85
+      }
+    ],
+    "xd_controlled_burn": [
+      {
+        "level": 0,
+        "statement": "A short account of how foresters set deliberate small spring fires to clear fuel and prevent larger summer wildfires.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "A fire policy that suppresses every small blaze creates the fuel conditions for a catastrophic one.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Addressing small grievances in a team as they arise prevents the single explosive conflict that suppressed resentment eventually produces.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "Paying down a debt in small steady installments avoids the ruinous settlement that years of deferral eventually demand.",
+        "trust": 0.5
+      },
+      {
+        "level": 2,
+        "statement": "Small regular cleanups of a codebase prevent the accumulated tangle that eventually forces a disastrous total rewrite.",
+        "trust": 0.55
+      },
+      {
+        "level": 3,
+        "statement": "A system sheltered from every small stress grows fragile, while one exposed to regular manageable stress stays resilient.",
+        "trust": 0.6
+      },
+      {
+        "level": 3,
+        "statement": "Risk that is suppressed rather than discharged accumulates until it exceeds anyone's capacity to control it.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Stability maintained by suppressing every disturbance is purchased at the price of eventual catastrophe.",
+        "trust": 0.8
+      },
+      {
+        "level": 3,
+        "statement": "The cost of an inevitable reckoning is roughly fixed; the choice is between small survivable installments and one ruinous payment.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Choosing frequent small harms on one's own terms beats avoiding harm until it arrives on terms no one chose.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Managing a persistent danger means administering it deliberately in safe doses, not pretending it can be eliminated.",
+        "trust": 0.7
+      }
+    ],
+    "xd_hive_split": [
+      {
+        "level": 0,
+        "statement": "A beekeeping passage explaining how and why to split an overcrowded hive before the colony swarms.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "Recognizing swarm preparations early lets a beekeeper divide one crowded colony into two productive ones.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A codebase carrying too many features and contributors becomes easier to change after being partitioned into independent services.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "A living cell that outgrows its limits resolves the pressure by dividing into two viable daughters.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "Dividing an overcrowded group before it ruptures on its own preserves the people and output that an uncontrolled split would scatter.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Teams that grow past a workable size recover speed and focus once they are split into smaller units.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Any system under sustained growth pressure will partition itself eventually; the only choice is who controls the partition.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Internal competition for shared resources, not loss of ability, is what degrades an overgrown group.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Warning signs of overload are useful only to someone watching before the breaking point arrives.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Acting early on predictable structural pressure converts an inevitable loss into a controlled gain.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "The same change costs far less when it is chosen than when it is endured.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Working with a system's built-in tendencies channels them, while fighting them only delays them.",
+        "trust": 0.75
+      }
+    ],
+    "xd_opening_theory": [
+      {
+        "level": 0,
+        "statement": "A short prose argument about how strong chess players use memorised opening theory and where that memorisation stops being useful.",
+        "trust": 0.98
+      },
+      {
+        "level": 1,
+        "statement": "A chess player who knows only the move sequence and not the reasons behind it is lost as soon as the opponent deviates.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "Chess players memorise openings because a century of analysis makes improvising there wasteful, but the value of recall ends where the analysed positions end.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A negotiator who memorises scripts is exposed the moment the other side leaves the script, while one who grasps the underlying interests can improvise.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Code copied from a template works until the requirements shift, and then only someone who understands why the template was built that way can fix it.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Competence includes recognising the exact point where recall must give way to judgment, rather than forcing a memorised pattern onto a case it no longer fits.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Following a fixed budget by habit fails when income or prices change, while knowing what each line was for permits sensible revision.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Prepared answers save effort in well-mapped situations, but they become a trap the moment the situation stops matching the preparation.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Rote knowledge has a boundary, and expertise consists partly in knowing where that boundary lies and what to do past it.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Standardisation buys speed in familiar territory at the price of brittleness everywhere else, unless the reasoning behind the standard travels with it.",
+        "trust": 0.75
+      },
+      {
+        "level": 3,
+        "statement": "Understanding the reasons behind a practice is what transfers to unfamiliar cases; the practice itself transfers to nothing.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Learn the reasons, not just the routines, because every routine eventually runs out.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "When a map stops matching the territory, following the map harder is the error, not the discipline.",
+        "trust": 0.85
+      }
+    ],
+    "xd_crop_rotation": [
+      {
+        "level": 0,
+        "statement": "A short text explaining how crop rotation and fallow seasons keep farmland productive.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "Growers who rest fields with cover crops sacrifice one season's yield to preserve many future seasons of production.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "Planting the same crop annually depletes the specific nutrients it needs and lets its specialized pests establish themselves.",
+        "trust": 1.0
+      },
+      {
+        "level": 2,
+        "statement": "A body trained identically every day accumulates injuries adapted to that pattern instead of growing stronger.",
+        "trust": 0.75
+      },
+      {
+        "level": 2,
+        "statement": "A household that consumes all its resources each month has no reserve when an expensive month arrives.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "A team kept at maximum output every sprint loses the recovery time that keeps its output possible.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Deliberate low-output periods are an investment that raises total long-term output above continuous pushing.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "Drawing on the same capacity in the same way every cycle exhausts exactly what that use depends on.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Maximizing present output by deferring renewal converts future capacity into temporary gain and ends in collapse.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Repeated identical demands on a system let threats specialized to those demands accumulate unopposed.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Sustained extraction from any system requires periodic non-extractive phases that appear on the ledger as loss.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Judging any practice solely by immediate output mistakes exhaustion for efficiency.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Rest is a form of production rather than an interruption of it.",
+        "trust": 0.9
+      }
+    ],
+    "xd_bulkheads": [
+      {
+        "level": 0,
+        "statement": "A ship's hull is divided by steel bulkheads into sealed compartments that contain flooding.",
+        "trust": 1.0
+      },
+      {
+        "level": 0,
+        "statement": "Doors between compartments are shut when danger is expected, slowing ordinary movement through the vessel.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "Subdividing a hull into watertight compartments is how a holed ship stays afloat and reaches port.",
+        "trust": 1.0
+      },
+      {
+        "level": 2,
+        "statement": "Dividing access so no single credential opens everything caps the damage one compromised login can do.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Money held in separate accounts for separate purposes cannot all be lost to one bad decision.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Precautionary closures impose a standing cost in ordinary times that is only vindicated in emergencies.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Services isolated behind hard boundaries let one component crash without taking the whole platform down.",
+        "trust": 0.75
+      },
+      {
+        "level": 2,
+        "statement": "Splitting a system into isolated segments keeps a single failure from becoming a total one.",
+        "trust": 0.95
+      },
+      {
+        "level": 3,
+        "statement": "A defense that is almost sufficient is, in the worst case, no defense at all.",
+        "trust": 0.8
+      },
+      {
+        "level": 3,
+        "statement": "Resilience comes from limiting how far failure can propagate rather than from preventing failure altogether.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Whatever overtops the first barrier usually overtops the rest, because the condition that defeats one defeats all.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Plan for the breach that will eventually happen instead of the perfection that never will.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Steady small inconveniences are a fair price for survival on the rare day everything goes wrong.",
+        "trust": 0.8
+      }
+    ],
+    "xd_trading_fours": [
+      {
+        "level": 0,
+        "statement": "A jazz combo practice where soloists alternate four-bar improvised phrases late in a tune, rotating among saxophone, drums, and trumpet.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "Trading fours is a jazz convention that enforces equal turn-taking and mutual responsiveness among improvising soloists.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A form that hands the floor to the next person on a fixed cycle prevents any participant from dominating regardless of their intent.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "A negotiation format that alternates short fixed-length statements stops stronger parties from talking over weaker ones.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Meetings that rotate the floor by rule let reserved members contribute without having to compete for airtime.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Requiring each contribution to answer the one before it turns waiting-for-a-turn into actual listening.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Constraints on individual freedom, when applied uniformly, can widen rather than narrow who actually gets to participate.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Equal participation comes from the design of the exchange, not from exhorting the dominant to restrain themselves.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Households that rotate who chooses the evening's activity prevent the assertive member from always setting the agenda.",
+        "trust": 0.65
+      },
+      {
+        "level": 3,
+        "statement": "Structures that force responsiveness produce attention, while structures that merely allocate time produce waiting.",
+        "trust": 0.65
+      },
+      {
+        "level": 4,
+        "statement": "Give every participant a guaranteed turn and make each turn answer the last, and a group becomes genuinely collaborative.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Rules of interaction should be built so that fairness and mutual attention are automatic rather than virtues individuals must supply.",
+        "trust": 0.75
+      }
+    ],
+    "xd_sourdough_feeding": [
+      {
+        "level": 0,
+        "statement": "A sourdough starter kept on the counter needs a small feeding of fresh flour and water every day.",
+        "trust": 1.0
+      },
+      {
+        "level": 0,
+        "statement": "Bakers who keep starters alive for years succeed by making feeding a fixed, tiny morning routine.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "A starter culture tolerates one skipped feeding but turns sour, grey, and sluggish after a week of neglect.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "Bringing a neglected starter back can take days of care, and it may never recover at all.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A behavior anchored to the same cue at the same time each day stops depending on memory or motivation.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "A codebase kept healthy by small daily cleanups rots invisibly when ignored, and reviving it becomes a project of its own.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "Maintenance skipped once leaves no visible trace, yet repeated neglect quietly compounds until recovery costs far more than upkeep.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Short daily exercise preserves a body's capacity cheaply, while rebuilding fitness after months of inactivity demands many times the effort.",
+        "trust": 0.5
+      },
+      {
+        "level": 2,
+        "statement": "Small automatic transfers into savings accumulate without willpower, while money saved only when remembered rarely gets saved.",
+        "trust": 0.4
+      },
+      {
+        "level": 3,
+        "statement": "Memory and motivation are unreliable foundations for anything meant to last; routine carries what intention cannot.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "The cost of maintaining a system is trivial beside the cost of reviving that system after neglect.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "What people sustain for years is what they made easy, not what they once did heroically.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Enduring care for anything comes from shrinking the daily act until skipping it feels stranger than doing it.",
+        "trust": 0.7
+      }
+    ],
+    "xd_long_wedging": [
+      {
+        "level": 0,
+        "statement": "A year's worth of loosely connected sensory sketches of workshops, harbours, kitchens, gardens, and small civic places.",
+        "trust": 0.95
+      },
+      {
+        "level": 0,
+        "statement": "Interleaved factual passages explain tidal mechanics and the history of natural pigments before synthetic chemistry.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "It is about flaws built in at the start that stay hidden until stress makes them visible.",
+        "trust": 0.9
+      },
+      {
+        "level": 1,
+        "statement": "It is about how care, routine, and close sensory attention give places and handmade things their character.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "A defect introduced at the beginning stays invisible until pressure arrives, precisely when repair has become most expensive.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Bugs merged early sit quietly in a codebase until production load exposes them, when fixing them costs the most.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Concealing the source of a valuable input can protect a monopoly longer than any law.",
+        "trust": 0.75
+      },
+      {
+        "level": 2,
+        "statement": "Expertise accumulates into sensory judgment that its holder cannot fully explain, teach, or hand over.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Tension left unaddressed inside a team erupts under deadline pressure, when the options for repair are fewest.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "When no one records why something is the way it is, the reason disappears within a generation.",
+        "trust": 0.65
+      },
+      {
+        "level": 3,
+        "statement": "Making something cheaper and more uniform severs the felt connection between a product and its origins.",
+        "trust": 0.8
+      },
+      {
+        "level": 3,
+        "statement": "Stress does not create weakness; it exposes weakness that was present from the beginning.",
+        "trust": 0.95
+      },
+      {
+        "level": 3,
+        "statement": "The cost of repairing a fault grows with how long it stayed hidden, not with its size.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "The worth of a tool is not settled by its speed.",
+        "trust": 0.7
+      },
+      {
+        "level": 4,
+        "statement": "Unhurried attention to ordinary work is worth defending even when faster methods produce equivalent results.",
+        "trust": 0.7
+      }
+    ],
+    "xd_long_tuning": [
+      {
+        "level": 0,
+        "statement": "A document whose title promises an orchestra season but whose body is mostly repeated descriptive vignettes of a coastal town.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "A closing scene in which every section of an ensemble tunes to a single note before any music begins.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "A history of prepaid postage, from recipient-paid messenger networks to uniform rates and the infrastructure they required.",
+        "trust": 0.9
+      },
+      {
+        "level": 1,
+        "statement": "How migratory birds navigate by sun, stars, and magnetic fields, and how shifting seasons disrupt their timing.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "A system calibrated to recurring environmental cues fails when the cues shift faster than it can adjust.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "A team that defers to one agreed convention outperforms individually excellent members who each follow their own judgment.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Coordinated activity begins when every participant sets aside private judgment and accepts one shared reference before anything else happens.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Deliberate non-intervention can preserve a thing's character better than active maintenance would.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Many small errors, each tolerable alone, compound into a collective failure worse than any single large mistake.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Protecting the few nodes everything passes through secures more than guarding every path equally.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Replacing per-use charges with one standard prepaid rate converts an elite channel into mass infrastructure.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Agreement on a shared standard is the precondition for coordinated action, not a refinement of it.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Interdependent systems desynchronize and fail before either one fails on its own.",
+        "trust": 0.75
+      },
+      {
+        "level": 4,
+        "statement": "Shared reference points, not individual correctness, are what make collective life possible.",
+        "trust": 0.85
+      }
+    ],
+    "xd_decoy_k8s_limits": [
+      {
+        "level": 0,
+        "statement": "A quick-reference cheat sheet for setting compute resource requests and limits on a shared cluster.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "Load tests belong in a staging namespace, never production, and must be tagged with the runner's name for cost attribution.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "Requests are reserved scheduling capacity, while limits are ceilings enforced by throttling or termination.",
+        "trust": 1.0
+      },
+      {
+        "level": 2,
+        "statement": "A budget sized from recorded peak spending leaves headroom for spikes without starving ordinary weeks.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Capacity should be provisioned from a high percentile of observed usage rather than from averages or estimates.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Pairing a guaranteed floor with a hard ceiling lets many tenants share one pool without starving each other.",
+        "trust": 0.75
+      },
+      {
+        "level": 2,
+        "statement": "Requiring a name on every costly action turns an anonymous shared bill into individual accountability.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "Risky experiments belong in a replica environment, because the live one is where failures become losses.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "When one group owns a shared foundation, everyone else changes it through requests rather than unilateral edits.",
+        "trust": 0.8
+      },
+      {
+        "level": 3,
+        "statement": "Decisions about allocating shared resources should rest on measurement rather than on guesswork.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Hard upper bounds on any single participant protect the collective from cascading failure.",
+        "trust": 0.7
+      },
+      {
+        "level": 3,
+        "statement": "Shared systems remain fair only when consumption is attributable to the people responsible for it.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Training loads calibrated to recently measured performance build capacity faster than loads set by aspiration.",
+        "trust": 0.55
+      },
+      {
+        "level": 4,
+        "statement": "Measure what actually happens before deciding what should be allowed to happen.",
+        "trust": 0.75
+      }
+    ],
+    "xd_decoy_oncall_sheet": [
+      {
+        "level": 0,
+        "statement": "A short internal operations note describing how a team maintains its on-call rotation in a shared spreadsheet.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "It documents how an engineering team coordinates on-call scheduling, contact details, time zones, swaps, and holiday marking.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "Scheduling data and incident records are deliberately kept in separate tools rather than combined in one place.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "A promise that never makes it into the signed contract is unenforceable, however clear both sides were in conversation.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "A request submitted after the payroll cutoff simply applies next period; the deadline, not the intent, decides when it counts.",
+        "trust": 0.6
+      },
+      {
+        "level": 2,
+        "statement": "Agreements made in chat carry no operational weight until someone enters them into the system that will act on them.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Changes to a shared record only take effect when the system that consumes it next reads it, creating a firm daily cutoff.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Code that two developers agree on in conversation but never commit to the shared repository might as well not exist.",
+        "trust": 0.6
+      },
+      {
+        "level": 2,
+        "statement": "Colour-coding lets a shared document carry an extra layer of meaning without adding fields or changing its structure.",
+        "trust": 0.7
+      },
+      {
+        "level": 3,
+        "statement": "Any automation fed by manually maintained data inherits the editing discipline of its humans as a reliability constraint.",
+        "trust": 0.7
+      },
+      {
+        "level": 3,
+        "statement": "Batch synchronization converts continuous human edits into hard deadlines, and missing one defers the change by a full cycle.",
+        "trust": 0.85
+      },
+      {
+        "level": 3,
+        "statement": "Splitting distinct kinds of information into purpose-built stores keeps each one smaller, clearer, and easier to keep correct.",
+        "trust": 0.7
+      },
+      {
+        "level": 3,
+        "statement": "The system of record, not the conversation surrounding it, defines reality for everything that acts on it.",
+        "trust": 0.9
+      },
+      {
+        "level": 4,
+        "statement": "Dependable operations are built from boring enforced routine and one authoritative record, not from memory, goodwill, or heroics.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Informal coordination fails exactly when the stakes are highest, so commitments must live where the acting system can see them.",
+        "trust": 0.7
+      }
+    ],
+    "xd_decoy_launch_party": [
+      {
+        "level": 0,
+        "statement": "A planning note shortlists three venues for an evening event, weighs capacity, weather cover and catering needs, and sets a deadline for attendee dietary details.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "The note weighs three shortlisted venues for a Thursday-evening product launch party against a fixed budget and guest needs.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A component that requires an external service to function costs more than its sticker price and adds a dependency to maintain.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "An option that only works after hiring outside help costs more than its headline price.",
+        "trust": 0.75
+      },
+      {
+        "level": 2,
+        "statement": "An option with a built-in fallback for its most likely failure beats a bigger option without one.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Asking people for their constraints well before the date turns surprises into plans.",
+        "trust": 0.85
+      },
+      {
+        "level": 2,
+        "statement": "Attaching a flexible event to a fixed external date removes a whole category of scheduling debate.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "Each option on a shortlist fails differently, so choosing means picking which failure you can absorb.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Sending a requirements survey weeks before a deadline is cheaper than improvising on the day.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "The most expensive choice on the list can still be the worst fit for the job.",
+        "trust": 0.9
+      },
+      {
+        "level": 3,
+        "statement": "Every alternative on the table carries a distinct concession, and comparing concessions beats comparing attractions.",
+        "trust": 0.6
+      },
+      {
+        "level": 3,
+        "statement": "Status and price correlate weakly with usefulness, and the prestigious option often serves the chooser's image over the goal.",
+        "trust": 0.6
+      },
+      {
+        "level": 4,
+        "statement": "Practical fit for the people involved should outrank impressiveness whenever resources are fixed.",
+        "trust": 0.7
+      }
+    ],
+    "xd_decoy_team_photos": [
+      {
+        "level": 0,
+        "statement": "A work note assigning draft captions for three photos from a company's first full-team offsite.",
+        "trust": 1.0
+      },
+      {
+        "level": 1,
+        "statement": "A growing team documents its first time gathered in one place for an internal photo album.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "The task pairs creative caption writing with verifying name spellings and confirming everyone pictured consents to publication.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "A change waits for review by whoever knows the surrounding system before it goes anywhere near production.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "One small deliverable quietly bundles creative work, fact verification, and permission gathering that must all finish before release.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Records that include the embarrassing moments alongside the flattering ones are the ones people actually revisit.",
+        "trust": 0.55
+      },
+      {
+        "level": 2,
+        "statement": "Work should not ship until the person holding the relevant knowledge, rather than the person doing it, has checked it.",
+        "trust": 0.8
+      },
+      {
+        "level": 3,
+        "statement": "Asking permission before speaking for people preserves more trust than apologizing after the fact ever can.",
+        "trust": 0.75
+      },
+      {
+        "level": 3,
+        "statement": "Shared records of time spent together give a group a common past to lean on.",
+        "trust": 0.65
+      },
+      {
+        "level": 3,
+        "statement": "Verification that costs minutes prevents errors that cost goodwill.",
+        "trust": 0.85
+      },
+      {
+        "level": 4,
+        "statement": "Belonging is manufactured through small shared rituals and their keepsakes, not declared into existence.",
+        "trust": 0.5
+      },
+      {
+        "level": 4,
+        "statement": "Care shown in minor ceremonial tasks signals respect more credibly than any statement of values.",
+        "trust": 0.55
+      }
+    ],
+    "xd_decoy_meeting_rooms": [
+      {
+        "level": 0,
+        "statement": "A workplace policy governs how employees reserve, use, and vacate shared meeting rooms.",
+        "trust": 0.98
+      },
+      {
+        "level": 0,
+        "statement": "The policy combines reservation rules, occupancy enforcement, cleanliness expectations, and a maintenance reporting channel.",
+        "trust": 0.95
+      },
+      {
+        "level": 1,
+        "statement": "The document concerns how coworkers share limited common space without chronic conflict.",
+        "trust": 0.88
+      },
+      {
+        "level": 1,
+        "statement": "The policy addresses fair allocation of scarce shared space among competing workplace groups.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "A clear reporting channel keeps small defects from becoming permanent features of shared infrastructure.",
+        "trust": 0.8
+      },
+      {
+        "level": 2,
+        "statement": "Every user of a shared resource is responsible for resetting it before the next user arrives.",
+        "trust": 0.92
+      },
+      {
+        "level": 2,
+        "statement": "Money a team sets aside but never spends should return to the pool rather than sit idle.",
+        "trust": 0.7
+      },
+      {
+        "level": 2,
+        "statement": "Ongoing commitments that consume disproportionate resources deserve stricter oversight than one-time uses.",
+        "trust": 0.9
+      },
+      {
+        "level": 2,
+        "statement": "Unclaimed reservations lapse automatically so that hoarded capacity returns to circulation.",
+        "trust": 0.95
+      },
+      {
+        "level": 2,
+        "statement": "Whoever touches shared code should leave it cleaner, because the next person builds on it immediately.",
+        "trust": 0.65
+      },
+      {
+        "level": 3,
+        "statement": "A commons survives on small enforced courtesies, not on the goodwill of its users alone.",
+        "trust": 0.65
+      },
+      {
+        "level": 3,
+        "statement": "Recurring obligations compound quietly, so periodic re-approval prevents stale commitments from crowding out current needs.",
+        "trust": 0.75
+      },
+      {
+        "level": 3,
+        "statement": "Scarce shared resources are allocated fairly only when claims must be actively exercised rather than passively held.",
+        "trust": 0.8
+      },
+      {
+        "level": 4,
+        "statement": "Access to what is shared is a standing privilege maintained through conduct, not a permanent entitlement.",
+        "trust": 0.6
+      },
+      {
+        "level": 4,
+        "statement": "Collective order comes from explicit rules about small daily behaviors, enforced consistently and impersonally.",
+        "trust": 0.55
+      }
+    ]
+  },
+  "entities": {
+    "xd_bend_not_break": [],
+    "xd_baton_zone": [],
+    "xd_mise_en_place": [],
+    "xd_controlled_burn": [],
+    "xd_hive_split": [],
+    "xd_opening_theory": [],
+    "xd_crop_rotation": [],
+    "xd_bulkheads": [],
+    "xd_trading_fours": [],
+    "xd_sourdough_feeding": [],
+    "xd_long_wedging": [
+      {
+        "entity": "Afghanistan",
+        "fact": "Afghanistan - a landlocked country in South and Central Asia whose capital is Kabul."
+      },
+      {
+        "entity": "Andromeda galaxy",
+        "fact": "Andromeda galaxy - the nearest large spiral galaxy to the Milky Way, roughly 2.5 million light-years from Earth."
+      },
+      {
+        "entity": "Bay of Fundy",
+        "fact": "Bay of Fundy - a bay between New Brunswick and Nova Scotia in Canada, renowned for the world's highest tides."
+      },
+      {
+        "entity": "Mauveine",
+        "fact": "Mauveine - the first synthetic organic dye, a purple aniline color discovered by William Henry Perkin in 1856."
+      },
+      {
+        "entity": "Mediterranean",
+        "fact": "Mediterranean - the sea between Europe, Africa, and Asia, connected to the Atlantic Ocean through the Strait of Gibraltar."
+      },
+      {
+        "entity": "Spain",
+        "fact": "Spain - a country on the Iberian Peninsula in southwestern Europe whose capital is Madrid."
+      },
+      {
+        "entity": "Virgin Mary",
+        "fact": "Virgin Mary - the mother of Jesus of Nazareth, venerated in Christianity as the mother of God."
+      }
+    ],
+    "xd_long_tuning": [
+      {
+        "entity": "Arctic tern",
+        "fact": "Arctic tern - migratory seabird famous for the longest migration of any animal, traveling between Arctic and Antarctic yearly."
+      }
+    ],
+    "xd_decoy_k8s_limits": [
+      {
+        "entity": "Kubernetes",
+        "fact": "Kubernetes - open-source container orchestration platform originally developed by Google for automating deployment, scaling, and management of containerized applications."
+      }
+    ],
+    "xd_decoy_oncall_sheet": [],
+    "xd_decoy_launch_party": [],
+    "xd_decoy_team_photos": [],
+    "xd_decoy_meeting_rooms": []
+  },
+  "lifts": {
+    "xd_q_graceful": [
+      "Systems survive overload by prioritizing essential functions and shedding the rest before collapse.",
+      "All-or-nothing failure is more destructive than gradual degradation that keeps core operations running.",
+      "Trading reduced capacity during peak demand preserves reliability that total failure makes unrecoverable."
+    ],
+    "xd_q_oncall_handoff": [
+      "Continuity is preserved when outgoing actors transfer complete state before relinquishing responsibility to incoming ones.",
+      "Critical events go unaddressed when transitions between responsible parties omit unstated context.",
+      "Time invested in documenting current conditions trades against capacity for immediate active response.",
+      "Structured handoff rituals compensate for the unreliability of individual memory under fatigue."
+    ],
+    "xd_q_launch_prep": [
+      "Critical transitions succeed when all dependencies are resolved before the moment of commitment.",
+      "Discovering missing elements under time pressure multiplies their cost beyond what early detection would require.",
+      "Front-loading preparation trades early effort for certainty when execution pressure is highest."
+    ],
+    "xd_q_small_releases": [
+      "Breaking a large change into small steps isolates variables, making each error easier to locate and correct.",
+      "Accumulated changes released together compound risk because failures become hard to attribute among many simultaneous shifts.",
+      "Frequent small adjustments incur overhead but make recovery faster than unwinding one large reversal."
+    ],
+    "xd_q_split_team": [
+      "Coordination costs grow faster than headcount, so groups beyond a certain size waste more effort aligning than producing.",
+      "Splitting before communication overhead dominates preserves autonomy, clear ownership, and decision speed.",
+      "Early division sacrifices cross-group cohesion and knowledge flow for reduced coordination overhead and sharper accountability.",
+      "Delaying a split erodes shared context faster than the split itself disrupts it."
+    ],
+    "xd_q_sales_playbook": [
+      "Following a standardized process ensures that no critical information is overlooked during interactions.",
+      "Rigid adherence to process causes missed opportunities when the situation doesn't match expectations.",
+      "Consistency ensures reliability while improvisation allows responsiveness to unique circumstances.",
+      "Adapting to the other party's specific needs builds trust that standardization cannot."
+    ],
+    "xd_q_burnout_rotation": [
+      "Sustained high-intensity effort depletes capacity unless interrupted with recovery periods.",
+      "Performance erodes when high-demand conditions continue without scheduled relief.",
+      "Rotation trades short-term continuity for sustained long-term capability."
+    ],
+    "xd_q_blast_radius": [
+      "Partitioning independent components limits the blast radius of any single failure to its originating boundary.",
+      "Cascading collapse occurs when components rely on each other's uninterrupted availability.",
+      "Adding boundaries between components increases overhead but preserves partial operation when parts fail."
+    ],
+    "xd_q_meeting_turns": [
+      "Structured turn-taking surfaces input from those who naturally hold back, preventing confident voices from crowding out others.",
+      "Equalizing participation trades some spontaneity for completeness, ensuring valuable perspectives aren't lost to silence.",
+      "Active facilitation counteracts the tendency for the loudest participants to monopolize collective attention."
+    ],
+    "xd_q_catch_early": [
+      "Small errors caught early cost orders of magnitude less to fix than after they propagate.",
+      "Defects passing undetected through successive stages compound into catastrophic downstream failures.",
+      "Investing effort in early verification trades favorably against the far greater cost of late-stage correction."
+    ],
+    "xd_q_shared_baseline": [
+      "Shared reference points prevent divergent effort from compounding into incompatible outputs.",
+      "Early alignment trades initial delay for fewer costly corrections downstream."
+    ],
+    "xd_q_habit": [
+      "Small repeated actions become automatic when the effort required stays below the threshold of resistance.",
+      "Ambitious routines collapse when initial effort exceeds what can be sustained daily.",
+      "Consistency of minimum viable action outperforms sporadic intensity over long time horizons.",
+      "Lowering the size of each step reduces the activation energy needed to begin."
+    ]
+  },
+  "ranks": {
+    "xd_q_graceful": [
+      "xd_bend_not_break",
+      "xd_bulkheads",
+      "xd_decoy_k8s_limits",
+      "xd_controlled_burn",
+      "xd_hive_split",
+      "xd_mise_en_place",
+      "xd_crop_rotation",
+      "xd_long_wedging",
+      "xd_long_tuning",
+      "xd_sourdough_feeding",
+      "xd_baton_zone",
+      "xd_decoy_launch_party",
+      "xd_opening_theory",
+      "xd_trading_fours",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_oncall_sheet",
+      "xd_decoy_team_photos"
+    ],
+    "xd_q_oncall_handoff": [
+      "xd_decoy_oncall_sheet",
+      "xd_long_tuning",
+      "xd_sourdough_feeding",
+      "xd_controlled_burn",
+      "xd_opening_theory",
+      "xd_hive_split",
+      "xd_long_wedging",
+      "xd_decoy_launch_party"
+    ],
+    "xd_q_launch_prep": [
+      "xd_mise_en_place",
+      "xd_decoy_team_photos",
+      "xd_controlled_burn",
+      "xd_long_tuning",
+      "xd_sourdough_feeding",
+      "xd_baton_zone",
+      "xd_long_wedging",
+      "xd_bulkheads",
+      "xd_hive_split",
+      "xd_crop_rotation",
+      "xd_bend_not_break",
+      "xd_opening_theory",
+      "xd_trading_fours"
+    ],
+    "xd_q_small_releases": [
+      "xd_controlled_burn",
+      "xd_bend_not_break",
+      "xd_sourdough_feeding",
+      "xd_mise_en_place",
+      "xd_bulkheads",
+      "xd_hive_split",
+      "xd_baton_zone",
+      "xd_crop_rotation",
+      "xd_opening_theory",
+      "xd_trading_fours",
+      "xd_long_tuning",
+      "xd_decoy_k8s_limits",
+      "xd_decoy_oncall_sheet",
+      "xd_long_wedging",
+      "xd_decoy_team_photos",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_launch_party",
+      "paraphrase_0001",
+      "paraphrase_0005",
+      "long_0005"
+    ],
+    "xd_q_split_team": [
+      "xd_hive_split",
+      "xd_bulkheads",
+      "xd_controlled_burn",
+      "xd_opening_theory",
+      "xd_crop_rotation",
+      "xd_decoy_meeting_rooms",
+      "xd_baton_zone",
+      "xd_trading_fours",
+      "xd_mise_en_place",
+      "xd_decoy_oncall_sheet",
+      "xd_bend_not_break",
+      "xd_sourdough_feeding",
+      "xd_long_tuning",
+      "xd_long_wedging",
+      "xd_decoy_k8s_limits",
+      "xd_decoy_team_photos",
+      "xd_decoy_launch_party",
+      "near_dup_0005",
+      "near_dup_0001",
+      "near_dup_0003"
+    ],
+    "xd_q_sales_playbook": [
+      "xd_opening_theory",
+      "xd_mise_en_place",
+      "xd_trading_fours",
+      "xd_bend_not_break",
+      "xd_controlled_burn",
+      "xd_long_tuning",
+      "xd_baton_zone",
+      "xd_bulkheads",
+      "xd_sourdough_feeding",
+      "xd_crop_rotation",
+      "xd_hive_split",
+      "xd_decoy_oncall_sheet",
+      "xd_decoy_launch_party",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_k8s_limits",
+      "xd_decoy_team_photos",
+      "xd_long_wedging",
+      "paraphrase_0001",
+      "paraphrase_0003",
+      "paraphrase_0009"
+    ],
+    "xd_q_burnout_rotation": [
+      "xd_crop_rotation",
+      "xd_trading_fours",
+      "xd_decoy_oncall_sheet",
+      "xd_bend_not_break",
+      "xd_controlled_burn",
+      "xd_sourdough_feeding",
+      "xd_hive_split",
+      "xd_bulkheads",
+      "xd_mise_en_place",
+      "xd_baton_zone",
+      "xd_decoy_k8s_limits",
+      "xd_long_tuning",
+      "xd_opening_theory",
+      "xd_long_wedging",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_team_photos",
+      "xd_decoy_launch_party",
+      "paraphrase_0001",
+      "paraphrase_0004",
+      "title_only_0008"
+    ],
+    "xd_q_blast_radius": [
+      "xd_bulkheads",
+      "xd_bend_not_break",
+      "xd_hive_split",
+      "xd_decoy_k8s_limits",
+      "xd_controlled_burn",
+      "xd_long_tuning",
+      "xd_crop_rotation",
+      "xd_sourdough_feeding",
+      "xd_mise_en_place",
+      "xd_baton_zone",
+      "xd_opening_theory",
+      "xd_trading_fours",
+      "xd_decoy_oncall_sheet",
+      "xd_decoy_meeting_rooms",
+      "xd_long_wedging",
+      "xd_decoy_team_photos",
+      "xd_decoy_launch_party",
+      "paraphrase_0006",
+      "title_only_0005",
+      "paraphrase_0001"
+    ],
+    "xd_q_meeting_turns": [
+      "xd_trading_fours",
+      "xd_long_tuning",
+      "xd_controlled_burn",
+      "short_0005",
+      "xd_mise_en_place",
+      "xd_baton_zone",
+      "xd_hive_split",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_oncall_sheet",
+      "xd_sourdough_feeding",
+      "xd_crop_rotation",
+      "xd_bend_not_break",
+      "xd_opening_theory",
+      "xd_bulkheads",
+      "xd_decoy_k8s_limits",
+      "xd_decoy_team_photos",
+      "xd_decoy_launch_party",
+      "xd_long_wedging",
+      "title_only_0005",
+      "long_0005"
+    ],
+    "xd_q_catch_early": [
+      "xd_long_wedging",
+      "xd_decoy_team_photos",
+      "xd_decoy_k8s_limits",
+      "xd_mise_en_place",
+      "xd_controlled_burn",
+      "xd_bulkheads",
+      "xd_sourdough_feeding",
+      "xd_long_tuning",
+      "xd_bend_not_break",
+      "xd_hive_split",
+      "xd_opening_theory",
+      "ordinary_0010",
+      "xd_baton_zone",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_launch_party",
+      "xd_decoy_oncall_sheet",
+      "xd_trading_fours",
+      "xd_crop_rotation",
+      "paraphrase_0001",
+      "paraphrase_0002"
+    ],
+    "xd_q_shared_baseline": [
+      "xd_long_tuning",
+      "xd_mise_en_place",
+      "xd_opening_theory",
+      "xd_trading_fours",
+      "xd_baton_zone",
+      "xd_decoy_oncall_sheet",
+      "xd_controlled_burn",
+      "xd_bulkheads",
+      "xd_hive_split",
+      "xd_bend_not_break",
+      "xd_crop_rotation",
+      "xd_sourdough_feeding",
+      "paraphrase_0004",
+      "long_0003",
+      "short_0005",
+      "xd_decoy_k8s_limits",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_team_photos",
+      "xd_decoy_launch_party",
+      "xd_long_wedging"
+    ],
+    "xd_q_habit": [
+      "xd_sourdough_feeding",
+      "long_0003",
+      "xd_controlled_burn",
+      "paraphrase_0001",
+      "xd_crop_rotation",
+      "xd_bend_not_break",
+      "xd_mise_en_place",
+      "xd_bulkheads",
+      "xd_trading_fours",
+      "xd_baton_zone",
+      "xd_opening_theory",
+      "xd_hive_split",
+      "xd_long_tuning",
+      "xd_long_wedging",
+      "xd_decoy_oncall_sheet",
+      "xd_decoy_meeting_rooms",
+      "xd_decoy_k8s_limits",
+      "xd_decoy_team_photos",
+      "paraphrase_0005",
+      "xd_decoy_launch_party"
+    ]
+  },
+  "sections": {
+    "xd_long_tuning": [
+      "Opens with a history of the postal service: messenger networks once made recipients pay, limiting mail to the wealthy, until the nineteenth-century postage stamp introduced uniform prepaid rates. This enabled mass correspondence, mailed newspapers, and commerce, and required infrastructure like sorting offices, mail coaches, and railway travelling post offices, leaving legacies in envelope addressing, postboxes, and the universal service obligation. The text then shifts abruptly into a long series of disconnected, often repeated descriptive vignettes of everyday places: a bookshop, bakery, rusted 1927 bridge, warm kitchen, print shop, hilltop observatory, colour-sequenced garden, tin-roofed shed, library reading room, train stations, canal paths, harbour at dawn, carpenter's workshop, lighthouse, and greenhouse. Nothing yet concerns the town orchestra promised by the title.",
+      "Rather than continuing any orchestra narrative, the section offers a collage of evocative place descriptions, many repeated verbatim: clouds tracking over a valley watched by farmers, a market square where soil-dusted vegetables and rooftop honey are sold amid friendly haggling, a bookshop in a former haberdasher's with index cards instead of buttons and no computer, a morning walk past bakery and school to a gull-lined pier, a pottery studio, an automated lighthouse with a summer painter, a carpenter listening to wood, a clock tower stopped since 1983 whose silence locals mythologise, a 1968-styled physics department with orange carpets, a basement archive with an 1842 letter, a ferry crossing, and forest paths.",
+      "A collage of loosely connected descriptive vignettes portraying a small coastal town and its surroundings, with several passages repeated verbatim. Sketches include a pine forest with mushroom rings and deer paths, a pottery studio, a sun-catching vineyard, a woman's morning walk past bakery, school and pier, a computer-free bookshop in a former haberdasher's, a garden planted so nothing blooms at once, a clock tower broken since 1983, a library reading room, a hilltop observatory, warehouse artist studios, a forty-minute ferry crossing, a neglected basement archive holding an 1842 letter, a tin-roofed shed, a winter greenhouse, a windy ridge footpath, and a grey harbour at dawn. No orchestra or volunteering narrative appears.",
+      "Explains how billions of birds migrate south each autumn, with the Arctic tern flying roughly seventy thousand kilometres between Arctic and Antarctic yearly. Birds navigate using multiple parallel systems: the sun by day, stars at night, and Earth's magnetic field sensed through special eye proteins. Since young birds migrate separately from adults, routes are partly instinctive, though feeding spots are learned. Climate change disrupts timing\u2014insects emerge earlier, leaving late-arriving birds hungry\u2014and species unable to adjust are declining. Conservation therefore focuses on protecting stopover sites, requiring international cooperation across borders birds do not recognise. The remainder consists of unrelated, sometimes repeated descriptive vignettes of places: a carpenter's workshop, a rusted 1927 bridge, a museum bird room, a vineyard, an observatory, and",
+      "Despite its title, the section contains nothing about the orchestra; it is a collage of sensory vignettes about old places and handmade work, several repeated verbatim. A ferry crossing, a fossil-layered canyon trail, a pottery studio, and a garden sequenced so nothing blooms at once appear alongside tributes to analog craft: a print shop's 1950s press kept for its resistance and smell, a baker who judges sourdough by sound, a bookshop run without a computer, a workbench with marker-outlined tools. Landmarks persist through deliberate inaction, like the unpainted 1927 bridge and the clock tower silent since 1983, whose failure locals cherish. Warm kitchens, a creaking library, canals, forests, train-station acoustics, an underfunded archive, and a lighthouse painter's residency complete the",
+      "Closing the account of volunteering with the town orchestra, the narrator reflects on the minute before each rehearsal when the oboe sounds a single A and every section tunes to it in turn, no one relying on their own pitch and no music starting until the room agrees. The conductor explains that a hall of players each slightly sharp or flat sounds worse than any single wrong note, so one shared reference saves the whole evening. The rest of the section consists of atmospheric sketches of town life, including the bakery, vineyard terraces, market square, carpenter, pottery studio, ferry, harbour, and clock tower, several of them repeated."
+    ],
+    "xd_long_wedging": [
+      "Explains the mechanics of tides: the moon's gravity pulls water into a bulge facing it while inertia forms a second bulge opposite, so Earth's rotation brings two high and two low tides daily. The sun adds a weaker pull; alignment yields spring tides, right angles neap tides. Coastline shape amplifies range, as at the Bay of Fundy's fifteen-metre tides, while enclosed seas like the Mediterranean barely register them. Coastal fishing, harbours and foraging follow tide tables, among the oldest published references. The remainder is a set of disconnected, often repeated descriptive sketches of small places and crafts: a library, garden, ferry, bakery, workshop, canal, greenhouse, shed, archive, clock tower, observatory, bookshop, lighthouse, market, rusted bridge, print shop and vineyard.",
+      "A loosely connected series of sensory sketches of places rather than a direct account of pottery. Recurring scenes include a dated physics department with orange carpets and blackboards of equations, a hilltop observatory where volunteers show visitors the Andromeda galaxy, a clock tower broken since 1983 whose true story is lost, a tin-roofed shed, a windy ridge footpath over a valley, a warehouse divided into artists' studios where a potter's wheel is audible through thin walls, a carpenter listening to his wood, a grey dawn harbour, a warm cluttered kitchen, a pine forest, a municipal archive holding an 1842 letter, chalky vineyard terraces, canal paths, a lighthouse painter's cottage, a 1950s printing press, an unpainted 1927 iron bridge, and a",
+      "A montage of closely observed places: a pine forest with deer paths, a print shop whose owner keeps a 1950s press for its feel despite faster digital options, valley clouds watched by farmers, a bookshop in a former haberdasher's with no computer, a bakery where the baker judges loaves by sound, sunlit vineyard terraces, a retro 1960s physics department, an unvisited bird room in a natural history museum, a carpenter who listens to his wood, an old-town market, train-station acoustics, a greenhouse, canal paths, a library reading room, a succession-planted garden, a basement archive holding an 1842 letter, a windy ridge path, and briefly a pottery studio smelling of wet clay with a cooling kiln. Many passages repeat verbatim, giving",
+      "Recounts the history of pigments before synthetics: ultramarine ground from Afghan lapis lazuli and reserved for the Virgin Mary's robes, cochineal red from insects whose source Spain disguised as a seed to protect its monopoly, yellows from ochre or toxic, darkening orpiment, and greens such as verdigris, terre verte, and malachite that were unstable, muddy, or costly. Nineteenth-century coal-tar chemistry, sparked by mauveine's accidental discovery in 1856, produced brighter, cheaper, lightfast-tested colours, but severed the link between paint and the earth it came from, making painting a little less magical. The remainder dissolves into disconnected descriptive vignettes of kitchens, harbours, libraries, studios, forests, archives, and print shops, several repeated verbatim.",
+      "A chain of short observational vignettes, many repeated verbatim, celebrating places shaped by care, craft and routine: a bakery whose baker of thirty years judges loaves by sound; a perpetually warm kitchen; a garden sequenced so alliums, lilies and japonica never clash; a lighthouse cottage hosting painters; a winter greenhouse; a market where haggling is friendship; a chalky vineyard; a library whose patrons read obituaries first; a tin-roofed shed; canal paths; a bookshop with index cards and no computer; echoing train stations; an unpainted 1927 bridge; an underfunded archive; a fossil-layered canyon; warehouse studios where a potter's wheel is audible; a 1950s printing press kept over digital; and slow ferries. Sensory detail\u2014sound, smell, light\u2014conveys presence and unhurried attention.",
+      "A montage of sensory vignettes about places and crafts\u2014grey harbours catching first sunlight, colour-sequenced gardens, a carpenter who listens to his wood, an unvisited bird room in a natural history museum, train-station acoustics, ferries, tin roofs, town markets, a 1927 rusted bridge, a clock tower broken since 1983\u2014before closing with the year's last pottery lesson: wedging. Clay must be kneaded on canvas to force out trapped air; skipped, a pot looks flawless until a hidden bubble bursts it in the kiln. The teacher's point is that the kiln only exposes flaws present from the start, when fixing them cost nothing."
+    ]
+  }
+}

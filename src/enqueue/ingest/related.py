@@ -10,7 +10,9 @@ piano practice and a tax letter, each explained by a sentence about codebases. L
 says what kind of thing it is, which links every set of reading notes to every other.
 Mention links: another artifact whose entities name the same person, place or thing
 (case-insensitive), scored MENTION_SCORE and carrying the name in `via`; a name that
-more than MENTION_MAX_SHARED artifacts mention is too common to connect anything, and
+more than MENTION_MAX_SHARED artifacts mention is too common to connect anything, a
+shared name between subjects further apart than MENTION_NEAR is a coincidence (two pages
+that both end in an Instagram link), and
 a link's own site ("Medium" on an article saved from medium.com) says where it was
 published, not what it is about, so that name never connects it to anything.
 The top RELATED_LIMIT at or above RELATED_MIN become links, stored in both directions
@@ -71,6 +73,8 @@ RELATED_LIMIT = 5
 RELATED_MIN = 0.66
 MENTION_SCORE = 0.7
 MENTION_MAX_SHARED = 8
+# Subject-line cosine a mention link also needs: the name must sit in related subjects.
+MENTION_NEAR = 0.5
 SUBJECT_LEVEL = 1
 # Hits come back across every level and are filtered to subject lines here, so ask for
 # enough that the subject lines among them are not crowded out.
@@ -80,7 +84,7 @@ _PER_STATEMENT = 80
 IDEA_MIN = 0.72
 IDEA_CANDIDATES = 8
 # Bump when the way links are chosen changes: every artifact is recomputed once.
-VERSION = "7"
+VERSION = "9"
 # The most model calls the judge makes in a day (UTC). Each call judges one artifact's
 # candidates. 0 turns the judge off: cached verdicts still link, nothing new is asked.
 JUDGE_DAILY = int(os.getenv("ENQ_RELATED_JUDGE_DAILY", "40"))
@@ -126,15 +130,13 @@ def compute(artifact_id: str, judge: bool = False) -> int:
     conn = db.get_conn()
     try:
         mine = conn.execute(
-            "SELECT id, level, statement FROM facets WHERE artifact_id = ? AND level >= ?",
-            (artifact_id, SUBJECT_LEVEL),
+            "SELECT id, level, statement FROM facets WHERE artifact_id = ? AND level >= ?"
+            " AND (level = ? OR bridge = 0)",
+            (artifact_id, SUBJECT_LEVEL, SUBJECT_LEVEL),
         ).fetchall()
         # other artifact -> (similarity, this artifact's line, the other's facet id)
         best: dict[str, tuple[float, str, str]] = {}
         ideas: dict[str, tuple[float, str, str]] = {}
-        # other artifact -> its closest subject line to any of ours, below the bar too:
-        # how near the two subjects are, which is what makes an idea link far or near.
-        near: dict[str, float] = {}
         cache: dict = {}
         for facet in mine:
             subject = facet["level"] == SUBJECT_LEVEL
@@ -145,10 +147,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 # A subject line only meets subject lines, an idea line only idea lines.
                 if other == artifact_id or (hit["level"] == SUBJECT_LEVEL) != subject:
                     continue
-                if hit["level"] < SUBJECT_LEVEL:
+                if hit["level"] < SUBJECT_LEVEL or hit.get("bridge"):
                     continue
-                if subject:
-                    near[other] = max(near.get(other, 0.0), hit["score"])
                 if hit["score"] < (RELATED_MIN if subject else IDEA_MIN):
                     continue
                 if hit_is_stale(conn, hit, cache):
@@ -156,12 +156,17 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 into = best if subject else ideas
                 if other not in into or hit["score"] > into[other][0]:
                     into[other] = (hit["score"], facet["statement"], hit["facet_id"])
-        via = _mentions(conn, artifact_id, cache)
+        named = _mentions(conn, artifact_id, cache)
+        # How near each candidate's subject is to this one's, read from the two items'
+        # own subject lines: the nearest-neighbour lists above miss most of a big library.
+        near = store.facet_similarity(artifact_id, [*best, *ideas, *named], SUBJECT_LEVEL)
+        via = {o: name for o, name in named.items() if near.get(o, 0.0) >= MENTION_NEAR}
 
-        # Idea candidates: the closest pairs not already linked by subject.
+        # Idea candidates: the most surprising pairs not already linked by subject, so
+        # the same idea from the farthest field is the one the judge is asked about.
         asked = sorted(
             ((other, found) for other, found in ideas.items() if other not in best),
-            key=lambda kv: kv[1][0],
+            key=lambda kv: kv[1][0] * (1.0 - near.get(kv[0], 0.0)),
             reverse=True,
         )[:IDEA_CANDIDATES]
         lines = _statements(conn, [found[2] for _, found in asked])
@@ -194,10 +199,7 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                     log.warning("related judge failed for %s: %s", artifact_id, exc)
                     missing = []  # would fail the same way again; asked anew on a change
 
-        # A subject this one's lines never came close to is at least as far as the
-        # farthest subject they did reach.
-        floor = min(near.values(), default=0.0)
-        distance = {o: round(max(0.0, 1.0 - near.get(o, floor)), 4) for o in [*best, *why, *via]}
+        distance = {o: round(1.0 - near.get(o, 0.0), 4) for o in [*best, *why, *via]}
         kinds = {other: "subject" for other in best}
         kinds.update({c["id"]: "idea" for c in candidates if c["id"] in why})
         for other in via:
@@ -211,10 +213,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
         theirs = _statements(conn, [best[other][2] for other, _ in top if other in best])
 
         now = db.now()
-        conn.execute(
-            "DELETE FROM related WHERE artifact_id = ? OR related_id = ?",
-            (artifact_id, artifact_id),
-        )
+        # Only the links this artifact chose: a link another note chose stays its own.
+        conn.execute("DELETE FROM related WHERE owner = ?", (artifact_id,))
         for other, score in top:
             found = best.get(other)
             if found:
@@ -225,15 +225,16 @@ def compute(artifact_id: str, judge: bool = False) -> int:
             for (a, b), point in zip(((artifact_id, other), (other, artifact_id)), points):
                 conn.execute(
                     "INSERT OR REPLACE INTO related"
-                    " (artifact_id, related_id, score, model_version, created_at, via, point,"
-                    " kind, distance) VALUES (?,?,?,?,?,?,?,?,?)",
+                    " (artifact_id, related_id, owner, score, model_version, created_at, via,"
+                    " point, kind, distance) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
                         a,
                         b,
+                        artifact_id,
                         round(score, 4),
                         model,
                         now,
-                        via.get(other),
+                        via.get(other) if kinds[other] == "mention" else None,
                         point,
                         kinds[other],
                         distance[other],
@@ -533,6 +534,8 @@ def refresh_if_outdated() -> int:
         ]
     finally:
         conn.close()
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM related")
     for artifact_id in ids:
         compute(artifact_id)
     _state_set("version", VERSION)
@@ -620,8 +623,12 @@ def for_artifact(conn, artifact_id: str) -> list[dict]:
         " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
         (artifact_id,),
     ).fetchall()
+    # Both notes of a pair may have chosen it; each pair is shown once.
     out = sorted(
         (dict(r) for r in rows),
         key=lambda r: _rank(r["link"] or "", r["distance"] or 0.0, r["score"]),
     )
-    return out[:RELATED_LIMIT]
+    first: dict[str, dict] = {}
+    for r in out:
+        first.setdefault(r["id"], r)
+    return list(first.values())[:RELATED_LIMIT]

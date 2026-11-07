@@ -14,6 +14,8 @@ import tempfile
 # folder config was imported with: on 2026-10-14 that flush created the real data
 # folder, which then blocked moving the library into it. Set before enqueue imports.
 os.environ["ENQ_DATA_DIR"] = tempfile.mkdtemp(prefix="enqueue-tests-")
+# Never the real Share extension inbox (~/Library/Group Containers/...).
+os.environ["ENQ_SHARE_INBOX"] = os.path.join(os.environ["ENQ_DATA_DIR"], "share-inbox")
 
 import pytest  # noqa: E402
 

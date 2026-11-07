@@ -431,11 +431,16 @@ function renderChat(d) {
 		// click: the cause with a path to the fix when the worker stored one
 		// (CR.2), and ask the same question again as a fresh turn (H4.4).
 		if (failed) {
+			// The month's included AI used up (providers/pause.py, relay/ai.py) offers Pro.
+			const usedUp = /included (AI|assistant) is used up/i.test(m.error || "");
+			const free = !(accountMenuMe && accountMenuMe.plan && accountMenuMe.plan.tier === "pro");
 			if (m.error)
 				html +=
 					'<div class="cause">' +
 					esc(m.error) +
-					' <button class="btn ghost" onclick="showSettings()">Check Settings</button></div>';
+					(usedUp && free
+						? ' <button class="btn ghost" onclick="openUpgrade(\'ai-used-up\')">Upgrade</button></div>'
+						: ' <button class="btn ghost" onclick="showSettings()">Check Settings</button></div>');
 			html +=
 				'<button class="btn ghost" onclick="retryTurn(\'' +
 				esc(m.id) +

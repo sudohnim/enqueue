@@ -140,11 +140,25 @@ def _paid_push(artifact_id: str) -> None:
             _save_unpushed([i for i in ids if i != artifact_id])
 
 
+def _note_full(full: bool) -> None:
+    """Remember whether the relay last refused a push for want of room (Settings)."""
+    if bool(settings.get("account_sync_full")) == full:
+        return
+    settings.update({"account_sync_full": full})
+    if full:
+        from .. import events
+
+        events.emit("sync.full", "Enqueue sync is full: new changes stay on this Mac")
+
+
 def retry_unpushed() -> int:
     """Push again what a failed push left owed. Returns how many were tried."""
     ids = _unpushed()
-    for artifact_id in ids:
+    for n, artifact_id in enumerate(ids, 1):
         push_artifact(artifact_id)
+        # While full, one probe a pull is enough to see whether there is room again.
+        if settings.get("account_sync_full"):
+            return n
     return len(ids)
 
 
@@ -196,6 +210,13 @@ def push_artifact(artifact_id: str) -> None:
     # 201 = stored or overwritten (the relay upserts by name, MOBFIX.5). 409 is
     # no longer expected but stays accepted for an older relay. Anything else is
     # a real error worth surfacing, but never fatal to the edit.
+    if resp.status_code == 413 and "full" in resp.text:
+        # The plan's storage is full: owed, so it goes up once there is room (Pro, or
+        # something deleted), and said in Settings and the account menu.
+        print(f"[sync] push refused for {artifact_id}: storage full", flush=True)
+        _owe_push(artifact_id)
+        _note_full(True)
+        return
     if resp.status_code not in (201, 409):
         print(f"[sync] push rejected for {artifact_id}: {resp.status_code}", flush=True)
         if resp.status_code >= 500 or resp.status_code == 429:
@@ -207,6 +228,7 @@ def push_artifact(artifact_id: str) -> None:
         telemetry.report("sync", "PushRejected", f"relay answered {resp.status_code}")
         return
     _paid_push(artifact_id)
+    _note_full(False)
 
     # Push the blobs the snapshot refers to (the sync design (AGENTS.md): fetched on demand by the
     # reader/thumbnails). The blob name is HMAC(content_hash, DEK), so it reveals

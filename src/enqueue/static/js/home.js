@@ -1315,6 +1315,18 @@ function readingWhy(r) {
 			"Stopped: your AI service turned down the key. " +
 			'<a href="#" class="reading-fix">Check it in Settings</a>.'
 		);
+	if (r.state === "paused" && r.limit === "included_ai") {
+		const day = r.paused_until
+			? new Date(r.paused_until).toLocaleDateString([], { month: "long", day: "numeric" })
+			: "";
+		const free = !(accountMenuMe && accountMenuMe.plan && accountMenuMe.plan.tier === "pro");
+		return (
+			"Paused: this month's included AI is used up. It comes back" +
+			(day ? " on " + esc(day) : " next month") +
+			"." +
+			(free ? ' <a href="#" class="reading-upgrade">Upgrade</a> for more.' : "")
+		);
+	}
 	if (r.state === "paused") {
 		const at = r.paused_until
 			? new Date(r.paused_until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
@@ -1373,6 +1385,12 @@ async function refreshReading() {
 		"</div>";
 	slot.dataset.state = r.state;
 	slot.hidden = false;
+	const more = slot.querySelector(".reading-upgrade");
+	if (more)
+		more.addEventListener("click", (e) => {
+			e.preventDefault();
+			openUpgrade("ai-used-up");
+		});
 	const fix = slot.querySelector(".reading-fix");
 	if (fix)
 		fix.addEventListener("click", (e) => {

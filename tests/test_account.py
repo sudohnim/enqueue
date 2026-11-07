@@ -54,6 +54,7 @@ def world(store, tmp_path, monkeypatch):
             google_desktop_client_id=GOOGLE_DESKTOP,
             apple_client_id=APPLE_SERVICE,
             rate_limit_per_min=1000,
+            purchase_link="https://pay.rev.cat/abc123",
         ),
     )
     relay = TestClient(relay_app, base_url=HOSTED)
@@ -368,3 +369,14 @@ def test_a_settings_change_the_phone_does_not_read_is_not_pushed(world, monkeypa
     assert pushed == []
     settings.update({"llm_model": "llama3.1:8b"})
     assert pushed == [1]
+
+
+def test_the_mac_offers_the_web_checkout_and_asks_again_after(world):
+    engine = world["engine"]
+    _sign_in_google(engine)
+
+    plan = engine.post("/account/plan/refresh").json()
+
+    assert plan["tier"] == "free"
+    assert plan["checkout_url"].startswith("https://pay.rev.cat/abc123/")
+    assert engine.get("/account").json()["plan"]["checkout_url"] == plan["checkout_url"]

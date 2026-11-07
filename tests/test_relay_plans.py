@@ -23,6 +23,10 @@ HOOK = "Bearer revenuecat-test-hook"
 
 @pytest.fixture
 def relay(tmp_path, monkeypatch):
+    return _relay(tmp_path, monkeypatch)
+
+
+def _relay(tmp_path, monkeypatch, **extra):
     monkeypatch.setattr(
         accounts_mod.Accounts, "_signing_key", lambda self, token, url: PROVIDER_KEY.public_key()
     )
@@ -34,6 +38,7 @@ def relay(tmp_path, monkeypatch):
         google_desktop_client_id=GOOGLE_DESKTOP,
         rate_limit_per_min=1000,
         revenuecat_webhook_auth=HOOK,
+        **extra,
     )
     app = create_relay(
         tmp_path / "relay",
@@ -213,3 +218,17 @@ def test_the_admin_grants_pro_by_email_and_takes_it_back(relay):
     assert nobody.status_code == 404
     bad = {"Authorization": "Bearer nope"}
     assert relay.put("/admin/accounts/pro", json={"email": "x"}, headers=bad).status_code == 401
+
+
+def test_a_free_account_gets_its_own_web_checkout_and_pro_does_not(tmp_path, monkeypatch):
+    relay = _relay(tmp_path, monkeypatch, purchase_link="https://pay.rev.cat/abc123/")
+    pair = _sign_in(relay)
+    account_id = pair["account"]["id"]
+
+    assert _plan(relay, pair)["checkout_url"] == f"https://pay.rev.cat/abc123/{account_id}"
+    _hook(relay, _event(account_id))
+    assert _plan(relay, pair)["checkout_url"] is None
+
+
+def test_no_purchase_link_means_no_web_checkout(relay):
+    assert _plan(relay, _sign_in(relay))["checkout_url"] is None

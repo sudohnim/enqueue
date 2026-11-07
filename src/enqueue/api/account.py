@@ -41,6 +41,13 @@ def read_account() -> dict:
     return account.state()
 
 
+@router.post("/account/plan/refresh")
+def refresh_account_plan() -> dict:
+    """Ask the relay for the plan now: Settings waits on it after a purchase."""
+    account.refresh_plan()
+    return account.state()["plan"]
+
+
 @router.post("/account/sign-in")
 def start_sign_in(req: SignIn) -> dict:
     """The address to open in the browser. Settings opens it and waits."""

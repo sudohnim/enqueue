@@ -131,7 +131,7 @@ def test_the_endpoint(store, quiet_queue):
 
     _notes(3)
     body = TestClient(create_app()).get("/reading").json()
-    assert set(body) == {"total", "done", "remaining", "state", "paused_until", "show"}
+    assert set(body) == {"total", "done", "remaining", "state", "paused_until", "limit", "show"}
     assert body["total"] == 3
 
 

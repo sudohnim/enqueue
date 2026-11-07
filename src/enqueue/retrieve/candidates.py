@@ -11,7 +11,6 @@ import math
 import re
 import threading
 import time
-from collections import defaultdict
 from contextvars import ContextVar, copy_context
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -616,11 +615,6 @@ def _pin_exact(
     return pinned[:limit]
 
 
-def _log_sub_queries(queries: list[str]) -> None:
-    if len(queries) > 1:
-        print(f"[search] {len(queries)} sub-queries (query expansion)", flush=True)
-
-
 def hit_is_stale(conn, hit: dict, cache: dict) -> bool:
     """Whether a facet/entity/section hit was built from an older body.
 
@@ -668,90 +662,6 @@ def _weighted_hits(conn, hits, cache):
         except (TypeError, ValueError):  # noqa: PERF203 - a bad trust value is data rot
             trust = 0.5
         yield hit, hit["score"] * trust * 2.0
-
-
-def candidates(
-    queries: list[str], limit: int = 150, per_query: int = 40, prefetch: int = 100
-) -> list[dict]:
-    """Artifact ids ranked by their best chunk, facet or entity hit across `queries`.
-
-    Raise `prefetch` for whole-library coverage; otherwise hits past the window are unseen.
-    """
-    _log_sub_queries(queries)
-    best: dict[str, float] = defaultdict(float)
-    why: dict[str, str] = {}
-    matched_facet: dict[str, str] = {}
-
-    store = get_store()
-    conn = db.reader()
-    cache: dict = {}
-    try:
-        for query in queries:
-            chunk_hits = store.search(store.CHUNKS, query, limit=per_query, prefetch=prefetch)
-            facet_hits = store.search(store.FACETS, query, limit=per_query, prefetch=prefetch)
-            entity_hits = store.search(store.ENTITIES, query, limit=per_query, prefetch=prefetch)
-            section_hits = store.search(store.SECTIONS, query, limit=per_query, prefetch=prefetch)
-            _prefetch_staleness(
-                conn,
-                cache,
-                [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits + section_hits],
-            )
-            for hit in chunk_hits:
-                aid = hit["artifact_id"]
-                if hit["score"] > best[aid]:
-                    best[aid] = hit["score"]
-                    why[aid] = "chunk"
-
-            for hit, score in _weighted_hits(conn, facet_hits, cache):
-                aid = hit["artifact_id"]
-                if score > best[aid]:
-                    best[aid] = score
-                    why[aid] = f"facet L{hit.get('level')}"
-                    facet_id = hit.get("facet_id")
-                    if facet_id:
-                        matched_facet[aid] = facet_id
-
-            for hit, score in _weighted_hits(conn, entity_hits, cache):
-                aid = hit["artifact_id"]
-                if score > best[aid]:
-                    best[aid] = score
-                    why[aid] = "entity"
-
-            for hit, score in _weighted_hits(conn, section_hits, cache):
-                aid = hit["artifact_id"]
-                if score > best[aid]:
-                    best[aid] = score
-                    why[aid] = "section"
-
-        ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)[:limit]
-
-        titles: dict[str, str] = {}
-        if ranked:
-            rows = conn.execute(
-                "SELECT id, title FROM artifacts"
-                " WHERE id IN (SELECT value FROM json_each(?))"
-                " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
-                (json.dumps([aid for aid, _ in ranked]),),
-            ).fetchall()
-            titles = {row["id"]: row["title"] for row in rows}
-
-        out = []
-        for aid, score in ranked:
-            title = titles.get(aid)
-            if title is None:
-                continue
-            out.append(
-                {
-                    "artifact_id": aid,
-                    "title": title,
-                    "score": score,
-                    "why": why.get(aid),
-                    "matched_facet_id": matched_facet.get(aid),
-                }
-            )
-        return out
-    finally:
-        conn.close()
 
 
 def search_results(q: str, limit: int = 20) -> list[dict]:
@@ -829,6 +739,22 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     return ranked
 
 
+# A lifted claim is the model's restatement, not the person's words: its facet hits
+# count for less than the query's own.
+LIFT_WEIGHT = 0.75
+
+
+def _best_of_layers(layers: list[list[tuple[str, float, dict]]]) -> dict[str, dict]:
+    """Per artifact, its single best hit in any layer. Fusing the layers instead (by rank,
+    or by adding their scores) was measured on the cross-domain eval and lost to this."""
+    best: dict[str, dict] = {}
+    for layer in layers:
+        for aid, score, info in layer:
+            if aid not in best or score > best[aid]["score"]:
+                best[aid] = {"score": score, **info}
+    return best
+
+
 def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> list[dict]:
     """Chunk + facet + entity rollup for a free-text query, with per-leg floor signals.
 
@@ -852,7 +778,7 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
         for claim in lifts or []
     ]
     for ll in lift_legs:
-        facet_hits = facet_hits + ll["fused"]
+        facet_hits = facet_hits + [{**h, "score": h["score"] * LIFT_WEIGHT} for h in ll["fused"]]
 
     # Floor signals (Q.2/Q.7): best raw cosine per artifact from the dense legs, and
     # lexical = a chunk/facet/entity KEYWORD hit. Trigram is recall only, not lexical.
@@ -884,33 +810,37 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
         cache,
         [h["artifact_id"] for h in chunk_hits + facet_hits + entity_hits + section_hits],
     )
-    best: dict[str, dict] = {}
-    for hit in chunk_hits:
-        aid = hit["artifact_id"]
-        if aid not in best or hit["score"] > best[aid]["score"]:
-            best[aid] = {"score": hit["score"], "chunk_id": hit["chunk_id"], "why": "chunk"}
-    for hit, score in _weighted_hits(conn, facet_hits, cache):
-        aid = hit["artifact_id"]
-        if aid not in best or score > best[aid]["score"]:
-            best[aid] = {
-                "score": score,
-                "chunk_id": None,
-                "why": f"facet L{hit.get('level')}",
-                "facet_id": hit.get("facet_id"),
-            }
-    for hit, score in _weighted_hits(conn, entity_hits, cache):
-        aid = hit["artifact_id"]
-        if aid not in best or score > best[aid]["score"]:
-            best[aid] = {
-                "score": score,
-                "chunk_id": None,
-                "entity": (hit.get("entity"), hit.get("fact")),
-                "why": "entity",
-            }
-    for hit, score in _weighted_hits(conn, section_hits, cache):
-        aid = hit["artifact_id"]
-        if aid not in best or score > best[aid]["score"]:
-            best[aid] = {"score": score, "chunk_id": None, "why": f"section {hit.get('ordinal')}"}
+    layers = [
+        [
+            (h["artifact_id"], h["score"], {"chunk_id": h["chunk_id"], "why": "chunk"})
+            for h in chunk_hits
+        ],
+        [
+            (
+                h["artifact_id"],
+                s,
+                {
+                    "chunk_id": None,
+                    "why": f"facet L{h.get('level')}",
+                    "facet_id": h.get("facet_id"),
+                },
+            )
+            for h, s in _weighted_hits(conn, facet_hits, cache)
+        ],
+        [
+            (
+                h["artifact_id"],
+                s,
+                {"chunk_id": None, "entity": (h.get("entity"), h.get("fact")), "why": "entity"},
+            )
+            for h, s in _weighted_hits(conn, entity_hits, cache)
+        ],
+        [
+            (h["artifact_id"], s, {"chunk_id": None, "why": f"section {h.get('ordinal')}"})
+            for h, s in _weighted_hits(conn, section_hits, cache)
+        ],
+    ]
+    best = _best_of_layers(layers)
 
     rows = conn.execute(
         "SELECT id, updated_at FROM artifacts" " WHERE id IN (SELECT value FROM json_each(?))",

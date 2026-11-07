@@ -666,7 +666,7 @@
   // name, or the line of its summary that matched. Hidden when there are none.
   function relatedWhy(r) {
     const parts = [];
-    if (r.via) parts.push("Both mention " + r.via + ".");
+    if (r.via && r.link === "mention") parts.push("Both mention " + r.via + ".");
     if (r.point) parts.push(r.point);
     return parts.join(" ");
   }

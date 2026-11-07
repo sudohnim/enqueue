@@ -1101,7 +1101,7 @@ def refresh_on_model_change() -> int:
     the model settings change. Returns the number queued.
     """
     from .. import db
-    from ..providers.base import get_provider, local_model_on
+    from ..providers.base import get_provider, ingest_is_default, local_model_on
     from . import facets as facets_mod
 
     try:
@@ -1119,7 +1119,9 @@ def refresh_on_model_change() -> int:
             " VALUES ('ingest_model', 'library', 'model', ?, 1, 'model', ?, ?)",
             (model, model, db.now()),
         )
-        if seen is None or seen["value"] == model:
+        # Enqueue changing its own default is not the person choosing a model: the lines
+        # already written stay, and new and edited items get the new model's.
+        if seen is None or seen["value"] == model or ingest_is_default():
             return 0
         ids = [
             r["id"]

@@ -629,29 +629,6 @@ class TestQueryBatching:
         batches = [s for s in statements if "SELECT value FROM json_each" in s]
         assert len(batches) >= 2, f"expected batched json_each queries, saw: {batches}"
 
-    def test_candidate_titles_are_one_query_not_one_per_ranked_id(self, sqlite_store, monkeypatch):
-        """The curate path (`candidates`) fetches ranked titles in one batch."""
-        from enqueue.retrieve import candidates
-
-        conn = db.get_conn()
-        try:
-            for i in range(10):
-                _note(conn, f"a{i}", f"Rooftop farming {i}", _BODY)
-                _chunk(conn, f"c{i}", f"a{i}", 0, _BODY)
-            conn.commit()
-        finally:
-            conn.close()
-        sqlite_store.upsert_chunks()
-
-        statements = self._count_statements(monkeypatch)
-        out = candidates.candidates(["rooftops"], limit=20)
-        assert len(out) == 10
-
-        probes = [s for s in statements if " FROM artifacts WHERE id = ?" in s]
-        assert probes == [], f"per-row title probes found: {probes[:3]}"
-        titles = [s for s in statements if "SELECT id, title FROM artifacts" in s]
-        assert len(titles) == 1, f"expected one batched title query, saw: {titles}"
-
 
 class TestQ2PerLegSignals:
     """Q.2: the /search rollup carries per-leg signals at the fusion point so

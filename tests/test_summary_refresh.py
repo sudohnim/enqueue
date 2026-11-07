@@ -88,3 +88,34 @@ def test_redo_forces_even_current_summaries(store, quiet_queue):
     # The force is taken once, by the run that regenerates it.
     assert facets_mod.take_forced(aid) is True
     assert facets_mod.take_forced(aid) is False
+
+
+def test_the_included_assistant_reads_with_its_own_ingest_default(store, quiet_queue):
+    from enqueue import included_ai, settings
+    from enqueue.providers.base import model_for
+
+    settings.update({"llm_backend": "enqueue", "llm_model": included_ai.DEFAULT_MODEL})
+    assert model_for("ingest") == included_ai.DEFAULT_INGEST_MODEL
+    assert model_for("chat") == included_ai.DEFAULT_MODEL
+
+    settings.update({"summarize_model": "anthropic/claude-haiku-5.5"})
+    assert model_for("ingest") == "anthropic/claude-haiku-5.5"
+
+
+def test_enqueue_changing_its_default_rewrites_nothing(store, quiet_queue):
+    from enqueue import included_ai, settings
+
+    aid = notes.create(body="a body long enough to earn a summary from the model")["artifact"]["id"]
+    _facet(aid, included_ai.DEFAULT_MODEL)
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO derived_values (scope, subject, attribute, value, grounded, source,"
+            " model_version, created_at) VALUES ('ingest_model', 'library', 'model', ?, 1,"
+            " 'model', ?, ?)",
+            (included_ai.DEFAULT_MODEL, included_ai.DEFAULT_MODEL, db.now()),
+        )
+    settings.update({"llm_backend": "enqueue", "llm_model": included_ai.DEFAULT_MODEL})
+    quiet_queue.clear()
+
+    assert q.refresh_on_model_change() == 0
+    assert aid not in quiet_queue

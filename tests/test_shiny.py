@@ -37,9 +37,9 @@ def _link(a: str, b: str, kind: str, distance: float, point=None, via=None) -> N
     with db.transaction() as conn:
         for x, y in ((a, b), (b, a)):
             conn.execute(
-                "INSERT INTO related (artifact_id, related_id, score, model_version,"
-                " created_at, via, point, kind, distance) VALUES (?,?,0.8,'m',?,?,?,?,?)",
-                (x, y, db.now(), via, point, kind, distance),
+                "INSERT INTO related (artifact_id, related_id, owner, score, model_version,"
+                " created_at, via, point, kind, distance) VALUES (?,?,?,0.8,'m',?,?,?,?,?)",
+                (x, y, a, db.now(), via, point, kind, distance),
             )
 
 

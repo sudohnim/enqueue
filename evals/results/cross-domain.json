@@ -1,9 +1,10 @@
 {
   "pass_rank": 3,
-  "facets_loaded": 0,
-  "entities_loaded": 0,
-  "lifts_loaded": 0,
-  "ranks_loaded": 0,
+  "facets_loaded": 222,
+  "entities_loaded": 9,
+  "lifts_loaded": 39,
+  "ranks_loaded": 12,
+  "sections_loaded": 12,
   "modes": {
     "chunks": {
       "total": 12,
@@ -87,33 +88,33 @@
     },
     "enriched": {
       "total": 12,
-      "pass": 7,
-      "pass_rate": 0.5833,
-      "MRR": 0.3556,
+      "pass": 9,
+      "pass_rate": 0.75,
+      "MRR": 0.6097,
       "results": [
         {
           "id": "xd_q_graceful",
-          "rank": null,
-          "pass": false,
-          "top_hit": "paraphrase_0006"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_bend_not_break"
         },
         {
           "id": "xd_q_oncall_handoff",
-          "rank": 2,
+          "rank": 3,
           "pass": true,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_launch_prep",
-          "rank": 2,
-          "pass": true,
-          "top_hit": "xd_decoy_launch_party"
+          "rank": 4,
+          "pass": false,
+          "top_hit": "xd_decoy_team_photos"
         },
         {
           "id": "xd_q_small_releases",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_bulkheads"
+          "rank": 2,
+          "pass": true,
+          "top_hit": "xd_bend_not_break"
         },
         {
           "id": "xd_q_split_team",
@@ -123,25 +124,25 @@
         },
         {
           "id": "xd_q_sales_playbook",
-          "rank": 3,
-          "pass": true,
+          "rank": 5,
+          "pass": false,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_burnout_rotation",
           "rank": 3,
           "pass": true,
-          "top_hit": "paraphrase_0001"
+          "top_hit": "xd_decoy_k8s_limits"
         },
         {
           "id": "xd_q_blast_radius",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_hive_split"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_bulkheads"
         },
         {
           "id": "xd_q_meeting_turns",
-          "rank": null,
+          "rank": 5,
           "pass": false,
           "top_hit": "xd_decoy_meeting_rooms"
         },
@@ -153,47 +154,47 @@
         },
         {
           "id": "xd_q_shared_baseline",
-          "rank": 10,
-          "pass": false,
+          "rank": 2,
+          "pass": true,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_habit",
-          "rank": 2,
+          "rank": 1,
           "pass": true,
-          "top_hit": "paraphrase_0001"
+          "top_hit": "xd_sourdough_feeding"
         }
       ]
     },
     "lifted": {
       "total": 12,
-      "pass": 7,
-      "pass_rate": 0.5833,
-      "MRR": 0.3556,
+      "pass": 9,
+      "pass_rate": 0.75,
+      "MRR": 0.6097,
       "results": [
         {
           "id": "xd_q_graceful",
-          "rank": null,
-          "pass": false,
-          "top_hit": "paraphrase_0006"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_bend_not_break"
         },
         {
           "id": "xd_q_oncall_handoff",
-          "rank": 2,
+          "rank": 3,
           "pass": true,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_launch_prep",
-          "rank": 2,
-          "pass": true,
-          "top_hit": "xd_decoy_launch_party"
+          "rank": 4,
+          "pass": false,
+          "top_hit": "xd_decoy_team_photos"
         },
         {
           "id": "xd_q_small_releases",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_bulkheads"
+          "rank": 2,
+          "pass": true,
+          "top_hit": "xd_bend_not_break"
         },
         {
           "id": "xd_q_split_team",
@@ -203,25 +204,25 @@
         },
         {
           "id": "xd_q_sales_playbook",
-          "rank": 3,
-          "pass": true,
+          "rank": 5,
+          "pass": false,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_burnout_rotation",
           "rank": 3,
           "pass": true,
-          "top_hit": "paraphrase_0001"
+          "top_hit": "xd_decoy_k8s_limits"
         },
         {
           "id": "xd_q_blast_radius",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_hive_split"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_bulkheads"
         },
         {
           "id": "xd_q_meeting_turns",
-          "rank": null,
+          "rank": 5,
           "pass": false,
           "top_hit": "xd_decoy_meeting_rooms"
         },
@@ -233,47 +234,47 @@
         },
         {
           "id": "xd_q_shared_baseline",
-          "rank": 10,
-          "pass": false,
+          "rank": 2,
+          "pass": true,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_habit",
-          "rank": 2,
+          "rank": 1,
           "pass": true,
-          "top_hit": "paraphrase_0001"
+          "top_hit": "xd_sourdough_feeding"
         }
       ]
     },
     "ranked": {
       "total": 12,
-      "pass": 7,
-      "pass_rate": 0.5833,
-      "MRR": 0.3556,
+      "pass": 11,
+      "pass_rate": 0.9167,
+      "MRR": 0.925,
       "results": [
         {
           "id": "xd_q_graceful",
-          "rank": null,
-          "pass": false,
-          "top_hit": "paraphrase_0006"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_bend_not_break"
         },
         {
           "id": "xd_q_oncall_handoff",
-          "rank": 2,
-          "pass": true,
+          "rank": 10,
+          "pass": false,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
           "id": "xd_q_launch_prep",
-          "rank": 2,
+          "rank": 1,
           "pass": true,
-          "top_hit": "xd_decoy_launch_party"
+          "top_hit": "xd_mise_en_place"
         },
         {
           "id": "xd_q_small_releases",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_bulkheads"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_controlled_burn"
         },
         {
           "id": "xd_q_split_team",
@@ -283,27 +284,27 @@
         },
         {
           "id": "xd_q_sales_playbook",
-          "rank": 3,
+          "rank": 1,
           "pass": true,
-          "top_hit": "xd_decoy_oncall_sheet"
+          "top_hit": "xd_opening_theory"
         },
         {
           "id": "xd_q_burnout_rotation",
-          "rank": 3,
+          "rank": 1,
           "pass": true,
-          "top_hit": "paraphrase_0001"
+          "top_hit": "xd_crop_rotation"
         },
         {
           "id": "xd_q_blast_radius",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_hive_split"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_bulkheads"
         },
         {
           "id": "xd_q_meeting_turns",
-          "rank": null,
-          "pass": false,
-          "top_hit": "xd_decoy_meeting_rooms"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_trading_fours"
         },
         {
           "id": "xd_q_catch_early",
@@ -313,15 +314,15 @@
         },
         {
           "id": "xd_q_shared_baseline",
-          "rank": 10,
-          "pass": false,
-          "top_hit": "xd_decoy_oncall_sheet"
+          "rank": 1,
+          "pass": true,
+          "top_hit": "xd_long_tuning"
         },
         {
           "id": "xd_q_habit",
-          "rank": 2,
+          "rank": 1,
           "pass": true,
-          "top_hit": "paraphrase_0001"
+          "top_hit": "xd_sourdough_feeding"
         }
       ]
     }

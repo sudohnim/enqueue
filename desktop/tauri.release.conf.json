@@ -5,7 +5,10 @@
     },
     "macOS": {
       "entitlements": "Entitlements.plist",
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "files": {
+        "PlugIns/EnqueueShare.appex": "share/EnqueueShare.appex"
+      }
     },
     "createUpdaterArtifacts": true
   }

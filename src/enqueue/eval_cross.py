@@ -288,6 +288,7 @@ class pointed_at_test_dir:
             TEST_DIR / "blobs",
         )
         db.reset_migration_state()
+        db.forget_readers()
         get_store.cache_clear()
         return self
 
@@ -297,6 +298,7 @@ class pointed_at_test_dir:
 
         config.DATA_DIR, config.DB_PATH, config.BLOB_DIR = self._saved
         db.reset_migration_state()
+        db.forget_readers()
         get_store.cache_clear()
         return False
 
@@ -312,6 +314,7 @@ def run(generate: bool = False) -> dict:
     """
     from . import settings
     from .index.store import get_store
+    from .retrieve import candidates as cand
     from .retrieve import lift, model_rank
 
     suite = load_suite()
@@ -321,6 +324,10 @@ def run(generate: bool = False) -> dict:
     fixture = {k: fixture.get(k, {}) for k in ("facets", "entities", "sections", "lifts", "ranks")}
     real_lift = lift.lift
     real_order = model_rank.order
+    real_judge = cand.judge_gray_zone
+    # The gray-zone judge is held fail-open (keep everything), as in CI: the eval never
+    # calls a model, so a run is the same on every machine.
+    cand.judge_gray_zone = lambda query, hits: {h["artifact_id"] for h in hits}
     with pointed_at_test_dir():
         build(suite)
         chunks_only = run_queries(suite)
@@ -366,6 +373,7 @@ def run(generate: bool = False) -> dict:
         finally:
             lift.lift = real_lift
             model_rank.order = real_order
+            cand.judge_gray_zone = real_judge
         if generate:
             FACETS_PATH.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
     return {

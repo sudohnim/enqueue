@@ -294,7 +294,19 @@ def model_for(role: str) -> str:
 
     if role not in ROLE_SETTINGS:
         raise ValueError(f"unknown model role {role!r}")
+    if role == "ingest" and ingest_is_default():
+        from .. import included_ai
+
+        return included_ai.DEFAULT_INGEST_MODEL
     return settings.get(ROLE_SETTINGS[role]) or settings.get("llm_model")
+
+
+def ingest_is_default() -> bool:
+    """Whether the included assistant reads the library on Enqueue's own choice of model:
+    nobody set an ingestion model for it."""
+    from .. import settings
+
+    return settings.get("llm_backend") == "enqueue" and not settings.get("summarize_model")
 
 
 def get_provider(local_only: bool = False, summarize: bool = False, role: str = "chat") -> Provider:

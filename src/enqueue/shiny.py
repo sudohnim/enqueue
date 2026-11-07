@@ -108,7 +108,8 @@ def _pairs(conn) -> list[dict]:
         f" WHERE r.artifact_id < r.related_id AND r.kind IN ('idea', 'mention') AND {_LIVE}"
         " AND b.deleted_at IS NULL AND b.vaulted_at IS NULL AND b.embedded_at IS NULL"
     ).fetchall()
-    pairs = [dict(r) for r in rows]
+    # Both notes of a pair may have chosen it; each pair counts once.
+    pairs = list({(r["a"], r["b"]): dict(r) for r in rows}.values())
     pairs.sort(key=lambda p: (p["kind"] != "idea", -(p["distance"] or 0.0), p["a"], p["b"]))
     return pairs
 
@@ -471,23 +472,18 @@ def _candidates(conn, seed: str) -> list[dict]:
 
     store = get_store()
     lines = conn.execute(
-        "SELECT level, statement FROM facets WHERE artifact_id = ? AND level IN (?, ?, ?)",
-        (seed, SUBJECT_LEVEL, *IDEA_LEVELS),
+        "SELECT level, statement FROM facets WHERE artifact_id = ? AND level IN (?, ?)"
+        " AND bridge = 0",
+        (seed, *IDEA_LEVELS),
     ).fetchall()
-    near: dict[str, float] = {}
     best: dict[str, tuple[float, str, str]] = {}
     cache: dict = {}
     for line in lines:
-        subject = line["level"] == SUBJECT_LEVEL
         for hit in store.search_dense(store.FACETS, line["statement"], limit=60, as_query=False):
             other = hit["artifact_id"]
             if other == seed:
                 continue
-            if subject:
-                if hit["level"] == SUBJECT_LEVEL:
-                    near[other] = max(near.get(other, 0.0), hit["score"])
-                continue
-            if hit["level"] not in IDEA_LEVELS or hit["score"] < HUNT_MIN:
+            if hit["level"] not in IDEA_LEVELS or hit.get("bridge") or hit["score"] < HUNT_MIN:
                 continue
             if hit_is_stale(conn, hit, cache):
                 continue
@@ -495,6 +491,7 @@ def _candidates(conn, seed: str) -> list[dict]:
                 best[other] = (hit["score"], line["statement"], hit["facet_id"])
     if not best:
         return []
+    near = store.facet_similarity(seed, list(best), SUBJECT_LEVEL)
     live = _live(conn, list(best))
     local = {
         r["id"]
@@ -504,7 +501,6 @@ def _candidates(conn, seed: str) -> list[dict]:
             (_local_on(), json.dumps(list(best))),
         )
     }
-    floor = min(near.values(), default=0.0)
     found = []
     for other, (score, mine, facet_id) in best.items():
         if other not in live or other in local or near.get(other, 0.0) >= RELATED_MIN:
@@ -514,7 +510,7 @@ def _candidates(conn, seed: str) -> list[dict]:
             {
                 "id": other,
                 "score": score,
-                "distance": round(max(0.0, 1.0 - near.get(other, floor)), 4),
+                "distance": round(1.0 - near.get(other, 0.0), 4),
                 "mine": mine,
                 "theirs": theirs["statement"] if theirs else "",
             }

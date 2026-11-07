@@ -192,9 +192,9 @@ const WELCOME_RENDER = {
 			"what they're about and ask questions. Pick where it runs.</div>" +
 			(included
 				? '<div class="field"><span class="rowlabel">Included with Enqueue</span>' +
-					'<div class="aside">No key and nothing to install. Comes with Enqueue sync: free ' +
-					"covers fast models from Anthropic, OpenAI and Google, and Pro adds more. Notes " +
-					"pass through Enqueue to the model and are not kept.</div>" +
+					'<div class="aside">Nothing to set up. It comes with Enqueue sync, and the free plan ' +
+					"is enough to start. Pro adds smarter AI. Your notes go to the AI to be read and " +
+					"are not kept.</div>" +
 					(isIncluded
 						? '<span class="welcome-chosen">Chosen</span>'
 						: included.signed_in

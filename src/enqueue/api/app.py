@@ -22,6 +22,7 @@ from . import (
     backup,
     chats,
     pivots,
+    portable,
     search,
     settings,
     setup,
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(pivots.router)
     app.include_router(vault.router)
     app.include_router(backup.router)
+    app.include_router(portable.router)
     app.include_router(setup.router)
     app.include_router(account.router)
     # Refuse other websites' requests (DNS rebinding, cross-site forms): api/guard.py.
@@ -178,6 +180,10 @@ def serve() -> None:
 
         ingest_queue.run_exclusive(related.refresh_if_outdated, wait=False)
         related.start_judge()
+        # What the Mac's Share menu sent while Enqueue was closed, and from now on.
+        from .. import share_inbox
+
+        share_inbox.start()
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 

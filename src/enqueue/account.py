@@ -54,7 +54,7 @@ _lock = threading.Lock()
 # but an abandoned tab must not block a second try, so these simply expire.
 _pending: dict[str, dict] = {}
 # How the last sign-in went, for the page waiting on it: idle, waiting, done, failed.
-_progress: dict = {"state": "idle", "error": None}
+_progress: dict = {"state": "idle", "error": None, "limit": ""}
 _access: dict = {"token": None, "until": 0.0}
 
 
@@ -159,7 +159,7 @@ def begin(provider: str, refresh: bool = False) -> str:
         for key in [k for k, v in _pending.items() if now - v["at"] > PENDING_TTL_S]:
             del _pending[key]
         _pending[state] = entry
-        _progress.update(state="waiting", error=None)
+        _progress.update(state="waiting", error=None, limit="")
     return url
 
 
@@ -171,9 +171,13 @@ def _take(state: str | None, provider: str) -> dict:
     return entry
 
 
-def _fail(message: str) -> None:
+class PlanLimit(AccountError):
+    """The relay refused this Mac because the plan's computers are all in use (402)."""
+
+
+def _fail(message: str, limit: str = "") -> None:
     with _lock:
-        _progress.update(state="failed", error=message)
+        _progress.update(state="failed", error=message, limit=limit)
 
 
 def finish_google(code: str | None, state: str | None, error: str | None = None) -> None:
@@ -194,7 +198,7 @@ def finish_google(code: str | None, state: str | None, error: str | None = None)
             raise AccountError(f"Google sign-in failed ({_detail(resp)}).")
         _adopt(resp.json(), refresh=entry.get("refresh", False))
     except AccountError as exc:
-        _fail(str(exc))
+        _fail(str(exc), "computers" if isinstance(exc, PlanLimit) else "")
         raise
     except httpx.HTTPError as exc:
         _fail("Enqueue sync could not be reached. Check the connection and try again.")
@@ -212,7 +216,7 @@ def finish_apple(handoff: str | None, state: str | None, error: str | None = Non
             raise AccountError(f"Apple sign-in failed ({_detail(resp)}).")
         _adopt(resp.json(), refresh=entry.get("refresh", False))
     except AccountError as exc:
-        _fail(str(exc))
+        _fail(str(exc), "computers" if isinstance(exc, PlanLimit) else "")
         raise
     except httpx.HTTPError as exc:
         _fail("Enqueue sync could not be reached. Check the connection and try again.")
@@ -239,6 +243,13 @@ def _adopt(pair: dict, refresh: bool = False) -> None:
             json={"name": _device_name(), "kind": "computer"},
             headers=_bearer(pair["access_token"]),
         )
+    if resp.status_code == 402:
+        # Keep the plan (and its checkout link) so the page can offer Pro right here.
+        with _client() as http:
+            plan = http.get("/account/plan", headers=_bearer(pair["access_token"]))
+        if plan.status_code == 200:
+            _keep_plan(plan.json())
+        raise PlanLimit(_detail(resp))
     if resp.status_code != 201:
         raise AccountError(f"Enqueue sync could not add this Mac ({_detail(resp)}).")
     device = resp.json()
@@ -472,6 +483,8 @@ def state() -> dict:
             "pro_until": settings.get("account_pro_until") or None,
             "used_bytes": settings.get("account_used_bytes") or 0,
             "storage_bytes": settings.get("account_storage_bytes") or 0,
+            "checkout_url": settings.get("account_checkout_url") or None,
+            "sync_full": bool(settings.get("account_sync_full")),
         },
     }
 
@@ -512,6 +525,7 @@ def _keep_plan(plan: dict | None) -> None:
             "account_pro_until": plan.get("pro_until") or 0,
             "account_used_bytes": int(plan.get("used_bytes") or 0),
             "account_storage_bytes": int((plan.get("limits") or {}).get("storage_bytes") or 0),
+            "account_checkout_url": plan.get("checkout_url") or "",
         }
     )
 

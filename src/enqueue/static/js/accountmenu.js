@@ -72,16 +72,21 @@ async function paintAccountChip() {
 function accountPlanLine(plan) {
 	plan = plan || {};
 	const pro = plan.tier === "pro";
-	const room = plan.storage_bytes ? planBytes(plan.storage_bytes) : "";
-	const used = room ? planBytes(plan.used_bytes || 0) + " of " + room + " used" : "";
 	return (
 		'<div class="acct-plan"><span class="acct-tier' +
 		(pro ? " pro" : "") +
 		'">' +
 		(pro ? "Pro" : "Free") +
 		"</span>" +
-		(used ? "<span>" + esc(used) + "</span>" : "") +
-		"</div>"
+		(pro
+			? ""
+			: '<button type="button" role="menuitem" class="acct-upgrade" onclick="accountMenuUpgrade()">Upgrade</button>') +
+		"</div>" +
+		(planFill(plan) === "full"
+			? '<div class="acct-limit">Sync storage is full. New changes stay on this Mac.</div>'
+			: planFill(plan) === "nearly"
+				? '<div class="acct-limit">Sync storage is almost full.</div>'
+				: "")
 	);
 }
 
@@ -196,6 +201,12 @@ function accountMenuHowTo() {
 		'<button type="button" role="menuitem" class="acct-item" onclick="accountMenuHowToOpen()">' +
 		"<span>How to use</span></button>"
 	);
+}
+
+function accountMenuUpgrade() {
+	const fill = planFill((accountMenuMe && accountMenuMe.plan) || {});
+	closeAccountMenu();
+	openUpgrade(fill === "full" ? "sync-full" : fill === "nearly" ? "sync-nearly-full" : "");
 }
 
 function accountMenuHowToOpen() {

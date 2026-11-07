@@ -7,6 +7,7 @@
        - allow-dyld-environment-variables: the shell sets PYTHONPATH for the engine.
        - allow-unsigned-executable-memory + allow-jit: Python / ONNX Runtime allocate
          executable memory at runtime.
+       - application-groups: the Share extension's inbox, which the engine files.
      These are the standard set for an embedded-interpreter app; they do not open the app
      to the network or the file system beyond what it already does. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -20,5 +21,9 @@
     <true/>
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>572NMYL3ZG.com.sudohnim.enqueue</string>
+    </array>
 </dict>
 </plist>

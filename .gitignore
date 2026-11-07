@@ -273,6 +273,7 @@ evals/search/blobs/
 # pi harness
 .pi-subagents/*
 desktop/engine/
+desktop/share/
 
 # iOS build output (the Xcode project is desktop/gen/apple, on the iOS branch). The
 # Rust library Xcode links is ~200 MB, over GitHub's file limit: never commit it.

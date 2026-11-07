@@ -195,6 +195,7 @@ def upload(
     mime: str | None = None,
     local_only: bool = False,
     embedded: bool = False,
+    background: bool = False,
 ) -> dict:
     """Store a file whole. Deduped by content, so re-uploading changes nothing.
 
@@ -262,7 +263,7 @@ def upload(
     # ingest entirely (no OCR, chunking, or facets). It still pushes, so its row and
     # blob reach the other devices.
     if not embedded:
-        ingest_queue.submit(artifact_id)
+        (ingest_queue.submit_background if background else ingest_queue.submit)(artifact_id)
     push_artifact(artifact_id)
     out = {"id": artifact_id, "created": not restored}
     if restored:

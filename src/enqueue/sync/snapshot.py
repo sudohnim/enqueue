@@ -67,8 +67,8 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
         "facets": [
             dict(r)
             for r in conn.execute(
-                "SELECT id, level, statement, model_version, body_version, trust, edited"
-                " FROM facets WHERE artifact_id = ? ORDER BY level, statement, id",
+                "SELECT id, level, statement, model_version, body_version, trust, edited,"
+                " bridge FROM facets WHERE artifact_id = ? ORDER BY level, statement, id",
                 (artifact_id,),
             )
         ],
@@ -276,8 +276,8 @@ def _apply_snapshot_children(
         for f in incoming_facets:
             conn.execute(
                 "INSERT INTO facets"
-                " (id, artifact_id, level, statement, model_version, body_version, trust, edited)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                " (id, artifact_id, level, statement, model_version, body_version, trust, edited,"
+                " bridge) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     f["id"],
                     artifact_id,
@@ -287,6 +287,7 @@ def _apply_snapshot_children(
                     f.get("body_version"),
                     f.get("trust", 0.5),
                     f.get("edited", 0),
+                    f.get("bridge", 0),
                 ),
             )
 

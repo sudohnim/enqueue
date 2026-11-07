@@ -94,6 +94,10 @@ class VectorStore(ABC):
         a passage rather than a search."""
 
     @abstractmethod
+    def facet_similarity(self, artifact_id: str, others: list[str], level: int) -> dict[str, float]:
+        """Per other artifact, the best cosine between its lines at `level` and this one's."""
+
+    @abstractmethod
     def search_keyword(self, name: str, text: str, limit: int = 30) -> list[dict]:
         """Keyword leg only. Same hit shape as `search`."""
 

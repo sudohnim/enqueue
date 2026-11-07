@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from typing import TypeVar, cast
 
 import instructor
@@ -31,6 +33,13 @@ def _extra_headers() -> dict[str, str]:
     return headers
 
 
+def _timeout(base_url: str) -> float:
+    """A model on this Mac may be loading; a hosted one that is this slow is stuck."""
+    host = (urlsplit(base_url).hostname or "").lower()
+    local = host in ("127.0.0.1", "localhost", "::1")
+    return config.LOCAL_MODEL_TIMEOUT_S if local else config.MODEL_TIMEOUT_S
+
+
 class OpenAICompatibleProvider:
     name = "openai-compatible"
 
@@ -46,6 +55,7 @@ class OpenAICompatibleProvider:
                 base_url=self.base_url,
                 api_key=config.llm_api_key(self.base_url),
                 default_headers=_extra_headers(),
+                timeout=_timeout(self.base_url),
             ),
             mode=mode,
         )
@@ -146,6 +156,7 @@ class OpenAICompatibleProvider:
             base_url=self.base_url,
             api_key=config.llm_api_key(self.base_url),
             default_headers=_extra_headers(),
+            timeout=_timeout(self.base_url),
         )
         content: list[ChatCompletionContentPartParam] = [
             {"type": "text", "text": IMAGE_DESCRIBE},

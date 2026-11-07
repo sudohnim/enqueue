@@ -38,7 +38,8 @@ should be arguable. A facet nobody could disagree with cannot match anything eit
 Bridges: at least two facets at level 2 or 3 must restate the mechanism in the terms of
 a different field where it genuinely applies - a team, a codebase, a body, a budget, a
 habit, a negotiation, a household - so a person searching in that field's words finds
-it. Use the field's general terms, never the artifact's own subject.
+it. Use the field's general terms, never the artifact's own subject. Set `bridge` to
+true on those facets and false on every other.
 
   artifact about ants reinforcing the trails other ants already walk
   good  Tools a whole team keeps using become the default long after better ones exist.

@@ -31,6 +31,11 @@ MIN_WAIT = 30
 _lock = threading.Lock()
 _until: datetime | None = None
 _reason = ""
+# "included_ai" when the pause is the month's included assistant used up (relay/ai.py
+# answers 429 `usage_limit`), so the page can say so and offer Pro; else "".
+_limit = ""
+# The words the page matches to offer Pro on a failed answer (static/js/chat.js).
+INCLUDED_USED_UP = "This month's included AI is used up"
 # The provider refused the key on the last call that reached it (a 401 that is not
 # OpenCode Go's "unknown model"). Not a pause: nothing is held back, but every call
 # will fail the same way until the key changes, so the page says so (reading.py).
@@ -60,13 +65,21 @@ def status() -> dict | None:
     end = until()
     if end is None:
         return None
-    return {"until": end.isoformat(), "reason": _reason}
+    return {"until": end.isoformat(), "reason": _reason, "limit": _limit}
+
+
+def limit() -> str:
+    """Which plan limit the pause is, while paused: "included_ai", or ""."""
+    return _limit if until() is not None else ""
 
 
 def check() -> None:
     """Raise ModelPaused when calls are paused; called before every model call."""
     end = until()
     if end is not None:
+        if _limit == "included_ai":
+            day = end.astimezone().strftime("%B %-d")
+            raise ModelPaused(f"{INCLUDED_USED_UP}. It comes back on {day}.")
         local = end.astimezone().strftime("%H:%M")
         raise ModelPaused(f"Paused: {_reason}. Model calls resume at {local}.")
 
@@ -101,6 +114,8 @@ def _describe(response) -> str:
     limit = metadata.get("limitName") if isinstance(metadata, dict) else None
     if kind == "GoUsageLimitError":
         return "OpenCode Go usage limit" + (f" ({limit})" if limit else "")
+    if kind == "usage_limit":
+        return "the month's included AI is used up"
     return "the model provider is rate limiting"
 
 
@@ -112,7 +127,7 @@ def trip_from(exc: BaseException) -> bool:
     """
     from .base import _is
 
-    global _until, _reason
+    global _until, _reason, _limit
     link: BaseException | None = exc
     while link is not None and not _is(link, "RateLimitError"):
         link = link.__cause__ or link.__context__
@@ -128,6 +143,7 @@ def trip_from(exc: BaseException) -> bool:
         if was_active and _until is not None and end <= _until:
             return True
         _until, _reason = end, reason
+        _limit = "included_ai" if reason == "the month's included AI is used up" else ""
     if not was_active:
         from .. import events
 
@@ -169,9 +185,9 @@ def lift(why: str) -> int:
 
 def reset() -> None:
     """Clear any pause and any refused key. For tests, and for `lift`."""
-    global _until, _reason, _key_refused
+    global _until, _reason, _limit, _key_refused
     with _lock:
-        _until, _reason = None, ""
+        _until, _reason, _limit = None, "", ""
         _key_refused = False
 
 

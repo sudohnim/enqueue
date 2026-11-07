@@ -29,6 +29,13 @@ MODELS: list[dict] = [
         "price": (0.10, 0.50),
     },
     {
+        "id": "deepseek/deepseek-v4-flash",
+        "label": "DeepSeek V4 Flash",
+        "tier": FREE,
+        "vision": False,
+        "price": (0.091, 0.182),
+    },
+    {
         "id": "openai/gpt-6-luna",
         "label": "GPT-6 Luna",
         "tier": FREE,
@@ -68,7 +75,7 @@ MODELS: list[dict] = [
         "label": "DeepSeek V4 Pro",
         "tier": PRO,
         "vision": False,
-        "price": (0.37, 0.73),
+        "price": (0.73, 1.46),
     },
     {
         "id": "qwen/qwen3.7-plus",
@@ -81,6 +88,10 @@ MODELS: list[dict] = [
 
 # What a library starts on: cheap enough for its first read on the free plan.
 DEFAULT_MODEL = "anthropic/claude-haiku-5.5"
+# What reads the library when nobody chose an ingestion model: the bake-off's pick
+# (2026-11-06, `enq eval-bakeoff`): 10/12 on the cross-domain eval, MRR 0.78, $0.05 for
+# the eval's 17 notes, against Haiku's 10/12, 0.62, $0.06 and qwen3.7-flash's 7/12.
+DEFAULT_INGEST_MODEL = "deepseek/deepseek-v4-flash"
 
 # What a month of included AI may cost Enqueue, per plan, in US dollars. Pro sells for
 # $4.99; after the store's cut this leaves room for storage and a margin. The month is

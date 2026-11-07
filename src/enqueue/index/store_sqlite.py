@@ -720,6 +720,26 @@ class SqliteVecStore(VectorStore):
             if r["chunk_id"] != chunk_id
         ][:limit]
 
+    def facet_similarity(self, artifact_id: str, others: list[str], level: int) -> dict[str, float]:
+        if not others:
+            return {}
+        conn = db.reader()
+        try:
+            rows = conn.execute(
+                "SELECT o.artifact_id AS other,"
+                " MAX(1 - vec_distance_cosine(mv.embedding, ov.embedding)) AS sim"
+                " FROM facets m JOIN vec_facets mv ON mv.facet_id = m.id"
+                " JOIN facets o ON o.level = ? AND o.artifact_id IN (SELECT value FROM json_each(?))"
+                " JOIN vec_facets ov ON ov.facet_id = o.id"
+                " WHERE m.artifact_id = ? AND m.level = ? GROUP BY o.artifact_id",
+                (level, json.dumps(sorted(set(others))), artifact_id, level),
+            ).fetchall()
+        except OperationalError:
+            return {}
+        finally:
+            conn.close()
+        return {r["other"]: max(0.0, min(1.0, r["sim"])) for r in rows}
+
     def search_within(self, artifact_id: str, text: str, limit: int = 20) -> list[str]:
         """Chunk ids of one artifact, best match for `text` first: its stored vectors
         against the query, and the keyword leg kept to its chunks, fused with RRF.
@@ -920,8 +940,8 @@ class SqliteVecStore(VectorStore):
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, artifact_id, level, trust, model_version, body_version, edited"
-                " FROM facets"
+                "SELECT id, artifact_id, level, trust, model_version, body_version, edited,"
+                " bridge FROM facets"
                 " WHERE id IN (SELECT value FROM json_each(?))",
                 (ids,),
             ).fetchall()
@@ -954,6 +974,7 @@ class SqliteVecStore(VectorStore):
                 hit["model_version"] = row["model_version"]
                 hit["body_version"] = row["body_version"]
                 hit["edited"] = bool(row["edited"])
+                hit["bridge"] = bool(row["bridge"])
             out.append(hit)
         return out
 

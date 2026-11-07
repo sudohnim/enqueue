@@ -140,8 +140,8 @@ def _entity(aid: str, name: str, model: str | None = None) -> None:
 
 
 def test_notes_that_name_the_same_thing_are_linked_with_the_name(sqlite_store):
-    _note("a", "Kilns reward patience.")
-    _note("b", "Markets punish haste.")
+    _note("a", "A week of judo training camps in Tbilisi, Georgia.")
+    _note("b", "Notes on judo throws and grips for self-defense.")
     _entity("a", "Nassim Taleb")
     _entity("b", "nassim taleb ")
     sqlite_store.upsert_facets()
@@ -154,6 +154,32 @@ def test_notes_that_name_the_same_thing_are_linked_with_the_name(sqlite_store):
     finally:
         conn.close()
     assert [(r["id"], r["via"]) for r in links] == [("a", "Nassim Taleb")]
+
+
+def test_a_name_shared_by_far_subjects_links_nothing(sqlite_store):
+    """A page footer's Instagram link says nothing about what the page is about."""
+    _note("a", "A booking page for wrestling training camps in Tbilisi, Georgia.")
+    _note("b", "A matrix of conflict-management styles for leading a team.")
+    _entity("a", "Instagram")
+    _entity("b", "Instagram")
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    assert _links("a") == []
+
+
+def test_a_subject_link_does_not_lead_with_a_shared_name(sqlite_store):
+    _note("a", SHARED)
+    _note("b", SHARED)
+    _entity("a", "WhatsApp")
+    _entity("b", "WhatsApp")
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    row = _rows("a")["b"]
+    assert row["link"] == "subject" and row["via"] is None
 
 
 def test_common_names_link_nothing(sqlite_store):
@@ -216,8 +242,8 @@ def test_links_from_an_older_rule_are_recomputed_once(sqlite_store):
     sqlite_store.upsert_facets()
     with db.transaction() as conn:
         conn.execute(
-            "INSERT INTO related (artifact_id, related_id, score, model_version, created_at)"
-            " VALUES ('a', 'gone', 0.9, 'm', ?)",
+            "INSERT INTO related (artifact_id, related_id, owner, score, model_version,"
+            " created_at) VALUES ('a', 'gone', 'gone', 0.9, 'm', ?)",
             (db.now(),),
         )
 
@@ -246,8 +272,8 @@ def test_a_links_own_site_is_not_a_shared_mention(sqlite_store):
     subjects = {
         "post1": "How sourdough starters are fed and kept alive over months.",
         "post2": "The orbital mechanics of a satellite transfer between two planets.",
-        "note1": "A ledger of household repairs and what each one cost.",
-        "note2": "Rules for a card game played with two decks.",
+        "note1": "A list of essay ideas to draft this month.",
+        "note2": "Notes on how editors choose which stories to run.",
     }
     for aid, subject in subjects.items():
         _note(aid, subject)
@@ -264,7 +290,7 @@ def test_a_links_own_site_is_not_a_shared_mention(sqlite_store):
     related.compute("note1")
 
     assert _links("post1") == []
-    assert _links("note1") == ["note2"]
+    assert [(r["id"], r["link"]) for r in _rows("note1").values()] == [("note2", "mention")]
 
 
 # ---- idea links: similarity proposes, the model judges -----------------------------
@@ -480,3 +506,73 @@ def test_an_analogy_comes_before_a_closer_note_on_the_same_subject(idea_pair):
     assert links[:2] == ["war", "prince2"]  # the far idea first, the same subject after
     assert _rows("prince")["prince2"]["link"] == "subject"
     assert _rows("prince")["prince2"]["distance"] < _rows("prince")["war"]["distance"]
+
+
+def test_a_mention_partner_outside_the_nearest_neighbours_still_links(sqlite_store, monkeypatch):
+    """In a big library most notes are outside a subject line's nearest neighbours; a
+    shared name between near subjects must link however many notes sit closer."""
+    monkeypatch.setattr(related, "_PER_STATEMENT", 1)
+    _note("a", "A week of judo training camps in Tbilisi, Georgia.")
+    _note("b", "Notes on judo throws and grips for self-defense.")
+    _entity("a", "Nassim Taleb")
+    _entity("b", "Nassim Taleb")
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    assert [(r["id"], r["link"]) for r in _rows("a").values()] == [("b", "mention")]
+
+
+def test_recomputing_a_note_keeps_the_links_others_chose(sqlite_store, monkeypatch):
+    """b chose a; a recomputing with closer notes of its own must not take that away."""
+    monkeypatch.setattr(related, "RELATED_LIMIT", 1)
+    _note("a", SHARED)
+    _note("b", "Structures endure by yielding under stress instead of resisting it.")
+    sqlite_store.upsert_facets()
+    related.compute("b")
+    _note("c", SHARED)
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    assert _links("a") == ["c"]
+    assert _links("b") == ["a"]
+
+
+def test_a_bridge_line_never_proposes_an_idea_pair(idea_pair):
+    """Bridges share another field's words with every other bridge, not an idea."""
+    judge = idea_pair(_Judge())
+    with db.transaction() as conn:
+        conn.execute("UPDATE facets SET bridge = 1 WHERE level = 3")
+
+    related.compute("prince", judge=True)
+
+    assert judge.calls == [] and _links("prince") == []
+
+
+def test_the_farther_of_two_idea_candidates_is_asked_first(idea_pair, monkeypatch):
+    """A banker funding wars sits nearer the prince's subject than a campaign list does,
+    so the campaign list is asked about first, though the banker's line matches closer."""
+    monkeypatch.setattr(related, "IDEA_CANDIDATES", 1)
+    judge = idea_pair(_Judge())
+    _note("banker", "A biography of a Renaissance banker who funded wars.")
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE facets SET statement = ? WHERE id = 'idea-war'",
+            (
+                "Reliability under pressure comes from incentives rather than from personal character.",
+            ),
+        )
+        conn.execute(
+            "INSERT INTO facets (id, artifact_id, level, statement, model_version, trust)"
+            " VALUES ('idea-banker', 'banker', 3, ?, ?, 0.5)",
+            (IDEA, model_for("ingest")),
+        )
+    from enqueue.index.store import get_store
+
+    get_store().upsert_facets()
+
+    related.compute("prince", judge=True)
+
+    assert "candidate id: war" in judge.calls[0]
+    assert "candidate id: banker" not in judge.calls[0]

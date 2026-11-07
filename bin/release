@@ -31,6 +31,8 @@ usage() {
 release_desktop() {
   echo "==> Vendoring the engine into the app bundle"
   "$REPO/bin/bundle-engine"
+  echo "==> Building the Share extension"
+  "$REPO/bin/build-share-extension"
 
   # Signing + notarization is opt-in: set APPLE_SIGNING_IDENTITY (a "Developer ID
   # Application: ..." identity in the keychain) to sign, and APPLE_ID + APPLE_PASSWORD +

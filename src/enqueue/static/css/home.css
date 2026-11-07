@@ -2202,6 +2202,32 @@ body.mv-dragging * {
   font-size: 14px;
   color: var(--text-mute);
 }
+.acct-upgrade {
+  margin-left: auto;
+  padding: 3px var(--sp-3);
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: var(--w-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.acct-upgrade:hover {
+  background: var(--purple-bold-hover);
+}
+.acct-upgrade:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.acct-limit {
+  margin: calc(-1 * var(--sp-1)) var(--sp-3) var(--sp-2);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text);
+}
 .acct-tier {
   padding: 1px var(--sp-2);
   border-radius: var(--r-full);

@@ -31,7 +31,9 @@ class AnthropicProvider:
         """Built on first model call, so reading `.model` stays free."""
         if self._sdk is None:
             self._sdk = anthropic.Anthropic(
-                api_key=config.llm_api_key(self.base_url), base_url=self.base_url
+                api_key=config.llm_api_key(self.base_url),
+                base_url=self.base_url,
+                timeout=config.MODEL_TIMEOUT_S,
             )
         return self._sdk
 

@@ -91,6 +91,26 @@ def backup(wait: bool = typer.Option(True, help="Wait for the backup to land."))
     typer.echo("still running; check Settings > Storage")
 
 
+def _wait_for(route: str) -> None:
+    import time
+
+    while True:
+        time.sleep(1)
+        state = _call("GET", route)
+        if state.get("state") != "running":
+            _echo(state)
+            return
+
+
+@app.command("import")
+def import_notes(
+    path: str = typer.Argument(..., help="A folder or .zip exported from another notes app.")
+) -> None:
+    """Import notes from Obsidian, Notion, Bear, Standard Notes, Fabric or any Markdown."""
+    _call("POST", "/import", json={"path": str(Path(path).expanduser().resolve())})
+    _wait_for("/import")
+
+
 @app.command()
 def restore(
     source: str = typer.Argument(..., help="A backup folder, or one file in it."),
@@ -1106,6 +1126,25 @@ def eval_cross(json_path: str = "", generate_facets: bool = False) -> None:
     if json_path:
         Path(json_path).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         typer.echo(f"wrote {json_path}")
+
+
+@app.command("eval-bakeoff")
+def eval_bakeoff(
+    role: str = typer.Argument(..., help="ingest or chat"),
+    model: str = typer.Argument(..., help="An OpenRouter model id."),
+    json_path: str = "",
+) -> None:
+    """Score one model for the included assistant (eval_bakeoff.py). Spends real money
+    on the OpenRouter key in the Keychain."""
+    from . import eval_bakeoff as bake
+
+    if role not in ("ingest", "chat"):
+        raise typer.BadParameter("role is ingest or chat")
+    report = bake.ingest(model) if role == "ingest" else bake.chat(model)
+    text = json.dumps(report, indent=2)
+    typer.echo(text)
+    if json_path:
+        Path(json_path).write_text(text + "\n", encoding="utf-8")
 
 
 @app.command("eval-embedders")

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Build the macOS Share extension (desktop/share-extension) into
+# desktop/share/EnqueueShare.appex, signed for the release overlay to put in
+# Enqueue.app/Contents/PlugIns. Signs with APPLE_SIGNING_IDENTITY, else ad hoc.
+set -euo pipefail
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+SRC="$REPO/desktop/share-extension"
+OUT="$REPO/desktop/share/EnqueueShare.appex"
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO/pyproject.toml" | head -1)"
+
+rm -rf "$OUT"
+mkdir -p "$OUT/Contents/MacOS"
+sed "s/VERSION/$VERSION/g" "$SRC/Info.plist" > "$OUT/Contents/Info.plist"
+xcrun swiftc -O -module-name EnqueueShare -parse-as-library \
+  -target arm64-apple-macos12.0 \
+  -Xlinker -e -Xlinker _NSExtensionMain \
+  -framework Cocoa -framework Social -framework UniformTypeIdentifiers \
+  "$SRC/ShareViewController.swift" -o "$OUT/Contents/MacOS/EnqueueShare"
+codesign --force --timestamp --options runtime --entitlements "$SRC/Share.entitlements" \
+  --sign "${APPLE_SIGNING_IDENTITY:--}" "$OUT"
+codesign --verify --strict "$OUT"
+echo "built $OUT"

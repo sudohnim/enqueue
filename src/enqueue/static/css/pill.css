@@ -420,6 +420,23 @@ dialog.ask .asked {
 	margin-top: var(--sp-6);
 }
 
+/* The upgrade sheet: a plain letter, with the way to buy last. */
+dialog.ask.upgrade {
+	max-width: min(440px, calc(100vw - 40px));
+}
+dialog.ask.upgrade h2 + p {
+	margin-top: var(--sp-4);
+}
+dialog.ask.upgrade .upgrade-why {
+	color: var(--text);
+	font-weight: var(--w-medium);
+}
+dialog.ask.upgrade .upgrade-where {
+	color: var(--text-mute);
+	font-size: 14px;
+	line-height: 20px;
+}
+
 /* The grouping-name modal is the one rich ask: it gets an explanatory line under
      the title and a properly styled field, so it reads as part of the app rather
      than a platform prompt. The destructive confirm and the move picker keep the

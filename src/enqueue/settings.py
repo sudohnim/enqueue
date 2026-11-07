@@ -94,6 +94,10 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "account_pro_until": ("ENQ_ACCOUNT_PRO_UNTIL", 0, True),
     "account_used_bytes": ("ENQ_ACCOUNT_USED_BYTES", 0, True),
     "account_storage_bytes": ("ENQ_ACCOUNT_STORAGE_BYTES", 0, True),
+    # Where this account buys Pro on the web (the relay's, empty on Pro or none set).
+    "account_checkout_url": ("ENQ_ACCOUNT_CHECKOUT_URL", "", True),
+    # The relay refused a push because the account's sync storage is full (413).
+    "account_sync_full": ("ENQ_ACCOUNT_SYNC_FULL", False, True),
     # The first-run welcome (static/js/welcome.js) was finished or skipped on this Mac.
     "welcome_done": ("ENQ_WELCOME_DONE", False, True),
     "model_retries": ("ENQ_MODEL_RETRIES", config.MODEL_RETRIES, True),
@@ -238,6 +242,7 @@ def _included(spec: dict) -> dict:
         "tier": tier,
         "models": included_ai.for_tier(tier),
         "default_model": included_ai.DEFAULT_MODEL,
+        "default_ingest_model": included_ai.DEFAULT_INGEST_MODEL,
     }
 
 

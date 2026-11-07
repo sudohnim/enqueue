@@ -85,6 +85,8 @@ class _RawFacet(BaseModel):
     # The model's own confidence that the text supports this facet (0..1). Optional so
     # a model that omits it - or a stub in a test - degrades to the neutral 0.5 trust.
     confidence: float | None = None
+    # A bridge restates the mechanism in another field's words for search.
+    bridge: bool = False
 
 
 class _RawFacetSet(BaseModel):
@@ -190,7 +192,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     # Keep each facet that passes the same per-facet quality bar the strict schema
     # enforces; drop the ones that do not. One long or subject-naming facet no
     # longer discards the good ones alongside it.
-    kept: list[tuple[Facet, float]] = []
+    kept: list[tuple[Facet, float, bool]] = []
     for rf in raw.facets:
         try:
             facet = Facet.model_validate(
@@ -199,7 +201,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
             )
         except Exception:  # noqa: BLE001 - a facet that fails the bar is simply not kept
             continue
-        kept.append((facet, _trust_from_confidence(rf.confidence)))
+        kept.append((facet, _trust_from_confidence(rf.confidence), rf.bridge))
 
     if not kept:
         return 0, "no facet cleared the quality gate"
@@ -207,11 +209,11 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     # Replace only the machine-written facets; a hand-edited facet (edited=1) is the
     # person's own and survives every regeneration.
     conn.execute("DELETE FROM facets WHERE artifact_id = ? AND edited = 0", (artifact_id,))
-    for facet, trust in kept:
+    for facet, trust, bridge in kept:
         conn.execute(
             "INSERT INTO facets"
-            " (id, artifact_id, level, statement, model_version, body_version, trust)"
-            " VALUES (?,?,?,?,?,?,?)",
+            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge)"
+            " VALUES (?,?,?,?,?,?,?,?)",
             (
                 str(uuid.uuid4()),
                 artifact_id,
@@ -220,6 +222,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 provider.model,
                 row["body_version"],
                 trust,
+                int(bridge and facet.level >= 2),
             ),
         )
     return len(kept), None

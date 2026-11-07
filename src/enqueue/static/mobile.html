@@ -3892,7 +3892,7 @@
       }
       document.getElementById("settings_plan_line").textContent = planSamplePro
         ? "Pro. It moves to your Enqueue sync account when you link your Mac."
-        : "Free. Pro adds up to five computers and five phones, 50 GB of sync storage and a bigger allowance for the built-in assistant.";
+        : "Free. Pro helps pay for storage and the AI: more devices, 50 times the room, and a smarter assistant.";
       document.getElementById("settings_plan_go").hidden = planSamplePro;
       document.getElementById("settings_plan_restore").hidden = planSamplePro;
       document.getElementById("settings_plan_manage").hidden = !(planSamplePro && planManage);
@@ -3917,6 +3917,14 @@
       line = `Pro${until}. ${used} of ${room} used.`;
     } else {
       line = `Free: one computer, one phone and ${room}. ${used} used.`;
+    }
+    const cap = plan.limits.storage_bytes || 0;
+    const fill = plan.used_bytes || 0;
+    if (cap && fill >= cap) {
+      line += " Full: new changes stay on this phone until there is room.";
+      if (!pro) line += " Upgrade for 50 times the room.";
+    } else if (cap && fill >= 0.8 * cap) {
+      line += " Almost full.";
     }
     document.getElementById("settings_plan_line").textContent = line;
     const canBuy = billingReady();
@@ -3949,13 +3957,14 @@
       const heading = document.createElement("h2");
       heading.className = "mconfirm-title";
       heading.id = "mpaywall_title";
-      heading.textContent = "Enqueue Pro";
+      heading.textContent = "Help me pay for the storage";
       const body = document.createElement("div");
       body.className = "mconfirm-points";
       for (const text of [
-        "Stronger models for the included assistant, like Claude Sonnet and GPT-6.1 Sol, and six times as much of it each month.",
-        "Sync up to five computers and five phones, and 50 GB instead of 1 GB.",
-        "Your own AI key works either way, with no limit from Enqueue.",
+        "Enqueue is made by one person. Almost everything in it is free, and stays free.",
+        "Pro pays for the two things that cost me money each month: keeping your notes in step across your devices, and the AI that reads them for you.",
+        "With Pro you can use up to five computers and five phones, keep 50 times as much, and get a smarter assistant you can ask more often.",
+        "If Enqueue is useful to you, Pro keeps the lights on.",
       ]) {
         const para = document.createElement("p");
         para.textContent = text;

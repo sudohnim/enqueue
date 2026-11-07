@@ -167,9 +167,17 @@ function renderSetup() {
 							esc(a.level) +
 							'"><span>' +
 							esc(a.text) +
-							'</span><button type="button" class="setup-go" data-guide="' +
-							esc(a.guide) +
-							'">Show me</button></li>',
+							"</span>" +
+							(a.upgrade
+								? '<button type="button" class="setup-go" onclick="openUpgrade(\'' +
+									esc(UPGRADE_FOR[a.id] ? a.id : "") +
+									"')\">Upgrade</button>"
+								: a.guide
+									? '<button type="button" class="setup-go" data-guide="' +
+										esc(a.guide) +
+										'">Show me</button>'
+									: "") +
+							"</li>",
 					)
 					.join("") +
 				"</ul>"
