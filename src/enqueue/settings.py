@@ -131,6 +131,8 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # (previews started riding the snapshot after most links had synced).
     "sync_link_previews_backfilled": ("ENQ_SYNC_LINK_PREVIEWS_BACKFILLED", False, True),
     "sync_relay_v2_pushed": ("ENQ_SYNC_RELAY_V2_PUSHED", False, True),
+    # One-shot flag: views saved before views synced between computers were sent once.
+    "sync_views_pushed": ("ENQ_SYNC_VIEWS_PUSHED", False, True),
     # One-shot flag: links whose preview failed were fetched once more when previews
     # moved to the Mac's own WebKit (preview.retry_refused_once).
     "preview_webkit_retried": ("ENQ_PREVIEW_WEBKIT_RETRIED", False, True),

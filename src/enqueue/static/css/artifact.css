@@ -435,22 +435,15 @@
   main#view:has(.notesheet) {
     padding-bottom: 88px;
   }
-  /* With no edge to stop at, the note fades out where it scrolls under the bar and
-     above the foot, over its own top and bottom padding, so a note at rest is
-     untouched and one being scrolled reads as "there is more". The right 12px (the
-     scroll bar) is left out of the fade. */
+  /* The note fades out where it scrolls under the bar, over its own top padding;
+     the bottom stays sharp, so the line being typed is never under a fade. The
+     right 12px (the scroll bar) is left out of the fade. */
   .notesheet > .editor {
     flex: 1 1 auto;
     min-height: 240px;
     overflow-y: auto;
     padding: var(--sp-5) var(--sp-4) var(--sp-7) 0;
-    --fade: linear-gradient(
-      to bottom,
-      transparent,
-      #000 var(--sp-5),
-      #000 calc(100% - var(--sp-7)),
-      transparent
-    );
+    --fade: linear-gradient(to bottom, transparent, #000 var(--sp-5));
     -webkit-mask-image: var(--fade), linear-gradient(#000, #000);
     mask-image: var(--fade), linear-gradient(#000, #000);
     -webkit-mask-size:

@@ -25,9 +25,11 @@ from .guard import assert_local_relay
 from .snapshot import (
     apply_chat_snapshot,
     apply_pulled_snapshot,
+    apply_view_snapshot,
     deserialize,
     read_artifact_snapshot,
     read_chat_snapshot,
+    read_view_snapshot,
     serialize,
 )
 
@@ -418,6 +420,52 @@ def push_chat(chat_id: str) -> None:
         print(f"[sync] chat push rejected for {chat_id}: {resp.status_code}", flush=True)
 
 
+def push_view(pivot_id: str) -> None:
+    """PUT one saved view (or its tombstone) for the other computers. Named `.view`,
+    not `.enc`: phones and older builds pass over it; phones read lib/pivots.enc."""
+    url = _relay_url()
+    dek = keyring_file.dek()
+    if not url or dek is None:
+        return
+    assert_local_relay(url)
+    conn = db.get_conn()
+    try:
+        snapshot = read_view_snapshot(conn, pivot_id)
+    finally:
+        conn.close()
+    if snapshot is None:
+        return
+    snapshot["view"]["_device_id"] = snapshot["view"].get("_device_id") or device_id()
+    name = f"dev/{device_id()}/views/{crypto.object_name(pivot_id, dek)}.view"
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{url.rstrip('/')}/sync/object/{name}",
+                content=crypto.seal_payload(serialize(snapshot), dek),
+                headers={
+                    "Authorization": f"Bearer {_secret()}",
+                    "Content-Type": "application/octet-stream",
+                },
+            )
+        if resp.status_code not in (201, 409):
+            print(f"[sync] view push rejected for {pivot_id}: {resp.status_code}", flush=True)
+    except httpx.HTTPError as exc:
+        print(f"[sync] view push failed for {pivot_id}: {exc}", flush=True)
+
+
+def push_views() -> int:
+    """Every saved view and tombstone, once: views made before views synced."""
+    conn = db.get_conn()
+    try:
+        ids = [r[0] for r in conn.execute("SELECT id FROM saved_pivots")]
+        ids += [r[0] for r in conn.execute("SELECT id FROM pivot_tombstones")]
+    finally:
+        conn.close()
+    for pivot_id in ids:
+        push_view(pivot_id)
+    return len(ids)
+
+
 def _writer(name: str) -> str:
     """The device that wrote a relay object (`dev/<device>/...`)."""
     return name.split("/")[1] if name.startswith("dev/") else ""
@@ -507,6 +555,7 @@ def pull() -> dict:
         # snapshot carries none of the model-written layers): ingest indexes it here,
         # and its model steps wait for the device that wrote it (ingest/queue.py).
         applied: dict[str, bool] = {}
+        views_changed = False
         for obj in listing.json()["objects"]:
             name = obj["name"]
             if name.startswith(mine):
@@ -525,6 +574,19 @@ def pull() -> dict:
                             keyring_file.vault_wrap_set(meta["salt"], meta["wrap"])
                 except Exception:  # noqa: BLE001 - a bad vault object never wedges the pull
                     pass
+                continue
+            if "/views/" in name and name.endswith(".view"):
+                resp = client.get(f"{base}/sync/object/{name}", headers=headers)
+                if resp.status_code != 200:
+                    continue
+                try:
+                    view = deserialize(crypto.open_payload(resp.content, dek))
+                    with db.transaction() as conn:
+                        views_changed |= apply_view_snapshot(conn, view)
+                    pulled += 1
+                except Exception as exc:  # noqa: BLE001 - one bad view never wedges a pull
+                    skipped += 1
+                    print(f"[sync] pull skipped {name}: {type(exc).__name__}: {exc}", flush=True)
                 continue
             if not (name.startswith("dev/") and name.endswith(".enc")):
                 continue  # blobs are fetched on demand (SYNC.8/E5), not pulled here
@@ -572,6 +634,10 @@ def pull() -> dict:
 
     _write_cursor(new_cursor)
     _note_unreadable(unreadable, readable)
+    if views_changed:
+        # The phone's list is one object every computer writes: send it with these views.
+        with contextlib.suppress(Exception):
+            push_pivots()
 
     # Reindex any facets a pull brought in, after the write transactions have closed.
     # Best effort: a stale index is a search miss, never a data loss, so one failed
@@ -913,7 +979,20 @@ def push_everything() -> int:
         push_chat(chat_id)
     push_settings()
     push_vault_meta()
+    push_views()
     return pushed
+
+
+def push_views_once() -> int:
+    """Send every view once, for views saved before they synced between computers."""
+    if not _relay_url() or settings.get("sync_views_pushed"):
+        return 0
+    if keyring_file.load_dek_from_keychain() is None:
+        return 0
+    n = push_views()
+    push_pivots()
+    settings.update({"sync_views_pushed": True})
+    return n
 
 
 def repush_relay_v2() -> int:

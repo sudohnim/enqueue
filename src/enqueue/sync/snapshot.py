@@ -622,3 +622,56 @@ def _apply_derived_layers(
             " model_version, created_at) VALUES ('related_judge', ?, ?, ?, 1, 'model', ?, ?)",
             (v["subject"], v["attribute"], v["value"], v["model_version"], now),
         )
+
+
+def read_view_snapshot(conn: Connection, pivot_id: str) -> dict | None:
+    """A saved view as it syncs between computers, or its tombstone once deleted."""
+    row = conn.execute(
+        "SELECT id, name, spec_json, created_at, result_json, result_at, updated_at,"
+        " _device_id FROM saved_pivots WHERE id = ?",
+        (pivot_id,),
+    ).fetchone()
+    if row is not None:
+        view = dict(row)
+        view["updated_at"] = view["updated_at"] or view["created_at"]
+        return {"view": view}
+    gone = conn.execute(
+        "SELECT id, deleted_at, _device_id FROM pivot_tombstones WHERE id = ?", (pivot_id,)
+    ).fetchone()
+    if gone is None:
+        return None
+    return {"view": {**dict(gone), "updated_at": gone["deleted_at"]}}
+
+
+def apply_view_snapshot(conn: Connection, snapshot: dict) -> bool:
+    """Take another computer's view under LWW; a delete is terminal. True when applied."""
+    view = snapshot["view"]
+    key = (view.get("updated_at") or "", view.get("_device_id") or "")
+    gone = conn.execute(
+        "SELECT deleted_at, _device_id FROM pivot_tombstones WHERE id = ?", (view["id"],)
+    ).fetchone()
+    if gone is not None:
+        return False
+    local = conn.execute(
+        "SELECT updated_at, created_at, _device_id FROM saved_pivots WHERE id = ?",
+        (view["id"],),
+    ).fetchone()
+    if local is not None:
+        mine = (local["updated_at"] or local["created_at"], local["_device_id"] or device_id())
+        if mine >= key:
+            return False
+    if view.get("deleted_at"):
+        conn.execute("DELETE FROM saved_pivots WHERE id = ?", (view["id"],))
+        conn.execute(
+            "INSERT OR REPLACE INTO pivot_tombstones (id, deleted_at, _device_id) VALUES (?,?,?)",
+            (view["id"], view["deleted_at"], view.get("_device_id")),
+        )
+        return True
+    cols = ["id", "name", "spec_json", "created_at", "result_json", "result_at", "updated_at"]
+    conn.execute(
+        f"INSERT INTO saved_pivots ({','.join(cols)}, _device_id) VALUES ({','.join('?' * 8)})"
+        " ON CONFLICT(id) DO UPDATE SET "
+        + ", ".join(f"{c}=excluded.{c}" for c in cols[1:] + ["_device_id"]),
+        [view.get(c) for c in cols] + [view.get("_device_id")],
+    )
+    return True

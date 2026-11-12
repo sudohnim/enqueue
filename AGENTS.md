@@ -194,7 +194,7 @@ So a capture or a share reaches the relay within seconds with the app closed; `b
 **The share sheet (2026-10-30).** Enqueue is a target in Android's share sheet (`ShareActivity`, no screen, its own task) for text, pictures and PDFs (`ACTION_SEND`, `ACTION_SEND_MULTIPLE`). It writes to the same inbox and closes with a toast: shared text with one address in it becomes "title" over "address" (the share's subject, else the words around the address), which `mobile_capture` files as a link with that title; any other text is a note; a file (25 MB at most) is kept as a sealed `.file` record (`QuickCaptureInbox.addFile`), which the page files through `mobile_capture_file` (kind `image`, `pdf` or `file` by its type; the desktop reads a PDF's text from the blob at ingest). Android has it, and the Mac has its own Share extension (see "The Mac Share extension" under Gotchas); an iOS Share Extension is not built.
 Dismissing the popup keeps its draft. Its look (raven and "Capture your thoughts." centred, a white field, Save) matches the desktop capture overlay.
 Build/run the app with `bin/launch mobile` (physical phone only) or `bin/launch emulator` (headless AVD, one-shot build + adb install + exit, for agent device-verify); the raw build is `cargo tauri android build --debug --target aarch64` with the apk at `desktop/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`. NEVER use `cargo tauri android dev` for headless verify - it hangs on device-pick.
-Sync/mobile scope boundaries (durable): one person, one library - no multi-user or shared libraries. Android-first; iOS is a follow-on. The relay is additive - with sync off, nothing about the desktop changes. `saved_pivots` (saved views) and chats do NOT cross the relay; mobile reads artifacts only, and mobile chat histories are device-local by decision.
+Sync/mobile scope boundaries (durable): one person, one library - no multi-user or shared libraries. Android-first; iOS is a follow-on. The relay is additive - with sync off, nothing about the desktop changes. Saved views cross the relay between computers, one LWW object per view (`dev/<device>/views/<hash>.view`, tombstones in `pivot_tombstones`; `push_view`, `apply_view_snapshot`); the phone reads only `lib/pivots.enc`, which every computer rewrites after a pull brings it a view. Before this each computer wrote only its own views over that one list, so a view made on one Mac vanished from the phone.
 Mobile linking is passwordless (QR.1/QRSYNC): the phone receives the DEK by camera-scanning the desktop QR and persists it in its sandboxed `sync_config`; there is deliberately NO password and NO recovery-phrase unlock path on the phone. The desktop is the single source of truth and the recovery anchor: lose the phone and you simply re-scan the desktop QR. Do not add a mobile password or recovery-phrase fallback.
 
 12. **The user-facing concept is "view", not "grouping".**
@@ -390,6 +390,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0044_view_sync.py` | `saved_pivots.updated_at` and `_device_id`, and `pivot_tombstones`: saved views sync between computers under LWW. |
 | `migrations/versions/0043_facet_bridge.py` | `facets.bridge`: a summary line that restates the idea in another field's words. Rides the snapshot both ways (the phone adds the column in `init_schema`). |
 | `migrations/versions/0042_related_owner.py` | `related.owner`, in the key: which artifact chose a link, so recomputing one replaces only its own choices. |
 | `migrations/versions/0041_related_kind.py` | `related.kind` (subject/mention/idea) and `related.distance` (how far apart the two subjects are). |
@@ -400,7 +401,7 @@ One line per file, describing its job.
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
 | `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
-| `migrations/versions/0009` .. `0041` | One revision per schema change, applied at startup (latest: `0043_facet_bridge`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
+| `migrations/versions/0009` .. `0041` | One revision per schema change, applied at startup (latest: `0044_view_sync`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop

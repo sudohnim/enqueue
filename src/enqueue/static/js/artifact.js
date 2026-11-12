@@ -413,6 +413,15 @@
     }
   }
 
+  function caretAt(node, offset) {
+    const r = document.createRange();
+    r.setStart(node, offset);
+    r.collapse(true);
+    const s = window.getSelection();
+    s.removeAllRanges();
+    s.addRange(r);
+  }
+
   function applyInputRules(ed) {
     const sel = window.getSelection();
     if (!sel.rangeCount) return;
@@ -424,10 +433,14 @@
     // and "> " work on the very first line too.
     if (block.nodeType !== 1) {
       if (block.nodeType !== 3) return;
+      const at = sel.anchorNode === block ? sel.anchorOffset : block.length;
       const p = document.createElement("p");
       block.parentNode.insertBefore(p, block);
       p.appendChild(block);
       block = p;
+      // Moving the node drops WebKit's caret to the editor itself, and the next
+      // letter then lands in a new bare node: one paragraph per character.
+      caretAt(block.firstChild, at);
     }
     if (["UL", "OL", "PRE", "BLOCKQUOTE"].includes(block.tagName)) return;
 
@@ -2151,20 +2164,23 @@
     )
       ed.classList.add("titled");
 
-    // applyInputRules mutates the block at the caret, so it must run synchronously
-    // on every keystroke - deferring it would fire the transform after the caret
-    // has moved on. refreshTitleHeader only re-derives the (cosmetic) header title
-    // by serialising the whole body to markdown, so debounce that expensive read to
-    // fire once the typing pauses (UIUX.3).
-    const refreshTitleHeaderSoon = debounce(refreshTitleHeader, 150);
+    // applyInputRules mutates the block at the caret, so it runs on every keystroke.
     // Saved as you type, once the typing pauses, not only on blur: switching to
     // another app does not reliably blur a WebKit editor, and coming back re-read the
     // page from the store - which did not have the words typed since the last blur, so
     // they vanished and the retyped list came out different (the "spacing" bug).
     const saveSoon = debounce(saveBody, 1500);
+    // Backspacing a note to nothing removes its last block; type into a fresh one.
+    ed.addEventListener("beforeinput", (e) => {
+      if (ed.firstElementChild || e.inputType !== "insertText" || !e.data) return;
+      e.preventDefault();
+      ed.innerHTML = "<p></p>";
+      ed.firstChild.textContent = e.data;
+      caretAt(ed.firstChild.firstChild, e.data.length);
+      ed.dispatchEvent(new Event("input"));
+    });
     ed.addEventListener("input", () => {
       applyInputRules(ed);
-      refreshTitleHeaderSoon();
       saveSoon();
     });
     ed.addEventListener("blur", saveBody);
@@ -2353,27 +2369,18 @@
     }
   }
 
-  // NOTE.2 + NOTE.3: the header always shows the truth about the note's title -
-  // the explicit title if one is set, else the live first-line derivation that
-  // mirrors notes.py's title_from_body via md.js's titleFromBody (same heading
-  // rule, same stripping, same cap), so the header shows exactly what the server
-  // will store on save. An explicit title (NOTE.0) is never clobbered by the
-  // body, and an in-progress edit (<input> in the header) is never overwritten.
+  // The header shows the note's title as it was opened, or the one set here; the
+  // engine names a note without one by its first line, seen once the note is left.
   function refreshTitleHeader() {
     if (!ctx || ctx.kind !== "note") return;
     const h = document.getElementById("titleH1");
     if (!h || h.querySelector("input")) return;
-    if (ctx.titleExplicit) {
-      h.textContent = ctx.title || "Untitled";
-    } else {
-      const ed = document.getElementById("body");
-      h.textContent = titleFromBody(noteText(ed));
-    }
+    h.textContent = ctx.title || "Untitled";
   }
 
   // NOTE.3: the header title is click-to-edit. Clicking swaps the <h1> for an
   // inline input; Enter or blur commits the explicit title (an empty commit
-  // clears it back to the live first-line derivation), Escape cancels without
+  // gives the note back to its first line), Escape cancels without
   // saving. The explicit intent lives server-side (artifacts.title_explicit),
   // so a later body-only save never re-derives over a hand-set title.
   let titleDraft = null;
@@ -2393,8 +2400,7 @@
     input.type = "text";
     input.className = "title-edit";
     input.setAttribute("aria-label", "Note title");
-    // Pre-fill with what the note is currently titled - explicit or derived - so
-    // clearing back to derived is "delete the text", not retyping from memory.
+    // Only a title set here fills the box; an empty box leaves the first line in charge.
     input.value = titleDraftValue();
     input.placeholder = "Untitled";
     h.textContent = "";
@@ -2415,10 +2421,7 @@
   }
 
   function titleDraftValue() {
-    const ed = document.getElementById("body");
-    return ctx.titleExplicit
-      ? ctx.title || "Untitled"
-      : titleFromBody(noteText(ed));
+    return ctx.titleExplicit ? ctx.title || "" : "";
   }
 
   function cancelTitleEdit(h) {
@@ -2437,10 +2440,7 @@
     // An unchanged commit is a no-op: it must not freeze a derived title by
     // accident (a click followed by a click elsewhere is not an edit). Only a
     // changed or cleared title sends a PATCH.
-    const currentTitle = ctx.titleExplicit
-      ? ctx.title || "Untitled"
-      : titleFromBody(currentBody);
-    if (value === currentTitle) {
+    if (value === titleDraftValue()) {
       cancelTitleEdit(h);
       return;
     }

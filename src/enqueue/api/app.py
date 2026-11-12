@@ -290,6 +290,9 @@ def _start_sync_worker() -> None:
             n = repush_relay_v2()
             if n:
                 print(f"[engine] pushed {n} items to the relay under hashed names")
+            from ..sync.client import push_views_once
+
+            push_views_once()
         except Exception as exc:  # noqa: BLE001 - additive; never block startup
             print(f"[engine] could not backfill link previews: {exc}")
 

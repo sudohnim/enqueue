@@ -21,18 +21,23 @@ import uuid
 from . import db
 
 
-def _resync_pivots() -> None:
-    """Best-effort push of the saved views to the relay so the mobile client's
-    Custom mode reflects a create/edit/rename/delete without a full backfill.
+def _resync_pivots(pivot_id: str) -> None:
+    """Stamp a changed view as this computer's, then send it and the phone's view list
+    to the relay on a daemon thread; a sync hiccup never breaks saving a view here."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE saved_pivots SET updated_at = ?, _device_id = NULL WHERE id = ?",
+            (db.now(), pivot_id),
+        )
+    _send(pivot_id)
 
-    Runs on a daemon thread (resolve_subset can be slow for a search subset) and
-    swallows everything: a sync hiccup must never break saving a view locally.
-    """
 
+def _send(pivot_id: str) -> None:
     def _run() -> None:
         try:
-            from .sync.client import push_pivots
+            from .sync.client import push_pivots, push_view
 
+            push_view(pivot_id)
             push_pivots()
         except Exception:  # noqa: BLE001 - never surface a sync error to the caller
             pass
@@ -56,7 +61,7 @@ def save(name: str, spec: dict) -> str:
             "INSERT INTO saved_pivots (id, name, spec_json, created_at) VALUES (?,?,?,?)",
             (pivot_id, name[:120], json.dumps(spec), db.now()),
         )
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return pivot_id
 
 
@@ -116,7 +121,7 @@ def save_manual(name: str, groups: list[dict] | None = None) -> str:
             " VALUES (?,?,?,?,?,?)",
             (pivot_id, name[:120], json.dumps(MANUAL_SPEC), db.now(), json.dumps(result), db.now()),
         )
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return pivot_id
 
 
@@ -142,7 +147,7 @@ def set_layout(pivot_id: str, groups: list[dict]) -> dict:
             "UPDATE saved_pivots SET result_json = ?, result_at = ? WHERE id = ?",
             (json.dumps(result), db.now(), pivot_id),
         )
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return result
 
 
@@ -251,6 +256,8 @@ def set_result(pivot_id: str, result: dict) -> None:
             "UPDATE saved_pivots SET result_json = ?, result_at = ? WHERE id = ?",
             (json.dumps(result), db.now(), pivot_id),
         )
+    if row is not None:
+        _resync_pivots(pivot_id)
 
 
 def remove_from_result(pivot_id: str, artifact_ids: list[str]) -> dict | None:
@@ -308,7 +315,7 @@ def remove_from_result(pivot_id: str, artifact_ids: list[str]) -> dict | None:
             "UPDATE saved_pivots SET result_json = ?, spec_json = ? WHERE id = ?",
             (json.dumps(result), json.dumps(spec), pivot_id),
         )
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return result
 
 
@@ -359,7 +366,7 @@ def restore_to_result(pivot_id: str, artifact_ids: list[str], place=None) -> dic
             "UPDATE saved_pivots SET result_json = ?, spec_json = ? WHERE id = ?",
             (json.dumps(result), json.dumps(spec), pivot_id),
         )
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return result
 
 
@@ -411,7 +418,7 @@ def add_to_result(pivot_id: str, artifact_id: str, group_key: str) -> dict | Non
             "UPDATE saved_pivots SET result_json = ? WHERE id = ?",
             (json.dumps(result), pivot_id),
         )
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return result
 
 
@@ -473,12 +480,18 @@ def rename(pivot_id: str, name: str) -> dict:
             "SELECT id, name, created_at FROM saved_pivots WHERE id = ?", (pivot_id,)
         ).fetchone()
         result = dict(updated)
-    _resync_pivots()
+    _resync_pivots(pivot_id)
     return result
 
 
 def delete(pivot_id: str) -> None:
     """Forget a saved view. Idempotent: deleting one already gone is not an error."""
     with db.transaction() as conn:
-        conn.execute("DELETE FROM saved_pivots WHERE id = ?", (pivot_id,))
-    _resync_pivots()
+        gone = conn.execute("DELETE FROM saved_pivots WHERE id = ?", (pivot_id,)).rowcount
+        if gone:
+            conn.execute(
+                "INSERT OR REPLACE INTO pivot_tombstones (id, deleted_at) VALUES (?,?)",
+                (pivot_id, db.now()),
+            )
+    if gone:
+        _send(pivot_id)
