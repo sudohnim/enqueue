@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mac-billing-restore"
+description = "Enables the mac_billing_restore command without any pre-configured scope."
+commands.allow = ["mac_billing_restore"]
+
+[[permission]]
+identifier = "deny-mac-billing-restore"
+description = "Denies the mac_billing_restore command without any pre-configured scope."
+commands.deny = ["mac_billing_restore"]

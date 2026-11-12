@@ -10,6 +10,7 @@
 #   bundle exec fastlane android next_code  print the next versionCode, change nothing
 #   bundle exec fastlane mac release        the signed, notarized .dmg and update bundle
 #   bundle exec fastlane mac publish        both on GitHub, and the update feed pointed at them
+#   bundle exec fastlane mac mas            the Mac App Store build, to TestFlight for Mac
 #   bundle exec fastlane ios beta           the iPhone app on TestFlight (feature/ios)
 
 require "json"
@@ -188,10 +189,12 @@ end
 
 # --- mac ----------------------------------------------------------------------
 #
-# The Mac app ships outside the App Store: a Developer ID signed, notarized .dmg that
-# bin/release desktop already makes. This lane only fills in the two settings and checks
-# them before a ten-minute build. Notarizing needs a notarytool profile in the keychain,
-# made once per Mac:
+# The Mac app ships two ways. The .dmg (`release`, `publish`): Developer ID signed,
+# notarized, updating itself. The Mac App Store build (`mas`): sandboxed, signed with the
+# App Store certificates and the profiles in ~/.appstoreconnect/profiles, uploaded to
+# TestFlight; it shares the iPhone app's record (universal purchase). The release lane only
+# fills in the two settings and checks them before a ten-minute build. Notarizing needs a
+# notarytool profile in the keychain, made once per Mac:
 #   xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG
 
 MAC_IDENTITY = "Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"
@@ -215,6 +218,30 @@ platform :mac do
     UI.user_error!("No .dmg was built.") unless dmg
     sh("xcrun", "stapler", "validate", dmg)
     UI.success("Ready to publish: #{dmg}")
+  end
+
+  desc "Build the Mac App Store .pkg and upload it to TestFlight for Mac (not submitted)"
+  lane :mas do
+    api_key = asc_key
+    latest = latest_testflight_build_number(api_key: api_key, app_identifier: "com.sudohnim.enqueue", platform: "osx", initial_build_number: 0)
+    # A build still processing is not listed yet, so the number last uploaded from this
+    # checkout counts too; Apple refuses a number it has seen.
+    stamp = File.join(REPO, "fastlane", ".mac-build-number")
+    local = File.exist?(stamp) ? File.read(stamp).to_i : 0
+    build = (ENV["BUILD"] || ([latest.to_i, local].max + 1)).to_s
+    File.write(stamp, build)
+    UI.message("build number #{build}")
+    sh({ "MAS_BUILD_NUMBER" => build }, File.join(REPO, "bin", "release"), "desktop", "--channel", "mas")
+    pkg = File.join(REPO, "desktop", "target", "release", "bundle", "macos", "Enqueue.pkg")
+    UI.user_error!("No .pkg was built.") unless File.exist?(pkg)
+    pilot(
+      api_key: api_key,
+      app_identifier: "com.sudohnim.enqueue",
+      app_platform: "osx",
+      pkg: pkg,
+      skip_waiting_for_build_processing: true,
+    )
+    UI.success("Build #{build} is on TestFlight for Mac.")
   end
 
   desc "Publish the built .dmg and update bundle on GitHub, then point installed Macs at it"

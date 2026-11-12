@@ -19,9 +19,9 @@
   body {
     height: 100%;
     margin: 0;
-    /* The window is transparent so the card can carry its own edge and shadow.
-       Anything painted on the body would show up as a rectangle around it. */
-    background: transparent;
+    /* The window is the card (lib.rs round_card rounds it and casts its shadow), so
+       the page paints the card's ground edge to edge. */
+    background: var(--bg);
     overflow: hidden;
   }
 
@@ -30,15 +30,9 @@
     color: var(--text);
     -webkit-font-smoothing: antialiased;
     height: 100vh;
-    /* The window is a little larger than the card so its soft violet shadow has
-       room to fall inside the transparent window instead of being clipped at the
-       window edge (a clipped shadow reads as a hard box). */
-    padding: 14px 18px 26px;
   }
 
-  /* The transparent window IS the floating card - it fills the window, carries its
-     own rounded edge and shadow, and floats on the desktop (the dequeue capture
-     model, without dimming the whole screen). */
+  /* The card fills the window; AppKit gives the window its rounded edge and shadow. */
   #card {
     height: 100%;
     display: flex;
@@ -46,27 +40,27 @@
     gap: 12px;
     background: var(--bg);
     border-radius: 22px;
-    /* No border: the edge is a faint white inner rim plus the layered violet
-       shadow, so the card reads as a lit object floating over the app. */
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.55),
-      var(--shadow-lifted);
+    /* No border: the edge is a faint white inner rim, so the card reads as lit. */
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
     padding: 14px 16px 16px;
     transition:
       box-shadow var(--dur) var(--ease),
       opacity 160ms var(--ease),
       transform 160ms var(--ease);
   }
-  /* On a successful keep the card leaves before the bird flies (K.5 reorder). */
-  #card.kept {
+  /* On a successful keep the card's contents leave before the bird flies (K.5). */
+  #card > * {
+    transition:
+      opacity 160ms var(--ease),
+      transform 160ms var(--ease);
+  }
+  #card.kept > * {
     opacity: 0;
     transform: scale(0.98);
   }
 
   #card.hovering {
-    box-shadow:
-      inset 0 0 0 2px var(--purple-bold),
-      var(--shadow-lifted);
+    box-shadow: inset 0 0 0 2px var(--purple-bold);
   }
 
   /* The focus signal is the app's ring, carried by the card so the borderless
@@ -322,12 +316,10 @@
     }
   }
 
-  /* CAP2.2 pivot: the capture-success raven flies INSIDE this overlay, then the
-     overlay dismisses. The capture window is already transparent, always-on-top, and
-     summoned over whatever app the person captured from, so the raven shows over that
-     app with no separate always-on-top window and no macOS window-level hacks. The
-     card is hidden for the flight so only the raven paints over the app (css/bird.css). */
-  #card.flying {
+  /* CAP2.2: the capture-success raven flies across the card, then the overlay
+     dismisses. The card's contents are hidden for the flight, so the raven crosses
+     the card's empty ground (css/bird.css). */
+  #card.flying > * {
     visibility: hidden;
   }
 </style>

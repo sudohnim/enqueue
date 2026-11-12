@@ -17,15 +17,25 @@ named, not filed, and do not move.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from . import config
 
-LEGACY = Path.home() / ".enqueue-poc"
+LEGACY = config.REAL_HOME / ".enqueue-poc"
+# Where a library has lived before, oldest first: the proof of concept's folder, then
+# Application Support, which the App Store sandbox cannot reach. A shipped app moves it
+# into the app group, where the .dmg and the App Store build both find it.
+FORMER = [LEGACY, config.REAL_HOME / "Library" / "Application Support" / "Enqueue"]
 
 # What the desktop shell and bin/launch may already have written to the new folder
 # before the engine's first start there: one-line pointers, not library data.
 _POINTERS = {"repo", "capture-position"}
+
+
+# A former folder the App Store sandbox would not let this engine move (the library of
+# the downloaded app, still in Application Support), for Settings to say so (setup.py).
+LEFT_BEHIND: list[Path] = []
 
 
 class BothHoldLibraries(RuntimeError):
@@ -44,16 +54,39 @@ def _remove_empty(path: Path) -> None:
 
 
 def move_legacy(legacy: Path | None = None, target: Path | None = None) -> str:
-    """Move the library from its old folder to `config.DATA_DIR`, once. Returns what
-    happened, as a sentence for the engine's log ("" when there was nothing to do).
+    """Move the library from where it lived before (`FORMER`, or `legacy`) to
+    `config.DATA_DIR`. Returns what happened ("" when there was nothing to do)."""
+    new = target or config.DATA_DIR
+    froms = [legacy] if legacy else [p for p in FORMER if p != new]
+    said = []
+    for old in froms:
+        try:
+            said.append(_move(old, new))
+        except PermissionError:
+            # The App Store sandbox sees the folder but may not open it. Start on the
+            # app group's library; the downloaded app moves the old one there.
+            LEFT_BEHIND.append(old)
+            said.append(f"left {old} where it is: this app may not open it")
+    return "; ".join(filter(None, said))
+
+
+def _move(old: Path, new: Path) -> str:
+    """Move one former folder to `new`, once. Returns what happened, as a sentence for
+    the engine's log ("" when there was nothing to do).
 
     Raises BothHoldLibraries, and changes nothing, when both folders hold files: merging
     two would be a guess, and either could be the real one. Empty folders (a `blobs/` made
     before anything was saved) are not files."""
-    old = legacy or LEGACY
-    new = target or config.DATA_DIR
     if old.is_symlink() or not old.is_dir() or old.resolve() == new.resolve():
         return ""
+    os.listdir(old)  # PermissionError under the App Store sandbox: the caller leaves it
+    set_aside = ""
+    if new.exists() and _unused_library(new):
+        # A library the App Store build made before the downloaded app moved the real
+        # one here: nothing was ever saved in it, so it makes way, kept beside it.
+        aside = new.with_name(f"{new.name}.unused-{int(time.time())}")
+        os.rename(new, aside)
+        set_aside = f" (set the unused {new} aside as {aside.name})"
     if new.exists():
         extra = {p.name for p in new.iterdir() if p.name not in _POINTERS and not _empty_tree(p)}
         if extra:
@@ -77,4 +110,22 @@ def move_legacy(legacy: Path | None = None, target: Path | None = None) -> str:
     except OSError:
         pass  # the library moved; the link is a courtesy
     new.chmod(0o700)
-    return f"moved the library from {old} to {new}"
+    return f"moved the library from {old} to {new}{set_aside}"
+
+
+def _unused_library(folder: Path) -> bool:
+    """Whether `folder` holds a library nothing was ever saved in: a database with no
+    artifacts and no original files. Anything that cannot be read is not unused."""
+    db = folder / "enqueue.db"
+    if not db.is_file() or any((folder / "blobs").glob("*")):
+        return False
+    from .sqlite import connect
+
+    try:
+        conn = connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 0
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - encrypted, damaged or odd: keep it, say both hold
+        return False

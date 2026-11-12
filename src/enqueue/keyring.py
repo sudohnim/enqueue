@@ -62,6 +62,8 @@ def available() -> bool:
 # usually about to be added.
 _CACHE: dict[str, tuple[float, str | None]] = {}
 _CACHE_LOCK = threading.Lock()
+# Two `add-generic-password -U` at once both try to create the item; one fails.
+_WRITE_LOCK = threading.Lock()
 _HIT_TTL_S = 300.0
 _MISS_TTL_S = 30.0
 
@@ -155,21 +157,22 @@ def _set(service: str, secret: str, noun: str = "key") -> None:
     quoted = secret.replace("\\", "\\\\").replace('"', '\\"')
     command = f'add-generic-password -a {ACCOUNT} -s {service} -U -w "{quoted}"\n'
 
-    done = subprocess.run(
-        [_SECURITY, "-i"],
-        input=command,
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
-    if done.returncode != 0:
-        raise RuntimeError(done.stderr.strip() or f"the keychain refused to store the {noun}")
+    with _WRITE_LOCK:
+        done = subprocess.run(
+            [_SECURITY, "-i"],
+            input=command,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if done.returncode != 0:
+            raise RuntimeError(done.stderr.strip() or f"the keychain refused to store the {noun}")
 
-    # `security -i` reports per-command failures on stderr while still exiting 0, so
-    # the only trustworthy confirmation is reading it back, from the Keychain itself.
-    _forget(service)
-    if _get(service, strict=True) != secret:
-        raise RuntimeError(f"the {noun} did not store correctly")
+        # `security -i` reports per-command failures on stderr while still exiting 0, so
+        # the only trustworthy confirmation is reading it back, from the Keychain itself.
+        _forget(service)
+        if _get(service, strict=True) != secret:
+            raise RuntimeError(f"the {noun} did not store correctly")
 
 
 def _clear(service: str) -> bool:

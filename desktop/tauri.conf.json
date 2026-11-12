@@ -50,6 +50,11 @@
             "allow-desktop-link-code",
             "allow-update-ready",
             "allow-app-restart",
+            "allow-remember-folder",
+            "allow-mac-billing-start",
+            "allow-mac-billing-offerings",
+            "allow-mac-billing-purchase",
+            "allow-mac-billing-restore",
             "dialog:allow-open",
             "core:event:allow-listen",
             "core:event:allow-unlisten"
@@ -140,8 +145,7 @@
           ]
         }
       ]
-    },
-    "macOSPrivateApi": true
+    }
   },
   "bundle": {
     "active": true,

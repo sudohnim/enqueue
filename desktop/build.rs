@@ -1,4 +1,16 @@
 fn main() {
+    // The Mac App Store build buys Pro through StoreKit (mac-billing, RevenueCat): link
+    // that Swift package only there.
+    if std::env::var("CARGO_FEATURE_MAS").is_ok()
+        && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+    {
+        swift_rs::SwiftLinker::new("12.0")
+            .with_package("EnqueueBilling", "mac-billing")
+            .link();
+        // The Swift runtime the package needs ships with macOS, in /usr/lib/swift.
+        println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+    }
+
     // Both pages are served by the engine, so Tauri sees their webviews as a remote
     // origin, and remote origins are refused every command unless a capability names
     // them. Declaring the commands here is what generates the `allow-*` permissions
@@ -55,6 +67,11 @@ fn main() {
                                 "allow-desktop-link-code",
                                 "allow-update-ready",
                                 "allow-app-restart",
+                                "allow-remember-folder",
+                                "allow-mac-billing-start",
+                                "allow-mac-billing-offerings",
+                                "allow-mac-billing-purchase",
+                                "allow-mac-billing-restore",
                                 "dialog:allow-open",
                                 "core:event:allow-listen",
                                 "core:event:allow-unlisten"
@@ -78,6 +95,11 @@ fn main() {
                 "desktop_link_code",
                 "update_ready",
                 "app_restart",
+                "remember_folder",
+                "mac_billing_start",
+                "mac_billing_offerings",
+                "mac_billing_purchase",
+                "mac_billing_restore",
                 "mobile_blob",
                 "mobile_capture",
                 "mobile_capture_file",

@@ -9,6 +9,7 @@ bootstrap) and then blocks on the server.
 
 from __future__ import annotations
 
+import mimetypes
 import threading
 
 from fastapi import FastAPI
@@ -32,6 +33,13 @@ from . import (
 )
 from ..keyring import KeychainUnavailable
 from .guard import LocalOnlyGuard
+
+# Python's built-in table only: the system's /etc/apache2/mime.types is closed to the App
+# Store sandbox, and reading it failed every static file.
+mimetypes.knownfiles = []
+mimetypes.init()
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("text/javascript", ".mjs")
 
 
 def create_app() -> FastAPI:

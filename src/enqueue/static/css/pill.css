@@ -427,14 +427,26 @@ dialog.ask.upgrade {
 dialog.ask.upgrade h2 + p {
 	margin-top: var(--sp-4);
 }
+dialog.ask.upgrade .upgrade-fine {
+	margin-top: var(--sp-4);
+	font-size: 13px;
+	line-height: 18px;
+	color: var(--text-mute);
+}
+dialog.ask.upgrade .upgrade-fine a,
+dialog.ask.upgrade .linkbtn {
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: var(--accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	cursor: pointer;
+}
 dialog.ask.upgrade .upgrade-why {
 	color: var(--text);
 	font-weight: var(--w-medium);
-}
-dialog.ask.upgrade .upgrade-where {
-	color: var(--text-mute);
-	font-size: 14px;
-	line-height: 20px;
 }
 
 /* The grouping-name modal is the one rich ask: it gets an explanatory line under

@@ -3854,12 +3854,32 @@ mod desktop {
     /// page asks for the version when it loads (`update_ready`).
     #[derive(Default)]
     struct PendingUpdate {
-        update: Option<tauri_plugin_updater::Update>,
+        update: Option<AppUpdate>,
         bytes: Option<Vec<u8>>,
     }
+
+    #[cfg(feature = "updater")]
+    use tauri_plugin_updater::Update as AppUpdate;
+
+    /// The App Store build has no updater (the store delivers updates): nothing is ever
+    /// downloaded, so nothing is ever put in place.
+    #[cfg(not(feature = "updater"))]
+    struct AppUpdate {
+        version: String,
+    }
+    #[cfg(not(feature = "updater"))]
+    impl AppUpdate {
+        fn install(&self, _bytes: &[u8]) -> Result<(), String> {
+            Err(format!("no updater in this build ({})", self.version))
+        }
+    }
+
+    /// How this build ships: "mas" (Mac App Store) or "dmg" (Developer ID download).
+    const CHANNEL: &str = if cfg!(feature = "mas") { "mas" } else { "dmg" };
     struct UpdateReady(Mutex<PendingUpdate>);
 
     /// How often a shipped app looks for a new version, after a first look a minute in.
+    #[cfg(feature = "updater")]
     const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
     /// A shipped app keeps itself current, the way Claude's desktop app does: it asks the
@@ -3869,6 +3889,10 @@ mod desktop {
     /// into it, "Update on close" leaves it for when the app quits. Either way it is put
     /// in place by the time the app next starts. A dev build (no bundled engine) never
     /// asks.
+    #[cfg(not(feature = "updater"))]
+    fn watch_for_updates(_app: AppHandle) {}
+
+    #[cfg(feature = "updater")]
     fn watch_for_updates(app: AppHandle) {
         use tauri_plugin_updater::UpdaterExt;
         if bundled_engine_command().is_none() {
@@ -3954,6 +3978,29 @@ mod desktop {
         }
         stop_engine(&app);
         app.restart();
+    }
+
+    /// Round the capture window's corners with public AppKit calls: a clear, non-opaque
+    /// window whose content layer is clipped to the card's radius, and the window's
+    /// shadow redrawn to that shape.
+    #[cfg(target_os = "macos")]
+    fn round_card(window: &tauri::WebviewWindow) {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        let Ok(ptr) = window.ns_window() else { return };
+        unsafe {
+            let ns_window = ptr as *mut AnyObject;
+            let clear: *mut AnyObject = msg_send![objc2::class!(NSColor), clearColor];
+            let _: () = msg_send![ns_window, setOpaque: false];
+            let _: () = msg_send![ns_window, setBackgroundColor: clear];
+            let view: *mut AnyObject = msg_send![ns_window, contentView];
+            let _: () = msg_send![view, setWantsLayer: true];
+            let layer: *mut AnyObject = msg_send![view, layer];
+            let _: () = msg_send![layer, setCornerRadius: 22.0f64];
+            let _: () = msg_send![layer, setMasksToBounds: true];
+            let _: () = msg_send![ns_window, setHasShadow: true];
+            let _: () = msg_send![ns_window, invalidateShadow];
+        }
     }
 
     fn stop_engine(app: &AppHandle) {
@@ -4100,21 +4147,42 @@ mod desktop {
         if let Some(dir) = std::env::var_os("ENQ_DATA_DIR") {
             return Some(PathBuf::from(dir));
         }
-        let home = PathBuf::from(std::env::var_os("HOME")?);
-        Some(home.join("Library/Application Support/Enqueue"))
+        let home = real_home()?;
+        Some(if bundled_engine_command().is_some() {
+            home.join("Library/Group Containers/572NMYL3ZG.com.sudohnim.enqueue/Enqueue")
+        } else {
+            home.join("Library/Application Support/Enqueue")
+        })
     }
 
-    fn legacy_dir() -> Option<PathBuf> {
-        std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".enqueue-poc"))
+    /// The person's home folder. Under the App Store sandbox HOME is the app's
+    /// container, so the shared folders are found from the account's own record.
+    fn real_home() -> Option<PathBuf> {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            let pw = libc::getpwuid(libc::getuid());
+            if !pw.is_null() && !(*pw).pw_dir.is_null() {
+                let dir = std::ffi::CStr::from_ptr((*pw).pw_dir);
+                return Some(PathBuf::from(dir.to_string_lossy().into_owned()));
+            }
+        }
+        std::env::var_os("HOME").map(PathBuf::from)
     }
 
-    /// A file of the library's folder to read: the new place first, then the old.
+    /// Where the library lived before, newest first (datadir.py FORMER).
+    fn former_dirs() -> Vec<PathBuf> {
+        real_home()
+            .map(|h| vec![h.join("Library/Application Support/Enqueue"), h.join(".enqueue-poc")])
+            .unwrap_or_default()
+    }
+
+    /// A file of the library's folder to read: the current place first, then the former.
     fn library_file(name: &str) -> Option<PathBuf> {
         let new = data_dir()?.join(name);
         if new.exists() {
             return Some(new);
         }
-        legacy_dir().map(|old| old.join(name)).filter(|p| p.exists()).or(Some(new))
+        former_dirs().into_iter().map(|old| old.join(name)).find(|p| p.exists()).or(Some(new))
     }
 
     /// Where the overlay was last left. Kept next to the repo pointer rather than in the
@@ -4186,6 +4254,9 @@ mod desktop {
         let mut cmd = Command::new(python);
         cmd.args(["-m", "enqueue", "serve"])
             .env("PYTHONPATH", engine.join("site"))
+            // How this app ships (config.CHANNEL): the library's folder and how Pro is
+            // bought follow it.
+            .env("ENQ_CHANNEL", CHANNEL)
             // The bundle ships no .pyc and the app dir may be read-only (a signed app in
             // /Applications), so never try to write bytecode next to the source.
             .env("PYTHONDONTWRITEBYTECODE", "1");
@@ -4214,17 +4285,28 @@ mod desktop {
             cmd
         };
 
-        let mut child = command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .ok()?;
+        let mut child = match command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+            Ok(child) => child,
+            Err(err) => {
+                eprintln!("[shell] could not start the engine: {err}");
+                return None;
+            }
+        };
 
         // Engine output goes to the app's stderr rather than being swallowed, so a
         // failure to start is visible instead of presenting a blank window.
         if let Some(err) = child.stderr.take() {
             thread::spawn(move || {
                 for line in BufReader::new(err).lines().map_while(Result::ok) {
+                    eprintln!("[engine] {line}");
+                }
+            });
+        }
+        // Read stdout too: a pipe nobody reads fills at 64 KB and then blocks the engine
+        // on its next print.
+        if let Some(out) = child.stdout.take() {
+            thread::spawn(move || {
+                for line in BufReader::new(out).lines().map_while(Result::ok) {
                     eprintln!("[engine] {line}");
                 }
             });
@@ -4543,7 +4625,191 @@ mod desktop {
             .map_err(|e| e.to_string())
     }
 
+    /// Enqueue Pro through the Mac App Store (mac-billing, RevenueCat over StoreKit): the
+    /// App Store build only. Each call blocks a worker thread until RevenueCat answers and
+    /// returns the iPhone plugin's JSON shapes; the .dmg build answers "not_this_build".
+    #[cfg(feature = "mas")]
+    mod mac_billing {
+        use std::ffi::{c_char, CStr, CString};
+        extern "C" {
+            fn enqueue_billing_start(account: *const c_char) -> *mut c_char;
+            fn enqueue_billing_offerings() -> *mut c_char;
+            fn enqueue_billing_purchase(package: *const c_char) -> *mut c_char;
+            fn enqueue_billing_restore() -> *mut c_char;
+        }
+        fn take(raw: *mut c_char) -> serde_json::Value {
+            if raw.is_null() {
+                return serde_json::json!({"ok": false, "reason": "error"});
+            }
+            let text = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+            unsafe { libc::free(raw.cast()) };
+            serde_json::from_str(&text).unwrap_or(serde_json::json!({"ok": false, "reason": "error"}))
+        }
+        fn arg(s: &str) -> CString {
+            CString::new(s).unwrap_or_default()
+        }
+        pub fn start(account: &str) -> serde_json::Value {
+            let a = arg(account);
+            take(unsafe { enqueue_billing_start(a.as_ptr()) })
+        }
+        pub fn offerings() -> serde_json::Value {
+            take(unsafe { enqueue_billing_offerings() })
+        }
+        pub fn purchase(package: &str) -> serde_json::Value {
+            let p = arg(package);
+            take(unsafe { enqueue_billing_purchase(p.as_ptr()) })
+        }
+        pub fn restore() -> serde_json::Value {
+            take(unsafe { enqueue_billing_restore() })
+        }
+    }
+
+    /// Runs one billing call off the main thread, or says this build has none.
+    async fn billing(call: impl FnOnce() -> serde_json::Value + Send + 'static) -> serde_json::Value {
+        if cfg!(feature = "mas") {
+            tauri::async_runtime::spawn_blocking(call)
+                .await
+                .unwrap_or(serde_json::json!({"ok": false, "reason": "error"}))
+        } else {
+            let _ = call;
+            serde_json::json!({"ok": false, "reason": "not_this_build"})
+        }
+    }
+
+    #[tauri::command]
+    async fn mac_billing_start(account_id: String) -> serde_json::Value {
+        #[cfg(feature = "mas")]
+        return billing(move || mac_billing::start(&account_id)).await;
+        #[cfg(not(feature = "mas"))]
+        billing(move || serde_json::json!({ "account": account_id })).await
+    }
+
+    #[tauri::command]
+    async fn mac_billing_offerings() -> serde_json::Value {
+        #[cfg(feature = "mas")]
+        return billing(mac_billing::offerings).await;
+        #[cfg(not(feature = "mas"))]
+        billing(serde_json::Value::default).await
+    }
+
+    #[tauri::command]
+    async fn mac_billing_purchase(package_id: String) -> serde_json::Value {
+        #[cfg(feature = "mas")]
+        return billing(move || mac_billing::purchase(&package_id)).await;
+        #[cfg(not(feature = "mas"))]
+        billing(move || serde_json::json!({ "package": package_id })).await
+    }
+
+    #[tauri::command]
+    async fn mac_billing_restore() -> serde_json::Value {
+        #[cfg(feature = "mas")]
+        return billing(mac_billing::restore).await;
+        #[cfg(not(feature = "mas"))]
+        billing(serde_json::Value::default).await
+    }
+
+    /// Folders the person picked that Enqueue keeps using (the backup folder), as
+    /// security-scoped bookmarks: under the App Store sandbox a picked folder is open to
+    /// the app only until it quits, unless the bookmark opens it again at the next start.
+    /// The engine shares the app's sandbox, so a folder opened here is open to it too.
+    fn folder_access_file() -> Option<PathBuf> {
+        data_dir().map(|dir| dir.join("folder-access.json"))
+    }
+
+    /// Keep a picked folder open across launches. Called by the page right after the
+    /// picker returns it, while the pick still grants access.
+    #[tauri::command]
+    fn remember_folder(path: String) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            use base64::Engine as _;
+            let bookmark = folder_bookmark(&path).ok_or("could not keep access to that folder")?;
+            let file = folder_access_file().ok_or("no library folder")?;
+            let mut kept: std::collections::BTreeMap<String, String> = std::fs::read_to_string(&file)
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default();
+            kept.insert(path, base64::engine::general_purpose::STANDARD.encode(bookmark));
+            if let Some(dir) = file.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            std::fs::write(&file, serde_json::to_string(&kept).unwrap_or_default())
+                .map_err(|e| e.to_string())?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = path;
+        Ok(())
+    }
+
+    /// Open every kept folder again; run before the engine starts.
+    #[cfg(target_os = "macos")]
+    fn reopen_folders() {
+        use base64::Engine as _;
+        let Some(text) = folder_access_file().and_then(|f| std::fs::read_to_string(f).ok()) else {
+            return;
+        };
+        let kept: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(&text).unwrap_or_default();
+        for (path, b64) in kept {
+            match base64::engine::general_purpose::STANDARD.decode(b64) {
+                Ok(raw) if open_bookmark(&raw) => {}
+                _ => eprintln!("[shell] could not open {path} again; pick it again in Settings"),
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn folder_bookmark(path: &str) -> Option<Vec<u8>> {
+        use objc2::msg_send;
+        use objc2::runtime::{AnyObject, Bool};
+        // NSURLBookmarkCreationWithSecurityScope
+        const WITH_SECURITY_SCOPE: usize = 1 << 11;
+        let c_path = std::ffi::CString::new(path).ok()?;
+        unsafe {
+            let ns_path: *mut AnyObject =
+                msg_send![objc2::class!(NSString), stringWithUTF8String: c_path.as_ptr()];
+            let url: *mut AnyObject =
+                msg_send![objc2::class!(NSURL), fileURLWithPath: ns_path, isDirectory: Bool::YES];
+            if url.is_null() {
+                return None;
+            }
+            let none: *mut AnyObject = std::ptr::null_mut();
+            let mut err: *mut AnyObject = std::ptr::null_mut();
+            let data: *mut AnyObject = msg_send![url, bookmarkDataWithOptions: WITH_SECURITY_SCOPE, includingResourceValuesForKeys: none, relativeToURL: none, error: &mut err];
+            if data.is_null() {
+                return None;
+            }
+            let len: usize = msg_send![data, length];
+            let bytes: *const u8 = msg_send![data, bytes];
+            Some(std::slice::from_raw_parts(bytes, len).to_vec())
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn open_bookmark(raw: &[u8]) -> bool {
+        use objc2::msg_send;
+        use objc2::runtime::{AnyObject, Bool};
+        // NSURLBookmarkResolutionWithSecurityScope
+        const WITH_SECURITY_SCOPE: usize = 1 << 10;
+        unsafe {
+            let data: *mut AnyObject =
+                msg_send![objc2::class!(NSData), dataWithBytes: raw.as_ptr(), length: raw.len()];
+            let none: *mut AnyObject = std::ptr::null_mut();
+            let mut stale = Bool::NO;
+            let mut err: *mut AnyObject = std::ptr::null_mut();
+            let url: *mut AnyObject = msg_send![objc2::class!(NSURL), URLByResolvingBookmarkData: data, options: WITH_SECURITY_SCOPE, relativeToURL: none, bookmarkDataIsStale: &mut stale, error: &mut err];
+            if url.is_null() {
+                return false;
+            }
+            // Left open for the life of the app: the backup runs whenever it is due.
+            let opened: Bool = msg_send![url, startAccessingSecurityScopedResource];
+            opened.as_bool()
+        }
+    }
+
     pub fn run() {
+        #[cfg(target_os = "macos")]
+        reopen_folders();
         // Spawn the engine but do NOT wait for it here, so Tauri's own init overlaps the
         // engine boot; the wait moves into setup, right before the one window that needs
         // the engine's URL.
@@ -4555,12 +4821,14 @@ mod desktop {
         };
         let spawned_here = child.is_some();
 
-        tauri::Builder::default()
+        let builder = tauri::Builder::default();
+        #[cfg(feature = "updater")]
+        let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        builder
             .manage(Engine(Mutex::new(child)))
             .manage(CameFromHome(AtomicBool::new(false)))
             .manage(UpdateReady(Mutex::new(PendingUpdate::default())))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-            .plugin(tauri_plugin_updater::Builder::new().build())
             // The Mac's own folder picker, for choosing where backups go (Settings,
             // Storage). Allowed for the home window only (tauri.conf.json, home-links).
             .plugin(tauri_plugin_dialog::init())
@@ -4572,7 +4840,12 @@ mod desktop {
                 window_drag,
                 desktop_link_code,
                 update_ready,
-                app_restart
+                app_restart,
+                remember_folder,
+                mac_billing_start,
+                mac_billing_offerings,
+                mac_billing_purchase,
+                mac_billing_restore
             ])
             .setup(move |app| {
                 // The webview loads the engine's URL, so it cannot be built until the
@@ -4618,21 +4891,23 @@ mod desktop {
                     ),
                 )
                 .title("")
-                // A contained capture card: the raven + heading, a prominent input box,
-                // and a Keep row under it. The window is ~36px wider and ~40px taller
-                // than the card (capture.html body padding) so the card's soft shadow
-                // falls inside the transparent window instead of being clipped.
-                .inner_size(640.0, 320.0)
+                // The window is the capture card: the raven + heading, a prominent input
+                // box, and a Keep row under it. Its rounded corners and shadow come from
+                // AppKit (round_card), not a see-through window, which needs a private
+                // API the App Store refuses.
+                .inner_size(604.0, 280.0)
                 .resizable(false)
                 .decorations(false)
-                .transparent(true)
-                .shadow(false)
+                .shadow(true)
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .visible(false)
                 .center()
                 .disable_drag_drop_handler()
                 .build()?;
+
+                #[cfg(target_os = "macos")]
+                round_card(&capture);
 
                 if let Some((x, y)) = saved_position() {
                     let _ = capture.set_position(tauri::PhysicalPosition::new(x, y));

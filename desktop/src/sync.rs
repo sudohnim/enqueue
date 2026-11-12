@@ -260,6 +260,20 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     })))
 }
 
+/// Every relay call goes through this agent: ureq waits forever on a read by default,
+/// and one stalled request held the phone's pull, and the loader, for good.
+fn relay() -> &'static ureq::Agent {
+    static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+    let read = std::time::Duration::from_secs(if cfg!(test) { 2 } else { 60 });
+    AGENT.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(15))
+            .timeout_read(read)
+            .timeout_write(read)
+            .build()
+    })
+}
+
 /// Push one snapshot to the relay (MOB.7): serialize, encrypt, PUT under this device's
 /// namespace. The relay upserts by name (MOBFIX.5), so a re-PUT of an edited or deleted
 /// snapshot overwrites in place and returns 201; a 409 (older relay) is still tolerated.
@@ -275,7 +289,7 @@ fn put_object_with_retry(url: &str, secret: &str, body: &[u8], label: &str) -> R
     const ATTEMPTS: usize = 3;
     let mut last = String::new();
     for attempt in 1..=ATTEMPTS {
-        match ureq::put(url)
+        match relay().put(url)
             .set("Authorization", &format!("Bearer {secret}"))
             .set("Content-Type", "application/octet-stream")
             .send_bytes(body)
@@ -1002,7 +1016,7 @@ fn fetch_snapshots_parallel(
     }
     // One agent, cloned per worker: `ureq::Agent` is Send + Sync and shares a
     // connection pool, so cloning is cheap and keeps sockets warm across a chunk.
-    let agent = ureq::AgentBuilder::new().build();
+    let agent = relay().clone();
     let chunk = (names.len() + WORKERS - 1) / WORKERS;
     let mut out: Vec<Value> = Vec::new();
     let mut missed = 0usize;
@@ -1106,7 +1120,7 @@ pub fn sync_library(
     };
 
     // List changed objects since the cursor.
-    let listing = match ureq::get(&format!("{base}/sync/objects"))
+    let listing = match relay().get(&format!("{base}/sync/objects"))
         .query("since", &cursor.to_string())
         .set("Authorization", &auth)
         .call()
@@ -1153,7 +1167,7 @@ pub fn sync_library(
         // Custom views (saved pivots) are a single library-level object; pull it,
         // decrypt, and cache the JSON in sync_meta for the Custom view mode.
         if name == "lib/pivots.enc" {
-            if let Ok(r) = ureq::get(&format!("{base}/sync/object/{name}"))
+            if let Ok(r) = relay().get(&format!("{base}/sync/object/{name}"))
                 .set("Authorization", &auth)
                 .call()
             {
@@ -1176,7 +1190,7 @@ pub fn sync_library(
         // wrap in sync_meta so this device can unlock the same vault with the same
         // PIN. The inner value is still PIN-wrapped, so the DEK alone cannot read it.
         if name == "lib/vault.enc" {
-            if let Ok(r) = ureq::get(&format!("{base}/sync/object/{name}"))
+            if let Ok(r) = relay().get(&format!("{base}/sync/object/{name}"))
                 .set("Authorization", &auth)
                 .call()
             {
@@ -1201,7 +1215,7 @@ pub fn sync_library(
         // desktop edit wins, and cache it in sync_meta for mobile_chat / settings to
         // read. This is what makes the desktop config propagate fully to the phone.
         if name.starts_with("lib/settings/") {
-            if let Ok(r) = ureq::get(&format!("{base}/sync/object/{name}"))
+            if let Ok(r) = relay().get(&format!("{base}/sync/object/{name}"))
                 .set("Authorization", &auth)
                 .call()
             {
@@ -2018,7 +2032,7 @@ pub fn fetch_blob(
 ) -> Result<Vec<u8>, String> {
     let mut last = String::new();
     for name in [blob_name(content_hash, dek), legacy_blob_name(content_hash, dek)] {
-        let resp = match ureq::get(&format!(
+        let resp = match relay().get(&format!(
             "{}/sync/object/blobs/{}",
             relay_url.trim_end_matches('/'),
             name
@@ -3164,5 +3178,28 @@ mod vault_summary_tests {
             .map(|r| r.unwrap())
             .collect();
         assert_eq!(left, vec!["e1"], "the person's own line is kept; the Mac seals it");
+    }
+}
+
+
+#[cfg(test)]
+mod relay_stall {
+    #[test]
+    fn a_relay_that_stops_answering_ends_the_pull() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let held: Vec<_> = listener.incoming().flatten().collect();
+            drop(held);
+        });
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            super::init_schema(&conn).unwrap();
+            let out = super::sync_library(&url, "s", Some(&[7u8; super::DEK_LEN]), &conn);
+            let _ = tx.send(out.status);
+        });
+        let status = rx.recv_timeout(std::time::Duration::from_secs(20)).expect("pull hung");
+        assert_eq!(status, "error");
     }
 }

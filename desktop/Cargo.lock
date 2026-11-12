@@ -15,6 +15,7 @@ dependencies = [
  "hmac",
  "image",
  "jni 0.21.1",
+ "libc",
  "ndk-context",
  "objc2",
  "qrcode",
@@ -24,6 +25,7 @@ dependencies = [
  "security-framework",
  "serde_json",
  "sha2",
+ "swift-rs",
  "tauri",
  "tauri-build",
  "tauri-plugin-barcode-scanner",
@@ -4645,8 +4647,6 @@ dependencies = [
 [[package]]
 name = "tao"
 version = "0.35.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1c93047acf68669466a34690ac58cca7010bd1b201e1ec86f1fd0a75d3dd4a9"
 dependencies = [
  "bitflags 2.13.1",
  "block2",

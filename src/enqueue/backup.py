@@ -178,7 +178,7 @@ def proton_drive_folders() -> list[str]:
     A folder with a date in parentheses is one macOS kept from an older account
     session; the live one is listed first.
     """
-    root = Path.home() / "Library" / "CloudStorage"
+    root = config.REAL_HOME / "Library" / "CloudStorage"
     try:
         found = [p for p in root.iterdir() if p.is_dir() and p.name.startswith("ProtonDrive")]
     except OSError:

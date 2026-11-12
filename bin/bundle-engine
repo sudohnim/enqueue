@@ -62,6 +62,9 @@ done
 # Drop bytecode + caches: the app runs read-only and re-writing .pyc next to the source
 # would fail anyway (PYTHONDONTWRITEBYTECODE is set by the shell too).
 find "$DEST" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+# Debug symbols some wheels ship (pyobjc's .dSYM folders): never loaded, and the App
+# Store refuses them for their com.apple bundle ids.
+find "$DEST" -type d -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev/null || true
 
 # Smoke test the relocated bundle before we hand it to Tauri: a broken bundle should fail
 # here, loudly, not as a blank window on a user's Mac.

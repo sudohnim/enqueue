@@ -17,11 +17,11 @@ import shutil
 import threading
 from pathlib import Path
 
-from . import capture, notes
+from . import capture, config, notes
 
 log = logging.getLogger(__name__)
 
-GROUP = "572NMYL3ZG.com.sudohnim.enqueue"
+GROUP = config.APP_GROUP
 EVERY_S = 3.0
 WEB = re.compile(r"^https?://\S+$", re.I)
 
@@ -30,7 +30,7 @@ def folder() -> Path:
     override = os.getenv("ENQ_SHARE_INBOX")
     if override:
         return Path(override)
-    return Path.home() / "Library" / "Group Containers" / GROUP / "Inbox"
+    return config.GROUP_DIR / "Inbox"
 
 
 def drain() -> int:

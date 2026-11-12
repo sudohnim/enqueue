@@ -330,7 +330,7 @@ class TestBrowserFallback:
 
         from enqueue.api import settings as api_settings
 
-        assert api_settings.read_settings()["features"] == {"preview_browser": False}
+        assert api_settings.read_settings()["features"]["preview_browser"] is False
 
     def test_a_refusal_the_browser_also_gets_is_said(self, store, quiet_queue, monkeypatch):
         made = capture.link("https://steve-yegge.medium.com/a-post")

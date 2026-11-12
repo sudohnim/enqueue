@@ -2,6 +2,9 @@
 # Build Enqueue's distributable artifacts for a chosen platform.
 #
 #   bin/release desktop         self-contained macOS .app + .dmg (engine vendored inside)
+#   bin/release desktop --channel mas [--dev]
+#                               the Mac App Store build: sandboxed .app + signed .pkg
+#                               (--dev: signed for this Mac, to run before uploading)
 #   bin/release android         signed release .apk + .aab
 #
 # Sibling to bin/launch, not a mode of it: `launch` runs the app for development (restarts
@@ -29,6 +32,19 @@ usage() {
 }
 
 release_desktop() {
+  local channel=dmg dev=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --channel) channel="$2"; shift 2 ;;
+      --dev) dev=1; shift ;;
+      *) usage ;;
+    esac
+  done
+  case "$channel" in
+    dmg) ;;
+    mas) release_desktop_mas "$dev"; return ;;
+    *) usage ;;
+  esac
   echo "==> Vendoring the engine into the app bundle"
   "$REPO/bin/bundle-engine"
   echo "==> Building the Share extension"
@@ -110,6 +126,75 @@ release_desktop() {
   echo "The .app carries its own engine; first launch downloads the embedding model once"
   echo "(needs network)."
   [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || echo "Unsigned: on first open, right-click the app -> Open."
+}
+
+# The Mac App Store build: no updater (Cargo feature `mas`), sandboxed, and signed
+# inside-out by hand, since every nested binary needs the App Store identity and the
+# engine's executables need the sandbox-inherit entitlements. Not notarized: Apple reviews
+# it. Profiles come from ~/.appstoreconnect/profiles (fastlane/README.md).
+#   MAS_BUILD_NUMBER   CFBundleVersion, one the store has not seen (fastlane mac mas)
+release_desktop_mas() {
+  local dev="$1"
+  local profiles="$HOME/.appstoreconnect/profiles" kind="" ident
+  if [ "$dev" = 1 ]; then
+    kind=".dev"
+    ident="${MAS_DEV_IDENTITY:-Apple Development: Minh Mai (39B735YA5P)}"
+  else
+    ident="3rd Party Mac Developer Application: Sudohnim, LLC (572NMYL3ZG)"
+  fi
+  local installer="3rd Party Mac Developer Installer: Sudohnim, LLC (572NMYL3ZG)"
+  for f in "Enqueue$kind.provisionprofile" "EnqueueShare$kind.provisionprofile"; do
+    [ -f "$profiles/$f" ] || { echo "error: no profile $profiles/$f (fastlane/README.md)" >&2; exit 1; }
+  done
+
+  echo "==> Vendoring the engine into the app bundle"
+  "$REPO/bin/bundle-engine"
+  echo "==> Building the Share extension"
+  APPLE_SIGNING_IDENTITY= "$REPO/bin/build-share-extension"
+
+  echo "==> Building the App Store .app"
+  cd "$REPO/desktop"
+  env -u APPLE_SIGNING_IDENTITY cargo tauri build --features mas --bundles app \
+    --config tauri.release.conf.json --config tauri.mas.conf.json -- --no-default-features
+
+  local app="$REPO/desktop/target/release/bundle/macos/Enqueue.app"
+  local plist="$app/Contents/Info.plist"
+  [ -n "${MAS_BUILD_NUMBER:-}" ] && /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $MAS_BUILD_NUMBER" "$plist"
+  /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$plist" 2>/dev/null || true
+  cp "$profiles/Enqueue$kind.provisionprofile" "$app/Contents/embedded.provisionprofile"
+  cp "$profiles/EnqueueShare$kind.provisionprofile" \
+    "$app/Contents/PlugIns/EnqueueShare.appex/Contents/embedded.provisionprofile"
+  # A file a browser downloaded carries com.apple.quarantine, which the store refuses.
+  xattr -cr "$app"
+
+  echo "==> Signing inside-out ($ident)"
+  local engine_ents="$REPO/desktop/Entitlements.engine.plist"
+  while IFS= read -r -d '' f; do
+    local kind_of
+    kind_of="$(file -b "$f")"
+    case "$kind_of" in
+      *Mach-O*executable*)
+        codesign --force --sign "$ident" --entitlements "$engine_ents" "$f" >/dev/null ;;
+      *Mach-O*)
+        codesign --force --sign "$ident" "$f" >/dev/null ;;
+    esac
+  done < <(find "$app/Contents/Resources/engine" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) -print0)
+  codesign --force --sign "$ident" --entitlements "$REPO/desktop/share-extension/Share.mas.entitlements" \
+    "$app/Contents/PlugIns/EnqueueShare.appex"
+  codesign --force --sign "$ident" --entitlements "$REPO/desktop/Entitlements.mas.plist" "$app"
+  codesign --verify --deep --strict "$app"
+  if xattr -r -l "$app" 2>/dev/null | grep -q quarantine; then
+    echo "error: a file in the bundle still carries com.apple.quarantine" >&2; exit 1
+  fi
+
+  if [ "$dev" = 1 ]; then
+    echo; echo "Built (signed for this Mac): $app"
+    return
+  fi
+  local pkg="$REPO/desktop/target/release/bundle/macos/Enqueue.pkg"
+  rm -f "$pkg"
+  productbuild --component "$app" /Applications --sign "$installer" "$pkg"
+  echo; echo "Built: $pkg"
 }
 
 # latest.json, the feed an installed app reads (tauri.conf.json plugins.updater):

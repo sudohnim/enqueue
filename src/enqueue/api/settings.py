@@ -27,7 +27,7 @@ def read_settings() -> dict:
         "sync": settings.sync_state(),
         # What this copy of Enqueue can do: the Mac app ships without the preview
         # browser, so its setting is not offered there.
-        "features": {"preview_browser": preview.browser_available()},
+        "features": {"preview_browser": preview.browser_available(), "channel": config.CHANNEL},
     }
 
 

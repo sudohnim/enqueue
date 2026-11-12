@@ -478,7 +478,10 @@ def state() -> dict:
         "picture": picture_file() is not None,
         # A Mac waiting for another device to approve it (sync/join.py).
         "join": _join_status(),
+        # How this Mac app ships (config.CHANNEL): the App Store build buys Pro itself.
+        "channel": config.CHANNEL,
         "plan": {
+            "account_id": settings.get("account_id") or "",
             "tier": settings.get("account_tier") or "free",
             "pro_until": settings.get("account_pro_until") or None,
             "used_bytes": settings.get("account_used_bytes") or 0,

@@ -10,12 +10,22 @@ description = "Enqueue"
 name = "enqueue_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# The two ways the Mac app ships. The .dmg (the default) updates itself from a signed
+# feed; the Mac App Store build (`--no-default-features --features mas`) has no updater,
+# since the store delivers every update, and tells its engine so (ENQ_CHANNEL).
+[features]
+default = ["updater"]
+updater = ["dep:tauri-plugin-updater"]
+mas = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Builds and links mac-billing (the App Store build's StoreKit), build.rs.
+swift-rs = { version = "1.0.9", features = ["build"] }
 serde_json = "1"
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = [] }
 # Only used to pick the hotkey out of GET /settings. Already in the tree via tauri.
 serde_json = "1"
 
@@ -65,8 +75,14 @@ tauri-plugin-native = { path = "plugins/tauri-plugin-native" }
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
-# A shipped Mac app updates itself from a signed feed (lib.rs watch_for_updates).
-tauri-plugin-updater = "2"
+# The .dmg updates itself from a signed feed (lib.rs watch_for_updates).
+tauri-plugin-updater = { version = "2", optional = true }
+
+# The capture card's rounded corners and shadow (public AppKit, lib.rs round_card), and
+# the person's real home folder under the App Store sandbox (lib.rs real_home).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+libc = "0.2"
 
 # On Linux the dialog plugin needs a file-dialog backend, which its default features
 # pick and the `default-features = false` above turns off; without it rfd refuses to
@@ -106,3 +122,4 @@ objc2 = "0.6"
 
 [patch.crates-io]
 swift-rs = { path = "vendor/swift-rs" }
+tao = { path = "vendor/tao" }

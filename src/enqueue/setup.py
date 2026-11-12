@@ -333,6 +333,18 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
                 " in again and approve it from this Mac.",
             )
     _storage_alerts(say, free)
+    from . import datadir
+
+    if datadir.LEFT_BEHIND:
+        say(
+            "library-left-behind",
+            WARN,
+            "storage",
+            "",
+            "Your library from the downloaded Enqueue is still in its old folder, which this"
+            " version cannot open. Quit this one, open the downloaded Enqueue once so it moves"
+            " the library, then open this one again.",
+        )
     if sync["keyring_legacy"]:
         say(
             "keyring-legacy",

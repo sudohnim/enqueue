@@ -1562,7 +1562,14 @@ async function chooseBackupDir() {
 	} catch (err) {
 		return toast("Could not open the folder picker: " + String(err.message || err), true);
 	}
-	if (typeof picked === "string" && picked) useBackupDir(picked);
+	if (typeof picked !== "string" || !picked) return;
+	// Keep the folder open across launches (the App Store sandbox closes it otherwise).
+	try {
+		await window.__TAURI__.core.invoke("remember_folder", { path: picked });
+	} catch (err) {
+		return toast("Enqueue could not keep access to that folder: " + String(err.message || err), true);
+	}
+	useBackupDir(picked);
 }
 
 async function useBackupDir(path) {
@@ -2400,59 +2407,151 @@ const PRO_PITCH = [
 	"If Enqueue is useful to you, Pro keeps the lights on.",
 ];
 
-// The upgrade sheet, from the account menu and Settings, Sync. It buys through the web
-// checkout when the relay names one, and points to the phone when it does not.
+// The upgrade sheet, from the account menu, Settings, Sync, and every limit that is hit.
+// The App Store build buys through Apple (mac-billing); the .dmg opens the web checkout
+// when the relay names one, else says how to upgrade on the phone.
 async function openUpgrade(why) {
-	let plan = (accountMenuMe && accountMenuMe.plan) || {};
+	let me = accountMenuMe || {};
 	try {
-		accountMenuMe = await api("/account");
-		plan = accountMenuMe.plan || plan;
+		me = accountMenuMe = await api("/account");
 	} catch {
-		// show the sheet from the plan as last read
+		// show the sheet from the account as last read
 	}
-	const buy = plan.checkout_url;
+	const plan = me.plan || {};
+	const apple = me.channel === "mas";
+	let pkg = null;
+	if (apple && me.signed_in && plan.account_id) {
+		const bridge = window.__TAURI__ && window.__TAURI__.core;
+		const started = bridge ? await bridge.invoke("mac_billing_start", { accountId: plan.account_id }) : {};
+		if (started.ok) {
+			const offers = await bridge.invoke("mac_billing_offerings");
+			pkg = (offers.packages || [])[0] || null;
+		}
+	}
+	const cta = !apple
+		? "Upgrade now, $4.99 a month"
+		: !me.signed_in
+			? "Sign in to upgrade"
+			: pkg
+				? "Upgrade now, " + pkg.price + " a month"
+				: "Upgrade now";
 	const box = modalShell(
 		'<h2 id="upgradeTitle">Help me pay for the storage</h2>' +
 			(UPGRADE_FOR[why] ? '<p class="upgrade-why">' + esc(UPGRADE_FOR[why]) + "</p>" : "") +
 			PRO_PITCH.map((line) => "<p>" + esc(line) + "</p>").join("") +
-			(buy ? "" : '<p class="upgrade-where">Upgrade in Enqueue on your phone, under Settings, Plan.</p>') +
 			'<div class="asked">' +
 			'<button class="btn secondary" value="no">Not now</button>' +
-			(buy ? '<button class="btn primary" value="yes">Upgrade for $4.99 a month</button>' : "") +
-			"</div>",
-		{ labelledBy: "upgradeTitle", backdrop: true, focusSel: buy ? '[value="yes"]' : null },
+			'<button class="btn primary" value="yes">' +
+			esc(cta) +
+			"</button>" +
+			"</div>" +
+			(apple ? appleTermsHtml() : ""),
+		{ labelledBy: "upgradeTitle", backdrop: true, focusSel: '[value="yes"]' },
 	);
 	box.classList.add("upgrade");
-	if (!buy) return;
-	box.querySelector('[value="yes"]').onclick = () => {
+	const restore = box.querySelector(".upgrade-restore");
+	if (restore)
+		restore.onclick = async () => {
+			box.finish(true);
+			const done = await window.__TAURI__.core.invoke("mac_billing_restore");
+			if (done.ok && done.pro) waitForPro("Pro is back on this Mac.");
+			else toast(done.ok ? "No Enqueue Pro purchase was found for this Apple Account." : done.message || "Restore did not work. Try again.", !done.ok);
+		};
+	box.querySelectorAll("[data-link]").forEach((a) =>
+		a.addEventListener("click", (e) => {
+			e.preventDefault();
+			openLink(a.dataset.link);
+		}),
+	);
+	box.querySelector('[value="yes"]').onclick = async () => {
 		box.finish(true);
-		goPro(buy);
+		if (apple) return buyWithApple(me, pkg);
+		let url = plan.checkout_url;
+		if (!url) {
+			try {
+				url = (await api("/account/plan/refresh", { method: "POST" })).checkout_url;
+			} catch {
+				url = null;
+			}
+		}
+		if (url) return goPro(url);
+		upgradeOnPhone();
 	};
 }
 
-// Opens the checkout in the browser, then asks the relay every 5 seconds for up to 15
-// minutes: the purchase reaches it through RevenueCat's webhook, not through this page.
-async function goPro(url) {
+// What App Review asks to see beside a subscription's buy button: renewal, how to cancel,
+// Restore, the terms and the privacy policy.
+function appleTermsHtml() {
+	return (
+		'<p class="upgrade-fine">Billed to your Apple Account each month. It renews unless you cancel at ' +
+		"least 24 hours before the month ends, in the App Store, under your account, Subscriptions. " +
+		'<button type="button" class="linkbtn upgrade-restore">Restore purchases</button> · ' +
+		'<a href="#" data-link="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/">Terms of Use</a> · ' +
+		'<a href="#" data-link="https://sudohnim.com/privacy">Privacy Policy</a></p>'
+	);
+}
+
+function openLink(url) {
 	const bridge = window.__TAURI__ && window.__TAURI__.core;
-	try {
-		if (bridge) await bridge.invoke("open_external", { url });
-		else window.open(url, "_blank", "noopener");
-	} catch (err) {
-		return toast(String((err && err.message) || err), true);
+	if (bridge) bridge.invoke("open_external", { url }).catch(() => {});
+	else window.open(url, "_blank", "noopener");
+}
+
+async function buyWithApple(me, pkg) {
+	if (!me.signed_in) {
+		toast("Pro belongs to your Enqueue sync account. Sign in first, then upgrade.");
+		currentSettingsTab = "sync";
+		return showSettings();
 	}
+	if (!pkg) return toast("The App Store did not answer. Try again in a minute.", true);
+	const done = await window.__TAURI__.core.invoke("mac_billing_purchase", { packageId: pkg.id });
+	if (done.ok) return waitForPro("You're on Pro. Thank you.");
+	if (done.reason !== "cancelled") toast(done.message || "The purchase did not go through.", true);
+}
+
+// The .dmg with no web checkout: Pro is bought in the phone app, and shows here once the
+// purchase reaches the relay.
+function upgradeOnPhone() {
+	const box = modalShell(
+		'<h2 id="phoneTitle">Upgrade in the phone app</h2>' +
+			"<p>Open Enqueue on your iPhone or Android phone, signed in with the same account, and " +
+			"choose Upgrade. Pro turns on here a minute later.</p>" +
+			"<p>No phone app yet? Get it here:</p>" +
+			'<div class="asked">' +
+			'<button class="btn secondary" value="no">Done</button>' +
+			'<button class="btn secondary" data-link="https://play.google.com/store/apps/details?id=com.sudohnim.enqueue">Google Play</button>' +
+			'<button class="btn primary" data-link="https://apps.apple.com/app/id6827283714">App Store</button>' +
+			"</div>",
+		{ labelledBy: "phoneTitle", backdrop: true },
+	);
+	box.classList.add("upgrade");
+	box.querySelectorAll("[data-link]").forEach((b) => (b.onclick = () => openLink(b.dataset.link)));
+	waitForPro("You're on Pro. Thank you.", true);
+}
+
+// Opens the checkout in the browser, then waits for the purchase to reach the relay
+// through RevenueCat's webhook.
+async function goPro(url) {
+	openLink(url);
 	toast("Finish in your browser. Pro shows here once it goes through.");
+	waitForPro("You're on Pro. Thank you.");
+}
+
+// Asks the relay every 5 seconds, for up to 15 minutes, until the plan is Pro.
+async function waitForPro(said, quiet) {
 	for (let i = 0; i < 180; i++) {
-		await new Promise((r) => setTimeout(r, 5000));
+		await new Promise((r) => setTimeout(r, i ? 5000 : 1500));
 		let plan;
 		try {
 			plan = await api("/account/plan/refresh", { method: "POST" });
-		} catch (err) {
+		} catch {
 			continue;
 		}
 		const row = document.getElementById("accountPlan");
 		if (row) row.innerHTML = planRow(plan);
-		if (plan.tier === "pro") return toast("You're on Pro. Thank you.");
+		if (plan.tier === "pro") return toast(said);
 	}
+	if (!quiet) toast("Pro has not reached Enqueue yet. It shows here once it does.");
 }
 
 function deviceWhen(seconds) {

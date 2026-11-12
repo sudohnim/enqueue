@@ -5,16 +5,33 @@ different model or endpoint never needs a code change.
 """
 
 import os
+import pwd
 from pathlib import Path
 
-# Where the library lives (datadir.py): the place a Mac app keeps what it owns, or the
-# XDG data folder elsewhere. ENQ_DATA_DIR points it anywhere else.
+# How this engine was shipped: "dmg" (Developer ID download) or "mas" (Mac App Store),
+# set by the desktop shell that starts it; empty when it runs from the repository.
+CHANNEL = os.getenv("ENQ_CHANNEL", "")
+# The person's home folder. The App Store sandbox points Path.home() at the app's
+# container, so anything shared between the two builds is found from here.
+REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
+# The team's app group: the Share extension's inbox, and the shipped app's library, which
+# the .dmg and the App Store build can both reach (datadir.py).
+APP_GROUP = "572NMYL3ZG.com.sudohnim.enqueue"
+GROUP_DIR = REAL_HOME / "Library" / "Group Containers" / APP_GROUP
+MAC = os.uname().sysname == "Darwin"
+# Where the library lives (datadir.py): the app group in a shipped Mac app, Application
+# Support when run from the repository, the XDG data folder elsewhere. ENQ_DATA_DIR
+# points it anywhere else.
 DATA_DIR = Path(
     os.getenv("ENQ_DATA_DIR")
     or (
-        Path.home() / "Library" / "Application Support" / "Enqueue"
-        if os.uname().sysname == "Darwin"
-        else Path(os.getenv("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "enqueue"
+        (
+            GROUP_DIR / "Enqueue"
+            if CHANNEL
+            else REAL_HOME / "Library" / "Application Support" / "Enqueue"
+        )
+        if MAC
+        else Path(os.getenv("XDG_DATA_HOME") or REAL_HOME / ".local" / "share") / "enqueue"
     )
 )
 DB_PATH = DATA_DIR / "enqueue.db"

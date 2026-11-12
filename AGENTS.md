@@ -55,7 +55,7 @@ The phone starts empty; link it to the Mac over a relay both can reach (Settings
 `bin/verify --fast` is the static part, and what the pre-commit hook runs: enable it once with `git config core.hooksPath .githooks`.
 Green proves it parses, passes and compiles; only running it on the Mac or a device proves it works (see [Verifying the Android app on a device](#verifying-the-android-app-on-a-device-headless-over-adb)).
 
-**Where the data lives.** Everything is under `~/Library/Application Support/Enqueue` (`config.DATA_DIR`; `ENQ_DATA_DIR` overrides; an old `~/.enqueue-poc` is moved there at the first start):
+**Where the data lives.** In a shipped Mac app (either channel) everything is under `~/Library/Group Containers/572NMYL3ZG.com.sudohnim.enqueue/Enqueue`; run from the repository, under `~/Library/Application Support/Enqueue` (`config.DATA_DIR`; `ENQ_DATA_DIR` overrides; former folders are moved there at the first start, see Resolved decision 3):
 
 | Path | What it is |
 | --- | --- |
@@ -73,7 +73,7 @@ Tests never touch any of it: `tests/conftest.py` points the process at a tempora
 `bin/deploy` is the front door (Dequeue's): `bin/deploy android dev` runs the `android dev` lane, which builds the signed `.aab` with a fresh versionCode and releases it to Play's internal testing track, completed, so testers get it; `bin/deploy android prod` runs `android prod` after asking; `bin/deploy desktop` runs `mac release`, then, after asking, `mac publish` (see "The Mac app updates itself" under Build notes). `bin/release` alone only builds, so an upload is always its own step. The Play key is Dequeue's `google-play@sudohnim-play-billing` service account (`desktop/play-store-svc.json`, gitignored), invited to Enqueue per app in Play Console.
 `android prod` does the same to production; `ANDROID_PROD_ROLLOUT=0.1` makes it a staged rollout.
 `android next_code` prints the versionCode the next upload would use and changes nothing.
-`mac release` builds the Developer ID signed, notarized and stapled `.dmg`; the Mac app ships outside the App Store, so nothing is uploaded.
+`mac release` builds the Developer ID signed, notarized and stapled `.dmg`, which is published on GitHub; `mac mas` builds the Mac App Store `.pkg` and uploads it to TestFlight for Mac (see "The Mac App Store build" under Build notes).
 `ios beta` uploads a build to TestFlight and `ios metadata` the App Store listing (see [The iOS app](#the-ios-app)).
 The Play lanes need the service account key at `desktop/play-store-svc.json` (gitignored, or `PLAY_JSON_KEY`), and that account invited to the Enqueue app in Play Console.
 The Actions tab's `release` workflow (run by hand with a tag) still builds an APK; it is debug-signed unless the `RELEASE_*` secrets are set.
@@ -124,7 +124,9 @@ The sync, decrypt, apply and render path is device-verified end to end, and a ho
 3. **The library lives in `~/Library/Application Support/Enqueue` (moved 2026-10-14).**
 It was `~/.enqueue-poc` for the proof of concept; a product keeps its data where a Mac app does (`config.DATA_DIR`; the XDG data folder off macOS; `ENQ_DATA_DIR` overrides).
 `datadir.move_legacy()` moves an old folder there at the engine's first start (`serve()`, and `enq migrate`/`enq restore`, which work on the files directly), before anything opens a file: one rename on one disk, never a copy, and never over a folder that already holds a library.
-`~/.enqueue-poc` is left as a link to the new folder. The desktop shell reads its pointers (`repo`, `capture-position`) from the new folder and falls back to the old (`data_dir`/`library_file` in `desktop/src/lib.rs`); `bin/launch` writes them to the new one.
+`~/.enqueue-poc` is left as a link to the new folder.
+**Moved again 2026-11-09: a shipped app keeps the library in the team's app group** (`config.GROUP_DIR`), because the Mac App Store sandbox cannot reach Application Support and the `.dmg` and the App Store build must share one library. `datadir.FORMER` lists every former home; the first shipped start moves the library from Application Support into the group and leaves Application Support as a link, so an engine run from the repository still finds it. The App Store build cannot read Application Support at all: a person moving from the `.dmg` opens the updated `.dmg` once first. Under the sandbox `Path.home()` is the app's container, so shared paths start from `config.REAL_HOME`.
+The desktop shell reads its pointers (`repo`, `capture-position`) from the new folder and falls back to the old (`data_dir`/`library_file` in `desktop/src/lib.rs`); `bin/launch` writes them to the new one.
 The path has a space in it: quote it in every script.
 
 4. **`instructor.Mode.JSON` is used for every OpenAI-protocol backend.**
@@ -273,13 +275,12 @@ Two windows:
 - **main** - the home window (the wall), loaded from `http://127.0.0.1:8787/`
 - **capture** - the quick-capture overlay, loaded from `http://127.0.0.1:8787/capture`
 
-The capture overlay is a transparent, undecorated, always-on-top window summoned by a global hotkey (default `Alt+Shift+E`).
+The capture overlay is an undecorated, always-on-top window summoned by a global hotkey (default `Alt+Shift+E`). The window is the card: AppKit rounds its corners and draws its shadow (`round_card` in `desktop/src/lib.rs`, public `NSWindow` calls), and the page paints the card edge to edge.
 It is built once at startup and then only shown and hidden, so there is no webview boot between the keypress and the caret.
 In the overlay, a plain Enter saves (the same path as the Save button), Shift+Enter inserts a newline, and Escape dismisses without discarding the draft (CAP2.1).
-On a successful capture the raven flight plays INSIDE the capture overlay, then it dismisses (CAP2.2). A separate always-on-top flight window was tried and abandoned: a background app's window cannot reliably float above the frontmost app on macOS (`NSFloatingWindowLevel` is not enough, and Tauri's `.show()`/`.set_focus()` steals focus), but the capture overlay is already summoned over whatever app the person was in, so playing the flight there needs no window-level hacks.
+On a successful capture the raven flight plays across the card (its contents hidden), then it dismisses (CAP2.2). A separate always-on-top flight window was tried and abandoned: a background app's window cannot reliably float above the frontmost app on macOS (`NSFloatingWindowLevel` is not enough, and Tauri's `.show()`/`.set_focus()` steals focus), but the capture overlay is already summoned over whatever app the person was in, so playing the flight there needs no window-level hacks.
 
-The shell uses `macOSPrivateApi: true` for the transparent capture window.
-This is an App Review exposure to be aware of if the app is ever submitted to the App Store.
+The card was a see-through window until 2026-11-09; that needs `macOSPrivateApi`, which the App Store refuses, so it is gone from both builds. Do not bring back `.transparent(true)` on a desktop window.
 
 ---
 
@@ -1280,9 +1281,19 @@ The engine is a relocatable CPython 3.12 (python-build-standalone, the one uv ma
 - **Signing.** With `APPLE_SIGNING_IDENTITY="Developer ID Application: Sudohnim, LLC (572NMYL3ZG)"` every Mach-O in the engine is signed inside-out with the hardened runtime and `desktop/Entitlements.plist` (library validation off, dyld variables, JIT), then Tauri signs the app.
 - **Notarizing.** Once per Mac, `xcrun notarytool store-credentials enqueue-notary --apple-id <you> --team-id 572NMYL3ZG` (it asks for an app-specific password from appleid.apple.com, which stays in the keychain); then `NOTARY_PROFILE=enqueue-notary bin/release desktop` submits the `.dmg`, waits, staples it and checks it with `spctl`.
 
+### The Mac App Store build (2026-11-09)
+
+The Mac app ships two ways from one codebase: the `.dmg` (Developer ID, notarized, updating itself) and the Mac App Store build. The shell's Cargo feature `mas` (`--no-default-features --features mas`) makes the App Store build; it has no updater (feature `updater`, default on) and passes `ENQ_CHANNEL=mas` to its engine (`dmg` otherwise; empty from the repository), which `GET /account` and `GET /settings` report as `channel`.
+- **Build.** `bin/release desktop --channel mas` vendors the engine, builds the app with `tauri.mas.conf.json` over the release overlay, embeds the profiles, signs inside-out by hand (each engine executable with `desktop/Entitlements.engine.plist`: sandbox + inherit; libraries plain; the Share extension with `Share.mas.entitlements`; the app with `desktop/Entitlements.mas.plist`), and makes `Enqueue.pkg` with the installer certificate. `--dev` signs with the development certificate and profiles instead, so the sandboxed app runs on this Mac before an upload. `bundle exec fastlane mac mas` picks a build number (`fastlane/.mac-build-number`), builds and uploads to TestFlight for Mac.
+- **Apple side.** The Mac app shares the iPhone app's record and bundle id (`com.sudohnim.enqueue`, universal purchase), so the same `enqueue_pro_monthly` and the same RevenueCat App Store app serve both. The Share extension has its own App ID (`com.sudohnim.enqueue.share`). Profiles live in `~/.appstoreconnect/profiles` (`Enqueue[.dev].provisionprofile`, `EnqueueShare[.dev].provisionprofile`), made through the App Store Connect API.
+- **What the sandbox allows, measured 2026-11-09** (a sandboxed test app running the bundled Python): SQLCipher, ONNX Runtime, the server on 127.0.0.1, outbound HTTPS, child processes, the WebKit link reader, Ollama on 11434 and `/usr/bin/security` all work. `/usr/bin/security` from the sandboxed engine reads and writes the same login-keychain items as the `.dmg`, so both builds share the library key and the rest with no change to `keyring.py`. The Security framework from the engine does not (`-34018`: a child with `inherit` may hold no `keychain-access-groups`). Application Support is closed (see Resolved decision 3).
+- **Folders the person picks.** The engine shares the app's sandbox: a folder opened by the shell (the picker, or a security-scoped bookmark resolved at start) is open to the running engine at once. The engine cannot resolve a bookmark itself. So the shell keeps the backup folder's bookmark (`remember_folder`, `folder-access.json` in the data folder) and opens it again before it starts the engine (`reopen_folders`). Import and export ask each time. Proton Drive detection finds nothing under the sandbox; the picker opens there instead.
+- **Buying Pro.** The App Store build buys through StoreKit: `desktop/mac-billing` (a Swift package on RevenueCat, linked by `build.rs` through swift-rs only with `mas`), reached as `mac_billing_start|offerings|purchase|restore`. The RevenueCat user is the Enqueue sync account (`plan.account_id`), so the purchase reaches the relay through the webhook. `openUpgrade` in `js/settings.js` shows the store price, Restore, Apple's terms and the privacy policy. The `.dmg` opens the web checkout when the relay names one, else says how to upgrade in the phone app (`upgradeOnPhone`) and waits for Pro (`waitForPro`).
+
 ### The Mac app updates itself
 
-A shipped app (one with a bundled engine) asks a feed for a newer version a minute after it starts and every six hours (`watch_for_updates` in `desktop/src/lib.rs`, `tauri-plugin-updater`).
+Only the `.dmg` updates itself; the App Store delivers the App Store build's updates.
+A shipped `.dmg` (one with a bundled engine) asks a feed for a newer version a minute after it starts and every six hours (`watch_for_updates` in `desktop/src/lib.rs`, `tauri-plugin-updater`).
 An update whose signature checks out against the public key in `tauri.conf.json` (`plugins.updater.pubkey`) is downloaded and kept in memory (`PendingUpdate`), and the page shows a card at the bottom right, the way Claude's desktop app does: **Update now** (`app_restart`: put it in place, stop the engine and wait for it so the new shell does not attach to the old engine on its port, restart) or **Update on close**, which only puts the card away. Either way it is put in place when the app quits (`install_pending` on `RunEvent::Exit`), so an ignored card still updates (`js/update.js`, `window.__enqUpdateReady`, `update_ready`).
 **The feed** is `latest.json` on a GitHub release tagged `mac-updates` (prerelease, never "latest", so an Android release cannot take its place); its `url` points at `Enqueue.app.tar.gz` on the versioned release `mac-v<version>`, which also carries the `.dmg` people download.
 **The key.** The private half is `~/.tauri/enqueue-updater.key` (made 2026-10-26 with `cargo tauri signer generate`), its password in the Keychain as `enqueue-updater-key-password`; `bin/release desktop` reads both (`TAURI_UPDATER_KEY_FILE` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` override). Lose it and installed copies can never update again: a new key means a new public key in the app, which only a manual download brings. Keep a copy in a password manager.
@@ -1308,7 +1319,6 @@ A plain `bin/release android` without the variable still builds with the derived
 
 - The shell spawns the engine via `uv run enq serve` from the repo directory.
 - A double-clicked app inherits the launch daemon's PATH, which has no `/opt/homebrew/bin`. The shell searches for `uv` at `/opt/homebrew/bin/uv` and `/usr/local/bin/uv`.
-- `macOSPrivateApi: true` is needed for the transparent capture window.
 - Tauri commands: `capture_dismiss`, `capture_drag`, `open_external`, `window_drag`. Each needs both `generate_handler!` registration and a matching permission in `tauri.conf.json`.
 
 ### Verification gate limits
@@ -1602,6 +1612,8 @@ The same Tauri mobile shell and the same `mobile.html` as Android, built for iOS
 The Xcode project is `desktop/gen/apple` (from `cargo tauri ios init`; its own `.gitignore` drops `build/` and `Externals/`); the signing team is `bundle.iOS.developmentTeam` in `tauri.conf.json` (Sudohnim, LLC), the minimum is iOS 16.
 What it took, each of which breaks the build or the screen if undone:
 
+- **`desktop/vendor/tao` is a patched copy of tao 0.35.3** (`[patch.crates-io]`). tao's `application:configurationForConnectingSceneSession:options:` returned `Retained::as_ptr(&config)` and then dropped `config`; in an optimized build the return-value optimization keeps the object out of the autorelease pool, so it was freed before UIKit retained it, and every release build crashed on launch (`objc_retain` in `_connectUISceneFromFBSScene`, SIGSEGV; App Review rejection of 0.3.1 (4), 2026-11-10). A debug build never crashed. The patch is upstream's fix (`Retained::autorelease_ptr`, tao 0.37); drop the copy when Tauri moves to a tao that has it. To check a launch fix, build for the simulator without `--debug` (`cargo tauri ios build --target aarch64-sim`) and run it on the OS App Review names.
+- **Uploading with fastlane needs a UTF-8 locale.** `altool` prints a warning with a curly apostrophe even on success, and fastlane under a US-ASCII locale fails reading it ("invalid byte sequence in US-ASCII") after the upload went through. Run `ios beta` with `LANG=en_US.UTF-8`, and `BUNDLE_PATH=vendor/bundle` (the gems live there, as `bin/deploy` sets).
 - **`desktop/vendor/swift-rs` is a patched copy** (`[patch.crates-io]` in `desktop/Cargo.toml`). Xcode 27 made the Swift Build engine SwiftPM's default; it prelinks each static library into one object, which turns Tauri's `@_cdecl` entry points (`_register_plugin`, `_init_plugin_*`, `_on_webview_created`) into local symbols, and the app fails to link with "Undefined symbols". The patch is one argument, `--build-system native`, under Xcode 27. Drop the copy when swift-rs or Tauri handles it. swift-rs below 1.0.9 does not build under Xcode 27 at all.
 - **Tauri refuses to build without the simulator runtime matching the SDK** ("Xcode Simulator SDK 27.0 is not installed"): `xcodebuild -downloadPlatform iOS`.
 - **`jni` and `ndk-context` are Android-only dependencies.** Anything new that touches JNI must be `#[cfg(target_os = "android")]`, not `#[cfg(mobile)]`.
