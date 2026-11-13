@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>A shared note</title>
+<link rel="stylesheet" href="static/tokens.css">
+<link rel="stylesheet" href="static/base.css">
+<link rel="stylesheet" href="static/artifact.css">
+<link rel="stylesheet" href="static/notetype.css">
+<link rel="stylesheet" href="static/share.css">
+</head>
+<body>
+<main class="share" aria-live="polite">
+  <p class="share-state" id="state">Opening the note...</p>
+  <form class="share-lock" id="lock" hidden>
+    <h1 class="share-lock-title">This note has a passphrase</h1>
+    <p>Type the passphrase you were given with the link.</p>
+    <div class="share-lock-row">
+      <input id="pass" type="password" autocomplete="off" aria-label="Passphrase" required>
+      <button class="btn primary" type="submit">Open</button>
+    </div>
+    <p class="share-lock-error" id="passError" hidden>That passphrase does not open this note.</p>
+  </form>
+  <article id="note" hidden>
+    <p class="share-meta" id="meta"></p>
+    <div class="md notetype" id="body"></div>
+  </article>
+</main>
+<footer class="share-foot">
+  <img src="static/raven.png" alt="" width="28" height="28">
+  <p>Shared from Enqueue. Only people with this link can read it, and Enqueue cannot.</p>
+</footer>
+<script src="static/md.js"></script>
+<script src="static/share.js"></script>
+</body>
+</html>

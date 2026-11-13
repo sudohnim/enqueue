@@ -57,11 +57,18 @@ def _floor_verdict(hit: dict) -> str:
 _UNJUDGED: ContextVar[frozenset[str]] = ContextVar("gray_unjudged", default=frozenset())
 
 
+# At most this many gray hits the judge has not ruled on yet are shown: they are
+# guesses, and a new search with a slow judge showed twenty of them, gibberish included.
+# Similarity cannot tell them apart; on the main eval the real vague matches among them
+# rank as far down as 6th.
+LOOSE_MAX = 6
+
+
 def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
     """Drop floor failures, judge the gray zone in one call.
 
     Order is preserved, except that a gray hit the judge could not rule on is marked
-    `loose` and moved behind every hit that passed on its own.
+    `loose` and moved behind every hit that passed on its own (`LOOSE_MAX` at most).
     """
     gray = [h for h in hits if _floor_verdict(h) == "gray"]
     kept_gray, unjudged = _judge_in_time(query, gray) if gray else (None, frozenset())
@@ -76,7 +83,7 @@ def _apply_floor(query: str, hits: list[dict]) -> list[dict]:
             loose.append({**h, "loose": True})
         else:
             sure.append(h)
-    return sure + loose
+    return sure + loose[:LOOSE_MAX]
 
 
 # A search never waits on the model for long: a slow judge (a thinking model, a retry,
@@ -739,6 +746,25 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     return ranked
 
 
+# Level 0 says what kind of thing an item is ("A short bulleted list of names"). That
+# is true of half a library, so by meaning it matched any search, gibberish included,
+# and carried most of what a slow judge left on the page. It still counts when the
+# search's own words are in it ("receipt", "a list of names").
+LITERAL_LEVEL = 0
+
+
+def without_literal(legs: dict) -> dict:
+    """A facet `search_legs` result with level 0 lines kept only on a keyword hit."""
+    said = {h["facet_id"] for h in legs["keyword"]}
+    return {
+        **legs,
+        "dense": [h for h in legs["dense"] if h.get("level") != LITERAL_LEVEL],
+        "fused": [
+            h for h in legs["fused"] if h.get("level") != LITERAL_LEVEL or h["facet_id"] in said
+        ],
+    }
+
+
 # A lifted claim is the model's restatement, not the person's words: its facet hits
 # count for less than the query's own.
 LIFT_WEIGHT = 0.75
@@ -769,12 +795,13 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
         name: store.search_legs(name, q, limit=per_query, prefetch=prefetch)
         for name in (store.CHUNKS, store.FACETS, store.ENTITIES, store.SECTIONS)
     }
+    legs[store.FACETS] = without_literal(legs[store.FACETS])
     chunk_hits = legs[store.CHUNKS]["fused"]
     facet_hits = legs[store.FACETS]["fused"]
     entity_hits = legs[store.ENTITIES]["fused"]
     section_hits = legs[store.SECTIONS]["fused"]
     lift_legs = [
-        store.search_legs(store.FACETS, claim, limit=per_query, prefetch=prefetch)
+        without_literal(store.search_legs(store.FACETS, claim, limit=per_query, prefetch=prefetch))
         for claim in lifts or []
     ]
     for ll in lift_legs:

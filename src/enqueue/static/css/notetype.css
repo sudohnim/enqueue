@@ -46,6 +46,9 @@
   margin: var(--sp-4) 0 0;
   text-wrap: pretty;
 }
+.notetype p[data-tight] {
+  margin-top: 0;
+}
 /* The line that leads into a list names it. */
 .notetype > p:has(+ ul),
 .notetype > p:has(+ ol) {

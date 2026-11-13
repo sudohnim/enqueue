@@ -1225,3 +1225,44 @@ class TestTheJudgeNeverHoldsASearch:
             release.set()
 
         assert kept == [hits[0]]
+
+
+class TestWhatAGuessMayShow:
+    """A new search with a slow judge showed twenty unjudged guesses, gibberish
+    included, most of them reached through a level 0 line ("A short list of names")."""
+
+    def test_at_most_a_few_unjudged_guesses_are_shown(self, monkeypatch):
+        from enqueue.retrieve import candidates as cand
+
+        sim = (KEEP_ABOVE + DROP_BELOW) / 2
+        hits = [{"artifact_id": f"a{n}", "dense_similarity": sim} for n in range(20)]
+        ids = {h["artifact_id"] for h in hits}
+        monkeypatch.setattr(cand, "_judge_in_time", lambda q, gray: (ids, frozenset(ids)))
+
+        kept = _apply_floor("q", hits)
+
+        assert [h["artifact_id"] for h in kept] == [f"a{n}" for n in range(cand.LOOSE_MAX)]
+        assert all(h["loose"] for h in kept)
+
+    def test_a_judged_hit_is_never_cut(self, monkeypatch):
+        from enqueue.retrieve import candidates as cand
+
+        sim = (KEEP_ABOVE + DROP_BELOW) / 2
+        hits = [{"artifact_id": f"a{n}", "dense_similarity": sim} for n in range(20)]
+        ids = {h["artifact_id"] for h in hits}
+        monkeypatch.setattr(cand, "_judge_in_time", lambda q, gray: (ids, frozenset()))
+
+        assert len(_apply_floor("q", hits)) == 20
+
+    def test_a_level_0_line_counts_only_on_the_searchs_own_words(self):
+        from enqueue.retrieve.candidates import without_literal
+
+        form = {"facet_id": "f0", "artifact_id": "a1", "level": 0, "score": 0.5}
+        said = {"facet_id": "f1", "artifact_id": "a2", "level": 0, "score": 0.5}
+        idea = {"facet_id": "f2", "artifact_id": "a3", "level": 2, "score": 0.5}
+        legs = {"dense": [form, said, idea], "keyword": [said], "fused": [form, said, idea]}
+
+        out = without_literal(legs)
+
+        assert out["dense"] == [idea]
+        assert out["fused"] == [said, idea]

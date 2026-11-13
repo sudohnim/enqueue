@@ -6,7 +6,7 @@
 .sr {
 	max-width: 720px;
 	margin: 0 auto;
-	padding: var(--sp-3) 0 140px;
+	padding: 0 0 140px;
 }
 .sr-field {
 	display: flex;

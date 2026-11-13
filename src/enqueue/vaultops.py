@@ -254,6 +254,9 @@ def _drop_from_index(artifact_id: str) -> None:
 def vault_artifact(artifact_id: str) -> dict:
     """Encrypt the artifact's content at rest and take it out of every live view."""
     key = vault.key()  # raises VaultError if locked
+    from . import share
+
+    share.forget_later(artifact_id)
     now = db.now()
     # Index rows are found only through their chunk/facet ids, so they go before the rows do.
     _drop_from_index(artifact_id)

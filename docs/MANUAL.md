@@ -173,6 +173,16 @@ Enqueue keeps drafts of a note as you write: how it began, one for each five min
 
 On the phone, Details shows the drafts and the switch; the list and the comparison work the same way.
 
+### Sharing a note
+
+A note can be shared as a read-only web link, with Enqueue Pro and sync turned on.
+- **Details > Share > Share this note** asks how long the link opens (1 day, 1 week, or until you stop it) and for an optional passphrase, then copies the link.
+- Anyone with the link reads the note in a browser, with no app and no account. Enqueue cannot read it: the key is in the link, after the `#`.
+- With a passphrase, the link alone opens nothing. Send the passphrase apart from the link.
+- The link shows the note as it was when you shared it. After you edit it, Details says so; **Update the shared copy** sends the new text to the same link.
+- **Stop sharing** ends the link for everyone. Moving the note to the trash or the vault, or keeping it on this Mac only, stops sharing too.
+- Pictures in a note do not show in the shared copy.
+
 ## Links, PDFs, images and files
 
 These are **captures**: kept exactly as they were, never edited.

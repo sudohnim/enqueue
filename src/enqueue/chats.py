@@ -29,6 +29,8 @@ REMOTE_PASSAGES = 20
 REMOTE_PASSAGE_WORDS = 400
 # Max chunks per artifact in a passage set, so one long note cannot crowd out the rest.
 CHUNKS_PER_ARTIFACT = 2
+# A passage from a note the question names ranks above any search score (RRF, < 0.1).
+NAMED_SCORE = 1.0
 # Turns of the conversation shown to the model that restates a follow-up.
 REWRITE_TURNS = 6
 # A follow-up this short cannot be searched for by itself.
@@ -372,7 +374,8 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
     conn = db.get_conn()
     try:
         from .index.store import get_store
-        from .retrieve.candidates import _cached_verdicts, _floor_verdict
+        from .retrieve.candidates import _cached_verdicts, _floor_verdict, without_literal
+        from .retrieve.names import named
 
         # The gray zone is not sent to a judge here. The answering model reads every
         # passage it is given and is told to refuse when none fits, so a judge call
@@ -450,10 +453,13 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
             name: store.search_legs(name, question, limit=4)
             for name in (store.FACETS, store.ENTITIES, store.SECTIONS)
         }
+        fe_legs[store.FACETS] = without_literal(fe_legs[store.FACETS])
         # Query lifting (retrieve/lift.py): facet-style restatements of the question
         # search the facet index too. Their dense similarity counts; never lexical.
         claims = lifting(config.CHAT_PREP_WAIT_S) or []
-        lift_legs = [store.search_legs(store.FACETS, claim, limit=4) for claim in claims]
+        lift_legs = [
+            without_literal(store.search_legs(store.FACETS, claim, limit=4)) for claim in claims
+        ]
         facet_hits = fe_legs[store.FACETS]["fused"] + [h for ll in lift_legs for h in ll["fused"]]
         for ll in lift_legs:
             for hit in ll["dense"][:window]:
@@ -589,6 +595,16 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
                     _pull_section(aid, int(why.split()[1]), why, score)
                 else:
                     _pull_opening(aid, why, score)
+
+        # The notes the question names, by title or by a name in them, each with its
+        # passage closest to the question; ahead of the rest, since a name is the
+        # plainest proof there is.
+        for aid in named(question, max(1, limit // 2)):
+            best = store.search_within(aid, question, 1)
+            if best:
+                found[best[0]] = {"score": NAMED_SCORE, "why": "named"}
+            else:
+                _pull_opening(aid, "named", NAMED_SCORE)
 
         if not found:
             return []

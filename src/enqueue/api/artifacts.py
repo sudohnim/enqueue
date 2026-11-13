@@ -142,7 +142,61 @@ def set_flags(artifact_id: str, req: ArtifactFlags) -> dict:
     from ..sync.client import push_artifact
 
     push_artifact(artifact_id)
+    if changes.get("local_only"):
+        from .. import share
+
+        share.forget_later(artifact_id)
     return notes.get(artifact_id)
+
+
+# ------------------------------------------------------------------------- sharing
+
+
+class ShareCreate(BaseModel):
+    expires: str = "never"
+    passphrase: str | None = None
+
+
+def _sharing(fn, *args):
+    from .. import share
+
+    try:
+        return fn(*args)
+    except share.ShareError as exc:
+        raise HTTPException(
+            status_code=exc.status, detail={"message": str(exc), "code": exc.code}
+        ) from None
+
+
+@router.get("/artifacts/{artifact_id}/share")
+def share_info(artifact_id: str) -> dict:
+    from .. import share
+
+    return _sharing(share.info, artifact_id)
+
+
+@router.post("/artifacts/{artifact_id}/share")
+def share_create(artifact_id: str, req: ShareCreate) -> dict:
+    """Share a note: a new read-only link, sealed as the note is now."""
+    from .. import share
+
+    return _sharing(share.create, artifact_id, req.expires, (req.passphrase or "").strip() or None)
+
+
+@router.put("/artifacts/{artifact_id}/share")
+def share_update(artifact_id: str) -> dict:
+    """Replace the shared copy with the note as it is now; the link stays."""
+    from .. import share
+
+    return _sharing(share.update, artifact_id)
+
+
+@router.delete("/artifacts/{artifact_id}/share")
+def share_stop(artifact_id: str) -> dict:
+    from .. import share
+
+    _sharing(share.stop, artifact_id)
+    return {"shared": False}
 
 
 @router.delete("/artifacts/{artifact_id}")

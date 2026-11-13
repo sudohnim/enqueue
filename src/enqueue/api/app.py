@@ -142,6 +142,13 @@ def serve() -> None:
         print(f"[engine] could not auto-load the sync keyring: {exc}")
 
     try:
+        from .. import share
+
+        threading.Thread(target=share.retry_stops, name="share-stops", daemon=True).start()
+    except Exception as exc:  # noqa: BLE001 - never block startup on housekeeping
+        print(f"[engine] could not check shared notes: {exc}")
+
+    try:
         expired = trash.purge_expired()
         if expired["purged"]:
             print(f"[engine] purged {expired['purged']} artifact(s) past the trash window")

@@ -188,6 +188,17 @@
     box-shadow: var(--hairline);
     transition: box-shadow var(--dur-fast) var(--ease);
   }
+  /* WebKit draws its own select over padding, fill and edge unless told not to. */
+  .field select {
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%235f5578' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px;
+    cursor: pointer;
+  }
   .field input:focus,
   .field select:focus,
   .field textarea:focus {
@@ -225,7 +236,7 @@
   .field input[disabled],
   .field select[disabled],
   .field textarea[disabled] {
-    background: var(--line-soft);
+    background-color: var(--line-soft);
     box-shadow: none;
     color: var(--text-mute);
     opacity: 0.55;
@@ -669,7 +680,8 @@
     margin: var(--sp-7, 40px) 0 var(--sp-3);
     text-transform: none;
   }
-  .settings-page #settingsTabPane > .shelf:first-of-type,
+  .settings-page #settingsTabPane > .shelf:first-child,
+  .settings-page #settingsTabPane > .h2:first-child + .shelf,
   .settings-page #settingsTabPane > .settings-card:first-child .settings-card-label {
     margin-top: 0;
   }
@@ -751,6 +763,11 @@
     border-top: 0;
     margin-top: 0;
     padding-top: var(--sp-4);
+  }
+  /* A row with no sentence centres its label on the control beside it. */
+  .settings-page .field:not(:has(> .aside, > .pinned, > .facts, > div[id])) > label {
+    grid-row: 1 / span 4;
+    align-self: center;
   }
   .settings-page .field > label,
   .settings-page .field > .rowlabel {

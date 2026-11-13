@@ -304,7 +304,7 @@ async function renderSettingsAI() {
 		html += fieldRow("llm_url", esc(SETTING_LABELS.llm_url), {
 			value: f.value,
 			locked: f.locked,
-			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
+			pinned: "Set outside Enqueue (" + esc(f.env_var) + ").",
 		});
 	}
 	settingsBackends = d.backends;
@@ -357,7 +357,7 @@ async function renderSettingsAI() {
 				max: 10,
 				value: retries.value,
 				locked: retries.locked,
-				pinned: "set outside Enqueue (" + esc(retries.env_var) + ")",
+				pinned: "Set outside Enqueue (" + esc(retries.env_var) + ").",
 				aside: "How many times to ask again when an answer comes back garbled.",
 			}) +
 			"</div>",
@@ -458,7 +458,7 @@ function searchSwitchRow(s, name, onText, offText) {
 		esc(SETTING_LABELS[name]) +
 		"</span>" +
 		(s.locked
-			? '<div class="pinned">set outside Enqueue (' + esc(s.env_var) + ")</div>"
+			? '<div class="pinned">Set outside Enqueue (' + esc(s.env_var) + ").</div>"
 			: '<div class="aside">' + (on ? onText : offText) + "</div>") +
 		"</div>" +
 		'<button class="toggle" role="switch" aria-checked="' +
@@ -577,7 +577,7 @@ function modelsGroup(d, picked) {
 		html += fieldRow(name, esc(SETTING_LABELS[name]), {
 			value: f.value,
 			locked: f.locked,
-			pinned: "set outside Enqueue (" + esc(f.env_var) + ")",
+			pinned: "Set outside Enqueue (" + esc(f.env_var) + ").",
 			list: listed ? (name === "vision_model" ? "visionOptions" : "modelOptions") : "",
 			placeholder:
 				name === "summarize_model" || name === "search_model"
@@ -1013,7 +1013,7 @@ async function renderSettingsFeatures() {
 		esc(keyLabel(hk.value)) +
 		"</span></button>" +
 		(hk.locked
-			? '<div class="pinned">set outside Enqueue (' + esc(hk.env_var) + ")</div>"
+			? '<div class="pinned">Set outside Enqueue (' + esc(hk.env_var) + ").</div>"
 			: '<div class="aside">Opens the capture box from any app. Click, then press the keys you want.</div>') +
 		"</div></div>";
 
@@ -1026,7 +1026,7 @@ async function renderSettingsFeatures() {
 		esc(SETTING_LABELS.auto_preview) +
 		"</span>" +
 		(ap.locked
-			? '<div class="pinned">set outside Enqueue (' + esc(ap.env_var) + ")</div>"
+			? '<div class="pinned">Set outside Enqueue (' + esc(ap.env_var) + ").</div>"
 			: '<div class="aside">' +
 				(apOn
 					? "Enqueue fetches the page's title and picture once, as you save it."
@@ -1184,7 +1184,7 @@ async function renderDraftsSection(d) {
 		", " +
 		esc(bytes(st.bytes)) +
 		'. <button class="linkish" onclick="applyDraftPolicy(this)">Tidy up now</button></div>' +
-		(f.locked ? '<div class="pinned">set outside Enqueue (' + esc(f.env_var) + ")</div>" : "") +
+		(f.locked ? '<div class="pinned">Set outside Enqueue (' + esc(f.env_var) + ").</div>" : "") +
 		"</div></div>"
 	);
 }
@@ -1642,13 +1642,13 @@ async function renderSettingsTrash() {
 			max: 3650,
 			value: td.value,
 			locked: td.locked,
-			pinned: "set outside Enqueue (" + esc(td.env_var) + ")",
+			pinned: "Set outside Enqueue (" + esc(td.env_var) + ").",
 			aside: "Days. After that, deleted things are gone for good. Nothing else is ever removed.",
 		}) +
 		"</div>";
 	html += '<div class="shelf">In the trash</div><div class="group">';
 	if (!trash.items.length) {
-		html += '<div class="aside">Nothing in the trash.</div>';
+		html += '<div class="aside">Nothing in the trash.</div></div>';
 	} else {
 		html +=
 			'<div class="callout warn">Emptying the trash deletes these for good.</div>' +
@@ -2397,6 +2397,7 @@ const UPGRADE_FOR = {
 	"sync-full": "Enqueue sync is full. New changes stay on this Mac until there is room.",
 	"sync-nearly-full": "Enqueue sync is almost full.",
 	computers: "Your free plan covers one computer, and another one is already signed in.",
+	share: "Sharing a note as a link is part of Pro.",
 };
 
 // The pitch for Pro, the same words as the phone's paywall (paywallSheet in mobile.html).
@@ -2930,7 +2931,7 @@ function telemetryCard(t) {
 		'<div class="field"><div class="togglerow"><div>' +
 		'<span class="rowlabel">Send error reports</span>' +
 		(t.locked
-			? '<div class="pinned">set outside Enqueue (' + esc(t.env_var) + ")</div>"
+			? '<div class="pinned">Set outside Enqueue (' + esc(t.env_var) + ").</div>"
 			: '<div class="aside">When something breaks, where in Enqueue it broke, so it can be fixed. ' +
 				"Never what you saved, searched for or asked, and never who you are.</div>") +
 		"</div>" +

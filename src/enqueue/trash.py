@@ -45,6 +45,9 @@ def retention_days() -> int:
 
 def delete(artifact_id: str) -> dict:
     """Mark an artifact deleted and take it out of retrieval immediately."""
+    from . import share
+
+    share.forget_later(artifact_id)
     now = _now().isoformat()
     # Index rows are found only through their chunk/facet ids, so they go before the rows do.
     _drop_from_index(artifact_id)

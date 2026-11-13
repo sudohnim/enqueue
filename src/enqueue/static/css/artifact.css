@@ -1,6 +1,7 @@
   /* ---- the artifact ------------------------------------------------------- */
   .back {
     margin-bottom: var(--sp-4);
+    margin-left: -16px;
   }
   .h1 {
     margin-top: var(--sp-4);
@@ -113,7 +114,6 @@
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);
-    margin: 0 var(--sp-1);
   }
   .title-action svg {
     width: 22px;
@@ -669,6 +669,11 @@
   .md p,
   .editor p {
     margin: var(--sp-4) 0 0;
+  }
+  /* A line written under another with no blank line between (Shift+Enter). */
+  .md p[data-tight],
+  .editor p[data-tight] {
+    margin-top: 0;
   }
   .md ul,
   .md ol,

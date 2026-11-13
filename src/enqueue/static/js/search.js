@@ -113,8 +113,8 @@
     const terms = searchTerms(q);
     const rank = (h) => r.hits.indexOf(h) + 1;
     view.innerHTML =
-      back() +
       '<div class="sr">' +
+      back() +
       '<form class="sr-field" role="search" onsubmit="event.preventDefault(); searchAgain()">' +
       '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>' +
       '<input id="searchfield" type="search" value="' +

@@ -1194,6 +1194,9 @@
       viewsRowHtml(d.views, id) +
       summaryHtml +
       (a.kind === "note" ? draftsSectionHtml(a, d.versions.length) : "") +
+      (a.kind === "note" && !a.local_only
+        ? '<section class="dsec sharesec" id="shareSec"></section>'
+        : "") +
       '<section class="dsec connections" id="connections"></section>' +
       "</div></aside>";
 
@@ -1202,6 +1205,7 @@
     mountViewsRow(id);
     mountRelatedRow();
     mountConnections(id);
+    mountShare(id);
     mountEditor(focus);
     mountTitleEdit(id);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
@@ -2293,6 +2297,18 @@
               return;
             }
           }
+        }
+        // In a paragraph, Enter starts a new one and Shift+Enter a line right under
+        // it (saved with no blank line between). WebKit makes a paragraph for both.
+        const para = el && el.closest ? el.closest("p") : null;
+        if (para && para.parentElement === ed && !e.isComposing) {
+          e.preventDefault();
+          document.execCommand("insertParagraph");
+          const at = window.getSelection().anchorNode;
+          let line = at && (at.nodeType === 1 ? at : at.parentElement);
+          while (line && line.parentElement !== ed) line = line.parentElement;
+          if (line && line !== para) line.toggleAttribute("data-tight", e.shiftKey);
+          ed.dispatchEvent(new Event("input"));
         }
       }
       // Tab indents: inside a list it nests the item one level deeper (Shift+Tab

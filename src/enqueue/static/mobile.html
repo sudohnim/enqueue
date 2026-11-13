@@ -897,7 +897,7 @@
   .writer-tabs {
     flex: none;
     margin-top: 6px;
-    padding: 0 8px;
+    padding: 0 4px;
   }
   .mtab {
     flex: none;
@@ -1259,7 +1259,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 16px;
+    padding: 12px var(--sp-4);
+    /* Edge to edge, so text scrolling under it never shows beside it; the padding puts
+       its controls on the content column. */
+    margin-inline: calc(-1 * var(--sp-4));
     /* The toolbar floats on the ground: frosted, with only a soft rule under it. */
     background: color-mix(in srgb, var(--bg) 88%, transparent);
     -webkit-backdrop-filter: blur(14px);
@@ -1286,6 +1289,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  #reader > header h1 {
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  #reader > header.title-below h1 {
+    opacity: 0;
   }
   .reader-actions {
     display: flex;
@@ -1314,8 +1323,9 @@
     width: 22px;
     height: 22px;
   }
-  .reader-actions button:hover,
-  .reader-actions button:focus {
+  /* Not :hover or :focus: on touch both stay after the tap, so the icon kept a box. */
+  .reader-actions button:active,
+  .reader-actions button:focus-visible {
     background: var(--line-soft);
   }
   .reader-actions button.lit {
@@ -1398,12 +1408,13 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: calc(env(safe-area-inset-top, 0px) + 6px) 10px 2px;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 8px 2px 0;
     flex: none;
   }
   .writer-back {
     width: 40px;
     height: 40px;
+    padding: 0;
     border-radius: 50%;
     border: 0;
     background: none;
@@ -1438,7 +1449,7 @@
   }
   .writer-head {
     flex: none;
-    padding: 4px 20px 0;
+    padding: 4px var(--sp-4) 0;
   }
   .writer-date {
     display: flex;
@@ -1494,7 +1505,7 @@
     outline: none;
     background: none;
     margin: 0;
-    padding: 12px 20px 24px;
+    padding: 12px var(--sp-4) 24px;
     font-family: var(--sans);
     font-size: 16px; /* >=16px so the WebView never zooms on focus */
     line-height: 1.6;
@@ -1738,7 +1749,7 @@
   /* Settings (read-only on the phone): a column of titled tiles, the same
      plate-plus-hairline groups as the desktop settings pane. */
   .mset-body {
-    padding: 16px;
+    padding: 0 0 16px;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -1839,7 +1850,7 @@
     flex-direction: column;
     gap: 2px;
     border-radius: var(--r-xl);
-    padding: 8px;
+    padding: 0 14px;
     background: var(--surface-2);
     box-shadow: var(--hairline);
   }
@@ -1902,7 +1913,7 @@
     right: 10px;
     bottom: calc(env(safe-area-inset-bottom) + 10px);
     z-index: 61;
-    width: min(calc(100% - 20px), 400px);
+    width: min(calc(100% - 20px), 460px);
     opacity: 0;
     transform: translateX(calc(100% + 12px));
     pointer-events: none;
@@ -3278,7 +3289,7 @@
     <!-- Events Section (VAULT.6): real session diagnostics + the vault door -->
     <div class="mset-group" data-guide-for="phone-activity">
       <h2 class="mset-title">Activity</h2>
-      <p class="mset-sub">Questions, captures, facet edits, and syncs. Tap a row for the full record.</p>
+      <p class="mset-sub">Questions, captures, summary edits and syncs. Tap a row for the full record.</p>
       <div id="settings_events_list" class="mset-events"></div>
       <div class="mset-row2">
         <button id="settings_events_refresh" type="button" class="mset-secondary">Refresh</button>
@@ -5991,6 +6002,27 @@
     // writing page, re-renders the same reader).
     if (!(history.state && history.state.v === "reader")) history.pushState({ v: "reader" }, "");
     show("reader");
+    watchReaderTitle();
+  }
+
+  // A note that opens on its own heading shows its name once: the toolbar takes the
+  // name only when that heading has scrolled up under the bar.
+  let readerTitleWatch = null;
+  function watchReaderTitle() {
+    const bar = document.querySelector("#reader > header");
+    if (readerTitleWatch) readerTitleWatch.disconnect();
+    const h = document.querySelector(
+      "#reader_body.notetype > h1:first-child, #reader_body > .notetype:first-child > h1:first-child",
+    );
+    const same = (t) => t.trim().toLowerCase();
+    const own = !!h && same(h.textContent) === same(document.getElementById("reader_title").textContent);
+    bar.classList.toggle("title-below", own);
+    if (!own) return;
+    readerTitleWatch = new IntersectionObserver(
+      ([e]) => bar.classList.toggle("title-below", e.isIntersecting || e.boundingClientRect.top > 0),
+      { rootMargin: -bar.offsetHeight + "px 0px 0px 0px" },
+    );
+    readerTitleWatch.observe(h);
   }
 
   // The details side panel: editable tags + the AI summary for the open artifact. Tags
@@ -8961,7 +8993,7 @@ return;
     events = coalesceMobileSync(events);
     if (!events.length) {
       const p = document.createElement("div");
-      p.style.color = "var(--text-mute)";
+      p.style.cssText = "color:var(--text-mute);padding:7px 0";
       p.textContent = "No activity yet.";
       el.appendChild(p);
     } else {

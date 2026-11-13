@@ -25,16 +25,42 @@ from pathlib import Path
 import hmac
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from . import blobs as _blobs
 from .blobs import BlobStoreError
-from .storage import LibraryFull, LibraryRevoked, RelayStorage, library_id
+from .storage import LibraryFull, LibraryRevoked, RelayStorage, ShareTaken, library_id
 
 # The largest object a device may store (a PDF, a photo): 100 MiB unless set.
 MAX_OBJECT_BYTES = int(os.getenv("RELAY_MAX_OBJECT_BYTES", str(100 * 1024 * 1024)))
 # Each library's storage limit, unless the library has its own: 5 GiB; 0 for none.
 DEFAULT_QUOTA_BYTES = int(os.getenv("RELAY_QUOTA_BYTES", str(5 * 1024**3)))
+
+
+# A shared note's id: 16 random bytes, URL-safe base64 without padding.
+_SHARE_ID = re.compile(r"[A-Za-z0-9_-]{22}")
+# Where shared links point (sharing): this relay's public address for /s/<id>.
+SHARE_BASE_URL = os.getenv("SHARE_BASE_URL", "").rstrip("/")
+_STATIC = Path(__file__).resolve().parent.parent / "static"
+# The only files the share viewer may load, by the path its page asks for.
+_VIEWER_FILES = {
+    "share.js": "js/share.js",
+    "md.js": "js/md.js",
+    "tokens.css": "css/tokens.css",
+    "base.css": "css/base.css",
+    "artifact.css": "css/artifact.css",
+    "notetype.css": "css/notetype.css",
+    "share.css": "css/share.css",
+    "raven.png": "raven-tilt.png",
+}
+_VIEWER_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self';"
+    " font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none';"
+    " form-action 'none'; frame-ancestors 'none'",
+    "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow",
+    "X-Content-Type-Options": "nosniff",
+}
 
 
 # The change stream takes its secret in the address (`?token=`, since an EventSource
@@ -212,8 +238,92 @@ def create_relay(
     @app.get("/health")
     def health() -> dict:
         # Unauthenticated liveness probe for the deploy script and Railway. It
-        # reveals nothing: no object names, no counts, just that the app is up.
-        return {"status": "ok"}
+        # reveals nothing: no object names, no counts, just that the app is up, and
+        # where its shared links point.
+        return {"status": "ok", "share_base": SHARE_BASE_URL}
+
+    # --- shared notes ---------------------------------------------------------------
+    # A shared note is sealed on the device under a key the relay never sees (it rides
+    # the link after `#`), stored in the owner's library, and served to anyone with the
+    # id. Making one is Pro on the hosted relay; a self-hosted relay has no plans.
+
+    def _share_owner(authorization: str = Header(default="")) -> str:
+        library = _require_header(authorization)
+        token = authorization.partition(" ")[2]
+        if accounts is not None and storage.library_for(token) is None:
+            from .accounts import tier_of
+
+            account = accounts.account_for_device(token)
+            if account is None or tier_of(account) != "pro":
+                raise HTTPException(status_code=402, detail="Sharing notes is part of Pro.")
+        return library
+
+    def _share_id(sid: str) -> str:
+        if not _SHARE_ID.fullmatch(sid):
+            raise HTTPException(status_code=404, detail="no such share")
+        return sid
+
+    @app.put("/share/{sid}", status_code=201)
+    async def put_share(
+        sid: str,
+        request: Request,
+        expires_at: float | None = None,
+        library: str = Depends(_share_owner),
+    ):
+        _share_id(sid)
+        if expires_at is not None and expires_at <= time.time():
+            raise HTTPException(status_code=400, detail="that time has passed")
+        data = await _body(request)
+        try:
+            await asyncio.to_thread(storage.put_share, library, sid, data, expires_at)
+        except ShareTaken as exc:
+            raise HTTPException(status_code=409, detail="share id taken") from exc
+        except LibraryFull as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except LibraryRevoked as exc:
+            raise HTTPException(status_code=401, detail="bad secret") from exc
+        return {"id": sid}
+
+    @app.delete("/share/{sid}", status_code=204)
+    def delete_share(sid: str, library: str = Depends(_require_header)):
+        storage.delete_share(library, _share_id(sid))
+        return Response(status_code=204)
+
+    @app.get("/share/{sid}")
+    def get_share(sid: str):
+        data = storage.get_share(_share_id(sid))
+        if data is None:
+            raise HTTPException(status_code=404, detail="no such share")
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={"Cache-Control": "no-store", **_VIEWER_HEADERS},
+        )
+
+    @app.get("/s/static/{name}")
+    def viewer_file(name: str):
+        path = _VIEWER_FILES.get(name)
+        if path is None:
+            raise HTTPException(status_code=404, detail="not found")
+        return FileResponse(
+            _STATIC / path, headers={"Cache-Control": "max-age=3600", **_VIEWER_HEADERS}
+        )
+
+    @app.get("/s/fonts/{name}")
+    def viewer_font(name: str):
+        if not re.fullmatch(r"HankenGrotesk-[A-Za-z-]+\.woff2", name):
+            raise HTTPException(status_code=404, detail="not found")
+        return FileResponse(
+            _STATIC / "fonts" / name,
+            headers={"Cache-Control": "max-age=31536000, immutable", **_VIEWER_HEADERS},
+        )
+
+    @app.get("/s/{sid}")
+    def viewer(sid: str):
+        _share_id(sid)
+        return FileResponse(
+            _STATIC / "share.html", headers={"Cache-Control": "no-cache", **_VIEWER_HEADERS}
+        )
 
     @app.get("/sync/objects")
     def list_objects(since: int = 0, library: str = Depends(_require_header)):

@@ -294,3 +294,77 @@ class TestEditedSummaryLines:
             assert hit_is_stale(conn, hit | {"edited": True}, {}) is False
         finally:
             conn.close()
+
+
+def _named_note(aid: str, title: str, text: str, entities: tuple[str, ...] = ()) -> None:
+    conn = db.get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO artifacts (id, kind, title, body, content_hash, status,"
+            " created_at, updated_at) VALUES (?, 'note', ?, ?, ?, 'ok',"
+            " datetime('now'), datetime('now'))",
+            (aid, title, text, aid + "_hash"),
+        )
+        conn.execute(
+            "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker)"
+            " VALUES (?, ?, 0, ?, 'test')",
+            (aid + "_c0", aid, text),
+        )
+        for n, name in enumerate(entities):
+            conn.execute(
+                "INSERT INTO entities (id, artifact_id, entity, fact, model_version)"
+                " VALUES (?, ?, ?, '', 'test-model')",
+                (f"{aid}_e{n}", aid, name),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class TestNamedInTheQuestion:
+    """A question that listed five names was answered "nothing mentions Thrawn" while
+    a note called Thrawn was in the library: one embedding blurred the names, and the
+    keyword search needed every word in one passage."""
+
+    QUESTION = "do i have notes on a council of taleb, thrawn, sun tzu and marcus aurelius"
+
+    def test_a_note_whose_title_the_question_names_is_read(self, sqlite_store):
+        _named_note("t1", "Thrawn", "Art reveals a culture's military doctrine.")
+        for n, text in enumerate(_FILLER_PARTS[:6]):
+            _named_note(f"f{n}", f"Camp tip {n}", text)
+        sqlite_store.upsert_chunks()
+
+        found = chats._library_passages(self.QUESTION, 4)
+
+        assert found[0]["artifact_id"] == "t1"
+        assert found[0]["why"] == "named"
+
+    def test_a_note_naming_someone_the_question_names_is_read(self, sqlite_store):
+        _named_note("o1", "The Odyssey", "Opportunities multiply as they are seized.", ("Sun Tzu",))
+        sqlite_store.upsert_chunks()
+
+        found = chats._library_passages(self.QUESTION, 4)
+
+        assert "o1" in {p["artifact_id"] for p in found}
+
+    def test_a_short_word_or_a_common_name_points_at_nothing(self, store):
+        from enqueue.retrieve.names import named
+
+        _named_note("w1", "Art", "Brush strokes.")
+        for n in range(9):
+            _named_note(f"g{n}", f"Page {n}", "Text.", ("Google",))
+
+        assert named("is there art in my google docs", 4) == []
+
+    def test_a_trashed_note_is_not_named(self, store):
+        from enqueue.retrieve.names import named
+
+        _named_note("t1", "Thrawn", "Doctrine.")
+        conn = db.get_conn()
+        try:
+            conn.execute("UPDATE artifacts SET deleted_at = datetime('now') WHERE id = 't1'")
+            conn.commit()
+        finally:
+            conn.close()
+
+        assert named(self.QUESTION, 4) == []

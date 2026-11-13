@@ -452,7 +452,7 @@ function renderPickerRows(box, list, onRun) {
 			const pivots = d.items || [];
 			if (!pivots.length) {
 				const none = document.createElement("div");
-				none.className = "state";
+				none.className = "aside";
 				none.textContent = "No views yet. Make one of your own below.";
 				list.appendChild(none);
 				return;

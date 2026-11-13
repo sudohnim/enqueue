@@ -1,0 +1,68 @@
+/* The shared-note viewer (share.html): one note on the lavender ground, read-only. */
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.share {
+  flex: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--sp-7) var(--sp-4) var(--sp-6);
+}
+.share-state {
+  color: var(--text-dim);
+  margin: var(--sp-7) 0;
+  text-align: center;
+}
+.share-meta {
+  margin: 0 0 var(--sp-2);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.share #body > :first-child {
+  margin-top: 0;
+}
+.share-lock {
+  max-width: 420px;
+  margin: var(--sp-7) auto;
+}
+.share-lock-title {
+  font-size: 24px;
+  line-height: 29px;
+  font-weight: var(--w-medium);
+  color: var(--text);
+  margin: 0 0 var(--sp-2);
+}
+.share-lock-row {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+.share-lock-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+}
+.share-lock-error {
+  color: var(--danger, #b3261e);
+  margin-top: var(--sp-2);
+}
+.share-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-4) var(--sp-6);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.share-foot p {
+  margin: 0;
+}

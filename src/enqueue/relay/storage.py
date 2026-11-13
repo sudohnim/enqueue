@@ -45,6 +45,15 @@ def new_secret() -> str:
     return _secrets.token_urlsafe(32)
 
 
+# Where a shared note's bytes are kept in its library. The change feed never lists
+# them: they are not sealed under the sync key, and a device would count them unreadable.
+SHARE_PREFIX = "share/"
+
+
+class ShareTaken(Exception):
+    """The share id belongs to another library."""
+
+
 class LibraryFull(Exception):
     """A write would take a library past its storage limit."""
 
@@ -178,6 +187,15 @@ class RelayStorage:
                     (legacy_library,),
                 )
                 conn.execute("DROP TABLE objects_single")
+            # Shared notes (sharing): each is an object `share/<id>` in its owner's
+            # library, so it counts toward the quota and goes when the library goes.
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS shares ("
+                " id TEXT PRIMARY KEY,"
+                " library TEXT NOT NULL,"
+                " created_at REAL NOT NULL,"
+                " expires_at REAL)"
+            )
             conn.execute("UPDATE objects SET size = length(data) WHERE size IS NULL")
             if legacy_library:
                 self._recount(conn, legacy_library)
@@ -267,6 +285,7 @@ class RelayStorage:
         earlier failure goes too). True once both are gone."""
         with self._lock, self._open() as conn:
             conn.execute("DELETE FROM objects WHERE library = ?", (library,))
+            conn.execute("DELETE FROM shares WHERE library = ?", (library,))
             conn.execute("UPDATE libraries SET used_bytes = 0 WHERE id = ?", (library,))
         if self.blobs is not None:
             try:
@@ -437,12 +456,60 @@ class RelayStorage:
         """Every object of the library with cursor > `since`, plus the new cursor."""
         with self._open() as conn:
             rows = conn.execute(
-                "SELECT name, size FROM objects"
-                " WHERE library = ? AND cursor > ? ORDER BY cursor",
+                "SELECT name, size FROM objects WHERE library = ? AND cursor > ?"
+                f" AND name NOT LIKE '{SHARE_PREFIX}%' ORDER BY cursor",
                 (library, since),
             ).fetchall()
             cursor = self._max_cursor(conn, library)
             return [{"name": r["name"], "size": r["size"]} for r in rows], cursor
+
+    # ---- shared notes ----------------------------------------------------------
+
+    def put_share(self, library: str, sid: str, data: bytes, expires_at: float | None) -> None:
+        """Store or replace a shared note. ShareTaken when another library holds `sid`."""
+        with self._open() as conn:
+            row = conn.execute("SELECT library FROM shares WHERE id = ?", (sid,)).fetchone()
+        if row is not None and row["library"] != library:
+            raise ShareTaken(sid)
+        self.put(library, SHARE_PREFIX + sid, data)
+        with self._lock, self._open() as conn:
+            conn.execute(
+                "INSERT INTO shares (id, library, created_at, expires_at) VALUES (?,?,?,?)"
+                " ON CONFLICT(id) DO UPDATE SET expires_at = excluded.expires_at",
+                (sid, library, time.time(), expires_at),
+            )
+
+    def get_share(self, sid: str) -> bytes | None:
+        """A shared note's bytes, or None when there is none, it expired, or its library
+        was revoked."""
+        self.drop_expired_shares()
+        with self._open() as conn:
+            row = conn.execute(
+                "SELECT s.library FROM shares s JOIN libraries l ON l.id = s.library"
+                " WHERE s.id = ? AND l.revoked_at IS NULL",
+                (sid,),
+            ).fetchone()
+        return self.get(row["library"], SHARE_PREFIX + sid) if row else None
+
+    def delete_share(self, library: str, sid: str) -> bool:
+        with self._lock, self._open() as conn:
+            gone = (
+                conn.execute(
+                    "DELETE FROM shares WHERE id = ? AND library = ?", (sid, library)
+                ).rowcount
+                > 0
+            )
+        return self.delete(library, SHARE_PREFIX + sid) or gone
+
+    def drop_expired_shares(self, now: float | None = None) -> int:
+        with self._open() as conn:
+            rows = conn.execute(
+                "SELECT id, library FROM shares WHERE expires_at IS NOT NULL AND expires_at <= ?",
+                (now or time.time(),),
+            ).fetchall()
+        for r in rows:
+            self.delete_share(r["library"], r["id"])
+        return len(rows)
 
     # ---- moving bytes into the blob store --------------------------------------
 

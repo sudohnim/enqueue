@@ -88,9 +88,9 @@
     },
     "enriched": {
       "total": 12,
-      "pass": 9,
-      "pass_rate": 0.75,
-      "MRR": 0.6097,
+      "pass": 10,
+      "pass_rate": 0.8333,
+      "MRR": 0.6389,
       "results": [
         {
           "id": "xd_q_graceful",
@@ -118,19 +118,19 @@
         },
         {
           "id": "xd_q_split_team",
-          "rank": 1,
+          "rank": 2,
           "pass": true,
-          "top_hit": "xd_hive_split"
-        },
-        {
-          "id": "xd_q_sales_playbook",
-          "rank": 5,
-          "pass": false,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
+          "id": "xd_q_sales_playbook",
+          "rank": 4,
+          "pass": false,
+          "top_hit": "xd_trading_fours"
+        },
+        {
           "id": "xd_q_burnout_rotation",
-          "rank": 3,
+          "rank": 2,
           "pass": true,
           "top_hit": "xd_decoy_k8s_limits"
         },
@@ -142,9 +142,9 @@
         },
         {
           "id": "xd_q_meeting_turns",
-          "rank": 5,
-          "pass": false,
-          "top_hit": "xd_decoy_meeting_rooms"
+          "rank": 3,
+          "pass": true,
+          "top_hit": "xd_mise_en_place"
         },
         {
           "id": "xd_q_catch_early",
@@ -154,9 +154,9 @@
         },
         {
           "id": "xd_q_shared_baseline",
-          "rank": 2,
+          "rank": 1,
           "pass": true,
-          "top_hit": "xd_decoy_oncall_sheet"
+          "top_hit": "xd_long_tuning"
         },
         {
           "id": "xd_q_habit",
@@ -168,9 +168,9 @@
     },
     "lifted": {
       "total": 12,
-      "pass": 9,
-      "pass_rate": 0.75,
-      "MRR": 0.6097,
+      "pass": 10,
+      "pass_rate": 0.8333,
+      "MRR": 0.6389,
       "results": [
         {
           "id": "xd_q_graceful",
@@ -198,19 +198,19 @@
         },
         {
           "id": "xd_q_split_team",
-          "rank": 1,
+          "rank": 2,
           "pass": true,
-          "top_hit": "xd_hive_split"
-        },
-        {
-          "id": "xd_q_sales_playbook",
-          "rank": 5,
-          "pass": false,
           "top_hit": "xd_decoy_oncall_sheet"
         },
         {
+          "id": "xd_q_sales_playbook",
+          "rank": 4,
+          "pass": false,
+          "top_hit": "xd_trading_fours"
+        },
+        {
           "id": "xd_q_burnout_rotation",
-          "rank": 3,
+          "rank": 2,
           "pass": true,
           "top_hit": "xd_decoy_k8s_limits"
         },
@@ -222,9 +222,9 @@
         },
         {
           "id": "xd_q_meeting_turns",
-          "rank": 5,
-          "pass": false,
-          "top_hit": "xd_decoy_meeting_rooms"
+          "rank": 3,
+          "pass": true,
+          "top_hit": "xd_mise_en_place"
         },
         {
           "id": "xd_q_catch_early",
@@ -234,9 +234,9 @@
         },
         {
           "id": "xd_q_shared_baseline",
-          "rank": 2,
+          "rank": 1,
           "pass": true,
-          "top_hit": "xd_decoy_oncall_sheet"
+          "top_hit": "xd_long_tuning"
         },
         {
           "id": "xd_q_habit",
