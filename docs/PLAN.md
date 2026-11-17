@@ -279,12 +279,14 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
   - Owed: device check - link the emulator to a Mac that shows a card today, and see the same idea on the phone
 
-- [ ] **P8. The phone's idea rows have Keep and Not the same** **[device]**
+- [x] **P8. The phone's idea rows have Keep and Not the same** **[device]** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
   - Needs: P8b, P6
   - Files: `static/mobile.html`
   - Do: in the related section of P6, add two buttons under each idea row, as the desktop does in `relatedRowHtml`. A tap calls `invoke("mobile_link_feedback", {a, b, verdict, idea})` with `idea` = the row's `point`, then draws the reader again.
   - Check: `bin/verify --fast`. Device: refuse a link on the emulator; after a sync it is gone on the Mac.
+  - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
+  - Owed: device check - refuse an idea link on the emulator, sync, and see it gone on the Mac
 
 - [ ] **P9. Docs for track P**
   - Needs: P1 to P8

@@ -1621,6 +1621,20 @@
     font-size: 13px;
     color: var(--text-mute);
   }
+  #reader_body .related-feedback {
+    display: flex;
+    gap: 12px;
+    padding: 0 8px 6px;
+  }
+  #reader_body .related-fb {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--accent-text);
+    cursor: pointer;
+  }
 
   /* The day's "Something shiny" card, above the library shelves. */
   .shiny-card {
@@ -6124,13 +6138,14 @@
         const section = document.createElement("section");
         section.className = "related";
         section.setAttribute("aria-label", "Related");
-        const group = (label, list, why) => {
+        const group = (label, list, why, feedback) => {
           if (!list.length) return;
           const head = document.createElement("div");
           head.className = "related-label";
           head.textContent = label;
           section.appendChild(head);
           for (const r of list) {
+            const wrap = document.createElement("div");
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "related-row";
@@ -6147,12 +6162,41 @@
               btn.appendChild(w);
             }
             btn.addEventListener("click", () => openArtifact(r.id));
-            section.appendChild(btn);
+            wrap.appendChild(btn);
+            if (feedback) {
+              const bar = document.createElement("div");
+              bar.className = "related-feedback";
+              for (const [verdict, text2] of [
+                ["keep", "Keep"],
+                ["no", "Not the same"],
+              ]) {
+                const fb = document.createElement("button");
+                fb.type = "button";
+                fb.className = "related-fb";
+                fb.textContent = text2;
+                fb.addEventListener("click", async () => {
+                  try {
+                    await invoke("mobile_link_feedback", {
+                      a: id,
+                      b: r.id,
+                      verdict,
+                      idea: r.point || "",
+                    });
+                    openArtifact(id);
+                  } catch (e) {
+                    /* keep the reader as it is */
+                  }
+                });
+                bar.appendChild(fb);
+              }
+              wrap.appendChild(bar);
+            }
+            section.appendChild(wrap);
           }
         };
         const of = (kind) => rows.filter((r) => r.link === kind);
         group("Same subject", of("subject"), (r) => r.point || "");
-        group("Same idea, another field", of("idea"), (r) => r.point || "");
+        group("Same idea, another field", of("idea"), (r) => r.point || "", true);
         group("Also mentions", of("mention"), (r) =>
           r.via ? "Both mention " + r.via + "." : "",
         );
