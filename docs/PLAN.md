@@ -1739,7 +1739,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     2. Register it in the three places, as P6b does.
   - Check: `cd desktop && cargo test --lib`; `cargo check --lib --target aarch64-linux-android`
 
-- [ ] **P7. The phone shows the day's card** **[device]**
+- [x] **P7. The phone shows the day's card** **[device]** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs, desktop/src/lib.rs; Owed: device check
   - Needs: P7b
   - Files: `static/mobile.html`
   - Do:
