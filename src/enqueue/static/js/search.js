@@ -168,6 +168,22 @@
     view.querySelector(".sr").addEventListener("keydown", resultKeys);
   }
 
+  // "More like this" from an artifact page: the same results view, headed by the
+  // item it was asked about rather than a query the person typed.
+  async function doSimilar(id, title) {
+    teardown();
+    setRoute("like/" + encodeURIComponent(id));
+    view.innerHTML = spinner("lg", "looking for similar notes...");
+    let r;
+    try {
+      r = await api("/artifacts/" + encodeURIComponent(id) + "/similar");
+    } catch (err) {
+      view.innerHTML = '<div class="state">' + esc(String((err && err.message) || err)) + "</div>";
+      return;
+    }
+    drawResults('Like "' + (title || "") + '"', r);
+  }
+
   function searchAgain() {
     const f = document.getElementById("searchfield");
     const q = f && f.value.trim();

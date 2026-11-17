@@ -681,7 +681,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `uv run pytest tests/test_similar.py -q`
   - Done: retrieve/passage_links.py, api/artifacts.py, tests/test_similar.py; 2 passed in 13.85s
 
-- [ ] **N3. "More like this"**
+- [x] **N3. "More like this"** (claimed: agent, 2026-11-17)
   - Split: steps 1 and 2 are done in N3a. Do steps 3 to 6 only (the page).
   - Needs: N3a, R1
   - Files: `retrieve/passage_links.py`, `api/artifacts.py` (new route at the end), `static/js/artifact.js` (`relatedRowHtml`, `mountRelatedRow`), `static/js/search.js`, new `tests/test_similar.py`
@@ -698,6 +698,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
     6. In `mountRelatedRow`, bind the button to `doSimilar`.
   - Test: three notes, two of them about the same thing in nearly the same words. `similar_items` of one returns the other first and does not return itself.
   - Check: `uv run pytest tests/test_similar.py -q`; `bin/verify --fast`
+  - Done: static/js/artifact.js, static/js/search.js; bin/verify: all checks passed
 
 - [ ] **N4. Lock the natural-language search with tests**
   - Needs: none

@@ -680,7 +680,14 @@
   // Related, under the note: what else this is like (ingest/related.py). Analogies come
   // first, the farthest field first, labelled as such; then notes on the same subject
   function relatedRowHtml(related, aid) {
-    if (!related || !related.length) return "";
+    const head =
+      '<div class="related-head"><div class="shelf">Related</div>' +
+      '<button class="related-all" type="button" data-like="' +
+      esc(aid) +
+      '">More like this</button>' +
+      '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>';
+    const open = '<section class="related" aria-label="Related" data-aid="' + esc(aid) + '">' + head;
+    if (!related || !related.length) return open + "</section>";
     const row = (r, why) =>
       '<div class="relatedrow"><button class="relateditem" type="button" data-id="' +
       esc(r.id) +
@@ -716,11 +723,7 @@
         : "";
     const of = (kind) => related.filter((r) => r.link === kind);
     return (
-      '<section class="related" aria-label="Related" data-aid="' +
-      esc(aid) +
-      '">' +
-      '<div class="related-head"><div class="shelf">Related</div>' +
-      '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>' +
+      open +
       group(
         "Same subject",
         of("subject").sort((a, b) => b.score - a.score),
@@ -805,12 +808,16 @@
         showArtifact(aid);
       });
     });
-    const more = view.querySelector(".related-all");
+    const more = view.querySelector(".related-all:not([data-like])");
     if (more)
       more.addEventListener("click", () => {
         relatedAllFor = aid;
         showArtifact(aid);
       });
+    const title = document.getElementById("titleH1")?.textContent?.trim() || "";
+    section.querySelectorAll("button[data-like]").forEach((btn) => {
+      btn.addEventListener("click", () => doSimilar(btn.dataset.like, title));
+    });
   }
 
   // The chip names and the input are bound here, not in inline onclick: a tag name
