@@ -115,6 +115,7 @@ def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) ->
             "chunk_contexts": [],
             "related_verdicts": [],
             "link_feedback": [],
+            "related": [],
         }
     from ..ingest import source
 
@@ -191,6 +192,20 @@ def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) ->
                 (artifact_id,),
             )
         ],
+        "related": (
+            []
+            if conn.execute(
+                "SELECT local_only FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()["local_only"]
+            else [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT artifact_id, related_id, owner, score, via, point, kind, distance"
+                    " FROM related WHERE owner = ?",
+                    (artifact_id,),
+                )
+            ]
+        ),
     }
 
 
@@ -591,6 +606,7 @@ def _apply_derived_layers(
     if vaulted:
         conn.execute("DELETE FROM entities WHERE artifact_id = ?", (artifact_id,))
         conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
+        conn.execute("DELETE FROM related WHERE owner = ?", (artifact_id,))
         conn.execute(
             "DELETE FROM derived_values WHERE subject = ?"
             " AND scope IN ('section_summary', 'chunk_context')",
@@ -680,6 +696,26 @@ def _apply_derived_layers(
             " model_version, created_at) VALUES ('related_judge', ?, ?, ?, 1, 'model', ?, ?)",
             (v["subject"], v["attribute"], v["value"], v["model_version"], now),
         )
+
+    if "related" in snapshot:
+        conn.execute("DELETE FROM related WHERE owner = ?", (artifact_id,))
+        for r in snapshot.get("related") or []:
+            conn.execute(
+                "INSERT INTO related (artifact_id, related_id, owner, score, via, point, kind, distance,"
+                " model_version, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    r["artifact_id"],
+                    r["related_id"],
+                    r["owner"],
+                    r["score"],
+                    r.get("via"),
+                    r.get("point"),
+                    r.get("kind"),
+                    r.get("distance"),
+                    "",
+                    now,
+                ),
+            )
 
     if "link_feedback" in snapshot:
         for lf in snapshot.get("link_feedback") or []:

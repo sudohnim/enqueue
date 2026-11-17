@@ -798,6 +798,74 @@ def pull_keyring() -> bool:
     return True
 
 
+def push_shiny() -> None:
+    """PUT the day's Something shiny sets to the relay as `lib/shiny.enc`."""
+    import json
+    from datetime import datetime, timezone
+
+    from .. import db
+
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+    dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
+    if dek is None:
+        return
+
+    day = datetime.now(timezone.utc).date().isoformat()
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT value FROM derived_values WHERE scope = 'shiny_day' AND subject = ?"
+            " AND attribute = 'sets' AND source = 'model'",
+            (day,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return
+    try:
+        sets = json.loads(row["value"])
+    except (ValueError, TypeError):
+        return
+    # Leave out sets holding a local-only or vaulted artifact.
+    filtered = []
+    for s in sets or []:
+        ids = s.get("ids") if isinstance(s, dict) else None
+        if not ids:
+            continue
+        conn = db.get_conn()
+        try:
+            local = any(
+                conn.execute(
+                    "SELECT local_only FROM artifacts WHERE id = ? AND (local_only = 1 OR vaulted_at IS NOT NULL)",
+                    (i,),
+                ).fetchone()
+                for i in ids
+            )
+        finally:
+            conn.close()
+        if local:
+            continue
+        filtered.append(s)
+    body = {"day": day, "sets": filtered, "updated_at": db.now()}
+    data = crypto.seal_payload(serialize(body), dek)
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{url.rstrip('/')}/sync/object/lib/shiny.enc", content=data, headers=headers
+            )
+        if resp.status_code not in (201, 409):
+            print(f"[sync] shiny push rejected: {resp.status_code}", flush=True)
+    except httpx.HTTPError as exc:
+        print(f"[sync] shiny push failed: {exc}", flush=True)
+
+
 def push_pivots() -> None:
     """PUT the saved views (custom pivots) to the relay as `lib/pivots.enc`.
 

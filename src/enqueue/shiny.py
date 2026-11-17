@@ -253,7 +253,15 @@ def prepare(day: date | None = None) -> bool:
         conn.close()
     if done:
         return False
-    return today(day, 0, background=False) is not None
+    result = today(day, 0, background=False) is not None
+    if result:
+        try:
+            from .sync import client as sync_client
+
+            sync_client.push_shiny()
+        except Exception:  # noqa: BLE001
+            pass
+    return result
 
 
 def _faces(conn, ids: list[str]) -> dict[str, dict]:
