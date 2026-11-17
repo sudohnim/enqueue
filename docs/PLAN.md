@@ -516,11 +516,12 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/check-style` prints no line for the file; `bin/verify --fast`
   - Done: static/css/details.css; bin/verify: all checks passed
 
-- [ ] **U6. Sizes and weights become tokens: the note page**
+- [x] **U6. Sizes and weights become tokens: the note page** (claimed: agent, 2026-11-17)
   - Needs: U1, U2b
   - Files: `static/css/artifact.css`
   - Do: as U3, with this file.
   - Check: `bin/check-style` prints no line for the file; `bin/verify --fast`
+  - Done: static/css/artifact.css; bin/verify: all checks passed
 
 - [ ] **U7. Sizes and weights become tokens: the phone and the capture page** **[device]**
   - Needs: U1, U2b

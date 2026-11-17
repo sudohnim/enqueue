@@ -252,8 +252,8 @@
     border-radius: var(--r-full);
     border: 0;
     font: inherit;
-    font-size: 13px;
-    font-weight: 400;
+    font-size: var(--t-sm);
+    font-weight: var(--w-regular);
     line-height: 18px;
     color: var(--text);
     transition: background var(--dur-fast) var(--ease);
@@ -337,12 +337,12 @@
     margin-top: var(--sp-4);
   }
   .relatedlabel {
-    font-size: 12px;
+    font-size: var(--t-xs);
     color: var(--text-mute);
     margin-bottom: var(--sp-1);
   }
   .relatedmeta {
-    font-size: 12px;
+    font-size: var(--t-xs);
     color: var(--text-mute);
   }
   .relateditem {
@@ -368,7 +368,7 @@
     outline-offset: 2px;
   }
   .relatedtitle {
-    font-size: 14px;
+    font-size: var(--t-md);
     font-weight: var(--w-strong);
     line-height: 20px;
     overflow-wrap: anywhere;
@@ -377,7 +377,7 @@
     color: var(--accent-text);
   }
   .relatedwhy {
-    font-size: 13px;
+    font-size: var(--t-sm);
     line-height: 18px;
     color: var(--text-dim);
     display: -webkit-box;
@@ -404,7 +404,7 @@
     border: 0;
     background: none;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--t-xs);
     color: var(--accent-text);
     cursor: pointer;
   }
@@ -414,7 +414,7 @@
   }
   .relatedkept,
   .related-note {
-    font-size: 12px;
+    font-size: var(--t-xs);
     color: var(--text-mute);
   }
   .related-all {
@@ -431,7 +431,7 @@
     padding: 2px 8px;
     border-radius: var(--r-pill);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--t-xs);
     font-weight: var(--w-medium);
     line-height: 17px;
     letter-spacing: 0;
@@ -679,7 +679,7 @@
 
   .md,
   .editor {
-    font-size: 16px;
+    font-size: var(--t-xl);
     line-height: 22.4px;
     color: var(--text-dim);
   }
@@ -695,19 +695,19 @@
   }
   .md h1,
   .editor h1 {
-    font-size: 32px;
+    font-size: var(--t-display-sm);
     line-height: 38px;
     letter-spacing: -0.38px;
   }
   .md h2,
   .editor h2 {
-    font-size: 24px;
+    font-size: var(--t-4xl);
     line-height: 29px;
     letter-spacing: -0.29px;
   }
   .md h3,
   .editor h3 {
-    font-size: 20px;
+    font-size: var(--t-3xl);
     line-height: 26px;
     letter-spacing: -0.24px;
   }
@@ -753,9 +753,9 @@
   .md code,
   .editor code {
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: var(--t-md);
     line-height: 20px;
-    font-weight: 400;
+    font-weight: var(--w-regular);
     letter-spacing: 0;
     color: var(--code-ink);
     background: var(--surface-2);
@@ -786,9 +786,9 @@
   .editor pre code,
   .editor pre {
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: var(--t-md);
     line-height: 20px;
-    font-weight: 400;
+    font-weight: var(--w-regular);
     letter-spacing: 0;
     color: var(--code-ink);
   }
@@ -813,7 +813,7 @@
   .editor strong {
     /* Bold a person typed has to read as bold beside 400 text, so it is the one
        weight above the scale's ceiling. */
-    font-weight: 600;
+    font-weight: var(--w-heading);
     color: var(--text);
   }
   .md em,
@@ -861,7 +861,7 @@
      so a long tracking-laden URL never sprawls across the page in underlined violet.
      The full address is still the link target and shows on hover. */
   .url {
-    font-size: 13.5px;
+    font-size: var(--t-md);
     line-height: 20px;
     color: var(--text-mute);
     display: block;
@@ -887,7 +887,7 @@
     gap: var(--sp-1) var(--sp-3);
     margin-top: var(--sp-3);
     padding: 0 var(--sp-1);
-    font-size: 13.5px;
+    font-size: var(--t-md);
     line-height: 20px;
     color: var(--text-mute);
     max-width: 72ch;
@@ -917,7 +917,7 @@
     text-decoration: none;
   }
   .lede {
-    font-size: 16px;
+    font-size: var(--t-xl);
     line-height: 22.4px;
     color: var(--text-dim);
     max-width: 64ch;
@@ -929,9 +929,9 @@
      monospace is allowed and chipped onto the recessed fill. */
   .mono {
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: var(--t-md);
     line-height: 20px;
-    font-weight: 400;
+    font-weight: var(--w-regular);
     letter-spacing: 0;
   }
   .chip {
@@ -1010,7 +1010,7 @@
     max-width: 240px;
     padding: 9px 0 10px;
     background: transparent;
-    font-size: 14px;
+    font-size: var(--t-md);
     color: var(--text-mute);
     cursor: pointer;
     user-select: none;
@@ -1145,7 +1145,7 @@
     margin: var(--sp-6) 0 var(--sp-2);
     padding-bottom: 6px;
     border-bottom: 1px solid var(--line-soft);
-    font-size: 12px;
+    font-size: var(--t-xs);
     font-weight: var(--w-medium);
     color: var(--text-mute);
   }
@@ -1173,7 +1173,7 @@
     display: none;
   }
   .nearby-label {
-    font-size: 12px;
+    font-size: var(--t-xs);
     color: var(--text-mute);
   }
   .nearby button {
@@ -1183,7 +1183,7 @@
     background: var(--surface);
     box-shadow: var(--hairline);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--t-xs);
     color: var(--text-dim);
     cursor: pointer;
   }
