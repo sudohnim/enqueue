@@ -509,11 +509,12 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/check-style` prints no line for these files; `bin/verify --fast`
   - Done: static/css/chat.css, settings.css, eyepanel.css, reader.css, welcome.css, tour.css, guide.css, linkpop.css, drafts.css, share.css, bird.css, notetype.css, search.css; bin/verify: all checks passed
 
-- [ ] **U5. Sizes and weights become tokens: the Details panel**
+- [x] **U5. Sizes and weights become tokens: the Details panel** (claimed: agent, 2026-11-17)
   - Needs: U1, U2b
   - Files: `static/css/details.css`
   - Do: as U3, with this file.
   - Check: `bin/check-style` prints no line for the file; `bin/verify --fast`
+  - Done: static/css/details.css; bin/verify: all checks passed
 
 - [ ] **U6. Sizes and weights become tokens: the note page**
   - Needs: U1, U2b
