@@ -270,6 +270,57 @@ def test_a_zip_that_climbs_out_of_itself_is_refused(library, src):
         importer.run(archive)
 
 
+def test_kindle_clippings_become_one_note_per_book_and_follow_changes(library, src):
+    clippings = src / "My Clippings.txt"
+    first = """The Willow (Jane Doe)
+- Your Highlight on page 12 | Added on Monday, January 1, 2024 10:00:00 AM
+
+Bends in the storm.
+"""
+    second = """The Willow (Jane Doe)
+- Your Highlight on page 20 | Added on Monday, January 2, 2024 10:00:00 AM
+
+Roots hold fast.
+"""
+    other = """Deep Work (Cal Newport)
+- Your Highlight on page 5 | Added on Monday, January 3, 2024 10:00:00 AM
+
+Focus matters.
+"""
+    bookmark = """The Willow (Jane Doe)
+- Your Bookmark on page 30 | Added on Monday, January 4, 2024 10:00:00 AM
+
+"""
+    added = """The Willow (Jane Doe)
+- Your Highlight on page 40 | Added on Monday, January 5, 2024 10:00:00 AM
+
+New thought.
+"""
+
+    def write(extra=""):
+        parts = [first, second, other, bookmark] + ([extra] if extra else [])
+        clippings.write_text("==========\n" + "==========\n".join(parts))
+
+    write()
+    importer.run(clippings)
+
+    notes = _notes()
+    assert set(notes) == {"The Willow", "Deep Work"}
+    assert notes["The Willow"]["body"].count("\n> ") == 2
+    assert all(n["tags"] == ["kindle"] for n in notes.values())
+
+    importer.run(clippings)
+
+    assert set(_notes()) == {"The Willow", "Deep Work"}
+
+    write(added)
+    importer.run(clippings)
+
+    notes = _notes()
+    assert set(notes) == {"The Willow", "Deep Work"}
+    assert notes["The Willow"]["body"].count("\n> ") == 3
+
+
 def test_html_becomes_the_markdown_the_editor_writes():
     md = importer.html_to_md(
         "<h2>Head</h2><p>A <a href='https://x.y'>link</a> and <code>code</code>.</p>"

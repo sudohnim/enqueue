@@ -270,15 +270,63 @@ def _import_bookmarks(f: Path) -> None:
             _count("links")
 
 
+def _is_clippings(f: Path) -> bool:
+    return f.name.lower() == "my clippings.txt"
+
+
+def _import_clippings(f: Path) -> None:
+    text = f.read_text("utf-8", "replace")
+    books: dict[str, list[tuple[str, int | None]]] = {}
+    for part in re.split(r"^==========$", text, flags=re.M):
+        lines = part.splitlines()
+        filled = [(i, line.strip()) for i, line in enumerate(lines) if line.strip()]
+        if len(filled) < 2:
+            continue
+        book = filled[0][1]
+        meta = filled[1][1]
+        if not meta.startswith("- Your ") or meta.startswith("- Your Bookmark"):
+            continue
+        tail = lines[filled[1][0] + 1 :]
+        blank = next((i for i, line in enumerate(tail) if not line.strip()), None)
+        if blank is None:
+            continue
+        passage = "\n".join(line for line in tail[blank + 1 :] if line.strip()).strip()
+        if not passage:
+            continue
+        page = re.search(r"page (\d+)", meta)
+        number = int(page.group(1)) if page else None
+        books.setdefault(book, []).append((passage, number))
+    now = db.now()
+    for book, highlights in books.items():
+        m = re.match(r"^(.*?)\s+\(([^()]*)\)$", book)
+        title, author = (m.group(1), m.group(2)) if m else (book, None)
+        lines = [f"# {title}", ""]
+        if author:
+            lines.append(f"by {author}")
+        for passage, page in highlights:
+            lines += ["", f"> {passage}"]
+            if page:
+                lines.append(f"page {page}")
+        body = "\n".join(lines) + "\n"
+        did = _upsert(
+            "kindle", book.lower(), str(len(highlights)), title, body, ["kindle"], now, now
+        )
+        if did == "updated":
+            _count("notes")
+
+
 def _import_files(files: list[Path], seen: set[str]) -> None:
     by_name: dict[str, Path] = {}
     for f in files:
         by_name.setdefault(f.name.lower(), f)
     used: set[Path] = set()
     for f in files:
-        if _is_bookmarks(f):
+        if _is_bookmarks(f) or _is_clippings(f):
             try:
-                _import_bookmarks(f)
+                if _is_bookmarks(f):
+                    _import_bookmarks(f)
+                else:
+                    _import_clippings(f)
             except Exception as exc:  # noqa: BLE001 - one bad file never stops the rest
                 _count("skipped", f"{f.name}: {exc}")
             used.add(f.resolve())
@@ -302,7 +350,7 @@ def _import_files(files: list[Path], seen: set[str]) -> None:
 
 
 def _is_note(f: Path) -> bool:
-    if _is_bookmarks(f):
+    if _is_bookmarks(f) or _is_clippings(f):
         return False
     if f.is_dir():
         return f.name.endswith(".textbundle")
@@ -447,7 +495,7 @@ def _embed_pictures(body: str, folder: Path, by_name: dict[str, Path], used: set
     return WIKI_EMBED.sub(wiki, MD_IMAGE.sub(markdown, body))
 
 
-def _save(title: str | None, body: str, names: list[str], created: str, updated: str) -> None:
+def _save(title: str | None, body: str, names: list[str], created: str, updated: str) -> str:
     from .sync.client import push_artifact
 
     note = notes.create(body, title=title, at=created, background=True)["artifact"]
@@ -458,6 +506,51 @@ def _save(title: str | None, body: str, names: list[str], created: str, updated:
     if names or updated != created:
         push_artifact(note["id"])
     _count("notes")
+    return note["id"]
+
+
+def _upsert(
+    source: str,
+    external_id: str,
+    stamp: str,
+    title: str | None,
+    body: str,
+    names: list[str],
+    created: str,
+    updated: str,
+) -> str:
+    """Create or update the note that mirrors one outside item.
+    Returns "created", "updated" or "same". A note the person put in the trash
+    is not made again."""
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT s.stamp, s.artifact_id, a.id AS live_id, a.deleted_at"
+            " FROM source_items s LEFT JOIN artifacts a ON a.id = s.artifact_id"
+            " WHERE s.source = ? AND s.external_id = ?",
+            (source, external_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None and row["stamp"] == stamp:
+        return "same"
+    if row is None:
+        artifact_id = _save(title, body, names, created, updated)
+        did = "created"
+    else:
+        artifact_id = row["artifact_id"]
+        if row["live_id"] and row["deleted_at"] is None:
+            notes.edit(artifact_id, body, title=title)
+            did = "updated"
+        else:
+            did = "same"
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO source_items (source, external_id, stamp, artifact_id)"
+            " VALUES (?, ?, ?, ?)",
+            (source, external_id, stamp, artifact_id),
+        )
+    return did
 
 
 # ---- Standard Notes -----------------------------------------------------------------

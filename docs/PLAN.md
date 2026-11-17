@@ -2993,7 +2993,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: in `tests/test_importer.py`, write a bookmarks file with: one link at the top level; one link in a folder "Cooking" inside "Bookmarks Bar"; one `javascript:` link; one link listed two times. After `importer.run(file)`: three links exist; the second has the tag `cooking` and not `bookmarks-bar`; the dated link has its `ADD_DATE` as `created_at`.
   - Check: `uv run pytest tests/test_importer.py -q`
 
-- [ ] **L3. Kindle highlights come in as one note for each book**
+- [x] **L3. Kindle highlights come in as one note for each book** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/importer.py, tests/test_importer.py; 12 passed
   - Needs: DB3
   - Files: `importer.py`, `tests/test_importer.py`
   - Why: a Kindle keeps all highlights in one text file, `My Clippings.txt`.
