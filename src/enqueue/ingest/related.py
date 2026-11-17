@@ -830,16 +830,9 @@ def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]
     out.sort(key=lambda r: (not r.get("kept", False),))
 
     ids = [r["id"] for r in out]
-    about = {
-        row["artifact_id"]: row["statement"]
-        for row in conn.execute(
-            "SELECT artifact_id, statement FROM facets WHERE level = 0"
-            + _NOT_INDEX_ONLY
-            + " AND COALESCE(role, 'kind') = 'kind'"
-            " AND artifact_id IN (SELECT value FROM json_each(?))",
-            (json.dumps(ids),),
-        )
-    }
+    from ..ingest import facets as facets_mod
+
+    about = facets_mod.gists(conn, ids)
     for r in out:
         r["about"] = about.get(r["id"])
     first: dict[str, dict] = {}

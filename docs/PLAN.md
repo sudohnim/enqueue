@@ -1115,7 +1115,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: with a fake provider that records its `user` text, the text holds a kept idea after feedback is written.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R13. A "same subject" row shows the gist**
+- [x] **R13. A "same subject" row shows the gist** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py; tests pass
   - Needs: R2, M7
   - Files: `ingest/related.py` (`for_artifact`), `tests/test_related.py`
   - Do: in `for_artifact`, replace the `about` query of R2 with `about = facets.gists(conn, ids)`. Import `facets` from the package inside the function.
