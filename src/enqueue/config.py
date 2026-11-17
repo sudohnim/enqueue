@@ -215,7 +215,7 @@ API_URL = f"http://{API_HOST}:{API_PORT}"
 # The only Host names the engine answers to (api/guard.py): a page from any other
 # site, even one whose name resolves to 127.0.0.1, is refused.
 ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-SESSION_ENFORCE = os.getenv("ENQ_SESSION_ENFORCE", "off") == "on"
+SESSION_ENFORCE = os.getenv("ENQ_SESSION_ENFORCE", "on") == "on"
 # The engine's own origins: a request that changes something must come from one of
 # these (or carry no Origin at all). Another local server (localhost:3000) is refused.
 ALLOWED_ORIGINS = frozenset(

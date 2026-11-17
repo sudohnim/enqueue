@@ -63,6 +63,11 @@ def _test_host(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_session_enforce(monkeypatch):
+    monkeypatch.setattr(config, "SESSION_ENFORCE", False)
+
+
+@pytest.fixture(autouse=True)
 def _every_save_counts(monkeypatch):
     """Tests edit a note and look at once: every save keeps its own draft and is
     summarized in the same pass, as before the slower clocks (config.DRAFT_EVERY_S,

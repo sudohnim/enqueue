@@ -508,7 +508,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: add a Rust unit test for `boot_url`: with a token set through a test helper it holds `/boot?t=`; with none it is the plain address.
   - Check: `cargo test --lib` in `desktop/`. Then `ENQ_SESSION_ENFORCE=on bin/launch desktop`: the wall shows, the capture hotkey opens the overlay, a capture saves, and `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8787/artifacts` prints `401`.
 
-- [ ] **S8. The token is required**
+- [x] **S8. The token is required** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/config.py, tests/conftest.py, src/enqueue/api/app.py; bin/verify --fast pass
   - Needs: S6, S7
   - Files: `config.py`, `api/app.py`, `tests/conftest.py`, `tests/test_session.py`
   - Do:

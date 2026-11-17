@@ -247,7 +247,10 @@ def serve() -> None:
     events.emit("start", "engine ready")
 
     # Session token for this run.
-    session.start()
+    token = session.start()
+    import logging
+
+    logging.getLogger(__name__).info("Open http://127.0.0.1:8787/boot?t=%s in a browser.", token)
 
     # Daily backups into the chosen folder (backup.py), when something changed.
     from .. import backup as backups
