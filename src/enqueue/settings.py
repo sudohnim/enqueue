@@ -120,6 +120,8 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "llm_headers": ("ENQ_LLM_HEADERS", "", True),
     # How many drafts of a note are kept (drafts.py): thinned, 30d or off.
     "drafts_keep": ("ENQ_DRAFTS_KEEP", "thinned", True),
+    # Folders to watch for new files (watch.py), one path on each line.
+    "watch_dirs": ("ENQ_WATCH_DIRS", "", True),
     # Days a deleted artifact survives before it is destroyed for good.
     "trash_days": ("ENQ_TRASH_DAYS", 30, True),
     # Whether error reports go to PostHog (telemetry.py): where the code broke, never

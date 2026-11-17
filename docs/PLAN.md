@@ -3182,7 +3182,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `uv run pytest tests/test_importer.py -q`
   - Do not: run the real script. `_apple_notes_raw` reads the owner's own notes. Test with the patch only.
 
-- [ ] **L5. New files in a folder are kept**
+- [x] **L5. New files in a folder are kept** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/watch.py, src/enqueue/settings.py, src/enqueue/api/app.py, tests/test_watch.py; 5 passed in 0.86s
   - Needs: DB3
   - Files: new `watch.py`, `settings.py`, `api/app.py` (one call), new `tests/test_watch.py`
   - Why: the PDF a person downloads and the screenshot they take are saved with no step.

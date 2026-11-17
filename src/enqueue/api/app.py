@@ -199,6 +199,10 @@ def serve() -> None:
         from .. import share_inbox
 
         share_inbox.start()
+        # New files in folders the person named are kept (watch.py).
+        from .. import watch
+
+        watch.start()
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 
