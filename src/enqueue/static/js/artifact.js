@@ -1032,6 +1032,11 @@
       ')">' +
       svg("star") +
       "</button>" +
+      (a.kind === "note" && !a.local_only && !a.vaulted_at
+        ? '<button class="title-action" id="shareToggle" aria-label="Share" title="Share this note" onclick="shareFromTitle()">' +
+          svg("share") +
+          "</button>"
+        : "") +
       '<button class="title-action" id="drawerToggle" aria-label="Details" aria-expanded="false" title="Details: tags, views and summary" onclick="toggleDrawer()">' +
       svg("info") +
       "</button></span>" +
@@ -1194,9 +1199,6 @@
       viewsRowHtml(d.views, id) +
       summaryHtml +
       (a.kind === "note" ? draftsSectionHtml(a, d.versions.length) : "") +
-      (a.kind === "note" && !a.local_only
-        ? '<section class="dsec sharesec" id="shareSec"></section>'
-        : "") +
       '<section class="dsec connections" id="connections"></section>' +
       "</div></aside>";
 

@@ -45,6 +45,10 @@ getrandom = "0.2"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+# A shared note is sealed as share.py seals it (AES-256-GCM, PBKDF2 for a passphrase).
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+unicode-normalization = "0.1"
 regex = "1.10"
 qrcode = { version = "0.14", features = ["svg"] }
 

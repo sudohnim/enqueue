@@ -77,6 +77,9 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
         # link cards and reader had no preview at all. The picture's bytes travel as
         # a blob (sync/client.py), fetched on demand by hash.
         "link_preview": _link_preview(conn, artifact_id),
+        # A shared note's link and keys, so every device shows and follows it. The
+        # snapshot is sealed under the sync key, so the link's key may ride it.
+        "share": _share(conn, artifact_id),
         # Everything else a model wrote about the artifact rides along, so a library
         # is read by a model once, on one device, and every other desktop takes the
         # result instead of paying for it again (derived_layers). The phone ignores
@@ -200,6 +203,45 @@ def _link_preview(conn: Connection, artifact_id: str) -> dict | None:
         (artifact_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+_SHARE_COLUMNS = (
+    "share_id",
+    "link_key",
+    "seal_key",
+    "passphrase",
+    "expires_at",
+    "created_at",
+    "shared_at",
+    "shared_hash",
+)
+
+
+def _share(conn: Connection, artifact_id: str) -> dict | None:
+    row = conn.execute(
+        f"SELECT {', '.join(_SHARE_COLUMNS)} FROM shares WHERE artifact_id = ?", (artifact_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _apply_share(conn: Connection, artifact_id: str, snapshot: dict) -> None:
+    """Take the snapshot's share, or its end; a snapshot without the key (an older build)
+    leaves this device's share alone."""
+    if "share" not in snapshot:
+        return
+    share = snapshot["share"]
+    if not share:
+        conn.execute("DELETE FROM shares WHERE artifact_id = ?", (artifact_id,))
+        return
+    conn.execute(
+        "DELETE FROM shares WHERE artifact_id = ? OR share_id = ?",
+        (artifact_id, share["share_id"]),
+    )
+    conn.execute(
+        f"INSERT INTO shares (artifact_id, {', '.join(_SHARE_COLUMNS)})"
+        f" VALUES (?{', ?' * len(_SHARE_COLUMNS)})",
+        (artifact_id, *(share.get(c) for c in _SHARE_COLUMNS)),
+    )
 
 
 def serialize(snapshot: dict) -> bytes:
@@ -374,6 +416,9 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
             # artifact row is not updated, in case children were added/removed
             # without changing the artifact's updated_at (e.g., tags added).
             _apply_snapshot_children(conn, artifact_id, snapshot, artifact)
+            # A share only from an equal key: a stale one must never revive a stopped link.
+            if local_key == lww_key(snapshot):
+                _apply_share(conn, artifact_id, snapshot)
             return
 
     # Upsert the artifact row in place (no delete, so the derived tables'
@@ -389,6 +434,7 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
     )
 
     _apply_snapshot_children(conn, artifact_id, snapshot, artifact)
+    _apply_share(conn, artifact_id, snapshot)
 
 
 def apply_pulled_snapshot(conn: Connection, snapshot: dict) -> None:

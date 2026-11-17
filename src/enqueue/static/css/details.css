@@ -706,15 +706,7 @@
   }
 }
 
-/* Sharing a note (js/sharenote.js): the link, and what changed since. */
-.dpanel .share-start {
-  margin-top: var(--sp-3);
-}
-.dpanel .share-link {
-  display: flex;
-  gap: var(--sp-2);
-  margin-top: var(--sp-3);
-}
+/* Sharing a note (js/sharenote.js): the dialogs. */
 .share-input {
   width: 100%;
   min-width: 0;
@@ -734,20 +726,30 @@
     0 0 0 2px color-mix(in oklab, var(--lavender-focus) 45%, transparent),
     var(--shadow-field);
 }
-.dpanel .share-link .share-input {
+dialog.share-dialog {
+  width: min(480px, calc(100vw - 40px));
+}
+dialog.share-dialog .share-link {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+}
+dialog.share-dialog .share-link .share-input {
   flex: 1;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-dim);
 }
-.dpanel .share-changed {
-  margin: var(--sp-3) 0 0;
-  font-size: var(--d-text);
-  line-height: var(--d-line);
-  color: var(--text-dim);
+dialog.share-dialog p.share-changed {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-mute);
 }
-.dpanel .share-stop {
-  display: block;
-  margin-top: var(--sp-3);
+dialog.share-dialog .share-foot {
+  align-items: center;
+}
+dialog.share-dialog .share-stop {
+  margin-right: auto;
+  color: var(--danger, var(--text-mute));
 }
 dialog.share-dialog .share-span {
   border: 0;

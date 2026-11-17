@@ -1,5 +1,5 @@
-  // Sharing a note as a read-only link (share.py): the Details panel's Share section
-  // and its dialog. The link carries the key; the relay keeps only sealed bytes.
+  // Sharing a note as a read-only link (share.py): the title bar's share button and its
+  // dialogs. The link carries the key; the relay keeps only sealed bytes.
 
   const SHARE_SPANS = [
     ["1d", "1 day"],
@@ -30,41 +30,20 @@
     return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  function shareSectionHtml(s) {
-    const head =
-      '<div class="dsec-head"><span class="dsec-label">Share</span></div>';
-    if (!s.shared) {
-      return (
-        head +
-        '<p class="facet-empty">Anyone with the link can read the note as it is now. Enqueue cannot.</p>' +
-        '<button class="btn secondary share-start" type="button" onclick="openShareDialog()">Share this note</button>'
-      );
-    }
-    const when =
+  function shareStatus(s) {
+    return (
       "Shared " +
       shareDay(s.shared_at) +
       (s.expires_at ? ", open until " + shareDay(s.expires_at) : ", open until you stop it") +
       (s.passphrase ? ", with a passphrase" : "") +
-      ".";
-    return (
-      head +
-      '<p class="facet-empty">' + esc(when) + "</p>" +
-      (s.url
-        ? '<div class="share-link"><input class="share-input" readonly aria-label="Link to the note" value="' +
-          esc(s.url) +
-          '"><button class="btn secondary" type="button" onclick="copyShareLink()">Copy</button></div>'
-        : "") +
-      (s.changed
-        ? '<p class="share-changed">You changed the note since you shared it. ' +
-          '<button type="button" class="linkish" onclick="updateShare()">Update the shared copy</button></p>'
-        : "") +
-      '<button type="button" class="linkish share-stop" onclick="stopShare()">Stop sharing</button>'
+      "."
     );
   }
 
+  // Lights the title bar's share button when the note is shared.
   async function mountShare(id) {
-    const box = document.getElementById("shareSec");
-    if (!box) return;
+    const top = document.getElementById("shareToggle");
+    if (!top) return;
     let s;
     try {
       s = await shareCall(id);
@@ -72,18 +51,62 @@
       s = { shared: false };
     }
     if (!ctx || ctx.id !== id) return;
-    box.innerHTML = shareSectionHtml(s);
+    top.classList.toggle("lit", !!s.shared);
+    top.title = s.shared ? "Shared: see the link" : "Share this note";
+    top.setAttribute("aria-label", s.shared ? "Shared" : "Share");
   }
 
-  async function copyShareLink() {
-    const field = document.querySelector("#shareSec .share-link input");
-    if (!field) return;
+  // The title bar's share button: the link of a shared note, else the dialog that makes one.
+  async function shareFromTitle() {
+    if (!ctx || ctx.kind !== "note") return;
+    const id = ctx.id;
+    let s;
     try {
-      await navigator.clipboard.writeText(field.value);
-      toast("Link copied");
-    } catch (_) {
-      field.select();
+      s = await shareCall(id);
+    } catch (err) {
+      return shareFailed(err);
     }
+    if (!ctx || ctx.id !== id) return;
+    return s.shared ? openSharedDialog(id, s) : openShareDialog();
+  }
+
+  async function openSharedDialog(id, s) {
+    const box = modalShell(
+      '<h2 id="shareTitle">Shared note</h2>' +
+        "<p>" + esc(shareStatus(s)) + " Anyone with the link reads the note as it is now.</p>" +
+        (s.url
+          ? '<div class="share-link"><input class="share-input" readonly aria-label="Link to the note" value="' +
+            esc(s.url) +
+            '"><button class="btn primary" type="button" data-act="copy">Copy</button></div>'
+          : "") +
+        (s.changed
+          ? '<p class="share-changed">The link has not caught up with your last edit yet. ' +
+            '<button type="button" class="linkish" data-act="send">Send it now</button></p>'
+          : "") +
+        '<div class="asked share-foot"><button type="button" class="linkish share-stop" data-act="stop">Stop sharing</button>' +
+        '<button class="btn secondary" value="no">Done</button></div>',
+      { labelledBy: "shareTitle", focusSel: s.url ? '[data-act="copy"]' : '[value="no"]', backdrop: true },
+    );
+    box.classList.add("share-dialog");
+    const field = box.querySelector(".share-input");
+    field?.addEventListener("focus", () => field.select());
+    box.querySelector('[data-act="copy"]')?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(field.value);
+        toast("Link copied");
+      } catch (_) {
+        field.select();
+      }
+    });
+    box.querySelector('[data-act="send"]')?.addEventListener("click", () => {
+      box.finish(null);
+      updateShare();
+    });
+    box.querySelector('[data-act="stop"]').addEventListener("click", () => {
+      box.finish(null);
+      stopShare();
+    });
+    await box.promise;
   }
 
   async function openShareDialog() {
@@ -91,7 +114,7 @@
     const id = ctx.id;
     const box = modalShell(
       '<h2 id="shareTitle">Share this note</h2>' +
-        "<p>Anyone with the link can read the note as it is now. Later edits stay here until you update the shared copy.</p>" +
+        "<p>Anyone with the link can read the note. Your edits reach it as you make them.</p>" +
         '<fieldset class="share-span"><legend>The link opens for</legend>' +
         SHARE_SPANS.map(
           ([v, label]) =>
@@ -104,7 +127,7 @@
         '<p class="share-hint">With a passphrase, the link alone opens nothing. Send it apart from the link.</p>' +
         '<div class="asked"><button class="btn secondary" value="no">Cancel</button>' +
         '<button class="btn primary" value="yes">Create link</button></div>',
-      { labelledBy: "shareTitle", focusSel: '[value="yes"]' },
+      { labelledBy: "shareTitle", focusSel: '[value="yes"]', backdrop: true },
     );
     box.classList.add("share-dialog");
     const yes = box.querySelector('[value="yes"]');
@@ -116,15 +139,8 @@
       try {
         const s = await shareCall(id, "POST", { expires, passphrase: passphrase || null });
         box.finish(true);
-        if (s.url) {
-          try {
-            await navigator.clipboard.writeText(s.url);
-            toast("Link copied");
-          } catch (_) {
-            toast("Link created");
-          }
-        }
         mountShare(id);
+        openSharedDialog(id, s);
       } catch (err) {
         box.finish(false);
         shareFailed(err);
@@ -138,7 +154,7 @@
     const id = ctx.id;
     try {
       await shareCall(id, "PUT");
-      toast("Shared copy updated");
+      toast("The link is up to date");
     } catch (err) {
       shareFailed(err);
     }

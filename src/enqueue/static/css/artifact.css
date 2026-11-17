@@ -127,6 +127,11 @@
     fill: currentColor;
     stroke: var(--text-dim);
   }
+  /* A shared note's mark stays an outline, like the info mark beside it. */
+  #shareToggle.lit svg {
+    fill: none;
+    stroke: currentColor;
+  }
   .title-action:hover {
     color: var(--text);
     background: color-mix(in srgb, var(--line) 20%, transparent);

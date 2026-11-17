@@ -1,7 +1,8 @@
 """Shared notes: a read-only web link to one note, which the relay cannot read.
 
-A share is a copy of the note as it was when shared (an update is the owner's choice),
-sealed here with AES-256-GCM, stored on the sync relay (`PUT /share/<id>`, in the
+A share follows the note: each change to a shared note reaches the link once the edits
+pause for QUIET_S (`follow`, called by every ingest run), so a reader who reloads sees the
+note as it is now. The copy is sealed here with AES-256-GCM, stored on the sync relay (`PUT /share/<id>`, in the
 library's own space) and opened in a browser by the viewer the relay serves at
 `/s/<id>`. The key rides the link after `#`, which a browser never sends to a server.
 With a passphrase, the key that seals is PBKDF2 of the passphrase salted with the link's
@@ -18,7 +19,9 @@ import base64
 import hashlib
 import json
 import os
+import logging
 import secrets
+import threading
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
@@ -32,7 +35,12 @@ FORMAT = 1
 NEEDS_PASSPHRASE = 1
 PBKDF2_ROUNDS = 600_000
 EXPIRES = {"1d": timedelta(days=1), "1w": timedelta(weeks=1), "never": None}
+# Seconds a shared note must be left alone before its link takes the new text.
+QUIET_S = 3.0
 _bases: dict[str, str] = {}
+_timers: dict[str, threading.Timer] = {}
+_timers_lock = threading.Lock()
+log = logging.getLogger(__name__)
 
 
 class ShareError(Exception):
@@ -154,6 +162,17 @@ def _expired(share) -> bool:
     return bool(at) and datetime.fromisoformat(at) <= datetime.now(timezone.utc)
 
 
+def _touch(conn, artifact_id: str) -> None:
+    """A new date, so the share's start or end wins on the other devices."""
+    conn.execute("UPDATE artifacts SET updated_at = ? WHERE id = ?", (db.now(), artifact_id))
+
+
+def _push(artifact_id: str) -> None:
+    from .sync.client import push_artifact
+
+    push_artifact(artifact_id)
+
+
 def info(artifact_id: str) -> dict:
     """Whether the note is shared, its link, and whether it changed since."""
     conn = db.get_conn()
@@ -182,7 +201,10 @@ def info(artifact_id: str) -> dict:
         "expires_at": share["expires_at"],
         "shared_at": share["shared_at"],
         "passphrase": bool(share["passphrase"]),
-        "changed": row is not None and _hash(row) != share["shared_hash"],
+        # Behind: the link lacks the latest edit and no send is waiting (one failed).
+        "changed": row is not None
+        and _hash(row) != share["shared_hash"]
+        and artifact_id not in _timers,
     }
 
 
@@ -223,7 +245,48 @@ def create(artifact_id: str, expires: str = "never", passphrase: str | None = No
                 _hash(row),
             ),
         )
+        _touch(conn, artifact_id)
+    _push(artifact_id)
     return info(artifact_id)
+
+
+def follow(artifact_id: str) -> None:
+    """A note changed: when it is shared and differs from its link's copy, send the new
+    text once the edits pause. Cheap when the note is not shared."""
+    conn = db.get_conn()
+    try:
+        share = conn.execute(
+            "SELECT shared_hash FROM shares WHERE artifact_id = ?", (artifact_id,)
+        ).fetchone()
+        row = (
+            conn.execute(
+                "SELECT title, body FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()
+            if share
+            else None
+        )
+    finally:
+        conn.close()
+    if row is None or _hash(row) == share["shared_hash"]:
+        return
+    with _timers_lock:
+        old = _timers.pop(artifact_id, None)
+        if old is not None:
+            old.cancel()
+        timer = threading.Timer(QUIET_S, _follow_now, (artifact_id,))
+        timer.daemon = True
+        _timers[artifact_id] = timer
+        timer.start()
+
+
+def _follow_now(artifact_id: str) -> None:
+    with _timers_lock:
+        _timers.pop(artifact_id, None)
+    try:
+        update(artifact_id)
+    except ShareError as exc:
+        # The share dialog shows the link as behind and offers to send it again.
+        log.info("shared note %s not updated: %s", artifact_id, exc)
 
 
 def update(artifact_id: str) -> dict:
@@ -244,6 +307,8 @@ def update(artifact_id: str) -> dict:
             "UPDATE shares SET shared_at = ?, shared_hash = ? WHERE artifact_id = ?",
             (shared_at, _hash(row), artifact_id),
         )
+    # No new date: the other devices take the copy's hash on an equal key.
+    _push(artifact_id)
     return info(artifact_id)
 
 
@@ -261,6 +326,8 @@ def stop(artifact_id: str) -> None:
     _call("DELETE", f"/share/{share['share_id']}")
     with db.transaction() as conn:
         conn.execute("DELETE FROM shares WHERE artifact_id = ?", (artifact_id,))
+        _touch(conn, artifact_id)
+    _push(artifact_id)
 
 
 def stop_quietly(artifact_id: str) -> None:
@@ -274,8 +341,6 @@ def stop_quietly(artifact_id: str) -> None:
 
 def forget_later(artifact_id: str) -> None:
     """Stop sharing in the background: the trash and the vault do not wait on the relay."""
-    import threading
-
     threading.Thread(target=stop_quietly, args=(artifact_id,), daemon=True).start()
 
 

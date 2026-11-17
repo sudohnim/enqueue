@@ -248,8 +248,11 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         facets.push(row.map_err(|e| e.to_string())?);
     }
 
+    let share = get_share(conn, artifact_id)?;
+
     Ok(Some(serde_json::json!({
         "artifact": artifact,
+        "share": share,
         "annotations": anns,
         "tags": tags,
         "page_text": [],
@@ -258,6 +261,128 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         // Full columns, so the desktop stores them faithfully.
         "facets": facets,
     })))
+}
+
+// ---- Shared notes: sealed exactly as the engine's share.py seals them ----------------
+
+const SHARE_MAGIC: &[u8; 4] = b"ENQS";
+const SHARE_PBKDF2_ROUNDS: u32 = 600_000;
+const SHARE_COLUMNS: [&str; 8] = [
+    "share_id", "link_key", "seal_key", "passphrase", "expires_at", "created_at", "shared_at",
+    "shared_hash",
+];
+
+pub fn share_b64(raw: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+}
+
+pub fn share_unb64(text: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(text.trim_end_matches('='))
+        .map_err(|e| format!("share key: {e}"))
+}
+
+/// The key that seals: the link's own key, or PBKDF2 of the passphrase salted with it.
+pub fn share_seal_key(link_key: &[u8], passphrase: Option<&str>) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    match passphrase.filter(|p| !p.is_empty()) {
+        None => out.copy_from_slice(&link_key[..32]),
+        Some(p) => {
+            use unicode_normalization::UnicodeNormalization;
+            let word: String = p.nfc().collect();
+            pbkdf2::pbkdf2_hmac::<sha2::Sha256>(word.as_bytes(), link_key, SHARE_PBKDF2_ROUNDS, &mut out);
+        }
+    }
+    out
+}
+
+/// `ENQS`, format 1, flags (1 = passphrase), a 12-byte nonce, then AES-256-GCM of the
+/// note with those 18 bytes as associated data.
+pub fn share_seal(key: &[u8; 32], title: &str, body: &str, shared_at: &str, passphrase: bool) -> Result<Vec<u8>, String> {
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    let mut head = Vec::with_capacity(18);
+    head.extend_from_slice(SHARE_MAGIC);
+    head.push(1);
+    head.push(if passphrase { 1 } else { 0 });
+    let mut nonce = [0u8; 12];
+    getrandom::getrandom(&mut nonce).map_err(|e| format!("nonce: {e}"))?;
+    head.extend_from_slice(&nonce);
+    let plain = serde_json::json!({"v": 1, "title": title, "body": body, "shared_at": shared_at}).to_string();
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
+    let sealed = cipher
+        .encrypt(aes_gcm::Nonce::from_slice(&nonce), Payload { msg: plain.as_bytes(), aad: &head })
+        .map_err(|_| "share seal failed".to_string())?;
+    head.extend_from_slice(&sealed);
+    Ok(head)
+}
+
+#[cfg(test)]
+fn share_open(key: &[u8; 32], data: &[u8]) -> Result<Value, String> {
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    let (head, rest) = data.split_at(18);
+    let cipher = aes_gcm::Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
+    let plain = cipher
+        .decrypt(aes_gcm::Nonce::from_slice(&head[6..]), Payload { msg: rest, aad: head })
+        .map_err(|_| "wrong key".to_string())?;
+    serde_json::from_slice(&plain).map_err(|e| e.to_string())
+}
+
+/// What the link's copy was made from (share.py `_hash`).
+pub fn share_hash(title: &str, body: &str) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(format!("{title}\n{body}").as_bytes()))
+}
+
+/// This note's share, as the snapshot carries it, or None.
+pub fn get_share(conn: &Connection, artifact_id: &str) -> Result<Option<Value>, String> {
+    conn.query_row(
+        &format!("SELECT {} FROM shares WHERE artifact_id = ?1", SHARE_COLUMNS.join(",")),
+        [artifact_id],
+        |r| {
+            Ok(serde_json::json!({
+                "share_id": r.get::<_, String>(0)?,
+                "link_key": r.get::<_, String>(1)?,
+                "seal_key": r.get::<_, String>(2)?,
+                "passphrase": r.get::<_, i64>(3)?,
+                "expires_at": r.get::<_, Option<String>>(4)?,
+                "created_at": r.get::<_, String>(5)?,
+                "shared_at": r.get::<_, String>(6)?,
+                "shared_hash": r.get::<_, String>(7)?,
+            }))
+        },
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// Store a share (or forget it, with None).
+pub fn set_share(conn: &Connection, artifact_id: &str, share: Option<&Value>) -> Result<(), String> {
+    conn.execute("DELETE FROM shares WHERE artifact_id = ?1", [artifact_id])
+        .map_err(|e| e.to_string())?;
+    let Some(s) = share else { return Ok(()) };
+    conn.execute("DELETE FROM shares WHERE share_id = ?1", [str_at(s.get("share_id"))])
+        .map_err(|e| e.to_string())?;
+    conn.execute(
+        &format!(
+            "INSERT INTO shares (artifact_id,{}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            SHARE_COLUMNS.join(",")
+        ),
+        rusqlite::params![
+            artifact_id,
+            str_at(s.get("share_id")),
+            str_at(s.get("link_key")),
+            str_at(s.get("seal_key")),
+            int_at(s.get("passphrase")).unwrap_or(0),
+            str_at(s.get("expires_at")),
+            str_at(s.get("created_at")),
+            str_at(s.get("shared_at")),
+            str_at(s.get("shared_hash")),
+        ],
+    )
+    .map_err(|e| format!("insert share: {e}"))?;
+    Ok(())
 }
 
 /// Every relay call goes through this agent: ureq waits forever on a read by default,
@@ -518,6 +643,14 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_events_id_desc ON events(id DESC);
         "#,
+    )
+    .map_err(|e| e.to_string())?;
+    // A shared note's link and keys (the engine's migration 0045), riding the snapshot.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS shares (artifact_id TEXT PRIMARY KEY, share_id TEXT NOT NULL UNIQUE, \
+         link_key TEXT NOT NULL, seal_key TEXT NOT NULL, passphrase INTEGER NOT NULL DEFAULT 0, \
+         expires_at TEXT, created_at TEXT NOT NULL, shared_at TEXT NOT NULL, shared_hash TEXT NOT NULL)",
+        [],
     )
     .map_err(|e| e.to_string())?;
     // Migration: tags_json was added after the first release. ALTER fails with a
@@ -838,6 +971,10 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             ],
         )
         .map_err(|e| format!("insert link preview: {e}"))?;
+    }
+    // A share or its end; a snapshot from an older build without the key leaves it alone.
+    if let Some(share) = snapshot.get("share") {
+        set_share(conn, id, share.as_object().map(|_| share))?;
     }
     Ok(())
 }
@@ -3181,6 +3318,36 @@ mod vault_summary_tests {
     }
 }
 
+/// Whether dotted version `a` is higher than `b` ("0.10.0" beats "0.9.9"); a version
+/// that does not parse is never newer.
+pub fn version_newer(a: &str, b: &str) -> bool {
+    let parse = |v: &str| -> Option<Vec<u64>> { v.trim().split('.').map(|p| p.parse().ok()).collect() };
+    match (parse(a), parse(b)) {
+        (Some(mut x), Some(mut y)) => {
+            let n = x.len().max(y.len());
+            x.resize(n, 0);
+            y.resize(n, 0);
+            x > y
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod version_compare {
+    use super::version_newer;
+
+    #[test]
+    fn versions_compare_by_number_not_text() {
+        assert!(version_newer("0.10.0", "0.9.9"));
+        assert!(version_newer("0.3.3", "0.3.2"));
+        assert!(version_newer("1.0", "0.9.9"));
+        assert!(!version_newer("0.3.2", "0.3.2"));
+        assert!(!version_newer("0.3.2.0", "0.3.2"));
+        assert!(!version_newer("", "0.3.2"));
+        assert!(!version_newer("0.3.1", "0.3.2"));
+    }
+}
 
 #[cfg(test)]
 mod relay_stall {
@@ -3201,5 +3368,47 @@ mod relay_stall {
         });
         let status = rx.recv_timeout(std::time::Duration::from_secs(20)).expect("pull hung");
         assert_eq!(status, "error");
+    }
+}
+
+#[cfg(test)]
+mod share_tests {
+    use super::*;
+
+    #[test]
+    fn a_share_opens_what_the_engine_sealed_and_seals_what_it_opens() {
+        let link_key: Vec<u8> = (0u8..32).collect();
+        let key = share_seal_key(&link_key, Some("correct horse"));
+        assert_eq!(hex::encode(key), "6e0e47b07fb12cc6608ce003ec335e64e80afd97be2916c2b75e7acca956b65f");
+        let from_python = hex::decode("454e515301014df5d9a0bf297fcbddaba036177cd080ba59d249f88fd7fcfc926379c8227a5b3ee0d9f37708aa5b9014eda1f78cdbd037dffc3ce7d25e61bc2c4b886d86b481d8a39d0b20fbf590cd0f85b18886c5ae6fcc99d00620d4a8452f3c9e7a2e8d81f3d88c602c2f40810bcd6f818d274ddeefccf956efd93df6").unwrap();
+        assert_eq!(share_open(&key, &from_python).unwrap()["body"], "Pack the blue tent.");
+        let ours = share_seal(&key, "Café", "Pack the blue tent.", "2026-11-13T00:00:00+00:00", true).unwrap();
+        assert_eq!(&ours[..6], b"ENQS\x01\x01");
+        assert_eq!(share_open(&key, &ours).unwrap()["title"], "Café");
+        assert!(share_open(&share_seal_key(&link_key, None), &ours).is_err());
+        assert_eq!(share_hash("Café", "Pack the blue tent."), "c4a1109dd0e099c042e6d1e3a381295ec8e6664dc3707c349c3329b80e8a4ca6");
+        assert_eq!(share_unb64(&share_b64(&link_key)).unwrap(), link_key);
+    }
+
+    #[test]
+    fn a_share_rides_the_snapshot_and_its_end_too() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let mut snap = serde_json::json!({
+            "artifact": {"id": "n1", "kind": "note", "title": "T", "body": "B", "created_at": "2026-11-13T00:00:00+00:00",
+                         "updated_at": "2026-11-13T00:00:01+00:00", "status": "ready", "_device_id": "mac"},
+            "share": {"share_id": "s1", "link_key": "k", "seal_key": "k", "passphrase": 0, "expires_at": null,
+                      "created_at": "2026-11-13T00:00:01+00:00", "shared_at": "2026-11-13T00:00:01+00:00", "shared_hash": "h"},
+        });
+        apply_snapshot(&conn, &snap).unwrap();
+        assert_eq!(get_share(&conn, "n1").unwrap().unwrap()["share_id"], "s1");
+        assert_eq!(build_snapshot(&conn, "n1").unwrap().unwrap()["share"]["link_key"], "k");
+        snap.as_object_mut().unwrap().remove("share");
+        apply_snapshot(&conn, &snap).unwrap();
+        assert!(get_share(&conn, "n1").unwrap().is_some());
+        snap["share"] = Value::Null;
+        snap["artifact"]["updated_at"] = "2026-11-13T00:00:02+00:00".into();
+        apply_snapshot(&conn, &snap).unwrap();
+        assert!(get_share(&conn, "n1").unwrap().is_none());
     }
 }

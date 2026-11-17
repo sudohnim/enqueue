@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import httpx
@@ -60,6 +61,22 @@ def test_a_passphrase_is_needed_besides_the_link(relay):
     assert _open(relay, url, "correct horse")["body"] == "Locker code ideas."
     with pytest.raises(Exception):
         _open(relay, url)
+
+
+def test_the_link_follows_the_note_as_it_is_edited(relay, monkeypatch):
+    monkeypatch.setattr(share, "QUIET_S", 0.05)
+    aid = notes.create(body="Old plan.")["artifact"]["id"]
+    url = share.create(aid)["url"]
+    notes.edit(aid, "New plan.")
+
+    share.follow(aid)
+    for _ in range(100):
+        if _open(relay, url)["body"] == "New plan.":
+            break
+        time.sleep(0.05)
+
+    assert _open(relay, url)["body"] == "New plan."
+    assert share.info(aid)["changed"] is False
 
 
 def test_an_update_replaces_the_copy_and_keeps_the_link(relay):
@@ -201,3 +218,83 @@ def test_the_viewer_is_served_with_a_strict_policy(tmp_path):
     assert script.status_code == 200
     assert relay.get("/s/static/../app.py").status_code == 404
     assert relay.get("/s/fonts/HankenGrotesk-latin.woff2").status_code == 200
+
+
+def _snapshot(aid: str) -> dict:
+    from enqueue.sync.snapshot import read_artifact_snapshot
+
+    conn = db.get_conn()
+    try:
+        return read_artifact_snapshot(conn, aid)
+    finally:
+        conn.close()
+
+
+def _apply(snap: dict) -> None:
+    from enqueue.sync.snapshot import apply_snapshot
+
+    with db.transaction() as conn:
+        apply_snapshot(conn, snap)
+
+
+def _later(snap: dict, body: str | None = None) -> dict:
+    snap = json.loads(json.dumps(snap))
+    snap["artifact"]["updated_at"] = "9999-01-01T00:00:00.000000+00:00"
+    snap["artifact"]["_device_id"] = "phone"
+    if body is not None:
+        snap["artifact"]["body"] = body
+    return snap
+
+
+def test_a_share_rides_the_snapshot_to_another_device(relay):
+    aid = notes.create(body="Carried along.")["artifact"]["id"]
+    before = _snapshot(aid)["artifact"]["updated_at"]
+    url = share.create(aid)["url"]
+    snap = _snapshot(aid)
+    assert snap["artifact"]["updated_at"] > before
+    assert snap["share"]["link_key"] == url.split("#")[1]
+
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM shares")
+    _apply(_later(snap))
+
+    assert share.info(aid)["url"] == url
+
+
+def test_a_stale_snapshot_cannot_bring_back_a_stopped_share(relay):
+    aid = notes.create(body="Gone for good.")["artifact"]["id"]
+    share.create(aid)
+    stale = _snapshot(aid)
+    share.stop(aid)
+
+    _apply(stale)
+
+    assert share.info(aid) == {"shared": False}
+    _apply(_later(_snapshot(aid)))
+    assert share.info(aid) == {"shared": False}
+
+
+def test_a_snapshot_without_a_share_key_leaves_the_share_alone(relay):
+    aid = notes.create(body="Older phone.")["artifact"]["id"]
+    share.create(aid)
+    snap = _later(_snapshot(aid))
+    del snap["share"]
+
+    _apply(snap)
+
+    assert share.info(aid)["shared"]
+
+
+def test_the_mac_follows_a_share_made_on_another_device(relay, monkeypatch):
+    monkeypatch.setattr(share, "QUIET_S", 0.05)
+    aid = notes.create(body="Written on the phone.")["artifact"]["id"]
+    url = share.create(aid)["url"]
+
+    _apply(_later(_snapshot(aid), body="Edited on the phone."))
+    share.follow(aid)
+    for _ in range(100):
+        if _open(relay, url)["body"] == "Edited on the phone.":
+            break
+        time.sleep(0.05)
+
+    assert _open(relay, url)["body"] == "Edited on the phone."

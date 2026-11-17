@@ -223,6 +223,25 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun googleSignIn(requestId: String) =
       runOnUiThread { signIn.google { signInReply(requestId, it) } }
+
+    // ---- A newer version on Google Play (AppUpdates.kt) -----------------------------
+    // Answers later through window.__enqUpdateReply(id, {...}).
+
+    @JavascriptInterface
+    fun updateCheck(requestId: String) = runOnUiThread { updates.check { updateReply(requestId, it) } }
+
+    @JavascriptInterface
+    fun updateStart(requestId: String) = runOnUiThread { updates.start { updateReply(requestId, it) } }
+  }
+
+  // Not lazy: its result launcher must be registered while the activity is built.
+  private val updates = AppUpdates(this)
+
+  private fun updateReply(requestId: String, payload: JSONObject) {
+    val wv = webView ?: return
+    val script =
+      "window.__enqUpdateReply && window.__enqUpdateReply(${JSONObject.quote(requestId)}, $payload)"
+    wv.post { wv.evaluateJavascript(script, null) }
   }
 
   private val billing by lazy { Billing(this) }

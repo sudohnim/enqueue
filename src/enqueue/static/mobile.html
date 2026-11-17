@@ -1644,6 +1644,107 @@
     color: #fff;
   }
 
+  /* Sharing a note (shareMakeSheet, shareLinkSheet): the link's form and the link. */
+  .share-sheet fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0 0 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .share-sheet legend {
+    padding: 0;
+    margin-bottom: 8px;
+    font-weight: var(--w-medium);
+  }
+  .share-sheet fieldset label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+  }
+  .share-sheet input[type="radio"] {
+    accent-color: var(--accent);
+    margin: 0;
+  }
+  .share-sheet .share-pass {
+    display: grid;
+    gap: 6px;
+    font-size: 15px;
+    font-weight: var(--w-medium);
+    color: var(--text);
+  }
+  .share-sheet .share-pass em {
+    font-style: normal;
+    font-weight: var(--w-regular);
+    color: var(--text-mute);
+  }
+  .share-sheet .share-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 16px;
+    font-weight: var(--w-regular);
+    padding: 10px 12px;
+    border: 0;
+    border-radius: var(--r-lg);
+    background: var(--surface-2);
+    box-shadow: var(--hairline);
+    color: var(--text);
+  }
+  .share-sheet .share-hint {
+    margin: 8px 0 18px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-mute);
+  }
+  .share-sheet .share-link {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 14px;
+  }
+  .share-sheet .share-link .share-input {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .share-sheet .share-link button {
+    padding: 10px 16px;
+    border: 0;
+    border-radius: var(--r-lg);
+    font-size: 15px;
+    background: var(--purple-bold);
+    color: var(--on-purple-bold);
+  }
+  .share-sheet .share-behind {
+    margin: 0 0 14px;
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--text-mute);
+  }
+  .share-sheet .share-behind button,
+  .share-sheet .share-stop {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    font: inherit;
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .share-sheet .mconfirm-row {
+    align-items: center;
+  }
+  .share-sheet .share-stop {
+    margin-right: auto;
+    color: var(--danger);
+  }
+
   /* A dialog that explains before it asks (the fingerprint lock's introduction and
      its turn-off confirmation): a title and a few short lines above the same button
      row the plain confirm uses. */
@@ -4194,6 +4295,100 @@
     }, 1500);
   }
 
+  // ---- a newer version in the store (AppUpdates.kt on Android, the App Store lookup
+  // on iPhone, mobile_update_check). Asked when the library shows and when the app comes
+  // back, at most every 6 hours; "Not now" holds that version off for 3 days.
+  const updateBridge =
+    window.EnqueueAndroid && typeof window.EnqueueAndroid.updateCheck === "function"
+      ? window.EnqueueAndroid
+      : null;
+  const UPDATE_SNOOZE = "enq.updateSnooze";
+  const _updWaiting = new Map();
+  let _updSeq = 0;
+  let _updateAskedAt = 0;
+  window.__enqUpdateReply = (id, payload) => {
+    const resolve = _updWaiting.get(id);
+    if (!resolve) return;
+    _updWaiting.delete(id);
+    resolve(payload || { ok: false });
+  };
+  function updateCall(method) {
+    return new Promise((resolve) => {
+      const id = "u" + ++_updSeq;
+      _updWaiting.set(id, resolve);
+      updateBridge[method](id);
+    });
+  }
+  async function storeUpdate() {
+    if (updateBridge) {
+      const r = await updateCall("updateCheck");
+      if (!r.ok || !(r.available || r.resume)) return null;
+      return { key: String(r.version_code), resume: r.resume, points: ["Google Play has a newer version of Enqueue."] };
+    }
+    if (!onIOS || !invoke) return null;
+    const r = await invoke("mobile_update_check");
+    if (!r || !r.available || !r.url) return null;
+    return {
+      key: r.version,
+      url: r.url,
+      points: ["Version " + r.version + " is on the App Store. You have " + r.current + "."],
+    };
+  }
+  function updateSnoozed(key) {
+    try {
+      const s = JSON.parse(localStorage.getItem(UPDATE_SNOOZE) || "null");
+      return !!s && s.key === key && Date.now() < s.until;
+    } catch (e) {
+      return false;
+    }
+  }
+  function snoozeUpdate(key) {
+    try {
+      localStorage.setItem(UPDATE_SNOOZE, JSON.stringify({ key, until: Date.now() + 3 * 864e5 }));
+    } catch (e) {
+      /* it asks again next time; harmless */
+    }
+  }
+  async function maybeOfferUpdate() {
+    if (Date.now() - _updateAskedAt < 6 * 36e5) return;
+    _updateAskedAt = Date.now();
+    let up;
+    try {
+      up = await storeUpdate();
+    } catch (e) {
+      return; // no network or no store: ask again next time
+    }
+    if (!up) return;
+    // Play's own screen picks up an update the person left half done.
+    if (up.resume) return updateCall("updateStart");
+    const busy =
+      document.hidden ||
+      document.getElementById("library").hidden ||
+      writerOpen() ||
+      pillMenu ||
+      document.querySelector(".mconfirm-backdrop") ||
+      document.getElementById("mpin");
+    if (busy || updateSnoozed(up.key)) {
+      if (busy) _updateAskedAt = 0;
+      return;
+    }
+    const yes = await mobileSheet({
+      title: "A new version of Enqueue is ready",
+      points: [...up.points, "Update to get the latest fixes and features."],
+      ok: "Update",
+    });
+    if (!yes) return snoozeUpdate(up.key);
+    if (updateBridge) {
+      const r = await updateCall("updateStart");
+      if (!r.ok && r.reason !== "none") openExternal("https://play.google.com/store/apps/details?id=com.sudohnim.enqueue").catch(() => {});
+    } else {
+      openExternal(up.url).catch((err) => toast(String((err && err.message) || err), true));
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) maybeOfferUpdate();
+  });
+
   // ---- the vault's fingerprint switch (inside the vault only) ----
   const VAULT_FINGER_POINTS = () => [
     cap(bioWord()) + " opens the vault instead of the 6-digit code.",
@@ -5336,6 +5531,7 @@
     // its job - hide it even if a (possibly slow) sync is still in flight.
     document.getElementById("loading").hidden = true;
     maybeOfferAppLock(); // once, on a phone that can use it
+    maybeOfferUpdate(); // a newer version in the store
     // Assemble all shelves off-DOM, then swap them in with one reflow. "Everything
     // else" (Last touch) is a big flat clump - render it as a vertical infinite-scroll
     // grid instead of one endless horizontal rail.
@@ -5737,6 +5933,200 @@
       });
   }
 
+  // ---- Sharing a note as a read-only link (mobile_share_*; the Mac's js/sharenote.js) ----
+  // The share rides the note's snapshot, so a link made on the Mac shows here and one
+  // made here shows there; edits on either reach the link.
+  const SHARE_SPANS = [
+    ["1d", "1 day"],
+    ["1w", "1 week"],
+    ["never", "Until I stop it"],
+  ];
+  function shareDay(iso) {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  async function shareFailed(err) {
+    const msg = String(err && err.message ? err.message : err);
+    if (!msg.startsWith("pro:")) return toast(msg, true);
+    if (!billingReady()) return toast(msg.slice(4).trim(), true);
+    await paintPlan(); // starts the store for this account, which goPro needs
+    goPro();
+  }
+  // A centred card on a dimmed page, closed by Cancel, a tap outside or Back.
+  function shareCard(title) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "mconfirm-backdrop";
+    const card = document.createElement("div");
+    card.className = "mconfirm-card share-sheet";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
+    card.setAttribute("aria-labelledby", "mshare_title");
+    const heading = document.createElement("h2");
+    heading.className = "mconfirm-title";
+    heading.id = "mshare_title";
+    heading.textContent = title;
+    card.appendChild(heading);
+    const close = () => backdrop.remove();
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) close();
+    });
+    backdrop.addEventListener("enq-cancel", close); // the Back gesture
+    backdrop.appendChild(card);
+    return { backdrop, card, close };
+  }
+  function markShared(btn, shared) {
+    if (!btn) return;
+    btn.classList.toggle("lit", !!shared);
+    btn.title = shared ? "Shared: see the link" : "Share this note";
+    btn.ariaLabel = shared ? "Shared" : "Share";
+  }
+  async function openShare(id, btn) {
+    let s;
+    try {
+      s = await invoke("mobile_share_get", { id });
+    } catch (e) {
+      return shareFailed(e);
+    }
+    markShared(btn, s.shared);
+    if (s.shared) shareLinkSheet(id, s, btn);
+    else shareMakeSheet(id, btn);
+  }
+  function shareMakeSheet(id, btn) {
+    const { backdrop, card, close } = shareCard("Share this note");
+    const intro = document.createElement("div");
+    intro.className = "mconfirm-points";
+    intro.innerHTML = "<p>Anyone with the link can read the note. Your edits reach it as you make them.</p>";
+    const spans = document.createElement("fieldset");
+    spans.innerHTML =
+      "<legend>The link opens for</legend>" +
+      SHARE_SPANS.map(
+        ([v, label]) =>
+          '<label><input type="radio" name="mshare_span" value="' + v + '"' +
+          (v === "1w" ? " checked" : "") + "> " + label + "</label>",
+      ).join("");
+    const pass = document.createElement("label");
+    pass.className = "share-pass";
+    pass.innerHTML =
+      "<span>Passphrase <em>(optional)</em></span>" +
+      '<input class="share-input" type="password" autocomplete="new-password">';
+    const hint = document.createElement("p");
+    hint.className = "share-hint";
+    hint.textContent = "With a passphrase, the link alone opens nothing. Send it apart from the link.";
+    const row = document.createElement("div");
+    row.className = "mconfirm-row";
+    const no = document.createElement("button");
+    no.type = "button";
+    no.textContent = "Cancel";
+    no.addEventListener("click", close);
+    const yes = document.createElement("button");
+    yes.type = "button";
+    yes.className = "mconfirm-ok";
+    yes.textContent = "Create link";
+    yes.addEventListener("click", async () => {
+      const expires = spans.querySelector("input:checked").value;
+      const passphrase = pass.querySelector("input").value || null;
+      yes.disabled = true;
+      yes.textContent = "Creating...";
+      try {
+        const s = await invoke("mobile_share_create", { id, expires, passphrase });
+        close();
+        markShared(btn, true);
+        shareLinkSheet(id, s, btn);
+      } catch (e) {
+        close();
+        shareFailed(e);
+      }
+    });
+    row.append(no, yes);
+    card.append(intro, spans, pass, hint, row);
+    document.body.appendChild(backdrop);
+    yes.focus();
+  }
+  function shareLinkSheet(id, s, btn) {
+    const { backdrop, card, close } = shareCard("Shared note");
+    const status = document.createElement("div");
+    status.className = "mconfirm-points";
+    const line = document.createElement("p");
+    line.textContent =
+      "Shared " + shareDay(s.shared_at) +
+      (s.expires_at ? ", open until " + shareDay(s.expires_at) : ", open until you stop it") +
+      (s.passphrase ? ", with a passphrase" : "") +
+      ". Anyone with the link reads the note as it is now.";
+    status.appendChild(line);
+    card.appendChild(status);
+    if (s.url) {
+      const link = document.createElement("div");
+      link.className = "share-link";
+      const field = document.createElement("input");
+      field.className = "share-input";
+      field.readOnly = true;
+      field.value = s.url;
+      field.setAttribute("aria-label", "Link to the note");
+      field.addEventListener("focus", () => field.select());
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", async () => {
+        try {
+          await copyText(s.url);
+          toast("Link copied");
+        } catch (e) {
+          field.select();
+        }
+      });
+      link.append(field, copy);
+      card.appendChild(link);
+    }
+    if (s.changed) {
+      const behind = document.createElement("p");
+      behind.className = "share-behind";
+      behind.textContent = "The link has not caught up with your last edit yet. ";
+      const send = document.createElement("button");
+      send.type = "button";
+      send.textContent = "Send it now";
+      send.addEventListener("click", async () => {
+        close();
+        try {
+          await invoke("mobile_share_update", { id });
+          toast("The link is up to date");
+        } catch (e) {
+          shareFailed(e);
+        }
+      });
+      behind.appendChild(send);
+      card.appendChild(behind);
+    }
+    const row = document.createElement("div");
+    row.className = "mconfirm-row";
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "share-stop";
+    stop.textContent = "Stop sharing";
+    stop.addEventListener("click", async () => {
+      close();
+      const yes = await mobileConfirm(
+        "Stop sharing this note? The link stops working for everyone who has it.",
+        "Stop sharing",
+        true,
+      );
+      if (!yes) return;
+      try {
+        await invoke("mobile_share_stop", { id });
+        markShared(btn, false);
+        toast("Sharing stopped");
+      } catch (e) {
+        shareFailed(e);
+      }
+    });
+    const done = document.createElement("button");
+    done.type = "button";
+    done.textContent = "Done";
+    done.addEventListener("click", close);
+    row.append(stop, done);
+    card.appendChild(row);
+    document.body.appendChild(backdrop);
+    (card.querySelector(".share-link button") || done).focus();
+  }
+
   // Whether the reader currently shows a vaulted artifact - the Back button uses
   // it to return to the vault (staying unlocked) rather than the library (locks).
   let readerVaulted = false;
@@ -5787,6 +6177,18 @@
       }
     });
     actions.appendChild(pinBtn);
+
+    // Share button: a read-only link to the note, lit while it is shared.
+    if (isNote && !a.vaulted_at && !a.deleted_at && !a.local_only) {
+      const shareBtn = document.createElement("button");
+      shareBtn.appendChild(createIcon("share"));
+      markShared(shareBtn, false);
+      shareBtn.addEventListener("click", () => openShare(a.id, shareBtn));
+      actions.appendChild(shareBtn);
+      invoke("mobile_share_get", { id: a.id })
+        .then((s) => markShared(shareBtn, s.shared))
+        .catch(() => {});
+    }
 
     // Mobile writes are deliberately the light, in-the-moment ones: edit / delete /
     // pin. Tagging and annotating are curation - a sit-down pass that belongs on the

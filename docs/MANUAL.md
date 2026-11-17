@@ -176,11 +176,14 @@ On the phone, Details shows the drafts and the switch; the list and the comparis
 ### Sharing a note
 
 A note can be shared as a read-only web link, with Enqueue Pro and sync turned on.
-- **Details > Share > Share this note** asks how long the link opens (1 day, 1 week, or until you stop it) and for an optional passphrase, then copies the link.
+- The share button in the note's title bar opens a dialog. It asks how long the link opens (1 day, 1 week, or until you stop it) and for an optional passphrase, then shows the link with **Copy**.
 - Anyone with the link reads the note in a browser, with no app and no account. Enqueue cannot read it: the key is in the link, after the `#`.
 - With a passphrase, the link alone opens nothing. Send the passphrase apart from the link.
-- The link shows the note as it was when you shared it. After you edit it, Details says so; **Update the shared copy** sends the new text to the same link.
+- The link follows the note: a few seconds after you stop typing, your edits reach it, and the reader sees them when they reload. This works from the phone too.
+- On a shared note, the share button opens the link again, with **Copy** and **Stop sharing**.
 - **Stop sharing** ends the link for everyone. Moving the note to the trash or the vault, or keeping it on this Mac only, stops sharing too.
+- On the phone, the share button is in a note's top bar, beside the star.
+- A link made on the Mac shows on the phone, and one made on the phone shows on the Mac.
 - Pictures in a note do not show in the shared copy.
 
 ## Links, PDFs, images and files
@@ -344,6 +347,7 @@ The phone app (Android and iPhone) is your library in your pocket: read, capture
 - **Back on iPhone.** Swipe in from the left edge.
 - **Sync while closed.** On Android, Enqueue sends and fetches changes about every half hour when there is a connection.
 On the iPhone, iOS wakes Enqueue now and then to do the same; it decides when.
+- **Updates.** When Google Play or the App Store has a newer version, the app asks you to update. **Update** opens the store's update; **Not now** asks again in 3 days.
 
 The phone does not write summaries or build the search index itself; those come from the Mac through sync.
 

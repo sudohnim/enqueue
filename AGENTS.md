@@ -392,7 +392,7 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
-| `migrations/versions/0045_shares.py` | `shares`: per shared note its link id, the key in the link, the key that seals (they differ with a passphrase), expiry, and a hash of what was shared. Local only, never synced. |
+| `migrations/versions/0045_shares.py` | `shares`: per shared note its link id, the key in the link, the key that seals (they differ with a passphrase), expiry, and a hash of what was shared. Rides the artifact snapshot as `share`. |
 | `migrations/versions/0044_view_sync.py` | `saved_pivots.updated_at` and `_device_id`, and `pivot_tombstones`: saved views sync between computers under LWW. |
 | `migrations/versions/0043_facet_bridge.py` | `facets.bridge`: a summary line that restates the idea in another field's words. Rides the snapshot both ways (the phone adds the column in `init_schema`). |
 | `migrations/versions/0042_related_owner.py` | `related.owner`, in the key: which artifact chose a link, so recomputing one replaces only its own choices. |
@@ -1583,17 +1583,27 @@ Play's Data safety form and Apple's App Privacy section must list "Crash logs" a
 
 ### Shared notes (2026-11-13)
 
-A note is shared as a read-only web link: a copy of the note as it is now, sealed on the Mac and kept on the sync relay, which cannot read it (`share.py`, `js/sharenote.js` for the Details panel's Share section, `static/share.html` + `js/share.js` + `css/share.css` for the viewer).
+A note is shared as a read-only web link: a copy of the note, sealed on the Mac and kept on the sync relay, which cannot read it (`share.py`, `js/sharenote.js` for the title bar's share button and its dialog (a centred modal: make a link, or copy, catch up and stop one), `static/share.html` + `js/share.js` + `css/share.css` for the viewer).
 The link is `<share base>/s/<id>#<link key>`: 16 random bytes of id and 32 of key, URL-safe base64; the key is after `#`, which a browser never sends.
 The sealed bytes are `ENQS`, a format byte (1), a flags byte (1 = needs a passphrase), a 12-byte nonce, then AES-256-GCM of `{"v","title","body","shared_at"}` with those first 18 bytes as associated data; the viewer opens them with WebCrypto, which is why this is AES-GCM and not the sync key's secretbox. `cryptography` is a core dependency for it.
 With a passphrase the sealing key is PBKDF2-SHA256 (600,000 rounds) of the passphrase (NFC) salted with the link key, so the link alone opens nothing; the Mac keeps the derived key (`shares.seal_key`) so "Update the shared copy" needs no passphrase.
-A share is a snapshot by decision: an edit changes nothing until the person presses Update (`share.update`, same link); Details says when the note changed since (`shared_hash`).
+The link follows the note (decided 2026-11-13, replacing a snapshot with an Update button): every ingest run calls `share.follow`, which, for a shared note whose text differs from the copy (`shared_hash`), sends it to the same link once edits pause for `QUIET_S` (3 s). Ingest sees every change, desktop edits and pulled phone edits alike. A send that fails leaves the share dialog saying the link is behind, with "Send it now" (`share.update`).
 Expiry is 1 day, 1 week or never; the relay drops an expired share when one is read (`storage.drop_expired_shares`).
 Only notes, never local-only, vaulted or trashed ones. Trash, vault and switching on local-only stop sharing in the background (`share.forget_later`); one that could not reach the relay, or a note trashed on the phone, is stopped at the next engine start (`share.retry_stops`).
 Sharing is Pro on the hosted relay (402, which Settings answers with the upgrade sheet, `UPGRADE_FOR.share`); a relay of your own has no plans. Stopping a share never needs Pro.
-Pictures in a note live on the Mac and are removed from the shared copy. The share record does not sync, so the phone and a second Mac do not show it; the phone cannot share yet.
+Pictures in a note live on the Mac and are removed from the shared copy.
+**The share record syncs (2026-11-13).** It rides the artifact snapshot as `share` (the `shares` row, or null when stopped; the snapshot is sealed under the sync key, so the link's key may ride it). Making or stopping a share moves the note's `updated_at` and pushes it; sending a new copy pushes without a new date, so the other devices take the copy's hash. A device takes a snapshot's `share` only when the snapshot's key wins or ties (`_apply_share` in `sync/snapshot.py`; the phone's apply gate does the same), so a stale snapshot can never bring back a stopped link; a snapshot without the key (an older build) leaves the share alone.
+**The phone shares too.** The reader's share button (`openShare`, `shareMakeSheet`, `shareLinkSheet` in `mobile.html`) calls `mobile_share_get|create|update|stop` in `lib.rs`, which seal in Rust exactly as `share.py` does (`share_seal`, `share_seal_key` in `sync.rs`, AES-256-GCM and PBKDF2; a test opens bytes the Python sealed). A 402 opens the paywall. The phone follows its own edits in the outbox (`share_follow` in `drain_outbox`): a shared note whose text moved on sends its new copy before its snapshot goes up, and one trashed or vaulted on the phone stops sharing there.
 The viewer's JavaScript comes from the relay: a relay that served other code could read what it decrypts. That is the limit of every web share with the key in the link.
-`tests/test_share.py` pins the format, the passphrase, update, stop, expiry, the Pro rule, and that shares never reach the sync feed.
+`tests/test_share.py` pins the format, the passphrase, following edits, update, stop, expiry, the Pro rule, and that shares never reach the sync feed.
+
+### The phone asks to update when the store has a newer version (2026-11-13)
+
+When the library shows, and when the app comes back to the front (at most every 6 hours), the phone asks its store for a newer version and shows a prompt (`maybeOfferUpdate` in `mobile.html`).
+Android asks Google Play through in-app updates (`AppUpdates.kt`, `com.google.android.play:app-update`, bridged as `EnqueueAndroid.updateCheck`/`updateStart`, answering through `window.__enqUpdateReply`); Update opens Play's own update screen, and an update left half done is picked up again without a prompt. Only a copy installed from Play gets an answer, so a debug or sideloaded build never prompts.
+The iPhone asks Apple's public lookup (`https://itunes.apple.com/lookup?bundleId=com.sudohnim.enqueue`, `mobile_update_check` in `lib.rs`) and compares its version with the running one (`sync::version_newer`); Update opens the App Store page. Apple's lookup can lag a release by some hours.
+"Not now" holds that version off for 3 days (localStorage `enq.updateSnooze`). The prompt never shows over another sheet, the writing page or the vault's code.
+The store is the one source: nothing is set at release time, and the prompt never names a version the store does not offer yet.
 
 ### The AI summary can be switched off for one artifact
 

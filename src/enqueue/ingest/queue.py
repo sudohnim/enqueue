@@ -394,6 +394,9 @@ def process(artifact_id: str) -> dict:
     every sweep.
     """
     _owed_in_run.discard(artifact_id)
+    from .. import share
+
+    share.follow(artifact_id)
     with _queued_lock:
         _processing.add(artifact_id)
     settled = False

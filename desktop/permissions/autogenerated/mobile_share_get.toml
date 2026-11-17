@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-share-get"
+description = "Enables the mobile_share_get command without any pre-configured scope."
+commands.allow = ["mobile_share_get"]
+
+[[permission]]
+identifier = "deny-mobile-share-get"
+description = "Denies the mobile_share_get command without any pre-configured scope."
+commands.deny = ["mobile_share_get"]
