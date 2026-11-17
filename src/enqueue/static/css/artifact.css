@@ -300,7 +300,7 @@
   .related-head {
     display: flex;
     align-items: flex-end;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: var(--sp-3);
   }
   .related-head .shelf {
@@ -330,8 +330,20 @@
   }
   .relatedlist {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: 1fr;
     gap: var(--sp-2);
+  }
+  .relatedgroup + .relatedgroup {
+    margin-top: var(--sp-4);
+  }
+  .relatedlabel {
+    font-size: 12px;
+    color: var(--text-mute);
+    margin-bottom: var(--sp-1);
+  }
+  .relatedmeta {
+    font-size: 12px;
+    color: var(--text-mute);
   }
   .relateditem {
     display: flex;
@@ -362,13 +374,6 @@
     overflow-wrap: anywhere;
   }
   .relateditem:hover .relatedtitle {
-    color: var(--accent-text);
-  }
-  /* An analogy: the same idea from another field, the kind worth the most. */
-  .relatedkind {
-    font-size: 12px;
-    line-height: 16px;
-    font-weight: var(--w-strong);
     color: var(--accent-text);
   }
   .relatedwhy {

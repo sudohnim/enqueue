@@ -815,7 +815,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
 
 Finding: three kinds of link sit in one grid and only one kind has a label. The far analogy is first for 78 of 153 items. 32% of rows say only "Both mention X."
 
-- [ ] **R1. Group and label the related rows**
+- [x] **R1. Group and label the related rows** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py, src/enqueue/static/js/artifact.js, src/enqueue/static/css/artifact.css, tests/test_related.py; tests pass
   - Needs: none
   - Files: `static/js/artifact.js` (`relatedWhy`, `relatedRowHtml`), `static/css/artifact.css` (`.related*`), `ingest/related.py` (`for_artifact`)
   - Find: `grep -n 'function relatedRowHtml\|function relatedWhy' src/enqueue/static/js/artifact.js`; `grep -n 'def for_artifact' src/enqueue/ingest/related.py`

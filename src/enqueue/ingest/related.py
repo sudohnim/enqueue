@@ -617,7 +617,7 @@ def for_artifact(conn, artifact_id: str) -> list[dict]:
     and `distance` (how far apart the two subjects are). Analogies come first, the
     farthest first; then the rest, closest first."""
     rows = conn.execute(
-        "SELECT a.id, a.title, a.kind, r.score, r.via, r.point, r.kind AS link, r.distance"
+        "SELECT a.id, a.title, a.kind, a.updated_at, r.score, r.via, r.point, r.kind AS link, r.distance"
         " FROM related r JOIN artifacts a"
         " ON a.id = r.related_id WHERE r.artifact_id = ?"
         " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",

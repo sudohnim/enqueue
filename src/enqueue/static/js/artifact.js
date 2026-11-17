@@ -675,39 +675,36 @@
 
   // Related, under the note: what else this is like (ingest/related.py). Analogies come
   // first, the farthest field first, labelled as such; then notes on the same subject
-  // or naming the same thing. Each says why it is here - the shared idea, the shared
-  // name, or the line of its summary that matched. Hidden when there are none.
-  function relatedWhy(r) {
-    const parts = [];
-    if (r.via && r.link === "mention") parts.push("Both mention " + r.via + ".");
-    if (r.point) parts.push(r.point);
-    return parts.join(" ");
-  }
-
   function relatedRowHtml(related) {
     if (!related || !related.length) return "";
+    const row = (r, why) =>
+      '<button class="relateditem" type="button" data-id="' +
+      esc(r.id) +
+      '"><span class="relatedtitle">' +
+      esc(r.title || "(untitled)") +
+      '</span><span class="relatedmeta">' +
+      esc(r.kind) +
+      (r.updated_at ? " · " + esc(since(r.updated_at)) : "") +
+      "</span>" +
+      (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
+      "</button>";
+    const group = (label, rows, why) =>
+      rows.length
+        ? '<div class="relatedgroup"><div class="relatedlabel">' +
+          label +
+          '</div><div class="relatedlist">' +
+          rows.map((r) => row(r, why(r))).join("") +
+          "</div></div>"
+        : "";
+    const of = (kind) => related.filter((r) => r.link === kind);
     return (
       '<section class="related" aria-label="Related">' +
-      // The raven that went and found these, with what it brought back at its feet.
       '<div class="related-head"><div class="shelf">Related</div>' +
       '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>' +
-      '<div class="relatedlist">' +
-      related
-        .map((r) => {
-          const why = relatedWhy(r);
-          return (
-            '<button class="relateditem" type="button" data-id="' +
-            esc(r.id) +
-            '"><span class="relatedtitle">' +
-            esc(r.title || "(untitled)") +
-            "</span>" +
-            (r.link === "idea" ? '<span class="relatedkind">Same idea, another field</span>' : "") +
-            (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
-            "</button>"
-          );
-        })
-        .join("") +
-      "</div></section>"
+      group("Same subject", of("subject").sort((a, b) => b.score - a.score), (r) => r.about || r.point || "") +
+      group("Same idea, another field", of("idea"), (r) => r.point || "") +
+      group("Also mentions", of("mention"), (r) => (r.via ? "Both mention " + r.via + "." : "")) +
+      "</section>"
     );
   }
 
