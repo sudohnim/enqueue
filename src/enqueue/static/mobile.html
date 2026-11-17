@@ -9291,7 +9291,10 @@ return;
           ? "background: var(--purple-bold); color: var(--on-purple-bold); align-self: flex-end;"
           : "color: var(--text); align-self: flex-start;");
       if (isUser) div.textContent = m.text || "";
-      else div.innerHTML = window.md ? md(m.text || "") : m.text || "";
+      else {
+        const text = (m.text || "").replace(/\s?\[P\d+\]/g, "");
+        div.innerHTML = window.md ? md(text) : text;
+      }
       if (m.cited && m.cited.length) {
         const cd = document.createElement("div");
         cd.style.cssText =

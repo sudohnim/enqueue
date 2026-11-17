@@ -1,6 +1,7 @@
 # Plan
 
 Tasks for agents, from two reviews (2026-11-13 and 2026-11-16).
+Only open tasks are listed. Finished work is under **Built on this branch** at the end.
 Each task is one unit of work for one agent.
 Each task says where the code is, what to change, how to test it, and when to stop.
 The section **For the owner** at the end is not for agents.
@@ -37,6 +38,7 @@ What happened in the last two rounds, and the rules that stop it:
 19. Make one commit for each task. The message is `<ID>: <title>`. In that commit, `docs/PLAN.md` changes only that task's lines.
 20. When your session ends, stop. Do not mark, close or summarize the tasks you did not reach.
 21. A task with a letter (P1a, P1b) is a step of the task with the same number. Do the steps in order; the task with no letter is the last step.
+22. A task named in a **Needs** line that is not in this file is done. It is listed under **Built on this branch**.
 
 Labels on a title:
 
@@ -112,22 +114,18 @@ A new `#[tauri::command]` needs three edits: `commands(&[...])` in `desktop/buil
 ## Tracks
 
 This table is in order of leverage. One agent works in one track at a time.
-The sections of the file are in the order they were written: the tracks from the Fabric review (A, N, C, V and DB2) and track L (with DB3) are after track E.
+The sections of the file are in the order they were written: the tracks from the Fabric review (A, N, C and V) are after track E.
 
-| Track | Subject | Tasks |
+| Track | Subject | Open tasks |
 | --- | --- | --- |
-| DB | Migrations (do first) | DB1, DB2, DB3 |
-| S | Security and privacy | S1 to S11 |
-| L | Fill the library from what is on this Mac | L1 to L8 |
-| M | The summary | M1 to M10 |
-| R | Related notes | R1 to R14 |
-| A | An answer shows where it came from | A1 to A8 |
-| Q | Search | Q1 to Q11 |
+| S | Security and privacy | S9 (owner, device), S11 |
+| A | An answer shows where it came from | A7, A8 |
+| Q | Search | Q11 |
 | N | A result opens at its place; tests that lock search | N1 to N5 |
-| H | Something shiny | H1 to H8 |
-| P | Phone | P1 to P9 |
+| H | Something shiny | H8 |
+| P | Phone | P3 to P9 |
 | C | Storage: less space, fast opening | C1 to C7 |
-| F | Features | F1 to F4 |
+| F | Features | F1a to F4 |
 | V | Find a picture by its colour | V1 to V4 |
 | U | Consistency | U1 to U11 |
 | I | Index speed | I1, I2 |
@@ -137,401 +135,29 @@ The sections of the file are in the order they were written: the tracks from the
 
 | File | Region | Track |
 | --- | --- | --- |
-| `js/artifact.js` | `summaryPanel`, `facetRow` | M |
-| `js/artifact.js` | `relatedWhy`, `relatedRowHtml`, `mountConnections`, `mountRelatedRow`, new code for the editor margin | R |
-| `css/artifact.css` | rules that start with `.related`, new `.nearby` rules | R |
 | `css/artifact.css` | font sizes and weights only, in U6 | U |
-| `api/artifacts.py` | `get_blob` | S |
-| `api/artifacts.py` | `get_artifact` from the line `from ..ingest import related` to its end, and new routes at the end of the file | R |
-| `notes.py` | the `SELECT ... FROM facets` in `get` | M |
-| `js/home.js` | `drawShiny` | H |
-| `js/home.js` | the search bar focus handler | Q |
-| `desktop/src/lib.rs` | code outside `mod mobile` | S |
 | `desktop/src/lib.rs` | code inside `mod mobile` | P |
-| `sync/snapshot.py` | the `facets` child | M |
-| `sync/snapshot.py` | `derived_layers` and `_apply_derived_layers` | R, then H (H7 needs R11) |
-| `prompts.py` | `FACET_GENERATION` | M |
-| `prompts.py` | `SHINY`, `SHINY_HUNT` | H |
+| `desktop/tauri.conf.json` | `app.security` (S9 only) | S |
 | `ingest/queue.py` | the `events.emit("ingest", ...)` call | I |
-| `index/store_sqlite.py` | `_fetch_hits` (one line, in Q9) | Q |
-| `index/store_sqlite.py` | all other code | I |
-| `backup.py` | `start_scheduler` (one new block for each task that names it) | Q, H, C |
-| `js/artifact.js` | `openArtifactAt` and one call at the end of `showArtifact` | A |
+| `ingest/queue.py` | one call each to `thumbs.make` and `colours.make` in `_process` | C, V |
+| `index/store_sqlite.py` | all of it | I |
+| `backup.py` | `start_scheduler` (one new block for each task that names it) | C |
+| `vaultops.py` | one call each to `thumbs.drop` and `colours.drop` | C, V |
 | `js/home.js` | `facePicture` | C |
 | `js/search.js` | `openHit`, `doSimilar` | N |
 | `js/search.js` | the colour dots | V |
-| `js/search.js` | all other code | Q |
 | `retrieve/candidates.py` | the `out.append({...})` dict in `_hybrid_results` (one key, in N1) | N |
 | `retrieve/filters.py` | all of it | V |
-| `prompts.py` | `CHAT_ANSWER` | A |
-| `schemas.py` | `Answer` | A |
-| `chats.py` | the prompt body, `without_places`, and the code that reads and writes `chat_places` | A |
-| `sync/snapshot.py` | `read_chat_snapshot`, `apply_chat_snapshot` | A |
-| `ingest/queue.py` | one call each to `thumbs.make` and `colours.make` in `_process` | C, V |
-| `vaultops.py` | one call each to `thumbs.drop` and `colours.drop` | C, V |
 | `static/mobile.html` | the chat message text (in A7) | A |
-| `api/artifacts.py` | new routes at the end of the file: one for each task that names one | R, N, C |
+| `static/mobile.html` | all other code | P, then U7 |
+| `api/artifacts.py` | new routes at the end of the file: one for each task that names one | N, C |
 | `api/admin.py` | new routes at the end of the file | F, C |
 | `js/settings.js` | one new block in the Library tab | C |
-| `js/settings.js` | the "From this Mac" block in the Library tab | L |
-| `importer.py`, `api/portable.py`, `js/welcome.js` | all of the changes in track L | L |
-| `capture.py` | `link` | L |
-| `api/app.py` | one call to `watch.start()` | L |
-| `api/settings.py` | one key in `features` | L |
 | `AGENTS.md`, `docs/MANUAL.md`, `docs/DESIGN.md` | the last task of each track | all |
 
 ---
 
-## Track DB: migrations
-
-- [x] **DB1. Three migrations**
-  Done: src/enqueue/migrations/versions/0046_searches.py, 0047_facet_role.py, 0048_link_feedback.py, tests/test_migrations.py; 8 passed
-  - Needs: none
-  - Files: new `migrations/versions/0046_searches.py`, new `migrations/versions/0047_facet_role.py`, new `migrations/versions/0048_link_feedback.py`, `tests/test_migrations.py`
-  - Why: three tracks need new tables. One task makes them all, so no two agents use the same number.
-  - Do:
-    1. Make `0046_searches.py` from the recipe. `revision = "0046_searches"`, `down_revision = "0045_shares"`. In `upgrade()`:
-       ```sql
-       CREATE TABLE searches (
-         id INTEGER PRIMARY KEY,
-         query TEXT NOT NULL,
-         hits TEXT NOT NULL DEFAULT '[]',
-         loose INTEGER NOT NULL DEFAULT 0,
-         source TEXT NOT NULL,
-         created_at TEXT NOT NULL
-       );
-       CREATE INDEX idx_searches_created ON searches(created_at);
-       ```
-       Run each statement with its own `op.execute`. `downgrade()` drops the table.
-    2. Make `0047_facet_role.py`. `down_revision = "0046_searches"`. In `upgrade()`:
-       ```sql
-       ALTER TABLE facets ADD COLUMN role TEXT;
-       UPDATE facets SET role = CASE
-         WHEN bridge = 1 THEN 'bridge'
-         WHEN level = 0 THEN 'kind'
-         WHEN level = 1 THEN 'subject'
-         ELSE 'idea' END;
-       ```
-       `downgrade()` drops the column.
-    3. Make `0048_link_feedback.py`. `down_revision = "0047_facet_role"`. In `upgrade()`:
-       ```sql
-       CREATE TABLE link_feedback (
-         pair TEXT PRIMARY KEY,
-         verdict TEXT NOT NULL,
-         idea TEXT NOT NULL DEFAULT '',
-         created_at TEXT NOT NULL
-       );
-       ```
-       `pair` is the two artifact ids, sorted, joined with `|`. `verdict` is `keep` or `no`.
-  - Test: in `tests/test_migrations.py`, add one test. After `db.migrate()` on a fresh database, the tables `searches` and `link_feedback` exist and `facets` has a column `role`. Copy the way the file's other tests open the database.
-  - Check: `uv run pytest tests/test_migrations.py -q`
-
----
-
 ## Track S: security and privacy
-
-- [x] **S1. A markdown image cannot name another host**
-  Done: src/enqueue/static/js/md.js, tests/js/md_roundtrip.js; tests pass
-  - Needs: none
-  - Files: `static/js/md.js`, `tests/js/md_roundtrip.js`
-  - Why: `![a](//evil.example/x.png)` renders `<img src="//evil.example/x.png">` today. The browser fetches it from the network. Chat answers use the same renderer, so a saved web page can make an answer leak text.
-  - Find: `grep -n 'data:image' src/enqueue/static/js/md.js`
-  - Do:
-    1. Replace the image rule's pattern with this one:
-       ```js
-       /!\[([^\]]*)\]\((\/(?:artifacts|vault)\/[0-9a-f-]{36}\/blob|data:image\/[^)\s]+)\)/g
-       ```
-       Keep the replacement string as it is.
-    2. Change the comment above the rule to say: only a blob path with an id, or a `data:image` address, is drawn as a picture.
-    3. In `tests/js/md_roundtrip.js`, find the existing image cases with `grep -n 'blob' tests/js/md_roundtrip.js`. If one uses an id that is not 36 characters, change it to `00000000-0000-0000-0000-000000000000`.
-  - Test: add this block to `tests/js/md_roundtrip.js`, before the code at the end that prints the result:
-    ```js
-    for (const bad of [
-      "![a](//evil.example/x.png)",
-      "![a](/\\evil.example/x)",
-      "![a](/settings)",
-      "![a](https://evil.example/x.png)",
-    ]) {
-      if (md(bad).includes("<img")) fail("no picture from: " + bad, "no <img>", md(bad));
-    }
-    const okImg = "![a](/artifacts/00000000-0000-0000-0000-000000000000/blob)";
-    if (!md(okImg).includes("<img src=\"/artifacts/00000000-0000-0000-0000-000000000000/blob\""))
-      fail("a blob picture is drawn", "<img>", md(okImg));
-    ```
-  - Check: `uv run pytest tests/test_md_roundtrip.py -q`
-  - Do not: change the link rule on the next lines.
-
-- [x] **S2. Security headers on each engine response**
-  Done: src/enqueue/api/guard.py, tests/test_headers.py; tests pass
-  - Needs: none
-  - Files: `api/guard.py`, new `tests/test_headers.py`
-  - Why: no engine page sends a policy. Any website can put the app in a frame, and a script fault in the page could send data to any host.
-  - Do:
-    1. At the top of `api/guard.py`, add `from starlette.datastructures import MutableHeaders`.
-    2. Add two module constants:
-       ```python
-       BASE_HEADERS = {
-           "X-Content-Type-Options": "nosniff",
-           "Referrer-Policy": "no-referrer",
-           "Cross-Origin-Resource-Policy": "same-origin",
-           "X-Frame-Options": "DENY",
-       }
-       PAGE_CSP = (
-           "default-src 'self'; img-src 'self' data: blob:;"
-           " connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:;"
-           " script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
-           " object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-       )
-       ```
-    3. In `LocalOnlyGuard.__call__`, define this function before the last line and pass it in place of `send` in the last `await self.app(scope, receive, send)`:
-       ```python
-       async def send_with_headers(message):
-           if message["type"] == "http.response.start":
-               headers = MutableHeaders(scope=message)
-               for name, value in BASE_HEADERS.items():
-                   if name not in headers:
-                       headers[name] = value
-               html = headers.get("content-type", "").startswith("text/html")
-               if html and "Content-Security-Policy" not in headers:
-                   headers["Content-Security-Policy"] = PAGE_CSP
-           await send(message)
-       ```
-  - Test: in `tests/test_headers.py`, with the `store` fixture and a `TestClient`:
-    1. `GET /` has all four base headers and a `Content-Security-Policy` that holds `frame-ancestors 'none'`.
-    2. `GET /health` has `X-Content-Type-Options: nosniff` and no `Content-Security-Policy`.
-  - Check: `uv run pytest tests/test_headers.py tests/test_extension.py -q`
-  - Device check **[device]**: `bin/launch desktop`. Open a note, a PDF, a link, the capture overlay and Settings. The app works and the log `$TMPDIR/enqueue-app.log` shows no new error.
-
-- [x] **S3. Refuse a request that another website started**
-  Done: src/enqueue/extension.py, src/enqueue/api/guard.py, tests/test_headers.py; tests pass
-  - Needs: S2
-  - Files: `api/guard.py`, `extension.py`, `tests/test_headers.py`
-  - Why: a website can call `GET /search?q=...` on `127.0.0.1:8787` today. It cannot read the answer, but the call writes the activity log and can make a model call.
-  - Do:
-    1. In `extension.py`, add:
-       ```python
-       def key_ok(presented: str | None) -> bool:
-           expected = code()
-           return bool(presented and expected) and hmac.compare_digest(
-               presented.encode(), expected.encode()
-           )
-       ```
-    2. In `api/guard.py`, add a constant `CROSS_SITE_OK = ("/account/google/callback", "/account/apple/done")`.
-    3. In `LocalOnlyGuard.__call__`, after the Host check and before the Origin check, add:
-       ```python
-       site = headers.get("sec-fetch-site", "")
-       if (
-           site in ("cross-site", "same-site")
-           and not scope["path"].startswith(CROSS_SITE_OK)
-           and not extension.key_ok(headers.get("x-enqueue-key"))
-       ):
-           await PlainTextResponse("Cross-site request refused.", status_code=403)(
-               scope, receive, send
-           )
-           return
-       ```
-  - Test: in `tests/test_headers.py`:
-    1. `GET /health` with header `Sec-Fetch-Site: cross-site` answers 403.
-    2. `GET /health` with `Sec-Fetch-Site: same-origin` answers 200.
-    3. `GET /health` with no such header answers 200.
-    4. `GET /account/google/callback` with `Sec-Fetch-Site: cross-site` does not answer 403.
-  - Check: `uv run pytest tests/test_headers.py tests/test_extension.py tests/test_account.py -q`
-
-- [x] **S4. The file route does not run what it is given**
-  Done: src/enqueue/api/artifacts.py, src/enqueue/api/vault.py, tests/test_blob_route.py; tests pass
-  - Needs: none
-  - Files: `api/artifacts.py` (`get_blob`), `api/vault.py` (its blob route), new `tests/test_blob_route.py`
-  - Why: the route sends the stored type and `inline`. An uploaded HTML or SVG file opened at that address would run script inside the engine's own origin.
-  - Find: `grep -n 'def get_blob' src/enqueue/api/artifacts.py` and `grep -n 'blob' src/enqueue/api/vault.py`
-  - Do:
-    1. In `api/artifacts.py`, next to `_inline`, add:
-       ```python
-       SHOWN_IN_PLACE = {"application/pdf", "text/plain"}
-
-
-       def _shown_in_place(mime: str) -> bool:
-           return mime in SHOWN_IN_PLACE or (
-               mime.startswith("image/") and mime != "image/svg+xml"
-           )
-
-
-       def _blob_headers(mime: str, filename: str) -> dict:
-           disposition = _inline(filename)
-           if not _shown_in_place(mime):
-               disposition = disposition.replace("inline", "attachment", 1)
-           return {
-               "Content-Disposition": disposition,
-               "X-Content-Type-Options": "nosniff",
-               "Content-Security-Policy": "default-src 'none'; sandbox",
-           }
-       ```
-    2. In `get_blob`, replace `headers={"Content-Disposition": _inline(filename)}` with `headers=_blob_headers(mime, filename)`.
-    3. In the vault's blob route, import `_blob_headers` from `.artifacts` and use it the same way.
-  - Test: in `tests/test_blob_route.py`, upload two files with `POST /capture/upload` (see `tests/test_extension.py` or `grep -rn 'capture/upload' tests` for the form shape): `a.html` with type `text/html`, and `a.png` with type `image/png` (any bytes). Assert: the HTML answer has `Content-Disposition` that starts with `attachment`; the PNG answer starts with `inline`; both have `nosniff`.
-  - Check: `uv run pytest tests/test_blob_route.py -q`
-
-- [x] **S5. The engine makes a session token (not required yet)**
-  - Needs: none
-  - Files: new `session.py`, `config.py`, `api/guard.py`, `api/static.py`, `api/app.py`, new `tests/test_session.py`
-  - Why: the engine answers any process on the Mac. `POST /backup/kit` gives the library key to any caller with no `Origin` header. This task adds the token. S8 makes it required, after the shell and the CLI send it.
-  - Do:
-    1. In `config.py`, add `SESSION_ENFORCE = os.getenv("ENQ_SESSION_ENFORCE", "off") == "on"`.
-    2. Make `session.py`:
-       ```python
-       """The engine's session token: made at start, kept in DATA_DIR/session (0600).
-  - Done: src/enqueue/session.py, api/guard.py, api/static.py, api/app.py, tests/test_session.py; tests pass
-
-       The shell, the CLI and the scripts read the file and send the token. A process
-       that cannot read the data folder cannot call the engine."""
-
-       from __future__ import annotations
-
-       import hmac
-       import os
-       import secrets
-
-       from . import config
-
-       _token = ""
-
-
-       def path():
-           return config.DATA_DIR / "session"
-
-
-       def start() -> str:
-           """Make this run's token and write it for the engine's own clients."""
-           global _token
-           _token = secrets.token_urlsafe(32)
-           config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-           fd = os.open(path(), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-           with os.fdopen(fd, "w") as f:
-               f.write(_token)
-           return _token
-
-
-       def read() -> str:
-           """The token a client sends: the running engine's, read from its file."""
-           try:
-               return path().read_text().strip()
-           except OSError:
-               return ""
-
-
-       def ok(presented: str | None) -> bool:
-           return bool(presented and _token) and hmac.compare_digest(
-               presented.encode(), _token.encode()
-           )
-       ```
-    3. In `api/app.py`, find `def serve` with `grep -n 'def serve' src/enqueue/api/app.py`. Call `session.start()` in it before the server starts. Import `session` from the package.
-    4. In `api/static.py`, add a route:
-       ```python
-       @router.get("/boot")
-       def boot(t: str = "", to: str = "/"):
-           """Give a window the session cookie, then send it to the page it asked for."""
-           from fastapi.responses import RedirectResponse
-
-           from .. import session
-
-           if not session.ok(t):
-               raise HTTPException(status_code=401, detail="This link is not valid any more.")
-           if not to.startswith("/") or to.startswith("//") or "\\" in to:
-               to = "/"
-           response = RedirectResponse(to, status_code=303)
-           response.set_cookie("enq_session", t, httponly=True, samesite="strict", path="/")
-           return response
-       ```
-       Add the `HTTPException` import if the file does not have it.
-    5. In `api/guard.py`, add:
-       ```python
-       OPEN_PATHS = ("/health", "/boot", "/account/google/callback", "/account/apple/done")
-
-
-       def _presented(headers: dict) -> str:
-           auth = headers.get("authorization", "")
-           if auth.lower().startswith("bearer "):
-               return auth[7:].strip()
-           from http.cookies import SimpleCookie
-
-           jar = SimpleCookie()
-           try:
-               jar.load(headers.get("cookie", ""))
-           except Exception:  # noqa: BLE001 - a bad cookie header is no token
-               return ""
-           return jar["enq_session"].value if "enq_session" in jar else ""
-       ```
-    6. In `LocalOnlyGuard.__call__`, after the Host check, add:
-       ```python
-       if (
-           config.SESSION_ENFORCE
-           and not scope["path"].startswith(OPEN_PATHS)
-           and not session.ok(_presented(headers))
-           and not extension.allows(
-               headers.get("origin") or "", scope["path"], headers.get("x-enqueue-key")
-           )
-       ):
-           await PlainTextResponse("This engine needs its session token.", status_code=401)(
-               scope, receive, send
-           )
-           return
-       ```
-       Import `session` at the top with `config` and `extension`.
-  - Test: in `tests/test_session.py`, with `store`, `monkeypatch.setattr(config, "SESSION_ENFORCE", True)` and `token = session.start()`:
-    1. `GET /artifacts` with no token answers 401.
-    2. `GET /artifacts` with `Authorization: Bearer <token>` answers 200.
-    3. `GET /health` with no token answers 200.
-    4. `GET /boot?t=<token>` with `follow_redirects=False` answers 303 and sets cookie `enq_session`; the next `GET /artifacts` on the same client answers 200.
-    5. `GET /boot?t=wrong` answers 401.
-    6. `GET /boot?t=<token>&to=//evil.example` redirects to `/`.
-    7. With `SESSION_ENFORCE` false, `GET /artifacts` with no token answers 200.
-  - Check: `uv run pytest tests/test_session.py tests/test_extension.py -q`
-
-- [x] **S6. The CLI and the scripts send the token**
-  Done: src/enqueue/cli.py; scripts unchanged (Owed: manual device check)
-  - Needs: S5
-  - Files: `cli.py` (`_call`), `bin/screenshots`, `bin/launch`
-  - Find: `grep -n 'def _call' src/enqueue/cli.py`; `grep -n '8787\|API_URL\|/health' bin/screenshots bin/launch`
-  - Do:
-    1. In `cli.py` `_call`, before `httpx.request`, add:
-       ```python
-       from . import session
-  - Done: src/enqueue/cli.py, bin/screenshots (fixed in review: its engine and browser now send the token). Owed: device check
-
-       token = session.read()
-       if token:
-           kwargs.setdefault("headers", {})["Authorization"] = f"Bearer {token}"
-       ```
-    2. In `bin/screenshots`, each request to its own engine sends the same header. Read the token from the scratch data folder's `session` file after the engine is up.
-    3. In `bin/launch`, the health wait uses `/health`, which is open. Change nothing there unless it calls another route.
-  - Test: none new. The CLI is tested by hand.
-  - Check: in one shell `ENQ_DATA_DIR=/tmp/enq-s6 ENQ_SESSION_ENFORCE=on uv run enq serve`. In another shell `ENQ_DATA_DIR=/tmp/enq-s6 uv run enq health` and `ENQ_DATA_DIR=/tmp/enq-s6 uv run enq artifacts` both answer. `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8787/artifacts` prints `401`. Stop the engine and delete `/tmp/enq-s6`.
-  - Do not: run this while another engine uses port 8787. If the port is in use, mark the task `[!]`.
-
-- [x] **S7. The shell opens its windows with the token** **[device required]**
-  Done: desktop/src/lib.rs; cargo test --lib pass; Owed: device check
-  - Needs: S5
-  - Files: `desktop/src/lib.rs` (outside `mod mobile`)
-  - Find: `grep -n 'WebviewUrl::External\|fn wait_for_engine\|fn data_dir\|ureq::' desktop/src/lib.rs`
-  - Do:
-    1. Add a function `session_token() -> String` that reads the file `session` in `data_dir()` and trims it. An absent file gives an empty string.
-    2. Add a function `boot_url(to: &str) -> String`. With an empty token it returns `format!("{ENGINE}{to}")`. With a token it returns `format!("{ENGINE}/boot?t={token}&to={to}")`.
-    3. The main window opens at `boot_url("/")`. The capture window opens at `boot_url("/capture")`. Call `boot_url` after `wait_for_engine` returns, so the file is there.
-    4. Each place that loads or reloads a window later (search for `navigate`, `eval`, `reload` and the comment "will reload the window when it does") uses `boot_url` again, because a new engine makes a new token.
-    5. Each `ureq` request the shell sends to `ENGINE`, other than `/health`, adds the header `Authorization: Bearer <token>` when the token is not empty.
-  - Test: add a Rust unit test for `boot_url`: with a token set through a test helper it holds `/boot?t=`; with none it is the plain address.
-  - Check: `cargo test --lib` in `desktop/`. Then `ENQ_SESSION_ENFORCE=on bin/launch desktop`: the wall shows, the capture hotkey opens the overlay, a capture saves, and `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8787/artifacts` prints `401`.
-  - Done: desktop/src/lib.rs; cargo test --lib pass. Fixed in review: engine_get and engine_post_json now send the token (the hotkey, phone linking and sign-in calls got 401). Owed: device check
-
-- [x] **S8. The token is required**
-  Done: src/enqueue/config.py, tests/conftest.py, src/enqueue/api/app.py; bin/verify --fast pass
-  - Needs: S6, S7
-  - Files: `config.py`, `api/app.py`, `tests/conftest.py`, `tests/test_session.py`
-  - Do:
-    1. In `config.py`, change the default: `os.getenv("ENQ_SESSION_ENFORCE", "on") == "on"`.
-    2. In `tests/conftest.py`, add an autouse fixture that sets `config.SESSION_ENFORCE` to `False`, so the other tests keep their plain clients. Copy the shape of `_test_host`.
-    3. In `serve()`, after `session.start()`, log one line: `Open http://127.0.0.1:8787/boot?t=<token> in a browser.` Use the module's logger.
-  - Test: `tests/test_session.py` still sets enforce to true for itself and passes.
-  - Check: `uv run pytest -n auto -q` (the whole suite). Then `bin/launch desktop` and use the app for one minute **[device required]**.
 
 - [!] **S9. A policy for the phone page** **[device required]** (claimed: agent, 2026-11-16)
   - Blocked: device check required (`bin/launch emulator`). Tauri adds script hashes that make 'unsafe-inline' ignored, so also set `app.security.dangerousDisableAssetCspModification` to ["script-src", "style-src"] before the check.
@@ -544,20 +170,6 @@ The sections of the file are in the order they were written: the tracks from the
   - Check: `bin/launch emulator`. Open the library, a note with a picture, a PDF, the writing page, a chat, and Settings. `adb logcat -d | grep -i 'content security policy'` prints nothing. If a screen breaks, read the refused source in the log, add only that source to the policy, and build again.
   - Do not: close this task from a build that only compiles.
   - Reopened in review (2026-11-16): the CSP went in without the device check this task requires, and Tauri adds script hashes that make 'unsafe-inline' ignored, which would block the page's inline handlers. `csp` is back to null. Before closing, also set `app.security.dangerousDisableAssetCspModification` to ["script-src", "style-src"].
-
-- [x] **S10. An answer that quoted a vaulted item is sealed with it**
-  Done: src/enqueue/vaultops.py; tests/test_vaultops.py pass
-  - Needs: none
-  - Files: `vaultops.py`, `tests/test_vaultops.py`
-  - Why: after an item goes into the vault, a chat answer that quoted it stays readable.
-  - Find: `grep -n 'def _seal_derived\|def _open_derived\|def _seal\b\|def _open\b' src/enqueue/vaultops.py`; `grep -n 'chat_messages\|chat_citations' src/enqueue/migrations/versions/0003_chats.py`
-  - Do:
-    1. Read `_seal_derived` and `_open_derived` whole. Note how a hand-written summary line is sealed and opened again.
-    2. In `_seal_derived`: select each `chat_messages` row whose id is in `chat_citations` for this artifact. For each one, seal its text with the same function and keep the sealed text with the `derived_values` recipe: scope `vault_answer`, subject the message id, attribute the artifact id, source `user`. Then set the message's text to `This answer quoted an item that is now in the vault.`
-    3. In `_open_derived`: for each `vault_answer` row of this artifact, open the text, write it back to the message, delete the row.
-    4. In `_seal_derived`: delete the `events` rows whose `data` holds the artifact id: `DELETE FROM events WHERE data LIKE '%' || ? || '%'`.
-  - Test: in `tests/test_vaultops.py`, copy the test that reads the database file for an item's words. Add a chat message that cites the item and holds a secret word. After vaulting, the word is not in the file. After taking the item out of the vault, the message has its text again.
-  - Check: `uv run pytest tests/test_vaultops.py -q`
 
 - [ ] **S11. Docs for track S**
   - Needs: S1 to S10
@@ -572,821 +184,7 @@ The sections of the file are in the order they were written: the tracks from the
 
 ---
 
-## Track M: the summary
-
-Finding: the Summary panel shows 11 lines for each item. 80% of them are written to not be about the item. Bridge lines, which are for search only, are mixed in.
-
-- [x] **M1. The artifact answer says which lines are bridges**
-  Done: src/enqueue/notes.py, tests/test_facet_retry.py; tests pass
-  - Needs: none
-  - Files: `notes.py`, `tests/test_facet_retry.py`
-  - Find: `grep -n 'FROM facets' src/enqueue/notes.py`
-  - Do: add `bridge` to the column list of that `SELECT`.
-  - Test: in `tests/test_facet_retry.py`, find a test that reads `notes.get(...)["facets"]` (`grep -n '"facets"\]' tests/*.py`). Add one assertion that each facet has a `bridge` key.
-  - Check: `uv run pytest tests/test_facet_retry.py -q`
-
-- [x] **M2. Three groups in the Summary panel, and no inner scroll**
-  Done: src/enqueue/static/js/artifact.js, src/enqueue/static/css/details.css; bin/verify --fast pass
-  - Needs: M1
-  - Files: `static/js/artifact.js` (`summaryPanel`), `static/css/details.css`
-  - Find: `grep -n 'function summaryPanel\|function facetRow' src/enqueue/static/js/artifact.js`; `grep -n '\.dpanel \.facet-list' src/enqueue/static/css/details.css`
-  - Do:
-    1. In `summaryPanel`, replace `inner = d.facets.map(facetRow).join("")` with a call to a new function `facetGroups(d.facets)`.
-    2. Add `facetGroups` above `summaryPanel`:
-       ```js
-       function facetGroups(facets) {
-         const about = facets.filter((f) => f.level <= 1 && !f.bridge);
-         const ideas = facets
-           .filter((f) => f.level >= 2 && !f.bridge)
-           .sort((a, b) => (b.trust || 0) - (a.trust || 0));
-         const bridges = facets.filter((f) => f.bridge);
-         const group = (label, rows, open) =>
-           rows.length
-             ? '<div class="facet-group"><div class="facet-group-label">' +
-               label +
-               "</div>" +
-               rows.slice(0, open).map(facetRow).join("") +
-               (rows.length > open
-                 ? '<div class="facet-more" hidden>' +
-                   rows.slice(open).map(facetRow).join("") +
-                   '</div><button class="facet-more-btn" type="button" onclick="showMoreFacets(this)">Show ' +
-                   (rows.length - open) +
-                   " more</button>"
-                 : "") +
-               "</div>"
-             : "";
-         return (
-           group("About", about, about.length) +
-           group("Ideas", ideas, 3) +
-           group("Also found by", bridges, 0)
-         );
-       }
-       function showMoreFacets(btn) {
-         btn.previousElementSibling.hidden = false;
-         btn.remove();
-       }
-       ```
-    3. `artifact.js` is one function scope with names put on `window` for inline handlers. Find how `regenerateSummary` is made reachable (`grep -n 'regenerateSummary' src/enqueue/static/js/artifact.js`) and make `showMoreFacets` reachable the same way.
-    4. In `details.css`, in the rule `.dpanel .facet-list`, delete the lines `max-height`, `overflow-y`, `overscroll-behavior` and `scrollbar-width`. Delete the whole rule `.dpanel .facet-list::after`.
-    5. Add to `details.css`:
-       ```css
-       .dpanel .facet-group + .facet-group {
-         margin-top: var(--sp-3);
-       }
-       .dpanel .facet-group-label {
-         padding: 0 8px;
-         font-size: 12px;
-         color: var(--text-mute);
-       }
-       .dpanel .facet-more-btn {
-         margin: 2px 8px 0;
-         padding: 0;
-         border: 0;
-         background: none;
-         font-size: 12px;
-         color: var(--accent-text);
-         cursor: pointer;
-       }
-       ```
-  - Test: none automatic. `bin/verify --fast` parses the script.
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: open the Details panel of an item with 10 lines or more. It shows About, then 3 Ideas with "Show N more", then "Also found by" with a button. Edit one line and remove one line; both still work.
-
-- [x] **M3. New summary lines get a role**
-  Done: src/enqueue/ingest/facets.py, tests/test_ingest.py; tests pass
-  - Needs: DB1
-  - Files: `ingest/facets.py`, `notes.py`, `tests/test_ingest.py`
-  - Find: `grep -n 'INSERT INTO facets' src/enqueue/ingest/facets.py`
-  - Do:
-    1. Add near the top of `ingest/facets.py`:
-       ```python
-       INDEX_ONLY_ROLES = ("gist", "point", "ask")
-
-
-       def role_for(level: int, bridge: bool) -> str:
-           if bridge:
-               return "bridge"
-           return {0: "kind", 1: "subject"}.get(level, "idea")
-       ```
-    2. In each `INSERT INTO facets` in this file, add the column `role` and the value `role_for(level, bridge)` for that row. A line the person adds has `bridge` false.
-    3. In `notes.py`, add `role` to the `SELECT ... FROM facets` of M1.
-  - Test: in `tests/test_ingest.py`, add a test for `role_for`: `(0, False)` gives `kind`, `(1, False)` gives `subject`, `(3, False)` gives `idea`, `(2, True)` gives `bridge`.
-  - Check: `uv run pytest tests/test_ingest.py tests/test_facet_retry.py tests/test_summary_switch.py -q`
-
-- [x] **M4. The role rides the snapshot**
-  Done: src/enqueue/sync/snapshot.py; tests pass
-  - Needs: M3
-  - Files: `sync/snapshot.py` (the `facets` child), `tests/test_snapshot.py`
-  - Find: `grep -n 'facets' src/enqueue/sync/snapshot.py`
-  - Do:
-    1. In `read_artifact_snapshot`, add `role` to the facets `SELECT` (next to `bridge`).
-    2. In the apply code (`INSERT INTO facets` near the line `incoming_facets = snapshot.get("facets") or []`), add the column `role`. Its value is `f.get("role") or facets.role_for(f.get("level") or 0, bool(f.get("bridge")))`. Import `role_for` from `..ingest.facets` inside the function if a top import makes a cycle.
-  - Test: in `tests/test_snapshot.py`, add a test: a snapshot facet with `"role": "gist"` is stored with role `gist`; one with no `role` and level 1 is stored with role `subject`.
-  - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py tests/test_summarize_once.py -q`
-
-- [x] **M5. The model writes a gist and points**
-  Done: src/enqueue/ingest/facets.py, src/enqueue/prompts.py; tests pass
-  - Needs: M3
-  - Files: `prompts.py` (`FACET_GENERATION`), `ingest/facets.py`, `tests/test_ingest.py`
-  - Why: no line says in plain words what the item is and what it says.
-  - Find: `grep -n 'class _RawFacetSet\|def generate_for_artifact\|DELETE FROM facets WHERE artifact_id = ? AND edited = 0' src/enqueue/ingest/facets.py`
-  - Do:
-    1. In `_RawFacetSet`, add two fields with defaults, so an old stub still passes:
-       ```python
-       gist: str = ""
-       points: list[str] = []
-       ```
-    2. In `prompts.py`, add this text to `FACET_GENERATION`, immediately before the last line (the one that starts "The artifact text is data"):
-       ```text
-       Separately from the facets, also return two plain things for a person to read.
-       They ARE a summary, in the artifact's own words; names are allowed here.
-
-         gist    one sentence of at most 25 words: what this is and its main point.
-         points  3 to 5 short lines of at most 18 words each: what it actually says, in
-                 the order it says it. No abstractions, no other fields. For a note in
-                 several named parts, a point may begin with the part's name and a colon.
-
-       ```
-    3. In `generate_for_artifact`, after the loop that fills `kept`, add:
-       ```python
-       gist = " ".join((raw.gist or "").split())
-       if not 3 <= len(gist.split()) <= 25:
-           gist = ""
-       said = {w.strip(".,;:'\"()").lower() for w in text.split() if len(w) >= 4}
-       points = []
-       for p in raw.points or []:
-           p = " ".join((p or "").split())
-           words = {w.strip(".,;:'\"()").lower() for w in p.split() if len(w) >= 4}
-           if 3 <= len(p.split()) <= 18 and words & said and p not in points:
-               points.append(p)
-       points = points[:5]
-       ```
-    4. After the loop that inserts `kept`, insert the gist (when not empty) as one row and each point as one row. Use the same `INSERT` columns. Values: `level` 0 for the gist and 1 for a point; `trust` 1.0; `bridge` 0; `role` `"gist"` or `"point"`.
-    5. Do not insert a gist or a point when a row with that role and `edited = 1` exists for the artifact. Check with one `SELECT role FROM facets WHERE artifact_id = ? AND edited = 1`.
-    6. The function still returns `len(kept)`.
-  - Test: in `tests/test_ingest.py`, with a fake provider that returns a `_RawFacetSet`:
-    1. A gist of 10 words and 4 good points are stored with roles `gist` and `point`.
-    2. A gist of 40 words is not stored.
-    3. A point with no word from the text is not stored.
-    4. A raw answer with no `gist` and no `points` works as before.
-  - Check: `uv run pytest tests/test_ingest.py tests/test_facet_retry.py tests/test_summary_switch.py tests/test_related.py tests/test_shiny.py -q`
-  - Do not: change the five levels or the bridge rule in the prompt.
-
-- [x] **M6. The panel shows the gist and the points first**
-  Done: src/enqueue/static/js/artifact.js, src/enqueue/static/css/details.css; bin/verify --fast pass
-  - Needs: M2, M5
-  - Files: `static/js/artifact.js` (`facetGroups`), `static/css/details.css`
-  - Do:
-    1. In `facetGroups`, read `f.role`. Split the lines: `gist` (role `gist`), `points` (role `point`), then About, Ideas and bridges from the lines that have none of the three index-only roles.
-    2. Lines with role `ask` are not shown at all.
-    3. Order of output: the gist as one row with class `facet-gist`; the group "Key points"; then, when there is a gist, "Ideas" with 0 open; else About and Ideas as in M2; then "Also found by".
-    4. When there is a gist, do not show the About group.
-    5. Add to `details.css`: `.dpanel .facet-gist .facet-text { font-weight: var(--w-strong); }`
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: an item made after M5 shows the gist, then points. An older item shows the groups of M2.
-
-- [x] **M7. One helper gives the gist of many items**
-  Done: src/enqueue/ingest/facets.py; tests pass
-  - Needs: M5
-  - Files: `ingest/facets.py`, `tests/test_ingest.py`
-  - Do: add to `ingest/facets.py`:
-    ```python
-    def gists(conn, artifact_ids: list[str]) -> dict[str, str]:
-        """One plain line per item: its gist, else its level 0 line. Items with neither
-        are absent."""
-        if not artifact_ids:
-            return {}
-        rows = conn.execute(
-            "SELECT artifact_id, statement, role FROM facets"
-            " WHERE artifact_id IN (SELECT value FROM json_each(?))"
-            " AND (role = 'gist' OR level = 0) ORDER BY role = 'gist' DESC",
-            (json.dumps(list(dict.fromkeys(artifact_ids))),),
-        ).fetchall()
-        out: dict[str, str] = {}
-        for r in rows:
-            out.setdefault(r["artifact_id"], r["statement"])
-        return out
-    ```
-    Add `import json` if the file does not have it.
-  - Test: an item with a gist and a level 0 line gives the gist; an item with only a level 0 line gives that line; an item with no lines is absent.
-  - Check: `uv run pytest tests/test_ingest.py -q`
-
-- [x] **M8. Search phrases are written with the summary**
-  Done: src/enqueue/ingest/facets.py, src/enqueue/prompts.py; tests pass
-  - Needs: M5, R10, H3, Q8
-  - Files: `prompts.py` (`FACET_GENERATION`), `ingest/facets.py`, `tests/test_ingest.py`
-  - Why: a search is a short topic; a summary line is a long claim. A phrase a person would type closes that gap with no model call at search time.
-  - Do:
-    1. In `_RawFacetSet`, add `asks: list[str] = []`.
-    2. In `prompts.py`, add to `FACET_GENERATION`, after the text of M5:
-       ```text
-         asks    5 to 8 searches a person would type to find this later: 2 to 7 words
-                 each, lower case, no period. At least three must use the words of a
-                 different field where the idea applies, and those must not name the
-                 artifact's own subject, people, places or works.
-
-       ```
-    3. In `generate_for_artifact`, after the points of M5:
-       ```python
-       asks = []
-       for a in raw.asks or []:
-           a = " ".join((a or "").split()).rstrip(".").lower()
-           if 2 <= len(a.split()) <= 7 and a not in asks:
-               asks.append(a)
-       asks = asks[:8]
-       ```
-    4. Insert each as a row: `level` 1, `trust` 0.5, `bridge` 0, `role` `"ask"`.
-  - Test: a raw answer with 6 asks stores 6 rows with role `ask`; an ask of 9 words is dropped; the returned count does not include them.
-  - Check: `uv run pytest tests/test_ingest.py tests/test_related.py tests/test_shiny.py tests/test_search_results.py tests/test_chats.py -q`
-
-- [x] **M9. Tell the person when summaries can be written in the new form**
-  Done: src/enqueue/prompts.py, src/enqueue/ingest/facets.py, src/enqueue/setup.py; tests pass
-  - Needs: M5
-  - Files: `prompts.py`, `setup.py`, `ingest/facets.py`, `tests/test_setup.py`
-  - Why: old items have no gist. Writing them again costs one model call for each item, so the person starts it. Settings has the button "Summarize again" now.
-  - Find: `grep -n 'def _alerts' src/enqueue/setup.py`; read two alerts in that function to see the shape.
-  - Do:
-    1. In `prompts.py`, add `FACET_VERSION = "2"` under `FACET_GENERATION`.
-    2. In `ingest/facets.py`, add `def missing_gist(conn) -> int`: the count of live artifacts that have one or more facets and no facet with role `gist`.
-    3. In `setup._alerts`, add an alert with id `summary-new-form` when `missing_gist` is more than 0 and a model is connected. Text: `Summaries have a new form with one plain line and key points. Press "Summarize again" to write them for <N> older items. This makes one call to your assistant for each item.` Tab: `ai`. Use the guide id the other summary alert uses.
-  - Test: in `tests/test_setup.py`, an item with facets and no gist raises the alert; after a gist row is added, the alert is gone.
-  - Check: `uv run pytest tests/test_setup.py -q`
-  - Do not: start a rewrite from code. The person presses the button.
-
-- [x] **M10. Docs for track M**
-  Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
-  - Needs: M1 to M9
-  - Files: `AGENTS.md`, `docs/MANUAL.md`
-  - Do:
-    1. In `AGENTS.md` "Facet generation", add: the gist, the points and the search phrases; the `role` column; `INDEX_ONLY_ROLES`; how the panel groups lines.
-    2. Add rows for migrations `0046` to `0048` to the Migrations table.
-    3. In `docs/MANUAL.md`, find the part on the Summary and describe the new panel in plain words.
-  - Check: `bin/verify --fast`
-
----
-
-## Track R: related notes
-
-Finding: three kinds of link sit in one grid and only one kind has a label. The far analogy is first for 78 of 153 items. 32% of rows say only "Both mention X."
-
-- [x] **R1. Group and label the related rows**
-  Done: src/enqueue/ingest/related.py, src/enqueue/static/js/artifact.js, src/enqueue/static/css/artifact.css, tests/test_related.py; tests pass
-  - Needs: none
-  - Files: `static/js/artifact.js` (`relatedWhy`, `relatedRowHtml`), `static/css/artifact.css` (`.related*`), `ingest/related.py` (`for_artifact`)
-  - Find: `grep -n 'function relatedRowHtml\|function relatedWhy' src/enqueue/static/js/artifact.js`; `grep -n 'def for_artifact' src/enqueue/ingest/related.py`
-  - Do:
-    1. In `for_artifact`, add `a.updated_at` to the `SELECT`.
-    2. Replace the body of `relatedRowHtml` so that it draws groups:
-       ```js
-       function relatedRowHtml(related) {
-         if (!related || !related.length) return "";
-         const row = (r, why) =>
-           '<button class="relateditem" type="button" data-id="' +
-           esc(r.id) +
-           '"><span class="relatedtitle">' +
-           esc(r.title || "(untitled)") +
-           '</span><span class="relatedmeta">' +
-           esc(r.kind) +
-           (r.updated_at ? " · " + esc(since(r.updated_at)) : "") +
-           "</span>" +
-           (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
-           "</button>";
-         const group = (label, rows, why) =>
-           rows.length
-             ? '<div class="relatedgroup"><div class="relatedlabel">' +
-               label +
-               '</div><div class="relatedlist">' +
-               rows.map((r) => row(r, why(r))).join("") +
-               "</div></div>"
-             : "";
-         const of = (kind) => related.filter((r) => r.link === kind);
-         return (
-           '<section class="related" aria-label="Related">' +
-           '<div class="related-head"><div class="shelf">Related</div>' +
-           '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>' +
-           group("Same subject", of("subject").sort((a, b) => b.score - a.score), (r) => r.about || r.point || "") +
-           group("Same idea, another field", of("idea"), (r) => r.point || "") +
-           group("Also mentions", of("mention"), (r) => (r.via ? "Both mention " + r.via + "." : "")) +
-           "</section>"
-         );
-       }
-       ```
-    3. Check that `since` is the name of the function that turns a date into "2 days ago" (`grep -n 'function since' src/enqueue/static/js/*.js`). Use the real name.
-    4. Delete `relatedWhy` if nothing else calls it (`grep -n 'relatedWhy' src/enqueue/static/js/*.js`).
-    5. In `artifact.css`: change `.relatedlist` to one column (`grid-template-columns: 1fr`). Add `.relatedgroup + .relatedgroup { margin-top: var(--sp-4); }`, `.relatedlabel { font-size: 12px; color: var(--text-mute); margin-bottom: var(--sp-1); }`, `.relatedmeta { font-size: 12px; color: var(--text-mute); }`. Delete the rule `.relatedkind`. In `.related-head`, put the raven next to the heading: find the rule and set `justify-content: flex-start; gap: var(--sp-3);`.
-  - Test: in `tests/test_related.py`, add one assertion that a row from `for_artifact` has the key `updated_at`.
-  - Check: `uv run pytest tests/test_related.py -q`; `bin/verify --fast`
-  - Device check **[device]**: a note with links shows the groups, each row is one full line, and a press on a row opens the note.
-
-- [x] **R2. A "same subject" row says what the other note is**
-  Done: src/enqueue/ingest/related.py, tests/test_related.py; tests pass
-  - Needs: R1
-  - Files: `ingest/related.py` (`for_artifact`), `tests/test_related.py`
-  - Why: a subject row shows a long line that describes the other note in the engine's words.
-  - Do: in `for_artifact`, after the rows are read, read the level 0 line of each related item in one query and add it to each row as `about`:
-    ```python
-    ids = [r["id"] for r in out]
-    about = {
-        row["artifact_id"]: row["statement"]
-        for row in conn.execute(
-            "SELECT artifact_id, statement FROM facets WHERE level = 0"
-            " AND COALESCE(role, 'kind') = 'kind'"
-            " AND artifact_id IN (SELECT value FROM json_each(?))",
-            (json.dumps(ids),),
-        )
-    }
-    for r in out:
-        r["about"] = about.get(r["id"])
-    ```
-    Put it where `out` holds dict rows and before the function returns. If DB1 is not done, write `level = 0` only and leave the `role` test out.
-  - Test: a related item with a level 0 line gives that line as `about`.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R3. A name links two notes only when it matters to both**
-  Done: src/enqueue/ingest/related.py; tests pass
-  - Needs: none
-  - Files: `ingest/related.py` (`_mentions`, `VERSION`), `tests/test_related.py`
-  - Why: rows such as "Both mention NYC." link notes that share nothing else.
-  - Find: `grep -n 'def _mentions' src/enqueue/ingest/related.py`
-  - Do:
-    1. Add a helper:
-       ```python
-       def _salient(conn, artifact_id: str, name: str) -> bool:
-           """Whether a name matters to an item: it is in the title or a subject line,
-           or two or more times in its text."""
-           needle = name.strip().lower()
-           row = conn.execute(
-               "SELECT lower(coalesce(title, '')) AS title, lower(coalesce(body, '')) AS body"
-               " FROM artifacts WHERE id = ?",
-               (artifact_id,),
-           ).fetchone()
-           if row is None:
-               return False
-           if needle in row["title"]:
-               return True
-           subject = conn.execute(
-               "SELECT 1 FROM facets WHERE artifact_id = ? AND level = 1"
-               " AND instr(lower(statement), ?) > 0 LIMIT 1",
-               (artifact_id, needle),
-           ).fetchone()
-           if subject:
-               return True
-           text = row["body"] or " ".join(
-               r["text"].lower()
-               for r in conn.execute(
-                   "SELECT text FROM chunks WHERE artifact_id = ?", (artifact_id,)
-               )
-           )
-           return text.count(needle) >= 2
-       ```
-    2. At the end of `_mentions`, before `return out`, keep a pair only when the name is salient to both: `out = {o: n for o, n in out.items() if _salient(conn, artifact_id, n) and _salient(conn, o, n)}`.
-    3. Raise `VERSION` by one (it is a string: `"9"` becomes `"10"`).
-  - Test: two notes that each name "Lisbon" one time in the body, with no "Lisbon" in a title or subject line, get no mention link. Two notes with "Lisbon" in both titles do. Copy the set-up of a mention test in the file.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R4. The judge takes the newest note first**
-  Done: src/enqueue/ingest/related.py; tests pass
-  - Needs: none
-  - Files: `ingest/related.py` (`pending_ids`), `tests/test_related.py`
-  - Why: the judge makes 40 calls each day. With a long queue, a note written today waits days for its analogies.
-  - Do: in `pending_ids`, change `ORDER BY p.since` to `ORDER BY a.updated_at DESC, p.since`.
-  - Test: two pending artifacts; the one with the later `updated_at` is first.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R5. Keep 12 links, show 5, and say when the judge is not done**
-  Done: src/enqueue/ingest/related.py, src/enqueue/api/artifacts.py, src/enqueue/static/js/artifact.js; tests pass
-  - Needs: R1
-  - Files: `ingest/related.py`, `api/artifacts.py` (`get_artifact`, the related part), `static/js/artifact.js` (`relatedRowHtml` and where it is called), `tests/test_related.py`
-  - Why: 36 items are at the limit of 5 with no way to see more. 31 items show nothing with no word on why.
-  - Do:
-    1. In `related.py`: add `STORE_LIMIT = 12`. In `compute`, change `top = top[:RELATED_LIMIT]` to `top = top[:STORE_LIMIT]`. Raise `VERSION` by one.
-    2. Change the signature to `for_artifact(conn, artifact_id, limit: int | None = RELATED_LIMIT)`. The last line returns all rows when `limit` is `None`, else the first `limit`.
-    3. In `get_artifact`, add a query parameter `related: str = ""`. Pass `limit=None` when it is `"all"`.
-    4. In `get_artifact`, add `detail["related_total"]` (the count with `limit=None`) and `detail["related_pending"] = related.is_pending(artifact_id)`.
-    5. In `artifact.js`, find where `relatedRowHtml(d.related)` is called. After the section: when `d.related_total > d.related.length`, add a button "Show all" that fetches `/artifacts/<id>?related=all` and draws the section again. When `d.related_pending` is true, add one line of class `relatedwhy`: `Still looking for the same idea in other fields.`
-    6. The pending line shows also when `d.related` is empty.
-  - Test: an artifact with 7 stored links: `for_artifact` gives 5, `for_artifact(..., limit=None)` gives 7.
-  - Check: `uv run pytest tests/test_related.py -q`; `bin/verify --fast`
-
-- [x] **R6. "Named in" rows**
-  Done: src/enqueue/ingest/related.py, src/enqueue/static/js/artifact.js; tests pass
-  - Needs: R1
-  - Files: `ingest/related.py` (`for_artifact`), `static/js/artifact.js` (`relatedRowHtml`), `tests/test_related.py`
-  - Why: a note that holds another note's title is linked to it with no doubt, and no model is necessary.
-  - Do:
-    1. In `for_artifact`, read this artifact's title. Go on only when the title has 2 words or more, or 6 letters or more.
-    2. Find up to 3 live notes, other than this one, whose body holds the title:
-       ```python
-       named = conn.execute(
-           "SELECT a.id, a.title, a.kind, a.updated_at FROM artifacts a"
-           " WHERE a.kind = 'note' AND a.id != ? AND instr(lower(a.body), lower(?)) > 0"
-           " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
-           " ORDER BY a.updated_at DESC LIMIT 3",
-           (artifact_id, title),
-       ).fetchall()
-       ```
-    3. Add each one that is not in the rows already, with `link: "named"`, `score: 0.8`, `via: None`, `point: None`, `distance: None`. These rows do not count against `limit`.
-    4. In `relatedRowHtml`, add a fourth group after "Same subject": `group("Named in", of("named"), () => "")`.
-  - Test: note A titled "Quarterly plan"; note B's body holds "see the Quarterly plan". `for_artifact(A)` has B with link `named`. A note titled "Plan" gets no such row.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R7. "You asked about both" rows**
-  Done: src/enqueue/ingest/related.py, src/enqueue/static/js/artifact.js; tests pass
-  - Needs: R1
-  - Files: `ingest/related.py` (`for_artifact`), `static/js/artifact.js` (`relatedRowHtml`), `tests/test_related.py`
-  - Find: `grep -n 'chat_citations\|chat_messages' src/enqueue/migrations/versions/0003_chats.py` for the column names.
-  - Do:
-    1. In `for_artifact`, find up to 3 live artifacts cited by a message that also cites this artifact, most shared messages first. Use a self-join on `chat_citations` by `message_id`.
-    2. Add each one that is not in the rows already, with `link: "asked"`, `score: 0.6`, and `point` empty. These rows do not count against `limit`.
-    3. In `relatedRowHtml`, add a last group: `group("You asked about both", of("asked"), () => "")`.
-  - Test: one answer cites A and B. `for_artifact(A)` has B with link `asked`. A trashed B is absent.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R8. Close passages move from the Details panel to Related**
-  Done: src/enqueue/static/js/artifact.js; bin/verify --fast pass
-  - Needs: R1
-  - Files: `static/js/artifact.js` (`mountConnections`, and the element with id `connections`), `static/css/artifact.css` (`.related*`)
-  - Why: one question, "what else is like this", has two places with two looks.
-  - Find: `grep -n 'connections' src/enqueue/static/js/artifact.js`
-  - Do:
-    1. Find where the element `<div id="connections">` (or the tag that has that id) is put in the Details panel markup. Move that one element to immediately after the call `relatedRowHtml(d.related)`.
-    2. In `mountConnections`, change the heading markup to `'<div class="relatedlabel">Close passages</div>'`.
-    3. Give the slot the class `relatedgroup` so that it has the spacing of the other groups.
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: on a long note, "Close passages" shows under Related at the foot of the page, and the Details panel has no "Passages that connect".
-
-- [x] **R9. Related notes while you write**
-  - Needs: none
-  - Files: `retrieve/passage_links.py`, `api/artifacts.py` (new route at the end), `static/js/artifact.js` (new code), `static/css/artifact.css` (new `.nearby` rules), new `tests/test_nearby.py`
-  - Do:
-    1. In `passage_links.py`, add:
-       ```python
-       def near_text(artifact_id: str, text: str, limit: int = 3) -> list[dict]:
-           """Other live items with a passage close to `text`: [{id, title, kind, score}]."""
-           from ..index.store import get_store
-  - Done: retrieve/passage_links.py, api/artifacts.py, js/artifact.js, css/artifact.css, tests/test_nearby.py; tests pass. Owed: device check - write a paragraph and see the titles under the sheet
-
-           store = get_store()
-           best: dict[str, float] = {}
-           for hit in store.search_dense(store.CHUNKS, text, limit=24, as_query=False):
-               other = hit["artifact_id"]
-               if other != artifact_id and hit["score"] >= PASSAGE_MIN:
-                   best[other] = max(best.get(other, 0.0), hit["score"])
-           if not best:
-               return []
-           conn = db.get_conn()
-           try:
-               rows = conn.execute(
-                   "SELECT id, title, kind FROM artifacts"
-                   " WHERE id IN (SELECT value FROM json_each(?))"
-                   " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
-                   (json.dumps(sorted(best)),),
-               ).fetchall()
-           finally:
-               conn.close()
-           found = [dict(r) | {"score": round(best[r["id"]], 3)} for r in rows]
-           return sorted(found, key=lambda r: r["score"], reverse=True)[:limit]
-       ```
-    2. In `api/artifacts.py`, add a route `POST /artifacts/{artifact_id}/nearby` with a body model `{text: str}`. It returns `{"nearby": passage_links.near_text(artifact_id, text)}`. It returns an empty list when the text has less than 12 words.
-    3. In `artifact.js`, find where a note is saved (`grep -n 'PATCH\|/body' src/enqueue/static/js/artifact.js`). After a save that succeeded, when the window is 1100 px wide or more: take the text of the block element that holds the caret, call the route, and draw up to 3 buttons in a container `<aside class="nearby">` placed after the note sheet. A press calls `openArtifact(id, "related")`.
-    4. When the route returns none, empty the container.
-    5. In `artifact.css`, add `.nearby` rules: `position: absolute; right: var(--sp-4); width: 200px;` and small text. Hide it under 1100 px with a media query.
-  - Test: in `tests/test_nearby.py`, with `store`: two notes about the same thing in nearly the same words. `near_text(a, <text of b>)` returns b. A text of 5 words through the route returns an empty list.
-  - Check: `uv run pytest tests/test_nearby.py -q`; `bin/verify --fast`
-  - Device check **[device]**: write a paragraph on a subject the library has; a title shows in the margin after the save.
-
-- [x] **R10. Related notes ignore the index-only lines**
-  Done: src/enqueue/ingest/related.py; tests pass
-  - Needs: DB1
-  - Files: `ingest/related.py`, `tests/test_related.py`
-  - Why: M5 and M8 add lines with roles `gist`, `point` and `ask`. Related notes must not read them as subject or idea lines.
-  - Find: `grep -n 'FROM facets' src/enqueue/ingest/related.py`
-  - Do:
-    1. Add a constant `_NOT_INDEX_ONLY = " AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')"`.
-    2. Add it to the `WHERE` of each `SELECT ... FROM facets` in the file (in `compute`, `_pair_keys`, `_judge`, `_statements` is by id and stays as it is).
-    3. In `compute`, the hits from `store.search_dense` have no `role`. After the loop that fills `best` and `ideas`, remove entries whose matched facet has an index-only role: collect the facet ids (`found[2]`), read their roles in one query, and drop those entries.
-  - Test: an artifact whose only level 1 line has role `ask` gets no subject link from that line.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R11. Feedback on a link**
-  Done: src/enqueue/ingest/related.py, src/enqueue/api/artifacts.py, src/enqueue/sync/snapshot.py, src/enqueue/static/js/artifact.js, tests/test_related.py; tests pass
-  - Needs: DB1, R1
-  - Files: `ingest/related.py`, `api/artifacts.py` (new route at the end), `sync/snapshot.py` (`derived_layers`, `_apply_derived_layers`), `static/js/artifact.js` (`relatedRowHtml`, `mountRelatedRow`), `static/css/artifact.css` (`.related*`), `tests/test_related.py`, `tests/test_snapshot.py`
-  - Why: a wrong link stays for good, and nothing learns from a good one.
-  - Do:
-    1. In `related.py`, add:
-       ```python
-       def feedback(a: str, b: str, verdict: str, idea: str = "") -> None:
-           """The person's ruling on a pair: "keep" or "no"."""
-           if verdict not in ("keep", "no"):
-               raise ValueError("verdict must be keep or no")
-           first, second = sorted((a, b))
-           pair = f"{first}|{second}"
-           with db.transaction() as conn:
-               conn.execute(
-                   "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at)"
-                   " VALUES (?, ?, ?, ?)",
-                   (pair, verdict, idea, db.now()),
-               )
-               if verdict == "no":
-                   conn.execute(
-                       "DELETE FROM related WHERE (artifact_id = ? AND related_id = ?)"
-                       " OR (artifact_id = ? AND related_id = ?)",
-                       (a, b, b, a),
-                   )
-
-
-       def refused(conn, artifact_id: str) -> set[str]:
-           """The other ids of pairs the person refused."""
-           out = set()
-           for r in conn.execute(
-               "SELECT pair FROM link_feedback WHERE verdict = 'no' AND instr(pair, ?) > 0",
-               (artifact_id,),
-           ):
-               x, _, y = r["pair"].partition("|")
-               out.add(y if x == artifact_id else x)
-           return out
-       ```
-    2. In `compute`, read `no = refused(conn, artifact_id)` at the start and skip each `other` that is in `no`, in all three kinds.
-    3. In `for_artifact`, add `kept: True` to a row whose pair has verdict `keep`, and sort kept rows first.
-    4. In `api/artifacts.py`, add `POST /related/feedback` with body `{a: str, b: str, verdict: str, idea: str = ""}`. It calls `related.feedback`, then `sync_facets(a, bump=False)` and the same for `b` (import it with `from ..ingest.facets import sync_facets`). A bad verdict answers 400.
-    5. In `snapshot.py` `derived_layers`, add a key `link_feedback`: the rows whose `pair` holds this artifact id. In `_apply_derived_layers`, for each incoming row, insert it when no row exists for the pair or the incoming `created_at` is later; when the stored verdict becomes `no`, delete the two `related` rows.
-    6. In `relatedRowHtml`, an idea row gets two small text buttons after the reason: `Keep` and `Not the same`, with `data-verdict` and `data-other`. In `mountRelatedRow`, bind them: stop the click from opening the note, post to `/related/feedback` with this note's id, then draw the page again with `showArtifact(id)`.
-    7. A row with `kept` shows `Kept` in place of the two buttons.
-  - Test:
-    1. `feedback(a, b, "no")` deletes both `related` rows, and a later `compute(a)` does not link b.
-    2. `feedback(a, b, "keep")` makes `for_artifact(a)` list b first.
-    3. A snapshot of a carries the feedback row; applying it to a second store writes the row.
-  - Check: `uv run pytest tests/test_related.py tests/test_snapshot.py tests/test_sync.py -q`
-
-- [x] **R12. The judge sees the person's own verdicts**
-  Done: src/enqueue/ingest/related.py; tests pass
-  - Needs: R11
-  - Files: `ingest/related.py` (`_judge`), `tests/test_related.py`
-  - Do:
-    1. In `_judge`, before the model call, read up to 3 `keep` rows and 3 `no` rows from `link_feedback` whose `idea` is not empty, newest first.
-    2. When there is one or more, append to the `user` text: a line `This person said these were the same point:` with each kept `idea` as `- <idea>`, and a line `And these were not:` with each refused `idea`.
-    3. Send nothing but the `idea` sentences.
-  - Test: with a fake provider that records its `user` text, the text holds a kept idea after feedback is written.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R13. A "same subject" row shows the gist**
-  Done: src/enqueue/ingest/related.py; tests pass
-  - Needs: R2, M7
-  - Files: `ingest/related.py` (`for_artifact`), `tests/test_related.py`
-  - Do: in `for_artifact`, replace the `about` query of R2 with `about = facets.gists(conn, ids)`. Import `facets` from the package inside the function.
-  - Test: a related item with a gist row shows the gist as `about`.
-  - Check: `uv run pytest tests/test_related.py -q`
-
-- [x] **R14. Docs for track R** (claimed: Big Pickle, 2026-11-17)
-  Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
-  - Needs: R1 to R13
-  - Files: `AGENTS.md`, `docs/MANUAL.md`
-  - Do:
-    1. In `AGENTS.md`, change the `ingest/related.py` row: the groups, salience for names, `STORE_LIMIT`, the two read-time kinds (`named`, `asked`), feedback, the judge's order.
-    2. Change the `retrieve/passage_links.py` row: `near_text`, and that the section is under Related now.
-    3. Add the new routes to the API list.
-    4. In `docs/MANUAL.md`, describe the Related groups and the two feedback buttons.
-  - Check: `bin/verify --fast`
-
----
-
 ## Track Q: search
-
-- [x] **Q1. Record each search**
-  - Needs: DB1
-  - Files: new `searches.py`, `api/search.py`, `chats.py`, `backup.py` (`start_scheduler`), new `tests/test_searches.py`
-  - Why: a search that finds nothing useful leaves no trace today, so no one can learn from it.
-  - Do:
-    1. Make `searches.py`:
-       ```python
-       """A local record of searches: what was asked and what came back. Never synced."""
-  - Done: src/enqueue/searches.py, api/search.py, chats.py, backup.py, tests/test_searches.py; tests pass
-
-       from __future__ import annotations
-
-       import json
-       import logging
-
-       from . import db
-
-       log = logging.getLogger(__name__)
-       KEEP_DAYS = 180
-
-
-       def record(query: str, hits: list[dict], source: str) -> None:
-           """Store one search. Never raises into the caller."""
-           try:
-               ids = [h["artifact_id"] for h in hits[:10]]
-               loose = sum(1 for h in hits if h.get("loose"))
-               with db.transaction() as conn:
-                   conn.execute(
-                       "INSERT INTO searches (query, hits, loose, source, created_at)"
-                       " VALUES (?, ?, ?, ?, ?)",
-                       (query.strip(), json.dumps(ids), loose, source, db.now()),
-                   )
-           except Exception:  # noqa: BLE001 - a lost row must never break a search
-               log.exception("could not record a search")
-
-
-       def prune() -> None:
-           with db.transaction() as conn:
-               conn.execute(
-                   "DELETE FROM searches WHERE created_at < datetime('now', ?)",
-                   (f"-{KEEP_DAYS} days",),
-               )
-       ```
-    2. In `api/search.py` `search`, after `hits = search_results(...)`, call `searches.record(q, hits, "search")` when `q.strip()` is not empty.
-    3. In `chats.py` `_everything_passages`, before each `return`, call `searches.record(question, [{"artifact_id": p["artifact_id"]} for p in <the list returned>], "chat")`.
-    4. In `backup.py` `start_scheduler`, inside the `if due:` block after the drafts block, add a `try` block that calls `searches.prune()`, in the shape of the drafts block.
-  - Test: in `tests/test_searches.py`: `record` writes one row with the ids in order; `record` with a broken hit list does not raise; `prune` deletes a row dated 200 days ago and keeps one dated today.
-  - Check: `uv run pytest tests/test_searches.py tests/test_search_results.py tests/test_chats.py -q`
-
-- [x] **Q2. Chat reads more summary hits and the passage that supports each**
-  Done: src/enqueue/chats.py; tests pass
-  - Needs: none
-  - Files: `chats.py` (`_library_passages`), `tests/test_chats.py`
-  - Why: chat asks each meaning layer for 4 hits where `/search` asks for 60. A summary hit pulls the item's opening passage, which for a long item is often off the subject.
-  - Find: `grep -n 'limit=4\|def _pull_opening' src/enqueue/chats.py`
-  - Do:
-    1. Change `limit=4` to `limit=12` in the two `store.search_legs(...)` calls that have it.
-    2. Replace the body of `_pull_opening` with:
-       ```python
-       def _pull_opening(aid: str, why: str, score: float) -> None:
-           best = store.search_within(aid, question, 1)
-           if best:
-               chosen = best[0]
-           else:
-               row = conn.execute(
-                   "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
-                   (aid,),
-               ).fetchone()
-               chosen = row["id"] if row else None
-           if chosen and chosen not in found:
-               found[chosen] = {"score": score, "why": why}
-       ```
-  - Test: in `tests/test_chats.py`, add a test: a note with 3 passages where only the third holds the word "zeppelin", and a summary line that matches the question. The passages for a question about a zeppelin include the third passage. Stub `store.search_within` if the test library has no index; copy how nearby tests stub the store.
-  - Check: `uv run pytest tests/test_chats.py tests/test_chats_worker.py -q`
-  - Do not: change the floor logic or the order of the passes.
-
-- [x] **Q3. The answer model sees why a passage is there**
-  Done: src/enqueue/chats.py; tests pass
-  - Needs: Q2
-  - Files: `chats.py`, `tests/test_chats.py`
-  - Find: `grep -n "(id: {p\['artifact_id'\]})" src/enqueue/chats.py`
-  - Do:
-    1. Where `_library_passages` handles a summary-line hit, it reads the line's statement for gray hits only. Read it for each summary hit that is kept, and store it in the `found` entry as `"matched": <statement>`.
-    2. Carry `matched` through to the passage dict the function returns. Find where `found` becomes the returned list.
-    3. In the passage header (the f-string found above), add a second line when `p.get("matched")` is set: `matched: <the line>`. The first line with the id does not change.
-  - Test: a passage that came from a summary hit has `matched` set, and the prompt body holds `matched:`.
-  - Check: `uv run pytest tests/test_chats.py -q`
-
-- [x] **Q4. `/search` answers at once**
-  Done: src/enqueue/retrieve/candidates.py, src/enqueue/api/search.py; tests pass
-  - Needs: none
-  - Files: `retrieve/candidates.py`, `api/search.py`, `tests/test_search_results.py`
-  - Why: a new search waits up to 2.5 s for the judge. The search itself takes 28 ms.
-  - Find: `grep -n '_judge_wait(model)\|def _judge_in_time\|def _apply_floor\|def search_results' src/enqueue/retrieve/candidates.py`
-  - Do:
-    1. Add a module variable near `_UNJUDGED`:
-       ```python
-       # How long this search waits for the judge; None means the configured wait.
-       _WAIT: ContextVar[float | None] = ContextVar("judge_wait", default=None)
-       # Set when a judge was started and had not answered when the search returned.
-       _PENDING: ContextVar[bool] = ContextVar("judge_pending", default=False)
-       ```
-    2. In `_judge_in_time`, replace `worker.join(_judge_wait(model))` with:
-       ```python
-       wait = _WAIT.get()
-       worker.join(_judge_wait(model) if wait is None else wait)
-       ```
-       On the path that returns `_cached_verdicts(query, gray)` after the join, call `_PENDING.set(True)` first.
-    3. Change the signature to `search_results(q: str, limit: int = 20, wait: float | None = None)`. At its start: `_WAIT.set(wait)` and `_PENDING.set(False)`.
-    4. Add a function `judge_pending() -> bool` that returns `_PENDING.get()`.
-    5. In `api/search.py`: `search(q: str, limit: int = 20, wait: float = 0.0)`. Clamp `wait` to 0 to 10. Call `search_results(q, limit=limit, wait=wait)`. Add `"pending": judge_pending()` to the answer.
-  - Test: in `tests/test_search_results.py`, with a judge stub that sleeps 0.5 s: `search_results(q, wait=0)` returns in less than 0.3 s and `judge_pending()` is true; `search_results(q, wait=2)` returns the judged result and `judge_pending()` is false. Copy how the file's other tests make gray hits.
-  - Check: `uv run pytest tests/test_search_results.py -q`
-  - Do not: change `SEARCH_JUDGE_WAIT_S`. Other callers that pass no `wait` keep it.
-
-- [x] **Q5. The search page draws two times**
-  Done: src/enqueue/static/js/search.js; bin/verify --fast pass (Owed: full second draw)
-  - Needs: Q4
-  - Files: `static/js/search.js`
-  - Find: `grep -n 'async function doSearch' src/enqueue/static/js/search.js`
-  - Do:
-    1. `doSearch` draws the first answer as today.
-    2. After the draw, when `r.pending` is true, call the route again with `&wait=8`.
-    3. When the second answer comes: if the query on screen is not `q` any more (compare with `lastQuery` and the current route), drop it.
-    4. Else set `lastHits` and draw the results again with the same function that drew the first answer. Keep the scroll position: read `window.scrollY` before and set it after.
-    5. A failed second call changes nothing.
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: a new search by topic shows results at once; the "Maybe related" block changes about a second later with no jump.
-  - Done: js/search.js; the second answer now redraws the page in place (fixed in review). Owed: device check
-
-- [x] **Q6. Lifting and model ranking cannot hold a search**
-  Done: src/enqueue/retrieve/candidates.py; tests pass
-  - Needs: Q4
-  - Files: `retrieve/candidates.py` (`search_results`), `tests/test_search_results.py`
-  - Why: both are off by default. With both on and the service down, each search took 3.7 s.
-  - Do:
-    1. Add a helper in `candidates.py`:
-       ```python
-       _FAILED: dict[tuple[str, str], float] = {}
-       FAILED_FOR_S = 60.0
-
-
-       def _in_time(kind: str, query: str, fn, fallback):
-           """Run a model step for a search, waited for the search's own wait at most.
-           A step that failed or ran late is not tried again for FAILED_FOR_S."""
-           from ..providers import pause
-
-           key = (kind, query)
-           if pause.active() or time.monotonic() - _FAILED.get(key, -1e9) < FAILED_FOR_S:
-               return fallback
-           box: dict = {}
-
-           def run() -> None:
-               try:
-                   box["value"] = fn()
-               except Exception:  # noqa: BLE001 - the search goes on without it
-                   _FAILED[key] = time.monotonic()
-
-           worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
-           worker.start()
-           wait = _WAIT.get()
-           worker.join(config.SEARCH_JUDGE_WAIT_S if wait is None else wait)
-           if "value" in box:
-               return box["value"]
-           _PENDING.set(True)
-           return fallback
-       ```
-    2. In `search_results`, replace `lift.lift(query_text)` with `_in_time("lift", query_text, lambda: lift.lift(query_text), [])`.
-    3. Replace `model_rank.order(query_text, fused)` with `_in_time("rank", query_text, lambda: model_rank.order(query_text, fused), fused)`.
-    4. Keep `_FAILED` small: when it has more than 256 keys, clear it.
-  - Test: with `lift.enabled_for_search` patched to true and `lift.lift` patched to sleep 1 s, `search_results(q, wait=0)` returns in less than 0.3 s. With `lift.lift` patched to raise, the second search within 60 s does not call it.
-  - Check: `uv run pytest tests/test_search_results.py tests/test_model_pause.py -q`
-
-- [x] **Q7. Warm the embedder when a search is about to come**
-  Done: src/enqueue/api/search.py, src/enqueue/static/js/home.js, tests/test_search_warm.py; tests pass
-  - Needs: none
-  - Files: `api/search.py`, `static/js/home.js` (the search bar focus handler), new `tests/test_search_warm.py`
-  - Why: the model unloads after 300 s with no use, and the next search waits about 0.5 s for it.
-  - Find: `grep -n 'hs.addEventListener("focus"' src/enqueue/static/js/home.js`
-  - Do:
-    1. In `api/search.py`, add:
-       ```python
-       @router.post("/search/warm")
-       def warm() -> dict:
-           """Load the embedding model now, so the search that follows does not wait."""
-           import threading
-
-           from ..index import embed
-
-           threading.Thread(target=lambda: embed.embed_query("warm"), daemon=True).start()
-           return {"ok": True}
-       ```
-    2. In `home.js`, at the start of the focus handler, add a call that runs one time for each 60 s:
-       ```js
-       if (Date.now() - (window.__warmAt || 0) > 60000) {
-         window.__warmAt = Date.now();
-         api("/search/warm", { method: "POST" }).catch(() => {});
-       }
-       ```
-  - Test: in `tests/test_search_warm.py`, patch `embed.embed_query` with a function that records a call. `POST /search/warm` answers `{"ok": true}` and the function was called (join or wait up to 1 s).
-  - Check: `uv run pytest tests/test_search_warm.py -q`; `bin/verify --fast`
-
-- [x] **Q8. The judge and the overview ignore the index-only lines**
-  Done: src/enqueue/retrieve/candidates.py, src/enqueue/chats.py; tests pass
-  - Needs: DB1
-  - Files: `retrieve/candidates.py` (`_facets_for_judge`), `chats.py` (`_overview`), `tests/test_search_results.py`
-  - Find: `grep -n 'FROM facets' src/enqueue/retrieve/candidates.py src/enqueue/chats.py`
-  - Do:
-    1. In `_facets_for_judge`, add `AND COALESCE(role, '') != 'ask'` to the `WHERE`.
-    2. In `_overview`, add the same to the `SELECT statement AS line ... FROM facets` query.
-  - Test: an artifact with one `ask` line and one `subject` line: `_facets_for_judge` returns the subject line only.
-  - Check: `uv run pytest tests/test_search_results.py tests/test_chats.py -q`
-
-- [x] **Q9. A search phrase hit says why it matched**
-  Done: src/enqueue/index/store_sqlite.py, src/enqueue/retrieve/candidates.py, src/enqueue/static/js/search.js; tests pass
-  - Needs: M8
-  - Files: `index/store_sqlite.py` (`_fetch_hits`: the facets branch), `retrieve/candidates.py` (`_hybrid_results`), `static/js/search.js`
-  - Find: `grep -n '" bridge FROM facets"\|hit\["bridge"\]' src/enqueue/index/store_sqlite.py`; `grep -n 'facet L' src/enqueue/retrieve/candidates.py`
-  - Do:
-    1. In `_fetch_hits`, add `role` to the facets `SELECT` and `hit["role"] = row["role"]` next to `hit["bridge"]`.
-    2. In `_hybrid_results`, where the facet layer builds `"why": f"facet L{h.get('level')}"`, use `"why": "search phrase"` when `h.get("role") == "ask"`.
-    3. In `search.js`, find where `why` is turned into words for the result (`grep -n 'facet L\|why' src/enqueue/static/js/search.js`). For `"search phrase"`, show `Found by: ` and the `matched` text.
-  - Test: in `tests/test_search_results.py`, an artifact with an `ask` line "release in small steps" is found by the search "small steps release" with `why` equal to `search phrase`.
-  - Check: `uv run pytest tests/test_search_results.py -q`; `bin/check-eval-cross`
-
-- [x] **Q10. A search result shows the gist**
-  Done: src/enqueue/api/search.py, src/enqueue/static/js/search.js; tests pass
-  - Needs: M7
-  - Files: `api/search.py` (`_dated`), `static/js/search.js`
-  - Do:
-    1. In `_dated`, after the rows are read, call `facets.gists(conn, [h["artifact_id"] for h in hits])` and set `h["gist"]` for each hit.
-    2. In `search.js`, when a hit has no marked passage to show and has a `gist`, show the gist as its second line.
-  - Test: a hit for an artifact with a gist row has `gist` in the `/search` answer.
-  - Check: `uv run pytest tests/test_search_results.py -q`
 
 - [ ] **Q11. Docs for track Q**
   - Needs: Q1 to Q10
@@ -1404,104 +202,6 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
 
 Finding: 57 idea pairs exist, and the daily card turns through the same 7 each week.
 
-- [x] **H1. The card does not repeat a pair**
-  Done: src/enqueue/shiny.py, tests/test_shiny.py; tests pass
-  - Needs: none
-  - Files: `shiny.py` (`_order`), `tests/test_shiny.py`
-  - Find: `grep -n 'def _order\|ROTATE\|toordinal' src/enqueue/shiny.py`
-  - Do:
-    1. In `_order`, in the block that opens a connection, also read `shown = _recent(conn, "shiny_shown", REMEMBER_DAYS, today)`.
-    2. After `pool = ideas or pairs`, add:
-       ```python
-       fresh = [p for p in pool if _pair([p["a"], p["b"]]) not in shown]
-       pool = fresh or pool
-       ```
-    3. Replace the three lines that use `ROTATE`, `start` and `top[start:] + top[:start] + rest` with a plain loop over `pool`.
-    4. Delete the constant `ROTATE` and each mention of it in the module docstring.
-  - Test: in `tests/test_shiny.py`: with 3 idea pairs, after `today(day1)` shows the first, `pick(day2)` returns another pair. When all 3 were shown, `pick` still returns a set. Fix tests that relied on the 7-day turn; the new rule is "unshown first".
-  - Check: `uv run pytest tests/test_shiny.py -q`
-
-- [x] **H2. A pair with a fresh note comes first**
-  Done: src/enqueue/shiny.py; tests pass
-  - Needs: H1
-  - Files: `shiny.py` (`_pairs`), `tests/test_shiny.py`
-  - Why: a link to the note the person wrote this week is worth more than a link between two old notes.
-  - Do:
-    1. In `_pairs`, add `a.updated_at AS a_at, b.updated_at AS b_at` to the `SELECT`.
-    2. Compute `week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()` and for each pair `fresh = max(p["a_at"] or "", p["b_at"] or "") >= week`.
-    3. Change the sort key to `(p["kind"] != "idea", not fresh, -(p["distance"] or 0.0), p["a"], p["b"])`.
-    4. Remove `a_at` and `b_at` from each dict before the return, so the stored sets keep their shape.
-  - Test: two idea pairs with the same distance; the pair that holds a note updated today sorts first.
-  - Check: `uv run pytest tests/test_shiny.py -q`
-
-- [x] **H3. Something shiny ignores the index-only lines**
-  Done: src/enqueue/shiny.py; tests pass
-  - Needs: DB1
-  - Files: `shiny.py` (`_faces`, `_seeds`, `_candidates`), `tests/test_shiny.py`
-  - Find: `grep -n 'FROM facets\|facets f' src/enqueue/shiny.py`
-  - Do:
-    1. Add `AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')` to the `WHERE` of each facet query in the three functions. In `_seeds` the alias is `f`: write `COALESCE(f.role, '')`.
-    2. In `_candidates`, the hits from `store.search_dense` have no `role`. After `best` is filled, read the roles of the matched facet ids in one query and drop entries with an index-only role.
-  - Test: an artifact whose only level 2 line has role `ask` is not a seed.
-  - Check: `uv run pytest tests/test_shiny.py -q`
-
-- [x] **H4. Feedback on the card**
-  Done: src/enqueue/static/js/home.js; bin/verify --fast pass (Owed: binding)
-  - Needs: R11
-  - Files: `static/js/home.js` (`drawShiny`), `static/css/home.css`
-  - Find: `grep -n 'function drawShiny\|Not today\|Find another' src/enqueue/static/js/home.js`
-  - Do:
-    1. In `drawShiny`, next to "Find another", add two text buttons: `Keep` and `Not the same`.
-    2. Both post to `/related/feedback` with `a` and `b` set to the first two ids of the set (`r.ids[0]`, `r.ids[1]`), the verdict, and `idea` set to `r.food.idea`.
-    3. After `Not the same`, call the function that "Find another" calls.
-    4. After `Keep`, replace the two buttons with the text `Kept`.
-    5. Style them like the "Not today" control. Find its rule in `home.css` and use the same class.
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: refuse a card. The next set shows, and the refused pair is not in the Related section of either note.
-  - Done: js/home.js; Keep and Not the same post to /related/feedback (fixed in review: the buttons were never drawn, and Keep was bound as Not today). Owed: device check
-
-- [x] **H5. The hunt does not bring back a refused pair, and sees the person's verdicts**
-  Done: src/enqueue/shiny.py; tests pass
-  - Needs: R11
-  - Files: `shiny.py` (`hunt`, `_pairs`), `tests/test_shiny.py`
-  - Do:
-    1. In `hunt`, drop each candidate where `seed` and the candidate are a refused pair. Use `related.refused(conn, seed)`.
-    2. In `_pairs`, the `related` rows of a refused pair are deleted by R11, so nothing changes there. Add a test that proves it.
-    3. In `hunt`, append the examples to the `user` text as R12 does: up to 3 kept and 3 refused `idea` sentences from `link_feedback`.
-  - Test: after `feedback(seed, other, "no")`, `hunt` does not return that pair.
-  - Check: `uv run pytest tests/test_shiny.py -q`
-  - Done: shiny.py (hunt skips refused pairs, sees kept and refused ideas); tests pass
-
-- [x] **H6. Give the model the passages when cards are refused often**
-  Done: src/enqueue/shiny.py, src/enqueue/prompts.py; tests pass
-  - Needs: R11
-  - Files: `shiny.py` (`_write`, `hunt`), `prompts.py` (`SHINY`, `SHINY_HUNT`), `tests/test_shiny.py`
-  - Why: the model sees titles and summary lines only. When the person refuses many cards, the lines are not enough.
-  - Do:
-    1. Add `def _grounded(conn, today) -> bool`: count the `shiny_shown` rows of the last 30 days (`_recent`) and the `link_feedback` rows with verdict `no` created in the last 30 days. Return true when the first is 5 or more and the second is more than one fifth of the first.
-    2. Add `def _passage(aid: str, line: str) -> str`: `store.search_within(aid, line, 1)`, read that chunk's text, return its first 120 words. Empty when nothing is found.
-    3. In `_write` and `hunt`, when `_grounded` is true, add under each note's block a line `passage: <text>`. Leave it out for a note that `privacy.local_only_ids` names when the model is remote.
-    4. In both prompts, add one sentence before the last line: `When a note has a "passage", it is that note's own text: the idea you name must be supported by it.`
-  - Test: with 5 shown pairs and 2 refusals, the user text of `_write` holds `passage:`. With 5 shown and 0 refusals, it does not.
-  - Check: `uv run pytest tests/test_shiny.py -q`
-  - Done: shiny.py, prompts.py (passages when refusals are high); tests pass
-
-- [x] **H7. The links and the day's card go to the relay**
-  Done: src/enqueue/sync/snapshot.py, src/enqueue/sync/client.py, src/enqueue/shiny.py; tests pass
-  - Needs: R11
-  - Files: `sync/snapshot.py` (`derived_layers`, `_apply_derived_layers`), `sync/client.py`, `shiny.py` (`prepare`), `tests/test_snapshot.py`, `tests/test_sync.py`
-  - Why: the phone has no related notes and no card, because these do not ride the relay.
-  - Find: `grep -n 'def push_pivots' -A 30 src/enqueue/sync/client.py`
-  - Do:
-    1. In `derived_layers`, add a key `related`: the rows of `related` where `owner` is this artifact, with all columns but `created_at`. Empty for a vaulted or local-only artifact.
-    2. In `_apply_derived_layers`, when the snapshot has the key `related`: delete the rows where `owner` is this artifact, then insert the incoming rows with `created_at` set to now.
-    3. In `sync/client.py`, add `push_shiny()`: seal and put `lib/shiny.enc`, with the body `{"day": <iso date>, "sets": [{"ids", "links", "food"}], "updated_at": <now>}` for the day's first 5 sets. Copy `push_pivots` for the sealing, the object name and the error handling.
-    4. Leave out a set that holds a local-only or vaulted artifact.
-    5. In `shiny.prepare`, call `push_shiny()` when it did something. Wrap the call so a sync failure does not raise.
-  - Test: a snapshot carries the `related` rows an artifact owns, and applying it writes them. A second apply with an empty list removes them. `push_shiny` with sync off does nothing and does not raise.
-  - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py tests/test_summarize_once.py tests/test_shiny.py -q`
-  - Done: snapshot.py (related layer), sync/client.py push_shiny, shiny.phone_sets (fixed in review: the sets were always empty); tests/test_shiny.py, tests/test_related_route.py pass
-
 - [ ] **H8. Docs for track H**
   - Needs: H1 to H7
   - Files: `AGENTS.md`
@@ -1514,130 +214,6 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
 
 All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
-- [x] **P1a. Prove the phone's database can make a keyword index** (claimed: agent, 2026-11-16)
-  Done: desktop/src/sync.rs; 1 passed
-  - Needs: none
-  - Files: `desktop/src/sync.rs` (the `mod tests` block only)
-  - Why: the phone uses SQLCipher's own SQLite build. A table it cannot make would stop the library from opening, so this is proved before anything uses it.
-  - Do:
-    1. In `desktop/src/sync.rs`, inside `mod tests`, add:
-       ```rust
-       #[test]
-       fn the_database_build_has_fts5() {
-           let conn = Connection::open_in_memory().unwrap();
-           conn.execute_batch("CREATE VIRTUAL TABLE t USING fts5(x); INSERT INTO t VALUES ('kiln');")
-               .unwrap();
-           let n: i64 = conn
-               .query_row("SELECT COUNT(*) FROM t WHERE t MATCH 'kiln'", [], |r| r.get(0))
-               .unwrap();
-           assert_eq!(n, 1);
-       }
-       ```
-    2. Run the Check. Then run the same test for the phone target: `cargo test --lib --target aarch64-apple-darwin the_database_build_has_fts5 --features ""` is not possible for a phone, so instead run `cargo check --lib --target aarch64-linux-android` to prove it builds.
-    3. In `desktop/Cargo.toml`, find the line for the phone (`grep -n 'bundled-sqlcipher-vendored-openssl' desktop/Cargo.toml`). Read the rusqlite feature list. SQLCipher's bundled build includes FTS5 in rusqlite 0.32. Write in the Done line which rusqlite version and features you saw.
-  - Check: `cd desktop && cargo test --lib the_database_build_has_fts5`
-  - Do not: change `init_schema` in this task.
-
-- [x] **P1b. The phone's keyword index, kept up to date by the database** (claimed: agent, 2026-11-16)
-  - Done: desktop/src/sync.rs (triggers); the required test was missing and was added in review; cargo test --lib 43 passed
-  - Needs: P1a
-  - Files: `desktop/src/sync.rs` (`init_schema` and `mod tests`)
-  - Why: the phone matches with `LIKE` and does not see summary lines or PDF text. Triggers keep the index right after every write, so no write function must remember to update it.
-  - Find: `grep -n 'pub fn init_schema' desktop/src/sync.rs`
-  - Do:
-    1. At the end of `init_schema`, before its last `Ok(())`, add:
-       ```rust
-       conn.execute_batch(
-           "CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(
-              artifact_id UNINDEXED, title, body, notes, summary, pages);",
-       )
-       .map_err(|e| e.to_string())?;
-       // One row per live item, rebuilt by the database itself after every write.
-       let rebuild = |key: &str| {
-           format!(
-               "DELETE FROM fts_items WHERE artifact_id = {key};
-                INSERT INTO fts_items (artifact_id, title, body, notes, summary, pages)
-                SELECT a.id, coalesce(a.title, ''), coalesce(a.body, ''),
-                  coalesce((SELECT group_concat(text, char(10)) FROM annotations
-                            WHERE artifact_id = a.id), ''),
-                  coalesce((SELECT group_concat(statement, char(10)) FROM facets
-                            WHERE artifact_id = a.id AND coalesce(role, '') != 'ask'), ''),
-                  coalesce((SELECT group_concat(text, char(10)) FROM page_text
-                            WHERE artifact_id = a.id), '')
-                FROM artifacts a
-                WHERE a.id = {key} AND a.deleted_at IS NULL AND a.vaulted_at IS NULL;"
-           )
-       };
-       for (name, table, when, key) in [
-           ("art_ins", "artifacts", "AFTER INSERT", "NEW.id"),
-           ("art_upd", "artifacts", "AFTER UPDATE", "NEW.id"),
-           ("art_del", "artifacts", "AFTER DELETE", "OLD.id"),
-           ("ann_ins", "annotations", "AFTER INSERT", "NEW.artifact_id"),
-           ("ann_upd", "annotations", "AFTER UPDATE", "NEW.artifact_id"),
-           ("ann_del", "annotations", "AFTER DELETE", "OLD.artifact_id"),
-           ("fac_ins", "facets", "AFTER INSERT", "NEW.artifact_id"),
-           ("fac_upd", "facets", "AFTER UPDATE", "NEW.artifact_id"),
-           ("fac_del", "facets", "AFTER DELETE", "OLD.artifact_id"),
-           ("pag_ins", "page_text", "AFTER INSERT", "NEW.artifact_id"),
-           ("pag_del", "page_text", "AFTER DELETE", "OLD.artifact_id"),
-       ] {
-           conn.execute_batch(&format!(
-               "CREATE TRIGGER IF NOT EXISTS fts_items_{name} {when} ON {table} BEGIN {} END;",
-               rebuild(key)
-           ))
-           .map_err(|e| e.to_string())?;
-       }
-       ```
-    2. Check that `init_schema` adds the `role` column to `facets` before this code runs (`grep -n 'ADD COLUMN role' desktop/src/sync.rs`). If the line is after, move this block after it.
-  - Test: in `mod tests`, add a test that calls `init_schema` on an in-memory connection, applies a snapshot with a PDF whose only text is in `page_text` (copy the snapshot JSON of `pulled_link_preview_lands_and_survives_a_preview_less_snapshot`; add `"page_text": [{"page": 0, "text": "the kiln schedule"}]`), and asserts `SELECT artifact_id FROM fts_items WHERE fts_items MATCH 'kiln'` returns it. Then set `deleted_at` on the artifact and assert the row is gone.
-  - Check: `cd desktop && cargo test --lib`
-
-- [x] **P1. Fill the phone's index one time for a library that has no rows** (claimed: agent, 2026-11-16)
-  - Done: desktop/src/sync.rs (one-time fill); test added in review; cargo test --lib 43 passed
-  - Needs: P1b
-  - Files: `desktop/src/sync.rs` (`init_schema` and `mod tests`)
-  - Do:
-    1. After the trigger block of P1b, add:
-       ```rust
-       let built: Option<String> = conn
-           .query_row("SELECT value FROM sync_meta WHERE key = 'fts_items_built'", [], |r| r.get(0))
-           .ok();
-       if built.is_none() {
-           conn.execute_batch(
-               "UPDATE artifacts SET id = id;
-                INSERT INTO sync_meta (key, value) VALUES ('fts_items_built', '1')
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-           )
-           .map_err(|e| e.to_string())?;
-       }
-       ```
-       `UPDATE artifacts SET id = id` fires the update trigger for each row, which writes its index row.
-    2. Check that `sync_meta` has columns `key` and `value` (`grep -n 'CREATE TABLE IF NOT EXISTS sync_meta' -A 4 desktop/src/sync.rs`).
-  - Test: insert an artifact with the triggers absent (drop them with `DROP TRIGGER fts_items_art_ins` in the test), delete the `fts_items_built` key, call `init_schema` again, and assert the artifact is in `fts_items`.
-  - Check: `cd desktop && cargo test --lib`
-
-- [x] **P2. Phone search uses the index** (claimed: agent, 2026-11-16)
-  - Done: desktop/src/sync.rs (search_fts); test added in review; cargo test --lib 43 passed
-  - Needs: P1
-  - Files: `desktop/src/sync.rs` (`search_artifacts`)
-  - Find: `grep -n 'pub fn search_artifacts\|fn query_terms\|fn search_like' desktop/src/sync.rs`
-  - Do:
-    1. Add `fn search_fts(conn, terms: &[String], all: bool) -> Result<Vec<Value>, String>`. Build the match string: each term as `"term"*` (double any `"` inside a term), joined with a space when `all` is true and with ` OR ` when false.
-    2. Query:
-       ```sql
-       SELECT a.id, a.kind, a.title, substr(a.body, 1, 280), a.source_url, a.mime,
-              a.filename, a.created_at, a.updated_at, a.pinned,
-              snippet(fts_items, -1, '', '', ' ... ', 12) AS snip
-       FROM fts_items f JOIN artifacts a ON a.id = f.artifact_id
-       WHERE fts_items MATCH ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL
-       ORDER BY bm25(fts_items, 0.0, 10.0, 1.0, 2.0, 3.0, 1.0) LIMIT 40
-       ```
-    3. Return the same JSON keys as `search_like`, plus `"snippet"`.
-    4. In `search_artifacts`: call `search_fts(.., true)`. When it has less than 5 rows, call `search_fts(.., false)` and append rows whose id is not in the list. When `search_fts` returns an error, fall back to `search_like`.
-    5. Keep the branch for an empty term list as it is.
-  - Test: Rust unit tests: a word that is only in a PDF's `page_text` finds the PDF; a title match is before a body match; a query of two words where only one matches still finds the item.
-  - Check: `cargo test --lib` in `desktop/`
-
 - [ ] **P3. A phone result shows the matched words**
   - Needs: P2
   - Files: `static/mobile.html`
@@ -1645,7 +221,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: where a search result row is drawn, when the row has `snippet` and the snippet is not the start of the body, show the snippet as the row's second line. Escape it with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`; search a word that is only in a PDF; the row shows the words around it.
 
-- [ ] **P4. The phone draws the summary in groups** (claimed: agent, 2026-11-16)
+- [ ] **P4. The phone draws the summary in groups**
   - Reopened in review (2026-11-17): the Rust half is done (the reader returns `bridge` and `role`); `static/mobile.html` still draws the flat list. Do step 5 only.
   - Needs: M2
   - Files: `desktop/src/sync.rs`, `static/mobile.html`
@@ -1659,7 +235,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: a Rust unit test: a snapshot facet with `bridge: 1` is read back with `bridge` 1.
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator`; the Details panel of a synced item shows the groups.
 
-- [ ] **P5. The phone keeps the role** (claimed: agent, 2026-11-16)
+- [ ] **P5. The phone keeps the role**
   - Reopened in review (2026-11-17): a snapshot facet with no role is still stored with none. Do step 3 only.
   - Needs: M4, P4
   - Files: `desktop/src/sync.rs`
@@ -1671,47 +247,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `cargo test --lib` in `desktop/`
   - Partly done in review (2026-11-16): the `role` column, apply, `build_snapshot` and a test are in `sync.rs`, and the reader hides `ask` lines. Left: set a role when a snapshot facet has none.
 
-- [x] **P6a. The phone stores related rows and reads them** (claimed: agent, 2026-11-16)
-  - Done: desktop/src/sync.rs; related_for failed on every call (it prepared a query on a column that does not exist) and had no order or limit, fixed and tested in review; the phone no longer sends links back, which would have wiped the Mac's links
-  - Needs: H7
-  - Files: `desktop/src/sync.rs` (`init_schema`, `apply_snapshot`, a new function, `mod tests`)
-  - Do:
-    1. In `init_schema`, add:
-       ```sql
-       CREATE TABLE IF NOT EXISTS related (
-         artifact_id TEXT NOT NULL, related_id TEXT NOT NULL, owner TEXT NOT NULL,
-         score REAL, via TEXT, point TEXT, kind TEXT, distance REAL,
-         PRIMARY KEY (artifact_id, related_id, owner));
-       ```
-    2. In `apply_snapshot`, after the facets block, add: when `snapshot.get("related")` is an array, run `DELETE FROM related WHERE owner = ?1` with the artifact id, then insert each element's eight fields with `INSERT OR REPLACE`.
-    3. Add `pub fn related_for(conn: &Connection, artifact_id: &str) -> Result<Vec<Value>, String>`. Query:
-       ```sql
-       SELECT a.id, a.title, a.kind, a.updated_at, r.kind, r.point, r.via, r.score, r.distance
-       FROM related r JOIN artifacts a ON a.id = r.related_id
-       WHERE r.artifact_id = ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL
-       ```
-       Keep the first row for each `id`. Sort: kind `subject` by score from high to low, then `idea` by distance from high to low, then `mention`. Return objects with keys `id`, `title`, `kind`, `updated_at`, `link` (the related kind), `point`, `via`. Return at most 5.
-  - Test: apply a snapshot whose `related` names one live item and one trashed item; `related_for` returns only the live one.
-  - Check: `cd desktop && cargo test --lib`
-
-- [x] **P6b. The page can ask the phone for related rows** (claimed: agent, 2026-11-16)
-  - Done: lib.rs, build.rs, tauri.conf.json; cargo check for Android passes (fixed in review)
-  - Needs: P6a
-  - Files: `desktop/src/lib.rs` (inside `mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`
-  - Do:
-    1. In `mod mobile`, next to `mobile_search` (`grep -n 'fn mobile_search' desktop/src/lib.rs`), add:
-       ```rust
-       #[tauri::command]
-       fn mobile_related(id: String) -> Result<String, String> {
-           let conn = open_lib()?;
-           let rows = crate::sync::related_for(&conn, &id)?;
-           Ok(serde_json::json!(rows).to_string())
-       }
-       ```
-    2. Follow the recipe for a new command: `"mobile_related"` in `commands(&[...])` in `build.rs`, `"allow-mobile-related"` in the `mobile-library` capability in `tauri.conf.json`, and `mobile::mobile_related` in `generate_handler!` (find how `mobile_search` is listed there and copy its form).
-  - Check: `cd desktop && cargo test --lib`; `bin/verify --android` when the Android SDK is on this Mac, else `cargo check --lib --target aarch64-linux-android`.
-
-- [ ] **P6. The phone's reader shows related rows** **[device]** (claimed: agent, 2026-11-16)
+- [ ] **P6. The phone's reader shows related rows** **[device]**
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
   - Needs: P6b, R1
   - Files: `static/mobile.html`
@@ -1722,24 +258,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     3. Escape every text with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`, open a synced note that has related notes on the Mac, and see the rows.
 
-- [x] **P7a. The phone keeps the day's Something shiny card** (claimed: agent, 2026-11-16)
-  - Done: desktop/src/sync.rs; cargo test --lib pass
-  - Needs: H7
-  - Files: `desktop/src/sync.rs` (the pull loop, `mod tests` not needed)
-  - Find: `grep -n 'name == "lib/pivots.enc"' desktop/src/sync.rs`
-  - Do: copy the whole `if name == "lib/pivots.enc" { ... continue; }` block and paste the copy right after it. In the copy, change `"lib/pivots.enc"` to `"lib/shiny.enc"` and the key `'pivots'` to `'shiny'`.
-  - Check: `cd desktop && cargo test --lib`
-
-- [x] **P7b. The page can ask for the day's card** (claimed: agent, 2026-11-16)
-  - Done: lib.rs, build.rs, tauri.conf.json; the command had stolen mobile_status's attribute, so the phone app did not compile; fixed in review
-  - Needs: P7a
-  - Files: `desktop/src/lib.rs` (inside `mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`
-  - Do:
-    1. Next to `mobile_pivots` (`grep -n 'fn mobile_pivots' desktop/src/lib.rs`), add a command `mobile_shiny` with the same body, reading the key `'shiny'`, and returning `"null"` when there is none.
-    2. Register it in the three places, as P6b does.
-  - Check: `cd desktop && cargo test --lib`; `cargo check --lib --target aarch64-linux-android`
-
-- [ ] **P7. The phone shows the day's card** **[device]** (claimed: agent, 2026-11-16)
+- [ ] **P7. The phone shows the day's card** **[device]**
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
   - Needs: P7b
   - Files: `static/mobile.html`
@@ -1751,34 +270,14 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     5. A tap on a note opens it in the reader.
   - Check: `bin/verify --fast`. Device: the emulator, linked to a Mac that shows a card today, shows the same idea.
 
-- [x] **P8a. The phone stores the person's link verdicts and sends them back** (claimed: agent, 2026-11-16)
-  - Done: desktop/src/sync.rs; `link_feedback_local` was missing and was added with a test in review
-  - Needs: P6a
-  - Files: `desktop/src/sync.rs` (`init_schema`, `apply_snapshot`, `build_snapshot`, a new function, `mod tests`)
-  - Do:
-    1. In `init_schema`, add the table of DB1: `CREATE TABLE IF NOT EXISTS link_feedback (pair TEXT PRIMARY KEY, verdict TEXT NOT NULL, idea TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);`
-    2. In `apply_snapshot`, for each element of `snapshot["link_feedback"]`: insert it when no row has that `pair` or the incoming `created_at` is later. When the stored verdict is `no`, delete the two `related` rows of the pair.
-    3. In `build_snapshot`, add a key `link_feedback`: the rows whose `pair` contains the artifact id (`instr(pair, ?1) > 0`).
-    4. Add `pub fn link_feedback_local(conn, a: &str, b: &str, verdict: &str, idea: &str) -> Result<(), String>`: refuse a verdict that is not `keep` or `no`; write the row with `pair` = the two ids sorted and joined by `|`; on `no` delete the two `related` rows; set `updated_at` of both artifacts to now (copy the time format other write functions use).
-  - Test: after `link_feedback_local(a, b, "no", "")`, `related` has no row for the pair and `build_snapshot(a)` has one `link_feedback` element.
-  - Check: `cd desktop && cargo test --lib`
-
-- [x] **P8b. The page can send a verdict** (claimed: agent, 2026-11-16)
-  - Done: lib.rs, build.rs, tauri.conf.json; did not compile (no command attribute, wrong queue_mutation_push call), fixed in review
-  - Needs: P8a
-  - Files: `desktop/src/lib.rs` (inside `mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`
-  - Find: `grep -n 'fn queue_mutation_push' desktop/src/lib.rs` and read one write command that calls it (`mobile_toggle_pin`).
-  - Do: add the command `mobile_link_feedback(a: String, b: String, verdict: String, idea: String)`. It calls `link_feedback_local`, then queues both artifacts the way `mobile_toggle_pin` queues one. Register it in the three places.
-  - Check: `cd desktop && cargo test --lib`; `cargo check --lib --target aarch64-linux-android`
-
-- [ ] **P8. The phone's idea rows have Keep and Not the same** **[device]** (claimed: agent, 2026-11-16)
+- [ ] **P8. The phone's idea rows have Keep and Not the same** **[device]**
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
   - Needs: P8b, P6
   - Files: `static/mobile.html`
   - Do: in the related section of P6, add two buttons under each idea row, as the desktop does in `relatedRowHtml`. A tap calls `invoke("mobile_link_feedback", {a, b, verdict, idea})` with `idea` = the row's `point`, then draws the reader again.
   - Check: `bin/verify --fast`. Device: refuse a link on the emulator; after a sync it is gone on the Mac.
 
-- [ ] **P9. Docs for track P** (claimed: agent, 2026-11-16)
+- [ ] **P9. Docs for track P**
   - Needs: P1 to P8
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: in `AGENTS.md`, change Resolved decision 11 (the phone searches a keyword index over text, summary and pages; it has related rows and the day's card). Change the `ingest/related.py` row's last sentence, which says the phone has no related data.
@@ -1928,7 +427,6 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     SIZE = re.compile(r"font-size:\s*([0-9.]+)px")
     WEIGHT = re.compile(r"font-weight:\s*([0-9]+)(\s*[;}])")
 
-
     def fix(text: str, name: str) -> str:
         def size(m):
             token = SIZES.get(m.group(1))
@@ -1945,7 +443,6 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
             return f"font-weight: var(--w-{token}){m.group(2)}"
 
         return WEIGHT.sub(weight, SIZE.sub(size, text))
-
 
     def main() -> int:
         for name in sys.argv[1:]:
@@ -1967,7 +464,6 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
                     f.write(new)
                 print(f"{name}: changed")
         return 0
-
 
     if __name__ == "__main__":
         sys.exit(main())
@@ -2062,7 +558,6 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
 
            return sqlite_vec.serialize_float32(embed_query(text))
 
-
        @lru_cache(maxsize=64)
        def passage_bytes(text: str) -> bytes:
            import sqlite_vec
@@ -2120,7 +615,7 @@ What Enqueue has now, against what those pages offer:
 
 | Fabric offers | Enqueue now | Track |
 | --- | --- | --- |
-| An answer shows where in the document it came from | An answer names the items it used, not the place | A |
+| An answer shows where in the document it came from | Built on the Mac (A1 to A6); the phone still shows the marks raw | A7 |
 | A search result opens at the paragraph or page | A note opens at its tab; a PDF opens at page 1 | N |
 | Search inside PDFs and notes | Yes | N4 locks it with tests |
 | Natural-language search | Kind and time words become filters | N4 locks it with tests |
@@ -2131,277 +626,19 @@ What Enqueue has now, against what those pages offer:
 | Visual search (find similar pictures) | Pictures are found by their description text only | owner item O7 |
 | Search and questions on audio and video | No audio or video kind | owner item O7 |
 
-- [x] **DB2. Four more migrations**
-  Done: migrations 0049-0052, trash.py purge, tests; 24 passed
-  - Needs: DB1
-  - Files: new `migrations/versions/0049_chat_places.py`, new `migrations/versions/0050_blob_relay.py`, new `migrations/versions/0051_artifact_colours.py`, new `migrations/versions/0052_thumbs.py`, `trash.py`, `tests/test_migrations.py`, `tests/test_trash.py`
-  - Do:
-    1. `0049_chat_places` (`down_revision = "0048_link_feedback"`):
-       ```sql
-       CREATE TABLE chat_places (
-         message_id TEXT NOT NULL,
-         n INTEGER NOT NULL,
-         artifact_id TEXT NOT NULL,
-         page INTEGER,
-         quote TEXT NOT NULL DEFAULT '',
-         PRIMARY KEY (message_id, n)
-       );
-       ```
-    2. `0050_blob_relay` (`down_revision = "0049_chat_places"`):
-       ```sql
-       CREATE TABLE blob_relay (
-         content_hash TEXT PRIMARY KEY,
-         relay TEXT NOT NULL,
-         pushed_at TEXT NOT NULL
-       );
-       ```
-    3. `0051_artifact_colours` (`down_revision = "0050_blob_relay"`):
-       ```sql
-       CREATE TABLE artifact_colours (
-         artifact_id TEXT NOT NULL,
-         r INTEGER NOT NULL,
-         g INTEGER NOT NULL,
-         b INTEGER NOT NULL,
-         share REAL NOT NULL,
-         PRIMARY KEY (artifact_id, r, g, b)
-       );
-       ```
-    4. `0052_thumbs` (`down_revision = "0051_artifact_colours"`):
-       ```sql
-       CREATE TABLE thumbs (
-         artifact_id TEXT PRIMARY KEY,
-         content_hash TEXT NOT NULL,
-         width INTEGER NOT NULL
-       );
-       ```
-    5. In `trash.py`, find the function that purges one artifact (`grep -n 'def purge' src/enqueue/trash.py`). Where it deletes the artifact's rows from other tables, add deletes for `chat_places`, `artifact_colours` and `thumbs` by `artifact_id`.
-  - Test: the four tables exist after `db.migrate()`. After a purge, no row of the three tables names the artifact.
-  - Check: `uv run pytest tests/test_migrations.py tests/test_trash.py -q`
-
 ---
 
 ## Track A: an answer shows where it came from
 
 Finding: an answer lists the items it used. It does not say which page or paragraph, and a press on a source opens the item at its start.
 
-- [x] **A1. A passage knows its page and its first words** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/ingest/chunk.py, tests/test_chunk.py; 9 passed in 1.14s
-  - Needs: none
-  - Files: `ingest/chunk.py`, `tests/test_chunk.py`
-  - Why: a PDF's passages are made from text with a `## page N` heading for each page. That is enough to know each passage's page with no new column.
-  - Do: add to `ingest/chunk.py` (add `import re` if absent):
-    ```python
-    _PAGE_HEADING = re.compile(r"^## page (\d+)\s*$", re.M)
-
-
-    def pages_for(conn, artifact_id: str) -> dict[str, int]:
-        """Chunk id -> the PDF page it starts on, counted from 0. Empty for anything
-        but a PDF."""
-        row = conn.execute("SELECT kind FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
-        if row is None or row["kind"] != "pdf":
-            return {}
-        out: dict[str, int] = {}
-        carried = 0
-        for c in conn.execute(
-            "SELECT id, text FROM chunks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
-        ):
-            found = [int(n) - 1 for n in _PAGE_HEADING.findall(c["text"])]
-            starts = c["text"].lstrip().startswith("## page ")
-            out[c["id"]] = found[0] if (found and starts) else carried
-            if found:
-                carried = found[-1]
-        return out
-
-
-    def quote_of(text: str, words: int = 10) -> str:
-        """The first words of a passage's own text, for finding it again in the reader."""
-        lines = [
-            ln
-            for ln in text.splitlines()
-            if ln.strip()
-            and not ln.lstrip().startswith("#")
-            and not ln.startswith("(note added by you)")
-        ]
-        return " ".join(" ".join(lines).split()[:words])
-    ```
-  - Test: in `tests/test_chunk.py`, insert a `pdf` artifact and three chunks by hand: `"## page 1\n\nalpha"`, `"more of page one"`, `"## page 2\n\nbeta"`. `pages_for` gives 0, 0, 1. A `note` artifact gives `{}`. `quote_of("# Title\n\none two three")` gives `"one two three"`.
-  - Check: `uv run pytest tests/test_chunk.py -q`
-
-- [x] **A2. Passages are numbered and the model says which it used** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/chats.py, src/enqueue/schemas.py, src/enqueue/prompts.py, src/enqueue/chats_worker.py, tests/test_chats.py; 54 passed in 11.03s
-  - Needs: none
-  - Files: `chats.py`, `schemas.py` (`Answer`), `prompts.py` (`CHAT_ANSWER`), `tests/test_chats.py`
-  - Find: `grep -n 'response_model=Answer' src/enqueue/chats.py`; read 20 lines above it.
-  - Do:
-    1. Where the prompt body is built from the passages (the f-string with `(id: {p['artifact_id']})`), number them. Use `enumerate(found, 1)` and start each header with `[P{n}] `, so a header reads `[P3] [pdf] (id: <id>) <title>`.
-    2. In the `context=` of that call, add `"offered_passages": len(found)`.
-    3. In `schemas.py` `Answer`, add the field:
-       ```python
-       used: list[int] = Field(
-           default_factory=list,
-           description="Numbers of the passages the answer rests on, most important first.",
-       )
-       ```
-    4. In `Answer.check`, before `return self`, add:
-       ```python
-       count = (info.context or {}).get("offered_passages", 0)
-       self.used = [
-           n for n in dict.fromkeys(self.used) if isinstance(n, int) and 1 <= n <= count
-       ][:8]
-       ```
-    5. In `prompts.py` `CHAT_ANSWER`, add this paragraph before its last line:
-       ```text
-       Each passage starts with a number in the form [P3]. After a sentence that rests on
-       a passage, put that passage's number in the same form, for example: The budget was
-       cut in March [P2]. In `used`, list the numbers of the passages you used, the most
-       important first, at most 8. Never write a number you were not shown.
-       ```
-    6. In `chats.py`, add:
-       ```python
-       def without_places(text: str) -> str:
-           """An answer's text with its [P3] place marks removed."""
-           return re.sub(r"\s?\[P\d+\]", "", text or "")
-       ```
-       Add `import re` if absent. Use it where the answer text is given to the title and topics calls, and in the `detail` of the `ask.answered` event.
-  - Test: with a fake provider that returns `used=[2, 9, 2]` and 3 passages offered, the stored answer has `used == [2]`. The prompt body sent to the provider holds `[P1]`. `without_places("A [P1]. B [P12]")` gives `"A. B"`.
-  - Check: `uv run pytest tests/test_chats.py tests/test_chats_worker.py -q`
-  - Do not: reject an answer because a number is wrong. Wrong numbers are dropped.
-
-- [x] **A3. Keep the place of each passage an answer used** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/chats.py, src/enqueue/chats_worker.py, tests/test_chats_worker.py; 55 passed in 10.96s
-  - Needs: DB2, A1, A2
-  - Files: `chats.py` (`run_answer`, `get`, `delete`), `chats_worker.py` (`_finish_pending`), `tests/test_chats_worker.py`
-  - Find: `grep -n 'def run_answer\|def get\b\|def delete\b' src/enqueue/chats.py`; `grep -n 'def _finish_pending' src/enqueue/chats_worker.py`
-  - Do:
-    1. In `run_answer`, after `answer = _ask_model(...)`, add:
-       ```python
-       from .ingest import chunk
-
-       places = []
-       conn = db.get_conn()
-       try:
-           pages: dict[str, dict[str, int]] = {}
-           for n in answer.used:
-               p = found[n - 1]
-               aid = p["artifact_id"]
-               if str(p.get("id", "")).startswith("overview:"):
-                   page, quote = None, ""
-               else:
-                   if aid not in pages:
-                       pages[aid] = chunk.pages_for(conn, aid)
-                   page, quote = pages[aid].get(p.get("id")), chunk.quote_of(p.get("text", ""))
-               places.append({"n": n, "artifact_id": aid, "page": page, "quote": quote})
-       finally:
-           conn.close()
-       ```
-    2. Add `"places": places` to the dict that `run_answer` returns.
-    3. In `chats_worker._finish_pending`, after the citations loop, add:
-       ```python
-       conn.execute("DELETE FROM chat_places WHERE message_id = ?", (message_id,))
-       for p in msg.get("places") or []:
-           conn.execute(
-               "INSERT OR REPLACE INTO chat_places (message_id, n, artifact_id, page, quote)"
-               " VALUES (?, ?, ?, ?, ?)",
-               (message_id, p["n"], p["artifact_id"], p["page"], p["quote"]),
-           )
-       ```
-    4. In `chats.get`, next to the query that fills `cited`, read `SELECT message_id, n, artifact_id, page, quote FROM chat_places WHERE message_id IN (SELECT id FROM chat_messages WHERE chat_id = ?) ORDER BY message_id, n` and add `"places": [...]` to each message the same way `cited` is added.
-    5. In `chats.delete`, delete the `chat_places` rows of the chat's messages next to the `chat_citations` delete.
-  - Test: with a fake provider that returns `used=[1]`, after `chats_worker.compute(job)` the message from `chats.get` has one place with the passage's artifact id and a `quote`. After `chats.delete`, `chat_places` has no row for it. Copy the job set-up of an existing test in `tests/test_chats_worker.py`.
-  - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`
-
-- [x] **A4. Places ride the conversation's snapshot** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/sync/snapshot.py, tests/test_snapshot.py; 26 passed in 25.01s
-  - Needs: A3
-  - Files: `sync/snapshot.py` (`read_chat_snapshot`, `apply_chat_snapshot`), `tests/test_snapshot.py`
-  - Find: `grep -n 'def read_chat_snapshot\|def apply_chat_snapshot\|"citations"' src/enqueue/sync/snapshot.py`
-  - Do:
-    1. In `read_chat_snapshot`, add a key `places`: the `chat_places` rows of the chat's messages, each `{message_id, n, artifact_id, page, quote}`, ordered by `message_id, n`.
-    2. In `apply_chat_snapshot`, only when the snapshot has the key `places`: delete the `chat_places` rows of the chat's messages and insert the incoming ones. A snapshot without the key (the phone's) leaves the rows alone.
-  - Test: a chat with one place round-trips through read and apply into a second store. Applying a snapshot with no `places` key keeps the rows.
-  - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py -q`
-
-- [x] **A5. The reader can open at a place** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/static/js/artifact.js; bin/verify: all checks passed
-  - Owed: device check - in the page console run `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})`; the PDF scrolls to page 3 and the words are marked.
-  - Needs: none
-  - Files: `static/js/artifact.js` (new functions, and one call at the end of `showArtifact`)
-  - Find: `grep -n 'async function showArtifact\|async function openFind\|function showFindHit\|function openArtifact' src/enqueue/static/js/artifact.js`. Read `openFind` whole: it shows how the find field in the pill gets its text and how a search inside the item starts.
-  - Do:
-    1. Add a variable `let openAt = null;` near the other state variables of the file.
-    2. Add:
-       ```js
-       // Open an item at a place: a PDF page (counted from 0) and the first words of
-       // a passage, which the find field then marks.
-       function openArtifactAt(id, place, source) {
-         openAt = { id, page: place && place.page, quote: (place && place.quote) || "" };
-         openArtifact(id, source || "chat");
-       }
-       ```
-       Make it reachable from other files the same way `openArtifact` is (`grep -n 'window.openArtifact' src/enqueue/static/js/*.js`).
-    3. At the end of `showArtifact`, after the page is drawn, add: when `openAt` is set and `openAt.id` is the shown id, take it and clear the variable, then:
-       - when `page` is a number, find `document.querySelector('.leaf[data-page="' + page + '"]')` and call `scrollIntoView({ block: "start" })` on it;
-       - when `quote` has 3 words or more, open the find field as `openFind` does and put the first 6 words of the quote in it, then start the find the way a typed query starts it.
-    4. A `showArtifact` that draws the same item again for another reason (a save, a focus) must not find `openAt` set: clear it the first time it is used.
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: in the page console run `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})`. The PDF scrolls to page 3 and the words are marked.
-
-- [x] **A6. An answer's place marks are buttons** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/static/js/chat.js, src/enqueue/static/css/chat.css; bin/verify: all checks passed
-  - Owed: device check - ask a question that a long PDF answers. The answer has "p. N" buttons. A press opens the PDF at that page with the words marked.
-  - Needs: A3, A5
-  - Files: `static/js/chat.js`, `static/css/chat.css`
-  - Find: `grep -n 'md(m.text)' src/enqueue/static/js/chat.js`
-  - Do:
-    1. Add a function:
-       ```js
-       // Turn [P3] in an answer into a button that opens the item at that place.
-       function withPlaces(html, m) {
-         const byN = {};
-         (m.places || []).forEach((p) => (byN[p.n] = p));
-         return html.replace(/\s?\[P(\d+)\]/g, (all, n) => {
-           const p = byN[n];
-           if (!p) return "";
-           const label = p.page === null || p.page === undefined ? "source" : "p. " + (p.page + 1);
-           return (
-             ' <button class="place" type="button" data-id="' +
-             esc(p.artifact_id) +
-             '" data-n="' +
-             esc(String(n)) +
-             '">' +
-             label +
-             "</button>"
-           );
-         });
-       }
-       ```
-    2. For an assistant message, wrap the rendered text: `withPlaces(md(m.text), m)`.
-    3. After the transcript is drawn, bind each `.place` button: find the message's place by `data-n` and call `openArtifactAt(p.artifact_id, p, "chat")`. Bind with a listener on the transcript container, not an inline handler. To find the message, put `data-mid="<message id>"` on the bubble if it has none.
-    4. In `chat.css`, add:
-       ```css
-       .place {
-         padding: 0 6px;
-         border: 0;
-         border-radius: var(--r-full);
-         background: var(--surface-3);
-         color: var(--accent-text);
-         font-size: 12px;
-         cursor: pointer;
-       }
-       .place:focus-visible {
-         outline: 2px solid var(--accent);
-         outline-offset: 2px;
-       }
-       ```
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: ask a question that a long PDF answers. The answer has "p. N" buttons. A press opens the PDF at that page with the words marked.
-
-- [ ] **A7. The phone does not show raw place marks**
+- [x] **A7. The phone does not show raw place marks** (claimed: agent, 2026-11-17)
   - Needs: A2
   - Files: `static/mobile.html` (the chat message text only)
   - Find: `grep -n 'm.cited && m.cited.length' src/enqueue/static/mobile.html`; the message text is drawn a few lines above.
   - Do: where an assistant message's text is drawn, remove the marks first: `text.replace(/\s?\[P\d+\]/g, "")`.
   - Check: `bin/verify --fast`
+  - Done: src/enqueue/static/mobile.html; bin/verify --fast pass
 
 - [ ] **A8. Docs for track A**
   - Needs: A1 to A7
@@ -2511,7 +748,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
        WIDTH = 520
        _TYPES = {"image/png": "png", "image/jpeg": "jpeg", "image/gif": "gif", "image/webp": "webp"}
 
-
        def render(data: bytes, mime: str, width: int = WIDTH) -> bytes | None:
            """A JPEG at most `width` pixels wide, or None for a type that cannot be drawn."""
            import fitz
@@ -2527,7 +763,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
                return pix.tobytes("jpeg")
            finally:
                doc.close()
-
 
        def make(artifact_id: str) -> bool:
            """Make and keep the small picture of one live image. True when one is kept."""
@@ -2560,7 +795,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
                )
            return True
 
-
        def get(artifact_id: str) -> bytes | None:
            conn = db.get_conn()
            try:
@@ -2574,7 +808,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
            if row is None or not blobstore.exists(row["content_hash"]):
                return None
            return blobstore.read(row["content_hash"])
-
 
        def drop(artifact_id: str) -> None:
            """Remove the small picture (the item went into the vault)."""
@@ -2671,7 +904,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
 
        from . import blobstore, db
 
-
        def candidates(conn, days: int, relay: str) -> list[dict]:
            """Live pdf, image and file artifacts whose original may leave this Mac."""
            since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -2766,7 +998,6 @@ Finding: this library has few pictures now, so this track is small. It makes eve
 
        _TYPES = {"image/png": "png", "image/jpeg": "jpeg", "image/gif": "gif", "image/webp": "webp"}
 
-
        def palette(data: bytes, mime: str, top: int = 5) -> list[tuple[int, int, int, float]]:
            """Up to `top` colours as (r, g, b, share of the picture), largest share first."""
            import fitz
@@ -2795,7 +1026,6 @@ Finding: this library has few pictures now, so this track is small. It makes eve
                out.append((int(mean[0]), int(mean[1]), int(mean[2]), share))
            return out
 
-
        def make(artifact_id: str) -> int:
            """Work out and keep one live image's colours. Returns how many were kept."""
            conn = db.get_conn()
@@ -2822,7 +1052,6 @@ Finding: this library has few pictures now, so this track is small. It makes eve
                    [(artifact_id, r, g, b, share) for r, g, b, share in found],
                )
            return len(found)
-
 
        def drop(artifact_id: str) -> None:
            with db.transaction() as conn:
@@ -2876,493 +1105,6 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Needs: V1 to V3
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: add `colours.py` to the module map and the colour filter to the `retrieve/filters.py` row. In `docs/MANUAL.md`, say how to search by colour: "blue photos", or the dots.
-  - Check: `bin/verify --fast`
-
----
-
-## Track L: fill the library from what is already on this Mac
-
-Why: a memory is worth what is in it, and an empty library is why a second brain fails in its first week.
-The sources here are ones a person does not upload to a cloud workspace, so only a local product can read them.
-`importer.py` already brings in folders and zip files of notes. This track adds four sources to it.
-
-- [x] **DB3. One more migration**
-  Done: migrations/versions/0053_source_items.py, tests/test_migrations.py; 8 passed
-  - Needs: DB2
-  - Files: new `migrations/versions/0053_source_items.py`, `tests/test_migrations.py`
-  - Do: `down_revision = "0052_thumbs"`. In `upgrade()`:
-    ```sql
-    CREATE TABLE source_items (
-      source TEXT NOT NULL,
-      external_id TEXT NOT NULL,
-      stamp TEXT NOT NULL,
-      artifact_id TEXT,
-      PRIMARY KEY (source, external_id)
-    );
-    ```
-    One row for each outside item Enqueue brought in: where it came from, its id there, a stamp that changes when it changes there, and the artifact made from it.
-  - Test: the table exists after `db.migrate()`.
-  - Check: `uv run pytest tests/test_migrations.py -q`
-
-- [x] **L1. A link can be saved with a date, behind the person's own work**
-  Done: src/enqueue/capture.py, tests/test_importer.py (test added in review); 15 passed
-  - Needs: none
-  - Files: `capture.py` (`link`), `tests/test_importer.py`
-  - Find: `grep -n '^def link' src/enqueue/capture.py`
-  - Do:
-    1. Change the signature to `link(url, local_only=False, title=None, at: str | None = None, background: bool = False)`.
-    2. Replace `now = db.now()` with `now = at or db.now()`.
-    3. Replace `ingest_queue.submit(artifact_id)` with:
-       ```python
-       if background:
-           ingest_queue.submit_background(artifact_id)
-       else:
-           ingest_queue.submit(artifact_id)
-       ```
-  - Test: `capture.link("https://example.com/a", at="2020-01-02T03:04:05+00:00")` stores that `created_at`. A call with no `at` works as before.
-  - Check: `uv run pytest tests/test_importer.py tests/test_preview.py -q`
-
-- [x] **L2. A browser's bookmarks file comes in as links** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/importer.py, tests/test_importer.py; 11 passed
-  - Needs: L1
-  - Files: `importer.py`, `tests/test_importer.py`
-  - Why: every browser can export its bookmarks as one HTML file. No permission is necessary to read it.
-  - Find: `grep -n 'def _import_files\|def _is_note\|def _count' src/enqueue/importer.py`
-  - Do:
-    1. Add:
-       ```python
-       BOOKMARK_MARK = "NETSCAPE-Bookmark-file-1"
-       BOOKMARK_TOKEN = re.compile(
-           r"<H3[^>]*>(.*?)</H3>|<DL>|</DL>|<A\s+([^>]*)>(.*?)</A>", re.I | re.S
-       )
-       BROWSER_FOLDERS = {
-           "bookmarks bar", "bookmarks menu", "bookmarks toolbar", "other bookmarks",
-           "favorites", "favourites", "favorites bar", "mobile bookmarks", "reading list",
-           "imported", "bookmarks",
-       }
-
-
-       def _is_bookmarks(f: Path) -> bool:
-           if f.is_dir() or f.suffix.lower() not in HTML_SUFFIXES:
-               return False
-           try:
-               with f.open("r", encoding="utf-8", errors="replace") as fh:
-                   return BOOKMARK_MARK in fh.read(2000)
-           except OSError:
-               return False
-
-
-       def _import_bookmarks(f: Path) -> None:
-           """Each bookmark becomes a link. The folders it sits in become its tags."""
-           from html import unescape
-
-           text = f.read_text("utf-8", "replace")
-           stack: list[str | None] = []
-           pending: str | None = None
-           for m in BOOKMARK_TOKEN.finditer(text):
-               token = m.group(0).upper()
-               if token.startswith("<H3"):
-                   pending = unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip()
-               elif token == "<DL>":
-                   stack.append(pending)
-                   pending = None
-               elif token == "</DL>":
-                   if stack:
-                       stack.pop()
-               else:
-                   href = re.search(r'HREF="([^"]*)"', m.group(2), re.I)
-                   url = unescape(href.group(1)).strip() if href else ""
-                   if not url.lower().startswith(("http://", "https://")):
-                       continue
-                   added = re.search(r'ADD_DATE="(\d+)"', m.group(2), re.I)
-                   at = (
-                       datetime.fromtimestamp(int(added.group(1)), timezone.utc).isoformat()
-                       if added
-                       else None
-                   )
-                   title = unescape(re.sub(r"<[^>]+>", "", m.group(3))).strip() or None
-                   out = capture.link(url, title=title, at=at, background=True)
-                   if not out.get("created"):
-                       _count("skipped")
-                       continue
-                   names = [
-                       s.lower().replace(" ", "-")
-                       for s in stack
-                       if s and s.lower() not in BROWSER_FOLDERS
-                   ]
-                   if names:
-                       with db.transaction() as conn:
-                           for name in names:
-                               tags.attach(conn, out["id"], name, at or db.now())
-                   _count("links")
-       ```
-    2. In `_is_note`, return `False` first when `_is_bookmarks(f)` is true, so the file is not read as a note.
-    3. In `_import_files`, before the loop over `note_files`, add a loop: for each `f` in `files` where `_is_bookmarks(f)`, call `_import_bookmarks(f)` inside a `try` that counts a skip on error, and add `f.resolve()` to `used`.
-    4. Add `links=0` to each `_state.update(state="running", ...)` call, and add `"links"` to the keys of the `import` event's `data`.
-    5. In the `import` event's text, add the count of links.
-  - Test: in `tests/test_importer.py`, write a bookmarks file with: one link at the top level; one link in a folder "Cooking" inside "Bookmarks Bar"; one `javascript:` link; one link listed two times. After `importer.run(file)`: three links exist; the second has the tag `cooking` and not `bookmarks-bar`; the dated link has its `ADD_DATE` as `created_at`.
-  - Check: `uv run pytest tests/test_importer.py -q`
-
-- [x] **L3. Kindle highlights come in as one note for each book** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/importer.py, tests/test_importer.py; 12 passed
-  - Needs: DB3
-  - Files: `importer.py`, `tests/test_importer.py`
-  - Why: a Kindle keeps all highlights in one text file, `My Clippings.txt`.
-  - Do:
-    1. Change `_save` to return the new note's id: add `return note["id"]` as its last line and change the return type to `str`.
-    2. Add a helper that both this task and L4 use:
-       ```python
-       def _upsert(
-           source: str,
-           external_id: str,
-           stamp: str,
-           title: str | None,
-           body: str,
-           names: list[str],
-           created: str,
-           updated: str,
-       ) -> str:
-           """Create or update the note that mirrors one outside item.
-           Returns "created", "updated" or "same". A note the person put in the trash
-           is not made again."""
-           conn = db.get_conn()
-           try:
-               row = conn.execute(
-                   "SELECT s.stamp, s.artifact_id, a.id AS live_id, a.deleted_at"
-                   " FROM source_items s LEFT JOIN artifacts a ON a.id = s.artifact_id"
-                   " WHERE s.source = ? AND s.external_id = ?",
-                   (source, external_id),
-               ).fetchone()
-           finally:
-               conn.close()
-           if row is not None and row["stamp"] == stamp:
-               return "same"
-           if row is None:
-               artifact_id = _save(title, body, names, created, updated)
-               did = "created"
-           else:
-               artifact_id = row["artifact_id"]
-               if row["live_id"] and row["deleted_at"] is None:
-                   notes.edit(artifact_id, body, title=title)
-                   did = "updated"
-               else:
-                   did = "same"
-           with db.transaction() as conn:
-               conn.execute(
-                   "INSERT OR REPLACE INTO source_items (source, external_id, stamp, artifact_id)"
-                   " VALUES (?, ?, ?, ?)",
-                   (source, external_id, stamp, artifact_id),
-               )
-           return did
-       ```
-    3. Add `_is_clippings(f)`: true for a file whose name, in lower case, is `my clippings.txt`.
-    4. Add `_import_clippings(f)`:
-       - read the text and split it on lines that are exactly `==========`;
-       - in each part, the first line that is not empty is the book (`Title (Author)`); the second starts with `- Your `; the text is all lines after the first blank line;
-       - skip a part whose second line starts with `- Your Bookmark` or whose text is empty;
-       - read the page from the second line with `re.search(r"page (\d+)", line)`;
-       - group the parts by the book line, in the file's order;
-       - for each book, make the body: `# <title>`, a blank line, `by <author>` when the book line ends with `(...)`, then for each highlight a blank line, `> <text>`, and `page <n>` on the next line when there is a page;
-       - call `_upsert("kindle", <book line in lower case>, str(<count of highlights>), <title>, body, ["kindle"], now, now)` with `now = db.now()`;
-       - call `_count("notes")` only for `"updated"`; `_save` counts a created note itself.
-    5. In `_is_note`, return `False` first when `_is_clippings(f)`. In `_import_files`, handle clippings files in the same early loop as bookmarks files.
-  - Test: a clippings file with two highlights of one book, one highlight of another book, and one bookmark entry. After `run`: two notes; the first has two `>` lines; the tag `kindle` is on both. Run it again: no new note. Add one highlight to the file and run again: still two notes, and the first now has three `>` lines.
-  - Check: `uv run pytest tests/test_importer.py -q`
-
-- [x] **L4a. Read Apple Notes and file them (no route yet)** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/importer.py, tests/test_importer.py; 13 passed in 1.59s
-  - Needs: L3
-  - Files: `importer.py`, `tests/test_importer.py`
-  - Do: add `_NOTES_SCRIPT`, `_apple_notes_raw`, `apple_notes_available` and `run_apple_notes` exactly as step 1 of L4 below writes them. Do not add `start_apple_notes` yet.
-  - Test: the test of L4, with `_apple_notes_raw` patched.
-  - Check: `uv run pytest tests/test_importer.py -q`
-  - Do not: run the real script.
-
-- [x] **L4. Apple Notes come in, and come in again when they change** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/importer.py, src/enqueue/api/portable.py, src/enqueue/api/settings.py; 13 passed in 1.73s
-  - Split: step 1 is done in L4a. Do steps 2 and 3 only (the route and the feature flag), and add `start_apple_notes` from step 1.
-  - Needs: L4a
-  - Files: `importer.py`, `api/portable.py`, `api/settings.py` (the `features` dict), `tests/test_importer.py`
-  - Why: most people who try Enqueue have years of notes in Apple Notes.
-  - Find: `grep -n 'def start\b\|def _run_safely' src/enqueue/importer.py`; `grep -n '"features"' src/enqueue/api/settings.py`; `grep -n 'def import_start' -A 12 src/enqueue/api/portable.py`
-  - Do:
-    1. In `importer.py`, add:
-       ```python
-       _NOTES_SCRIPT = """
-       const app = Application("Notes");
-       const out = [];
-       for (const n of app.notes()) {
-         try {
-           if (n.passwordProtected()) continue;
-           out.push({
-             id: n.id(), name: n.name(), body: n.body(),
-             created: n.creationDate().toISOString(),
-             modified: n.modificationDate().toISOString(),
-             folder: n.container().name(),
-           });
-         } catch (e) {}
-       }
-       JSON.stringify(out);
-       """
-
-
-       def _apple_notes_raw() -> list[dict]:
-           """Every note the Notes app will give, as it gives them. Locked notes are left out."""
-           import subprocess
-
-           done = subprocess.run(
-               ["/usr/bin/osascript", "-l", "JavaScript", "-e", _NOTES_SCRIPT],
-               capture_output=True,
-               text=True,
-               timeout=1800,
-           )
-           if done.returncode != 0:
-               raise RuntimeError(
-                   "Enqueue could not read Notes. Allow it in System Settings,"
-                   " Privacy & Security, Automation, then try again."
-               )
-           return json.loads(done.stdout or "[]")
-
-
-       def apple_notes_available() -> bool:
-           import sys
-
-           return sys.platform == "darwin" and config.CHANNEL != "mas"
-
-
-       def run_apple_notes() -> dict:
-           with _lock:
-               _state.update(
-                   state="running", path="Apple Notes", notes=0, files=0, links=0,
-                   skipped=0, errors=[],
-               )
-           for n in _apple_notes_raw():
-               try:
-                   if (n.get("folder") or "") == "Recently Deleted":
-                       continue
-                   html = re.sub(r"<(img|object)[^>]*>", "", n.get("body") or "", flags=re.I)
-                   body = html_to_md(html).strip()
-                   if not body:
-                       _count("skipped")
-                       continue
-                   folder = (n.get("folder") or "").strip()
-                   names = [folder.lower().replace(" ", "-")] if folder and folder != "Notes" else []
-                   did = _upsert(
-                       "apple-notes", n["id"], n.get("modified") or "", n.get("name") or None,
-                       body, names, n.get("created") or db.now(), n.get("modified") or db.now(),
-                   )
-                   if did == "updated":
-                       _count("notes")
-                   elif did == "same":
-                       _count("skipped")
-               except Exception as exc:  # noqa: BLE001 - one bad note never stops the rest
-                   _count("skipped", f"{n.get('name')}: {exc}")
-           with _lock:
-               _state["state"] = "done"
-               report = dict(_state)
-           events.emit("import", f"{report['notes']} notes from Apple Notes")
-           return report
-
-
-       def start_apple_notes() -> dict:
-           """Bring Apple Notes in on a thread of its own; refuses while an import runs."""
-           if not apple_notes_available():
-               raise RuntimeError("Apple Notes cannot be read by this build of Enqueue.")
-           with _lock:
-               if _state.get("state") == "running":
-                   raise RuntimeError("an import is already running")
-               _state.clear()
-               _state.update(state="running", path="Apple Notes")
-
-           def safely() -> None:
-               try:
-                   run_apple_notes()
-               except Exception as exc:  # noqa: BLE001 - the page shows why
-                   log.exception("Apple Notes import failed")
-                   with _lock:
-                       _state.update(state="failed", error=str(exc)[:300])
-
-           threading.Thread(target=safely, name="import-apple-notes", daemon=True).start()
-           return state()
-       ```
-       Check that `config` is imported in `importer.py`; add the import if it is not. Check the name of the channel constant with `grep -n 'CHANNEL' src/enqueue/config.py`.
-    2. In `api/portable.py`, add `POST /import/apple-notes` (status 202). It calls `importer.start_apple_notes()`. Turn a `RuntimeError` into the same status and shape `import_start` uses for "already running".
-    3. In `api/settings.py`, add `"apple_notes": importer.apple_notes_available()` to the `features` dict.
-  - Test: in `tests/test_importer.py`, `monkeypatch.setattr(importer, "_apple_notes_raw", lambda: [...])` with three notes: one in "Recently Deleted", one with an empty body, one with `<div>Hello <b>world</b></div>` in the folder "Trips". After `run_apple_notes()`: one note, with the tag `trips`. A second run makes no new note. A third run with a later `modified` changes the note's body when the body changed.
-  - Check: `uv run pytest tests/test_importer.py -q`
-  - Do not: run the real script. `_apple_notes_raw` reads the owner's own notes. Test with the patch only.
-
-- [x] **L5. New files in a folder are kept** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/watch.py, src/enqueue/settings.py, src/enqueue/api/app.py, tests/test_watch.py; 5 passed in 0.86s
-  - Needs: DB3
-  - Files: new `watch.py`, `settings.py`, `api/app.py` (one call), new `tests/test_watch.py`
-  - Why: the PDF a person downloads and the screenshot they take are saved with no step.
-  - Find: `grep -n 'share_inbox.start()' src/enqueue/api/app.py`; `grep -n '"drafts_keep"' src/enqueue/settings.py`
-  - Do:
-    1. In `settings.py`, declare `"watch_dirs": ("ENQ_WATCH_DIRS", "", True)`. Its value is folder paths, one on each line.
-    2. Make `watch.py`:
-       ```python
-       """Folders the person asked Enqueue to watch: each new file in one is kept.
-
-       Only files that appear after a folder was added are taken. Files that were there
-       before stay as they are; the person brings those in with an import."""
-
-       from __future__ import annotations
-
-       import logging
-       import threading
-       import time
-       from datetime import datetime, timezone
-       from pathlib import Path
-
-       from . import capture, db, settings
-
-       log = logging.getLogger(__name__)
-       SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".md", ".txt"}
-       MAX_BYTES = 25 * 1024 * 1024
-       PER_SCAN = 25
-       EVERY_S = 600
-       SETTLE_S = 60
-
-
-       def folders() -> list[Path]:
-           raw = str(settings.get("watch_dirs") or "")
-           return [Path(line.strip()).expanduser() for line in raw.splitlines() if line.strip()]
-
-
-       def _row(source: str, external_id: str):
-           conn = db.get_conn()
-           try:
-               return conn.execute(
-                   "SELECT stamp FROM source_items WHERE source = ? AND external_id = ?",
-                   (source, external_id),
-               ).fetchone()
-           finally:
-               conn.close()
-
-
-       def _keep(source: str, external_id: str, stamp: str, artifact_id: str | None) -> None:
-           with db.transaction() as conn:
-               conn.execute(
-                   "INSERT OR REPLACE INTO source_items (source, external_id, stamp, artifact_id)"
-                   " VALUES (?, ?, ?, ?)",
-                   (source, external_id, stamp, artifact_id),
-               )
-
-
-       def _since(folder: Path, now: float) -> float:
-           """When watching of this folder began. The first look records it."""
-           row = _row("watch-folder", str(folder))
-           if row is not None:
-               return float(row["stamp"])
-           _keep("watch-folder", str(folder), str(now), None)
-           return now
-
-
-       def scan(now: float | None = None) -> dict:
-           """Take up to PER_SCAN new files. Returns how many were taken."""
-           now = time.time() if now is None else now
-           taken = 0
-           for folder in folders():
-               if not folder.is_dir():
-                   continue
-               since = _since(folder, now)
-               for f in sorted(folder.iterdir()):
-                   if taken >= PER_SCAN:
-                       return {"taken": taken}
-                   try:
-                       if not f.is_file() or f.name.startswith("."):
-                           continue
-                       if f.suffix.lower() not in SUFFIXES:
-                           continue
-                       st = f.stat()
-                       if st.st_size == 0 or st.st_size > MAX_BYTES:
-                           continue
-                       if st.st_mtime < since or now - st.st_mtime < SETTLE_S:
-                           continue
-                       stamp = f"{int(st.st_mtime)}:{st.st_size}"
-                       row = _row("watch", str(f))
-                       if row is not None and row["stamp"] == stamp:
-                           continue
-                       out = capture.upload(f.read_bytes(), f.name, background=True)
-                       _keep("watch", str(f), stamp, out.get("id"))
-                       taken += 1
-                   except Exception:  # noqa: BLE001 - one bad file never stops the rest
-                       log.exception("could not keep %s", f.name)
-           return {"taken": taken}
-
-
-       def start() -> None:
-           """Look every EVERY_S seconds, for as long as the engine runs."""
-
-           def loop() -> None:
-               time.sleep(120)
-               while True:
-                   try:
-                       scan()
-                   except Exception:  # noqa: BLE001 - the watcher must outlive one bad look
-                       log.exception("watch scan failed")
-                   time.sleep(EVERY_S)
-
-           threading.Thread(target=loop, name="watch-folders", daemon=True).start()
-       ```
-       Remove the `datetime` import if black or ruff says it is not used.
-    3. In `api/app.py`, next to `share_inbox.start()`, add `watch.start()` in the same guarded form.
-  - Test: in `tests/test_watch.py`, with `store`, a temp folder in `watch_dirs`, and `capture.upload` patched to record calls and return `{"id": "x", "created": True}`:
-    1. A file that was in the folder before the first `scan` is not taken.
-    2. A `.pdf` written after the first scan, with its time set 2 minutes back with `os.utime`, is taken by a scan whose `now` is the real time.
-    3. The same file is not taken a second time.
-    4. A `.zip`, a file that starts with `.`, an empty file, and a file changed 5 seconds ago are not taken.
-    5. With 30 new files, one scan takes 25.
-  - Check: `uv run pytest tests/test_watch.py -q`
-
-- [x] **L6a. Settings: the Apple Notes row and the import hints** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/static/js/settings.js; bin/verify --fast pass
-  - Needs: L2, L3, L4
-  - Files: `static/js/settings.js` (a new section after "Move notes in and out")
-  - Do: steps 1, 2, 5 and 6 of L6 below.
-  - Check: `bin/verify --fast`
-
-- [x] **L6b. Settings: folders to watch** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/static/js/settings.js; bin/verify --fast pass
-  - Needs: L5, L6a
-  - Files: `static/js/settings.js` (the same section)
-  - Do: steps 3 and 4 of L6 below.
-  - Check: `bin/verify --fast`
-
-- [x] **L6. Settings: "From this Mac"** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/static/js/guides.js, src/enqueue/static/js/settings_guide.js, tests/js/guides.js; 1 passed in 0.29s; bin/verify: all checks passed
-  - Owed: device check - bin/launch desktop; add a folder, put a PDF in it, wait 12 minutes or restart the engine and wait 3; the PDF is on the wall
-  - Split: steps 1 to 6 are done in L6a and L6b. Do step 7 only (the guide).
-  - Needs: L6b
-  - Files: `static/js/settings.js` (one new block in the Library tab, after "Move notes in and out"), `static/js/guides.js`, `tests/js/guides.js`
-  - Find: `grep -n 'Move notes in and out\|const startImport\|remember_folder\|plugin:dialog|open' src/enqueue/static/js/settings.js`. Read `startMove` and the folder picker near line 1555.
-  - Do:
-    1. Add a section with the heading `From this Mac` and three rows.
-    2. Row 1, only when `d.features.apple_notes` is true: label `Apple Notes`, sentence `Bring in your notes. Run it again later to bring in what changed. Locked notes are left out.`, button `Bring in`. The button posts to `/import/apple-notes`, then shows progress the way the import button does.
-    3. Row 2: label `New files in a folder`, sentence `Each new PDF, picture and text file in these folders is kept. Files that are there now stay as they are.` Under it, one line for each folder in `watch_dirs` with a `Remove` button, and a button `Add a folder`.
-    4. `Add a folder` opens the Mac's folder picker as the backup folder picker does, calls `remember_folder` for the picked path, then saves `watch_dirs` with the new path added, through `PATCH /settings`. In a plain browser with no picker, show a text field in its place.
-    5. Row 3, text only: `Bookmarks: export them from your browser, then choose the file with Import. Kindle: choose the file "My Clippings.txt" with Import.`
-    6. In the import's result line, show the count of links when it is above 0.
-    7. Add one guide to `guides.js` with the id `from-this-mac` and the tab `storage`: what each source is, that all reading is done on this Mac, and that pictures and PDFs are then read by the assistant the person chose. Add the heading to `SHELF_GUIDES` in `settings_guide.js` if that file maps headings (it is one more file: name it in your `Done` line).
-  - Check: `bin/verify --fast`; `uv run pytest tests/test_guides.py -q` if the file exists.
-  - Device check **[device]**: `bin/launch desktop`; add a folder, put a PDF in it, wait 12 minutes or restart the engine and wait 3; the PDF is on the wall.
-
-- [x] **L7. The welcome offers to bring things in** (claimed: Big Pickle, 2026-11-17)
-  Done: src/enqueue/static/js/welcome.js; bin/verify: all checks passed
-  - Owed: device check - open the welcome from the `?`; the row is there and its button opens the Library tab.
-  - Needs: L6
-  - Files: `static/js/welcome.js` (`welcomeChecklist`)
-  - Find: `grep -n 'async function welcomeChecklist' -A 40 src/enqueue/static/js/welcome.js`
-  - Do: add one row to the list, after the assistant row, in the shape of the other rows. Title: `Bring in what you have`. Detail: `Apple Notes, bookmarks, Kindle highlights, and new files in a folder.` Its button closes the welcome and opens Settings on the Library tab (find how another row opens Settings). The row is never "done"; it shows no check mark.
-  - Check: `bin/verify --fast`
-  - Device check **[device]**: open the welcome from the `?`; the row is there and its button opens the Library tab.
-
-- [x] **L8. Docs for track L** (claimed: Big Pickle, 2026-11-17)
-  Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
-  - Needs: L1 to L7
-  - Files: `AGENTS.md`, `docs/MANUAL.md`
-  - Do: in `AGENTS.md`, extend the `importer.py` row (bookmarks, Kindle, Apple Notes, `_upsert`, `source_items`), add a row for `watch.py`, add the route and the setting, and extend "Importing notes" under Gotchas. In `docs/MANUAL.md`, add "From this Mac" with the four sources in plain words.
   - Check: `bin/verify --fast`
 
 ---
@@ -3614,3 +1356,137 @@ What follows about Mem and Obsidian is from general knowledge. Check it before i
 ### One line
 
 Enqueue finds, connects and answers from everything you save, and only your devices can read it.
+
+---
+
+# Built on this branch
+
+Branch `feature/plan`, from the reviews of 2026-11-13 and 2026-11-16, built 2026-11-16 to 2026-11-17.
+Each part says what we set out to build, what now exists, and the tasks that built it.
+Use it to judge the result against the goal.
+The task text was deleted when the plan was compacted. `git log --grep '^<ID>:'` shows a task's commit, and `git show f7b161b:docs/PLAN.md` shows the full text of every task.
+
+## Migrations (DB)
+
+Goal: give each track its tables in one place, so no two agents take the same migration number.
+Built: `0046_searches`, `0047_facet_role`, `0048_link_feedback`, `0049_chat_places`, `0050_blob_relay`, `0051_artifact_colours`, `0052_thumbs`, `0053_source_items`, and purge of their rows in `trash.py`.
+The tables for tracks C and V exist but nothing writes them yet.
+Tasks: DB1, DB2, DB3.
+
+## Security and privacy (S)
+
+Goal: close the faults the review found in the engine's local surface, and seal what a vaulted item leaves in answers.
+Built:
+- A markdown image cannot load from another host.
+- Each engine response carries security headers.
+- The engine refuses a state-changing request that another website started (`Sec-Fetch-Site`).
+- The file route serves an original as a download, never as a page that runs.
+- A session token (`session.py`): the shell, the CLI and `bin/screenshots` send it, and the engine requires it.
+- An answer that quoted a vaulted item is sealed with the item and opened again on unvault.
+
+Open: the Content Security Policy for the phone page (S9, needs a device) and the docs (S11).
+Tasks: S1 to S8, S10.
+
+## The summary (M)
+
+Goal: a summary that reads as a summary, not a list of loose statements, while search keeps its conceptual lines.
+Built:
+- Each summary line has a role: kind, subject, idea, bridge, gist, point or ask (`facets.role`).
+- The model writes a one-sentence gist, 3 to 5 key points in the item's own words, and 5 to 8 search phrases.
+- The Summary panel shows the gist, then Key points, then Ideas; bridges sit under "Also found by", closed; search phrases are never shown.
+- The role rides the snapshot to the phone and back.
+- One helper gives the gist of many items (`facets.gists`), and Settings says when summaries can be written in the new form.
+
+Tasks: M1 to M10.
+
+## Related notes (R)
+
+Goal: related rows that say why two notes belong together, with fewer false links, and a way for the person to correct them.
+Built:
+- Rows in five named groups: Same subject, Named in, Same idea another field, Also mentions, You asked about both; then Close passages.
+- A same-subject row shows the other note's gist.
+- A shared name links two notes only when it matters to both.
+- The judge takes the newest note first.
+- 12 links are kept and 5 are shown, with Show all and a line while the judge is still working.
+- "Named in" and "You asked about both" rows, read at open time with no model.
+- Related notes appear in the margin while you write (`POST /artifacts/{id}/nearby`).
+- Index-only lines (gist, point, ask) never propose a link.
+- Keep and Not the same on an idea row (`link_feedback`); the judge, the links and Something shiny honour the verdict, and it rides the snapshot.
+
+Tasks: R1 to R14.
+
+## Search (Q)
+
+Goal: search that answers at once, never waits on a model, and records enough to measure itself.
+Built:
+- Each search is recorded locally (`searches`) for the real-search eval.
+- Chat reads more summary hits, with the passage that supports each, and the answer model sees why a passage is there.
+- `/search` answers at once and the page draws a second time when the judge is done.
+- Lifting and model ranking cannot hold a search.
+- The embedder warms up when a search is about to come.
+- Index-only lines do not reach the judge or the overview; a search-phrase hit says why it matched; a result shows the gist.
+
+Open: the docs (Q11).
+Tasks: Q1 to Q10.
+
+## Something shiny (H)
+
+Goal: a daily card that does not repeat itself and learns from the person.
+Built:
+- The card does not repeat a pair, and a pair with a fresh note comes first.
+- Index-only lines do not count.
+- Keep and Not the same on the card; the hunt does not bring back a refused pair.
+- When cards are refused often, the model gets the passages.
+- The links and the day's card go to the relay for the phone.
+
+Open: the docs (H8).
+Tasks: H1 to H7.
+
+## Phone (P)
+
+Goal: the phone gets what the Mac has: fast search, related notes, the day's card and feedback.
+Built (data and bridge only):
+- A keyword index in the phone's database, kept up to date by triggers and filled once for an older library; phone search uses it.
+- The phone stores related rows, the day's card and the person's link verdicts, and sends verdicts back.
+- Tauri commands for the page: `mobile_related`, `mobile_shiny`, `mobile_link_feedback`.
+
+Open: every screen (P3 to P8) and the docs (P9).
+Tasks: P1a, P1b, P1, P2, P6a, P6b, P7a, P7b, P8a, P8b.
+
+## An answer shows where it came from (A)
+
+Goal: match Fabric's cited answers on long documents: an answer points at the page and the words it used.
+Built:
+- Passages are numbered `[P3]`; the model writes the numbers in its answer and lists them in `used`; wrong numbers are dropped.
+- Each used passage keeps its PDF page and first words (`chat_places`), which ride the chat snapshot and are removed when the item is vaulted.
+- On the Mac, a `[P3]` mark is a "p. N" button that opens the PDF at that page with the words marked (`openArtifactAt`).
+
+Owed device checks:
+- A5: `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})` scrolls to page 3 and marks the words.
+- A6: an answer from a long PDF has "p. N" buttons, and a press opens the PDF at that page.
+
+Open: the phone shows the marks raw (A7), and the docs (A8).
+Tasks: A1 to A6.
+
+## Fill the library from what is on this Mac (L)
+
+Goal: a new person's library is full on the first day, from what is already on the Mac, with nothing sent to a service to read it.
+Built:
+- A link can be saved with its own date, on the background lane.
+- A browser's bookmarks file comes in as links, with folders as tags.
+- Kindle's `My Clippings.txt` comes in as one note per book.
+- Apple Notes come in through JXA (not in the Mac App Store build), and come in again when they change (`source_items`, `importer._upsert`).
+- New files in watched folders are kept (`watch.py`, `watch_dirs`).
+- Settings > Library > From this Mac, its guide, and a row in the welcome.
+
+Owed device checks:
+- L6: add a watched folder, put a PDF in it, and wait for the next look; the PDF is on the wall.
+- L7: open the welcome from the `?`; the row is there and its button opens the Library tab.
+
+Limit: a file moved into a watched folder keeps its old modified time and is not taken.
+Tasks: L1 to L8.
+
+## Process
+
+- Two rounds marked about 60 skipped tasks done each. `bin/check-plan` (in `bin/verify --fast` and the pre-commit hook) now refuses a done mark with no Done line, with "skipped", or with an open need.
+- The third round closed 19 tasks with one commit each and no false marks.
