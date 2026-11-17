@@ -49,7 +49,7 @@
     align-items: center;
     gap: var(--sp-1);
     font-family: var(--sans);
-    font-size: 14px;
+    font-size: var(--t-md);
     font-weight: var(--w-medium);
     line-height: 14px;
     letter-spacing: -0.25px;
@@ -72,7 +72,7 @@
     border-radius: var(--r-full);
     background: var(--surface-3);
     color: var(--accent-text);
-    font-size: 12px;
+    font-size: var(--t-xs);
     cursor: pointer;
   }
   .place:focus-visible {
@@ -95,7 +95,7 @@
      settings link is the one accent on it. */
   .cause {
     margin-top: var(--sp-3);
-    font-size: 13px;
+    font-size: var(--t-sm);
     line-height: 1.5;
     color: var(--text-mute);
   }
@@ -103,7 +103,7 @@
     margin-left: var(--sp-2);
     min-height: 0;
     padding: 2px 8px;
-    font-size: 13px;
+    font-size: var(--t-sm);
     line-height: 1.4;
   }
 

@@ -115,7 +115,7 @@
   margin-top: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--r-lg);
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 19px;
   background: var(--tint-warn);
   color: #6b4208;
@@ -176,7 +176,7 @@
   border-radius: 50%;
   background: var(--surface-3);
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: var(--t-xs);
   font-weight: var(--w-strong);
   font-variant-numeric: tabular-nums;
 }
@@ -251,7 +251,7 @@
   border-radius: var(--r-full);
   background: var(--surface-3);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--t-md);
   color: var(--text-dim);
   text-align: left;
   cursor: pointer;
@@ -311,7 +311,7 @@
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-sm);
   font-weight: var(--w-medium);
   color: var(--accent-text);
   cursor: pointer;
@@ -338,7 +338,7 @@
   align-items: baseline;
   gap: var(--sp-3);
   padding: 10px 0;
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 20px;
   color: var(--text-dim);
 }
@@ -370,7 +370,7 @@
 .settings-tabs .tab-todo {
   margin-left: auto;
   padding-left: var(--sp-2);
-  font-size: 12px;
+  font-size: var(--t-xs);
   font-weight: var(--w-regular);
   color: var(--warning);
 }
@@ -407,7 +407,7 @@
 .sask-head {
   margin: 0;
   padding: var(--sp-2) var(--sp-3) 6px;
-  font-size: 12px;
+  font-size: var(--t-xs);
   font-weight: var(--w-regular);
   color: var(--text-mute);
 }
@@ -429,13 +429,13 @@
   cursor: pointer;
 }
 .sask-row b {
-  font-size: 15px;
+  font-size: var(--t-lg);
   font-weight: var(--w-medium);
   line-height: 21px;
   color: var(--text);
 }
 .sask-row small {
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 18px;
   color: var(--text-mute);
 }
@@ -455,14 +455,14 @@
 }
 .sask-q {
   margin: 0 0 var(--sp-2);
-  font-size: 15px;
+  font-size: var(--t-lg);
   font-weight: var(--w-medium);
   line-height: 21px;
   color: var(--text);
 }
 .sask-a {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--t-lg);
   line-height: 23px;
   color: var(--text-dim);
   text-wrap: pretty;
@@ -475,7 +475,7 @@
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--line-soft);
-  font-size: 12px;
+  font-size: var(--t-xs);
   color: var(--text-mute);
 }
 .sask-go {
@@ -489,7 +489,7 @@
   background: var(--accent);
   color: var(--accent-ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-sm);
   font-weight: var(--w-medium);
   cursor: pointer;
 }
@@ -518,7 +518,7 @@
   color: var(--text);
   font: inherit;
   /* 16px or the phone's browser zooms the page when the field takes focus. */
-  font-size: 16px;
+  font-size: var(--t-xl);
   outline: none;
 }
 .sask-field::placeholder {
@@ -532,7 +532,7 @@
 }
 [data-touch] .sask-head {
   padding-left: 0;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 [data-touch] .sask-row {
   padding: 12px var(--sp-3);
@@ -540,11 +540,11 @@
   width: calc(100% + 2 * var(--sp-3));
 }
 [data-touch] .sask-row b {
-  font-size: 16px;
+  font-size: var(--t-xl);
   line-height: 22px;
 }
 [data-touch] .sask-row small {
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 20px;
 }
 [data-touch] .sask-answer {

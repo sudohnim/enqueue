@@ -502,11 +502,12 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Done: static/css/base.css, static/css/home.css, static/css/pill.css; bin/verify: all checks passed
   - Owed: device check - the wall, a card and the pill look the same as before
 
-- [ ] **U4. Sizes and weights become tokens: the pages**
+- [x] **U4. Sizes and weights become tokens: the pages** (claimed: agent, 2026-11-17)
   - Needs: U1, U2b
   - Files: `static/css/chat.css`, `settings.css`, `eyepanel.css`, `reader.css`, `welcome.css`, `tour.css`, `guide.css`, `linkpop.css`, `drafts.css`, `share.css`, `bird.css`, `notetype.css`, `search.css`
   - Do: as U3, with these files.
   - Check: `bin/check-style` prints no line for these files; `bin/verify --fast`
+  - Done: static/css/chat.css, settings.css, eyepanel.css, reader.css, welcome.css, tour.css, guide.css, linkpop.css, drafts.css, share.css, bird.css, notetype.css, search.css; bin/verify: all checks passed
 
 - [ ] **U5. Sizes and weights become tokens: the Details panel**
   - Needs: U1, U2b
