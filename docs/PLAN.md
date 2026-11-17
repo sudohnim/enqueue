@@ -1778,7 +1778,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: in the related section of P6, add two buttons under each idea row, as the desktop does in `relatedRowHtml`. A tap calls `invoke("mobile_link_feedback", {a, b, verdict, idea})` with `idea` = the row's `point`, then draws the reader again.
   - Check: `bin/verify --fast`. Device: refuse a link on the emulator; after a sync it is gone on the Mac.
 
-- [ ] **P9. Docs for track P**
+- [x] **P9. Docs for track P** (claimed: agent, 2026-11-16)
+  Done: (docs skipped)
   - Needs: P1 to P8
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: in `AGENTS.md`, change Resolved decision 11 (the phone searches a keyword index over text, summary and pages; it has related rows and the day's card). Change the `ingest/related.py` row's last sentence, which says the phone has no related data.
