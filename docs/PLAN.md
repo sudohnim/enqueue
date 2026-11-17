@@ -1338,7 +1338,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: in `tests/test_search_warm.py`, patch `embed.embed_query` with a function that records a call. `POST /search/warm` answers `{"ok": true}` and the function was called (join or wait up to 1 s).
   - Check: `uv run pytest tests/test_search_warm.py -q`; `bin/verify --fast`
 
-- [ ] **Q8. The judge and the overview ignore the index-only lines**
+- [x] **Q8. The judge and the overview ignore the index-only lines** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/retrieve/candidates.py, src/enqueue/chats.py; tests pass
   - Needs: DB1
   - Files: `retrieve/candidates.py` (`_facets_for_judge`), `chats.py` (`_overview`), `tests/test_search_results.py`
   - Find: `grep -n 'FROM facets' src/enqueue/retrieve/candidates.py src/enqueue/chats.py`

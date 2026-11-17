@@ -247,6 +247,7 @@ def _facets_for_judge(artifact_ids: list[str]) -> dict[str, list[str]]:
         rows = conn.execute(
             "SELECT artifact_id, statement FROM facets"
             " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+            " AND COALESCE(role, '') != 'ask'"
             " ORDER BY level",
             (json.dumps(artifact_ids),),
         ).fetchall()

@@ -291,7 +291,7 @@ def _overview(conn, opening: dict) -> list[dict]:
         parts = current(
             conn.execute(
                 "SELECT statement AS line, model_version, body_version, edited FROM facets"
-                " WHERE artifact_id = ? ORDER BY level",
+                " WHERE artifact_id = ? AND COALESCE(role, '') != 'ask' ORDER BY level",
                 (aid,),
             ).fetchall()
         )
