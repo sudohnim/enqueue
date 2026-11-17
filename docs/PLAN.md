@@ -1225,7 +1225,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: a passage that came from a summary hit has `matched` set, and the prompt body holds `matched:`.
   - Check: `uv run pytest tests/test_chats.py -q`
 
-- [ ] **Q4. `/search` answers at once**
+- [x] **Q4. `/search` answers at once** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/retrieve/candidates.py, src/enqueue/api/search.py; tests pass
   - Needs: none
   - Files: `retrieve/candidates.py`, `api/search.py`, `tests/test_search_results.py`
   - Why: a new search waits up to 2.5 s for the judge. The search itself takes 28 ms.

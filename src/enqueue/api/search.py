@@ -16,7 +16,8 @@ router = APIRouter()
 
 
 @router.get("/search")
-def search(q: str, limit: int = 20) -> dict:
+def search(q: str, limit: int = 20, wait: float = 0.0) -> dict:
+    wait = max(0.0, min(10.0, float(wait)))
     if not bootstrap.search_allowed():
         # The index is missing, rebuilding, or built with a different embedding
         # version. Serving results now would silently differ from another
@@ -27,7 +28,7 @@ def search(q: str, limit: int = 20) -> dict:
         )
     # Chunk and facet hits rolled up to one row per artifact (deduplicated),
     # so an artifact whose six chunks match does not occupy every slot.
-    hits = search_results(q, limit=limit)
+    hits = search_results(q, limit=limit, wait=wait)
     from .. import searches
 
     if q.strip():
@@ -46,7 +47,9 @@ def search(q: str, limit: int = 20) -> dict:
     except Exception:  # noqa: BLE001
         pass
     _dated(hits)
-    return {"query": q, "hits": hits, "filters": understood}
+    from ..retrieve.candidates import judge_pending
+
+    return {"query": q, "hits": hits, "filters": understood, "pending": judge_pending()}
 
 
 def _dated(hits: list[dict]) -> None:

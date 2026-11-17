@@ -55,6 +55,10 @@ def _floor_verdict(hit: dict) -> str:
 # note - but the caller is told, so they rank after what search is sure of and the
 # page can say so instead of presenting twenty guesses as twenty results.
 _UNJUDGED: ContextVar[frozenset[str]] = ContextVar("gray_unjudged", default=frozenset())
+# How long this search waits for the judge; None means the configured wait.
+_WAIT: ContextVar[float | None] = ContextVar("judge_wait", default=None)
+# Set when a judge was started and had not answered when the search returned.
+_PENDING: ContextVar[bool] = ContextVar("judge_pending", default=False)
 
 
 # At most this many gray hits the judge has not ruled on yet are shown: they are
@@ -144,9 +148,11 @@ def _judge_in_time(query: str, gray: list[dict]) -> tuple[set[str], frozenset[st
 
     worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
     worker.start()
-    worker.join(_judge_wait(model))
+    wait = _WAIT.get()
+    worker.join(_judge_wait(model) if wait is None else wait)
     if "unjudged" in box:
         return box["kept"], box["unjudged"]
+    _PENDING.set(True)
     return _cached_verdicts(query, gray)
 
 
@@ -671,12 +677,14 @@ def _weighted_hits(conn, hits, cache):
         yield hit, hit["score"] * trust * 2.0
 
 
-def search_results(q: str, limit: int = 20) -> list[dict]:
+def search_results(q: str, limit: int = 20, wait: float | None = None) -> list[dict]:
     """One row per artifact for /search.
 
     `#tag` / `tag:x` tokens are an exact filter, never embedded. A query that is
     entirely one "quoted phrase" pins exact matches on top (R.10).
     """
+    _WAIT.set(wait)
+    _PENDING.set(False)
     from .. import tags
 
     from . import filters, lift, model_rank
@@ -1065,3 +1073,7 @@ def artifact_texts(conn, ids, max_words: int = 1200) -> dict[str, str]:
 def artifact_text(conn, artifact_id: str, max_words: int = 1200) -> str:
     """A note's body, or a capture's chunks."""
     return artifact_texts(conn, [artifact_id], max_words)[artifact_id]
+
+
+def judge_pending() -> bool:
+    return _PENDING.get()
