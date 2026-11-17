@@ -1616,7 +1616,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: insert an artifact with the triggers absent (drop them with `DROP TRIGGER fts_items_art_ins` in the test), delete the `fts_items_built` key, call `init_schema` again, and assert the artifact is in `fts_items`.
   - Check: `cd desktop && cargo test --lib`
 
-- [ ] **P2. Phone search uses the index**
+- [x] **P2. Phone search uses the index** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: P1
   - Files: `desktop/src/sync.rs` (`search_artifacts`)
   - Find: `grep -n 'pub fn search_artifacts\|fn query_terms\|fn search_like' desktop/src/sync.rs`

@@ -1993,20 +1993,68 @@ pub fn read_events(conn: &Connection, limit: i64) -> Result<Vec<Value>, String> 
 /// Keyword search over titles, bodies, and annotations (MOB.6). No embeddings, no
 /// model - a plain case-insensitive substring match, the same honesty as the desktop's
 /// keyword leg. Returns library rows, newest first.
+pub fn search_fts(conn: &Connection, terms: &[String], all: bool) -> Result<Vec<Value>, String> {
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let match_str = if all {
+        terms.iter().map(|t| format!("\"{}\"*", t.replace('"', "\"\""))).collect::<Vec<_>>().join(" ")
+    } else {
+        terms.iter().map(|t| format!("\"{}\"*", t.replace('"', "\"\""))).collect::<Vec<_>>().join(" OR ")
+    };
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.kind, a.title, substr(a.body, 1, 280), a.source_url, a.mime, \
+         a.filename, a.created_at, a.updated_at, a.pinned, \
+         snippet(fts_items, -1, '', '', ' ... ', 12) AS snip \
+         FROM fts_items f JOIN artifacts a ON a.id = f.artifact_id \
+         WHERE fts_items MATCH ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL \
+         ORDER BY bm25(fts_items, 0.0, 10.0, 1.0, 2.0, 3.0, 1.0) LIMIT 40",
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(rusqlite::params![match_str], |r| {
+        Ok(serde_json::json!({
+            "id": r.get::<_, String>(0)?,
+            "kind": r.get::<_, String>(1)?,
+            "title": r.get::<_, String>(2)?,
+            "body": r.get::<_, Option<String>>(3)?,
+            "source_url": r.get::<_, Option<String>>(4)?,
+            "mime": r.get::<_, Option<String>>(5)?,
+            "filename": r.get::<_, Option<String>>(6)?,
+            "created_at": r.get::<_, String>(7)?,
+            "updated_at": r.get::<_, String>(8)?,
+            "pinned": r.get::<_, i64>(9)?,
+            "snippet": r.get::<_, Option<String>>(10)?,
+        }))
+    }).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
 pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
-    // A question ("do I have any docker notes?") used to be matched as one literal
-    // substring, so it found nothing and the answer path returned canned "no match"
-    // without ever calling the model. Instead break the query into keywords, drop the
-    // stopwords, and match any of them - ranked by how many distinct terms an artifact
-    // hits, then recency. This is the phone's honest keyword leg: no embeddings, but it
-    // actually finds the docker note when you ask about docker.
     let terms = query_terms(query);
     if terms.is_empty() {
-        // No meaningful keywords (a very short or all-stopword query): fall back to the
-        // whole trimmed string as one substring, so "docker" still works.
         return search_like(conn, &[query.trim().to_lowercase()]);
     }
-    search_like(conn, &terms)
+    match search_fts(conn, &terms, true) {
+        Ok(res) if res.len() >= 5 => return Ok(res),
+        Ok(res) => {
+            let mut all_res = res;
+            if let Ok(more) = search_fts(conn, &terms, false) {
+                for r in more {
+                    if !all_res.iter().any(|x| x["id"] == r["id"]) {
+                        all_res.push(r);
+                    }
+                }
+            }
+            if all_res.is_empty() {
+                return search_like(conn, &terms);
+            }
+            return Ok(all_res);
+        }
+        Err(_) => search_like(conn, &terms),
+    }
 }
 
 /// What the phone's chat may send to the model: the keyword matches minus anything
