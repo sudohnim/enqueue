@@ -628,6 +628,18 @@ def for_artifact(conn, artifact_id: str) -> list[dict]:
         (dict(r) for r in rows),
         key=lambda r: _rank(r["link"] or "", r["distance"] or 0.0, r["score"]),
     )
+    ids = [r["id"] for r in out]
+    about = {
+        row["artifact_id"]: row["statement"]
+        for row in conn.execute(
+            "SELECT artifact_id, statement FROM facets WHERE level = 0"
+            " AND COALESCE(role, 'kind') = 'kind'"
+            " AND artifact_id IN (SELECT value FROM json_each(?))",
+            (json.dumps(ids),),
+        )
+    }
+    for r in out:
+        r["about"] = about.get(r["id"])
     first: dict[str, dict] = {}
     for r in out:
         first.setdefault(r["id"], r)

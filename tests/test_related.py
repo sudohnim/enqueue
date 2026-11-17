@@ -128,6 +128,7 @@ def test_artifact_detail_carries_related(sqlite_store):
         "link",
         "distance",
         "updated_at",
+        "about",
     }
 
 

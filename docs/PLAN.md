@@ -864,7 +864,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `uv run pytest tests/test_related.py -q`; `bin/verify --fast`
   - Device check **[device]**: a note with links shows the groups, each row is one full line, and a press on a row opens the note.
 
-- [ ] **R2. A "same subject" row says what the other note is**
+- [x] **R2. A "same subject" row says what the other note is** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py, tests/test_related.py; tests pass
   - Needs: R1
   - Files: `ingest/related.py` (`for_artifact`), `tests/test_related.py`
   - Why: a subject row shows a long line that describes the other note in the engine's words.
