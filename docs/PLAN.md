@@ -659,7 +659,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Test: in `tests/test_ingest.py`, add a test for `role_for`: `(0, False)` gives `kind`, `(1, False)` gives `subject`, `(3, False)` gives `idea`, `(2, True)` gives `bridge`.
   - Check: `uv run pytest tests/test_ingest.py tests/test_facet_retry.py tests/test_summary_switch.py -q`
 
-- [ ] **M4. The role rides the snapshot**
+- [x] **M4. The role rides the snapshot** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/sync/snapshot.py; tests pass
   - Needs: M3
   - Files: `sync/snapshot.py` (the `facets` child), `tests/test_snapshot.py`
   - Find: `grep -n 'facets' src/enqueue/sync/snapshot.py`
