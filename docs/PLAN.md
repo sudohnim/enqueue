@@ -2184,7 +2184,8 @@ What Enqueue has now, against what those pages offer:
 
 Finding: an answer lists the items it used. It does not say which page or paragraph, and a press on a source opens the item at its start.
 
-- [ ] **A1. A passage knows its page and its first words**
+- [x] **A1. A passage knows its page and its first words** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/ingest/chunk.py, tests/test_chunk.py; 9 passed in 1.14s
   - Needs: none
   - Files: `ingest/chunk.py`, `tests/test_chunk.py`
   - Why: a PDF's passages are made from text with a `## page N` heading for each page. That is enough to know each passage's page with no new column.

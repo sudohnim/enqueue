@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import base64
 import re
+import uuid
 
-from enqueue import config
+from enqueue import config, db
 from enqueue.index.embed import token_count
 from enqueue.index.store_sqlite import CHUNK_INDEX_TEXT_WITH_CONTEXT
 from enqueue.ingest import chunk as chunk_mod
@@ -75,3 +76,37 @@ def test_a_full_chunk_with_title_and_context_is_not_truncated():
     for piece in _pieces(" ".join(SENTENCES)):
         text = CHUNK_INDEX_TEXT_WITH_CONTEXT.format(title=title, context=context, text=piece)
         assert token_count(text) < config.EMBED_MAX_TOKENS - 2
+
+
+def _insert_artifact(kind: str) -> str:
+    aid = str(uuid.uuid4())
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO artifacts (id, kind, title, body, content_hash, status, created_at,"
+            " updated_at) VALUES (?, ?, 'Doc', NULL, ?, 'ok', ?, ?)",
+            (aid, kind, aid, db.now(), db.now()),
+        )
+    return aid
+
+
+def test_pages_for_pdf_chunks(store):
+    aid = _insert_artifact("pdf")
+    texts = ["## page 1\n\nalpha", "more of page one", "## page 2\n\nbeta"]
+    with db.transaction() as conn:
+        for i, text in enumerate(texts):
+            conn.execute(
+                "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker) VALUES (?,?,?,?,?)",
+                (f"{aid}-{i}", aid, i, text, "test"),
+            )
+        out = chunk_mod.pages_for(conn, aid)
+    assert [out[f"{aid}-{i}"] for i in range(3)] == [0, 0, 1]
+
+
+def test_pages_for_non_pdf_is_empty(store):
+    aid = _insert_artifact("note")
+    with db.transaction() as conn:
+        assert chunk_mod.pages_for(conn, aid) == {}
+
+
+def test_quote_of_skips_headings_and_blank_lines():
+    assert chunk_mod.quote_of("# Title\n\none two three") == "one two three"
