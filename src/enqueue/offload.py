@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from . import blobstore
+import httpx
+
+from . import blobstore, crypto, keyring_file
+from .sync import client as sync_client
 
 
 def candidates(conn, days: int, relay: str) -> list[dict]:
@@ -23,3 +26,29 @@ def candidates(conn, days: int, relay: str) -> list[dict]:
         (relay.rstrip("/"), since, since),
     ).fetchall()
     return [dict(r) for r in rows if blobstore.exists(r["content_hash"])]
+
+
+def on_relay(content_hash: str) -> bool:
+    """True only when the relay holds these exact sealed bytes for this blob."""
+    url = sync_client._relay_url()
+    if not url:
+        return False
+    dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
+    if dek is None:
+        return False
+    name = crypto.blob_name(content_hash, dek)
+    try:
+        with httpx.Client(timeout=20) as client:
+            resp = client.head(
+                f"{url.rstrip('/')}/sync/object/blobs/{name}",
+                headers={"Authorization": f"Bearer {sync_client._secret()}"},
+            )
+    except Exception:  # noqa: BLE001 - an unreachable relay is "not here", never fatal
+        return False
+    if resp.status_code != 200:
+        return False
+    try:
+        size = int(resp.headers["X-Object-Size"])
+    except (KeyError, ValueError):
+        return False
+    return size == len(crypto.seal_payload(blobstore.read(content_hash), dek))

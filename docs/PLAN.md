@@ -933,7 +933,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_offload.py -q`
   - Done: src/enqueue/settings.py, src/enqueue/offload.py, tests/test_offload.py; 1 passed in 0.58s
 
-- [ ] **C4b. Ask the relay if it holds an original, byte for byte**
+- [x] **C4b. Ask the relay if it holds an original, byte for byte** (claimed: agent, 2026-11-17)
   - Needs: C3, C4a
   - Files: `offload.py`, `tests/test_offload.py`
   - Find: read `fetch_blob_to_cache` in `sync/client.py` for the relay address, the key and the header.
@@ -943,6 +943,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     3. Return `True` only when the status is 200 and `int(header "X-Object-Size") == len(crypto.seal_payload(blobstore.read(content_hash), dek))`. Return `False` on any exception.
   - Test: start the test relay the way `tests/test_sync.py` does and push an artifact with a file. `on_relay` is true. With `httpx.Client.head` patched to return 404, false. With the header one byte off, false.
   - Check: `uv run pytest tests/test_offload.py tests/test_sync.py -q`
+  - Done: src/enqueue/offload.py, tests/test_offload.py; 15 passed in 24.81s
 
 - [ ] **C4. Free up space: let go of originals the relay holds (off by default)**
   - Needs: C4b
