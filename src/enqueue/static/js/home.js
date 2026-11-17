@@ -1611,12 +1611,18 @@ function drawShiny(slot, r, n) {
 		: r.more
 		? '<button class="shiny-another" type="button" data-to="next">Find another' + svg("chev") + "</button>"
 		: '<button class="shiny-another" type="button" data-to="again">Look for new ones</button>';
+	const feedbackBtns =
+		r.ids && r.ids.length >= 2
+			? '<button class="shiny-dismiss" type="button" data-verdict="keep">Keep</button>' +
+			  '<button class="shiny-dismiss" type="button" data-verdict="no">Not the same</button>'
+			: "";
 	slot.innerHTML =
 		'<section class="shiny-card" aria-label="Something shiny">' +
 		shinyRavenHtml() +
 		'<div class="shiny-body">' +
 		'<div class="shiny-head">' +
 		(food.idea ? '<p class="shiny-idea">' + esc(food.idea) + "</p>" : "<span></span>") +
+		feedbackBtns +
 		'<button class="shiny-dismiss" type="button">Not today</button></div>' +
 		'<ul class="shiny-notes">' +
 		r.notes

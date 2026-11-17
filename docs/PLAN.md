@@ -1429,7 +1429,8 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: an artifact whose only level 2 line has role `ask` is not a seed.
   - Check: `uv run pytest tests/test_shiny.py -q`
 
-- [ ] **H4. Feedback on the card**
+- [x] **H4. Feedback on the card** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/static/js/home.js; bin/verify --fast pass (Owed: binding)
   - Needs: R11
   - Files: `static/js/home.js` (`drawShiny`), `static/css/home.css`
   - Find: `grep -n 'function drawShiny\|Not today\|Find another' src/enqueue/static/js/home.js`
