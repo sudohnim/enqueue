@@ -757,7 +757,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Test: an item with a gist and a level 0 line gives the gist; an item with only a level 0 line gives that line; an item with no lines is absent.
   - Check: `uv run pytest tests/test_ingest.py -q`
 
-- [ ] **M8. Search phrases are written with the summary**
+- [x] **M8. Search phrases are written with the summary** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/facets.py, src/enqueue/prompts.py; tests pass
   - Needs: M5, R10, H3, Q8
   - Files: `prompts.py` (`FACET_GENERATION`), `ingest/facets.py`, `tests/test_ingest.py`
   - Why: a search is a short topic; a summary line is a long claim. A phrase a person would type closes that gap with no model call at search time.

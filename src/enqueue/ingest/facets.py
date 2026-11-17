@@ -103,6 +103,7 @@ class _RawFacetSet(BaseModel):
     facets: list[_RawFacet]
     gist: str = ""
     points: list[str] = []
+    asks: list[str] = []
 
 
 def _trust_from_confidence(confidence: float | None) -> float:
@@ -270,6 +271,20 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
                 " VALUES (?,?,?,?,?,?,1.0,0,'point')",
                 (str(uuid.uuid4()), artifact_id, 1, p, provider.model, row["body_version"]),
+            )
+    asks = []
+    for a in raw.asks or []:
+        a = " ".join((a or "").split()).rstrip(".").lower()
+        if 2 <= len(a.split()) <= 7 and a not in asks:
+            asks.append(a)
+    asks = asks[:8]
+    if asks and "ask" not in edited_roles:
+        for a in asks:
+            conn.execute(
+                "INSERT INTO facets"
+                " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+                " VALUES (?,?,?,?,?,?,0.5,0,'ask')",
+                (str(uuid.uuid4()), artifact_id, 1, a, provider.model, row["body_version"]),
             )
     return len(kept), None
 
