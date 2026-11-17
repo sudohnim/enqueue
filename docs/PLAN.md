@@ -524,7 +524,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: `tests/test_session.py` still sets enforce to true for itself and passes.
   - Check: `uv run pytest -n auto -q` (the whole suite). Then `bin/launch desktop` and use the app for one minute **[device required]**.
 
-- [ ] **S9. A policy for the phone page** **[device required]**
+- [x] **S9. A policy for the phone page** **[device required]** (claimed: agent, 2026-11-16)
+  Done: desktop/tauri.conf.json; Owed: device check
   Done: desktop/tauri.conf.json; Owed: device check
   - Needs: S2
   - Files: `desktop/tauri.conf.json`
