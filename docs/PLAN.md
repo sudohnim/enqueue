@@ -3059,7 +3059,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: a clippings file with two highlights of one book, one highlight of another book, and one bookmark entry. After `run`: two notes; the first has two `>` lines; the tag `kindle` is on both. Run it again: no new note. Add one highlight to the file and run again: still two notes, and the first now has three `>` lines.
   - Check: `uv run pytest tests/test_importer.py -q`
 
-- [ ] **L4a. Read Apple Notes and file them (no route yet)**
+- [x] **L4a. Read Apple Notes and file them (no route yet)** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/importer.py, tests/test_importer.py; 13 passed in 1.59s
   - Needs: L3
   - Files: `importer.py`, `tests/test_importer.py`
   - Do: add `_NOTES_SCRIPT`, `_apple_notes_raw`, `apple_notes_available` and `run_apple_notes` exactly as step 1 of L4 below writes them. Do not add `start_apple_notes` yet.

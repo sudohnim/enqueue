@@ -29,7 +29,7 @@ from urllib.parse import unquote
 import yaml
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-from . import capture, db, events, notes, tags
+from . import capture, config, db, events, notes, tags
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +63,22 @@ BROWSER_FOLDERS = {
     "imported",
     "bookmarks",
 }
+_NOTES_SCRIPT = """
+const app = Application("Notes");
+const out = [];
+for (const n of app.notes()) {
+  try {
+    if (n.passwordProtected()) continue;
+    out.push({
+      id: n.id(), name: n.name(), body: n.body(),
+      created: n.creationDate().toISOString(),
+      modified: n.modificationDate().toISOString(),
+      folder: n.container().name(),
+    });
+  } catch (e) {}
+}
+JSON.stringify(out);
+"""
 
 _lock = threading.Lock()
 _state: dict = {"state": "idle"}
@@ -551,6 +567,75 @@ def _upsert(
             (source, external_id, stamp, artifact_id),
         )
     return did
+
+
+def _apple_notes_raw() -> list[dict]:
+    """Every note the Notes app will give, as it gives them. Locked notes are left out."""
+    import subprocess
+
+    done = subprocess.run(
+        ["/usr/bin/osascript", "-l", "JavaScript", "-e", _NOTES_SCRIPT],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    if done.returncode != 0:
+        raise RuntimeError(
+            "Enqueue could not read Notes. Allow it in System Settings,"
+            " Privacy & Security, Automation, then try again."
+        )
+    return json.loads(done.stdout or "[]")
+
+
+def apple_notes_available() -> bool:
+    import sys
+
+    return sys.platform == "darwin" and config.CHANNEL != "mas"
+
+
+def run_apple_notes() -> dict:
+    with _lock:
+        _state.update(
+            state="running",
+            path="Apple Notes",
+            notes=0,
+            files=0,
+            links=0,
+            skipped=0,
+            errors=[],
+        )
+    for n in _apple_notes_raw():
+        try:
+            if (n.get("folder") or "") == "Recently Deleted":
+                continue
+            html = re.sub(r"<(img|object)[^>]*>", "", n.get("body") or "", flags=re.I)
+            body = html_to_md(html).strip()
+            if not body:
+                _count("skipped")
+                continue
+            folder = (n.get("folder") or "").strip()
+            names = [folder.lower().replace(" ", "-")] if folder and folder != "Notes" else []
+            did = _upsert(
+                "apple-notes",
+                n["id"],
+                n.get("modified") or "",
+                n.get("name") or None,
+                body,
+                names,
+                n.get("created") or db.now(),
+                n.get("modified") or db.now(),
+            )
+            if did == "updated":
+                _count("notes")
+            elif did == "same":
+                _count("skipped")
+        except Exception as exc:  # noqa: BLE001 - one bad note never stops the rest
+            _count("skipped", f"{n.get('name')}: {exc}")
+    with _lock:
+        _state["state"] = "done"
+        report = dict(_state)
+    events.emit("import", f"{report['notes']} notes from Apple Notes")
+    return report
 
 
 # ---- Standard Notes -----------------------------------------------------------------

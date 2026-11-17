@@ -321,6 +321,55 @@ New thought.
     assert notes["The Willow"]["body"].count("\n> ") == 3
 
 
+def test_apple_notes_come_in_and_follow_changes(library, monkeypatch):
+    raw = [
+        {
+            "id": "deleted",
+            "name": "Deleted",
+            "body": "<div>Secret</div>",
+            "created": "2024-01-01T00:00:00Z",
+            "modified": "2024-01-01T00:00:00Z",
+            "folder": "Recently Deleted",
+        },
+        {
+            "id": "empty",
+            "name": "Empty",
+            "body": "",
+            "created": "2024-01-01T00:00:00Z",
+            "modified": "2024-01-01T00:00:00Z",
+            "folder": "Notes",
+        },
+        {
+            "id": "trip",
+            "name": "Trip",
+            "body": "<div>Hello <b>world</b></div>",
+            "created": "2024-01-01T00:00:00Z",
+            "modified": "2024-01-01T00:00:00Z",
+            "folder": "Trips",
+        },
+    ]
+    monkeypatch.setattr(importer, "_apple_notes_raw", lambda: raw)
+
+    report = importer.run_apple_notes()
+
+    assert report["notes"] == 1
+    assert len(_notes()) == 1
+    note = _notes()["Trip"]
+    assert note["body"].strip() == "Hello **world**"
+    assert note["tags"] == ["trips"]
+
+    report = importer.run_apple_notes()
+
+    assert report["notes"] == 0 and len(_notes()) == 1
+
+    raw[2]["modified"] = "2024-02-01T00:00:00Z"
+    raw[2]["body"] = "<div>Hello <b>again</b></div>"
+
+    importer.run_apple_notes()
+
+    assert len(_notes()) == 1 and _notes()["Trip"]["body"].strip() == "Hello **again**"
+
+
 def test_html_becomes_the_markdown_the_editor_writes():
     md = importer.html_to_md(
         "<h2>Head</h2><p>A <a href='https://x.y'>link</a> and <code>code</code>.</p>"
