@@ -630,8 +630,6 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           edited        INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_facets_artifact ON facets(artifact_id);
-        CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(
-          artifact_id UNINDEXED, title, body, notes, summary, pages);
         -- The activity log (mirrors the engine's events table): the notable things the
         -- phone did - a question asked and answered, a capture, a facet edit, a sync -
         -- each with a one-line detail and an optional JSON `data` blob opened on demand.
@@ -2370,6 +2368,17 @@ pub fn approval_for(public_key_b64: &str, dek: &[u8]) -> Result<String, String> 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_database_build_has_fts5() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE VIRTUAL TABLE t USING fts5(x); INSERT INTO t VALUES ('kiln');")
+            .unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM t WHERE t MATCH 'kiln'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
     #[test]
     fn a_pynacl_sealed_key_opens_here_and_the_codes_agree() {
         // Made with the Mac's crypto.seal_to / crypto.join_code (PyNaCl).

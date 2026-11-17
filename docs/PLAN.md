@@ -1514,7 +1514,8 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
 
 All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
-- [ ] **P1a. Prove the phone's database can make a keyword index**
+- [x] **P1a. Prove the phone's database can make a keyword index** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; 1 passed
   - Needs: none
   - Files: `desktop/src/sync.rs` (the `mod tests` block only)
   - Why: the phone uses SQLCipher's own SQLite build. A table it cannot make would stop the library from opening, so this is proved before anything uses it.
