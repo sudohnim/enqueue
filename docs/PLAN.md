@@ -531,13 +531,14 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Done: static/mobile.html, static/capture.html; bin/verify: all checks passed
   - Owed: device check - the library, a reader and Settings look the same as before
 
-- [ ] **U8. The style check fails the gate**
+- [x] **U8. The style check fails the gate** (claimed: agent, 2026-11-17)
   - Needs: U3, U4, U5, U6, U7
   - Files: `bin/verify`, `AGENTS.md`
   - Do:
     1. In `bin/verify`, run `bin/check-style --strict` and fail the fast gate when it exits 1, the way `bin/check-contrast` fails it.
     2. In `AGENTS.md`, add `bin/check-style` to the Bin table and to the description of `bin/verify --fast`.
   - Check: `bin/verify --fast` passes. Add `font-size: 13px;` to one rule in `base.css`, run it again and see it fail, then remove the line.
+  - Done: bin/verify, AGENTS.md; bin/verify: all checks passed
 
 - [ ] **U9. A switch says what it does**
   - Needs: M6

@@ -451,7 +451,7 @@ def main():
 
     print("")
     print(f"=== {SRC}: style check ===")
-    r = subprocess.run(["bin/check-style"], capture_output=False, timeout=30)
+    r = subprocess.run(["bin/check-style", "--strict"], capture_output=False, timeout=30)
     if r.returncode == 0:
         print(f"{SRC}: style OK")
     else:
