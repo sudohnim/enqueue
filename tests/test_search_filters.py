@@ -105,7 +105,7 @@ def test_the_endpoint_reports_what_it_understood(store, monkeypatch):
     from enqueue.index import bootstrap
 
     monkeypatch.setattr(bootstrap, "search_allowed", lambda: True)
-    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20: [])
+    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20, wait=None: [])
     client = TestClient(create_app())
     body = client.get("/search", params={"q": "pdfs from last week"}).json()
     assert body["filters"] == "PDFs · saved last week"
@@ -130,7 +130,7 @@ def test_each_hit_carries_its_date_and_a_links_site(store, monkeypatch):
         )
     monkeypatch.setattr(bootstrap, "search_allowed", lambda: True)
     hits = [{"artifact_id": "n1", "title": "A note"}, {"artifact_id": "l1", "title": "A link"}]
-    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20: hits)
+    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20, wait=None: hits)
 
     body = TestClient(app).get("/search", params={"q": "anything"}).json()
 

@@ -226,7 +226,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
     let mut facets = Vec::new();
     let mut fstmt = conn
         .prepare(
-            "SELECT id,level,statement,model_version,body_version,trust,edited,bridge \
+            "SELECT id,level,statement,model_version,body_version,trust,edited,bridge,role \
              FROM facets WHERE artifact_id = ?1 ORDER BY level, statement, id",
         )
         .map_err(|e| e.to_string())?;
@@ -241,6 +241,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
                 "trust": r.get::<_, Option<f64>>(5)?,
                 "edited": r.get::<_, i64>(6)?,
                 "bridge": r.get::<_, i64>(7)?,
+                "role": r.get::<_, Option<String>>(8)?,
             }))
         })
         .map_err(|e| e.to_string())?;
@@ -676,6 +677,9 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     // Migration: bridge (a summary line restating the idea in another field's words;
     // the desktop's migration 0043), same duplicate-safe pattern.
     let _ = conn.execute("ALTER TABLE facets ADD COLUMN bridge INTEGER NOT NULL DEFAULT 0", []);
+    // What a summary line is for (the engine's facets.role): kept so a phone edit sends
+    // it back, since the desktop takes the phone's lines whole.
+    let _ = conn.execute("ALTER TABLE facets ADD COLUMN role TEXT", []);
     // Migration: keep_drafts (the person's per-note switch, set on either device; the
     // desktop's migration 0040), same duplicate-safe pattern.
     let _ = conn.execute(
@@ -926,8 +930,8 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
             for f in facets {
                 conn.execute(
                     "INSERT INTO facets\
-                     (id,artifact_id,level,statement,model_version,body_version,trust,edited,bridge) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                     (id,artifact_id,level,statement,model_version,body_version,trust,edited,bridge,role) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                     rusqlite::params![
                         str_at(f.get("id")),
                         id,
@@ -938,6 +942,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
                         f.get("trust").and_then(|v| v.as_f64()),
                         int_at(f.get("edited")).unwrap_or(0),
                         int_at(f.get("bridge")).unwrap_or(0),
+                        str_at(f.get("role")),
                     ],
                 )
                 .map_err(|e| format!("insert facet: {e}"))?;
@@ -1825,7 +1830,7 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
     let mut fstmt = conn
         .prepare(
             "SELECT id, level, statement, edited FROM facets WHERE artifact_id = ?1 \
-             ORDER BY level, statement, id",
+             AND COALESCE(role, '') != 'ask' ORDER BY level, statement, id",
         )
         .map_err(|e| e.to_string())?;
     let frows = fstmt
@@ -2679,6 +2684,42 @@ mod tests {
         apply_snapshot(&conn, &without).unwrap();
         let detail = get_artifact(&conn, "l2").unwrap();
         assert_eq!(detail["preview"]["site_name"], "Psyche");
+    }
+
+    #[test]
+    fn a_summary_lines_role_goes_back_to_the_desktop_and_phrases_stay_hidden() {
+        // The desktop takes a phone's summary lines whole, so a phone that dropped the
+        // role would turn the gist and points into plain lines on every edit.
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let snap: Value = serde_json::from_str(
+            r#"{
+              "artifact": {"id":"n1","kind":"note","title":"t","body":"b",
+                "source_url":null,"content_hash":null,"mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+                "local_only":0,"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                "title_explicit":0,"_device_id":"d1"},
+              "annotations": [], "page_text": [], "versions": [],
+              "facets": [
+                {"id":"f1","level":0,"statement":"A plain line.","edited":0,"bridge":0,
+                 "role":"gist"},
+                {"id":"f2","level":1,"statement":"small steps release","edited":0,
+                 "bridge":0,"role":"ask"}
+              ]
+            }"#,
+        )
+        .unwrap();
+        apply_snapshot(&conn, &snap).unwrap();
+        let back = build_snapshot(&conn, "n1").unwrap().unwrap();
+        let roles: Vec<String> = back["facets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["role"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(roles, vec!["gist".to_string(), "ask".to_string()]);
+        let shown = get_artifact(&conn, "n1").unwrap();
+        assert_eq!(shown["facets"].as_array().unwrap().len(), 1, "a search phrase is not shown");
     }
 
     /// A relay on a local port: `/sync/objects` lists two snapshots, and the second

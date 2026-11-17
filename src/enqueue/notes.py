@@ -352,7 +352,8 @@ def get(artifact_id: str) -> dict:
         superseded = {e["supersedes_id"] for e in entries if e["supersedes_id"]}
 
         facets = conn.execute(
-            "SELECT id, level, statement, trust, edited, bridge FROM facets WHERE artifact_id = ?"
+            "SELECT id, level, statement, trust, edited, bridge, role FROM facets"
+            " WHERE artifact_id = ?"
             " ORDER BY level, statement",
             (artifact_id,),
         ).fetchall()

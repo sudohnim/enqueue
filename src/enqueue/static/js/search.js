@@ -105,25 +105,27 @@
     }
     if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
     lastQuery = q;
-    lastHits = r.hits;
-    const scrollY = window.scrollY;
-    async function redrawSecond() {
-      if (!r.pending) return;
-      let r2;
-      try {
-        r2 = await api("/search?limit=20&wait=8&q=" + encodeURIComponent(q));
-      } catch (_) {
-        return;
-      }
-      if (lastQuery !== q) return;
-      const onScreen = (document.getElementById("searchfield") || {}).value;
-      if (onScreen && onScreen.trim() !== q) return;
-      lastHits = r2.hits;
-      // re-run the same drawing by calling doSearch's render path is complex; instead
-      // replace view.innerHTML via a second fetch handled by re-invoking doSearch is not desired.
-      // Minimal: update lastHits only; full re-render skipped.
+    drawResults(q, r);
+    // The judge (and lifting or model ranking, when on) may still be at work: ask once
+    // more, waiting for it, and redraw in place when this search is still on screen.
+    if (!r.pending) return;
+    let again;
+    try {
+      again = await api("/search?limit=20&wait=8&q=" + encodeURIComponent(q));
+    } catch (_) {
+      return;
     }
-    redrawSecond();
+    const field = document.getElementById("searchfield");
+    if (lastQuery !== q || !field || field.value.trim() !== q || !view.querySelector(".sr")) return;
+    const y = window.scrollY;
+    const typing = document.activeElement === field;
+    drawResults(q, again);
+    window.scrollTo(0, y);
+    if (typing) document.getElementById("searchfield")?.focus();
+  }
+
+  function drawResults(q, r) {
+    lastHits = r.hits;
     // Hits the relevance check could not rule on (the model was unreachable) come
     // last from the engine, marked `loose`: shown apart as "Maybe related".
     const sure = r.hits.filter((h) => !h.loose);
@@ -151,7 +153,9 @@
             "<p>If you are after an idea rather than a phrase, ask the eye instead: it reads by meaning.</p></div>") +
       (loose.length
         ? '<section class="sr-maybe" aria-label="Maybe related">' +
-          '<div class="sr-maybe-head">Maybe related<span>Search could not double-check these yet.</span></div>' +
+          '<div class="sr-maybe-head">Maybe related<span>' +
+          (r.pending ? "Still checking these." : "Search could not double-check these yet.") +
+          "</span></div>" +
           '<ol class="sr-list">' +
           loose.map((h) => maybeHtml(h, rank(h), terms)).join("") +
           "</ol></section>"

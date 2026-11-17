@@ -130,8 +130,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
 
     store = get_store()
     conn = db.get_conn()
-    no = refused(conn, artifact_id)
     try:
+        no = refused(conn, artifact_id)
         mine = conn.execute(
             "SELECT id, level, statement FROM facets WHERE artifact_id = ? AND level >= ?"
             + _NOT_INDEX_ONLY
@@ -387,6 +387,16 @@ def refused(conn, artifact_id: str) -> set[str]:
         x, _, y = r["pair"].partition("|")
         out.add(y if x == artifact_id else x)
     return out
+
+
+def stored_count(conn, artifact_id: str) -> int:
+    """How many live items this artifact has a stored link to."""
+    return conn.execute(
+        "SELECT COUNT(DISTINCT r.related_id) FROM related r JOIN artifacts a ON a.id = r.related_id"
+        " WHERE r.artifact_id = ?"
+        " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
+        (artifact_id,),
+    ).fetchone()[0]
 
 
 def is_pending(artifact_id: str) -> bool:
@@ -676,12 +686,6 @@ def _salient(conn, artifact_id: str, name: str) -> bool:
     ).fetchone()
     if subject:
         return True
-    ent = conn.execute(
-        "SELECT 1 FROM entities WHERE artifact_id = ? AND lower(trim(entity)) = ? LIMIT 1",
-        (artifact_id, needle),
-    ).fetchone()
-    if ent:
-        return True
     text = row["body"] or " ".join(
         r["text"].lower()
         for r in conn.execute("SELECT text FROM chunks WHERE artifact_id = ?", (artifact_id,))
@@ -734,11 +738,12 @@ def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
     return out
 
 
-def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]:
+def for_artifact(conn, artifact_id: str, limit: int | None = -1) -> list[dict]:
     """Live related artifacts, each with `point` (its summary line that matched, or
     the judge's sentence), `via` (a shared name), `link` (subject, mention or idea)
     and `distance` (how far apart the two subjects are). Analogies come first, the
-    farthest first; then the rest, closest first."""
+    farthest first; then the rest, closest first. `limit` caps the stored links (-1 is
+    RELATED_LIMIT, None is all); "named" and "asked" rows come after them, uncounted."""
     rows = conn.execute(
         "SELECT a.id, a.title, a.kind, a.updated_at, r.score, r.via, r.point, r.kind AS link, r.distance"
         " FROM related r JOIN artifacts a"
@@ -752,94 +757,74 @@ def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]
         key=lambda r: _rank(r["link"] or "", r["distance"] or 0.0, r["score"]),
     )
 
+    # Feedback: kept pairs sort first, then the cap applies to the stored links.
+    kept_ids = set()
+    for r in conn.execute(
+        "SELECT pair FROM link_feedback WHERE verdict = 'keep' AND instr(pair, ?) > 0",
+        (artifact_id,),
+    ):
+        x, _, y = r["pair"].partition("|")
+        kept_ids.add(y if x == artifact_id else x)
+    for r in out:
+        r["kept"] = r["id"] in kept_ids
+    out.sort(key=lambda r: not r["kept"])
+    first: dict[str, dict] = {}
+    for r in out:
+        first.setdefault(r["id"], r)
+    out = list(first.values())
+    if limit == -1:
+        limit = RELATED_LIMIT
+    if limit is not None:
+        out = out[:limit]
+    existing = {r["id"] for r in out}
+
+    def extra(row, link: str, score: float) -> None:
+        out.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "kind": row["kind"],
+                "updated_at": row["updated_at"],
+                "score": score,
+                "via": None,
+                "point": None,
+                "link": link,
+                "distance": None,
+                "kept": False,
+            }
+        )
+        existing.add(row["id"])
+
     # "Named in": live notes whose body holds this artifact's title.
     title = conn.execute("SELECT title FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
     title = (title["title"] if title else "") or ""
     if len(title.split()) >= 2 or len(title) >= 6:
-        named_rows = conn.execute(
+        for row in conn.execute(
             "SELECT a.id, a.title, a.kind, a.updated_at FROM artifacts a"
             " WHERE a.kind = 'note' AND a.id != ? AND instr(lower(a.body), lower(?)) > 0"
             " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
             " ORDER BY a.updated_at DESC LIMIT 3",
             (artifact_id, title),
-        ).fetchall()
-        existing = {r["id"] for r in out}
-        for nr in named_rows:
-            if nr["id"] in existing:
-                continue
-            out.append(
-                {
-                    "id": nr["id"],
-                    "title": nr["title"],
-                    "kind": nr["kind"],
-                    "updated_at": nr["updated_at"],
-                    "score": 0.8,
-                    "via": None,
-                    "point": None,
-                    "link": "named",
-                    "distance": None,
-                }
-            )
-            existing.add(nr["id"])
+        ).fetchall():
+            if row["id"] not in existing:
+                extra(row, "named", 0.8)
 
-    # "You asked about both": artifacts cited by a message that also cited this one.
-    try:
-        asked_rows = conn.execute(
-            "SELECT cc2.artifact_id, COUNT(*) AS c FROM chat_citations cc1"
-            " JOIN chat_citations cc2 ON cc1.message_id = cc2.message_id"
-            " WHERE cc1.artifact_id = ? AND cc2.artifact_id != ?"
-            " AND cc2.artifact_id IN (SELECT id FROM artifacts WHERE deleted_at IS NULL"
-            " AND vaulted_at IS NULL AND embedded_at IS NULL)"
-            " GROUP BY cc2.artifact_id ORDER BY c DESC LIMIT 3",
-            (artifact_id, artifact_id),
-        ).fetchall()
-    except Exception:  # noqa: BLE001
-        asked_rows = []
-    for ar in asked_rows:
-        if ar["artifact_id"] in existing:
-            continue
-        arow = conn.execute(
-            "SELECT id, title, kind, updated_at FROM artifacts WHERE id = ?", (ar["artifact_id"],)
-        ).fetchone()
-        if arow is None:
-            continue
-        out.append(
-            {
-                "id": arow["id"],
-                "title": arow["title"],
-                "kind": arow["kind"],
-                "updated_at": arow["updated_at"],
-                "score": 0.6,
-                "via": None,
-                "point": None,
-                "link": "asked",
-                "distance": None,
-            }
-        )
-        existing.add(arow["id"])
-    # Feedback: kept pairs sort first.
-    kept_ids = set()
-    for r in conn.execute("SELECT pair FROM link_feedback WHERE verdict = 'keep'"):
-        x, _, y = r["pair"].partition("|")
-        if x == artifact_id:
-            kept_ids.add(y)
-        elif y == artifact_id:
-            kept_ids.add(x)
-    for r in out:
-        r["kept"] = r["id"] in kept_ids
-    out.sort(key=lambda r: (not r.get("kept", False),))
+    # "You asked about both": artifacts cited by an answer that also cited this one.
+    for row in conn.execute(
+        "SELECT a.id, a.title, a.kind, a.updated_at, COUNT(*) AS c FROM chat_citations c1"
+        " JOIN chat_citations c2 ON c1.message_id = c2.message_id"
+        " JOIN artifacts a ON a.id = c2.artifact_id"
+        " WHERE c1.artifact_id = ? AND c2.artifact_id != ?"
+        " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+        " GROUP BY a.id ORDER BY c DESC LIMIT 3",
+        (artifact_id, artifact_id),
+    ).fetchall():
+        if row["id"] not in existing:
+            extra(row, "asked", 0.6)
 
-    ids = [r["id"] for r in out]
-    from ..ingest import facets as facets_mod
+    from . import facets as facets_mod
 
-    about = facets_mod.gists(conn, ids)
+    about = facets_mod.gists(conn, [r["id"] for r in out])
     for r in out:
         r["about"] = about.get(r["id"])
-    first: dict[str, dict] = {}
-    for r in out:
-        first.setdefault(r["id"], r)
-    if limit is None:
-        limit = RELATED_LIMIT
-    if limit is None:
-        return list(first.values())
-    return list(first.values())[:limit]
+    return out

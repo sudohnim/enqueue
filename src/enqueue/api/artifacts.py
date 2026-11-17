@@ -502,15 +502,17 @@ def get_artifact(artifact_id: str, related: str = "") -> dict:
     detail["views"] = sorted(views, key=lambda v: v["name"])
 
     from .. import db
-    from ..ingest import related
+    from ..ingest import related as related_mod
 
+    show_all = related == "all"
     conn = db.get_conn()
     try:
-        detail["related"] = related.for_artifact(
-            conn, artifact_id, limit=10**9 if related == "all" else None
+        detail["related"] = related_mod.for_artifact(
+            conn, artifact_id, limit=None if show_all else related_mod.RELATED_LIMIT
         )
-        detail["related_total"] = len(related.for_artifact(conn, artifact_id, limit=None))
-        detail["related_pending"] = related.is_pending(artifact_id)
+        stored = related_mod.stored_count(conn, artifact_id)
+        detail["related_more"] = 0 if show_all else max(0, stored - related_mod.RELATED_LIMIT)
+        detail["related_pending"] = related_mod.is_pending(artifact_id)
     finally:
         conn.close()
     return detail

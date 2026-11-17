@@ -134,11 +134,16 @@ def test_artifact_detail_carries_related(sqlite_store):
 
 
 def _entity(aid: str, name: str, model: str | None = None) -> None:
+    """A name the item is about: an entity, and twice in its text, so it is salient."""
     with db.transaction() as conn:
         conn.execute(
             "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
             " VALUES (?, ?, ?, 'a fact', ?, 0.5)",
             (f"e-{aid}-{name}", aid, name, model or model_for("ingest")),
+        )
+        conn.execute(
+            "UPDATE artifacts SET body = body || ' ' || ? || ' ' || ? WHERE id = ?",
+            (name, name, aid),
         )
 
 
@@ -261,12 +266,7 @@ def test_links_from_an_older_rule_are_recomputed_once(sqlite_store):
 
 
 def _mention(aid: str, name: str) -> None:
-    with db.transaction() as conn:
-        conn.execute(
-            "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
-            " VALUES (?, ?, ?, 'A fact.', ?, 0.5)",
-            (f"e-{aid}-{name}", aid, name, model_for("ingest")),
-        )
+    _entity(aid, name)
 
 
 def test_a_links_own_site_is_not_a_shared_mention(sqlite_store):
@@ -580,3 +580,41 @@ def test_the_farther_of_two_idea_candidates_is_asked_first(idea_pair, monkeypatc
 
     assert "candidate id: war" in judge.calls[0]
     assert "candidate id: banker" not in judge.calls[0]
+
+
+def test_a_name_said_once_in_passing_links_nothing(sqlite_store):
+    """Two notes that each name a city once share no subject; no mention link."""
+    _note("a", "A week of food and walks along the river in an old port town.")
+    _note("b", "A spreadsheet of quarterly costs for the shared flat and its bills.")
+    for aid in ("a", "b"):
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO entities (id, artifact_id, entity, fact, model_version, trust)"
+                " VALUES (?, ?, 'Lisbon', 'a fact', ?, 0.5)",
+                (f"e-{aid}", aid, model_for("ingest")),
+            )
+            conn.execute("UPDATE artifacts SET body = 'once in Lisbon' WHERE id = ?", (aid,))
+    sqlite_store.upsert_facets()
+
+    related.compute("a")
+
+    assert "b" not in _links("a")
+
+
+def test_named_and_asked_rows_survive_a_full_list(sqlite_store, monkeypatch):
+    """A short title does not break the read, and a note that names this one shows."""
+    monkeypatch.setattr(related, "RELATED_LIMIT", 0)
+    _note("a", SHARED)
+    _note("b", SHARED)
+    with db.transaction() as conn:
+        conn.execute("UPDATE artifacts SET title = 'Quarterly plan' WHERE id = 'a'")
+        conn.execute("UPDATE artifacts SET body = 'see the Quarterly plan' WHERE id = 'b'")
+    conn = db.get_conn()
+    try:
+        rows = related.for_artifact(conn, "a")
+        short = related.for_artifact(conn, "b")
+    finally:
+        conn.close()
+
+    assert [(r["id"], r["link"]) for r in rows] == [("b", "named")]
+    assert short == []

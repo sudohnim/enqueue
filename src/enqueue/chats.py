@@ -350,7 +350,7 @@ def _everything_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         result = _library_passages(question, limit)
         from . import searches
 
-        searches.record(question, [{"artifact_id": p["artifact_id"]} for p in result], "chat")
+        searches.record(question, result, "chat")
         return result
     lists = [_library_passages(side, limit) for side in sides]
     lists.append(_library_passages(question, limit))
@@ -368,7 +368,7 @@ def _everything_passages(question: str, limit: int = PASSAGES) -> list[dict]:
     result = out[:limit]
     from . import searches
 
-    searches.record(question, [{"artifact_id": p["artifact_id"]} for p in result], "chat")
+    searches.record(question, result, "chat")
     return result
 
 

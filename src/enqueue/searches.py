@@ -14,7 +14,7 @@ KEEP_DAYS = 180
 def record(query: str, hits: list[dict], source: str) -> None:
     """Store one search. Never raises into the caller."""
     try:
-        ids = [h["artifact_id"] for h in hits[:10]]
+        ids = [h.get("artifact_id") for h in hits if h.get("artifact_id")][:10]
         loose = sum(1 for h in hits if h.get("loose"))
         with db.transaction() as conn:
             conn.execute(

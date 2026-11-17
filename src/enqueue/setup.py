@@ -308,8 +308,14 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
         or (backend["name"] == "local")
         or (not backend.get("needs_key") or backend.get("key_present"))
     )
-    if connected and _facets.missing_gist(db.get_conn()) > 0:
-        n = _facets.missing_gist(db.get_conn())
+    n = 0
+    if connected:
+        conn = db.get_conn()
+        try:
+            n = _facets.missing_gist(conn)
+        finally:
+            conn.close()
+    if n:
         say(
             "summary-new-form",
             "note",

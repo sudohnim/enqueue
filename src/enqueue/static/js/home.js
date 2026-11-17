@@ -1611,10 +1611,11 @@ function drawShiny(slot, r, n) {
 		: r.more
 		? '<button class="shiny-another" type="button" data-to="next">Find another' + svg("chev") + "</button>"
 		: '<button class="shiny-another" type="button" data-to="again">Look for new ones</button>';
+	const pair = (r.notes || []).map((a) => a.id);
 	const feedbackBtns =
-		r.ids && r.ids.length >= 2
+		pair.length >= 2
 			? '<button class="shiny-dismiss" type="button" data-verdict="keep">Keep</button>' +
-			  '<button class="shiny-dismiss" type="button" data-verdict="no">Not the same</button>'
+				'<button class="shiny-dismiss" type="button" data-verdict="no">Not the same</button>'
 			: "";
 	slot.innerHTML =
 		'<section class="shiny-card" aria-label="Something shiny">' +
@@ -1623,7 +1624,7 @@ function drawShiny(slot, r, n) {
 		'<div class="shiny-head">' +
 		(food.idea ? '<p class="shiny-idea">' + esc(food.idea) + "</p>" : "<span></span>") +
 		feedbackBtns +
-		'<button class="shiny-dismiss" type="button">Not today</button></div>' +
+		'<button class="shiny-dismiss" type="button" data-dismiss="today">Not today</button></div>' +
 		'<ul class="shiny-notes">' +
 		r.notes
 			.map(
@@ -1646,7 +1647,32 @@ function drawShiny(slot, r, n) {
 	slot.querySelectorAll(".shiny-note").forEach((b) => {
 		b.addEventListener("click", () => openArtifact(b.dataset.id, "shiny"));
 	});
-	slot.querySelector(".shiny-dismiss").addEventListener("click", () => {
+	slot.querySelectorAll("[data-verdict]").forEach((b) => {
+		b.addEventListener("click", async () => {
+			b.disabled = true;
+			try {
+				await api("/related/feedback", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						a: pair[0],
+						b: pair[1],
+						verdict: b.dataset.verdict,
+						idea: food.idea || "",
+					}),
+				});
+			} catch (err) {
+				b.disabled = false;
+				return toast(String((err && err.message) || err), true);
+			}
+			if (b.dataset.verdict === "keep") {
+				slot.querySelectorAll("[data-verdict]").forEach((x) => x.remove());
+				return;
+			}
+			slot.querySelector(".shiny-another")?.click();
+		});
+	});
+	slot.querySelector('[data-dismiss="today"]').addEventListener("click", () => {
 		try {
 			localStorage.setItem(SHINY_DISMISSED, todayStamp());
 			dropHunt();

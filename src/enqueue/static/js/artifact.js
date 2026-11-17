@@ -548,6 +548,8 @@
   }
 
   let ctx = null;
+  // The item whose next draw lists every related note ("Show all").
+  let relatedAllFor = null;
   // A pending re-look at a link's preview. Held at module scope so leaving the screen
   // can cancel it rather than hoping a stale guard happens to be false.
   let faceWatch = null;
@@ -675,10 +677,10 @@
 
   // Related, under the note: what else this is like (ingest/related.py). Analogies come
   // first, the farthest field first, labelled as such; then notes on the same subject
-  function relatedRowHtml(related) {
+  function relatedRowHtml(related, aid) {
     if (!related || !related.length) return "";
     const row = (r, why) =>
-      '<button class="relateditem" type="button" data-id="' +
+      '<div class="relatedrow"><button class="relateditem" type="button" data-id="' +
       esc(r.id) +
       '"><span class="relatedtitle">' +
       esc(r.title || "(untitled)") +
@@ -687,16 +689,21 @@
       (r.updated_at ? " · " + esc(since(r.updated_at)) : "") +
       "</span>" +
       (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
-      (r.link === "idea" && !r.kept
-        ? '<span class="relatedfeedback"><button type="button" data-verdict="keep" data-other="' +
-          esc(r.id) +
-          '">Keep</button><button type="button" data-verdict="no" data-other="' +
-          esc(r.id) +
-          '">Not the same</button></span>'
-        : r.kept
-          ? '<span class="relatedwhy">Kept</span>'
+      "</button>" +
+      (r.kept
+        ? '<span class="relatedfeedback"><span class="relatedkept">Kept</span></span>'
+        : r.link === "idea"
+          ? '<span class="relatedfeedback"><button type="button" data-verdict="keep" data-other="' +
+            esc(r.id) +
+            '" data-idea="' +
+            esc(r.point || "") +
+            '">Keep</button><button type="button" data-verdict="no" data-other="' +
+            esc(r.id) +
+            '" data-idea="' +
+            esc(r.point || "") +
+            '">Not the same</button></span>'
           : "") +
-      "</button>";
+      "</div>";
     const group = (label, rows, why) =>
       rows.length
         ? '<div class="relatedgroup"><div class="relatedlabel">' +
@@ -707,10 +714,16 @@
         : "";
     const of = (kind) => related.filter((r) => r.link === kind);
     return (
-      '<section class="related" aria-label="Related">' +
+      '<section class="related" aria-label="Related" data-aid="' +
+      esc(aid) +
+      '">' +
       '<div class="related-head"><div class="shelf">Related</div>' +
       '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>' +
-      group("Same subject", of("subject").sort((a, b) => b.score - a.score), (r) => r.about || r.point || "") +
+      group(
+        "Same subject",
+        of("subject").sort((a, b) => b.score - a.score),
+        (r) => r.about || r.point || "",
+      ) +
       group("Named in", of("named"), () => "") +
       group("Same idea, another field", of("idea"), (r) => r.point || "") +
       group("Also mentions", of("mention"), (r) => (r.via ? "Both mention " + r.via + "." : "")) +
@@ -764,24 +777,38 @@
 
   function mountRelatedRow() {
     view.querySelectorAll(".relateditem").forEach((item) => {
-      item.addEventListener("click", (e) => {
-        const btn = e.target && e.target.closest && e.target.closest("button[data-verdict]");
-        if (btn) {
-          e.stopPropagation();
-          const other = btn.dataset.other;
-          const verdict = btn.dataset.verdict;
-          api("/related/feedback", {
+      item.addEventListener("click", () => openArtifact(item.dataset.id, "related"));
+    });
+    const section = view.querySelector(".related");
+    if (!section) return;
+    const aid = section.dataset.aid;
+    section.querySelectorAll("button[data-verdict]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          await api("/related/feedback", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ a: ctx.id, b: other, verdict, idea: "" }),
-          })
-            .then(() => showArtifact(ctx.id))
-            .catch(() => {});
-          return;
+            body: JSON.stringify({
+              a: aid,
+              b: btn.dataset.other,
+              verdict: btn.dataset.verdict,
+              idea: btn.dataset.idea || "",
+            }),
+          });
+        } catch (err) {
+          btn.disabled = false;
+          return toast(String((err && err.message) || err), true);
         }
-        openArtifact(item.dataset.id, "related");
+        showArtifact(aid);
       });
     });
+    const more = view.querySelector(".related-all");
+    if (more)
+      more.addEventListener("click", () => {
+        relatedAllFor = aid;
+        showArtifact(aid);
+      });
   }
 
   // The chip names and the input are bound here, not in inline onclick: a tag name
@@ -999,7 +1026,9 @@
     const noteScroll = !arriving && was ? was.scrollTop : 0;
     teardown();
     if (arriving) faceTries = 0;
-    const d = await api("/artifacts/" + id);
+    const all = relatedAllFor === id;
+    relatedAllFor = null;
+    const d = await api("/artifacts/" + id + (all ? "?related=all" : ""));
     const a = d.artifact;
     scope = { kind: "artifact", id, label: "this artifact" };
     restorePill("inside");
@@ -1204,12 +1233,14 @@
     html +=
       '<div class="bodygrid"><div class="bodycol">' +
       body +
-      relatedRowHtml(d.related) +
-      (d.related_pending ? '<p class="relatedwhy">Still looking for the same idea in other fields.</p>' : "") +
-      (d.related_total > (d.related || []).length
-        ? '<button class="facet-more-btn" type="button" onclick="showAllRelated(\'' +
-          id +
-          "')\">Show all</button>"
+      relatedRowHtml(d.related, id) +
+      (d.related_pending
+        ? '<p class="related-note">Still looking for the same idea in other fields.</p>'
+        : "") +
+      (d.related_more
+        ? '<button class="related-all" type="button">Show all ' +
+          (d.related_more + (d.related || []).length) +
+          "</button>"
         : "") +
       '<div class="relatedgroup" id="connections"></div>' +
       "</div></div></div>" +
@@ -1356,13 +1387,14 @@
   }
 
   function facetGroups(facets) {
-    const gist = facets.filter((f) => f.role === "gist");
-    const points = facets.filter((f) => f.role === "point");
-    const about = facets.filter((f) => !f.role && f.level <= 1 && !f.bridge);
-    const ideas = facets
-      .filter((f) => !f.role && f.level >= 2 && !f.bridge)
-      .sort((a, b) => (b.trust || 0) - (a.trust || 0));
-    const bridges = facets.filter((f) => f.bridge && !f.role);
+    // A line from before roles were stored has none: its level and bridge decide.
+    const role = (f) => f.role || (f.bridge ? "bridge" : f.level <= 1 ? "subject" : "idea");
+    const of = (...names) => facets.filter((f) => names.includes(role(f)));
+    const gist = of("gist");
+    const points = of("point");
+    const about = of("kind", "subject");
+    const ideas = of("idea").sort((a, b) => (b.trust || 0) - (a.trust || 0));
+    const bridges = of("bridge");
     const group = (label, rows, open) =>
       rows.length
         ? '<div class="facet-group"><div class="facet-group-label">' +
@@ -1378,8 +1410,10 @@
             : "") +
           "</div>"
         : "";
-    let out = "";
-    if (gist.length) out += gist.map((f) => facetRow(f)).join("").replace('class="facet"', 'class="facet facet-gist"');
+    let out = gist
+      .map(facetRow)
+      .join("")
+      .replace(/class="facet"/g, 'class="facet facet-gist"');
     if (points.length) out += group("Key points", points, points.length);
     if (gist.length) out += group("Ideas", ideas, 0);
     else out += group("About", about, about.length) + group("Ideas", ideas, 3);
@@ -1482,11 +1516,6 @@
 
   // Re-fetch one artifact and swap its summary panel in place, so every mutation
   // (regenerate, edit, add, delete) shows the server's canonical result.
-  async function showAllRelated(id) {
-    const d = await api("/artifacts/" + id + "?related=all");
-    // redraw related section only: simplest full re-render
-    await showArtifact(id);
-  }
   async function refreshSummaryPanel(id) {
     let d;
     try {
@@ -2670,10 +2699,11 @@
           v.textContent = draftsCountLabel(saved.versions.length);
         }
         if (window.innerWidth >= 1100) {
-          const block = document.activeElement && document.activeElement.closest
-            ? document.activeElement.closest("p,li,pre,blockquote,h2,h3")
-            : null;
-          const t = (block ? block.textContent : text).trim();
+          const sel = window.getSelection();
+          const node = sel && sel.anchorNode;
+          const el = node && (node.nodeType === 1 ? node : node.parentElement);
+          const block = el && el.closest ? el.closest("p,li,pre,blockquote,h2,h3") : null;
+          const t = block ? block.textContent.trim() : "";
           try {
             const nr = await api("/artifacts/" + ctx.id + "/nearby", {
               method: "POST",
@@ -2687,9 +2717,24 @@
               const sheet = document.querySelector(".docpane.notesheet");
               if (sheet && sheet.parentNode) sheet.parentNode.insertBefore(aside, sheet.nextSibling);
             }
-            aside.innerHTML = (nr.nearby || [])
-              .map((n) => '<button type="button" onclick="openArtifact(\'' + esc(n.id) + "','related')\">" + esc(n.title) + "</button>")
-              .join("");
+            const found = nr.nearby || [];
+            aside.hidden = !found.length;
+            aside.innerHTML = found.length
+              ? '<div class="nearby-label">Close to this</div>' +
+                found
+                  .map(
+                    (n) =>
+                      '<button type="button" data-id="' +
+                      esc(n.id) +
+                      '">' +
+                      esc(n.title || "(untitled)") +
+                      "</button>",
+                  )
+                  .join("")
+              : "";
+            aside.querySelectorAll("button[data-id]").forEach((b) => {
+              b.addEventListener("click", () => openArtifact(b.dataset.id, "related"));
+            });
           } catch (_) {}
         }
       } else {

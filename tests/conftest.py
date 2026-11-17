@@ -16,6 +16,9 @@ import tempfile
 os.environ["ENQ_DATA_DIR"] = tempfile.mkdtemp(prefix="enqueue-tests-")
 # Never the real Share extension inbox (~/Library/Group Containers/...).
 os.environ["ENQ_SHARE_INBOX"] = os.path.join(os.environ["ENQ_DATA_DIR"], "share-inbox")
+# Never the hosted relay or the included assistant: a closed port answers at once. A
+# test that sends an ingest to the real relay waits on the network, and is slow and flaky.
+os.environ["ENQ_HOSTED_RELAY_URL"] = "http://127.0.0.1:9"
 
 import pytest  # noqa: E402
 

@@ -317,6 +317,8 @@ def _apply_snapshot_children(
     # children re-apply (schema repair) would otherwise delete them. This is why a
     # device that generates its own summaries keeps them, while the phone (which cannot)
     # receives them whenever a snapshot brings them along.
+    from ..ingest.facets import role_for
+
     incoming_facets = snapshot.get("facets") or []
     # A vaulted artifact is the exception: its snapshot carries only sealed lines
     # (often none), and the readable summary a device made before it was vaulted must
@@ -339,10 +341,7 @@ def _apply_snapshot_children(
                     f.get("trust", 0.5),
                     f.get("edited", 0),
                     f.get("bridge", 0),
-                    f.get("role")
-                    or __import__("enqueue.ingest.facets", fromlist=["role_for"]).role_for(
-                        f.get("level") or 0, bool(f.get("bridge"))
-                    ),
+                    f.get("role") or role_for(f.get("level") or 0, bool(f.get("bridge"))),
                 ),
             )
 

@@ -173,6 +173,11 @@ def start_engine(data: Path) -> None:
     with socket.socket() as probe:
         if probe.connect_ex(("127.0.0.1", PORT)) == 0:
             raise SystemExit(f"port {PORT} is in use; stop whatever holds it and rerun")
+    # The engine refuses a caller without its session token (session.py); this one
+    # writes it into the scratch folder, where seed() and shoot() read it.
+    from enqueue import session
+
+    session.start()
     server = uvicorn.Server(
         uvicorn.Config(engine.app, host="127.0.0.1", port=PORT, log_level="warning")
     )
@@ -193,7 +198,11 @@ def make_pdf(path: Path) -> None:
 def seed(scratch: Path) -> dict:
     import httpx
 
-    api = httpx.Client(base_url=BASE, timeout=600)
+    from enqueue import session
+
+    api = httpx.Client(
+        base_url=BASE, timeout=600, headers={"Authorization": f"Bearer {session.read()}"}
+    )
     for _ in range(120):
         try:
             if api.get("/health").status_code == 200:
@@ -257,8 +266,13 @@ def shoot(ids: dict) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         browser = p.chromium.launch()
+        from enqueue import session
+
         ctx = browser.new_context(
-            viewport={"width": 1280, "height": 820}, device_scale_factor=2, reduced_motion="reduce"
+            viewport={"width": 1280, "height": 820},
+            device_scale_factor=2,
+            reduced_motion="reduce",
+            extra_http_headers={"Authorization": f"Bearer {session.read()}"},
         )
         page = ctx.new_page()
 

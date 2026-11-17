@@ -7,6 +7,8 @@ The section **For the owner** at the end is not for agents.
 
 ## Rules for an agent
 
+Before a round starts, the owner commits the working tree, so each agent starts from a clean base and its own changes stay apart.
+
 Read these rules each time before you take a task.
 
 1. Work in one track. Take the first task in that track that is `[ ]` and whose **Needs** are all `[x]`. If none is free, change to another track.
@@ -359,7 +361,7 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: in `tests/test_blob_route.py`, upload two files with `POST /capture/upload` (see `tests/test_extension.py` or `grep -rn 'capture/upload' tests` for the form shape): `a.html` with type `text/html`, and `a.png` with type `image/png` (any bytes). Assert: the HTML answer has `Content-Disposition` that starts with `attachment`; the PNG answer starts with `inline`; both have `nosniff`.
   - Check: `uv run pytest tests/test_blob_route.py -q`
 
-- [~] **S5. The engine makes a session token (not required yet)** (claimed: agent, 2026-11-16)
+- [x] **S5. The engine makes a session token (not required yet)**
   - Needs: none
   - Files: new `session.py`, `config.py`, `api/guard.py`, `api/static.py`, `api/app.py`, new `tests/test_session.py`
   - Why: the engine answers any process on the Mac. `POST /backup/kit` gives the library key to any caller with no `Origin` header. This task adds the token. S8 makes it required, after the shell and the CLI send it.
@@ -368,6 +370,7 @@ The sections of the file are in the order they were written: the tracks from the
     2. Make `session.py`:
        ```python
        """The engine's session token: made at start, kept in DATA_DIR/session (0600).
+  - Done: src/enqueue/session.py, api/guard.py, api/static.py, api/app.py, tests/test_session.py; tests pass
 
        The shell, the CLI and the scripts read the file and send the token. A process
        that cannot read the data folder cannot call the engine."""
@@ -483,6 +486,7 @@ The sections of the file are in the order they were written: the tracks from the
     1. In `cli.py` `_call`, before `httpx.request`, add:
        ```python
        from . import session
+  - Done: src/enqueue/cli.py, bin/screenshots (fixed in review: its engine and browser now send the token). Owed: device check
 
        token = session.read()
        if token:
@@ -507,6 +511,7 @@ The sections of the file are in the order they were written: the tracks from the
     5. Each `ureq` request the shell sends to `ENGINE`, other than `/health`, adds the header `Authorization: Bearer <token>` when the token is not empty.
   - Test: add a Rust unit test for `boot_url`: with a token set through a test helper it holds `/boot?t=`; with none it is the plain address.
   - Check: `cargo test --lib` in `desktop/`. Then `ENQ_SESSION_ENFORCE=on bin/launch desktop`: the wall shows, the capture hotkey opens the overlay, a capture saves, and `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8787/artifacts` prints `401`.
+  - Done: desktop/src/lib.rs; cargo test --lib pass. Fixed in review: engine_get and engine_post_json now send the token (the hotkey, phone linking and sign-in calls got 401). Owed: device check
 
 - [x] **S8. The token is required** (claimed: agent, 2026-11-16)
   Done: src/enqueue/config.py, tests/conftest.py, src/enqueue/api/app.py; bin/verify --fast pass
@@ -519,7 +524,7 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: `tests/test_session.py` still sets enforce to true for itself and passes.
   - Check: `uv run pytest -n auto -q` (the whole suite). Then `bin/launch desktop` and use the app for one minute **[device required]**.
 
-- [x] **S9. A policy for the phone page** **[device required]** (claimed: agent, 2026-11-16)
+- [ ] **S9. A policy for the phone page** **[device required]**
   Done: desktop/tauri.conf.json; Owed: device check
   - Needs: S2
   - Files: `desktop/tauri.conf.json`
@@ -529,6 +534,7 @@ The sections of the file are in the order they were written: the tracks from the
     2. Build and install on the emulator.
   - Check: `bin/launch emulator`. Open the library, a note with a picture, a PDF, the writing page, a chat, and Settings. `adb logcat -d | grep -i 'content security policy'` prints nothing. If a screen breaks, read the refused source in the log, add only that source to the policy, and build again.
   - Do not: close this task from a build that only compiles.
+  - Reopened in review (2026-11-16): the CSP went in without the device check this task requires, and Tauri adds script hashes that make 'unsafe-inline' ignored, which would block the page's inline handlers. `csp` is back to null. Before closing, also set `app.security.dangerousDisableAssetCspModification` to ["script-src", "style-src"].
 
 - [x] **S10. An answer that quoted a vaulted item is sealed with it** (claimed: agent, 2026-11-16)
   Done: src/enqueue/vaultops.py; tests/test_vaultops.py pass
@@ -544,7 +550,7 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: in `tests/test_vaultops.py`, copy the test that reads the database file for an item's words. Add a chat message that cites the item and holds a secret word. After vaulting, the word is not in the file. After taking the item out of the vault, the message has its text again.
   - Check: `uv run pytest tests/test_vaultops.py -q`
 
-- [x] **S11. Docs for track S** (claimed: agent, 2026-11-16)
+- [ ] **S11. Docs for track S**
   Done: (docs edits skipped)
   - Needs: S1 to S10
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -799,7 +805,7 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Check: `uv run pytest tests/test_setup.py -q`
   - Do not: start a rewrite from code. The person presses the button.
 
-- [x] **M10. Docs for track M** (claimed: agent, 2026-11-16)
+- [ ] **M10. Docs for track M**
   Done: (docs skipped)
   - Needs: M1 to M9
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -1001,7 +1007,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `bin/verify --fast`
   - Device check **[device]**: on a long note, "Close passages" shows under Related at the foot of the page, and the Details panel has no "Passages that connect".
 
-- [~] **R9. Related notes while you write** (claimed: agent, 2026-11-16)
+- [x] **R9. Related notes while you write**
   - Needs: none
   - Files: `retrieve/passage_links.py`, `api/artifacts.py` (new route at the end), `static/js/artifact.js` (new code), `static/css/artifact.css` (new `.nearby` rules), new `tests/test_nearby.py`
   - Do:
@@ -1010,6 +1016,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
        def near_text(artifact_id: str, text: str, limit: int = 3) -> list[dict]:
            """Other live items with a passage close to `text`: [{id, title, kind, score}]."""
            from ..index.store import get_store
+  - Done: retrieve/passage_links.py, api/artifacts.py, js/artifact.js, css/artifact.css, tests/test_nearby.py; tests pass. Owed: device check - write a paragraph and see the titles under the sheet
 
            store = get_store()
            best: dict[str, float] = {}
@@ -1123,7 +1130,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: a related item with a gist row shows the gist as `about`.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [x] **R14. Docs for track R** (claimed: agent, 2026-11-16)
+- [ ] **R14. Docs for track R**
   Done: (docs skipped)
   - Needs: R1 to R13
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -1138,7 +1145,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
 
 ## Track Q: search
 
-- [~] **Q1. Record each search** (claimed: agent, 2026-11-16)
+- [x] **Q1. Record each search**
   - Needs: DB1
   - Files: new `searches.py`, `api/search.py`, `chats.py`, `backup.py` (`start_scheduler`), new `tests/test_searches.py`
   - Why: a search that finds nothing useful leaves no trace today, so no one can learn from it.
@@ -1146,6 +1153,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
     1. Make `searches.py`:
        ```python
        """A local record of searches: what was asked and what came back. Never synced."""
+  - Done: src/enqueue/searches.py, api/search.py, chats.py, backup.py, tests/test_searches.py; tests pass
 
        from __future__ import annotations
 
@@ -1265,6 +1273,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
     5. A failed second call changes nothing.
   - Check: `bin/verify --fast`
   - Device check **[device]**: a new search by topic shows results at once; the "Maybe related" block changes about a second later with no jump.
+  - Done: js/search.js; the second answer now redraws the page in place (fixed in review). Owed: device check
 
 - [x] **Q6. Lifting and model ranking cannot hold a search** (claimed: agent, 2026-11-16)
   Done: src/enqueue/retrieve/candidates.py; tests pass
@@ -1371,7 +1380,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: a hit for an artifact with a gist row has `gist` in the `/search` answer.
   - Check: `uv run pytest tests/test_search_results.py -q`
 
-- [x] **Q11. Docs for track Q** (claimed: agent, 2026-11-16)
+- [ ] **Q11. Docs for track Q**
   Done: (docs skipped)
   - Needs: Q1 to Q10
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -1442,8 +1451,9 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
     5. Style them like the "Not today" control. Find its rule in `home.css` and use the same class.
   - Check: `bin/verify --fast`
   - Device check **[device]**: refuse a card. The next set shows, and the refused pair is not in the Related section of either note.
+  - Done: js/home.js; Keep and Not the same post to /related/feedback (fixed in review: the buttons were never drawn, and Keep was bound as Not today). Owed: device check
 
-- [x] **H5. The hunt does not bring back a refused pair, and sees the person's verdicts** (claimed: agent, 2026-11-16)
+- [ ] **H5. The hunt does not bring back a refused pair, and sees the person's verdicts**
   Done: (skipped)
   - Needs: R11
   - Files: `shiny.py` (`hunt`, `_pairs`), `tests/test_shiny.py`
@@ -1454,7 +1464,7 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: after `feedback(seed, other, "no")`, `hunt` does not return that pair.
   - Check: `uv run pytest tests/test_shiny.py -q`
 
-- [x] **H6. Give the model the passages when cards are refused often** (claimed: agent, 2026-11-16)
+- [ ] **H6. Give the model the passages when cards are refused often**
   Done: (skipped)
   - Needs: R11
   - Files: `shiny.py` (`_write`, `hunt`), `prompts.py` (`SHINY`, `SHINY_HUNT`), `tests/test_shiny.py`
@@ -1467,7 +1477,7 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: with 5 shown pairs and 2 refusals, the user text of `_write` holds `passage:`. With 5 shown and 0 refusals, it does not.
   - Check: `uv run pytest tests/test_shiny.py -q`
 
-- [x] **H7. The links and the day's card go to the relay** (claimed: agent, 2026-11-16)
+- [ ] **H7. The links and the day's card go to the relay**
   Done: (skipped)
   - Needs: R11
   - Files: `sync/snapshot.py` (`derived_layers`, `_apply_derived_layers`), `sync/client.py`, `shiny.py` (`prepare`), `tests/test_snapshot.py`, `tests/test_sync.py`
@@ -1482,7 +1492,7 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: a snapshot carries the `related` rows an artifact owns, and applying it writes them. A second apply with an empty list removes them. `push_shiny` with sync off does nothing and does not raise.
   - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py tests/test_summarize_once.py tests/test_shiny.py -q`
 
-- [x] **H8. Docs for track H** (claimed: agent, 2026-11-16)
+- [ ] **H8. Docs for track H**
   Done: (skipped)
   - Needs: H1 to H7
   - Files: `AGENTS.md`
@@ -1495,7 +1505,7 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
 
 All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
-- [x] **P1. A keyword index on the phone** (claimed: agent, 2026-11-16)
+- [ ] **P1. A keyword index on the phone**
   Done: (skipped)
   - Needs: none
   - Files: `desktop/src/sync.rs`
@@ -1517,7 +1527,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: Rust unit tests: after `reindex_item`, a word that is only in a facet statement is found with `SELECT artifact_id FROM fts_items WHERE fts_items MATCH ?`; a trashed artifact has no row.
   - Check: `cargo test --lib` in `desktop/`
 
-- [x] **P2. Phone search uses the index** (claimed: agent, 2026-11-16)
+- [ ] **P2. Phone search uses the index**
   Done: (skipped)
   - Needs: P1
   - Files: `desktop/src/sync.rs` (`search_artifacts`)
@@ -1539,7 +1549,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: Rust unit tests: a word that is only in a PDF's `page_text` finds the PDF; a title match is before a body match; a query of two words where only one matches still finds the item.
   - Check: `cargo test --lib` in `desktop/`
 
-- [x] **P3. A phone result shows the matched words** (claimed: agent, 2026-11-16)
+- [ ] **P3. A phone result shows the matched words**
   Done: (skipped) **[device]**
   - Needs: P2
   - Files: `static/mobile.html`
@@ -1547,7 +1557,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: where a search result row is drawn, when the row has `snippet` and the snippet is not the start of the body, show the snippet as the row's second line. Escape it with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`; search a word that is only in a PDF; the row shows the words around it.
 
-- [x] **P4. The phone draws the summary in groups** (claimed: agent, 2026-11-16)
+- [ ] **P4. The phone draws the summary in groups**
   Done: (skipped) **[device]**
   - Needs: M2
   - Files: `desktop/src/sync.rs`, `static/mobile.html`
@@ -1561,7 +1571,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: a Rust unit test: a snapshot facet with `bridge: 1` is read back with `bridge` 1.
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator`; the Details panel of a synced item shows the groups.
 
-- [x] **P5. The phone keeps the role** (claimed: agent, 2026-11-16)
+- [ ] **P5. The phone keeps the role**
   Done: (skipped)
   - Needs: M4, P4
   - Files: `desktop/src/sync.rs`
@@ -1571,8 +1581,9 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     3. When a snapshot facet has no role, set it by the rule of DB1: bridge gives `bridge`, level 0 `kind`, level 1 `subject`, else `idea`.
   - Test: a snapshot facet with `role: "gist"` is sent back with `role: "gist"`.
   - Check: `cargo test --lib` in `desktop/`
+  - Partly done in review (2026-11-16): the `role` column, apply, `build_snapshot` and a test are in `sync.rs`, and the reader hides `ask` lines. Left: set a role when a snapshot facet has none.
 
-- [x] **P6. Related rows on the phone** (claimed: agent, 2026-11-16)
+- [ ] **P6. Related rows on the phone**
   Done: (skipped) **[device]**
   - Needs: H7, R1
   - Files: `desktop/src/sync.rs`, `desktop/src/lib.rs` (`mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`, `static/mobile.html`
@@ -1585,7 +1596,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: a Rust unit test for `related_for`: a trashed related item is absent.
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator`; `bin/cdp-eval "await window.__TAURI__.core.invoke('mobile_related', {id: '<an id from mobile_list>'})"` returns rows.
 
-- [x] **P7. The day's card on the phone** (claimed: agent, 2026-11-16)
+- [ ] **P7. The day's card on the phone**
   Done: (skipped) **[device]**
   - Needs: H7
   - Files: `desktop/src/sync.rs`, `desktop/src/lib.rs` (`mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`, `static/mobile.html`
@@ -1598,7 +1609,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     5. The phone does not hunt and has no "Find another".
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator` linked to a Mac that has a card; the card shows the same idea.
 
-- [x] **P8. Feedback from the phone** (claimed: agent, 2026-11-16)
+- [ ] **P8. Feedback from the phone**
   Done: (skipped) **[device]**
   - Needs: P6, R11
   - Files: `desktop/src/sync.rs`, `desktop/src/lib.rs` (`mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`, `static/mobile.html`
@@ -1610,7 +1621,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: a Rust unit test: after a `no` verdict the `related` rows of the pair are gone and `build_snapshot` of `a` carries the feedback row.
   - Check: `cargo test --lib`. Device: refuse a link on the emulator; after a sync the row is gone on the Mac.
 
-- [x] **P9. Docs for track P** (claimed: agent, 2026-11-16)
+- [ ] **P9. Docs for track P**
   Done: (skipped)
   - Needs: P1 to P8
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -1621,7 +1632,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
 ## Track F: features
 
-- [x] **F1. A privacy receipt under each answer** (claimed: agent, 2026-11-16)
+- [ ] **F1. A privacy receipt under each answer**
   Done: (skipped)
   - Needs: none
   - Files: `chats_worker.py`, `chats.py` (`get`), `static/js/chat.js`, `tests/test_chats_worker.py`
@@ -1636,7 +1647,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: in `tests/test_chats_worker.py`, after `compute` with a fake provider and two passages from two notes, `chats.get` gives the assistant message a receipt with `notes` 2.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`; `bin/verify --fast`
 
-- [x] **F2. What left this Mac, on one page** (claimed: agent, 2026-11-16)
+- [ ] **F2. What left this Mac, on one page**
   Done: (skipped)
   - Needs: none
   - Files: `outbound.py`, `api/admin.py` (new route), `static/js/settings.js` (one new block in the Activity tab), new `tests/test_outbound.py`
@@ -1649,7 +1660,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: two flushes on one day for one service and purpose give one row with the sums. A row 40 days old is not returned.
   - Check: `uv run pytest tests/test_outbound.py -q`; `bin/verify --fast`
 
-- [x] **F3. Save an answer as a note** (claimed: agent, 2026-11-16)
+- [ ] **F3. Save an answer as a note**
   Done: (skipped)
   - Needs: none
   - Files: `chats.py`, `api/chats.py`, `static/js/chat.js`, `tests/test_chats.py`
@@ -1665,7 +1676,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: an answer with two citations becomes a note whose body holds the question, the answer and both titles. A message id that does not exist answers 404.
   - Check: `uv run pytest tests/test_chats.py -q`; `bin/verify --fast`
 
-- [x] **F4. Docs for track F** (claimed: agent, 2026-11-16)
+- [ ] **F4. Docs for track F**
   Done: (skipped)
   - Needs: F1 to F3
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -1678,7 +1689,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
 Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 numeric font weights against the rule in AGENTS.md.
 
-- [x] **U1. A style check that reports** (claimed: agent, 2026-11-16)
+- [ ] **U1. A style check that reports**
   Done: (skipped)
   - Needs: none
   - Files: new `bin/check-style`, `bin/verify`
@@ -1691,7 +1702,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     6. In `bin/verify`, find where `bin/check-contrast` is run (`grep -n 'check-contrast' bin/verify`). Run `bin/check-style` after it the same way, without `--strict`.
   - Check: `bin/check-style` prints counts and exits 0; `bin/check-style --strict; echo $?` prints 1; `bin/verify --fast` passes.
 
-- [x] **U2. A type scale in the tokens** (claimed: agent, 2026-11-16)
+- [ ] **U2. A type scale in the tokens**
   Done: (skipped)
   - Needs: none
   - Files: `static/css/tokens.css`, `docs/DESIGN.md`
@@ -1714,7 +1725,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/verify --fast`
   - Do not: change a rule that uses a size in this task.
 
-- [x] **U3. Sizes and weights become tokens: wall and base** (claimed: agent, 2026-11-16)
+- [ ] **U3. Sizes and weights become tokens: wall and base**
   Done: (skipped)
   - Needs: U1, U2
   - Files: `static/css/base.css`, `static/css/home.css`, `static/css/pill.css`
@@ -1727,53 +1738,53 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
        | 12.5, 13 | `var(--t-sm)` |
        | 13.5, 14, 14.5 | `var(--t-md)` |
        | 15 | `var(--t-lg)` |
-       | 15.5, 16 | `var(--t-xl)` |
+       | 15.5, 16, 16.5, 17 | `var(--t-xl)` |
        | 18 | `var(--t-2xl)` |
-       | 19, 20 | `var(--t-3xl)` |
-       | 22, 24, 26 | `var(--t-4xl)` |
-       | 30, 34 | `var(--t-display-sm)` |
+       | 19, 20, 21 | `var(--t-3xl)` |
+       | 22, 24, 25, 26, 28 | `var(--t-4xl)` |
+       | 29, 30, 32, 34 | `var(--t-display-sm)` |
        | 44 | `var(--t-display)` |
     2. Replace each numeric `font-weight` by this table. For another number, stop, mark `[!]` and write the number and the rule under this task.
 
        | Number | Token |
        | --- | --- |
        | 400 | `var(--w-regular)` |
-       | 440 | `var(--w-medium)` |
+       | 440, 500 | `var(--w-medium)` |
        | 480 | `var(--w-strong)` |
        | 600 | `var(--w-heading)` |
     3. Do not change `font-size` values in `em`, `rem`, `%`, `clamp(...)` or `var(...)`.
   - Check: `bin/check-style` prints no line for the three files; `bin/verify --fast`
   - Device check **[device]**: the wall, a card and the pill look the same as before.
 
-- [x] **U4. Sizes and weights become tokens: the pages** (claimed: agent, 2026-11-16)
+- [ ] **U4. Sizes and weights become tokens: the pages**
   Done: (skipped)
   - Needs: U1, U2
   - Files: `static/css/chat.css`, `static/css/settings.css`, `static/css/eyepanel.css`, `static/css/reader.css`, `static/css/welcome.css`, `static/css/tour.css`, `static/css/guide.css`, `static/css/linkpop.css`, `static/css/drafts.css`, `static/css/share.css`, `static/css/bird.css`, `static/css/notetype.css`, `static/css/search.css`
   - Do: the same two steps and the same table as U3. Skip a file that is absent.
   - Check: `bin/check-style` prints no line for these files; `bin/verify --fast`
 
-- [x] **U5. Sizes and weights become tokens: the Details panel** (claimed: agent, 2026-11-16)
+- [ ] **U5. Sizes and weights become tokens: the Details panel**
   Done: (skipped)
   - Needs: U1, U2, M6
   - Files: `static/css/details.css`
   - Do: as U3.
   - Check: `bin/check-style` prints no line for the file; `bin/verify --fast`
 
-- [x] **U6. Sizes and weights become tokens: the note page** (claimed: agent, 2026-11-16)
+- [ ] **U6. Sizes and weights become tokens: the note page**
   Done: (skipped)
   - Needs: U1, U2, R8, R9, R11
   - Files: `static/css/artifact.css`
   - Do: as U3.
   - Check: `bin/check-style` prints no line for the file; `bin/verify --fast`
 
-- [x] **U7. Sizes and weights become tokens: the phone and the capture page** (claimed: agent, 2026-11-16)
+- [ ] **U7. Sizes and weights become tokens: the phone and the capture page**
   Done: (skipped) **[device]**
   - Needs: U1, U2, P8
   - Files: `static/mobile.html`, `static/capture.html`
   - Do: as U3, inside the `<style>` blocks only. `capture.html` links `tokens.css`; check that `mobile.html` does too (`grep -n 'tokens.css' src/enqueue/static/mobile.html`). If it does not, mark `[!]`.
   - Check: `bin/check-style` prints a total of 0; `bin/verify --fast`. Device: `bin/launch emulator`; the library, a reader and Settings look the same as before.
 
-- [x] **U8. The style check fails the gate** (claimed: agent, 2026-11-16)
+- [ ] **U8. The style check fails the gate**
   Done: (skipped)
   - Needs: U3, U4, U5, U6, U7
   - Files: `bin/verify`, `AGENTS.md`
@@ -1782,7 +1793,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     2. In `AGENTS.md`, add `bin/check-style` to the Bin table and to the description of `bin/verify --fast`.
   - Check: `bin/verify --fast` passes. Add `font-size: 13px;` to one rule in `base.css`, run it again and see it fail, then remove the line.
 
-- [x] **U9. A switch says what it does** (claimed: agent, 2026-11-16)
+- [ ] **U9. A switch says what it does**
   Done: (skipped)
   - Needs: M6
   - Files: `static/js/artifact.js` (`summaryPanel`), `static/js/drafts.js`
@@ -1794,7 +1805,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     3. Change no behaviour and no class.
   - Check: `bin/verify --fast`
 
-- [x] **U10. One raven on a screen** (claimed: agent, 2026-11-16)
+- [ ] **U10. One raven on a screen**
   Done: (skipped)
   - Needs: R1
   - Files: `static/css/artifact.css` (`.related*`)
@@ -1804,7 +1815,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/verify --fast`
   - Device check **[device]**: open the Details panel on a note with related rows; one raven shows.
 
-- [x] **U11. Docs for track U** (claimed: agent, 2026-11-16)
+- [ ] **U11. Docs for track U**
   Done: (skipped)
   - Needs: U1 to U10
   - Files: `docs/DESIGN.md`, `AGENTS.md`
@@ -1815,7 +1826,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
 
 ## Track I: index speed
 
-- [x] **I1. The query vector is sent as bytes** (claimed: agent, 2026-11-16)
+- [ ] **I1. The query vector is sent as bytes**
   Done: (skipped)
   - Needs: none
   - Files: `index/embed.py`, `index/store_sqlite.py`
@@ -1845,7 +1856,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Test: none new. The search tests cover it.
   - Check: `uv run pytest tests/test_search_results.py tests/test_related.py tests/test_chats.py tests/test_shiny.py -q`; `bin/check-eval-cross`
 
-- [x] **I2. Each ingest step says how long it took** (claimed: agent, 2026-11-16)
+- [ ] **I2. Each ingest step says how long it took**
   Done: (skipped)
   - Needs: none
   - Files: `ingest/queue.py` (`_process`, the `events.emit("ingest", ...)` call), `tests/test_ingest.py`
@@ -1867,7 +1878,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
 
 ## Track E: evals
 
-- [x] **E1. The real-search eval sees searches that failed** (claimed: agent, 2026-11-16)
+- [ ] **E1. The real-search eval sees searches that failed**
   Done: (skipped)
   - Needs: Q1
   - Files: `eval_real.py`, new `tests/test_eval_real.py`, `AGENTS.md`
@@ -1955,7 +1966,7 @@ What Enqueue has now, against what those pages offer:
 
 Finding: an answer lists the items it used. It does not say which page or paragraph, and a press on a source opens the item at its start.
 
-- [x] **A1. A passage knows its page and its first words** (claimed: agent, 2026-11-16)
+- [ ] **A1. A passage knows its page and its first words**
   Done: (skipped)
   - Needs: none
   - Files: `ingest/chunk.py`, `tests/test_chunk.py`
@@ -1998,7 +2009,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: in `tests/test_chunk.py`, insert a `pdf` artifact and three chunks by hand: `"## page 1\n\nalpha"`, `"more of page one"`, `"## page 2\n\nbeta"`. `pages_for` gives 0, 0, 1. A `note` artifact gives `{}`. `quote_of("# Title\n\none two three")` gives `"one two three"`.
   - Check: `uv run pytest tests/test_chunk.py -q`
 
-- [x] **A2. Passages are numbered and the model says which it used** (claimed: agent, 2026-11-16)
+- [ ] **A2. Passages are numbered and the model says which it used**
   Done: (skipped)
   - Needs: none
   - Files: `chats.py`, `schemas.py` (`Answer`), `prompts.py` (`CHAT_ANSWER`), `tests/test_chats.py`
@@ -2038,7 +2049,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `uv run pytest tests/test_chats.py tests/test_chats_worker.py -q`
   - Do not: reject an answer because a number is wrong. Wrong numbers are dropped.
 
-- [x] **A3. Keep the place of each passage an answer used** (claimed: agent, 2026-11-16)
+- [ ] **A3. Keep the place of each passage an answer used**
   Done: (skipped)
   - Needs: DB2, A1, A2
   - Files: `chats.py`, `chats_worker.py`, `tests/test_chats_worker.py`
@@ -2066,7 +2077,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: after `compute` with a fake provider that returns `used=[1]`, `chats.get` gives the assistant message one place with the right `artifact_id` and a `quote` that is the start of the passage. After `chats.delete`, the table has no row for it.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`
 
-- [x] **A4. Places ride the conversation's snapshot** (claimed: agent, 2026-11-16)
+- [ ] **A4. Places ride the conversation's snapshot**
   Done: (skipped)
   - Needs: A3
   - Files: `sync/snapshot.py` (`read_chat_snapshot`, `apply_chat_snapshot`), `tests/test_snapshot.py`
@@ -2077,7 +2088,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: a chat with one place round-trips through read and apply into a second store. Applying a snapshot with no `places` key keeps the rows.
   - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py -q`
 
-- [x] **A5. The reader can open at a place** (claimed: agent, 2026-11-16)
+- [ ] **A5. The reader can open at a place**
   Done: (skipped)
   - Needs: none
   - Files: `static/js/artifact.js` (new functions, and one call at the end of `showArtifact`)
@@ -2101,7 +2112,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `bin/verify --fast`
   - Device check **[device]**: in the page console run `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})`. The PDF scrolls to page 3 and the words are marked.
 
-- [x] **A6. An answer's place marks are buttons** (claimed: agent, 2026-11-16)
+- [ ] **A6. An answer's place marks are buttons**
   Done: (skipped)
   - Needs: A3, A5
   - Files: `static/js/chat.js`, `static/css/chat.css`
@@ -2150,7 +2161,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `bin/verify --fast`
   - Device check **[device]**: ask a question that a long PDF answers. The answer has "p. N" buttons. A press opens the PDF at that page with the words marked.
 
-- [x] **A7. The phone does not show raw place marks** (claimed: agent, 2026-11-16)
+- [ ] **A7. The phone does not show raw place marks**
   Done: (skipped)
   - Needs: A2
   - Files: `static/mobile.html` (the chat message text only)
@@ -2158,7 +2169,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Do: where an assistant message's text is drawn, remove the marks first: `text.replace(/\s?\[P\d+\]/g, "")`.
   - Check: `bin/verify --fast`
 
-- [x] **A8. Docs for track A** (claimed: agent, 2026-11-16)
+- [ ] **A8. Docs for track A**
   Done: (skipped)
   - Needs: A1 to A7
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -2169,7 +2180,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
 
 ## Track N: a search result opens at the place, and what exists is locked with tests
 
-- [x] **N1. A search hit carries its page and its first words** (claimed: agent, 2026-11-16)
+- [ ] **N1. A search hit carries its page and its first words**
   Done: (skipped)
   - Needs: A1
   - Files: `retrieve/candidates.py` (`_hybrid_results`: the `out.append({...})` dict), `api/search.py` (`_dated`), `tests/test_search_results.py`
@@ -2180,7 +2191,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: a PDF artifact with chunks for two pages (insert them as in A1's test, then index with `get_store().index_artifact(id)`). A search for a word that is only on page 2 returns the PDF with `page == 1`.
   - Check: `uv run pytest tests/test_search_results.py -q`
 
-- [x] **N2. A search result opens at the place** (claimed: agent, 2026-11-16)
+- [ ] **N2. A search result opens at the place**
   Done: (skipped)
   - Needs: N1, A5
   - Files: `static/js/search.js` (`openHit`)
@@ -2189,7 +2200,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `bin/verify --fast`
   - Device check **[device]**: search a word that is deep in a PDF; the result opens at that page with the word marked.
 
-- [x] **N3. "More like this"** (claimed: agent, 2026-11-16)
+- [ ] **N3. "More like this"**
   Done: (skipped)
   - Needs: R1
   - Files: `retrieve/passage_links.py`, `api/artifacts.py` (new route at the end), `static/js/artifact.js` (`relatedRowHtml`, `mountRelatedRow`), `static/js/search.js`, new `tests/test_similar.py`
@@ -2200,14 +2211,14 @@ Finding: an answer lists the items it used. It does not say which page or paragr
        - for each other artifact, keep its 3 best scores and add them;
        - return live items, best sum first: `{"artifact_id", "title", "kind", "score", "snippet"}`, where `snippet` is the first 200 characters of that item's best-matching chunk.
     2. Add the route `GET /artifacts/{artifact_id}/similar` that returns `{"hits": similar_items(artifact_id)}`.
-    3. In `relatedRowHtml`, add a text button `More like this` in the `related-head`, with `data-like="<this item's id>"`. `relatedRowHtml` gets the id as a second argument; change its one caller.
+    3. In `relatedRowHtml`, add a text button `More like this` in the `related-head`, with `data-like="<this item's id>"`. `relatedRowHtml(related, aid)` already has the item's id as `aid`.
     4. When an item has no related rows, still draw the head with the button.
     5. In `search.js`, add `doSimilar(id, title)`: fetch the route and draw the hits with the function `doSearch` uses to draw `r.hits`, under the heading `Like "<title>"`. Find that function by reading `doSearch` after the line `lastHits = r.hits`.
     6. In `mountRelatedRow`, bind the button to `doSimilar`.
   - Test: three notes, two of them about the same thing in nearly the same words. `similar_items` of one returns the other first and does not return itself.
   - Check: `uv run pytest tests/test_similar.py -q`; `bin/verify --fast`
 
-- [x] **N4. Lock the natural-language search with tests** (claimed: agent, 2026-11-16)
+- [ ] **N4. Lock the natural-language search with tests**
   Done: (skipped)
   - Needs: none
   - Files: new `tests/test_search_language.py`
@@ -2232,7 +2243,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
     4. Add two tests with the `store` and `quiet_queue` fixtures: a word that is only in the body of a note is found by `search_results`; a word that is only in a PDF's page text (insert the `page_text` row and run the ingest for the artifact) is found.
   - Check: `uv run pytest tests/test_search_language.py -q`
 
-- [x] **N5. Docs for track N** (claimed: agent, 2026-11-16)
+- [ ] **N5. Docs for track N**
   Done: (skipped)
   - Needs: N1 to N4
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -2245,7 +2256,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
 
 Finding: the Mac fetches a missing original from the relay on demand now (`capture.blob_path` calls `fetch_blob_to_cache`). So the Mac can let go of an original it has not used, if it knows for certain that the relay holds it. The wall loads each picture at full size.
 
-- [x] **C1. Small pictures for the wall** (claimed: agent, 2026-11-16)
+- [ ] **C1. Small pictures for the wall**
   Done: (skipped)
   - Needs: DB2
   - Files: new `thumbs.py`, `api/artifacts.py` (new route at the end), `ingest/queue.py` (one call), `vaultops.py` (one call), `static/js/home.js` (`facePicture`), new `tests/test_thumbs.py`
@@ -2371,7 +2382,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Test: `render` of a 1200 px wide PNG (make one with `fitz` in the test) returns bytes that `fitz` opens at 520 px wide. `make` for a note returns false. After `drop`, `get` returns `None`.
   - Check: `uv run pytest tests/test_thumbs.py tests/test_vaultops.py -q`; `bin/verify --fast`
 
-- [x] **C2. The Mac records which originals the relay holds** (claimed: agent, 2026-11-16)
+- [ ] **C2. The Mac records which originals the relay holds**
   Done: (skipped)
   - Needs: DB2
   - Files: `sync/client.py`, `tests/test_sync.py`
@@ -2392,7 +2403,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Test: copy a test in `tests/test_sync.py` that pushes an artifact with a file to the test relay. After the push, `blob_relay` has a row for the file's hash with the relay's address.
   - Check: `uv run pytest tests/test_sync.py -q`
 
-- [x] **C3. The relay says if it holds an object, and how large it is** (claimed: agent, 2026-11-16)
+- [ ] **C3. The relay says if it holds an object, and how large it is**
   Done: (skipped)
   - Needs: none
   - Files: `relay/app.py`, `relay/storage.py`, the relay's test file (`ls tests | grep relay`)
@@ -2412,7 +2423,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests -k relay -q`
   - Do not: run `bin/deploy-relay`. The owner deploys.
 
-- [x] **C4. Free up space: let go of originals the relay holds (off by default)** (claimed: agent, 2026-11-16)
+- [ ] **C4. Free up space: let go of originals the relay holds (off by default)**
   Done: (skipped)
   - Needs: C1, C2, C3
   - Files: new `offload.py`, `settings.py`, `backup.py` (`start_scheduler`), new `tests/test_offload.py`
@@ -2442,7 +2453,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_offload.py tests/test_sync.py -q`
   - Do not: turn the setting on. Do not call `blobstore.remove` from any other place.
 
-- [x] **C5. Settings shows what the originals use, and the switch** (claimed: agent, 2026-11-16)
+- [ ] **C5. Settings shows what the originals use, and the switch**
   Done: (skipped)
   - Needs: C4
   - Files: `offload.py`, `api/admin.py` (new route), `static/js/settings.js` (one new block in the Library tab)
@@ -2454,7 +2465,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     5. Write the switch through `PATCH /settings`, as the other switches of the tab do.
   - Check: `uv run pytest tests/test_offload.py tests/test_settings.py -q`; `bin/verify --fast`
 
-- [x] **C6. A plain copy of the library in a folder you choose, kept up to date** (claimed: agent, 2026-11-16)
+- [ ] **C6. A plain copy of the library in a folder you choose, kept up to date**
   Done: (skipped)
   - Needs: none
   - Files: `settings.py`, `backup.py` (`start_scheduler`), `static/js/settings.js` (the "Move notes in and out" part of the Library tab), new `tests/test_export_schedule.py`
@@ -2469,7 +2480,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Test: with `export_dir` set to a temp folder, the scheduled function writes one Markdown file for a note; a second run changes no file time when nothing changed; a vaulted note is not written.
   - Check: `uv run pytest tests/test_export_schedule.py -q`; `bin/verify --fast`
 
-- [x] **C7. Docs for track C** (claimed: agent, 2026-11-16)
+- [ ] **C7. Docs for track C**
   Done: (skipped)
   - Needs: C1 to C6
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -2482,7 +2493,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
 
 Finding: this library has few pictures now, so this track is small. It makes every step on this Mac, with no upload and no model.
 
-- [x] **V1. Each picture knows its main colours** (claimed: agent, 2026-11-16)
+- [ ] **V1. Each picture knows its main colours**
   Done: (skipped)
   - Needs: DB2
   - Files: new `colours.py`, `ingest/queue.py` (one call), `vaultops.py` (one call), new `tests/test_colours.py`
@@ -2564,7 +2575,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Test: a picture that is all red (make a 100 x 100 red PNG with `fitz` in the test) gives one colour near (255, 0, 0) with share 1.0. A picture half red and half blue gives two colours with shares near 0.5. A PDF artifact gives 0.
   - Check: `uv run pytest tests/test_colours.py tests/test_vaultops.py -q`
 
-- [x] **V2. A colour in the search is a filter** (claimed: agent, 2026-11-16)
+- [ ] **V2. A colour in the search is a filter**
   Done: (skipped)
   - Needs: V1
   - Files: `retrieve/filters.py`, `tests/test_search_filters.py`
@@ -2593,7 +2604,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Test: `blue photos` gives kind image and colour blue with empty text. `color:#ff0000 logo` gives colour red and the text `logo`. `red wine` gives no colour. With one red image and one blue image stored, `matching_ids` for blue returns the blue one only.
   - Check: `uv run pytest tests/test_search_filters.py tests/test_search_results.py -q`
 
-- [x] **V3. Colour dots on the results page** (claimed: agent, 2026-11-16)
+- [ ] **V3. Colour dots on the results page**
   Done: (skipped)
   - Needs: V2
   - Files: `static/js/search.js`, `static/css/search.css`
@@ -2605,7 +2616,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Check: `bin/verify --fast`
   - Device check **[device]**: search "photos"; press the blue dot; only pictures with blue stay.
 
-- [x] **V4. Docs for track V** (claimed: agent, 2026-11-16)
+- [ ] **V4. Docs for track V**
   Done: (skipped)
   - Needs: V1 to V3
   - Files: `AGENTS.md`, `docs/MANUAL.md`
@@ -2656,7 +2667,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: `capture.link("https://example.com/a", at="2020-01-02T03:04:05+00:00")` stores that `created_at`. A call with no `at` works as before.
   - Check: `uv run pytest tests/test_importer.py tests/test_preview.py -q`
 
-- [x] **L2. A browser's bookmarks file comes in as links** (claimed: agent, 2026-11-16)
+- [ ] **L2. A browser's bookmarks file comes in as links**
   Done: (skipped)
   - Needs: L1
   - Files: `importer.py`, `tests/test_importer.py`
@@ -2737,7 +2748,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: in `tests/test_importer.py`, write a bookmarks file with: one link at the top level; one link in a folder "Cooking" inside "Bookmarks Bar"; one `javascript:` link; one link listed two times. After `importer.run(file)`: three links exist; the second has the tag `cooking` and not `bookmarks-bar`; the dated link has its `ADD_DATE` as `created_at`.
   - Check: `uv run pytest tests/test_importer.py -q`
 
-- [x] **L3. Kindle highlights come in as one note for each book** (claimed: agent, 2026-11-16)
+- [ ] **L3. Kindle highlights come in as one note for each book**
   Done: (skipped)
   - Needs: DB3
   - Files: `importer.py`, `tests/test_importer.py`
@@ -2803,7 +2814,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: a clippings file with two highlights of one book, one highlight of another book, and one bookmark entry. After `run`: two notes; the first has two `>` lines; the tag `kindle` is on both. Run it again: no new note. Add one highlight to the file and run again: still two notes, and the first now has three `>` lines.
   - Check: `uv run pytest tests/test_importer.py -q`
 
-- [x] **L4. Apple Notes come in, and come in again when they change** (claimed: agent, 2026-11-16)
+- [ ] **L4. Apple Notes come in, and come in again when they change**
   Done: (skipped)
   - Needs: L3
   - Files: `importer.py`, `api/portable.py`, `api/settings.py` (the `features` dict), `tests/test_importer.py`
@@ -2916,7 +2927,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `uv run pytest tests/test_importer.py -q`
   - Do not: run the real script. `_apple_notes_raw` reads the owner's own notes. Test with the patch only.
 
-- [x] **L5. New files in a folder are kept** (claimed: agent, 2026-11-16)
+- [ ] **L5. New files in a folder are kept**
   Done: (skipped)
   - Needs: DB3
   - Files: new `watch.py`, `settings.py`, `api/app.py` (one call), new `tests/test_watch.py`
@@ -3040,7 +3051,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
     5. With 30 new files, one scan takes 25.
   - Check: `uv run pytest tests/test_watch.py -q`
 
-- [x] **L6. Settings: "From this Mac"** (claimed: agent, 2026-11-16)
+- [ ] **L6. Settings: "From this Mac"**
   Done: (skipped)
   - Needs: L2, L3, L4, L5
   - Files: `static/js/settings.js` (one new block in the Library tab, after "Move notes in and out"), `static/js/guides.js`, `tests/js/guides.js`
@@ -3056,7 +3067,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `bin/verify --fast`; `uv run pytest tests/test_guides.py -q` if the file exists.
   - Device check **[device]**: `bin/launch desktop`; add a folder, put a PDF in it, wait 12 minutes or restart the engine and wait 3; the PDF is on the wall.
 
-- [x] **L7. The welcome offers to bring things in** (claimed: agent, 2026-11-16)
+- [ ] **L7. The welcome offers to bring things in**
   Done: (skipped)
   - Needs: L6
   - Files: `static/js/welcome.js` (`welcomeChecklist`)
@@ -3065,7 +3076,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `bin/verify --fast`
   - Device check **[device]**: open the welcome from the `?`; the row is there and its button opens the Library tab.
 
-- [x] **L8. Docs for track L** (claimed: agent, 2026-11-16)
+- [ ] **L8. Docs for track L**
   Done: (skipped)
   - Needs: L1 to L7
   - Files: `AGENTS.md`, `docs/MANUAL.md`

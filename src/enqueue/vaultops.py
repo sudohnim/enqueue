@@ -158,6 +158,7 @@ def _seal_derived(conn, artifact_id: str, key: bytes) -> int:
                 "UPDATE chat_messages SET text = ? WHERE id = ?",
                 ("This answer quoted an item that is now in the vault.", m["id"]),
             )
+            _touch_chat(conn, m["id"])
             changed += 1
     # Activity rows that name the item.
     conn.execute("DELETE FROM events WHERE data LIKE '%' || ? || '%'", (artifact_id,))
@@ -213,14 +214,46 @@ def _open_derived(conn, artifact_id: str, key: bytes) -> bool:
         (artifact_id,),
     ).fetchall():
         opened = try_open(key, r["value"])
-        if opened is not None:
-            conn.execute("UPDATE chat_messages SET text = ? WHERE id = ?", (opened, r["subject"]))
-            touched = True
-    conn.execute(
-        "DELETE FROM derived_values WHERE scope = 'vault_answer' AND attribute = ?",
-        (artifact_id,),
-    )
+        if opened is None:
+            continue  # kept sealed: deleting it would lose the answer for good
+        conn.execute("UPDATE chat_messages SET text = ? WHERE id = ?", (opened, r["subject"]))
+        conn.execute(
+            "DELETE FROM derived_values WHERE scope = 'vault_answer' AND subject = ?"
+            " AND attribute = ?",
+            (r["subject"], artifact_id),
+        )
+        _touch_chat(conn, r["subject"])
+        touched = True
     return touched
+
+
+def _touch_chat(conn, message_id: str) -> None:
+    """Move a conversation's date so its changed answer wins on the other devices."""
+    conn.execute(
+        "UPDATE chats SET updated_at = ? WHERE id = (SELECT chat_id FROM chat_messages"
+        " WHERE id = ?)",
+        (db.now(), message_id),
+    )
+
+
+def _push_chats_citing(artifact_id: str) -> None:
+    """Send each conversation that quoted this item, so no device keeps the old text."""
+    from .chats import _push
+
+    conn = db.get_conn()
+    try:
+        ids = [
+            r["chat_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT m.chat_id FROM chat_messages m JOIN chat_citations c"
+                " ON c.message_id = m.id WHERE c.artifact_id = ?",
+                (artifact_id,),
+            )
+        ]
+    finally:
+        conn.close()
+    for chat_id in ids:
+        _push(chat_id)
 
 
 def _vaulted_ids(conn) -> list[str]:
@@ -256,6 +289,7 @@ def scrub() -> int:
     for artifact_id in touched:
         with contextlib.suppress(Exception):  # noqa: BLE001 - sync is best-effort
             push_artifact(artifact_id)
+            _push_chats_citing(artifact_id)
     return sum(touched.values())
 
 
@@ -357,6 +391,7 @@ def vault_artifact(artifact_id: str) -> dict:
     # unlinked - without this the old body lingers in the file's freelist.
     _vacuum()
     push_artifact(artifact_id)
+    _push_chats_citing(artifact_id)
     return {"id": artifact_id, "vaulted_at": now, "already": False}
 
 
@@ -482,6 +517,7 @@ def unvault_artifact(artifact_id: str) -> dict:
 
     ingest_queue.submit(artifact_id)  # rebuild chunks/facets/entities
     push_artifact(artifact_id)
+    _push_chats_citing(artifact_id)
     return {"id": artifact_id, "restored": True}
 
 

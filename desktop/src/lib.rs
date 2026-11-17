@@ -4351,7 +4351,8 @@ mod desktop {
         stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
         write!(
             stream,
-            "GET {path} HTTP/1.0\r\nHost: {HOST_PORT}\r\nConnection: close\r\n\r\n"
+            "GET {path} HTTP/1.0\r\nHost: {HOST_PORT}\r\n{}Connection: close\r\n\r\n",
+            auth_header()
         )
         .ok()?;
 
@@ -4374,7 +4375,8 @@ mod desktop {
         let payload = body.to_string();
         write!(
             stream,
-            "POST {path} HTTP/1.0\r\nHost: {HOST_PORT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+            "POST {path} HTTP/1.0\r\nHost: {HOST_PORT}\r\n{}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+            auth_header(),
             payload.len()
         )
         .map_err(|_| unreachable())?;
@@ -4440,16 +4442,23 @@ mod desktop {
         }
     }
 
-    /// The library's folder (the engine's `config.DATA_DIR`): Application Support on a
-    /// Mac. Before the engine's first start after the move it may still be the old
-    /// `~/.enqueue-poc`, which the engine then leaves as a link to the new one
-    /// (datadir.py), so reading falls back to it and writing always goes to the new.
+    /// The session token the running engine wrote (session.py), or empty.
     fn session_token() -> String {
         data_dir()
             .map(|d| std::fs::read_to_string(d.join("session")).unwrap_or_default())
             .unwrap_or_default()
             .trim()
             .to_string()
+    }
+
+    /// The engine's session token as a request header line, or nothing without one.
+    fn auth_header() -> String {
+        let token = session_token();
+        if token.is_empty() {
+            String::new()
+        } else {
+            format!("Authorization: Bearer {token}\r\n")
+        }
     }
 
     fn boot_url(to: &str) -> String {
@@ -4461,6 +4470,10 @@ mod desktop {
         }
     }
 
+    /// The library's folder (the engine's `config.DATA_DIR`): Application Support on a
+    /// Mac. Before the engine's first start after the move it may still be the old
+    /// `~/.enqueue-poc`, which the engine then leaves as a link to the new one
+    /// (datadir.py), so reading falls back to it and writing always goes to the new.
     fn data_dir() -> Option<PathBuf> {
         if let Some(dir) = std::env::var_os("ENQ_DATA_DIR") {
             return Some(PathBuf::from(dir));

@@ -731,7 +731,10 @@ class SqliteVecStore(VectorStore):
                 " FROM facets m JOIN vec_facets mv ON mv.facet_id = m.id"
                 " JOIN facets o ON o.level = ? AND o.artifact_id IN (SELECT value FROM json_each(?))"
                 " JOIN vec_facets ov ON ov.facet_id = o.id"
-                " WHERE m.artifact_id = ? AND m.level = ? GROUP BY o.artifact_id",
+                " WHERE m.artifact_id = ? AND m.level = ?"
+                " AND COALESCE(m.role, '') NOT IN ('gist', 'point', 'ask')"
+                " AND COALESCE(o.role, '') NOT IN ('gist', 'point', 'ask')"
+                " GROUP BY o.artifact_id",
                 (level, json.dumps(sorted(set(others))), artifact_id, level),
             ).fetchall()
         except OperationalError:

@@ -76,7 +76,9 @@ def _in_time(kind: str, query: str, fn, fallback):
     def run() -> None:
         try:
             box["value"] = fn()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - the search goes on without it
+            if len(_FAILED) > 256:
+                _FAILED.clear()
             _FAILED[key] = time.monotonic()
 
     worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
