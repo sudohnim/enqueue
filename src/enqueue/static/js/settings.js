@@ -3138,12 +3138,50 @@ function telemetryCard(t) {
 	);
 }
 
+function outboundHtml(days) {
+	const rows = days && days.length
+		? "<table>" +
+			"<thead><tr><th>Day</th><th>Service</th><th>What for</th><th>Calls</th><th>Characters</th></tr></thead>" +
+			"<tbody>" +
+			days
+				.map(
+					(r) =>
+						"<tr><td>" +
+						esc(r.day) +
+						"</td><td>" +
+						esc(r.service) +
+						"</td><td>" +
+						esc(r.purpose) +
+						"</td><td>" +
+						r.calls +
+						"</td><td>" +
+						Number(r.chars).toLocaleString() +
+						"</td></tr>"
+				)
+				.join("") +
+			"</tbody></table>"
+		: '<p class="aside">Nothing has left this Mac in the last 30 days.</p>';
+	return (
+		'<div class="settings-card">' +
+		'<div class="settings-card-label">What left this Mac</div>' +
+		'<p class="aside" style="margin-bottom: var(--sp-3);">Counts of what was sent to online models. No text is kept.</p>' +
+		rows +
+		"</div>"
+	);
+}
+
 async function renderSettingsEvents() {
 	let events = [];
 	let usage = "";
+	let days = [];
 	try {
-		const [e, d] = await Promise.all([api("/events?limit=200"), api("/settings")]);
+		const [e, d, o] = await Promise.all([
+			api("/events?limit=200"),
+			api("/settings"),
+			api("/outbound"),
+		]);
 		events = e.events || [];
+		days = o.days || [];
 		if (d.settings.telemetry) usage = telemetryCard(d.settings.telemetry);
 	} catch (_) {
 		/* an empty log is fine */
@@ -3154,6 +3192,7 @@ async function renderSettingsEvents() {
 	ensureEventsPoller();
 	return (
 		usage +
+		outboundHtml(days) +
 		'<div class="settings-card">' +
 		'<div class="settings-card-label">Activity</div>' +
 		'<p class="aside" style="margin-bottom: var(--sp-3);">What Enqueue has been doing. Click a line for the details.</p>' +

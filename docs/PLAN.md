@@ -342,7 +342,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`; `bin/verify --fast`
   - Done: static/js/chat.js; bin/verify: all checks passed
 
-- [ ] **F2. What left this Mac, on one page**
+- [x] **F2. What left this Mac, on one page** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `outbound.py`, `api/admin.py` (new route), `static/js/settings.js` (one new block in the Activity tab), new `tests/test_outbound.py`
   - Find: read `outbound.py` whole first. `grep -n 'events' src/enqueue/static/js/settings.js | head` for where the Activity tab is drawn.
@@ -353,6 +353,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     4. In `settings.js`, at the top of the Activity tab, add a section "What left this Mac" with a table of the rows: day, service, what for, calls, characters. With no rows, one line: `Nothing has left this Mac in the last 30 days.`
   - Test: two flushes on one day for one service and purpose give one row with the sums. A row 40 days old is not returned.
   - Check: `uv run pytest tests/test_outbound.py -q`; `bin/verify --fast`
+  - Done: outbound.py, api/admin.py, static/js/settings.js, tests/test_outbound.py; bin/verify: all checks passed
 
 - [ ] **F3. Save an answer as a note**
   - Needs: none

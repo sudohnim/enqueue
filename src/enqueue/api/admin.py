@@ -32,6 +32,14 @@ def ingest_wait(timeout: float = 60.0) -> dict:
     return {"idle": ingest_queue.wait_idle(timeout)}
 
 
+@router.get("/outbound")
+def outbound_days() -> dict:
+    """What left this Mac, grouped by day, service and purpose (outbound.by_day)."""
+    from .. import outbound
+
+    return {"days": outbound.by_day()}
+
+
 @router.get("/storage/originals")
 def storage_originals() -> dict:
     """Space originals use on this Mac (offload.report)."""
