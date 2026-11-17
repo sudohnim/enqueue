@@ -1388,7 +1388,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
 
 Finding: 57 idea pairs exist, and the daily card turns through the same 7 each week.
 
-- [ ] **H1. The card does not repeat a pair**
+- [x] **H1. The card does not repeat a pair** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/shiny.py, tests/test_shiny.py; tests pass
   - Needs: none
   - Files: `shiny.py` (`_order`), `tests/test_shiny.py`
   - Find: `grep -n 'def _order\|ROTATE\|toordinal' src/enqueue/shiny.py`

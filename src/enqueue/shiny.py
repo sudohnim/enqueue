@@ -46,7 +46,7 @@ from . import db, prompts
 log = logging.getLogger(__name__)
 
 # How many of the farthest pairs the days rotate through.
-ROTATE = 7
+
 # The most notes in one set.
 MAX_NOTES = 3
 # The summary levels the model is shown: subject, mechanism, principle.
@@ -136,6 +136,7 @@ def _order(today: date) -> list[tuple[list[str], list[dict]]]:
     conn = db.get_conn()
     try:
         pairs = _pairs(conn)
+        shown = _recent(conn, "shiny_shown", REMEMBER_DAYS, today)
     finally:
         conn.close()
     # A shared name is thin fare beside a shared idea: only when there is no idea link.
@@ -143,14 +144,12 @@ def _order(today: date) -> list[tuple[list[str], list[dict]]]:
     if not pairs:
         return []
     pool = ideas or pairs
-    top, rest = pool[:ROTATE], pool[ROTATE:]
-    start = today.toordinal() % len(top)
-    # The day's order: the farthest pairs from today's turn on, then everything else.
-    # A set whose notes were all in an earlier one is skipped, or "Find another" would
-    # show the same three notes again by way of another of their pairs.
+    fresh = [p for p in pool if _pair([p["a"], p["b"]]) not in shown]
+    pool = fresh or pool
+    # The day's order: every pair in pool, farthest first.
     keep = ("a", "b", "kind", "point", "via")
     sets: list[tuple[list[str], list[dict]]] = []
-    for first in top[start:] + top[:start] + rest:
+    for first in pool:
         ids, links = _grow(first, pairs)
         if any(set(ids) <= set(shown) for shown, _ in sets):
             continue
