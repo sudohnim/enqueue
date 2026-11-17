@@ -114,6 +114,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # The folder backups go into (backup.py) - a cloud drive's folder, Proton Drive by
     # design. Empty means backups are off. The live library never moves there.
     "backup_dir": ("ENQ_BACKUP_DIR", "", True),
+    # Parent folder for the daily plain copy (export.py, backup.py). Empty means the
+    # copy is off. The copy goes in <export_dir>/Enqueue and is not encrypted.
+    "export_dir": ("ENQ_EXPORT_DIR", "", True),
     # Free text, sent as extra headers on every model call. Some endpoints want a
     # referer or an app name before they will answer; this is the escape hatch that
     # stops each one becoming a code change. One `Name: value` per line.

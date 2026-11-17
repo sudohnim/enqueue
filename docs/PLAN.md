@@ -970,7 +970,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_offload.py tests/test_settings.py -q`; `bin/verify --fast`
   - Done: src/enqueue/offload.py, src/enqueue/api/admin.py, src/enqueue/static/js/settings.js; 24 passed in 4.67s
 
-- [ ] **C6. A plain copy of the library in a folder you choose, kept up to date**
+- [x] **C6. A plain copy of the library in a folder you choose, kept up to date** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `settings.py`, `backup.py` (`start_scheduler`), `static/js/settings.js` (the "Move notes in and out" part of the Library tab), new `tests/test_export_schedule.py`
   - Why: the backup is sealed, so it cannot be opened as files. `export.py` writes the library as plain Markdown and original files, and a second run changes only what changed. A folder inside an end-to-end encrypted drive (Proton Drive) gives a copy that is private and can be used.
@@ -983,6 +983,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     5. Items in the vault and items marked local-only are not written. Check how `export.py` treats them; if it writes local-only items, leave them out of the scheduled run only and say so in the sentence.
   - Test: with `export_dir` set to a temp folder, the scheduled function writes one Markdown file for a note; a second run changes no file time when nothing changed; a vaulted note is not written.
   - Check: `uv run pytest tests/test_export_schedule.py -q`; `bin/verify --fast`
+  - Done: src/enqueue/settings.py, src/enqueue/backup.py, src/enqueue/static/js/settings.js, tests/test_export_schedule.py; 4 passed in 0.88s
 
 - [ ] **C7. Docs for track C**
   - Needs: C1 to C6

@@ -1286,6 +1286,26 @@ async function renderMoveSection(d) {
 		verb + "</button></div>";
 	const busy = (st) => st.state === "running";
 	if (busy(imp) || busy(exp)) setTimeout(watchMove, 1500);
+	const exportField = d.settings.export_dir || {};
+	const dailyOn = !!String(exportField.value || "").trim();
+	const locked = !!exportField.locked;
+	const lastFolder = exp && exp.path ? String(exp.path).replace(/\/Enqueue\/?$/, "") : "";
+	const dailyRow =
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">Keep this copy up to date every day</span>' +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(dailyOn) +
+		'" aria-label="Keep this copy up to date every day" data-dir="' +
+		esc(lastFolder) +
+		'"' +
+		(locked ? ' disabled aria-disabled="true"' : "") +
+		' onclick="toggleDailyExport(this)"><span class="knob"></span></button>' +
+		"</div>" +
+		'<div class="aside">Files in this folder are not encrypted by Enqueue. ' +
+		"Anyone who can open the folder can read them. Use a folder in a drive that is " +
+		"end-to-end encrypted. Items in the vault and items marked local-only are left out " +
+		"of the daily copy.</div></div>";
 	let html =
 		'<div class="shelf">Move notes in and out</div><div class="group">' +
 		'<div class="field"><span class="rowlabel">Import notes</span>' +
@@ -1306,7 +1326,9 @@ async function renderMoveSection(d) {
 			? '<div class="actions"><button class="btn tertiary" onclick="chooseExport()"' + (busy(exp) ? " disabled" : "") +
 				">Export to a folder…</button></div>"
 			: typed("export_input", "Export", "startExport")) +
-		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div></div>";
+		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div>" +
+		dailyRow +
+		"</div>";
 	const apple =
 		d.features && d.features.apple_notes
 			? '<div class="field"><span class="rowlabel">Apple Notes</span>' +
@@ -1425,6 +1447,15 @@ async function chooseImport(folder) {
 async function chooseExport() {
 	const path = await choosePath({ directory: true, multiple: false, title: "Choose where the export goes" });
 	if (path) startExport(path);
+}
+
+function toggleDailyExport(button) {
+	const on = button.getAttribute("aria-checked") !== "true";
+	if (on && !(button.dataset.dir || "").trim()) {
+		return toast("Export to a folder first, then turn this on.", true);
+	}
+	button.setAttribute("aria-checked", String(on));
+	stageSetting("export_dir", on ? button.dataset.dir : "");
 }
 
 async function startMove(route, path) {
