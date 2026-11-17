@@ -106,6 +106,7 @@ fn main() {
                 "mobile_report",
                 "mobile_save_cropped_image",
                 "mobile_get",
+                "mobile_related",
                 "mobile_chats_list",
                 "mobile_chat_get",
                 "mobile_chat_send",

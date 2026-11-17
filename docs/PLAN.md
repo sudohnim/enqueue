@@ -1694,7 +1694,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: apply a snapshot whose `related` names one live item and one trashed item; `related_for` returns only the live one.
   - Check: `cd desktop && cargo test --lib`
 
-- [ ] **P6b. The page can ask the phone for related rows**
+- [x] **P6b. The page can ask the phone for related rows** (claimed: agent, 2026-11-16)
+  Done: desktop/src/lib.rs, desktop/build.rs, desktop/tauri.conf.json; cargo check pass
   - Needs: P6a
   - Files: `desktop/src/lib.rs` (inside `mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`
   - Do:

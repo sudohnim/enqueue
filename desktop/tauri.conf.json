@@ -146,7 +146,8 @@
             "native:allow-read",
             "native:allow-clear",
             "native:allow-quick",
-            "native:allow-apple"
+            "native:allow-apple",
+            "allow-mobile-related"
           ]
         }
       ]
