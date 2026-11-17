@@ -3338,7 +3338,9 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `bin/verify --fast`; `uv run pytest tests/test_guides.py -q` if the file exists.
   - Device check **[device]**: `bin/launch desktop`; add a folder, put a PDF in it, wait 12 minutes or restart the engine and wait 3; the PDF is on the wall.
 
-- [ ] **L7. The welcome offers to bring things in**
+- [x] **L7. The welcome offers to bring things in** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/static/js/welcome.js; bin/verify: all checks passed
+  - Owed: device check - open the welcome from the `?`; the row is there and its button opens the Library tab.
   - Needs: L6
   - Files: `static/js/welcome.js` (`welcomeChecklist`)
   - Find: `grep -n 'async function welcomeChecklist' -A 40 src/enqueue/static/js/welcome.js`

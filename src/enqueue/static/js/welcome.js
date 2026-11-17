@@ -74,6 +74,12 @@ function welcomeGo(index) {
 	renderWelcome();
 }
 
+function welcomeBringThingsIn() {
+	welcomeLeaveStep();
+	currentSettingsTab = "storage";
+	showSettings();
+}
+
 // The sync walk and the phone code keep state outside the page; a step that is left
 // must not leave a code on screen or a sign-in poll pointed at it.
 function welcomeLeaveStep() {
@@ -325,29 +331,41 @@ async function welcomeChecklist() {
 				? ["done", "Show the code any time to link another"]
 				: ["todo", "Not linked"],
 	};
-	return WELCOME_STEPS.slice(1)
-		.map((s, i) => {
-			const [st, detail] = state[s.id] || ["todo", ""];
-			return (
-				'<button type="button" class="welcome-row" data-state="' +
-				st +
-				'" onclick="welcomeGo(' +
-				(i + 1) +
-				')">' +
-				'<span class="welcome-row-mark" aria-hidden="true">' +
-				(st === "done" ? '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : "") +
-				"</span>" +
-				'<span class="welcome-row-words"><span class="welcome-row-title">' +
-				esc(s.label) +
-				'</span><span class="welcome-row-detail">' +
-				esc(detail) +
-				"</span></span>" +
-				'<span class="welcome-row-go">' +
-				(st === "done" ? "Change" : "Set up") +
-				"</span></button>"
-			);
-		})
-		.join("");
+	const rows = WELCOME_STEPS.slice(1).map((s, i) => {
+		const [st, detail] = state[s.id] || ["todo", ""];
+		return (
+			'<button type="button" class="welcome-row" data-state="' +
+			st +
+			'" onclick="welcomeGo(' +
+			(i + 1) +
+			')">' +
+			'<span class="welcome-row-mark" aria-hidden="true">' +
+			(st === "done" ? '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : "") +
+			"</span>" +
+			'<span class="welcome-row-words"><span class="welcome-row-title">' +
+			esc(s.label) +
+			'</span><span class="welcome-row-detail">' +
+			esc(detail) +
+			"</span></span>" +
+			'<span class="welcome-row-go">' +
+			(st === "done" ? "Change" : "Set up") +
+			"</span></button>"
+		);
+	});
+	rows.splice(
+		1,
+		0,
+		'<button type="button" class="welcome-row" data-state="todo" ' +
+			'onclick="welcomeBringThingsIn()">' +
+			'<span class="welcome-row-mark" aria-hidden="true"></span>' +
+			'<span class="welcome-row-words"><span class="welcome-row-title">' +
+			"Bring in what you have" +
+			'</span><span class="welcome-row-detail">' +
+			"Apple Notes, bookmarks, Kindle highlights, and new files in a folder." +
+			"</span></span>" +
+			'<span class="welcome-row-go">Set up</span></button>',
+	);
+	return rows.join("");
 }
 
 async function welcomeSettings(changes) {
