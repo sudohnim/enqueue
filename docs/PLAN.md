@@ -1514,8 +1514,7 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
 
 All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
-- [x] **P1. A keyword index on the phone** (claimed: agent, 2026-11-16)
-  Done: (skipped)
+- [ ] **P1. A keyword index on the phone**
   Done: (skipped)
   - Needs: none
   - Files: `desktop/src/sync.rs`

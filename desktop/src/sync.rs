@@ -630,6 +630,8 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           edited        INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_facets_artifact ON facets(artifact_id);
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(
+          artifact_id UNINDEXED, title, body, notes, summary, pages);
         -- The activity log (mirrors the engine's events table): the notable things the
         -- phone did - a question asked and answered, a capture, a facet edit, a sync -
         -- each with a one-line detail and an optional JSON `data` blob opened on demand.
