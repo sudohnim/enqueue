@@ -60,6 +60,34 @@ _WAIT: ContextVar[float | None] = ContextVar("judge_wait", default=None)
 # Set when a judge was started and had not answered when the search returned.
 _PENDING: ContextVar[bool] = ContextVar("judge_pending", default=False)
 
+_FAILED: dict[tuple[str, str], float] = {}
+FAILED_FOR_S = 60.0
+
+
+def _in_time(kind: str, query: str, fn, fallback):
+    """Run a model step for a search, waited for the search's own wait at most."""
+    from ..providers import pause
+
+    key = (kind, query)
+    if pause.active() or time.monotonic() - _FAILED.get(key, -1e9) < FAILED_FOR_S:
+        return fallback
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            box["value"] = fn()
+        except Exception:  # noqa: BLE001
+            _FAILED[key] = time.monotonic()
+
+    worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
+    worker.start()
+    wait = _WAIT.get()
+    worker.join(config.SEARCH_JUDGE_WAIT_S if wait is None else wait)
+    if "value" in box:
+        return box["value"]
+    _PENDING.set(True)
+    return fallback
+
 
 # At most this many gray hits the judge has not ruled on yet are shown: they are
 # guesses, and a new search with a slow judge showed twenty of them, gibberish included.
@@ -716,7 +744,10 @@ def search_results(q: str, limit: int = 20, wait: float | None = None) -> list[d
     if not free_text:
         return _results_for_ids(allowed, limit)
 
-    lifts = lift.lift(query_text) if phrase is None and lift.enabled_for_search() else []
+    if phrase is None and lift.enabled_for_search():
+        lifts = _in_time("lift", query_text, lambda: lift.lift(query_text), [])
+    else:
+        lifts = []
 
     if allowed is not None:
         # Filter a wider window so an allowed hit just past `limit` is not lost. No rerank here.
@@ -736,7 +767,7 @@ def search_results(q: str, limit: int = 20, wait: float | None = None) -> list[d
         if config.SEARCH_RERANK:
             fused = _rerank(query_text, fused)
         if model_rank.enabled():
-            fused = model_rank.order(query_text, fused)
+            fused = _in_time("rank", query_text, lambda: model_rank.order(query_text, fused), fused)
         ranked = fused[:limit]
 
     else:

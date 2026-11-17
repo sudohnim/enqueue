@@ -1266,7 +1266,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `bin/verify --fast`
   - Device check **[device]**: a new search by topic shows results at once; the "Maybe related" block changes about a second later with no jump.
 
-- [ ] **Q6. Lifting and model ranking cannot hold a search**
+- [x] **Q6. Lifting and model ranking cannot hold a search** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/retrieve/candidates.py; tests pass
   - Needs: Q4
   - Files: `retrieve/candidates.py` (`search_results`), `tests/test_search_results.py`
   - Why: both are off by default. With both on and the service down, each search took 3.7 s.
