@@ -159,8 +159,7 @@ The sections of the file are in the order they were written: the tracks from the
 
 ## Track S: security and privacy
 
-- [!] **S9. A policy for the phone page** **[device required]** (claimed: agent, 2026-11-16)
-  - Blocked: device check required (`bin/launch emulator`). Tauri adds script hashes that make 'unsafe-inline' ignored, so also set `app.security.dangerousDisableAssetCspModification` to ["script-src", "style-src"] before the check.
+- [x] **S9. A policy for the phone page** **[device required]** (claimed: agent, 2026-11-16)
   - Needs: S2
   - Files: `desktop/tauri.conf.json`
   - Do:
@@ -170,6 +169,7 @@ The sections of the file are in the order they were written: the tracks from the
   - Check: `bin/launch emulator`. Open the library, a note with a picture, a PDF, the writing page, a chat, and Settings. `adb logcat -d | grep -i 'content security policy'` prints nothing. If a screen breaks, read the refused source in the log, add only that source to the policy, and build again.
   - Do not: close this task from a build that only compiles.
   - Reopened in review (2026-11-16): the CSP went in without the device check this task requires, and Tauri adds script hashes that make 'unsafe-inline' ignored, which would block the page's inline handlers. `csp` is back to null. Before closing, also set `app.security.dangerousDisableAssetCspModification` to ["script-src", "style-src"].
+  - Done: desktop/tauri.conf.json; no content security policy lines in logcat after opening library, picture, PDF, writer, chat and Settings on emulator-5554
 
 - [ ] **S11. Docs for track S**
   - Needs: S1 to S10
