@@ -11,7 +11,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from enqueue import crypto, db, keyring, keyring_file, notes, settings, trash
+from enqueue import blobstore, crypto, db, keyring, keyring_file, notes, settings, trash
 from enqueue.relay.app import create_relay
 from enqueue.sync import device_id, guard
 from enqueue.sync.client import pull, push_artifact
@@ -127,6 +127,50 @@ class TestPush:
                 timeout=5,
             ).json()
             assert [o["name"] for o in after["objects"]] == obj_names
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5)
+
+    def test_a_pushed_blob_is_recorded_on_the_relay(self, store, monkeypatch):
+        import uuid
+
+        base, server, thread = self._serve(create_relay(store / "relay", secret="test-secret"))
+        try:
+            settings.update({"sync_relay_url": base})
+            monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+            keyring_file.initialize()
+
+            content_hash = blobstore.write(b"the original file bytes")
+            aid = str(uuid.uuid4())
+            now = db.now()
+            with db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO artifacts"
+                    " (id, kind, title, content_hash, mime, status, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        aid,
+                        "file",
+                        "A file",
+                        content_hash,
+                        "application/octet-stream",
+                        "ok",
+                        now,
+                        now,
+                    ),
+                )
+
+            push_artifact(aid)
+
+            conn = db.get_conn()
+            try:
+                row = conn.execute(
+                    "SELECT relay FROM blob_relay WHERE content_hash = ?", (content_hash,)
+                ).fetchone()
+            finally:
+                conn.close()
+            assert row is not None
+            assert row["relay"] == base
         finally:
             server.should_exit = True
             thread.join(timeout=5)

@@ -860,7 +860,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_thumbs.py tests/test_vaultops.py -q`; `bin/verify --fast`
   - Done: src/enqueue/thumbs.py, src/enqueue/api/artifacts.py, src/enqueue/ingest/queue.py, src/enqueue/vaultops.py, src/enqueue/static/js/home.js, tests/test_thumbs.py; 18 passed in 8.90s
 
-- [ ] **C2. The Mac records which originals the relay holds**
+- [x] **C2. The Mac records which originals the relay holds** (claimed: agent, 2026-11-17)
   - Needs: DB2
   - Files: `sync/client.py`, `tests/test_sync.py`
   - Find: `grep -n '/sync/object/blobs/' src/enqueue/sync/client.py`. Two of the lines are `client.put(...)`.
@@ -879,6 +879,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     3. In `fetch_blob_to_cache`, after a blob was fetched and opened, call it too: the relay holds what it just gave.
   - Test: copy a test in `tests/test_sync.py` that pushes an artifact with a file to the test relay. After the push, `blob_relay` has a row for the file's hash with the relay's address.
   - Check: `uv run pytest tests/test_sync.py -q`
+  - Done: src/enqueue/sync/client.py, tests/test_sync.py; 13 passed in 24.53s
 
 - [ ] **C3. The relay says if it holds an object, and how large it is**
   - Needs: none
