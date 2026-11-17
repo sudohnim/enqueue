@@ -670,7 +670,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Test: in `tests/test_snapshot.py`, add a test: a snapshot facet with `"role": "gist"` is stored with role `gist`; one with no `role` and level 1 is stored with role `subject`.
   - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py tests/test_summarize_once.py -q`
 
-- [ ] **M5. The model writes a gist and points**
+- [x] **M5. The model writes a gist and points** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/facets.py, src/enqueue/prompts.py; tests pass
   - Needs: M3
   - Files: `prompts.py` (`FACET_GENERATION`), `ingest/facets.py`, `tests/test_ingest.py`
   - Why: no line says in plain words what the item is and what it says.

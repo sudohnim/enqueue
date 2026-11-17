@@ -100,6 +100,8 @@ class _RawFacet(BaseModel):
 
 class _RawFacetSet(BaseModel):
     facets: list[_RawFacet]
+    gist: str = ""
+    points: list[str] = []
 
 
 def _trust_from_confidence(confidence: float | None) -> float:
@@ -235,6 +237,39 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 role_for(facet.level, bool(bridge and facet.level >= 2)),
             ),
         )
+
+    # Gist and points: plain lines a person reads. Kept only when no hand-edited
+    # line already holds that role.
+    edited_roles = {
+        r["role"]
+        for r in conn.execute(
+            "SELECT role FROM facets WHERE artifact_id = ? AND edited = 1", (artifact_id,)
+        )
+    }
+    gist = " ".join((raw.gist or "").split())
+    if gist and "gist" not in edited_roles and 3 <= len(gist.split()) <= 25:
+        conn.execute(
+            "INSERT INTO facets"
+            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+            " VALUES (?,?,?,?,?,?,1.0,0,'gist')",
+            (str(uuid.uuid4()), artifact_id, 0, gist, provider.model, row["body_version"]),
+        )
+    said = {w.strip(".,;:'\"()").lower() for w in text.split() if len(w) >= 4}
+    points = []
+    for p in raw.points or []:
+        p = " ".join((p or "").split())
+        words = {w.strip(".,;:'\"()").lower() for w in p.split() if len(w) >= 4}
+        if 3 <= len(p.split()) <= 18 and words & said and p not in points:
+            points.append(p)
+    points = points[:5]
+    if "point" not in edited_roles:
+        for p in points:
+            conn.execute(
+                "INSERT INTO facets"
+                " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+                " VALUES (?,?,?,?,?,?,1.0,0,'point')",
+                (str(uuid.uuid4()), artifact_id, 1, p, provider.model, row["body_version"]),
+            )
     return len(kept), None
 
 
