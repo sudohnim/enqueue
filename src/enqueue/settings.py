@@ -120,6 +120,9 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     "llm_headers": ("ENQ_LLM_HEADERS", "", True),
     # How many drafts of a note are kept (drafts.py): thinned, 30d or off.
     "drafts_keep": ("ENQ_DRAFTS_KEEP", "thinned", True),
+    # Let originals the relay holds leave this Mac after a quiet spell (offload.py).
+    "offload_originals": ("ENQ_OFFLOAD", "off", True),
+    "offload_after_days": ("ENQ_OFFLOAD_DAYS", 30, True),
     # Folders to watch for new files (watch.py), one path on each line.
     "watch_dirs": ("ENQ_WATCH_DIRS", "", True),
     # Days a deleted artifact survives before it is destroyed for good.

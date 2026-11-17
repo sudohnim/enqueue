@@ -901,7 +901,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Do not: run `bin/deploy-relay`. The owner deploys.
   - Done: src/enqueue/relay/storage.py, src/enqueue/relay/app.py, tests/test_relay.py; 100 passed in 23.02s
 
-- [ ] **C4a. Which originals may leave this Mac**
+- [x] **C4a. Which originals may leave this Mac** (claimed: agent, 2026-11-17)
   - Needs: C1, C2
   - Files: new `offload.py`, `settings.py`, new `tests/test_offload.py`
   - Do:
@@ -909,13 +909,9 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     2. Make `offload.py` with this function:
        ```python
        """Originals not opened for a while live on the relay only (track C, C4)."""
-
        from __future__ import annotations
-
        from datetime import datetime, timedelta, timezone
-
        from . import blobstore, db
-
        def candidates(conn, days: int, relay: str) -> list[dict]:
            """Live pdf, image and file artifacts whose original may leave this Mac."""
            since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -935,6 +931,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
        ```
   - Test: in `tests/test_offload.py`, with `store`, insert rows by hand (artifacts, `blob_relay`, `thumbs`, `opens`) and write the blob with `blobstore.write(b"x", h)`. One old PDF on the relay is a candidate. Each of these is not: pinned, `local_only`, opened yesterday, `blob_relay` with another relay, an image with no thumb, a note.
   - Check: `uv run pytest tests/test_offload.py -q`
+  - Done: src/enqueue/settings.py, src/enqueue/offload.py, tests/test_offload.py; 1 passed in 0.58s
 
 - [ ] **C4b. Ask the relay if it holds an original, byte for byte**
   - Needs: C3, C4a
