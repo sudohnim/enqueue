@@ -1711,7 +1711,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     2. Follow the recipe for a new command: `"mobile_related"` in `commands(&[...])` in `build.rs`, `"allow-mobile-related"` in the `mobile-library` capability in `tauri.conf.json`, and `mobile::mobile_related` in `generate_handler!` (find how `mobile_search` is listed there and copy its form).
   - Check: `cd desktop && cargo test --lib`; `bin/verify --android` when the Android SDK is on this Mac, else `cargo check --lib --target aarch64-linux-android`.
 
-- [ ] **P6. The phone's reader shows related rows** **[device]**
+- [x] **P6. The phone's reader shows related rows** **[device]** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs, desktop/src/lib.rs; Owed: device check
   - Needs: P6b, R1
   - Files: `static/mobile.html`
   - Find: the reader is filled by a function that sets `#reader_body` (`grep -n 'reader_body' src/enqueue/static/mobile.html | head`).
