@@ -1089,6 +1089,44 @@ async function renderSettingsFeatures() {
 
 // ---- Storage sub-page ----------------------------------------------------
 // ---- Storage tab ----------------------------------------------------------
+async function renderSpaceSection(d) {
+	const space = await api("/storage/originals");
+	const setting =
+		d.settings.offload_originals || { value: "off", locked: false, env_var: "ENQ_OFFLOAD" };
+	const on = String(setting.value).toLowerCase() === "on";
+	const label = "Keep files I have not opened in 30 days in Enqueue sync only";
+	let html = '<div class="shelf">Space on this Mac</div><div class="group">';
+	html +=
+		'<div class="field"><div class="aside">Original files on this Mac: ' +
+		bytes(space.local_bytes) +
+		".</div></div>";
+	if (!space.ready) {
+		html +=
+			'<div class="field"><div class="aside">Turn on Enqueue sync to free space on this Mac.</div></div>';
+	} else {
+		html +=
+			'<div class="field"><div class="togglerow"><div>' +
+			'<span class="rowlabel">' +
+			label +
+			"</span>" +
+			(setting.locked
+				? '<div class="pinned">Set outside Enqueue (' + esc(setting.env_var) + ").</div>"
+				: '<div class="aside">They open again when you need them. Pinned items and items marked "only on this Mac" always stay. This can free ' +
+					bytes(space.could_free_bytes) +
+					" now.</div>") +
+			"</div>" +
+			'<button class="toggle" role="switch" aria-checked="' +
+			String(on) +
+			'" aria-label="' +
+			esc(label) +
+			'"' +
+			(setting.locked ? ' disabled aria-disabled="true"' : "") +
+			" onclick=\"stageSwitch(this, 'offload_originals')\"><span class=\"knob\"></span></button>" +
+			"</div></div>";
+	}
+	return html + "</div>";
+}
+
 async function renderSettingsStorage() {
 	const d = await api("/settings");
 	let html = '<div class="h2">Library</div>';
@@ -1114,6 +1152,7 @@ async function renderSettingsStorage() {
 		"." +
 		(backupOn ? " A copy goes to your backup folder." : " Nothing you save leaves this Mac.") +
 		"</div></div></div>";
+	html += await renderSpaceSection(d);
 	html += moreOptions(
 		'<div class="group">' +
 			'<div class="field"><span class="rowlabel">Library folder</span>' +

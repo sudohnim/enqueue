@@ -32,6 +32,14 @@ def ingest_wait(timeout: float = 60.0) -> dict:
     return {"idle": ingest_queue.wait_idle(timeout)}
 
 
+@router.get("/storage/originals")
+def storage_originals() -> dict:
+    """Space originals use on this Mac (offload.report)."""
+    from .. import offload
+
+    return offload.report()
+
+
 @router.get("/reading")
 def reading_progress() -> dict:
     """How far the assistant is through reading the library (reading.py). Cheap:

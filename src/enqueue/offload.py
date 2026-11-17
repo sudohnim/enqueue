@@ -84,3 +84,34 @@ def run(limit: int = 200) -> dict:
             data={"count": count, "bytes": total},
         )
     return {"freed": count, "bytes": total}
+
+
+def report() -> dict:
+    """Space originals use on this Mac, and how much the relay could take."""
+    url = sync_client._relay_url()
+    ready = bool(url and sync_client._secret())
+    conn = db.get_conn()
+    try:
+        local_rows = conn.execute(
+            "SELECT content_hash FROM artifacts"
+            " WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"
+            "   AND content_hash IS NOT NULL"
+        ).fetchall()
+        candidate_rows = candidates(conn, int(settings.get("offload_after_days")), url)
+    finally:
+        conn.close()
+    local_bytes = 0
+    local_count = 0
+    for row in local_rows:
+        digest = row["content_hash"]
+        if blobstore.exists(digest):
+            local_bytes += blobstore.size(digest)
+            local_count += 1
+    could_free_bytes = sum(blobstore.size(row["content_hash"]) for row in candidate_rows)
+    return {
+        "local_bytes": local_bytes,
+        "local_count": local_count,
+        "could_free_bytes": could_free_bytes,
+        "could_free_count": len(candidate_rows),
+        "ready": ready,
+    }

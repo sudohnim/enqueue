@@ -958,7 +958,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Do not: turn the setting on in code. Do not call `blobstore.remove` anywhere else.
   - Done: src/enqueue/offload.py, src/enqueue/backup.py, tests/test_offload.py; 16 passed in 25.86s
 
-- [ ] **C5. Settings shows what the originals use, and the switch**
+- [x] **C5. Settings shows what the originals use, and the switch** (claimed: agent, 2026-11-17)
   - Needs: C4
   - Files: `offload.py`, `api/admin.py` (new route), `static/js/settings.js` (one new block in the Library tab)
   - Do:
@@ -968,6 +968,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     4. When `ready` is false, show in place of the switch: `Turn on Enqueue sync to free space on this Mac.`
     5. Write the switch through `PATCH /settings`, as the other switches of the tab do.
   - Check: `uv run pytest tests/test_offload.py tests/test_settings.py -q`; `bin/verify --fast`
+  - Done: src/enqueue/offload.py, src/enqueue/api/admin.py, src/enqueue/static/js/settings.js; 24 passed in 4.67s
 
 - [ ] **C6. A plain copy of the library in a folder you choose, kept up to date**
   - Needs: none
