@@ -203,11 +203,12 @@ The sections of the file are in the order they were written: the tracks from the
 
 Finding: 57 idea pairs exist, and the daily card turns through the same 7 each week.
 
-- [ ] **H8. Docs for track H**
+- [x] **H8. Docs for track H** (claimed: agent, 2026-11-17)
   - Needs: H1 to H7
   - Files: `AGENTS.md`
   - Do: in the `shiny.py` row and in "Something shiny holds still all day", replace the 7-day turn with the new rules: unshown pairs first, a fresh note first, feedback, passages when refusals are high, and `lib/shiny.enc`.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md; bin/verify: all checks passed
 
 ---
 
