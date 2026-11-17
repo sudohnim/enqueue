@@ -1471,7 +1471,7 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Check: `uv run pytest tests/test_shiny.py -q`
 
 - [x] **H6. Give the model the passages when cards are refused often** (claimed: agent, 2026-11-16)
-  Done: (skipped)
+  Done: src/enqueue/shiny.py, src/enqueue/prompts.py; tests pass
   Done: (skipped)
   - Needs: R11
   - Files: `shiny.py` (`_write`, `hunt`), `prompts.py` (`SHINY`, `SHINY_HUNT`), `tests/test_shiny.py`

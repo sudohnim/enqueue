@@ -302,6 +302,36 @@ _writing: set[str] = set()
 _failed: dict[str, str] = {}
 
 
+def _grounded(conn, today: date) -> bool:
+    shown = _recent(conn, "shiny_shown", 30, today)
+    # count shiny_shown rows of last 30 days
+    since = (today - timedelta(days=30)).isoformat()
+    n_shown = len(shown)
+    n_refused = conn.execute(
+        "SELECT COUNT(*) AS n FROM link_feedback WHERE verdict = 'no'" " AND created_at > ?",
+        (since,),
+    ).fetchone()["n"]
+    return n_shown >= 5 and n_refused > n_shown / 5
+
+
+def _passage(aid: str, line: str) -> str:
+    from ..index.store import get_store
+
+    store = get_store()
+    best = store.search_within(aid, line, 1)
+    if not best:
+        return ""
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT text FROM chunks WHERE id = ?", (best[0],)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return ""
+    words = (row["text"] or "").split()
+    return " ".join(words[:120])
+
+
 def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) -> None:
     """Ask the chat model for the set's words and cache them. Never raises."""
     from . import privacy
@@ -317,12 +347,29 @@ def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) ->
         finally:
             conn.close()
         blocks = []
+        grounded = False
+        try:
+            conn = db.get_conn()
+            try:
+                grounded = _grounded(conn, datetime.now(timezone.utc).date())
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            grounded = False
+        from . import privacy
+
+        local_ids = privacy.local_only_ids(ids) if not _local_on() else set()
         for i in ids:
             face = faces.get(i) or {"kind": "item", "title": None, "lines": []}
-            blocks.append(
-                f"note id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n"
-                + "\n".join(f"- {line}" for line in face["lines"][:6])
+            block = f"note id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n" + "\n".join(
+                f"- {line}" for line in face["lines"][:6]
             )
+            if grounded and i not in local_ids:
+                line = (face["lines"] or [""])[0] if face["lines"] else ""
+                passage = _passage(i, line)
+                if passage:
+                    block += f"\npassage: {passage}"
+            blocks.append(block)
         said = [p["point"] or (f"Both mention {p['via']}." if p["via"] else "") for p in links]
         if privacy.local_only_ids(ids) and not local_model_on():
             raise LookupError("a local-only note is read by no model")
@@ -584,11 +631,32 @@ def hunt(today: date | None = None, rng: random.Random | None = None) -> dict:
         if not found:
             continue
 
+        grounded = False
+        try:
+            _c = db.get_conn()
+            try:
+                grounded = _grounded(_c, today)
+            finally:
+                _c.close()
+        except Exception:  # noqa: BLE001
+            grounded = False
+        from . import privacy
+
+        local_ids = (
+            privacy.local_only_ids([seed, *(c["id"] for c in found)]) if not _local_on() else set()
+        )
+
         def block(i: str) -> str:
             face = faces.get(i) or {"kind": "item", "title": None, "lines": []}
-            return f"id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n" + "\n".join(
+            out = f"id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n" + "\n".join(
                 f"- {line}" for line in face["lines"][:6]
             )
+            if grounded and i not in local_ids:
+                line = (face["lines"] or [""])[0] if face["lines"] else ""
+                passage = _passage(i, line)
+                if passage:
+                    out += f"\npassage: {passage}"
+            return out
 
         _c = db.get_conn()
         try:
