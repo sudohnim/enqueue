@@ -2267,7 +2267,8 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `uv run pytest tests/test_chats.py tests/test_chats_worker.py -q`
   - Do not: reject an answer because a number is wrong. Wrong numbers are dropped.
 
-- [ ] **A3. Keep the place of each passage an answer used**
+- [x] **A3. Keep the place of each passage an answer used** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/chats.py, src/enqueue/chats_worker.py, tests/test_chats_worker.py; 55 passed in 10.96s
   - Needs: DB2, A1, A2
   - Files: `chats.py` (`run_answer`, `get`, `delete`), `chats_worker.py` (`_finish_pending`), `tests/test_chats_worker.py`
   - Find: `grep -n 'def run_answer\|def get\b\|def delete\b' src/enqueue/chats.py`; `grep -n 'def _finish_pending' src/enqueue/chats_worker.py`

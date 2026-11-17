@@ -230,6 +230,13 @@ def _finish_pending(conn, message_id: str, msg: dict) -> None:
             " VALUES (?,?,?)",
             (message_id, artifact_id, rank),
         )
+    conn.execute("DELETE FROM chat_places WHERE message_id = ?", (message_id,))
+    for p in msg.get("places") or []:
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_places (message_id, n, artifact_id, page, quote)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (message_id, p["n"], p["artifact_id"], p["page"], p["quote"]),
+        )
 
 
 def _first_exchange(chat_id: str, message_id: str) -> bool:

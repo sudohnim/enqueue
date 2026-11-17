@@ -125,6 +125,23 @@ def get(chat_id: str) -> dict:
                 {"artifact_id": row["artifact_id"], "title": row["title"], "kind": row["kind"]}
             )
 
+        places: dict[str, list[dict]] = {}
+        for row in conn.execute(
+            "SELECT message_id, n, artifact_id, page, quote FROM chat_places"
+            " WHERE message_id IN (SELECT id FROM chat_messages WHERE chat_id = ?)"
+            " ORDER BY message_id, n",
+            (chat_id,),
+        ):
+            places.setdefault(row["message_id"], []).append(
+                {
+                    "message_id": row["message_id"],
+                    "n": row["n"],
+                    "artifact_id": row["artifact_id"],
+                    "page": row["page"],
+                    "quote": row["quote"],
+                }
+            )
+
         topics = conn.execute(
             "SELECT id, topic FROM chat_topics WHERE chat_id = ? ORDER BY created_at",
             (chat_id,),
@@ -134,7 +151,7 @@ def get(chat_id: str) -> dict:
             out = dict(m)
             raw = out.pop("payload", None)
             out["payload"] = json.loads(raw) if raw else None
-            return out | {"cited": cited.get(m["id"], [])}
+            return out | {"cited": cited.get(m["id"], []), "places": places.get(m["id"], [])}
 
         scope_label = "everything"
         if chat["scope_kind"] == "artifact":
@@ -219,6 +236,11 @@ def delete(chat_id: str) -> dict:
             raise KeyError(chat_id)
         conn.execute(
             "DELETE FROM chat_citations WHERE message_id IN"
+            " (SELECT id FROM chat_messages WHERE chat_id = ?)",
+            (chat_id,),
+        )
+        conn.execute(
+            "DELETE FROM chat_places WHERE message_id IN"
             " (SELECT id FROM chat_messages WHERE chat_id = ?)",
             (chat_id,),
         )
@@ -825,6 +847,25 @@ def run_answer(chat_id: str, text: str) -> dict:
     empty_reason = empty_scope_reason(chat["scope_kind"], chat["scope_id"]) if not found else None
     answer = _ask_model(text, history, found, empty_reason, provider=_chat_provider(chat_id))
 
+    from .ingest import chunk
+
+    places = []
+    conn = db.get_conn()
+    try:
+        pages: dict[str, dict[str, int]] = {}
+        for n in answer.used:
+            p = found[n - 1]
+            aid = p["artifact_id"]
+            if str(p.get("id", "")).startswith("overview:"):
+                page, quote = None, ""
+            else:
+                if aid not in pages:
+                    pages[aid] = chunk.pages_for(conn, aid)
+                page, quote = pages[aid].get(p.get("id")), chunk.quote_of(p.get("text", ""))
+            places.append({"n": n, "artifact_id": aid, "page": page, "quote": quote})
+    finally:
+        conn.close()
+
     by_artifact = {p["artifact_id"] for p in found}
     return {
         "role": "assistant",
@@ -833,6 +874,7 @@ def run_answer(chat_id: str, text: str) -> dict:
         "kind": "answer",
         "payload": None,
         "cited": [aid for aid in dict.fromkeys(answer.cited) if aid in by_artifact],
+        "places": places,
     }
 
 

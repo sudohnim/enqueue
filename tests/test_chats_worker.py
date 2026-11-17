@@ -299,3 +299,82 @@ class TestSweep:
         assert chats_worker.wait_idle()
         assert _row(message_id)["status"] == "done"
         assert _row(message_id)["text"] == "Slow but stored."
+
+
+def _places(message_id: str) -> list[dict]:
+    conn = db.get_conn()
+    try:
+        return [
+            dict(row)
+            for row in conn.execute(
+                "SELECT message_id, n, artifact_id, page, quote FROM chat_places"
+                " WHERE message_id = ? ORDER BY n",
+                (message_id,),
+            )
+        ]
+    finally:
+        conn.close()
+
+
+class TestPlaces:
+    """An answer's used passage keeps where it came from (A3)."""
+
+    def test_answer_places_are_stored_and_read(self, store, quiet_queue, monkeypatch):
+        aid = "pdf-1"
+        now = db.now()
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO artifacts"
+                " (id, kind, title, body, source_url, content_hash, mime, filename,"
+                " created_at, updated_at, local_only, status)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (aid, "pdf", "PDF", None, None, "hash-pdf-1", None, None, now, now, 0, "ok"),
+            )
+            conn.execute(
+                "INSERT INTO chunks (id, artifact_id, ordinal, text, chunker)"
+                " VALUES (?,?,?,?,?)",
+                ("p1", aid, 0, "## page 1\n\nalpha beta gamma", "test"),
+            )
+        passage = {
+            "id": "p1",
+            "artifact_id": aid,
+            "title": "PDF",
+            "text": "## page 1\n\nalpha beta gamma",
+            "kind": "pdf",
+        }
+        chat = chats.create()
+        message_id = _seed_pending(chat["chat"]["id"])
+        _stub_router(monkeypatch)
+        _stub_answer(
+            monkeypatch,
+            [passage],
+            answer=Answer.model_validate(
+                {
+                    "answer": "It says alpha.",
+                    "grounded": True,
+                    "cited": [aid],
+                    "used": [1],
+                },
+                context={"offered_passages": 1},
+            ),
+        )
+
+        chats_worker.compute(
+            chats_worker.Job(chat["chat"]["id"], message_id, "what does it say?", None)
+        )
+
+        messages = chats.get(chat["chat"]["id"])["messages"]
+        answer = next(m for m in messages if m["id"] == message_id)
+        assert answer["places"] == [
+            {
+                "message_id": message_id,
+                "n": 1,
+                "artifact_id": aid,
+                "page": 0,
+                "quote": "alpha beta gamma",
+            }
+        ]
+        assert _places(message_id) == answer["places"]
+
+        chats.delete(chat["chat"]["id"])
+        assert _places(message_id) == []
