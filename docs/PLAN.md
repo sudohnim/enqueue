@@ -1186,7 +1186,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: in `tests/test_searches.py`: `record` writes one row with the ids in order; `record` with a broken hit list does not raise; `prune` deletes a row dated 200 days ago and keeps one dated today.
   - Check: `uv run pytest tests/test_searches.py tests/test_search_results.py tests/test_chats.py -q`
 
-- [ ] **Q2. Chat reads more summary hits and the passage that supports each**
+- [x] **Q2. Chat reads more summary hits and the passage that supports each** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/chats.py; tests pass
   - Needs: none
   - Files: `chats.py` (`_library_passages`), `tests/test_chats.py`
   - Why: chat asks each meaning layer for 4 hits where `/search` asks for 60. A summary hit pulls the item's opening passage, which for a long item is often off the subject.

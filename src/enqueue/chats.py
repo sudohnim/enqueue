@@ -458,7 +458,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         facet_entity_dense: dict[str, float] = {}
         facet_entity_lexical: set[str] = set()
         fe_legs = {
-            name: store.search_legs(name, question, limit=4)
+            name: store.search_legs(name, question, limit=12)
             for name in (store.FACETS, store.ENTITIES, store.SECTIONS)
         }
         fe_legs[store.FACETS] = without_literal(fe_legs[store.FACETS])
@@ -466,7 +466,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         # search the facet index too. Their dense similarity counts; never lexical.
         claims = lifting(config.CHAT_PREP_WAIT_S) or []
         lift_legs = [
-            without_literal(store.search_legs(store.FACETS, claim, limit=4)) for claim in claims
+            without_literal(store.search_legs(store.FACETS, claim, limit=12)) for claim in claims
         ]
         facet_hits = fe_legs[store.FACETS]["fused"] + [h for ll in lift_legs for h in ll["fused"]]
         for ll in lift_legs:
@@ -483,12 +483,17 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
                 facet_entity_lexical.add(hit["artifact_id"])
 
         def _pull_opening(aid: str, why: str, score: float) -> None:
-            row = conn.execute(
-                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
-                (aid,),
-            ).fetchone()
-            if row and row["id"] not in found:
-                found[row["id"]] = {"score": score, "why": why}
+            best = store.search_within(aid, question, 1)
+            if best:
+                chosen = best[0]
+            else:
+                row = conn.execute(
+                    "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
+                    (aid,),
+                ).fetchone()
+                chosen = row["id"] if row else None
+            if chosen and chosen not in found:
+                found[chosen] = {"score": score, "why": why}
 
         def _pull_section(aid: str, ordinal: int, why: str, score: float) -> None:
             n_sections = conn.execute(
