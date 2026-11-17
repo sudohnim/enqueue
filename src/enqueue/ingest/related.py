@@ -546,9 +546,38 @@ def _judge(
             f"line from the item: {c['mine']}\nline from this candidate: {c['theirs']}"
             for c in batch
         ]
+        kept_ideas = [
+            r["idea"]
+            for r in conn.execute(
+                "SELECT idea FROM link_feedback WHERE verdict = 'keep' AND idea != ''"
+                " ORDER BY created_at DESC LIMIT 3"
+            )
+        ]
+        refused_ideas = [
+            r["idea"]
+            for r in conn.execute(
+                "SELECT idea FROM link_feedback WHERE verdict = 'no' AND idea != ''"
+                " ORDER BY created_at DESC LIMIT 3"
+            )
+        ]
+        examples = ""
+        if kept_ideas or refused_ideas:
+            examples = "\n\n"
+            if kept_ideas:
+                examples += (
+                    "This person said these were the same point:\n"
+                    + "\n".join("- " + i for i in kept_ideas)
+                    + "\n"
+                )
+            if refused_ideas:
+                examples += (
+                    "And these were not:\n" + "\n".join("- " + i for i in refused_ideas) + "\n"
+                )
         result = provider.complete(
             system=prompts.RELATED_JUDGE,
-            user=f"The item:\n{face(artifact_id)}\n\nCandidates:\n\n" + "\n\n".join(blocks),
+            user=f"The item:\n{face(artifact_id)}\n\nCandidates:\n\n"
+            + "\n\n".join(blocks)
+            + examples,
             response_model=_Verdicts,
         )
         asked = {c["id"] for c in batch}

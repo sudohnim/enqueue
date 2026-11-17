@@ -1104,7 +1104,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
     3. A snapshot of a carries the feedback row; applying it to a second store writes the row.
   - Check: `uv run pytest tests/test_related.py tests/test_snapshot.py tests/test_sync.py -q`
 
-- [ ] **R12. The judge sees the person's own verdicts**
+- [x] **R12. The judge sees the person's own verdicts** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py; tests pass
   - Needs: R11
   - Files: `ingest/related.py` (`_judge`), `tests/test_related.py`
   - Do:
