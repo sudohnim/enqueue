@@ -313,7 +313,7 @@ Each pair is judged once and remembered.
 Judging runs quietly in the background, at most 40 notes a day, so it can never use up your model allowance; a whole library is worked through over several days.
 An artifact marked local-only is only ever judged by the model on your computer.
 Click a related artifact to open it.
-Related is shown on the desktop only.
+On the phone, the reader shows the same three kinds of link under your note; tap one to open it. On a same-idea row there, **Keep** and **Not the same** work too, and sync back to the Mac. The other groups and **Close passages** are on the desktop only.
 
 ## Tags and views
 
@@ -365,9 +365,11 @@ There is no way to recover a forgotten vault PIN.
 
 The phone app (Android and iPhone) is your library in your pocket: read, capture, write, ask.
 
-- **Reading.** Rows open to the note, the image (pinch to zoom), the link's preview, or the PDF.
+- **Reading.** Rows open to the note, the image (pinch to zoom), the link's preview, or the PDF. Under a note, **Related** rows open the linked item, and a same-idea row has **Keep** and **Not the same**.
 - **Writing.** Tap a note to write in it. **+ > Note** starts a new one. Both save as you type.
 - **Tabs and drafts.** A note's tabs show one at a time; its drafts are in Details. See [Notes](#notes).
+- **Searching.** Search finds the words you saved in notes, your annotations, the summary on each item, and PDF page text, and marks the words it matched. It works offline.
+- **Something shiny.** The day's card sits above the library; **Not today** hides it until tomorrow.
 - **Asking.** The eye answers from the copy on the phone.
 - **Small edits.** Star, delete, restore, and rewrite a summary line. Tagging and views are for the desk.
 - **Offline.** Everything is on the phone and saves there first. What you did reaches your Mac when there is a connection again.
@@ -380,7 +382,8 @@ The phone app (Android and iPhone) is your library in your pocket: read, capture
 On the iPhone, iOS wakes Enqueue now and then to do the same; it decides when.
 - **Updates.** When Google Play or the App Store has a newer version, the app asks you to update. **Update** opens the store's update; **Not now** asks again in 3 days.
 
-The phone does not write summaries or build the search index itself; those come from the Mac through sync.
+The phone does not write summaries; the model on your Mac does, and the words reach the phone through sync.
+From those words it builds a local keyword index, so search covers the note text, the summary and PDF pages even offline.
 
 ## Sync
 

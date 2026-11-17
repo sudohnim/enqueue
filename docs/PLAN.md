@@ -288,11 +288,12 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
   - Owed: device check - refuse an idea link on the emulator, sync, and see it gone on the Mac
 
-- [ ] **P9. Docs for track P**
+- [x] **P9. Docs for track P** (claimed: agent, 2026-11-17)
   - Needs: P1 to P8
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: in `AGENTS.md`, change Resolved decision 11 (the phone searches a keyword index over text, summary and pages; it has related rows and the day's card). Change the `ingest/related.py` row's last sentence, which says the phone has no related data.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
 
 ---
 
