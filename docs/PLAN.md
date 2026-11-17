@@ -1730,7 +1730,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: copy the whole `if name == "lib/pivots.enc" { ... continue; }` block and paste the copy right after it. In the copy, change `"lib/pivots.enc"` to `"lib/shiny.enc"` and the key `'pivots'` to `'shiny'`.
   - Check: `cd desktop && cargo test --lib`
 
-- [ ] **P7b. The page can ask for the day's card**
+- [x] **P7b. The page can ask for the day's card** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs, desktop/src/lib.rs, desktop/build.rs, desktop/tauri.conf.json; cargo check pass
   - Needs: P7a
   - Files: `desktop/src/lib.rs` (inside `mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`
   - Do:

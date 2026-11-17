@@ -116,6 +116,7 @@ fn main() {
                 "mobile_list",
                 "mobile_search",
                 "mobile_status",
+                "mobile_shiny",
                 "mobile_sync",
                 "open_external",
                 "window_drag",
