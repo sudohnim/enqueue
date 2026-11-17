@@ -1015,6 +1015,10 @@ function mountSuggest(hs, list) {
 	hs.setAttribute("aria-controls", "suggestList");
 	hs.setAttribute("aria-expanded", "false");
 	hs.addEventListener("focus", async () => {
+		if (Date.now() - (window.__warmAt || 0) > 60000) {
+			window.__warmAt = Date.now();
+			api("/search/warm", { method: "POST" }).catch(() => {});
+		}
 		await loadSuggestTitles();
 		if (document.activeElement === hs) draw();
 	});

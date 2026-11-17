@@ -15,6 +15,17 @@ router = APIRouter()
 # ------------------------------------------------------------------------- search
 
 
+@router.post("/search/warm")
+def warm() -> dict:
+    """Load the embedding model now, so the search that follows does not wait."""
+    import threading
+
+    from ..index import embed
+
+    threading.Thread(target=lambda: embed.embed_query("warm"), daemon=True).start()
+    return {"ok": True}
+
+
 @router.get("/search")
 def search(q: str, limit: int = 20, wait: float = 0.0) -> dict:
     wait = max(0.0, min(10.0, float(wait)))

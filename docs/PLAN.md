@@ -1309,7 +1309,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: with `lift.enabled_for_search` patched to true and `lift.lift` patched to sleep 1 s, `search_results(q, wait=0)` returns in less than 0.3 s. With `lift.lift` patched to raise, the second search within 60 s does not call it.
   - Check: `uv run pytest tests/test_search_results.py tests/test_model_pause.py -q`
 
-- [ ] **Q7. Warm the embedder when a search is about to come**
+- [x] **Q7. Warm the embedder when a search is about to come** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/api/search.py, src/enqueue/static/js/home.js, tests/test_search_warm.py; tests pass
   - Needs: none
   - Files: `api/search.py`, `static/js/home.js` (the search bar focus handler), new `tests/test_search_warm.py`
   - Why: the model unloads after 300 s with no use, and the next search waits about 0.5 s for it.
