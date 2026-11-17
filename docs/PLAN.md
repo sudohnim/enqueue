@@ -603,7 +603,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `uv run pytest tests/test_search_results.py tests/test_related.py tests/test_chats.py tests/test_shiny.py -q`; `bin/check-eval-cross`
   - Done: index/embed.py, index/store_sqlite.py; bin/check-eval-cross: OK
 
-- [ ] **I2. Each ingest step says how long it took**
+- [x] **I2. Each ingest step says how long it took** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `ingest/queue.py` (`_process`, the `events.emit("ingest", ...)` call), `tests/test_ingest.py`
   - Why: the owner needs these numbers to decide if two model steps run in parallel.
@@ -619,6 +619,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     4. Add `import time` if the file does not have it.
   - Test: after one ingest that writes an `ingest` event, the event's data has `took_ms` with the key `chunk`.
   - Check: `uv run pytest tests/test_ingest.py tests/test_facet_retry.py tests/test_writing_pace.py -q`
+  - Done: ingest/queue.py, tests/test_ingest.py; 41 passed in 7.52s
 
 ---
 

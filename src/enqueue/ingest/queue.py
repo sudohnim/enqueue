@@ -416,6 +416,11 @@ def _process(artifact_id: str) -> dict:
     from ..index.store import get_store
     from . import chunk as chunk_mod
 
+    took: dict[str, int] = {}
+
+    def _timed(name: str, started: float) -> None:
+        took[name] = took.get(name, 0) + int((time.monotonic() - started) * 1000)
+
     # A saved link is only an address until the publisher is asked what it is. Doing
     # that here rather than at capture time is what keeps saving instant: the request
     # happens behind the response, on this thread, where nobody is waiting on it.
@@ -512,9 +517,13 @@ def _process(artifact_id: str) -> dict:
         # Re-chunking gives every chunk a new id, and an index row can only be found
         # through its chunk, so the old rows are dropped while the old chunks still exist.
         store.drop_artifact(store.CHUNKS, artifact_id)
+        started = time.monotonic()
         with db.transaction() as conn:
             chunks = chunk_mod.chunk_artifact(conn, artifact_id, made)
+        _timed("chunk", started)
+        started = time.monotonic()
         indexed = store.index_artifact(artifact_id) if chunks else 0
+        _timed("index", started)
     if not chunks:
         # An artifact can lose its text: a note emptied, a preview refetched and
         # failed. Its stale points have to go, or search keeps returning it.
@@ -540,8 +549,12 @@ def _process(artifact_id: str) -> dict:
         and not awaiting
         and not _wait_for_quiet(artifact_id)
     )
+    started = time.monotonic()
     sections_made = _sections_artifact(artifact_id) if ready else False
+    _timed("sections", started)
+    started = time.monotonic()
     facets_made = _facet_artifact(artifact_id) if ready else 0
+    _timed("facets", started)
 
     # Entities are the named things in the body, each enriched with a one-line
     # world-knowledge fact. They close the same gap from the other side: a
@@ -549,7 +562,9 @@ def _process(artifact_id: str) -> dict:
     # biography that never says it. Same discipline as facets - best effort,
     # one bad entity never fails the artifact, and the artifact stays findable
     # by its own words regardless.
+    started = time.monotonic()
     entities_made = _entities_artifact(artifact_id) if ready else 0
+    _timed("entities", started)
 
     # Related artifacts (ingest/related.py): links to notes about the same thing or
     # naming the same things. Local and cheap, so it runs whenever facets or entities
@@ -559,16 +574,22 @@ def _process(artifact_id: str) -> dict:
         try:
             from . import related
 
+            started = time.monotonic()
             related.compute(artifact_id)
+            _timed("related", started)
         except Exception:  # noqa: BLE001 - derived; never blocks capture
             log.exception("related artifacts failed for %s", artifact_id)
 
     # Chunk context (ingest/context.py): for a multi-chunk document, the ingest model
     # places each chunk in it, and the artifact is re-indexed with those lines. It
     # runs after the first index so the capture is searchable without waiting on it.
+    started = time.monotonic()
     contexts_made = _context_artifact(artifact_id) if ready and chunks > 1 else 0
+    _timed("contexts", started)
     if contexts_made:
+        started = time.monotonic()
         indexed = store.index_artifact(artifact_id)
+        _timed("index", started)
 
     # What the model wrote rides the artifact's snapshot to every other device (the
     # phone cannot make its own; another desktop takes it instead of paying again).
@@ -628,6 +649,7 @@ def _process(artifact_id: str) -> dict:
                 "facets": facets_made,
                 "entities": entities_made,
                 "contexts": contexts_made,
+                "took_ms": took,
             },
         )
     except Exception:  # noqa: BLE001
