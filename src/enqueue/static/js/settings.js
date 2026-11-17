@@ -1098,7 +1098,7 @@ async function renderSettingsStorage() {
 	const s0 = d.storage;
 	html += await renderBackupSection();
 	html += await renderDraftsSection(d);
-	html += await renderMoveSection();
+	html += await renderMoveSection(d);
 	const items = (s0.counts && s0.counts.artifacts) || 0;
 	const chats = (s0.counts && s0.counts.chats) || 0;
 	html +=
@@ -1232,7 +1232,7 @@ async function showExtensionCode(button) {
 }
 
 // Bringing notes in from another app, and taking the whole library out (portable.py).
-async function renderMoveSection() {
+async function renderMoveSection(d) {
 	let imp, exp;
 	try {
 		[imp, exp] = await Promise.all([api("/import"), api("/export")]);
@@ -1247,7 +1247,7 @@ async function renderMoveSection() {
 		verb + "</button></div>";
 	const busy = (st) => st.state === "running";
 	if (busy(imp) || busy(exp)) setTimeout(watchMove, 1500);
-	return (
+	let html =
 		'<div class="shelf">Move notes in and out</div><div class="group">' +
 		'<div class="field"><span class="rowlabel">Import notes</span>' +
 		'<div class="aside">From Obsidian, Notion, Bear, Standard Notes, Fabric, or any folder of ' +
@@ -1267,8 +1267,23 @@ async function renderMoveSection() {
 			? '<div class="actions"><button class="btn tertiary" onclick="chooseExport()"' + (busy(exp) ? " disabled" : "") +
 				">Export to a folder…</button></div>"
 			: typed("export_input", "Export", "startExport")) +
-		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div></div>"
-	);
+		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div></div>";
+	const apple =
+		d.features && d.features.apple_notes
+			? '<div class="field"><span class="rowlabel">Apple Notes</span>' +
+				'<div class="aside">Bring in your notes. Run it again later to bring in what changed. ' +
+				"Locked notes are left out.</div>" +
+				'<div class="actions"><button class="btn tertiary" onclick="startAppleNotes()"' +
+				(busy(imp) ? " disabled" : "") + ">Bring in</button></div>" +
+				'<div class="aside" id="appleState">' + esc(moveLine(imp, "import")) + "</div></div>"
+			: "";
+	html +=
+		'<div class="shelf">From this Mac</div><div class="group">' +
+		apple +
+		'<div class="field"><span class="rowlabel">Bookmarks and Kindle</span>' +
+		'<div class="aside">Bookmarks: export them from your browser, then choose the file with Import. ' +
+		'Kindle: choose the file "My Clippings.txt" with Import.</div></div></div>';
+	return html;
 }
 
 function moveLine(st, what) {
@@ -1276,9 +1291,14 @@ function moveLine(st, what) {
 	if (st.state === "failed") return (what === "import" ? "The import" : "The export") + " stopped: " + st.error;
 	if (what === "import") {
 		if (!st.notes && !st.files && st.state !== "running") return "";
-		const line = plural(st.notes, "note") + " and " + plural(st.files, "file");
+		if (st.path === "Apple Notes") {
+			const count = plural(st.notes || 0, "note");
+			return (st.state === "running" ? "Bringing in… " + count + " so far" : "Brought in " + count) + ".";
+		}
+		const line = plural(st.notes || 0, "note") + " and " + plural(st.files || 0, "file");
+		const links = st.links ? " and " + plural(st.links, "link") : "";
 		const skipped = st.skipped ? ", " + st.skipped + " skipped (already here, or empty)" : "";
-		return (st.state === "running" ? "Importing… " + line + " so far" : "Imported " + line) + skipped + ".";
+		return (st.state === "running" ? "Importing… " + line + links + " so far" : "Imported " + line + links) + skipped + ".";
 	}
 	if (st.state === "running") return "Exporting… " + plural(st.items || 0, "item") + " so far.";
 	return st.state === "done" ? "Exported " + plural(st.items, "item") + " to " + st.path + "." : "";
@@ -1294,8 +1314,10 @@ async function watchMove() {
 	}
 	const a = document.getElementById("importState");
 	const b = document.getElementById("exportState");
+	const c = document.getElementById("appleState");
 	if (a) a.textContent = moveLine(imp, "import");
 	if (b) b.textContent = moveLine(exp, "export");
+	if (c) c.textContent = moveLine(imp, "import");
 	if (imp.state === "running" || exp.state === "running") setTimeout(watchMove, 1500);
 	else await renderSettingsTab("storage");
 }
@@ -1344,6 +1366,15 @@ async function startMove(route, path) {
 
 const startImport = (path) => startMove("/import", path);
 const startExport = (path) => startMove("/export", path);
+
+async function startAppleNotes() {
+	try {
+		await api("/import/apple-notes", { method: "POST" });
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await renderSettingsTab("storage");
+}
 
 function stageDraftPolicy(value) {
 	stageSetting("drafts_keep", value);

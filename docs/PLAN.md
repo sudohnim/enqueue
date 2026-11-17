@@ -3306,7 +3306,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
     5. With 30 new files, one scan takes 25.
   - Check: `uv run pytest tests/test_watch.py -q`
 
-- [ ] **L6a. Settings: the Apple Notes row and the import hints**
+- [x] **L6a. Settings: the Apple Notes row and the import hints** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/static/js/settings.js; bin/verify --fast pass
   - Needs: L2, L3, L4
   - Files: `static/js/settings.js` (a new section after "Move notes in and out")
   - Do: steps 1, 2, 5 and 6 of L6 below.
