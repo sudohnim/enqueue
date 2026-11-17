@@ -2310,7 +2310,8 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: with a fake provider that returns `used=[1]`, after `chats_worker.compute(job)` the message from `chats.get` has one place with the passage's artifact id and a `quote`. After `chats.delete`, `chat_places` has no row for it. Copy the job set-up of an existing test in `tests/test_chats_worker.py`.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`
 
-- [ ] **A4. Places ride the conversation's snapshot**
+- [x] **A4. Places ride the conversation's snapshot** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/sync/snapshot.py, tests/test_snapshot.py; 26 passed in 25.01s
   - Needs: A3
   - Files: `sync/snapshot.py` (`read_chat_snapshot`, `apply_chat_snapshot`), `tests/test_snapshot.py`
   - Find: `grep -n 'def read_chat_snapshot\|def apply_chat_snapshot\|"citations"' src/enqueue/sync/snapshot.py`

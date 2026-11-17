@@ -494,8 +494,8 @@ def read_chat_snapshot(conn: Connection, chat_id: str) -> dict | None:
     """Build one conversation's snapshot, or None when it does not exist.
 
     Children are ordered deterministically so the canonical JSON is byte-stable:
-    messages by `ordinal, id`, citations by `message_id, rank`, topics by
-    `created_at, id`.
+    messages by `ordinal, id`, citations by `message_id, rank`, places by
+    `message_id, n`, topics by `created_at, id`.
     """
     row = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
     if row is None:
@@ -515,6 +515,15 @@ def read_chat_snapshot(conn: Connection, chat_id: str) -> dict | None:
                 "SELECT c.* FROM chat_citations c"
                 " JOIN chat_messages m ON m.id = c.message_id"
                 " WHERE m.chat_id = ? ORDER BY c.message_id, c.rank",
+                (chat_id,),
+            )
+        ],
+        "places": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT p.message_id, p.n, p.artifact_id, p.page, p.quote FROM chat_places p"
+                " JOIN chat_messages m ON m.id = p.message_id"
+                " WHERE m.chat_id = ? ORDER BY p.message_id, p.n",
                 (chat_id,),
             )
         ],
@@ -571,6 +580,12 @@ def apply_chat_snapshot(conn: Connection, snapshot: dict) -> None:
         " (SELECT id FROM chat_messages WHERE chat_id = ?)",
         (chat_id,),
     )
+    if "places" in snapshot:
+        conn.execute(
+            "DELETE FROM chat_places WHERE message_id IN"
+            " (SELECT id FROM chat_messages WHERE chat_id = ?)",
+            (chat_id,),
+        )
     conn.execute("DELETE FROM chat_messages WHERE chat_id = ?", (chat_id,))
     conn.execute("DELETE FROM chat_topics WHERE chat_id = ?", (chat_id,))
     for m in snapshot.get("messages", []):
@@ -584,6 +599,13 @@ def apply_chat_snapshot(conn: Connection, snapshot: dict) -> None:
             "INSERT INTO chat_citations (message_id, artifact_id, rank) VALUES (?,?,?)",
             (c["message_id"], c["artifact_id"], c["rank"]),
         )
+    if "places" in snapshot:
+        for p in snapshot.get("places") or []:
+            conn.execute(
+                "INSERT OR REPLACE INTO chat_places (message_id, n, artifact_id, page, quote)"
+                " VALUES (?,?,?,?,?)",
+                (p["message_id"], p["n"], p["artifact_id"], p.get("page"), p.get("quote", "")),
+            )
     for t in snapshot.get("topics", []):
         tc = list(t.keys())
         conn.execute(
