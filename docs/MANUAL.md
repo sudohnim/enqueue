@@ -92,6 +92,17 @@ You can change the shortcut in Settings > Capture.
 
 Capturing never waits: the thing is saved at once, and the reading, summarising and indexing happen behind it.
 
+### From this Mac
+
+**Settings > Library > From this Mac** brings in what you already have.
+
+- **Apple Notes.** Press **Bring in**. Each note comes in as a note. Run it again later to bring in what changed. Locked notes and notes in Recently Deleted are left out. This is not offered in the Mac App Store build.
+- **Bookmarks.** Export your bookmarks from your browser as an HTML file, then choose that file with **Import**. Each bookmark becomes a link. Its folders become tags, except the browser's own folders.
+- **Kindle highlights.** Find `My Clippings.txt` in your Kindle's documents folder, then choose it with **Import**. Each book becomes one note with its highlights.
+- **New files in a folder.** Add a folder under **New files in a folder**. Each new PDF, picture and text file is kept. Files already there are left alone.
+
+Enqueue reads these files on this Mac. Nothing is sent to a service to do the reading. After they are in, the assistant you chose reads and summarises them like anything else.
+
 ## The library
 
 The home screen is the wall: everything you saved, the most recently touched first.

@@ -327,7 +327,8 @@ One line per file, describing its job.
 | `account.py` | Enqueue sync from the Mac: sign in with Google (desktop PKCE, back to `/account/google/callback`) or Apple (the web flow, back through the relay to `/account/apple/done` with a one-time code), then a device token for this Mac becomes the sync secret (`sync/enable.py`). Keeps the relay's refresh token in the Keychain (`enqueue-account-session`) and who is signed in in settings; mints a token per phone (`desktop_link_code`) and per joining computer (`sync/pairing.py`); lists and removes devices, signs out, deletes the account. Routes in `api/account.py`. See "Enqueue sync" under Gotchas. |
 | `shiny.py` | Something shiny (the idea is brain food: a glint found in the clutter), in place of resurfacing one old note: each day two or three notes from different fields that make the same point sit above the wall, with the idea they share, how each shows it, and a question to take it further (far analogies, Epstein's *Range*). The set comes from `related` idea links, the farthest first (`related.distance`), rotating daily through the top 7; a third note joins through another idea link; mention links across fields serve only when there is no idea link; subject links never. One call to the chat model per set writes the words (`prompts.SHINY`, shown titles and subject/mechanism/principle lines only, never the notes' text), in the background, cached in `derived_values` (scope `shiny`, subject the ids joined, attribute a stamp of what was shown); until then, or with no model, the card shows the link's own sentence. A set with a local-only note keeps the link's sentence (no model reads it); a failed call is not asked again that day. Vaulting and purge drop the cached words. `GET /shiny` returns the notes as wall items plus `food`, `links` and `writing`; "Find another" is `GET /shiny?n=N`: the day's order is the top 7 from today's turn, then every other pair, and `more` says whether one follows (after the last, the button says "Back to the first"); each set's words are written once, when first shown. `refreshShiny` in `static/js/home.js` draws the card, remembers today's `n` (localStorage `enqueue.shiny.at`) and asks again a few times while `writing`; "Not today" hides it until tomorrow (localStorage, this browser only). Opening a note records an open with source `shiny`. |
 | `telemetry.py` | Error reports to PostHog (US), see "Error reports" under Gotchas. |
-| `importer.py` | Import from other apps: a folder or a .zip of Markdown, HTML and files (Obsidian, Notion, Bear, Standard Notes, Fabric). See "Importing notes" under Gotchas. |
+| `importer.py` | Import from other apps: a folder or a .zip of Markdown, HTML and files (Obsidian, Notion, Bear, Standard Notes, Fabric). A Netscape bookmarks HTML file becomes links, with folder names as tags. `My Clippings.txt` becomes one note per book. Apple Notes are read through JXA (`/usr/bin/osascript -l JavaScript`) on a Mac build that is not the Mac App Store build; HTML becomes Markdown, the folder becomes a tag, and locked notes and Recently Deleted are skipped. `_upsert` and `source_items` mirror outside items: a second import updates the same note, an unchanged one is skipped, and one put in the trash is not made again. See "Importing notes" under Gotchas. |
+| `watch.py` | Keeps new files in folders named by `watch_dirs` (`ENQ_WATCH_DIRS`), one path per line. Only files that appear after a folder is added are taken: PDFs, pictures, Markdown and text under 25 MB, after they stop changing for a minute. The first look is 2 minutes after start, then every 10 minutes, at most 25 files a look. Dotfiles are skipped. |
 | `export.py` | The library as plain files: one Markdown file per item (title, dates, kind, source, `Tags:`), originals and the pictures inside notes in `files/`, a manifest, a README. Idempotent: a rerun into the same folder rewrites only what changed and prunes what it wrote that is gone. `enq export <dir> [--verify]`; Settings > Library starts it into `<folder>/Enqueue` (`POST /export`, `GET /export` in `api/portable.py`). |
 | `extension.py` | The browser extension's connect code (Keychain `enqueue-extension-key`): with it in `X-Enqueue-Key`, an extension origin passes the origin guard for the capture routes only. See "The browser extension" under Gotchas. |
 | `share.py` | Shared notes: a read-only web link to one note, sealed here (AES-256-GCM) and kept on the sync relay. See "Shared notes" under Gotchas. |
@@ -694,6 +695,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_MODEL_RETRIES` | `3` | TOTAL attempts per structured call (instructor's `max_retries`); 1 = one shot, no reprompt |
 | `ENQ_PREVIEW_BROWSER` | `on` | Open a refused or script-only link once more in the Mac's own WebKit (`webkit_page.py`) |
 | `ENQ_BACKUP_DIR` | (empty) | The cloud-drive folder backups go into; empty = backups off |
+| `ENQ_WATCH_DIRS` | (empty) | Folders to watch for new files (`watch.py`), one path on each line |
 | `ENQ_USER_AGENT` | `Enqueue/0.2 (...)` | User agent for preview fetches |
 | `ENQ_HOTKEY` | `Alt+Shift+E` | Global capture hotkey |
 | `ENQ_AUTO_PREVIEW` | `on` | Whether saving a link auto-fetches a preview |
@@ -862,6 +864,7 @@ GET    /events?limit=N              the activity log, newest first, each with it
 GET    /setup                       what is connected, what is left to set up, settings that need a look
 GET    /reading                     how far the assistant is through reading the library (the wall's progress line)
 GET    /backup                      backup folder, detected Proton Drive folders, last backup, the kept backups
+GET    /import                      progress of the last import
 GET    /fonts/{name}                font files (cached 1 year)
 ```
 
@@ -878,6 +881,8 @@ DELETE /trash/{id}                   purge one (irreversible)
 DELETE /trash                        empty trash (irreversible)
 POST   /capture/link                 save a URL, nothing fetched
 POST   /capture/upload               multipart file upload
+POST   /import                       import a folder or .zip on a background thread
+POST   /import/apple-notes           bring Apple Notes in on a background thread
 POST   /artifacts/{id}/preview       fetch what a saved link is (opt-in)
 POST   /chats                        start a conversation (optionally with text)
 POST   /chats/{id}/messages          one turn
@@ -1684,6 +1689,14 @@ One reader covers the exports: Markdown and text files are notes, HTML is conver
 A note keeps its title (frontmatter `title`, else its first heading, else the file name without Notion's 32-character id), tags (frontmatter `tags`, inline `#tag`, Bear's `#tag with spaces#` in TextBundles only, never inside code) and dates (frontmatter `created`/`updated`/`date`, Bear's `info.json`, Standard Notes' own, else the file's).
 A picture a note shows (`![](relative/path)` or Obsidian's `![[name.png]]`, found by name anywhere in the export) becomes an embedded image; every other file is a capture, except a Notion database table, whose pages came in as notes. A note whose text is already in the library is skipped, so importing twice adds nothing.
 Imported items go through ingest on the background lane (`notes.create(background=True)`, `capture.upload(background=True)`), behind the person's own captures.
+
+A Netscape bookmarks export is read when it is chosen with Import. Each bookmark becomes a link. The folders it sits in become tags, except names browsers give their own folders. A `My Clippings.txt` file becomes one note per book. Each highlight is a blockquote with its page when the file has one. The note has the `kindle` tag.
+
+Apple Notes are read on the Mac through JXA (`/usr/bin/osascript -l JavaScript`, `importer.run_apple_notes`). HTML becomes the Markdown the editor writes. The folder becomes a tag, except the default Notes folder. Locked notes and notes in Recently Deleted are skipped, as are pictures and attachments. The button is hidden in the Mac App Store build (`config.CHANNEL == "mas"`). Nothing about a note is sent to a service for this read.
+
+Outside items that can change have a `source_items` row keyed by source and external id. `importer._upsert` uses the stamp on that row to create the mirror once, update it when the outside item changes, or skip it when it has not. A mirror the person put in the trash is not made again. Watched folders use the same table to remember when watching began and which files they already kept (`watch.py`).
+
+Files in a watched folder are taken only after they settle for a minute. The first look is two minutes after the engine starts, then every ten minutes. At most 25 files are taken in one look. Dotfiles, empty files and files over 25 MB are left alone. Files already in the folder when it is added are left alone.
 
 ### The browser extension (2026-11-06)
 

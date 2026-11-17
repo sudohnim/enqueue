@@ -3348,7 +3348,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `bin/verify --fast`
   - Device check **[device]**: open the welcome from the `?`; the row is there and its button opens the Library tab.
 
-- [ ] **L8. Docs for track L**
+- [x] **L8. Docs for track L** (claimed: Big Pickle, 2026-11-17)
+  Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
   - Needs: L1 to L7
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: in `AGENTS.md`, extend the `importer.py` row (bookmarks, Kindle, Apple Notes, `_upsert`, `source_items`), add a row for `watch.py`, add the route and the setting, and extend "Importing notes" under Gotchas. In `docs/MANUAL.md`, add "From this Mac" with the four sources in plain words.
