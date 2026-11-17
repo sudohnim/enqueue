@@ -881,7 +881,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_sync.py -q`
   - Done: src/enqueue/sync/client.py, tests/test_sync.py; 13 passed in 24.53s
 
-- [ ] **C3. The relay says if it holds an object, and how large it is**
+- [x] **C3. The relay says if it holds an object, and how large it is** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `relay/app.py`, `relay/storage.py`, the relay's test file (`ls tests | grep relay`)
   - Find: `grep -n 'def get(self, library' -A 20 src/enqueue/relay/storage.py`; `grep -n '@app.get("/sync/object' -A 6 src/enqueue/relay/app.py`
@@ -899,6 +899,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Test: `HEAD` of a stored object answers 200 with `X-Object-Size` equal to the length of the stored bytes. `HEAD` of an unknown name answers 404. `HEAD` with another library's secret answers 404 or 401, never the size.
   - Check: `uv run pytest tests -k relay -q`
   - Do not: run `bin/deploy-relay`. The owner deploys.
+  - Done: src/enqueue/relay/storage.py, src/enqueue/relay/app.py, tests/test_relay.py; 100 passed in 23.02s
 
 - [ ] **C4a. Which originals may leave this Mac**
   - Needs: C1, C2

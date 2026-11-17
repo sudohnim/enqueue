@@ -42,6 +42,25 @@ def test_put_then_get_is_byte_identical(tmp_path):
     assert got.content == payload
 
 
+def test_head_reports_size_without_leaking_other_libraries(tmp_path):
+    client = _client(tmp_path)
+    payload = b"the bytes whose size is reported"
+    name = "dev/d1/artifacts/a.enc"
+    assert client.put(f"/sync/object/{name}", content=payload, headers=_auth()).status_code == 201
+
+    head = client.head(f"/sync/object/{name}", headers=_auth())
+    assert head.status_code == 200
+    assert head.headers["X-Object-Size"] == str(len(payload))
+
+    missing = client.head("/sync/object/no/such.enc", headers=_auth())
+    assert missing.status_code == 404
+    assert "X-Object-Size" not in missing.headers
+
+    other = client.head(f"/sync/object/{name}", headers=_auth("other-secret"))
+    assert other.status_code in (401, 404)
+    assert "X-Object-Size" not in other.headers
+
+
 def test_put_an_existing_name_overwrites_in_place(tmp_path):
     # MOBFIX.5: the relay upserts by name. A second PUT overwrites the bytes so a
     # mutation (edit/delete) to an already-synced artifact actually lands.

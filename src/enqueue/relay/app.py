@@ -337,6 +337,13 @@ def create_relay(
             raise HTTPException(status_code=404, detail="no such object")
         return Response(content=data, media_type="application/octet-stream")
 
+    @app.head("/sync/object/{name:path}")
+    def head_object(name: str, library: str = Depends(_require_header)):
+        size = storage.size(library, name)
+        if size is None:
+            raise HTTPException(status_code=404, detail="no such object")
+        return Response(status_code=200, headers={"X-Object-Size": str(size)})
+
     @app.put("/sync/object/{name:path}", status_code=201)
     async def put_object(name: str, request: Request, library: str = Depends(_require_header)):
         # UPSERT by name (MOBFIX.5): create or overwrite, always 201. An overwrite
