@@ -102,7 +102,8 @@ def _pairs(conn) -> list[dict]:
     """Every pair worth showing, best first: idea links before mention links, the
     farthest first."""
     rows = conn.execute(
-        "SELECT r.artifact_id AS a, r.related_id AS b, r.kind, r.distance, r.point, r.via"
+        "SELECT r.artifact_id AS a, r.related_id AS b, r.kind, r.distance, r.point, r.via,"
+        " a.updated_at AS a_at, b.updated_at AS b_at"
         " FROM related r JOIN artifacts a ON a.id = r.artifact_id"
         " JOIN artifacts b ON b.id = r.related_id"
         f" WHERE r.artifact_id < r.related_id AND r.kind IN ('idea', 'mention') AND {_LIVE}"
@@ -110,7 +111,16 @@ def _pairs(conn) -> list[dict]:
     ).fetchall()
     # Both notes of a pair may have chosen it; each pair counts once.
     pairs = list({(r["a"], r["b"]): dict(r) for r in rows}.values())
-    pairs.sort(key=lambda p: (p["kind"] != "idea", -(p["distance"] or 0.0), p["a"], p["b"]))
+    week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    for p in pairs:
+        p["fresh"] = max(p.get("a_at") or "", p.get("b_at") or "") >= week
+    pairs.sort(
+        key=lambda p: (p["kind"] != "idea", not p["fresh"], -(p["distance"] or 0.0), p["a"], p["b"])
+    )
+    for p in pairs:
+        p.pop("a_at", None)
+        p.pop("b_at", None)
+        p.pop("fresh", None)
     return pairs
 
 

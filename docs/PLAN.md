@@ -1405,7 +1405,8 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: in `tests/test_shiny.py`: with 3 idea pairs, after `today(day1)` shows the first, `pick(day2)` returns another pair. When all 3 were shown, `pick` still returns a set. Fix tests that relied on the 7-day turn; the new rule is "unshown first".
   - Check: `uv run pytest tests/test_shiny.py -q`
 
-- [ ] **H2. A pair with a fresh note comes first**
+- [x] **H2. A pair with a fresh note comes first** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/shiny.py; tests pass
   - Needs: H1
   - Files: `shiny.py` (`_pairs`), `tests/test_shiny.py`
   - Why: a link to the note the person wrote this week is worth more than a link between two old notes.
