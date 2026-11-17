@@ -219,7 +219,8 @@ The sections of the file are in the order they were written: the tracks from the
 
 ## Track S: security and privacy
 
-- [ ] **S1. A markdown image cannot name another host**
+- [x] **S1. A markdown image cannot name another host** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/static/js/md.js, tests/js/md_roundtrip.js; tests pass
   - Needs: none
   - Files: `static/js/md.js`, `tests/js/md_roundtrip.js`
   - Why: `![a](//evil.example/x.png)` renders `<img src="//evil.example/x.png">` today. The browser fetches it from the network. Chat answers use the same renderer, so a saved web page can make an answer leak text.
