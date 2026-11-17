@@ -1074,7 +1074,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Check: `uv run pytest tests/test_colours.py tests/test_vaultops.py -q`
   - Done: new colours.py, ingest/queue.py, vaultops.py, new tests/test_colours.py; 16 passed in 8.90s
 
-- [ ] **V2. A colour in the search is a filter**
+- [x] **V2. A colour in the search is a filter** (claimed: agent, 2026-11-17)
   - Needs: V1
   - Files: `retrieve/filters.py`, `tests/test_search_filters.py`
   - Find: read `retrieve/filters.py` whole: the `Filters` class, `parse`, `matching_ids`, and how `label` is built.
@@ -1101,6 +1101,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
     6. Add the colour's name (or the hex text) to the label.
   - Test: `blue photos` gives kind image and colour blue with empty text. `color:#ff0000 logo` gives colour red and the text `logo`. `red wine` gives no colour. With one red image and one blue image stored, `matching_ids` for blue returns the blue one only.
   - Check: `uv run pytest tests/test_search_filters.py tests/test_search_results.py -q`
+  - Done: retrieve/filters.py, tests/test_search_filters.py; 60 passed in 9.98s
 
 - [ ] **V3. Colour dots on the results page**
   - Needs: V2
