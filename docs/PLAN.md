@@ -700,14 +700,13 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `uv run pytest tests/test_similar.py -q`; `bin/verify --fast`
   - Done: static/js/artifact.js, static/js/search.js; bin/verify: all checks passed
 
-- [ ] **N4. Lock the natural-language search with tests**
+- [x] **N4. Lock the natural-language search with tests** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: new `tests/test_search_language.py`
   - Why: the owner wants these behaviours explicit and kept. They exist in `retrieve/filters.py`; no one test lists them in one place.
   - Find: read `retrieve/filters.py` whole. Note the fields of `Filters` and what `parse(q, now)` returns.
   - Do:
     1. Write one parametrized test over this table. Call `filters.parse(query, now=datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc))`.
-
        | Query | Kind filter | Time filter | Text that is left to search |
        | --- | --- | --- | --- |
        | `pdfs from last month` | pdf | October 2026 | empty |
@@ -723,6 +722,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
     3. If a row fails, do not change `filters.py`. Mark that row `pytest.param(..., marks=pytest.mark.xfail(reason="<what it returned>"))` and write the query and the real output under this task.
     4. Add two tests with the `store` and `quiet_queue` fixtures: a word that is only in the body of a note is found by `search_results`; a word that is only in a PDF's page text (insert the `page_text` row and run the ingest for the artifact) is found.
   - Check: `uv run pytest tests/test_search_language.py -q`
+  - Done: tests/test_search_language.py; 11 passed in 1.54s
 
 - [ ] **N5. Docs for track N**
   - Needs: N1 to N4
