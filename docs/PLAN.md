@@ -1103,7 +1103,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Check: `uv run pytest tests/test_search_filters.py tests/test_search_results.py -q`
   - Done: retrieve/filters.py, tests/test_search_filters.py; 60 passed in 9.98s
 
-- [ ] **V3. Colour dots on the results page**
+- [x] **V3. Colour dots on the results page** (claimed: agent, 2026-11-17)
   - Needs: V2
   - Files: `static/js/search.js`, `static/css/search.css`
   - Do:
@@ -1113,6 +1113,8 @@ Finding: this library has few pictures now, so this track is small. It makes eve
     4. In `search.css`: `.colourdots { display: flex; gap: var(--sp-2); }` and `.colourdot { width: 20px; height: 20px; border-radius: var(--r-full); border: 1px solid var(--line); cursor: pointer; }`. Set each dot's `background` inline from the table.
   - Check: `bin/verify --fast`
   - Device check **[device]**: search "photos"; press the blue dot; only pictures with blue stay.
+  - Done: static/js/search.js, static/css/search.css; bin/verify: all checks passed
+  - Owed: device check - search "photos"; press the blue dot; only pictures with blue stay
 
 - [ ] **V4. Docs for track V**
   - Needs: V1 to V3

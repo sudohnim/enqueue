@@ -72,6 +72,24 @@
 	font-size: 13px;
 	color: var(--text-dim);
 }
+.colourdots {
+	display: flex;
+	gap: var(--sp-2);
+}
+.colourdot {
+	width: 20px;
+	height: 20px;
+	border-radius: var(--r-full);
+	border: 1px solid var(--line);
+	cursor: pointer;
+}
+.colourdot.on {
+	box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent);
+}
+.colourdot:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
 .sr-list {
 	list-style: none;
 	margin: 0;

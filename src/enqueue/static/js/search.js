@@ -63,6 +63,59 @@
   let lastQuery = "";
   let lastHits = [];
 
+  // The colours a picture can be found by (retrieve/filters.py COLOURS). One row of
+  // dots narrows picture results without typing `color:`.
+  const COLOUR_DOTS = [
+    ["red", "220, 40, 40"],
+    ["orange", "240, 140, 30"],
+    ["yellow", "240, 220, 50"],
+    ["green", "50, 160, 70"],
+    ["teal", "30, 150, 150"],
+    ["blue", "40, 90, 220"],
+    ["purple", "130, 60, 180"],
+    ["pink", "240, 130, 180"],
+    ["brown", "130, 85, 50"],
+    ["black", "20, 20, 20"],
+    ["white", "245, 245, 245"],
+    ["grey", "128, 128, 128"],
+  ];
+
+  // `color:<name>` (or the British spelling) is replaced, not stacked.
+  function withColour(q, name) {
+    return (q.replace(/\bcolou?r:\S+/gi, "").trim() + " color:" + name).trim();
+  }
+
+  function chosenColour(q) {
+    const m = /(?:^|\s)colou?r:(\S+)/i.exec(q || "");
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  function colourDotsHtml(q) {
+    const chosen = chosenColour(q);
+    return (
+      '<div class="colourdots" role="group" aria-label="Filter by colour">' +
+      COLOUR_DOTS.map(
+        ([name, rgb]) =>
+          '<button type="button" class="colourdot' +
+          (chosen === name ? " on" : "") +
+          '" style="background:rgb(' +
+          rgb +
+          ')" aria-label="' +
+          name +
+          '" title="' +
+          name +
+          '" onclick="pickColour(\'' +
+          name +
+          '\')"></button>',
+      ).join("") +
+      "</div>"
+    );
+  }
+
+  function pickColour(name) {
+    doSearch(withColour(lastQuery, name));
+  }
+
   function openHit(id, rank) {
     reportOpen(id, "search", lastQuery, rank);
     // A note with tabs opens on the tab the hit came from (Tabs.find).
@@ -149,6 +202,7 @@
       (sure.length ? sure.length + (sure.length === 1 ? " result" : " results") : "No sure results") +
       (r.filters ? '<span class="sr-chip">' + esc(r.filters) + "</span>" : "") +
       "</div>" +
+      (r.hits.filter((h) => h.kind === "image").length >= 3 ? colourDotsHtml(q) : "") +
       (sure.length
         ? '<ol class="sr-list">' + sure.map((h) => resultHtml(h, rank(h), terms)).join("") + "</ol>"
         : loose.length
