@@ -2644,6 +2644,29 @@
           v.dataset.n = saved.versions.length;
           v.textContent = draftsCountLabel(saved.versions.length);
         }
+        if (window.innerWidth >= 1100) {
+          const block = document.activeElement && document.activeElement.closest
+            ? document.activeElement.closest("p,li,pre,blockquote,h2,h3")
+            : null;
+          const t = (block ? block.textContent : text).trim();
+          try {
+            const nr = await api("/artifacts/" + ctx.id + "/nearby", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: t }),
+            });
+            let aside = document.querySelector("aside.nearby");
+            if (!aside) {
+              aside = document.createElement("aside");
+              aside.className = "nearby";
+              const sheet = document.querySelector(".docpane.notesheet");
+              if (sheet && sheet.parentNode) sheet.parentNode.insertBefore(aside, sheet.nextSibling);
+            }
+            aside.innerHTML = (nr.nearby || [])
+              .map((n) => '<button type="button" onclick="openArtifact(\'' + esc(n.id) + "','related')\">" + esc(n.title) + "</button>")
+              .join("");
+          } catch (_) {}
+        }
       } else {
         if (!text.trim()) return;
         const r = await api("/artifacts/" + ctx.id + "/annotations", {

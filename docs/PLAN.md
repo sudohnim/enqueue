@@ -1001,7 +1001,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `bin/verify --fast`
   - Device check **[device]**: on a long note, "Close passages" shows under Related at the foot of the page, and the Details panel has no "Passages that connect".
 
-- [ ] **R9. Related notes while you write**
+- [~] **R9. Related notes while you write** (claimed: agent, 2026-11-16)
   - Needs: none
   - Files: `retrieve/passage_links.py`, `api/artifacts.py` (new route at the end), `static/js/artifact.js` (new code), `static/css/artifact.css` (new `.nearby` rules), new `tests/test_nearby.py`
   - Do:

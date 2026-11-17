@@ -84,3 +84,32 @@ def for_artifact(artifact_id: str) -> list[dict]:
                 {"chunk_id": c["id"], "ordinal": c["ordinal"], "excerpt": excerpt, "links": links}
             )
     return out
+
+
+def near_text(artifact_id: str, text: str, limit: int = 3) -> list[dict]:
+    """Other live items with a passage close to `text`."""
+    words = text.split()
+    if len(words) < 12:
+        return []
+    from ..index.store import get_store
+
+    store = get_store()
+    best: dict[str, float] = {}
+    for hit in store.search_dense(store.CHUNKS, text, limit=24, as_query=False):
+        other = hit["artifact_id"]
+        if other != artifact_id and hit["score"] >= PASSAGE_MIN:
+            best[other] = max(best.get(other, 0.0), hit["score"])
+    if not best:
+        return []
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, kind FROM artifacts"
+            " WHERE id IN (SELECT value FROM json_each(?))"
+            " AND deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL",
+            (json.dumps(sorted(best)),),
+        ).fetchall()
+    finally:
+        conn.close()
+    found = [dict(r) | {"score": round(best[r["id"]], 3)} for r in rows]
+    return sorted(found, key=lambda r: r["score"], reverse=True)[:limit]

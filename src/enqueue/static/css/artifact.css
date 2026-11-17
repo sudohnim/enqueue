@@ -1125,3 +1125,6 @@
   .notetabs[hidden] {
     display: none;
   }
+
+.nearby { position: absolute; right: var(--sp-4); width: 200px; font-size: 12px; }
+@media (max-width: 1099px) { .nearby { display: none; } }

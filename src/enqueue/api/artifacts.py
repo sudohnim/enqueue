@@ -646,6 +646,20 @@ def find_in_artifact(artifact_id: str, q: str) -> dict:
     return {"query": q, "hits": capture.find_in_pdf(artifact_id, q)}
 
 
+class NearbyBody(BaseModel):
+    text: str = ""
+
+
+@router.post("/artifacts/{artifact_id}/nearby")
+def nearby(artifact_id: str, body: NearbyBody) -> dict:
+    from ..retrieve import passage_links
+
+    text = (body.text or "").strip()
+    if len(text.split()) < 12:
+        return {"nearby": []}
+    return {"nearby": passage_links.near_text(artifact_id, text)}
+
+
 @router.get("/artifacts/{artifact_id}/preview-image")
 def get_preview_image(artifact_id: str):
     """A link's picture, served from here rather than from the publisher.
