@@ -476,6 +476,17 @@ def _process(artifact_id: str) -> dict:
     # unsearchable; the capture itself already succeeded.
     described = "" if awaiting else _describe_image_if_needed(artifact_id)
 
+    # A small picture for the wall, made from the original once and kept sealed like
+    # it. Best effort: an image that cannot be drawn simply has no thumb, and the
+    # page falls back to the original.
+    if row["kind"] == "image":
+        try:
+            from .. import thumbs
+
+            thumbs.make(artifact_id)
+        except Exception:  # noqa: BLE001 - a thumb is a convenience, not the capture
+            log.warning("thumb failed for %s", artifact_id, exc_info=True)
+
     # A run whose chunks would come out exactly as they are stored, and are indexed as
     # they would be now, keeps them: a retry that only owes a model step, a sync
     # re-apply, a reprocess of unchanged text. Re-chunking took the artifact out of

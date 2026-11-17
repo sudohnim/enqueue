@@ -937,3 +937,19 @@ def related_feedback(body: FeedbackBody) -> dict:
     sync_facets(body.a, bump=False)
     sync_facets(body.b, bump=False)
     return {"ok": True}
+
+
+@router.get("/artifacts/{artifact_id}/thumb")
+def get_thumb(artifact_id: str):
+    from .. import thumbs
+
+    data = thumbs.get(artifact_id)
+    if data is None and thumbs.make(artifact_id):
+        data = thumbs.get(artifact_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="no small picture")
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )

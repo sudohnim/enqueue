@@ -748,7 +748,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
 
 Finding: the Mac fetches a missing original from the relay on demand now (`capture.blob_path` calls `fetch_blob_to_cache`). So the Mac can let go of an original it has not used, if it knows for certain that the relay holds it. The wall loads each picture at full size.
 
-- [ ] **C1. Small pictures for the wall**
+- [x] **C1. Small pictures for the wall** (claimed: agent, 2026-11-17)
   - Needs: DB2
   - Files: new `thumbs.py`, `api/artifacts.py` (new route at the end), `ingest/queue.py` (one call), `vaultops.py` (one call), `static/js/home.js` (`facePicture`), new `tests/test_thumbs.py`
   - Why: `facePicture` loads `/artifacts/<id>/blob` for each picture tile: the whole original. A small picture opens faster, and it stays when the original leaves this Mac (C4).
@@ -756,21 +756,15 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
     1. Make `thumbs.py`:
        ```python
        """Small pictures of image artifacts, kept sealed like every original (blobstore)."""
-
        from __future__ import annotations
-
        import logging
-
        from . import blobstore, db
-
        log = logging.getLogger(__name__)
        WIDTH = 520
        _TYPES = {"image/png": "png", "image/jpeg": "jpeg", "image/gif": "gif", "image/webp": "webp"}
-
        def render(data: bytes, mime: str, width: int = WIDTH) -> bytes | None:
            """A JPEG at most `width` pixels wide, or None for a type that cannot be drawn."""
            import fitz
-
            ext = _TYPES.get(mime)
            if ext is None:
                return None
@@ -782,7 +776,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
                return pix.tobytes("jpeg")
            finally:
                doc.close()
-
        def make(artifact_id: str) -> bool:
            """Make and keep the small picture of one live image. True when one is kept."""
            conn = db.get_conn()
@@ -813,7 +806,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
                    (artifact_id, digest, WIDTH),
                )
            return True
-
        def get(artifact_id: str) -> bytes | None:
            conn = db.get_conn()
            try:
@@ -827,7 +819,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
            if row is None or not blobstore.exists(row["content_hash"]):
                return None
            return blobstore.read(row["content_hash"])
-
        def drop(artifact_id: str) -> None:
            """Remove the small picture (the item went into the vault)."""
            with db.transaction() as conn:
@@ -844,7 +835,6 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
        @router.get("/artifacts/{artifact_id}/thumb")
        def get_thumb(artifact_id: str):
            from .. import thumbs
-
            data = thumbs.get(artifact_id)
            if data is None and thumbs.make(artifact_id):
                data = thumbs.get(artifact_id)
@@ -868,6 +858,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
        Use this `drop` for the image case only, with `src="/artifacts/<id>/thumb"`.
   - Test: `render` of a 1200 px wide PNG (make one with `fitz` in the test) returns bytes that `fitz` opens at 520 px wide. `make` for a note returns false. After `drop`, `get` returns `None`.
   - Check: `uv run pytest tests/test_thumbs.py tests/test_vaultops.py -q`; `bin/verify --fast`
+  - Done: src/enqueue/thumbs.py, src/enqueue/api/artifacts.py, src/enqueue/ingest/queue.py, src/enqueue/vaultops.py, src/enqueue/static/js/home.js, tests/test_thumbs.py; 18 passed in 8.90s
 
 - [ ] **C2. The Mac records which originals the relay holds**
   - Needs: DB2

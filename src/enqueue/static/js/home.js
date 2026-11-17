@@ -2,14 +2,19 @@
 // across the foot for the title; everything else is set as type inside the square.
 function facePicture(a) {
 	const drop = ' onerror="this.remove()"';
-	if (a.kind === "image")
+	if (a.kind === "image") {
+		const thumbDrop =
+			' onerror="if(!this.dataset.full){this.dataset.full=1;this.src=\'/artifacts/' +
+			a.id +
+			'/blob\'}else{this.remove()}"';
 		return (
 			'<img src="/artifacts/' +
 			a.id +
-			'/blob" alt="" loading="lazy"' +
-			drop +
+			'/thumb" alt="" loading="lazy"' +
+			thumbDrop +
 			">"
 		);
+	}
 	if (a.kind === "pdf")
 		return (
 			'<img src="/artifacts/' +
