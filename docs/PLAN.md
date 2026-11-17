@@ -1418,7 +1418,8 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: two idea pairs with the same distance; the pair that holds a note updated today sorts first.
   - Check: `uv run pytest tests/test_shiny.py -q`
 
-- [ ] **H3. Something shiny ignores the index-only lines**
+- [x] **H3. Something shiny ignores the index-only lines** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/shiny.py; tests pass
   - Needs: DB1
   - Files: `shiny.py` (`_faces`, `_seeds`, `_candidates`), `tests/test_shiny.py`
   - Find: `grep -n 'FROM facets\|facets f' src/enqueue/shiny.py`

@@ -265,6 +265,7 @@ def _faces(conn, ids: list[str]) -> dict[str, dict]:
     for r in conn.execute(
         "SELECT artifact_id, level, statement FROM facets"
         " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+        " AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')"
         f" AND level IN ({','.join('?' * len(LEVELS))}) ORDER BY level, statement",
         (json.dumps(ids), *LEVELS),
     ):
@@ -450,7 +451,8 @@ def _seeds(conn, rng: random.Random, today: date) -> list[str]:
     rows = conn.execute(
         "SELECT a.id, a.created_at, a.updated_at FROM artifacts a"
         f" WHERE {_LIVE} AND (a.local_only = 0 OR ?) AND EXISTS (SELECT 1 FROM facets f"
-        " WHERE f.artifact_id = a.id AND f.level IN (?, ?))",
+        " WHERE f.artifact_id = a.id AND f.level IN (?, ?)"
+        " AND COALESCE(f.role, '') NOT IN ('gist', 'point', 'ask'))",
         (_local_on(), *IDEA_LEVELS),
     ).fetchall()
     resting = _recent(conn, "shiny_seed", SEED_REST_DAYS, today)
@@ -482,7 +484,7 @@ def _candidates(conn, seed: str) -> list[dict]:
     store = get_store()
     lines = conn.execute(
         "SELECT level, statement FROM facets WHERE artifact_id = ? AND level IN (?, ?)"
-        " AND bridge = 0",
+        " AND bridge = 0 AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')",
         (seed, *IDEA_LEVELS),
     ).fetchall()
     best: dict[str, tuple[float, str, str]] = {}
@@ -498,6 +500,20 @@ def _candidates(conn, seed: str) -> list[dict]:
                 continue
             if other not in best or hit["score"] > best[other][0]:
                 best[other] = (hit["score"], line["statement"], hit["facet_id"])
+    if not best:
+        return []
+    facet_ids = [v[2] for v in best.values()]
+    if facet_ids:
+        roles = {
+            r["id"]: r["role"]
+            for r in conn.execute(
+                "SELECT id, role FROM facets WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps(facet_ids),),
+            )
+        }
+        best = {
+            k: v for k, v in best.items() if roles.get(v[2], "") not in ("gist", "point", "ask")
+        }
     if not best:
         return []
     near = store.facet_similarity(seed, list(best), SUBJECT_LEVEL)
