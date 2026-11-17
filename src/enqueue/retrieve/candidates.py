@@ -985,6 +985,7 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
                 {
                     "score": round(info["score"], 4),
                     "artifact_id": aid,
+                    "chunk_id": info["chunk_id"],
                     "title": title,
                     "kind": kind,
                     "why": info["why"],

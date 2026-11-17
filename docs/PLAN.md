@@ -652,7 +652,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
 
 ## Track N: a search result opens at the place, and what exists is locked with tests
 
-- [ ] **N1. A search hit carries its page and its first words**
+- [x] **N1. A search hit carries its page and its first words**
   - Needs: A1
   - Files: `retrieve/candidates.py` (`_hybrid_results`: the `out.append({...})` dict), `api/search.py` (`_dated`), `tests/test_search_results.py`
   - Do:
@@ -661,6 +661,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
     3. For each hit that has `text`, set `h["quote"] = chunk.quote_of(h["text"])`.
   - Test: a PDF artifact with chunks for two pages (insert them as in A1's test, then index with `get_store().index_artifact(id)`). A search for a word that is only on page 2 returns the PDF with `page == 1`.
   - Check: `uv run pytest tests/test_search_results.py -q`
+  - Done: retrieve/candidates.py, api/search.py, tests/test_search_results.py, docs/PLAN.md; 43 passed in 8.48s
 
 - [ ] **N2. A search result opens at the place**
   - Needs: N1, A5

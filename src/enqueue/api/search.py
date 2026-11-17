@@ -79,9 +79,15 @@ def _dated(hits: list[dict]) -> None:
         (json.dumps([h["artifact_id"] for h in hits]),),
     ).fetchall()
     by_id = {r["id"]: r for r in rows}
+    from ..ingest import chunk
     from ..ingest import facets as facets_mod
 
     gists = facets_mod.gists(conn, [h["artifact_id"] for h in hits])
+    # One pages_for call per PDF artifact; each chunk hit then reads its own page.
+    pdf_pages: dict[str, dict[str, int]] = {}
+    for h in hits:
+        if h.get("kind") == "pdf" and h.get("chunk_id") and h["artifact_id"] not in pdf_pages:
+            pdf_pages[h["artifact_id"]] = chunk.pages_for(conn, h["artifact_id"])
     for h in hits:
         r = by_id.get(h["artifact_id"])
         if r is None:
@@ -91,6 +97,10 @@ def _dated(hits: list[dict]) -> None:
         h["site"] = r["site_name"] or host.removeprefix("www.") or None
         if h["artifact_id"] in gists:
             h["gist"] = gists[h["artifact_id"]]
+        if h.get("kind") == "pdf" and h.get("chunk_id"):
+            h["page"] = pdf_pages.get(h["artifact_id"], {}).get(h["chunk_id"])
+        if h.get("text"):
+            h["quote"] = chunk.quote_of(h["text"])
 
 
 @router.get("/titles")
