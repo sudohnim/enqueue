@@ -693,6 +693,42 @@ def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]
                 }
             )
             existing.add(nr["id"])
+
+    # "You asked about both": artifacts cited by a message that also cited this one.
+    try:
+        asked_rows = conn.execute(
+            "SELECT cc2.artifact_id, COUNT(*) AS c FROM chat_citations cc1"
+            " JOIN chat_citations cc2 ON cc1.message_id = cc2.message_id"
+            " WHERE cc1.artifact_id = ? AND cc2.artifact_id != ?"
+            " AND cc2.artifact_id IN (SELECT id FROM artifacts WHERE deleted_at IS NULL"
+            " AND vaulted_at IS NULL AND embedded_at IS NULL)"
+            " GROUP BY cc2.artifact_id ORDER BY c DESC LIMIT 3",
+            (artifact_id, artifact_id),
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        asked_rows = []
+    for ar in asked_rows:
+        if ar["artifact_id"] in existing:
+            continue
+        arow = conn.execute(
+            "SELECT id, title, kind, updated_at FROM artifacts WHERE id = ?", (ar["artifact_id"],)
+        ).fetchone()
+        if arow is None:
+            continue
+        out.append(
+            {
+                "id": arow["id"],
+                "title": arow["title"],
+                "kind": arow["kind"],
+                "updated_at": arow["updated_at"],
+                "score": 0.6,
+                "via": None,
+                "point": None,
+                "link": "asked",
+                "distance": None,
+            }
+        )
+        existing.add(arow["id"])
     ids = [r["id"] for r in out]
     about = {
         row["artifact_id"]: row["statement"]

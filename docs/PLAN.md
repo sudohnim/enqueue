@@ -976,7 +976,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: note A titled "Quarterly plan"; note B's body holds "see the Quarterly plan". `for_artifact(A)` has B with link `named`. A note titled "Plan" gets no such row.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R7. "You asked about both" rows**
+- [x] **R7. "You asked about both" rows** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py, src/enqueue/static/js/artifact.js; tests pass
   - Needs: R1
   - Files: `ingest/related.py` (`for_artifact`), `static/js/artifact.js` (`relatedRowHtml`), `tests/test_related.py`
   - Find: `grep -n 'chat_citations\|chat_messages' src/enqueue/migrations/versions/0003_chats.py` for the column names.

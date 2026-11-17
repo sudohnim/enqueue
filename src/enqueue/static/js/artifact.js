@@ -705,6 +705,7 @@
       group("Named in", of("named"), () => "") +
       group("Same idea, another field", of("idea"), (r) => r.point || "") +
       group("Also mentions", of("mention"), (r) => (r.via ? "Both mention " + r.via + "." : "")) +
+      group("You asked about both", of("asked"), () => "") +
       "</section>"
     );
   }
