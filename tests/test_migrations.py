@@ -144,6 +144,7 @@ def test_head_has_new_tables_and_role(store):
         "blob_relay",
         "artifact_colours",
         "thumbs",
+        "source_items",
     } <= tables(config.DB_PATH)
     conn = sqlite3.connect(config.DB_PATH)
     try:

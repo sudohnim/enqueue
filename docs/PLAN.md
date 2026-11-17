@@ -2518,7 +2518,8 @@ Why: a memory is worth what is in it, and an empty library is why a second brain
 The sources here are ones a person does not upload to a cloud workspace, so only a local product can read them.
 `importer.py` already brings in folders and zip files of notes. This track adds four sources to it.
 
-- [ ] **DB3. One more migration**
+- [x] **DB3. One more migration** (claimed: agent, 2026-11-16)
+  Done: migrations/versions/0053_source_items.py, tests/test_migrations.py; 8 passed
   - Needs: DB2
   - Files: new `migrations/versions/0053_source_items.py`, `tests/test_migrations.py`
   - Do: `down_revision = "0052_thumbs"`. In `upgrade()`:
