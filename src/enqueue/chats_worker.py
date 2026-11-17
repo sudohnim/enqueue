@@ -52,6 +52,8 @@ def _one_line(text: str, cap: int = 80) -> str:
 
 def _emit_answered(events, job: Job, skill_name: str, msg: dict, route_ms, answer_ms, total_ms):
     """Log a completed answer with the whole exchange and where the time went."""
+    from .chats import without_places
+
     cited = list(msg.get("cited") or [])
     grounded = bool(msg.get("grounded"))
     # Resolve cited artifact ids to titles so the opened event reads without a lookup.
@@ -63,7 +65,7 @@ def _emit_answered(events, job: Job, skill_name: str, msg: dict, route_ms, answe
         detail,
         data={
             "question": job.text,
-            "answer": msg.get("text", ""),
+            "answer": without_places(msg.get("text", "")),
             "skill": skill_name,
             "model": _answer_model(),
             "grounded": grounded,
@@ -174,7 +176,7 @@ def compute(job: Job) -> None:
         # "answer failed" for a turn that actually completed.
         try:
             if _first_exchange(job.chat_id, job.message_id):
-                chats._name(job.chat_id, job.text, msg["text"])
+                chats._name(job.chat_id, job.text, chats.without_places(msg["text"]))
             chats._retopic(job.chat_id)
         except Exception:  # noqa: BLE001 - naming is best effort; the answer already landed
             log.exception("naming or topic derivation failed for chat %s", job.chat_id)

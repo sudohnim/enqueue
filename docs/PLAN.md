@@ -2227,7 +2227,8 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: in `tests/test_chunk.py`, insert a `pdf` artifact and three chunks by hand: `"## page 1\n\nalpha"`, `"more of page one"`, `"## page 2\n\nbeta"`. `pages_for` gives 0, 0, 1. A `note` artifact gives `{}`. `quote_of("# Title\n\none two three")` gives `"one two three"`.
   - Check: `uv run pytest tests/test_chunk.py -q`
 
-- [ ] **A2. Passages are numbered and the model says which it used**
+- [x] **A2. Passages are numbered and the model says which it used** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/chats.py, src/enqueue/schemas.py, src/enqueue/prompts.py, src/enqueue/chats_worker.py, tests/test_chats.py; 54 passed in 11.03s
   - Needs: none
   - Files: `chats.py`, `schemas.py` (`Answer`), `prompts.py` (`CHAT_ANSWER`), `tests/test_chats.py`
   - Find: `grep -n 'response_model=Answer' src/enqueue/chats.py`; read 20 lines above it.

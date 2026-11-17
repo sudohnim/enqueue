@@ -939,6 +939,35 @@ class TestPassageShapeForTheAnswerModel:
             "model can cite it (CHATBUG.1); got:\n" + captured.last_user
         )
 
+
+class TestNumberedPassages:
+    def test_used_is_limited_to_offered_numbers_and_deduplicated(self):
+        answer = Answer.model_validate(
+            {
+                "answer": "It fell.",
+                "grounded": True,
+                "cited": ["a", "b", "c"],
+                "used": [2, 9, 2],
+            },
+            context={"offered_artifact_ids": ["a", "b", "c"], "offered_passages": 3},
+        )
+        assert answer.used == [2]
+
+    def test_prompt_numbers_the_passages(self, store, monkeypatch):
+        captured = TestPassageShapeForTheAnswerModel._RecordingProvider(
+            Answer=Answer(answer="Yes.", grounded=True, cited=["a"])
+        )
+        monkeypatch.setattr(chats, "get_provider", lambda *a, **k: captured)
+        chats._ask_model(
+            question="q?",
+            history="",
+            found=[{"artifact_id": "a", "title": "A", "text": "some words here"}],
+        )
+        assert "[P1] [artifact] (id: a) A" in captured.last_user
+
+    def test_without_places_removes_the_marks(self):
+        assert chats.without_places("A [P1]. B [P12]") == "A. B"
+
     def test_annotation_sourced_chunk_text_is_tagged_as_a_note(self, store):
         """Before L.1: chunk text merged annotation prose with artifact body
         silently, so a passage over an image whose only text was an annotation

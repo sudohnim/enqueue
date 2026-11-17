@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import uuid
 from contextvars import copy_context
@@ -704,6 +705,11 @@ def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
     return None
 
 
+def without_places(text: str) -> str:
+    """An answer's text with its [P3] place marks removed."""
+    return re.sub(r"\s?\[P\d+\]", "", text or "")
+
+
 def _ask_model(
     question: str,
     history: str,
@@ -727,16 +733,19 @@ def _ask_model(
     provider = provider or get_provider()
     _, words = _budget(provider)
     body = "\n\n".join(
-        f"[{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n"
+        f"[P{n}] [{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n"
         + (f"matched: {p['matched']}\n" if p.get("matched") else "")
         + f"{_clip(p['text'], words)}"
-        for p in found
+        for n, p in enumerate(found, 1)
     )
     return provider.complete(
         system=CHAT_ANSWER,
         user=f"{history}Question: {question}\n\nPassages:\n\n{body}",
         response_model=Answer,
-        context={"offered_artifact_ids": [p["artifact_id"] for p in found]},
+        context={
+            "offered_artifact_ids": [p["artifact_id"] for p in found],
+            "offered_passages": len(found),
+        },
     )
 
 
@@ -978,7 +987,9 @@ def _retopic(chat_id: str) -> None:
     if not any(row["grounded"] for row in rows if row["role"] == "assistant"):
         return
 
-    transcript = "\n\n".join(f"{r['role']}: {' '.join(r['text'].split())[:700]}" for r in rows)
+    transcript = "\n\n".join(
+        f"{r['role']}: {' '.join(without_places(r['text']).split())[:700]}" for r in rows
+    )
     try:
         found = _chat_provider(chat_id).complete(
             system=CHAT_TOPICS,

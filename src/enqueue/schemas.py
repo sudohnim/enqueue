@@ -114,6 +114,10 @@ class Answer(BaseModel):
     cited: list[str] = Field(
         default_factory=list, description="Ids of the artifacts the answer actually used."
     )
+    used: list[int] = Field(
+        default_factory=list,
+        description="Numbers of the passages the answer rests on, most important first.",
+    )
 
     @model_validator(mode="after")
     def check(self, info: ValidationInfo):
@@ -140,6 +144,10 @@ class Answer(BaseModel):
                 "grounded is false but artifacts are cited; if they carried the answer, "
                 "grounded is true"
             )
+        count = (info.context or {}).get("offered_passages", 0)
+        self.used = [n for n in dict.fromkeys(self.used) if isinstance(n, int) and 1 <= n <= count][
+            :8
+        ]
         return self
 
 
