@@ -229,6 +229,7 @@ When your words clearly name one thing it is already picked, so typing part of a
 On the phone the same name matches lead the results as you type.
 Typing an artifact's name finds that artifact first, ahead of anything that only resembles it.
 Results never wait long on the model: when it is slow, the results it has not checked yet are shown last, under a line that says so, and the same search is exact the next time.
+Open a PDF result and it opens at the page where your words matched, with them marked, not at the first page.
 
 If you never saved anything about a subject, the answer is **nothing found**, not a wall of loosely related things.
 
@@ -300,6 +301,7 @@ The panel draws these in five named groups, in this order: **Same subject** (the
 Those two groups need no stored link and do not count toward the five.
 **Show all** opens every stored row when there are more than five.
 A final group, **Close passages**, sits at the foot and holds passages in other notes that say something near to a passage here.
+**More like this**, beside the Related heading, runs a live search from the artifact and shows the closest other items as a results list.
 
 On a same-idea row, **Keep** moves the pair to the top and marks it Kept.
 **Not the same** removes the link and stops the pair being suggested again.

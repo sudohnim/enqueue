@@ -724,11 +724,12 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `uv run pytest tests/test_search_language.py -q`
   - Done: tests/test_search_language.py; 11 passed in 1.54s
 
-- [ ] **N5. Docs for track N**
+- [x] **N5. Docs for track N** (claimed: agent, 2026-11-17)
   - Needs: N1 to N4
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: add `GET /artifacts/{id}/similar` to the API list; in "Retrieval design notes", add that a hit carries `page` and `quote`. In `docs/MANUAL.md`, describe "More like this" and that a result opens at its place.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
 
 ---
 

@@ -882,6 +882,7 @@ GET    /artifacts                   list, newest first. ?limit&offset&order&pinn
 GET    /artifacts/{id}              detail, body, annotations, facets, versions; ?related=all shows every Related row
 GET    /artifacts/{id}/text         readable text, with page numbers for PDFs
 GET    /artifacts/{id}/connections  per passage, the other notes that say something close
+GET    /artifacts/{id}/similar      live items closest to one artifact, for "More like this"
 GET    /artifacts/{id}/blob         original bytes
 GET    /artifacts/{id}/find?q=      phrase locations in a PDF (page fractions)
 GET    /artifacts/{id}/preview-image  link's stored picture
@@ -1019,6 +1020,11 @@ Dense kNN always returns a nearest neighbor however far, so a no-match query wou
 ### Retrieval design notes
 
 These used to live as long comments in `retrieve/candidates.py`, `index/store_sqlite.py` and `chats.py`.
+
+**A hit carries its place (N.1 / N.2).**
+The rollup keeps the matched `chunk_id` on each row.
+`api/search._dated` fills `page` from `chunk.pages_for` for a PDF hit and `quote` from `chunk.quote_of` for any hit with text.
+The page opens a result at that passage with the matched words marked, rather than at the top of the artifact.
 
 **Relevance floor (Q.3 / Q.3b / Q.7).**
 One dense threshold cannot work: the eval showed the weakest real matches (cosine ~0.518) sit below the strongest gibberish neighbors (~0.668).
