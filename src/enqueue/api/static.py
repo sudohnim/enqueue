@@ -21,6 +21,22 @@ from .. import db
 router = APIRouter()
 
 
+@router.get("/boot")
+def boot(t: str = "", to: str = "/"):
+    """Give a window the session cookie, then send it to the page it asked for."""
+    from fastapi.responses import RedirectResponse
+
+    from .. import session
+
+    if not session.ok(t):
+        raise HTTPException(status_code=401, detail="This link is not valid any more.")
+    if not to.startswith("/") or to.startswith("//") or "\\" in to:
+        to = "/"
+    response = RedirectResponse(to, status_code=303)
+    response.set_cookie("enq_session", t, httponly=True, samesite="strict", path="/")
+    return response
+
+
 font_dir = resources.files("enqueue").joinpath("static/fonts")
 static_dir = resources.files("enqueue").joinpath("static")
 

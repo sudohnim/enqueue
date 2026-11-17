@@ -359,7 +359,7 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: in `tests/test_blob_route.py`, upload two files with `POST /capture/upload` (see `tests/test_extension.py` or `grep -rn 'capture/upload' tests` for the form shape): `a.html` with type `text/html`, and `a.png` with type `image/png` (any bytes). Assert: the HTML answer has `Content-Disposition` that starts with `attachment`; the PNG answer starts with `inline`; both have `nosniff`.
   - Check: `uv run pytest tests/test_blob_route.py -q`
 
-- [ ] **S5. The engine makes a session token (not required yet)**
+- [~] **S5. The engine makes a session token (not required yet)** (claimed: agent, 2026-11-16)
   - Needs: none
   - Files: new `session.py`, `config.py`, `api/guard.py`, `api/static.py`, `api/app.py`, new `tests/test_session.py`
   - Why: the engine answers any process on the Mac. `POST /backup/kit` gives the library key to any caller with no `Origin` header. This task adds the token. S8 makes it required, after the shell and the CLI send it.

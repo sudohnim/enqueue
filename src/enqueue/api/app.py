@@ -15,7 +15,7 @@ import threading
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from .. import chats_worker, config, trash
+from .. import chats_worker, config, session, trash
 from . import (
     account,
     admin,
@@ -245,6 +245,9 @@ def serve() -> None:
     from .. import events
 
     events.emit("start", "engine ready")
+
+    # Session token for this run.
+    session.start()
 
     # Daily backups into the chosen folder (backup.py), when something changed.
     from .. import backup as backups

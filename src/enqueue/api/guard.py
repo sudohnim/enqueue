@@ -26,11 +26,12 @@ from urllib.parse import urlsplit
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import config, extension
+from .. import config, extension, session
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 CROSS_SITE_OK = ("/account/google/callback", "/account/apple/done")
+OPEN_PATHS = ("/health", "/boot", "/account/google/callback", "/account/apple/done")
 
 BASE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -55,6 +56,20 @@ def _hostname(value: str) -> str:
         return ""
 
 
+def _presented(headers: dict) -> str:
+    auth = headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    from http.cookies import SimpleCookie
+
+    jar = SimpleCookie()
+    try:
+        jar.load(headers.get("cookie", ""))
+    except Exception:  # noqa: BLE001 - a bad cookie header is no token
+        return ""
+    return jar["enq_session"].value if "enq_session" in jar else ""
+
+
 class LocalOnlyGuard:
     """ASGI middleware enforcing the Host and Origin rules above."""
 
@@ -70,6 +85,19 @@ class LocalOnlyGuard:
 
         if _hostname(headers.get("host", "")) not in allowed:
             await PlainTextResponse("Unknown host.", status_code=421)(scope, receive, send)
+            return
+
+        if (
+            config.SESSION_ENFORCE
+            and not scope["path"].startswith(OPEN_PATHS)
+            and not session.ok(_presented(headers))
+            and not extension.allows(
+                headers.get("origin") or "", scope["path"], headers.get("x-enqueue-key")
+            )
+        ):
+            await PlainTextResponse("This engine needs its session token.", status_code=401)(
+                scope, receive, send
+            )
             return
 
         site = headers.get("sec-fetch-site", "")
