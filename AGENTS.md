@@ -393,6 +393,9 @@ One line per file, describing its job.
 | `migrations/versions/0006_trash.py` | artifacts.deleted_at. |
 | `migrations/versions/0007_preview_images.py` | link_previews.image_hash, image_mime. |
 | `migrations/versions/0008_page_count.py` | artifacts.pages (PDF page count, cached). |
+| `migrations/versions/0048_link_feedback.py` | `link_feedback`: the person's keep/no ruling on a related pair, with an optional idea. Rides the artifact snapshot and steers related links and Something shiny. |
+| `migrations/versions/0047_facet_role.py` | `facets.role`, backfilled from `bridge` and `level`: `bridge`, `kind`, `subject` or `idea`. |
+| `migrations/versions/0046_searches.py` | `searches`: a local record of each search, its hits, loose count and source for the real-search eval. Never synced. |
 | `migrations/versions/0045_shares.py` | `shares`: per shared note its link id, the key in the link, the key that seals (they differ with a passphrase), expiry, and a hash of what was shared. Rides the artifact snapshot as `share`. |
 | `migrations/versions/0044_view_sync.py` | `saved_pivots.updated_at` and `_device_id`, and `pivot_tombstones`: saved views sync between computers under LWW. |
 | `migrations/versions/0043_facet_bridge.py` | `facets.bridge`: a summary line that restates the idea in another field's words. Rides the snapshot both ways (the phone adds the column in `init_schema`). |
@@ -405,7 +408,7 @@ One line per file, describing its job.
 | `migrations/versions/0035_opens.py` | `opens` (artifact_id, source, query, rank, opened_at): the open log behind the real-search eval. No foreign keys; purge deletes an artifact's rows. |
 | `migrations/versions/0034_related.py` | `related` (artifact_id, related_id, score, model_version): derived links, no foreign keys; purge deletes both directions. |
 | `migrations/versions/0033_chunk_context.py` | `chunks.context` and `chunks.context_model` (contextual chunks). |
-| `migrations/versions/0009` .. `0041` | One revision per schema change, applied at startup (latest: `0045_shares`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
+| `migrations/versions/0009` .. `0041` | One revision per schema change, applied at startup (latest: `0048_link_feedback`). Notable: 0010 index tables, 0019 below, 0031 `facets.edited`, 0032 `events`, 0036 `sections`. Read the directory for the rest. |
 | `migrations/versions/0019_drop_exhibits.py` | Drops the exhibits and exhibit_members tables; chat scope_kind CHECK rewritten without 'exhibit' (exhibit-scoped rows become everything-scoped). |
 
 ### Desktop
@@ -469,6 +472,34 @@ One line per file, describing its job.
 
 1. **Eligibility gate** (`ingest/facets.py`): `apply_eligibility_gate()` marks artifacts that should not get facets (too short, not a note, text_only status).
 2. **Generate** (`ingest/facets.py` `generate_for_artifact`): feeds the model the artifact's page_text (not just the body, capped at `FACET_INPUT_CHARS`) PLUS its annotations marked "(your note)", so a person's notes shape the summary. Calls `get_provider(summarize=True)` (the summary model), stores facets stamped with `provider.model` and a trust derived from the model's confidence. DELETE-before-insert only removes rows `WHERE edited=0`, preserving hand-edited lines.
+
+**Gist, points and search phrases.**
+The model also returns a `gist`, `points` and `asks`, separate from the five levels.
+The gist is one plain sentence of at most 25 words.
+Points are 3 to 5 lines of at most 18 words each, in the artifact's own words and order.
+Asks are 5 to 8 searches of 2 to 7 lower-case words, some in another field's words.
+`generate_for_artifact` stores them as facet rows with roles `gist`, `point` and `ask`.
+A hand-edited row of one role blocks the machine from replacing that role.
+
+**Roles.**
+`facets.role` is `bridge`, `kind`, `subject`, `idea`, `gist`, `point` or `ask`.
+`role_for(level, bridge)` maps a bridge to `bridge`, level 0 to `kind`, level 1 to `subject`, and higher levels to `idea`.
+Migration `0047_facet_role` backfilled existing rows the same way.
+The role rides the artifact snapshot.
+A row with no role falls back to `role_for`.
+`INDEX_ONLY_ROLES = ("gist", "point", "ask")` names the rows written for reading and search rather than for related links.
+Search indexes them, and a hit with role `ask` is labelled "search phrase".
+`VectorStore.facet_similarity` excludes them, so they cannot propose subject or idea links.
+The gray-zone judge never sees role `ask`.
+
+**Summary panel.**
+`static/js/artifact.js` `facetGroups` groups the lines for the panel.
+The gist sits first on its own, then "Key points", then "Ideas".
+When there is no gist, the panel shows "About" and three "Ideas" first.
+Bridges sit under "Also found by", closed until asked for.
+Ask rows are never shown.
+Long groups get a "Show N more" button.
+
 3. **Index** (`index/store_sqlite.py`): `index_facets_artifact()` embeds facet statements, upserts into `vec_facets` and `fts_facets`. Search drops a facet written from an older body; the model that wrote it does not matter (see "Two desktops read an item with the model once" under Gotchas).
 
 **Re-summarizing runs on the ingest worker.** `backfill_summaries()` (every startup) queues every live item whose facets are not `facets.is_current` (none, or written from an older body), and every live item with no chunks (one pulled before pulls were ingested), so the library converges across restarts. A change of ingest model is the one thing that rewrites current summaries: `queue.refresh_on_model_change()` (at startup and on any model setting change) forces every item whose summary lines another model wrote through every model step, once; it only records the model the first time it runs. "Rebuild concepts" / `POST /facets` / `enq facets` call `queue_summary_refresh(redo)`, which queues the same set (or, with `redo`, every item, forced via `facets.force`) and returns at once; it used to run `generate_all` inside the request for hours, which a restart killed. `enq doctor` reports `summaries: {model, current, stale, retrying}`. The retry sweeper (`_sweep_due`) never re-queues an artifact already waiting in the queue or being processed (`_in_flight`): a due row only moves once the worker processes it, and re-queuing it every 30s while the worker was busy produced bursts of back-to-back re-ingests ("33 chunks, 0 facets" every ~13s). See "A retry run settles its row" under Gotchas.

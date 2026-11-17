@@ -256,8 +256,16 @@ It follows the pointer, blinks, and approves when something is saved.
 
 Open an artifact and click the **circled i** to open its Details panel: tags, views, the summary, and passages that connect to other artifacts.
 The page slides aside so the panel never covers what you are reading.
-The **Summary** is a handful of lines the model wrote about what the artifact says and what it is an example of.
-These lines are what let search find it by idea.
+
+The model writes a short plain line first: what the artifact is and its main point.
+Below it, **Key points** say what the artifact actually says, in its own words and in order.
+Below that, **Ideas** say what it could be an example of, so search can find it by meaning.
+Open **Show more** to read the rest of the ideas.
+**Also found by** holds lines that reach the same idea from another field; these start closed too.
+When there is no plain first line, the panel shows **About** instead.
+
+The model also writes short search phrases for each artifact.
+They are not shown in the panel, but they help search find it by what a person would type.
 
 - Click a line to rewrite it, or **Add a line** to write your own.
 - Remove a line you disagree with.
