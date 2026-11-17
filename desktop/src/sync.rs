@@ -627,7 +627,9 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
           model_version TEXT,
           body_version  TEXT,
           trust         REAL,
-          edited        INTEGER NOT NULL DEFAULT 0
+          edited        INTEGER NOT NULL DEFAULT 0,
+          role          TEXT,
+          bridge        INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_facets_artifact ON facets(artifact_id);
         -- The activity log (mirrors the engine's events table): the notable things the
@@ -766,6 +768,43 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
             "INSERT INTO sync_meta (key, value) VALUES ('heal_repull_v4_facets', '1')",
             [],
         )
+        .map_err(|e| e.to_string())?;
+    }
+    // P1b: keyword index kept up to date by the database itself.
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_items USING fts5(\
+           artifact_id UNINDEXED, title, body, notes, summary, pages);",
+    )
+    .map_err(|e| e.to_string())?;
+    let rebuild = |key: &str| {
+        format!(
+            "DELETE FROM fts_items WHERE artifact_id = {key}; \
+             INSERT INTO fts_items (artifact_id, title, body, notes, summary, pages) \
+             SELECT a.id, coalesce(a.title, ''), coalesce(a.body, ''), \
+               coalesce((SELECT group_concat(text, char(10)) FROM annotations WHERE artifact_id = a.id), ''), \
+               coalesce((SELECT group_concat(statement, char(10)) FROM facets WHERE artifact_id = a.id AND coalesce(role, '') != 'ask'), ''), \
+               coalesce((SELECT group_concat(text, char(10)) FROM page_text WHERE artifact_id = a.id), '') \
+             FROM artifacts a \
+             WHERE a.id = {key} AND a.deleted_at IS NULL AND a.vaulted_at IS NULL;"
+        )
+    };
+    for (name, table, when, key) in [
+        ("art_ins", "artifacts", "AFTER INSERT", "NEW.id"),
+        ("art_upd", "artifacts", "AFTER UPDATE", "NEW.id"),
+        ("art_del", "artifacts", "AFTER DELETE", "OLD.id"),
+        ("ann_ins", "annotations", "AFTER INSERT", "NEW.artifact_id"),
+        ("ann_upd", "annotations", "AFTER UPDATE", "NEW.artifact_id"),
+        ("ann_del", "annotations", "AFTER DELETE", "OLD.artifact_id"),
+        ("fac_ins", "facets", "AFTER INSERT", "NEW.artifact_id"),
+        ("fac_upd", "facets", "AFTER UPDATE", "NEW.artifact_id"),
+        ("fac_del", "facets", "AFTER DELETE", "OLD.artifact_id"),
+        ("pag_ins", "page_text", "AFTER INSERT", "NEW.artifact_id"),
+        ("pag_del", "page_text", "AFTER DELETE", "OLD.artifact_id"),
+    ] {
+        conn.execute_batch(&format!(
+            "CREATE TRIGGER IF NOT EXISTS fts_items_{name} {when} ON {table} BEGIN {} END;",
+            rebuild(key)
+        ))
         .map_err(|e| e.to_string())?;
     }
     Ok(())

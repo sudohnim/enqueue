@@ -1538,7 +1538,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `cd desktop && cargo test --lib the_database_build_has_fts5`
   - Do not: change `init_schema` in this task.
 
-- [ ] **P1b. The phone's keyword index, kept up to date by the database**
+- [x] **P1b. The phone's keyword index, kept up to date by the database** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: P1a
   - Files: `desktop/src/sync.rs` (`init_schema` and `mod tests`)
   - Why: the phone matches with `LIKE` and does not see summary lines or PDF text. Triggers keep the index right after every write, so no write function must remember to update it.
