@@ -140,6 +140,27 @@ def _seal_derived(conn, artifact_id: str, key: bytes) -> int:
             if hashlib.sha256(raw).hexdigest() == image_hash:
                 picture.write_bytes(crypto.encrypt(raw, key))
                 changed += 1
+    # Chat answers that quoted this item.
+    for m in conn.execute(
+        "SELECT cm.id, cm.text FROM chat_messages cm "
+        "WHERE cm.id IN (SELECT message_id FROM chat_citations WHERE artifact_id = ?)",
+        (artifact_id,),
+    ).fetchall():
+        sealed = _seal(key, m["text"])
+        if sealed != m["text"]:
+            conn.execute(
+                "INSERT OR REPLACE INTO derived_values "
+                "(scope, subject, attribute, value, grounded, source, model_version, created_at) "
+                "VALUES (?, ?, ?, ?, 1, ?, '', ?)",
+                ("vault_answer", m["id"], artifact_id, sealed, "user", db.now()),
+            )
+            conn.execute(
+                "UPDATE chat_messages SET text = ? WHERE id = ?",
+                ("This answer quoted an item that is now in the vault.", m["id"]),
+            )
+            changed += 1
+    # Activity rows that name the item.
+    conn.execute("DELETE FROM events WHERE data LIKE '%' || ? || '%'", (artifact_id,))
     return changed
 
 
@@ -186,6 +207,19 @@ def _open_derived(conn, artifact_id: str, key: bytes) -> bool:
                 if plain is not None and hashlib.sha256(plain).hexdigest() == image_hash:
                     picture.write_bytes(plain)
                     touched = True
+    # Chat answers that quoted this item.
+    for r in conn.execute(
+        "SELECT subject, value FROM derived_values WHERE scope = 'vault_answer' AND attribute = ?",
+        (artifact_id,),
+    ).fetchall():
+        opened = try_open(key, r["value"])
+        if opened is not None:
+            conn.execute("UPDATE chat_messages SET text = ? WHERE id = ?", (opened, r["subject"]))
+            touched = True
+    conn.execute(
+        "DELETE FROM derived_values WHERE scope = 'vault_answer' AND attribute = ?",
+        (artifact_id,),
+    )
     return touched
 
 

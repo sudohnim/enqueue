@@ -530,7 +530,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Check: `bin/launch emulator`. Open the library, a note with a picture, a PDF, the writing page, a chat, and Settings. `adb logcat -d | grep -i 'content security policy'` prints nothing. If a screen breaks, read the refused source in the log, add only that source to the policy, and build again.
   - Do not: close this task from a build that only compiles.
 
-- [ ] **S10. An answer that quoted a vaulted item is sealed with it**
+- [x] **S10. An answer that quoted a vaulted item is sealed with it** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/vaultops.py; tests/test_vaultops.py pass
   - Needs: none
   - Files: `vaultops.py`, `tests/test_vaultops.py`
   - Why: after an item goes into the vault, a chat answer that quoted it stays readable.
