@@ -171,7 +171,7 @@ The sections of the file are in the order they were written: the tracks from the
   - Reopened in review (2026-11-16): the CSP went in without the device check this task requires, and Tauri adds script hashes that make 'unsafe-inline' ignored, which would block the page's inline handlers. `csp` is back to null. Before closing, also set `app.security.dangerousDisableAssetCspModification` to ["script-src", "style-src"].
   - Done: desktop/tauri.conf.json; no content security policy lines in logcat after opening library, picture, PDF, writer, chat and Settings on emulator-5554
 
-- [ ] **S11. Docs for track S**
+- [x] **S11. Docs for track S** (claimed: agent, 2026-11-17)
   - Needs: S1 to S10
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do:
@@ -181,6 +181,7 @@ The sections of the file are in the order they were written: the tracks from the
     4. In the "What vaulting covers" section, remove "any conversation that quoted it" from the list of what stays readable.
     5. In `docs/MANUAL.md`, add nothing unless a screen changed.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md; bin/verify: all checks passed
 
 ---
 

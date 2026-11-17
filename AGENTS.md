@@ -297,7 +297,8 @@ One line per file, describing its job.
 | `cli.py` | Thin Typer CLI over the engine API. Every command calls `httpx` against localhost. |
 | `api/` | FastAPI app split into one router per domain (M.9): `static.py` (shell, capture, health), `artifacts.py` (wall, artifact, tags, capture writes), `wall.py` (shared wall-shaping helpers), `write.py` (re-chunk, facets, index rebuild), `admin.py` (doctor, index counts, ingest wait), `search.py`, `chats.py`, `settings.py`, `pivots.py`. `app.py` has `create_app()` + `serve()` and binds 127.0.0.1:8787. |
 | `config.py` | Constants: paths, model names, backends, env overrides. No logic. |
-| `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421) and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403), so no other website can reach the engine, even through DNS rebinding. Requests with no Origin (CLI, the shell's health check) pass. Tests add `testserver` via conftest. |
+| `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421); needs the session token (`Authorization: Bearer` or the `enq_session` cookie, else 401, except `OPEN_PATHS = ("/health", "/boot", "/account/google/callback", "/account/apple/done")` and the extension key); refuses `Sec-Fetch-Site: cross-site` or `same-site` (else 403, except `CROSS_SITE_OK = ("/account/google/callback", "/account/apple/done")` and the extension key); and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403). Requests with no Origin (CLI, the shell's health check) pass. Adds `BASE_HEADERS` (`X-Content-Type-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`, `X-Frame-Options`) and a `PAGE_CSP` on HTML. Tests add `testserver` via conftest. |
+| `session.py` | The engine's session token: `start()` makes a `secrets.token_urlsafe(32)` token at engine start and writes it to `DATA_DIR/session` (mode 0600); `read()` returns it for the engine's own clients; `ok()` compares a presented token in constant time (`hmac.compare_digest`). The shell, the CLI and the scripts read the file and send the token, so a process that cannot read the data folder cannot call the engine. |
 | `privacy.py` | What may go to which model. `is_remote(provider)` (endpoint not loopback), `shareable(items, provider)` drops local-only artifacts from anything shown to a remote model: chat passages, the gray-zone judge, model re-ranking. A chat scoped to a local-only artifact, and attribute extraction from one, get no model at all (`providers.base.LocalOnly`). The phone's chat does the same through `sync::chat_sources`. |
 | `blobstore.py` | The original files on disk, sealed under a key from the library key once the kit is saved; every read and write goes through it. See "At rest" under Encryption and keys. |
 | `thumbs.py` | Small pictures for the wall: `make`/`get`/`drop` keep a 520px JPEG of a live image, sealed in the blobstore like every original; made at ingest, shown by `GET /artifacts/{id}/thumb`, dropped when the item is vaulted. See "An original can live on the relay only" under Gotchas. |
@@ -1452,6 +1453,23 @@ ESCALATE TO HUMAN only for a visual the camera layer hides or a macOS-display ch
 Always bind to `127.0.0.1`.
 This machine may run Ollama in Docker bound to the IPv6 wildcard, and `localhost` resolves to IPv6 first.
 
+### The engine needs a session token (S5 to S8, 2026-11-16)
+
+Binding to `127.0.0.1` keeps other machines out, but any page or DNS-rebinding name on this Mac could still call the engine.
+S1 to S3 close those holes with the Host rule, the security headers and the `Sec-Fetch-Site` and Origin rules in `api/guard.py`.
+S5 to S8 add a session token on top: `session.start()` makes a `secrets.token_urlsafe(32)` token at engine start and writes it to `DATA_DIR/session` (mode 0600).
+Every request except `OPEN_PATHS` must present that token as `Authorization: Bearer <token>` or in the `enq_session` cookie, else 401.
+S6 made the CLI read the file and send the Bearer header.
+S7 made the desktop shell open both windows through `/boot?t=<token>&to=<page>`, which checks the token, sets an HttpOnly, SameSite=Strict cookie and redirects to the page, and added the Bearer header to its raw HTTP calls.
+S8 turned the check on by default with `ENQ_SESSION_ENFORCE` (on unless set to `off`); tests turn it off in conftest.
+
+A person who opens the engine in a browser can no longer use `http://127.0.0.1:8787/` alone.
+At engine start the log prints `Open http://127.0.0.1:8787/boot?t=<token> in a browser.`
+Open that address: `/boot` checks the token, sets the cookie and sends the home page.
+The token in the log is the same one in `DATA_DIR/session`.
+Each run makes a new token, so a link saved from an earlier run fails with "This link is not valid any more." (401).
+The token only gates this run's local HTTP calls and never leaves the Mac.
+
 ### settings_path is resolved at call time
 
 `settings.settings_path()` reads `config.DATA_DIR` each time it is called, not at import.
@@ -1853,7 +1871,7 @@ Anything new that stores text about an artifact must be added to one of those tw
 `vaultops.scrub()` brings items vaulted by an older build up to this: at startup it removes the model's rows (no key needed), and when the vault is unlocked (`POST /vault/unlock`) it seals the rest; it vacuums and pushes each cleaned item so the readable copy leaves the other devices.
 A vaulted snapshot replaces a device's summary lines even when it carries none (`sync/snapshot.py` and `apply_snapshot` in `desktop/src/sync.rs`); every other snapshot still leaves local lines alone when it has none.
 The phone does the same when it vaults (`vault_apply` in `desktop/src/lib.rs`) and removes leftover model lines beside vaulted items at each launch (`init_schema`).
-Still readable about a vaulted item: its tags, its kind and dates, and any conversation that quoted it before it was vaulted.
+Still readable about a vaulted item: its tags, its kind and dates.
 
 **The library is its owner's only (`db.restrict_permissions`, at engine startup).**
 The data folder is 0700 and the files in it 0600; they were 0755 and 0644, readable by every account on the Mac.
@@ -1883,7 +1901,7 @@ Anything new that stores text about an artifact must be added to one of those tw
 `vaultops.scrub()` brings items vaulted by an older build up to this: at startup it removes the model's rows (no key needed), and when the vault is unlocked (`POST /vault/unlock`) it seals the rest; it vacuums and pushes each cleaned item so the readable copy leaves the other devices.
 A vaulted snapshot replaces a device's summary lines even when it carries none (`sync/snapshot.py` and `apply_snapshot` in `desktop/src/sync.rs`); every other snapshot still leaves local lines alone when it has none.
 The phone does the same when it vaults (`vault_apply` in `desktop/src/lib.rs`) and removes leftover model lines beside vaulted items at each launch (`init_schema`).
-Still readable about a vaulted item: its tags, its kind and dates, and any conversation that quoted it before it was vaulted.
+Still readable about a vaulted item: its tags, its kind and dates.
 
 **The library is its owner's only (`db.restrict_permissions`, at engine startup).**
 The data folder is 0700 and the files in it 0600; they were 0755 and 0644, readable by every account on the Mac.
