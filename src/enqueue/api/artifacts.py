@@ -32,6 +32,14 @@ def connections(artifact_id: str) -> dict:
     return {"passages": passage_links.for_artifact(artifact_id)}
 
 
+@router.get("/artifacts/{artifact_id}/similar")
+def similar(artifact_id: str) -> dict:
+    """Live items closest to an artifact (retrieve/passage_links.py)."""
+    from ..retrieve import passage_links
+
+    return {"hits": passage_links.similar_items(artifact_id)}
+
+
 @router.post("/shiny/again")
 def shiny_again() -> dict:
     """Choose today's Something shiny again from the connections found so far (the

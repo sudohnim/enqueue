@@ -673,12 +673,13 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Device check **[device]**: search a word that is deep in a PDF; the result opens at that page with the word marked.
   - Done: static/js/search.js; bin/verify: all checks passed
 
-- [ ] **N3a. "More like this": the engine side**
+- [x] **N3a. "More like this": the engine side** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `retrieve/passage_links.py`, `api/artifacts.py` (a new route at the end), new `tests/test_similar.py`
   - Do: steps 1 and 2 of N3 below.
   - Test: the test of N3.
   - Check: `uv run pytest tests/test_similar.py -q`
+  - Done: retrieve/passage_links.py, api/artifacts.py, tests/test_similar.py; 2 passed in 13.85s
 
 - [ ] **N3. "More like this"**
   - Split: steps 1 and 2 are done in N3a. Do steps 3 to 6 only (the page).
