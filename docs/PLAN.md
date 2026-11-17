@@ -186,7 +186,7 @@ The sections of the file are in the order they were written: the tracks from the
 
 ## Track Q: search
 
-- [ ] **Q11. Docs for track Q**
+- [x] **Q11. Docs for track Q**
   - Needs: Q1 to Q10
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do:
@@ -195,6 +195,7 @@ The sections of the file are in the order they were written: the tracks from the
     3. Add `POST /search/warm` to the API list.
     4. In "Chat passages", say that a summary hit pulls its best passage.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/PLAN.md; bin/verify: all checks passed
 
 ---
 

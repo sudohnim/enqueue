@@ -319,6 +319,7 @@ One line per file, describing its job.
 | `sqlite.py` | The SQLite driver for everything that opens the library: SQLCipher's build (`sqlcipher3`), re-exported. Reads plain files too; `db.connect` keys an encrypted one. |
 | `libkey.py` | The library key: 32 random bytes made once, in the Keychain (`enqueue-library-key`), the root every other key is derived from (`derive`, HKDF-SHA256 per use); the recovery kit (`kit`/`from_kit`, 56 Crockford characters with a checksum) and whether the person said they saved it. |
 | `opens.py` | Records each artifact open (`opens` table): source (search/wall/related/chat/other), and for a search open its query and 1-based rank. `usage_boost` turns opens, chat citations and pins into a small ranking multiplier. The interface reports opens through `POST /artifacts/{id}/opened` (`reportOpen` in `static/js/util.js`). Local only, never synced. |
+| `searches.py` | A local record of each `/search` query, its top hit ids, loose count and source for the real-search eval. `prune()` keeps 180 days. Never synced. |
 | `reading.py` | How far the assistant is through reading the library (`GET /reading`), for the wall's "Reading your library" line. See "Reading your library" under Gotchas. |
 | `catalog.py` | Which models an online service serves: OpenRouter's public list (`GET /api/v1/models`, no key), fetched at most every 12 hours into memory and `model-catalog.json`, OpenCode Go's from `config`; OpenAI's and Anthropic's from their `/v1/models` with the person's key (`KEYED`); Ollama's from `/api/tags` on this Mac, asked each time, never kept. `suggest` picks the model a service starts on from its own list (a cheap one: Haiku, an OpenAI "luna"/"mini"; for Ollama the best of `local_model.CHOICES` it holds), returned as `suggested`/`suggested_vision`; Settings and the welcome switch to it once a key is saved (`applySuggested` in `settings.js`). `GET /settings/models?backend=` feeds the Settings pickers; `settings.update` refuses a model the list lacks (a list a few minutes old is fetched again first, so a new model is not turned away); `/setup` says when a saved one is not offered (`model-unknown`), reading the kept list only. The images job needs a model that reads pictures. A list that cannot be fetched refuses nothing. Tests never fetch (`conftest._no_model_catalog_fetch`). |
 | `local_model.py` | Ollama on this Mac, for the `local` backend: installed (`/Applications/Ollama.app` or the CLI), running (`/api/version`), the models it holds that answer (`/api/tags`, `/api/show` capabilities), `start()` (`open -a Ollama`), and the models Enqueue offers (`CHOICES`, the recommended one by `hw.memsize`), downloaded in the background through `/api/pull` (`pull`, `pull_state`, `cancel`). Routes `GET /settings/local`, `POST /settings/local/start`, `POST`/`DELETE /settings/local/pull`; the panel is `renderLocalPanel` in `static/js/settings.js`. Tests point `BASE` at a closed port (`conftest`). |
@@ -665,6 +666,7 @@ Migrations run automatically at startup via Alembic.
 | `related_state` | key/value for related links: the rule's `version`, the judge's `judge_day` count | local only |
 | `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
 | `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
+| `searches` | each search, its hits, loose count and source for the real-search eval | migration `0046_searches`; local only, never synced; pruned after 180 days |
 
 ### Invariants
 
@@ -942,6 +944,7 @@ PATCH  /facets/{fid}                 edit one summary line (marks edited, reinde
 DELETE /facets/{fid}                 delete one summary line
 POST   /index                        rebuild the search index
 POST   /reprocess                    re-extract, re-chunk, re-index everything
+POST   /search/warm                  load the embedding model before a search
 POST   /ingest/wait                  block until queue drains (for tests)
 POST   /artifacts/{id}/opened        record an open (source, and a search open's query + rank)
 POST   /artifacts/{id}/nearby        titles close to a passage being written ({text}, 12+ words)
@@ -1081,7 +1084,11 @@ Search and chat drop level 0 lines from the dense facet leg and keep one only on
 Measured 2026-11-13: cross-domain enriched and lifted 9/12 to 10/12, main eval unchanged.
 
 **The judge never holds a search.**
-`_apply_floor` waits `config.SEARCH_JUDGE_WAIT_S` (2.5s, `ENQ_SEARCH_JUDGE_WAIT`) for the gray-zone judge (`_judge_in_time`); past that the search answers from cached verdicts, keeps what was never judged as `loose` (shown last, under the page's line that says so, `LOOSE_MAX` 6 at most), and the judge finishes in the background and caches, so the same search is exact next time.
+`_apply_floor` waits for the gray-zone judge (`_judge_in_time`) for the search's own `wait`, or `config.SEARCH_JUDGE_WAIT_S` (2.5s, `ENQ_SEARCH_JUDGE_WAIT`) when called without one.
+`GET /search` takes `wait` from 0 to 10 seconds and defaults to 0, so a page search answers at once.
+A judge that has not answered in that time keeps the never-judged hits as `loose`, shown last under the page's line that says so (`LOOSE_MAX` 6 at most), and finishes in the background and caches, so the same search is exact next time.
+`judge_pending()` reports whether a judge was left running as `pending` in the `/search` result.
+The page draws that first result, then asks `/search` again with `wait=8` when `pending` is true and redraws in place if the same query is still on screen.
 Without the cap a new search with a slow judge showed 20 guesses, gibberish included; similarity cannot tell them apart, and on the main eval the real vague matches among them rank as far down as 6th.
 At most two judges run on past their search (`_JUDGES`); a search that finds both busy answers without one.
 A thinking model with reprompts once held a search for an exact title for 94 seconds.
@@ -1116,7 +1123,7 @@ A line the person wrote or rewrote (`facets.edited`) is never stale: `add_facet`
 **Chat passages.**
 The budget follows the answering model (`chats._budget`): a model on this machine gets `PASSAGES` (8) passages clipped to `PASSAGE_WORDS` (220), because a local 8B model given more summarizes instead; a hosted one gets `REMOTE_PASSAGES` (20) at `REMOTE_PASSAGE_WORDS` (400), which is every chunk whole.
 At most `CHUNKS_PER_ARTIFACT` chunks per note so one long note cannot take the whole budget (the "do I have notes on a president" case).
-A facet or entity hit pulls its artifact's opening chunk in, so the answer has literal text to stand on.
+A summary, entity or section hit pulls its artifact's best passage for the question (`store.search_within`), falling back to its opening passage, so the answer has literal text to stand on.
 A note the question names, by title or by an entity (`retrieve/names.py`), is read first, at its passage closest to the question: one embedding of "a council of Taleb, Thrawn, Sun Tzu and Marcus Aurelius" blurred the names, and the answer said nothing mentioned Thrawn while a note called Thrawn existed.
 A scoped chat reads its artifact whole when it fits the budget, with no search.
 One that does not fit (26% of one real library's artifacts, up to 81 chunks) used to be cut to its first 8 chunks, so nothing past the opening pages could be answered.
