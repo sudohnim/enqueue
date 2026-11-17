@@ -84,7 +84,7 @@ _PER_STATEMENT = 80
 IDEA_MIN = 0.72
 IDEA_CANDIDATES = 8
 # Bump when the way links are chosen changes: every artifact is recomputed once.
-VERSION = "9"
+VERSION = "10"
 # The most model calls the judge makes in a day (UTC). Each call judges one artifact's
 # candidates. 0 turns the judge off: cached verdicts still link, nothing new is asked.
 JUDGE_DAILY = int(os.getenv("ENQ_RELATED_JUDGE_DAILY", "40"))
@@ -567,6 +567,39 @@ def _own_sites(conn, artifact_ids: list[str]) -> dict[str, set[str]]:
     return out
 
 
+def _salient(conn, artifact_id: str, name: str) -> bool:
+    """Whether a name matters to an item: it is in the title or a subject line,
+    or two or more times in its text."""
+    needle = name.strip().lower()
+    row = conn.execute(
+        "SELECT lower(coalesce(title, '')) AS title, lower(coalesce(body, '')) AS body"
+        " FROM artifacts WHERE id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    if needle in row["title"]:
+        return True
+    subject = conn.execute(
+        "SELECT 1 FROM facets WHERE artifact_id = ? AND level = 1"
+        " AND instr(lower(statement), ?) > 0 LIMIT 1",
+        (artifact_id, needle),
+    ).fetchone()
+    if subject:
+        return True
+    ent = conn.execute(
+        "SELECT 1 FROM entities WHERE artifact_id = ? AND lower(trim(entity)) = ? LIMIT 1",
+        (artifact_id, needle),
+    ).fetchone()
+    if ent:
+        return True
+    text = row["body"] or " ".join(
+        r["text"].lower()
+        for r in conn.execute("SELECT text FROM chunks WHERE artifact_id = ?", (artifact_id,))
+    )
+    return text.count(needle) >= 2
+
+
 def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
     """Other live artifacts whose current entities share a name with this one's, mapped
     to the shared name (the rarest one, when several are shared)."""
@@ -608,6 +641,7 @@ def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
             continue
         for other in others:
             out[other] = names[name]  # rarest name last, so it wins
+    out = {o: n for o, n in out.items() if _salient(conn, artifact_id, n) and _salient(conn, o, n)}
     return out
 
 

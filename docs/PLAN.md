@@ -888,7 +888,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: a related item with a level 0 line gives that line as `about`.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R3. A name links two notes only when it matters to both**
+- [x] **R3. A name links two notes only when it matters to both** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py; tests pass
   - Needs: none
   - Files: `ingest/related.py` (`_mentions`, `VERSION`), `tests/test_related.py`
   - Why: rows such as "Both mention NYC." link notes that share nothing else.
