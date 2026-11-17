@@ -1771,7 +1771,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: add the command `mobile_link_feedback(a: String, b: String, verdict: String, idea: String)`. It calls `link_feedback_local`, then queues both artifacts the way `mobile_toggle_pin` queues one. Register it in the three places.
   - Check: `cd desktop && cargo test --lib`; `cargo check --lib --target aarch64-linux-android`
 
-- [ ] **P8. The phone's idea rows have Keep and Not the same** **[device]**
+- [x] **P8. The phone's idea rows have Keep and Not the same** **[device]** (claimed: agent, 2026-11-16)
+  Done: desktop/src/lib.rs; Owed: device check
   - Needs: P8b, P6
   - Files: `static/mobile.html`
   - Do: in the related section of P6, add two buttons under each idea row, as the desktop does in `relatedRowHtml`. A tap calls `invoke("mobile_link_feedback", {a, b, verdict, idea})` with `idea` = the row's `point`, then draws the reader again.
