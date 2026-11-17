@@ -30,6 +30,8 @@ from .. import config, extension
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
+CROSS_SITE_OK = ("/account/google/callback", "/account/apple/done")
+
 BASE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -68,6 +70,17 @@ class LocalOnlyGuard:
 
         if _hostname(headers.get("host", "")) not in allowed:
             await PlainTextResponse("Unknown host.", status_code=421)(scope, receive, send)
+            return
+
+        site = headers.get("sec-fetch-site", "")
+        if (
+            site in ("cross-site", "same-site")
+            and not scope["path"].startswith(CROSS_SITE_OK)
+            and not extension.key_ok(headers.get("x-enqueue-key"))
+        ):
+            await PlainTextResponse("Cross-site request refused.", status_code=403)(
+                scope, receive, send
+            )
             return
 
         origin = headers.get("origin")

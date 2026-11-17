@@ -291,7 +291,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Check: `uv run pytest tests/test_headers.py tests/test_extension.py -q`
   - Device check **[device]**: `bin/launch desktop`. Open a note, a PDF, a link, the capture overlay and Settings. The app works and the log `$TMPDIR/enqueue-app.log` shows no new error.
 
-- [ ] **S3. Refuse a request that another website started**
+- [x] **S3. Refuse a request that another website started** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/extension.py, src/enqueue/api/guard.py, tests/test_headers.py; tests pass
   - Needs: S2
   - Files: `api/guard.py`, `extension.py`, `tests/test_headers.py`
   - Why: a website can call `GET /search?q=...` on `127.0.0.1:8787` today. It cannot read the answer, but the call writes the activity log and can make a model call.

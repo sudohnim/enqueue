@@ -33,6 +33,13 @@ def new_code() -> str:
     return value
 
 
+def key_ok(presented: str | None) -> bool:
+    expected = code()
+    return bool(presented and expected) and hmac.compare_digest(
+        presented.encode(), expected.encode()
+    )
+
+
 def allows(origin: str, path: str, presented: str | None) -> bool:
     """Whether an extension's state-changing request may pass the origin guard."""
     if not origin.lower().startswith(ORIGINS) or not presented or not ROUTES.match(path):
