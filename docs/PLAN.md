@@ -326,7 +326,8 @@ The sections of the file are in the order they were written: the tracks from the
     4. `GET /account/google/callback` with `Sec-Fetch-Site: cross-site` does not answer 403.
   - Check: `uv run pytest tests/test_headers.py tests/test_extension.py tests/test_account.py -q`
 
-- [ ] **S4. The file route does not run what it is given**
+- [x] **S4. The file route does not run what it is given** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/api/artifacts.py, src/enqueue/api/vault.py, tests/test_blob_route.py; tests pass
   - Needs: none
   - Files: `api/artifacts.py` (`get_blob`), `api/vault.py` (its blob route), new `tests/test_blob_route.py`
   - Why: the route sends the stored type and `inline`. An uploaded HTML or SVG file opened at that address would run script inside the engine's own origin.

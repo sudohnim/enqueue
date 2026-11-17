@@ -602,8 +602,26 @@ def get_blob(artifact_id: str):
     return Response(
         content=blob.read_bytes(),
         media_type=mime,
-        headers={"Content-Disposition": _inline(filename)},
+        headers=_blob_headers(mime, filename),
     )
+
+
+SHOWN_IN_PLACE = {"application/pdf", "text/plain"}
+
+
+def _shown_in_place(mime: str) -> bool:
+    return mime in SHOWN_IN_PLACE or (mime.startswith("image/") and mime != "image/svg+xml")
+
+
+def _blob_headers(mime: str, filename: str) -> dict:
+    disposition = _inline(filename)
+    if not _shown_in_place(mime):
+        disposition = disposition.replace("inline", "attachment", 1)
+    return {
+        "Content-Disposition": disposition,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+    }
 
 
 def _inline(filename: str) -> str:
