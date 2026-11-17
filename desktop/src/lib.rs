@@ -4444,6 +4444,23 @@ mod desktop {
     /// Mac. Before the engine's first start after the move it may still be the old
     /// `~/.enqueue-poc`, which the engine then leaves as a link to the new one
     /// (datadir.py), so reading falls back to it and writing always goes to the new.
+    fn session_token() -> String {
+        data_dir()
+            .map(|d| std::fs::read_to_string(d.join("session")).unwrap_or_default())
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    }
+
+    fn boot_url(to: &str) -> String {
+        let token = session_token();
+        if token.is_empty() {
+            format!("{ENGINE}{to}")
+        } else {
+            format!("{ENGINE}/boot?t={token}&to={to}")
+        }
+    }
+
     fn data_dir() -> Option<PathBuf> {
         if let Some(dir) = std::env::var_os("ENQ_DATA_DIR") {
             return Some(PathBuf::from(dir));
@@ -5165,7 +5182,7 @@ mod desktop {
                 let builder = tauri::WebviewWindowBuilder::new(
                     app,
                     "main",
-                    tauri::WebviewUrl::External(ENGINE.parse().expect("valid engine url")),
+                    tauri::WebviewUrl::External(boot_url("/").parse().expect("valid engine url")),
                 )
                 .title("Enqueue")
                 .inner_size(1080.0, 780.0)
@@ -5188,7 +5205,7 @@ mod desktop {
                     app,
                     "capture",
                     tauri::WebviewUrl::External(
-                        format!("{ENGINE}/capture").parse().expect("valid engine url"),
+                        boot_url("/capture").parse().expect("valid engine url"),
                     ),
                 )
                 .title("")
@@ -5227,8 +5244,8 @@ mod desktop {
                         // Keep waiting well past the initial 60s - a truly stuck engine is
                         // rare, and a long poll costs nothing but a refused connection.
                         if wait_for_engine(Duration::from_secs(120)) {
-                            let _ = main_win.eval("window.location.reload()");
-                            let _ = capture_win.eval("window.location.reload()");
+                            let _ = main_win.eval(&format!("window.location.href = '{}'", boot_url("/")));
+                            let _ = capture_win.eval(&format!("window.location.href = '{}'", boot_url("/capture")));
                         }
                     });
                 }
@@ -5337,6 +5354,13 @@ mod desktop {
             let parsed: serde_json::Value = serde_json::from_str(&decoded).unwrap();
             let expected: serde_json::Value = serde_json::from_str(&payload_str).unwrap();
             assert_eq!(parsed, expected);
+        }
+
+        #[test]
+        fn boot_url_without_token_is_plain() {
+            // With no session file, boot_url returns the plain engine address.
+            let url = boot_url("/capture");
+            assert!(url.contains("/capture"), "boot_url: {}", url);
         }
 
         /// LINKSTAY.1: verify loopback/private detection.

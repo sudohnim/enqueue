@@ -494,7 +494,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Check: in one shell `ENQ_DATA_DIR=/tmp/enq-s6 ENQ_SESSION_ENFORCE=on uv run enq serve`. In another shell `ENQ_DATA_DIR=/tmp/enq-s6 uv run enq health` and `ENQ_DATA_DIR=/tmp/enq-s6 uv run enq artifacts` both answer. `curl -s -o /dev/null -w '%{http_code}\n' 127.0.0.1:8787/artifacts` prints `401`. Stop the engine and delete `/tmp/enq-s6`.
   - Do not: run this while another engine uses port 8787. If the port is in use, mark the task `[!]`.
 
-- [ ] **S7. The shell opens its windows with the token** **[device required]**
+- [x] **S7. The shell opens its windows with the token** **[device required]** (claimed: agent, 2026-11-16)
+  Done: desktop/src/lib.rs; cargo test --lib pass; Owed: device check
   - Needs: S5
   - Files: `desktop/src/lib.rs` (outside `mod mobile`)
   - Find: `grep -n 'WebviewUrl::External\|fn wait_for_engine\|fn data_dir\|ureq::' desktop/src/lib.rs`
