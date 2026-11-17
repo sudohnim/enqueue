@@ -273,6 +273,24 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         }
     }
 
+    let mut lfs = Vec::new();
+    {
+        let mut lstmt = conn.prepare(
+            "SELECT pair, verdict, idea, created_at FROM link_feedback WHERE instr(pair, ?1) > 0",
+        ).map_err(|e| e.to_string())?;
+        let lrows = lstmt.query_map([artifact_id], |r| {
+            Ok(serde_json::json!({
+                "pair": r.get::<_, String>(0)?,
+                "verdict": r.get::<_, String>(1)?,
+                "idea": r.get::<_, String>(2)?,
+                "created_at": r.get::<_, String>(3)?,
+            }))
+        }).map_err(|e| e.to_string())?;
+        for row in lrows {
+            lfs.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
     Ok(Some(serde_json::json!({
         "artifact": artifact,
         "share": share,
@@ -284,6 +302,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         // Full columns, so the desktop stores them faithfully.
         "facets": facets,
         "related": rels,
+        "link_feedback": lfs,
     })))
 }
 
@@ -844,6 +863,9 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS related (artifact_id TEXT NOT NULL, related_id TEXT NOT NULL, owner TEXT, score REAL, via TEXT, point TEXT, kind TEXT, distance REAL, PRIMARY KEY (artifact_id, related_id, owner));",
     ).map_err(|e| e.to_string())?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS link_feedback (pair TEXT PRIMARY KEY, verdict TEXT NOT NULL, idea TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);",
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1046,6 +1068,37 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
                 ],
             )
             .map_err(|e| format!("insert related: {e}"))?;
+        }
+    }
+
+    // Link feedback rides the snapshot.
+    if let Some(lfs) = snapshot.get("link_feedback").and_then(|v| v.as_array()) {
+        for lf in lfs {
+            let pair = str_at(lf.get("pair")).unwrap_or_default();
+            let created = str_at(lf.get("created_at")).unwrap_or_default();
+            let existing: Option<String> = conn
+                .query_row("SELECT created_at FROM link_feedback WHERE pair = ?1", [pair.clone()], |r| r.get(0))
+                .optional()
+                .map_err(|e| e.to_string())?
+                .flatten();
+            if existing.is_none() || created > existing.clone().unwrap_or_default() {
+                let verdict = str_at(lf.get("verdict")).unwrap_or_default();
+                conn.execute(
+                    "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at) VALUES (?1,?2,?3,?4)",
+                    rusqlite::params![pair, verdict.clone(), str_at(lf.get("idea")).unwrap_or_default(), created],
+                )
+                .map_err(|e| e.to_string())?;
+                if verdict == "no" {
+                    let parts: Vec<&str> = pair.split('|').collect();
+                    if parts.len() == 2 {
+                        conn.execute(
+                            "DELETE FROM related WHERE (artifact_id = ?1 AND related_id = ?2) OR (artifact_id = ?2 AND related_id = ?1)",
+                            rusqlite::params![parts[0], parts[1]],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
+                }
+            }
         }
     }
 

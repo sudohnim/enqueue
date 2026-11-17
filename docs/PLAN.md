@@ -1751,7 +1751,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     5. A tap on a note opens it in the reader.
   - Check: `bin/verify --fast`. Device: the emulator, linked to a Mac that shows a card today, shows the same idea.
 
-- [ ] **P8a. The phone stores the person's link verdicts and sends them back**
+- [x] **P8a. The phone stores the person's link verdicts and sends them back** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: P6a
   - Files: `desktop/src/sync.rs` (`init_schema`, `apply_snapshot`, `build_snapshot`, a new function, `mod tests`)
   - Do:
