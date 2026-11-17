@@ -224,7 +224,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`; search a word that is only in a PDF; the row shows the words around it.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
 
-- [ ] **P4. The phone draws the summary in groups**
+- [x] **P4. The phone draws the summary in groups** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): the Rust half is done (the reader returns `bridge` and `role`); `static/mobile.html` still draws the flat list. Do step 5 only.
   - Needs: M2
   - Files: `desktop/src/sync.rs`, `static/mobile.html`
@@ -237,6 +237,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     5. In `mobile.html`, where `#details_summary` is filled, draw the three groups of M2 (About, Ideas with 3 open, Also found by closed). Copy `facetGroups` from `js/artifact.js` and use the phone's own row function.
   - Test: a Rust unit test: a snapshot facet with `bridge: 1` is read back with `bridge` 1.
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator`; the Details panel of a synced item shows the groups.
+  - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
 
 - [ ] **P5. The phone keeps the role**
   - Reopened in review (2026-11-17): a snapshot facet with no role is still stored with none. Do step 3 only.

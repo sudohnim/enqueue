@@ -6481,7 +6481,7 @@
         "No summary yet. Summaries are generated on the desktop and sync here.";
       sumEl.appendChild(e);
     } else {
-      for (const f of facets) renderMobileFacet(sumEl, f, a);
+      renderMobileFacetGroups(sumEl, facets, a);
     }
     const anns = (data && data.annotations) || [];
     document.getElementById("details_notes_block").hidden = !anns.length;
@@ -6500,6 +6500,59 @@
 
   // What the open panel was last drawn from, so cancelling an edit redraws all of it.
   let detailsData = {};
+
+  // The summary is drawn in the same groups as the desktop panel (M2). A line from
+  // before roles were stored falls back to its level and bridge, so an older snapshot
+  // still groups the way it did on the desktop that wrote it.
+  function renderMobileFacetGroups(sumEl, facets, a) {
+    const role = (f) => f.role || (f.bridge ? "bridge" : f.level <= 1 ? "subject" : "idea");
+    const of = (...names) => facets.filter((f) => names.includes(role(f)));
+    const gist = of("gist");
+    const points = of("point");
+    const about = of("kind", "subject");
+    const ideas = of("idea").sort((x, y) => (y.trust || 0) - (x.trust || 0));
+    const bridges = of("bridge");
+    const group = (label, rows, open) => {
+      if (!rows.length) return;
+      const g = document.createElement("div");
+      g.className = "facet-group";
+      const lbl = document.createElement("div");
+      lbl.className = "facet-group-label";
+      lbl.textContent = label;
+      g.appendChild(lbl);
+      rows.slice(0, open).forEach((f) => renderMobileFacet(g, f, a));
+      if (rows.length > open) {
+        const more = document.createElement("div");
+        more.className = "facet-more";
+        more.hidden = true;
+        rows.slice(open).forEach((f) => renderMobileFacet(more, f, a));
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "facet-more-btn";
+        btn.textContent = "Show " + (rows.length - open) + " more";
+        btn.addEventListener("click", () => {
+          more.hidden = false;
+          btn.remove();
+        });
+        g.appendChild(more);
+        g.appendChild(btn);
+      }
+      sumEl.appendChild(g);
+    };
+    gist.forEach((f) => {
+      const at = sumEl.children.length;
+      renderMobileFacet(sumEl, f, a);
+      const row = sumEl.children[at];
+      if (row) row.classList.add("facet-gist");
+    });
+    group("Key points", points, points.length);
+    if (gist.length) group("Ideas", ideas, 0);
+    else {
+      group("About", about, about.length);
+      group("Ideas", ideas, 3);
+    }
+    group("Also found by", bridges, 0);
+  }
 
   // One point of the summary: tap the line to rewrite it, the trailing mark removes
   // it. A line you rewrote wears the accent on its dot, like the desktop panel.
