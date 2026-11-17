@@ -329,6 +329,37 @@ async function showConversations() {
 			.join("");
 }
 
+// Turn [P3] in an answer into a button that opens the item at that place.
+function withPlaces(html, m) {
+	const byN = {};
+	(m.places || []).forEach((p) => (byN[p.n] = p));
+	return html.replace(/\s?\[P(\d+)\]/g, (all, n) => {
+		const p = byN[n];
+		if (!p) return "";
+		const label = p.page === null || p.page === undefined ? "source" : "p. " + (p.page + 1);
+		return (
+			' <button class="place" type="button" data-id="' +
+			esc(p.artifact_id) +
+			'" data-n="' +
+			esc(String(n)) +
+			'">' +
+			label +
+			"</button>"
+		);
+	});
+}
+
+// The place buttons are drawn with the transcript, so the click is caught on the
+// container that holds them. A fresh render replaces the bubbles but not the listener.
+function placeClick(e) {
+	const btn = e.target.closest && e.target.closest(".place");
+	if (!btn) return;
+	const bubble = btn.closest(".turn[data-mid]");
+	const msg = chat && (chat.messages || []).find((m) => m.id === (bubble && bubble.dataset.mid));
+	const place = msg && (msg.places || []).find((p) => String(p.n) === btn.dataset.n);
+	if (place) openArtifactAt(place.artifact_id, place, "chat");
+}
+
 function renderChat(d) {
 	// The scope is a constraint, not a subtitle. Rendered as metadata it read like a
 	// caption, and a chat silently locked to one empty link answered "nothing you have
@@ -395,13 +426,15 @@ function renderChat(d) {
 		html +=
 			'<div class="turn ' +
 			(m.role === "user" ? "you" : "assistant") +
+			'" data-mid="' +
+			esc(m.id) +
 			'">' +
 			'<div class="said md">' +
 			(m.role === "user"
 				? esc(m.text)
 				: pending
 					? eyeLoader()
-					: md(m.text));
+					: withPlaces(md(m.text), m));
 		const echoes =
 			d.chat.scope_kind === "artifact" &&
 			m.cited &&
@@ -463,6 +496,12 @@ function renderChat(d) {
 
 	const body = document.getElementById("eyeBody");
 	body.innerHTML = html;
+	// The place buttons are rebuilt with every transcript, but the container is not:
+	// bind once, and let the click find the message through the bubble's data-mid.
+	if (!body.dataset.placeBound) {
+		body.addEventListener("click", placeClick);
+		body.dataset.placeBound = "1";
+	}
 	// Transcript is the live view; the conversations list is put away whenever a
 	// chat renders, so answering always returns you to the thread you asked in.
 	showTranscript();

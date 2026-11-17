@@ -66,6 +66,20 @@
     border-color: var(--line-strong);
   }
 
+  .place {
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--surface-3);
+    color: var(--accent-text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .place:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   /* The highest-stakes line in the product: the collection does not hold this. It sits
      at the same weight as the claim it qualifies rather than as small print under it. */
   .unsourced {

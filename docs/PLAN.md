@@ -2346,7 +2346,9 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `bin/verify --fast`
   - Device check **[device]**: in the page console run `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})`. The PDF scrolls to page 3 and the words are marked.
 
-- [ ] **A6. An answer's place marks are buttons**
+- [x] **A6. An answer's place marks are buttons** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/static/js/chat.js, src/enqueue/static/css/chat.css; bin/verify: all checks passed
+  - Owed: device check - ask a question that a long PDF answers. The answer has "p. N" buttons. A press opens the PDF at that page with the words marked.
   - Needs: A3, A5
   - Files: `static/js/chat.js`, `static/css/chat.css`
   - Find: `grep -n 'md(m.text)' src/enqueue/static/js/chat.js`
