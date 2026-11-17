@@ -1365,7 +1365,7 @@
       '<button class="toggle summary-switch" role="switch" aria-checked="' +
       String(on) +
       '" aria-label="Keep drafts of this note" title="' +
-      (on ? "Keeping drafts of this note" : "Drafts are off for this note") +
+      (on ? "Drafts of this note are kept" : "Only the latest draft is kept") +
       '" onclick="detailsKeepDrafts(' +
       String(!on) +
       ')"><span class="knob"></span></button></span></div>' +
@@ -1462,8 +1462,8 @@
         ? ""
         : '<button class="toggle summary-switch" role="switch" aria-checked="' +
           String(!off) +
-          '" aria-label="AI summary" title="' +
-          (off ? "AI summary is off for this one" : "AI summary is on") +
+          '" aria-label="Write a summary of this item" title="' +
+          (off ? "No summary is written for this item" : "A summary is written for this item") +
           '" onclick="setSummary(\'' +
           id +
           "'," +

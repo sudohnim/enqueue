@@ -540,7 +540,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/verify --fast` passes. Add `font-size: 13px;` to one rule in `base.css`, run it again and see it fail, then remove the line.
   - Done: bin/verify, AGENTS.md; bin/verify: all checks passed
 
-- [ ] **U9. A switch says what it does**
+- [x] **U9. A switch says what it does** (claimed: agent, 2026-11-17)
   - Needs: M6
   - Files: `static/js/artifact.js` (`summaryPanel`), `static/js/drafts.js`
   - Why: the Summary and Drafts switches have the section name as their only label, so "on" has no stated meaning.
@@ -550,6 +550,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     2. For the Drafts switch, set `aria-label` to `Keep drafts of this note` and the titles to `Drafts of this note are kept` and `Only the latest draft is kept`.
     3. Change no behaviour and no class.
   - Check: `bin/verify --fast`
+  - Done: static/js/artifact.js, static/js/drafts.js; bin/verify: all checks passed
 
 - [ ] **U10. One raven on a screen**
   - Needs: R1
