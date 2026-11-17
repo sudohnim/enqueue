@@ -171,6 +171,45 @@ class TestSweep:
             "failure under load",
         }
 
+    def test_answer_keeps_a_privacy_receipt(self, store, quiet_queue, monkeypatch):
+        first = notes.create(body="# One\n\nFirst note body.")
+        second = notes.create(body="# Two\n\nSecond note body.")
+        chat = chats.create()
+        message_id = _seed_pending(chat["chat"]["id"])
+        _stub_router(monkeypatch)
+        passages = [
+            {
+                "artifact_id": first["artifact"]["id"],
+                "title": "One",
+                "text": "First note body.",
+                "kind": "note",
+            },
+            {
+                "artifact_id": second["artifact"]["id"],
+                "title": "Two",
+                "text": "Second note body.",
+                "kind": "note",
+            },
+        ]
+        _stub_answer(
+            monkeypatch,
+            passages,
+            answer=Answer(
+                answer="Both notes agree.",
+                grounded=True,
+                cited=[first["artifact"]["id"], second["artifact"]["id"]],
+            ),
+        )
+
+        chats_worker.compute(
+            chats_worker.Job(chat["chat"]["id"], message_id, "what do they say?", None)
+        )
+
+        messages = chats.get(chat["chat"]["id"])["messages"]
+        answer = next(m for m in messages if m["id"] == message_id)
+        assert answer["receipt"]["notes"] == 2
+        assert answer["receipt"]["chars"] == sum(len(p["text"]) for p in passages)
+
     def test_worker_marks_a_failed_turn(self, store, quiet_queue, monkeypatch):
         chat = chats.create()
         message_id = _seed_pending(chat["chat"]["id"])

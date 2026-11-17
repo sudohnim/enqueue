@@ -215,6 +215,8 @@ def compute(job: Job) -> None:
 
 def _finish_pending(conn, message_id: str, msg: dict) -> None:
     """Move a pending assistant turn to `done`, with its citations, in one write."""
+    from . import db as db_module
+
     try:
         grounded_int = int(msg["grounded"])
     except (TypeError, ValueError) as exc:
@@ -236,6 +238,13 @@ def _finish_pending(conn, message_id: str, msg: dict) -> None:
             "INSERT OR REPLACE INTO chat_places (message_id, n, artifact_id, page, quote)"
             " VALUES (?, ?, ?, ?, ?)",
             (message_id, p["n"], p["artifact_id"], p["page"], p["quote"]),
+        )
+    if msg.get("receipt"):
+        conn.execute(
+            "INSERT OR REPLACE INTO derived_values (scope, subject, attribute, value, grounded,"
+            " source, model_version, created_at)"
+            " VALUES ('answer_receipt', ?, 'receipt', ?, 1, 'engine', '', ?)",
+            (message_id, json_dumps(msg["receipt"]), db_module.now()),
         )
 
 

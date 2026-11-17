@@ -299,14 +299,13 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
 ## Track F: features
 
-- [ ] **F1a. Each answer keeps a privacy receipt**
+- [x] **F1a. Each answer keeps a privacy receipt** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `chats.py` (`run_answer`, `get`), `chats_worker.py` (`_finish_pending`), `tests/test_chats_worker.py`
   - Do:
     1. In `run_answer`, after `answer = _ask_model(...)`, compute:
        ```python
        from . import privacy, settings
-
        provider = _chat_provider(chat_id)
        label = config.BACKENDS.get(str(settings.get("llm_backend")), {}).get("label", provider.name)
        receipt = (
@@ -325,6 +324,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     3. In `chats.get`, read those rows for the chat's messages in one query and add `"receipt"` (the parsed JSON) to each assistant message that has one.
   - Test: after `compute` with a fake provider and passages from two notes, the assistant message from `chats.get` has `receipt["notes"] == 2`.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`
+  - Done: chats.py, chats_worker.py, tests/test_chats_worker.py; 56 passed in 11.46s
 
 - [ ] **F1. A privacy receipt under each answer**
   - Split: steps 1 to 3 and 5 are done in F1a. Do step 4 only (the line under the answer in `chat.js`).

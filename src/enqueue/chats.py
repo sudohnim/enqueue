@@ -142,6 +142,15 @@ def get(chat_id: str) -> dict:
                 }
             )
 
+        receipts: dict[str, dict] = {}
+        for row in conn.execute(
+            "SELECT subject, value FROM derived_values"
+            " WHERE scope = 'answer_receipt' AND attribute = 'receipt'"
+            " AND subject IN (SELECT id FROM chat_messages WHERE chat_id = ?)",
+            (chat_id,),
+        ):
+            receipts[row["subject"]] = json.loads(row["value"])
+
         topics = conn.execute(
             "SELECT id, topic FROM chat_topics WHERE chat_id = ? ORDER BY created_at",
             (chat_id,),
@@ -151,7 +160,10 @@ def get(chat_id: str) -> dict:
             out = dict(m)
             raw = out.pop("payload", None)
             out["payload"] = json.loads(raw) if raw else None
-            return out | {"cited": cited.get(m["id"], []), "places": places.get(m["id"], [])}
+            out |= {"cited": cited.get(m["id"], []), "places": places.get(m["id"], [])}
+            if m["id"] in receipts:
+                out["receipt"] = receipts[m["id"]]
+            return out
 
         scope_label = "everything"
         if chat["scope_kind"] == "artifact":
@@ -847,6 +859,22 @@ def run_answer(chat_id: str, text: str) -> dict:
     empty_reason = empty_scope_reason(chat["scope_kind"], chat["scope_id"]) if not found else None
     answer = _ask_model(text, history, found, empty_reason, provider=_chat_provider(chat_id))
 
+    from . import settings
+
+    provider = _chat_provider(chat_id)
+    backend = config.BACKENDS.get(str(settings.get("llm_backend")), {})
+    label = backend.get("label") or getattr(provider, "name", "")
+    receipt = (
+        {
+            "notes": len({p["artifact_id"] for p in found}),
+            "chars": sum(len(p.get("text", "")) for p in found),
+            "service": label,
+            "local": not privacy.is_remote(provider),
+        }
+        if found
+        else None
+    )
+
     from .ingest import chunk
 
     places = []
@@ -875,6 +903,7 @@ def run_answer(chat_id: str, text: str) -> dict:
         "payload": None,
         "cited": [aid for aid in dict.fromkeys(answer.cited) if aid in by_artifact],
         "places": places,
+        "receipt": receipt,
     }
 
 
