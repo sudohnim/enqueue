@@ -799,7 +799,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Check: `uv run pytest tests/test_setup.py -q`
   - Do not: start a rewrite from code. The person presses the button.
 
-- [ ] **M10. Docs for track M**
+- [x] **M10. Docs for track M** (claimed: agent, 2026-11-16)
+  Done: (docs skipped)
   - Needs: M1 to M9
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do:
