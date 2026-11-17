@@ -137,7 +137,14 @@ def test_head_has_the_wall_sort_index(store):
 
 def test_head_has_new_tables_and_role(store):
     """DB1: searches and link_feedback exist; facets has a role column."""
-    assert {"searches", "link_feedback"} <= tables(config.DB_PATH)
+    assert {
+        "searches",
+        "link_feedback",
+        "chat_places",
+        "blob_relay",
+        "artifact_colours",
+        "thumbs",
+    } <= tables(config.DB_PATH)
     conn = sqlite3.connect(config.DB_PATH)
     try:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(facets)").fetchall()}

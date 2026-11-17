@@ -1824,7 +1824,8 @@ What Enqueue has now, against what those pages offer:
 | Visual search (find similar pictures) | Pictures are found by their description text only | owner item O7 |
 | Search and questions on audio and video | No audio or video kind | owner item O7 |
 
-- [ ] **DB2. Four more migrations**
+- [x] **DB2. Four more migrations** (claimed: agent, 2026-11-16)
+  Done: migrations 0049-0052, trash.py purge, tests; 24 passed
   - Needs: DB1
   - Files: new `migrations/versions/0049_chat_places.py`, new `migrations/versions/0050_blob_relay.py`, new `migrations/versions/0051_artifact_colours.py`, new `migrations/versions/0052_thumbs.py`, `trash.py`, `tests/test_migrations.py`, `tests/test_trash.py`
   - Do:
