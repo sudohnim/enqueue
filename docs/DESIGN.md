@@ -115,6 +115,25 @@ One exception: bold a person typed (`<strong>`, `<b>` in a note or an answer) is
 | Button | 14-15px | 440-480 | 0 | Buttons |
 | Mono | 11-13px | 400 | 0 | Keycaps, hotkeys |
 
+### Size tokens
+
+A stylesheet uses a `--t-*` token for a font size, never a number.
+
+| Token | Value |
+| --- | --- |
+| `--t-xs` | 12px |
+| `--t-sm` | 13px |
+| `--t-md` | 14px |
+| `--t-lg` | 15px |
+| `--t-xl` | 16px |
+| `--t-2xl` | 18px |
+| `--t-3xl` | 20px |
+| `--t-4xl` | 24px |
+| `--t-display-sm` | 34px |
+| `--t-display` | 44px |
+
+The px values are the sizes already on screen, so replacing a number with its token does not change how anything looks.
+
 ### Principles
 
 - Size and ink make the hierarchy. Reaching for weight to make something matter is the September habit; make it larger or darker instead.

@@ -397,7 +397,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/check-style` prints counts and exits 0; `bin/check-style --strict; echo $?` prints 1; `bin/verify --fast` passes.
   - Done: bin/check-style, bin/verify; bin/verify: all checks passed
 
-- [ ] **U2. A type scale in the tokens**
+- [x] **U2. A type scale in the tokens** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `static/css/tokens.css`, `docs/DESIGN.md`
   - Find: `grep -n -- '--w-' src/enqueue/static/css/tokens.css | head`
@@ -418,6 +418,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     2. In `docs/DESIGN.md` section 3, add a short table of the ten tokens and the rule: a stylesheet uses a `--t-*` token for a font size, never a number.
   - Check: `bin/verify --fast`
   - Do not: change a rule that uses a size in this task.
+  - Done: static/css/tokens.css, docs/DESIGN.md; bin/verify: all checks passed
 
 - [ ] **U2b. A script that puts the type tokens in a stylesheet**
   - Needs: U2
