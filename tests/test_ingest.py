@@ -220,3 +220,12 @@ def test_an_older_background_copy_does_not_make_a_fresh_one_skip():
     queue._dequeue("lanes", older)
     assert queue._pending("lanes") == 0
     assert "lanes" not in queue._queued
+
+
+def test_role_for():
+    from enqueue.ingest.facets import role_for
+
+    assert role_for(0, False) == "kind"
+    assert role_for(1, False) == "subject"
+    assert role_for(3, False) == "idea"
+    assert role_for(2, True) == "bridge"

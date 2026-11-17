@@ -62,6 +62,15 @@ _STOPWORDS = {
 }
 
 
+INDEX_ONLY_ROLES = ("gist", "point", "ask")
+
+
+def role_for(level: int, bridge: bool) -> str:
+    if bridge:
+        return "bridge"
+    return {0: "kind", 1: "subject"}.get(level, "idea")
+
+
 def proper_nouns(text: str, title: str) -> set[str]:
     """Words a level-2-or-above facet must not use, lowercased.
 
@@ -212,8 +221,8 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     for facet, trust, bridge in kept:
         conn.execute(
             "INSERT INTO facets"
-            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge)"
-            " VALUES (?,?,?,?,?,?,?,?)",
+            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 str(uuid.uuid4()),
                 artifact_id,
@@ -223,6 +232,7 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 row["body_version"],
                 trust,
                 int(bridge and facet.level >= 2),
+                role_for(facet.level, bool(bridge and facet.level >= 2)),
             ),
         )
     return len(kept), None
@@ -431,9 +441,17 @@ def add_facet(artifact_id: str, statement: str, level: int = 2) -> dict:
         ).fetchone()[0]
         conn.execute(
             "INSERT INTO facets"
-            " (id, artifact_id, level, statement, model_version, body_version, trust, edited)"
-            " VALUES (?,?,?,?,?,?,1.0,1)",
-            (facet_id, artifact_id, level, statement[:400], "edited", body_version),
+            " (id, artifact_id, level, statement, model_version, body_version, trust, edited, role)"
+            " VALUES (?,?,?,?,?,?,1.0,1,?)",
+            (
+                facet_id,
+                artifact_id,
+                level,
+                statement[:400],
+                "edited",
+                body_version,
+                role_for(level, False),
+            ),
         )
     _reindex(artifact_id)
     sync_facets(artifact_id, bump=True)

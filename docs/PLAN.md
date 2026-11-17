@@ -638,7 +638,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Check: `bin/verify --fast`
   - Device check **[device]**: open the Details panel of an item with 10 lines or more. It shows About, then 3 Ideas with "Show N more", then "Also found by" with a button. Edit one line and remove one line; both still work.
 
-- [ ] **M3. New summary lines get a role**
+- [x] **M3. New summary lines get a role** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/facets.py, tests/test_ingest.py; tests pass
   - Needs: DB1
   - Files: `ingest/facets.py`, `notes.py`, `tests/test_ingest.py`
   - Find: `grep -n 'INSERT INTO facets' src/enqueue/ingest/facets.py`
