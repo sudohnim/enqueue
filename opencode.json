@@ -4,7 +4,8 @@
     "AGENTS.md"
   ],
   "enabled_providers": [
-    "opencode-go"
+    "opencode-go",
+    "opencode"
   ],
   "model": "opencode-go/glm-5.2",
   "small_model": "opencode-go/deepseek-v4-flash"
