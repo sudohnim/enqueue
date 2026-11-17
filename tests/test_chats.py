@@ -1019,3 +1019,52 @@ class TestNumberedPassages:
             "model can attribute the line to a user-supplied note on the "
             "artifact, not the artifact's own body (L.1); got:\n" + joined
         )
+
+
+class TestSaveAnswerAsNote:
+    def test_grounded_answer_becomes_a_note_with_question_and_sources(
+        self, store, quiet_queue, answered, async_turns
+    ):
+        a = notes.create(body="# Joints\n\nA joint that moves.")
+        b = notes.create(body="# Hulls\n\nA hull that yields.")
+        answered.passages = [
+            {
+                "artifact_id": a["artifact"]["id"],
+                "title": "Joints",
+                "text": "A joint that moves.",
+                "kind": "note",
+            },
+            {
+                "artifact_id": b["artifact"]["id"],
+                "title": "Hulls",
+                "text": "A hull that yields.",
+                "kind": "note",
+            },
+        ]
+        answered(
+            Answer=Answer(
+                answer="Movement outlasts rigidity. [P1]",
+                grounded=True,
+                cited=[a["artifact"]["id"], b["artifact"]["id"]],
+            ),
+            ChatTitle=ChatTitle(title="Movement over rigidity"),
+            ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
+        )
+
+        made = chats.ask("what outlasts what?")
+        chat_id = made["chat"]["id"]
+        async_turns.resolve()
+        answer_id = chats.get(chat_id)["messages"][-1]["id"]
+
+        note = chats.answer_as_note(chat_id, answer_id)
+        body = note["artifact"]["body"]
+        assert "# what outlasts what?" in body
+        assert "Movement outlasts rigidity." in body
+        assert "[P1]" not in body
+        assert "- Joints" in body
+        assert "- Hulls" in body
+
+    def test_unknown_answer_answers_404(self, store):
+        client = TestClient(api.app)
+        resp = client.post("/chats/no-chat/messages/no-message/note")
+        assert resp.status_code == 404

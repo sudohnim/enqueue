@@ -90,6 +90,15 @@ def send_to_chat(chat_id: str, req: ChatSend) -> dict:
         ) from None
 
 
+@router.post("/chats/{chat_id}/messages/{message_id}/note")
+def answer_as_note(chat_id: str, message_id: str) -> dict:
+    """Save a grounded answer as a note, with its question and sources."""
+    try:
+        return chats.answer_as_note(chat_id, message_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such answer") from None
+
+
 @router.patch("/chats/{chat_id}")
 def edit_chat(chat_id: str, req: ChatEdit) -> dict:
     try:

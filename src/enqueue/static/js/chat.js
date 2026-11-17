@@ -492,6 +492,13 @@ function renderChat(d) {
 						esc(m.receipt.service) +
 						".") +
 				"</div>";
+		if (m.grounded && !pending && !failed && !organize)
+			html +=
+				'<button class="btn ghost" onclick="saveAnswerAsNote(\'' +
+				esc(d.chat.id) +
+				"','" +
+				esc(m.id) +
+				"')\">Save as a note</button>";
 		html += "</div>";
 
 		// The grouped view is not stored in the turn's text: it re-runs the stored
@@ -617,6 +624,16 @@ function organizeSlotHtml(mid) {
 // Keep this arrangement: name the spec that produced the turn and store it, so
 // the grid button can re-open and re-run it live. The spec is the recipe, not a
 // snapshot - naming is the only text a person types; grouping never prompts.
+// Save a grounded answer into the library as a note, with its question and sources.
+async function saveAnswerAsNote(chatId, mid) {
+	try {
+		await api("/chats/" + chatId + "/messages/" + mid + "/note", { method: "POST" });
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	toast("Saved as a note.");
+}
+
 async function saveGrouping(mid) {
 	const st = organizeTurns[mid];
 	if (!st) return;

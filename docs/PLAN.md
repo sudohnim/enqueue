@@ -355,7 +355,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `uv run pytest tests/test_outbound.py -q`; `bin/verify --fast`
   - Done: outbound.py, api/admin.py, static/js/settings.js, tests/test_outbound.py; bin/verify: all checks passed
 
-- [ ] **F3. Save an answer as a note**
+- [x] **F3. Save an answer as a note** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `chats.py`, `api/chats.py`, `static/js/chat.js`, `tests/test_chats.py`
   - Do:
@@ -369,6 +369,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     3. In `chat.js`, under a grounded answer, add a small text button `Save as a note`. On success show the toast `Saved as a note.`
   - Test: an answer with two citations becomes a note whose body holds the question, the answer and both titles. A message id that does not exist answers 404.
   - Check: `uv run pytest tests/test_chats.py -q`; `bin/verify --fast`
+  - Done: chats.py, api/chats.py, static/js/chat.js, tests/test_chats.py; bin/verify: all checks passed
 
 - [ ] **F4. Docs for track F**
   - Needs: F1 to F3

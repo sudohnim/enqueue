@@ -181,6 +181,43 @@ def get(chat_id: str) -> dict:
         conn.close()
 
 
+def answer_as_note(chat_id: str, message_id: str) -> dict:
+    """Save a grounded answer, its question and its sources as a new note."""
+    from . import notes
+
+    conn = db.get_conn()
+    try:
+        msg = conn.execute(
+            "SELECT * FROM chat_messages WHERE id = ? AND chat_id = ?", (message_id, chat_id)
+        ).fetchone()
+        if msg is None or msg["role"] != "assistant" or not msg["grounded"]:
+            raise KeyError(message_id)
+        question = conn.execute(
+            "SELECT text FROM chat_messages WHERE chat_id = ? AND ordinal < ?"
+            " AND role = 'user' ORDER BY ordinal DESC LIMIT 1",
+            (chat_id, msg["ordinal"]),
+        ).fetchone()
+        if question is None:
+            raise KeyError(message_id)
+        titles = [
+            row["title"]
+            for row in conn.execute(
+                "SELECT a.title FROM chat_citations c"
+                " JOIN artifacts a ON a.id = c.artifact_id"
+                " WHERE c.message_id = ? ORDER BY c.rank",
+                (message_id,),
+            )
+        ]
+    finally:
+        conn.close()
+
+    answer = re.sub(r"\s?\[P\d+\]", "", msg["text"])
+    body = "\n".join(
+        [f"# {question['text']}", "", answer, "", "Sources:"] + [f"- {t}" for t in titles]
+    )
+    return notes.create(body=body)
+
+
 def pin(chat_id: str, pinned: bool = True) -> dict:
     """Keep a conversation at the top of the list."""
     with db.transaction() as conn:
