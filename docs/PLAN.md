@@ -523,11 +523,13 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/check-style` prints no line for the file; `bin/verify --fast`
   - Done: static/css/artifact.css; bin/verify: all checks passed
 
-- [ ] **U7. Sizes and weights become tokens: the phone and the capture page** **[device]**
+- [x] **U7. Sizes and weights become tokens: the phone and the capture page** **[device]** (claimed: agent, 2026-11-17)
   - Needs: U1, U2b
   - Files: `static/mobile.html`, `static/capture.html`
   - Do: as U3, with these two files. The script changes only text inside `<style>` blocks.
   - Check: `bin/check-style` prints a total of 0; `bin/verify --fast`. Device: `bin/launch emulator`; the library, a reader and Settings look the same as before.
+  - Done: static/mobile.html, static/capture.html; bin/verify: all checks passed
+  - Owed: device check - the library, a reader and Settings look the same as before
 
 - [ ] **U8. The style check fails the gate**
   - Needs: U3, U4, U5, U6, U7
