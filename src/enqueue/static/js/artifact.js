@@ -687,6 +687,15 @@
       (r.updated_at ? " · " + esc(since(r.updated_at)) : "") +
       "</span>" +
       (why ? '<span class="relatedwhy">' + esc(why) + "</span>" : "") +
+      (r.link === "idea" && !r.kept
+        ? '<span class="relatedfeedback"><button type="button" data-verdict="keep" data-other="' +
+          esc(r.id) +
+          '">Keep</button><button type="button" data-verdict="no" data-other="' +
+          esc(r.id) +
+          '">Not the same</button></span>'
+        : r.kept
+          ? '<span class="relatedwhy">Kept</span>'
+          : "") +
       "</button>";
     const group = (label, rows, why) =>
       rows.length
@@ -755,7 +764,23 @@
 
   function mountRelatedRow() {
     view.querySelectorAll(".relateditem").forEach((item) => {
-      item.addEventListener("click", () => openArtifact(item.dataset.id, "related"));
+      item.addEventListener("click", (e) => {
+        const btn = e.target && e.target.closest && e.target.closest("button[data-verdict]");
+        if (btn) {
+          e.stopPropagation();
+          const other = btn.dataset.other;
+          const verdict = btn.dataset.verdict;
+          api("/related/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ a: ctx.id, b: other, verdict, idea: "" }),
+          })
+            .then(() => showArtifact(ctx.id))
+            .catch(() => {});
+          return;
+        }
+        openArtifact(item.dataset.id, "related");
+      });
     });
   }
 

@@ -130,6 +130,7 @@ def compute(artifact_id: str, judge: bool = False) -> int:
 
     store = get_store()
     conn = db.get_conn()
+    no = refused(conn, artifact_id)
     try:
         mine = conn.execute(
             "SELECT id, level, statement FROM facets WHERE artifact_id = ? AND level >= ?"
@@ -147,6 +148,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 store.FACETS, facet["statement"], limit=_PER_STATEMENT, as_query=False
             ):
                 other = hit["artifact_id"]
+                if other in no:
+                    continue
                 # A subject line only meets subject lines, an idea line only idea lines.
                 if other == artifact_id or (hit["level"] == SUBJECT_LEVEL) != subject:
                     continue
@@ -179,6 +182,7 @@ def compute(artifact_id: str, judge: bool = False) -> int:
             }
 
         named = _mentions(conn, artifact_id, cache)
+        named = {k: v for k, v in named.items() if k not in no}
         # How near each candidate's subject is to this one's, read from the two items'
         # own subject lines: the nearest-neighbour lists above miss most of a big library.
         near = store.facet_similarity(artifact_id, [*best, *ideas, *named], SUBJECT_LEVEL)
@@ -351,6 +355,38 @@ def pending_ids() -> list[str]:
         ]
     finally:
         conn.close()
+
+
+def feedback(a: str, b: str, verdict: str, idea: str = "") -> None:
+    """The person's ruling on a pair: "keep" or "no"."""
+    if verdict not in ("keep", "no"):
+        raise ValueError("verdict must be keep or no")
+    first, second = sorted((a, b))
+    pair = f"{first}|{second}"
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (pair, verdict, idea, db.now()),
+        )
+        if verdict == "no":
+            conn.execute(
+                "DELETE FROM related WHERE (artifact_id = ? AND related_id = ?)"
+                " OR (artifact_id = ? AND related_id = ?)",
+                (a, b, b, a),
+            )
+
+
+def refused(conn, artifact_id: str) -> set[str]:
+    """The other ids of pairs the person refused."""
+    out = set()
+    for r in conn.execute(
+        "SELECT pair FROM link_feedback WHERE verdict = 'no' AND instr(pair, ?) > 0",
+        (artifact_id,),
+    ):
+        x, _, y = r["pair"].partition("|")
+        out.add(y if x == artifact_id else x)
+    return out
 
 
 def is_pending(artifact_id: str) -> bool:
@@ -752,6 +788,18 @@ def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]
             }
         )
         existing.add(arow["id"])
+    # Feedback: kept pairs sort first.
+    kept_ids = set()
+    for r in conn.execute("SELECT pair FROM link_feedback WHERE verdict = 'keep'"):
+        x, _, y = r["pair"].partition("|")
+        if x == artifact_id:
+            kept_ids.add(y)
+        elif y == artifact_id:
+            kept_ids.add(x)
+    for r in out:
+        r["kept"] = r["id"] in kept_ids
+    out.sort(key=lambda r: (not r.get("kept", False),))
+
     ids = [r["id"] for r in out]
     about = {
         row["artifact_id"]: row["statement"]

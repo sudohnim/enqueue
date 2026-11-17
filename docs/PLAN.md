@@ -1053,7 +1053,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: an artifact whose only level 1 line has role `ask` gets no subject link from that line.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R11. Feedback on a link**
+- [x] **R11. Feedback on a link** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py, src/enqueue/api/artifacts.py, src/enqueue/sync/snapshot.py, src/enqueue/static/js/artifact.js, tests/test_related.py; tests pass
   - Needs: DB1, R1
   - Files: `ingest/related.py`, `api/artifacts.py` (new route at the end), `sync/snapshot.py` (`derived_layers`, `_apply_derived_layers`), `static/js/artifact.js` (`relatedRowHtml`, `mountRelatedRow`), `static/css/artifact.css` (`.related*`), `tests/test_related.py`, `tests/test_snapshot.py`
   - Why: a wrong link stays for good, and nothing learns from a good one.

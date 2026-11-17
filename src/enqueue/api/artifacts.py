@@ -646,6 +646,13 @@ def find_in_artifact(artifact_id: str, q: str) -> dict:
     return {"query": q, "hits": capture.find_in_pdf(artifact_id, q)}
 
 
+class FeedbackBody(BaseModel):
+    a: str
+    b: str
+    verdict: str
+    idea: str = ""
+
+
 class NearbyBody(BaseModel):
     text: str = ""
 
@@ -906,3 +913,17 @@ def delete_facet(facet_id: str) -> dict:
         return facets_mod.delete_facet(facet_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such facet") from None
+
+
+@router.post("/related/feedback")
+def related_feedback(body: FeedbackBody) -> dict:
+    from ..ingest import related
+
+    if body.verdict not in ("keep", "no"):
+        raise HTTPException(status_code=400, detail="bad verdict")
+    related.feedback(body.a, body.b, body.verdict, body.idea)
+    from ..ingest.facets import sync_facets
+
+    sync_facets(body.a, bump=False)
+    sync_facets(body.b, bump=False)
+    return {"ok": True}

@@ -114,6 +114,7 @@ def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) ->
             "section_cache": [],
             "chunk_contexts": [],
             "related_verdicts": [],
+            "link_feedback": [],
         }
     from ..ingest import source
 
@@ -180,6 +181,14 @@ def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) ->
                 " WHERE scope = 'related_judge' AND source = 'model'"
                 " AND (subject LIKE ? OR subject LIKE ?) ORDER BY subject",
                 (f"{artifact_id}|%", f"%|{artifact_id}"),
+            )
+        ],
+        "link_feedback": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT pair, verdict, idea, created_at FROM link_feedback"
+                " WHERE instr(pair, ?) > 0",
+                (artifact_id,),
             )
         ],
     }
@@ -672,6 +681,25 @@ def _apply_derived_layers(
             " model_version, created_at) VALUES ('related_judge', ?, ?, ?, 1, 'model', ?, ?)",
             (v["subject"], v["attribute"], v["value"], v["model_version"], now),
         )
+
+    if "link_feedback" in snapshot:
+        for lf in snapshot.get("link_feedback") or []:
+            existing = conn.execute(
+                "SELECT created_at, verdict FROM link_feedback WHERE pair = ?", (lf["pair"],)
+            ).fetchone()
+            if existing is None or (lf.get("created_at") or "") > (existing["created_at"] or ""):
+                conn.execute(
+                    "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    (lf["pair"], lf["verdict"], lf.get("idea", ""), lf.get("created_at") or now),
+                )
+                if lf["verdict"] == "no":
+                    x, _, y = lf["pair"].partition("|")
+                    conn.execute(
+                        "DELETE FROM related WHERE (artifact_id = ? AND related_id = ?)"
+                        " OR (artifact_id = ? AND related_id = ?)",
+                        (x, y, y, x),
+                    )
 
 
 def read_view_snapshot(conn: Connection, pivot_id: str) -> dict | None:
