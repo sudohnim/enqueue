@@ -252,7 +252,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Partly done in review (2026-11-16): the `role` column, apply, `build_snapshot` and a test are in `sync.rs`, and the reader hides `ask` lines. Left: set a role when a snapshot facet has none.
   - Done: desktop/src/sync.rs; test result: ok. 44 passed; 0 failed
 
-- [ ] **P6. The phone's reader shows related rows** **[device]**
+- [x] **P6. The phone's reader shows related rows** **[device]** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
   - Needs: P6b, R1
   - Files: `static/mobile.html`
@@ -262,6 +262,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     2. Each row is a `<button>` with `data-id`. A tap opens that item in the reader the way a library row does (find the function a library row calls).
     3. Escape every text with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`, open a synced note that has related notes on the Mac, and see the rows.
+  - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
+  - Owed: device check - open a synced note that has related notes on the Mac, and see the rows
 
 - [ ] **P7. The phone shows the day's card** **[device]**
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.

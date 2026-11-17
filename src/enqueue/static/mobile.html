@@ -1585,6 +1585,43 @@
     cursor: text;
   }
 
+  /* Related rows at the foot of the reader: the same idea links the desktop shows. */
+  #reader_body .related {
+    margin: 24px 0 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  #reader_body .related-label {
+    padding: 12px 0 4px;
+    font-size: 12px;
+    color: var(--text-mute);
+  }
+  #reader_body .related-row {
+    display: block;
+    width: 100%;
+    margin-bottom: 4px;
+    padding: 10px 8px;
+    border: 0;
+    border-radius: var(--r);
+    background: var(--surface-2);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+  }
+  #reader_body .related-row:active {
+    background: var(--surface-hover);
+  }
+  #reader_body .related-title {
+    display: block;
+    font-weight: var(--w-medium);
+  }
+  #reader_body .related-why {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+
   /* In-app confirm dialog. The native window.confirm() BLOCKS the Android WebView
      (no JS-dialog handler is wired), so it hangs the page - this replaces it. */
   .mconfirm-backdrop {
@@ -5948,6 +5985,56 @@
       });
   }
 
+  // The reader's Related section: the links the desktop found, grouped the same way
+  // as the desktop panel. The result arrives after the body renders, so drop it if
+  // the reader has moved on to another item meanwhile.
+  function mountRelated(id) {
+    invoke("mobile_related", { id })
+      .then((raw) => {
+        if (currentArtifactId !== id) return;
+        const rows = parse(raw) || [];
+        const body = document.getElementById("reader_body");
+        if (!rows.length || !body) return;
+        const section = document.createElement("section");
+        section.className = "related";
+        section.setAttribute("aria-label", "Related");
+        const group = (label, list, why) => {
+          if (!list.length) return;
+          const head = document.createElement("div");
+          head.className = "related-label";
+          head.textContent = label;
+          section.appendChild(head);
+          for (const r of list) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "related-row";
+            btn.dataset.id = r.id || "";
+            const title = document.createElement("span");
+            title.className = "related-title";
+            title.textContent = r.title || "(untitled)";
+            btn.appendChild(title);
+            const text = why(r);
+            if (text) {
+              const w = document.createElement("span");
+              w.className = "related-why";
+              w.textContent = text;
+              btn.appendChild(w);
+            }
+            btn.addEventListener("click", () => openArtifact(r.id));
+            section.appendChild(btn);
+          }
+        };
+        const of = (kind) => rows.filter((r) => r.link === kind);
+        group("Same subject", of("subject"), (r) => r.point || "");
+        group("Same idea, another field", of("idea"), (r) => r.point || "");
+        group("Also mentions", of("mention"), (r) =>
+          r.via ? "Both mention " + r.via + "." : "",
+        );
+        if (section.children.length) body.appendChild(section);
+      })
+      .catch(() => {});
+  }
+
   // ---- Sharing a note as a read-only link (mobile_share_*; the Mac's js/sharenote.js) ----
   // The share rides the note's snapshot, so a link made on the Mac shows here and one
   // made here shows there; edits on either reach the link.
@@ -6414,6 +6501,10 @@
     // Tags and annotations (the AI summary) are shown on demand in the Details side
     // panel (the info button), not inline - so the reader stays focused on the content.
     // The inline `#reader_ann` / `#reader_tags` blocks stay hidden.
+
+    // Related links the desktop found, at the foot of the text. Loaded after the body
+    // so a slow reply cannot push the item itself down.
+    mountRelated(a.id);
 
     // One history entry per visit, not per re-render (a pin, or coming back from the
     // writing page, re-renders the same reader).
