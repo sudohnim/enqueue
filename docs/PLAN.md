@@ -1116,11 +1116,12 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Done: static/js/search.js, static/css/search.css; bin/verify: all checks passed
   - Owed: device check - search "photos"; press the blue dot; only pictures with blue stay
 
-- [ ] **V4. Docs for track V**
+- [x] **V4. Docs for track V** (claimed: agent, 2026-11-17)
   - Needs: V1 to V3
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: add `colours.py` to the module map and the colour filter to the `retrieve/filters.py` row. In `docs/MANUAL.md`, say how to search by colour: "blue photos", or the dots.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
 
 ---
 

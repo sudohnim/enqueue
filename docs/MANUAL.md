@@ -233,6 +233,15 @@ Open a PDF result and it opens at the page where your words matched, with them m
 
 If you never saved anything about a subject, the answer is **nothing found**, not a wall of loosely related things.
 
+### Finding a picture by its colour
+
+Type a colour before the word picture, photo, image or screenshot: "blue photos" shows only pictures with blue in them.
+Or type `color:blue`, `colour:blue` or `color:#rrggbb` anywhere in the search.
+A colour with no picture word after it stays an ordinary word: "red wine" searches for red wine.
+When a search shows three pictures or more, a row of colour dots appears under the result count.
+Press a dot to filter to that colour; the dot of the colour in your search gets a ring.
+The colours are read from each picture on your Mac. Nothing is sent away to find them.
+
 ### Finding a word inside one artifact
 
 With an artifact open, press **Cmd+F** (Ctrl+F) and type.
