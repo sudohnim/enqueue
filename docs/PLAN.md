@@ -1138,7 +1138,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: a related item with a gist row shows the gist as `about`.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R14. Docs for track R**
+- [x] **R14. Docs for track R** (claimed: Big Pickle, 2026-11-17)
+  Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
   - Needs: R1 to R13
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do:

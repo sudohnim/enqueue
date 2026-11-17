@@ -294,6 +294,15 @@ There are three kinds of link:
 Same-point links come first, marked **Same idea, another field**, and the farther apart the two fields, the higher it sits: a note on a willow in a storm beside one on shipping software says more than two notes on the same book.
 The rest follow, closest first.
 
+The panel draws these in five named groups, in this order: **Same subject** (the reason is the other note's own "what it is about" line), **Named in**, **Same idea, another field**, **Also mentions** (Both mention ...), and **You asked about both**.
+**Named in** holds live notes whose text uses this note's title; **You asked about both** holds notes an answer cited alongside this one.
+Those two groups need no stored link and do not count toward the five.
+**Show all** opens every stored row when there are more than five.
+A final group, **Close passages**, sits at the foot and holds passages in other notes that say something near to a passage here.
+
+On a same-idea row, **Keep** moves the pair to the top and marks it Kept.
+**Not the same** removes the link and stops the pair being suggested again.
+
 Nothing is invented to fill the list.
 A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.
 If the model is out of usage or unreachable, the other two kinds still work, and the waiting pairs are judged on their own once it is back.
