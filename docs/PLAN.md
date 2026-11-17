@@ -1763,7 +1763,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: after `link_feedback_local(a, b, "no", "")`, `related` has no row for the pair and `build_snapshot(a)` has one `link_feedback` element.
   - Check: `cd desktop && cargo test --lib`
 
-- [ ] **P8b. The page can send a verdict**
+- [x] **P8b. The page can send a verdict** (claimed: agent, 2026-11-16)
+  Done: desktop/src/lib.rs, desktop/build.rs, desktop/tauri.conf.json; cargo check pass
   - Needs: P8a
   - Files: `desktop/src/lib.rs` (inside `mod mobile`), `desktop/build.rs`, `desktop/tauri.conf.json`
   - Find: `grep -n 'fn queue_mutation_push' desktop/src/lib.rs` and read one write command that calls it (`mobile_toggle_pin`).

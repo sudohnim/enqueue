@@ -148,7 +148,8 @@
             "native:allow-quick",
             "native:allow-apple",
             "allow-mobile-related",
-            "allow-mobile-shiny"
+            "allow-mobile-shiny",
+            "allow-mobile-link-feedback"
           ]
         }
       ]
