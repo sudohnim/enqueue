@@ -323,7 +323,7 @@ def pending_ids() -> list[str]:
             for r in conn.execute(
                 "SELECT p.artifact_id FROM related_pending p JOIN artifacts a"
                 " ON a.id = p.artifact_id WHERE a.deleted_at IS NULL"
-                " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY p.since"
+                " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY a.updated_at DESC, p.since"
             )
         ]
     finally:

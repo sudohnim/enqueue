@@ -930,7 +930,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: two notes that each name "Lisbon" one time in the body, with no "Lisbon" in a title or subject line, get no mention link. Two notes with "Lisbon" in both titles do. Copy the set-up of a mention test in the file.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R4. The judge takes the newest note first**
+- [x] **R4. The judge takes the newest note first** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py; tests pass
   - Needs: none
   - Files: `ingest/related.py` (`pending_ids`), `tests/test_related.py`
   - Why: the judge makes 40 calls each day. With a long queue, a note written today waits days for its analogies.
