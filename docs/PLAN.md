@@ -552,7 +552,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/verify --fast`
   - Done: static/js/artifact.js, static/js/drafts.js; bin/verify: all checks passed
 
-- [ ] **U10. One raven on a screen**
+- [x] **U10. One raven on a screen** (claimed: agent, 2026-11-17)
   - Needs: R1
   - Files: `static/css/artifact.css` (`.related*`)
   - Why: with the Details panel open, the page shows the panel's raven and the Related raven at the same time.
@@ -560,6 +560,8 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Do: add one CSS rule that hides `.related-raven` while the panel is open. Use the class or attribute the code sets on the panel or on its parent. If the open state is only on the panel element, use `:has()`: `#view:has(.drawer.open) .related-raven { visibility: hidden; }` with the real class name.
   - Check: `bin/verify --fast`
   - Device check **[device]**: open the Details panel on a note with related rows; one raven shows.
+  - Done: static/css/artifact.css; bin/verify: all checks passed
+  - Owed: device check - open the Details panel on a note with related rows; one raven shows
 
 - [ ] **U11. Docs for track U**
   - Needs: U1 to U10
