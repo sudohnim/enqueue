@@ -985,11 +985,12 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_export_schedule.py -q`; `bin/verify --fast`
   - Done: src/enqueue/settings.py, src/enqueue/backup.py, src/enqueue/static/js/settings.js, tests/test_export_schedule.py; 4 passed in 0.88s
 
-- [ ] **C7. Docs for track C**
+- [x] **C7. Docs for track C** (claimed: agent, 2026-11-17)
   - Needs: C1 to C6
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: add `thumbs.py` and `offload.py` to the module map; add the three tables; add the `HEAD` route to "The relay"; add a Gotchas section "An original can live on the relay only" with the eight conditions of C4. In `docs/MANUAL.md`, describe "Space on this Mac" and the daily plain copy.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
 
 ---
 

@@ -454,6 +454,31 @@ Start Enqueue again and it rebuilds the search index; browsing works meanwhile, 
 
 Your model API key is not in the backup (it lives in the Mac's Keychain); enter it again in Settings.
 
+## Space on this Mac
+
+**Settings > Library** shows how much space the original files you saved use on this Mac.
+If you use Enqueue sync, you can let go of copies the relay already holds.
+Under **Space on this Mac**, turn on **Keep files I have not opened in 30 days in Enqueue sync only**.
+The 30 days is the `offload_after_days` setting.
+Enqueue removes a local file only after it checks that the relay holds the same sealed bytes.
+Pinned items and items marked "only on this Mac" always stay.
+Vaulted items and items in the trash stay too.
+A file you open again is fetched from the relay and put back on the Mac.
+The switch is off by default, so nothing is removed until you turn it on.
+
+## A plain copy in a folder
+
+A backup is encrypted and cannot be opened as files.
+For a copy you can read without Enqueue, use **Settings > Library > Export to a folder**.
+Enqueue writes one Markdown file per item and the original files into `<folder>/Enqueue`.
+Turn on **Keep this copy up to date every day** to update that folder every day.
+The folder is the `export_dir` setting; Enqueue writes into `<folder>/Enqueue` and never creates the folder itself, so skip this if the folder is missing.
+A second run changes only what changed.
+Files in this folder are not encrypted by Enqueue.
+Anyone who can open the folder can read them.
+Use a folder in a drive that is end-to-end encrypted.
+Items in the vault and items marked local-only are left out of the daily copy.
+
 ## Privacy and encryption
 
 Nobody but you can read your library: not the relay, not your cloud drive, not us.

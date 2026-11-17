@@ -300,6 +300,8 @@ One line per file, describing its job.
 | `api/guard.py` | `LocalOnlyGuard`: answers only loopback Host names (`config.ALLOWED_HOSTS`, else 421) and refuses a state-changing request whose Origin is not the engine's own (`config.ALLOWED_ORIGINS`, port included, else 403), so no other website can reach the engine, even through DNS rebinding. Requests with no Origin (CLI, the shell's health check) pass. Tests add `testserver` via conftest. |
 | `privacy.py` | What may go to which model. `is_remote(provider)` (endpoint not loopback), `shareable(items, provider)` drops local-only artifacts from anything shown to a remote model: chat passages, the gray-zone judge, model re-ranking. A chat scoped to a local-only artifact, and attribute extraction from one, get no model at all (`providers.base.LocalOnly`). The phone's chat does the same through `sync::chat_sources`. |
 | `blobstore.py` | The original files on disk, sealed under a key from the library key once the kit is saved; every read and write goes through it. See "At rest" under Encryption and keys. |
+| `thumbs.py` | Small pictures for the wall: `make`/`get`/`drop` keep a 520px JPEG of a live image, sealed in the blobstore like every original; made at ingest, shown by `GET /artifacts/{id}/thumb`, dropped when the item is vaulted. See "An original can live on the relay only" under Gotchas. |
+| `offload.py` | Let go of originals the relay holds (`candidates`/`on_relay`/`run`/`report`), off by default. `run` removes a local original only after `on_relay` confirms the relay holds the exact sealed bytes; a needed file is fetched back on open. See "An original can live on the relay only" under Gotchas. |
 | `netguard.py` | `is_public(host, port)`: whether a host resolves only to public addresses. What a link preview may reach, for the plain fetch and the WebKit reader alike. |
 | `webkit_page.py` | The preview browser: one page in an off-screen WKWebView in a process of its own, HTML back once its scripts ran. See "Browser fallback" under Link previews. |
 | `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. |
@@ -631,7 +633,7 @@ It parses nothing, holds no key, and can decrypt nothing. The hosted one also ke
 - **Limits.** An object over `RELAY_MAX_OBJECT_BYTES` (100 MiB) and a write past a library's storage limit (`RELAY_QUOTA_BYTES`, 5 GiB, or the library's own `--quota-gb`) are 413; at most 256 pairings wait at once. `enq relay` refuses to listen on anything but loopback with `dev-secret` or a secret under 24 characters.
 - **Setup.** The desktop's sync setup asks for the relay password and checks it against the relay first (`PUT /settings/sync-secret` with `relay_url`, `api/settings._relay_refuses`), so a made-up one is refused there instead of failing every sync after. There is no "make one" any more: a relay only ever opened the secret it ran with.
 - **Auth.** Each library's own secret (in each device's Keychain or sealed config): `Authorization: Bearer <secret>` on HTTP, `?token=<secret>` on the SSE stream (an `EventSource` cannot set headers); the relay blanks it in its access log (`app.hide_tokens_in_access_log`), which once held every library's password.
-- **Routes.** `GET /sync/objects?since=<cursor>` lists names changed after a cursor (and the new cursor); `GET /sync/object/<name>` fetches one; `PUT /sync/object/<name>` stores or overwrites one (an upsert takes a fresh cursor, so a device past the old one pulls the update again); `DELETE /sync/object/<name>` removes one (a device clearing its own superseded copies); `GET /sync/events` streams a line per write; `PUT`/`GET /pair/<id>` carry a one-time sealed envelope for adding a computer.
+- **Routes.** `GET /sync/objects?since=<cursor>` lists names changed after a cursor (and the new cursor); `GET /sync/object/<name>` fetches one; `HEAD /sync/object/<name>` returns 200 with `X-Object-Size` (the object's byte length) when it exists, else 404, used by `offload.on_relay` to confirm a blob is on the relay before the Mac lets go of its local copy; `PUT /sync/object/<name>` stores or overwrites one (an upsert takes a fresh cursor, so a device past the old one pulls the update again); `DELETE /sync/object/<name>` removes one (a device clearing its own superseded copies); `GET /sync/events` streams a line per write; `PUT`/`GET /pair/<id>` carry a one-time sealed envelope for adding a computer.
 - **Shared notes.** `PUT /share/<id>` (device token or library secret; on the hosted relay a device token must be Pro, else 402; `?expires_at=` a Unix time), `DELETE /share/<id>`, and the public `GET /share/<id>` (the sealed bytes) and `GET /s/<id>` (the viewer, `static/share.html`, with its files under `/s/static/` and `/s/fonts/` from an allowlist, behind a strict CSP and `no-referrer`). A share is stored as the object `share/<id>` in the owner's library, so it counts toward the quota, lives in R2 and goes when the library is revoked; the change feed never lists `share/` objects. `SHARE_BASE_URL` (the hosted relay: `https://enqueue.ing`) is where links point, reported on `/health` as `share_base`; without it links point at the relay itself.
 - **Names.** `dev/<device_id>/artifacts/<hash>.enc` and `dev/<device_id>/chats/<hash>.enc` (the id hashed under the names key), `blobs/<hash>`, `lib/settings/<time>-<device>.enc` (the newest by its own `updated_at` wins), `lib/vault.enc`, `lib/pivots.enc`. A device writes only under its own `dev/<device_id>/`, and reads everything.
 - **Running one.** `enq relay --host 0.0.0.0 --port <port> --secret <long random> [--admin-secret <long random>]` (or `RELAY_HOST`/`RELAY_PORT`/`RELAY_DATA_DIR`/`RELAY_SECRET`/`RELAY_ADMIN_SECRET`), behind TLS (Caddy, nginx, the host's own), on a data folder that survives restarts. With R2 the volume holds only the index (a few hundred bytes per object); the bucket `enqueue` is in the Cloudflare account, with an R2 API token scoped to Object Read & Write on that bucket alone, and the four `R2_*` variables are on the Railway service. `bin/deploy-relay` deploys the hosted one: the `enqueue` service in the `enqueue` Railway project, with a Postgres service beside it whose `DATABASE_URL` reaches the relay as a reference over Railway's private network. It is the live relay for every linked device. **Staging** (made 2026-10-26) is the `staging` environment of the same Railway project: the same services with their own volume, Postgres and secrets (in the Keychain as `enqueue-staging-relay-secret` and `enqueue-staging-relay-admin-secret`), no R2 (its bytes stay on its volume) and no purchase webhook, at `https://enqueue-staging.up.railway.app`. Deploy there first with `RAILWAY_ENVIRONMENT=staging bin/deploy-relay`; point a test Mac at it with `ENQ_HOSTED_RELAY_URL` and its own `ENQ_DATA_DIR`. Sign in with Apple needs the staging callback added to the Services ID before it works there. Wait for the new build before trusting `/health`, since the old one keeps answering while it rolls out. For a test, `enq relay` plus `cloudflared tunnel --url http://127.0.0.1:8788`. No CORS: every client is native (Python `httpx`, Rust `ureq`).
@@ -669,6 +671,9 @@ Migrations run automatically at startup via Alembic.
 | `sections` | the ingest model's summary of each section of a long document | derived at map-reduce ingest, searched as its own layer, staled like facets |
 | `opens` | each time an artifact was opened, from where, and for which search | local only, never synced; purge deletes an artifact's rows |
 | `searches` | each search, its hits, loose count and source for the real-search eval | migration `0046_searches`; local only, never synced; pruned after 180 days |
+| `thumbs` | the small wall picture of an image | `artifact_id` PK, `content_hash` (sealed JPEG in the blobstore), `width`; migration `0052_thumbs`; dropped when the item is vaulted |
+| `blob_relay` | which relay holds a blob | `content_hash` PK, `relay`, `pushed_at`; migration `0050_blob_relay`; written after a blob is pushed to or fetched from a relay, so `offload` knows a copy exists off this Mac |
+| `artifact_colours` | the colours of a picture | `artifact_id`, `r`, `g`, `b`, `share`; PK `(artifact_id, r, g, b)`; migration `0051_artifact_colours`; picture colours for colour search (track V) |
 
 ### Invariants
 
@@ -1697,6 +1702,24 @@ A page can be fetched perfectly and still have no article in it (an Instagram po
 Since `fetch` re-queues the artifact and ingest fetches whatever needs it, one such link fetched its page, re-ingested and re-pushed itself to the relay every second or two for as long as the engine ran (353 times in ten minutes), which also startled the phone's eye at every pull.
 `link_previews.body_tried` records a fetch that found no body, so the heal is tried once; "Try again" still forces a fetch.
 Anything that re-queues an artifact from inside ingest needs a condition that ingest itself makes false.
+
+### An original can live on the relay only
+
+With `offload_originals` on, the Mac may let go of a local original once the relay holds a byte-for-byte copy.
+`offload.candidates` selects an artifact only when every one of these holds:
+the artifact is live (not deleted, vaulted or embedded);
+`local_only` is 0;
+it is not pinned;
+its kind is `pdf`, `image` or `file`;
+its `updated_at` is older than `offload_after_days`;
+nothing opened it since then (no `opens` row at or after the cutoff);
+a `blob_relay` row records that this relay holds the hash;
+and, for an image, a thumb exists so the wall still shows a picture.
+`blobstore.exists` must also hold, so a file already gone is never counted.
+Before removing anything, `on_relay` sends `HEAD /sync/object/blobs/<name>` and compares the relay's `X-Object-Size` with the length of the sealed payload, so a different copy is never mistaken for this one.
+Removing the local file is safe: opening the artifact fetches the blob from the relay again.
+The switch is off by default.
+`report()` drives "Space on this Mac" in Settings, and counts what could be freed without a relay call.
 
 ### The iOS app
 
