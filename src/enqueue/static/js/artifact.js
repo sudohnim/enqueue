@@ -724,7 +724,7 @@
     }
     if (!r.passages.length || !document.body.contains(slot)) return;
     slot.innerHTML =
-      '<div class="dsec-head"><span class="dsec-label">Passages that connect</span></div>' +
+      '<div class="relatedlabel">Close passages</div>' +
       r.passages
         .map(
           (p) =>
@@ -1186,6 +1186,7 @@
           id +
           "')\">Show all</button>"
         : "") +
+      '<div class="relatedgroup" id="connections"></div>' +
       "</div></div></div>" +
       '<aside class="drawer dpanel" id="drawer" aria-label="Details">' +
       '<div class="dpanel-top">' +
@@ -1204,7 +1205,6 @@
       viewsRowHtml(d.views, id) +
       summaryHtml +
       (a.kind === "note" ? draftsSectionHtml(a, d.versions.length) : "") +
-      '<section class="dsec connections" id="connections"></section>' +
       "</div></aside>";
 
     view.innerHTML = html;

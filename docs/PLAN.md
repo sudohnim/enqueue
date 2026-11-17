@@ -988,7 +988,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: one answer cites A and B. `for_artifact(A)` has B with link `asked`. A trashed B is absent.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R8. Close passages move from the Details panel to Related**
+- [x] **R8. Close passages move from the Details panel to Related** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/static/js/artifact.js; bin/verify --fast pass
   - Needs: R1
   - Files: `static/js/artifact.js` (`mountConnections`, and the element with id `connections`), `static/css/artifact.css` (`.related*`)
   - Why: one question, "what else is like this", has two places with two looks.
