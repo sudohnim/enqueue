@@ -1277,9 +1277,37 @@ async function renderMoveSection(d) {
 				(busy(imp) ? " disabled" : "") + ">Bring in</button></div>" +
 				'<div class="aside" id="appleState">' + esc(moveLine(imp, "import")) + "</div></div>"
 			: "";
+	const dirs = String((d.settings.watch_dirs || {}).value || "")
+		.split(/\r?\n/)
+		.map((x) => x.trim())
+		.filter(Boolean);
+	const dirRows = dirs
+		.map(
+			(p) =>
+				'<div class="keyrow"><span class="aside path" title="' +
+				esc(p) +
+				'">' +
+				esc(p) +
+				'</span><button class="btn tertiary" onclick="removeWatchDir(' +
+				esc(JSON.stringify(p)) +
+				')">Remove</button></div>',
+		)
+		.join("");
+	const addDir = picker
+		? '<div class="actions"><button class="btn tertiary" onclick="chooseWatchDir()">Add a folder</button></div>'
+		: '<div class="keyrow"><input id="watch_dir_input" placeholder="~/Downloads/..." ' +
+			"onkeydown=\"if(event.key==='Enter')addWatchDir(this.value)\">" +
+			'<button class="btn tertiary" onclick="addWatchDir(document.getElementById(\'watch_dir_input\').value)">' +
+			"Add a folder</button></div>";
 	html +=
 		'<div class="shelf">From this Mac</div><div class="group">' +
 		apple +
+		'<div class="field"><span class="rowlabel">New files in a folder</span>' +
+		'<div class="aside">Each new PDF, picture and text file in these folders is kept. ' +
+		"Files that are there now stay as they are.</div>" +
+		dirRows +
+		addDir +
+		"</div>" +
 		'<div class="field"><span class="rowlabel">Bookmarks and Kindle</span>' +
 		'<div class="aside">Bookmarks: export them from your browser, then choose the file with Import. ' +
 		'Kindle: choose the file "My Clippings.txt" with Import.</div></div></div>';
@@ -1374,6 +1402,61 @@ async function startAppleNotes() {
 		return toast(String((err && err.message) || err), true);
 	}
 	await renderSettingsTab("storage");
+}
+
+async function watchDirsNow() {
+	const d = await api("/settings");
+	return String((d.settings.watch_dirs || {}).value || "")
+		.split(/\r?\n/)
+		.map((x) => x.trim())
+		.filter(Boolean);
+}
+
+async function saveWatchDirs(dirs) {
+	try {
+		await api("/settings", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ changes: { watch_dirs: dirs.join("\n") } }),
+		});
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await renderSettingsTab("storage");
+}
+
+async function chooseWatchDir() {
+	const picked = await choosePath({ directory: true, multiple: false, title: "Choose a folder to watch" });
+	if (!picked) return;
+	try {
+		await window.__TAURI__.core.invoke("remember_folder", { path: picked });
+	} catch (err) {
+		return toast("Enqueue could not keep access to that folder: " + String(err.message || err), true);
+	}
+	await addWatchDir(picked);
+}
+
+async function addWatchDir(path) {
+	const dir = String(path || "").trim();
+	if (!dir) return;
+	let dirs;
+	try {
+		dirs = await watchDirsNow();
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	if (!dirs.includes(dir)) dirs.push(dir);
+	await saveWatchDirs(dirs);
+}
+
+async function removeWatchDir(path) {
+	let dirs;
+	try {
+		dirs = await watchDirsNow();
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await saveWatchDirs(dirs.filter((x) => x !== path));
 }
 
 function stageDraftPolicy(value) {

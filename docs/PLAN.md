@@ -3313,7 +3313,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Do: steps 1, 2, 5 and 6 of L6 below.
   - Check: `bin/verify --fast`
 
-- [ ] **L6b. Settings: folders to watch**
+- [x] **L6b. Settings: folders to watch** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/static/js/settings.js; bin/verify --fast pass
   - Needs: L5, L6a
   - Files: `static/js/settings.js` (the same section)
   - Do: steps 3 and 4 of L6 below.
