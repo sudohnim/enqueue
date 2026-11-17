@@ -638,6 +638,28 @@ def run_apple_notes() -> dict:
     return report
 
 
+def start_apple_notes() -> dict:
+    """Bring Apple Notes in on a thread of its own; refuses while an import runs."""
+    if not apple_notes_available():
+        raise RuntimeError("Apple Notes cannot be read by this build of Enqueue.")
+    with _lock:
+        if _state.get("state") == "running":
+            raise RuntimeError("an import is already running")
+        _state.clear()
+        _state.update(state="running", path="Apple Notes")
+
+    def safely() -> None:
+        try:
+            run_apple_notes()
+        except Exception as exc:  # noqa: BLE001 - the page shows why
+            log.exception("Apple Notes import failed")
+            with _lock:
+                _state.update(state="failed", error=str(exc)[:300])
+
+    threading.Thread(target=safely, name="import-apple-notes", daemon=True).start()
+    return state()
+
+
 # ---- Standard Notes -----------------------------------------------------------------
 
 

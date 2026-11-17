@@ -3068,7 +3068,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `uv run pytest tests/test_importer.py -q`
   - Do not: run the real script.
 
-- [ ] **L4. Apple Notes come in, and come in again when they change**
+- [x] **L4. Apple Notes come in, and come in again when they change** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/importer.py, src/enqueue/api/portable.py, src/enqueue/api/settings.py; 13 passed in 1.73s
   - Split: step 1 is done in L4a. Do steps 2 and 3 only (the route and the feature flag), and add `start_apple_notes` from step 1.
   - Needs: L4a
   - Files: `importer.py`, `api/portable.py`, `api/settings.py` (the `features` dict), `tests/test_importer.py`
