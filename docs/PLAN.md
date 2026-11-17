@@ -785,7 +785,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Test: a raw answer with 6 asks stores 6 rows with role `ask`; an ask of 9 words is dropped; the returned count does not include them.
   - Check: `uv run pytest tests/test_ingest.py tests/test_related.py tests/test_shiny.py tests/test_search_results.py tests/test_chats.py -q`
 
-- [ ] **M9. Tell the person when summaries can be written in the new form**
+- [x] **M9. Tell the person when summaries can be written in the new form** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/prompts.py, src/enqueue/ingest/facets.py, src/enqueue/setup.py; tests pass
   - Needs: M5
   - Files: `prompts.py`, `setup.py`, `ingest/facets.py`, `tests/test_setup.py`
   - Why: old items have no gist. Writing them again costs one model call for each item, so the person starts it. Settings has the button "Summarize again" now.

@@ -5,6 +5,8 @@ page can contain text addressed to a model, and a poisoned facet is written to t
 index permanently rather than affecting a single session.
 """
 
+FACET_VERSION = "2"
+
 FACET_GENERATION = """\
 You read one saved artifact and write the arguments it could be recruited into.
 

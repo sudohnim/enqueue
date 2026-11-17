@@ -300,6 +300,25 @@ def _alerts(backend: dict, models: dict, sync: dict) -> list[dict]:
             f"{stale} {'item is' if stale == 1 else 'items are'} waiting for a summary."
             " Search still finds them by their words.",
         )
+
+    from .ingest import facets as _facets
+
+    connected = (
+        (backend.get("included") and backend.get("signed_in"))
+        or (backend["name"] == "local")
+        or (not backend.get("needs_key") or backend.get("key_present"))
+    )
+    if connected and _facets.missing_gist(db.get_conn()) > 0:
+        n = _facets.missing_gist(db.get_conn())
+        say(
+            "summary-new-form",
+            "note",
+            "ai",
+            "concepts",
+            f"Summaries have a new form with one plain line and key points. Press"
+            f' "Summarize again" to write them for {n} older items. This makes one'
+            " call to your assistant for each item.",
+        )
     if blind:
         say(
             "images-undescribed",

@@ -529,6 +529,17 @@ def delete_facet(facet_id: str) -> dict:
     return {"id": facet_id, "artifact_id": artifact_id, "deleted": True}
 
 
+def missing_gist(conn) -> int:
+    """Count live artifacts that have facets but no gist line."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM artifacts a WHERE a.deleted_at IS NULL"
+        " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+        " AND EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id)"
+        " AND NOT EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id AND f.role = 'gist')"
+    ).fetchone()
+    return int(row["n"]) if row else 0
+
+
 def gists(conn, artifact_ids: list[str]) -> dict[str, str]:
     """One plain line per item: its gist, else its level 0 line. Items with neither
     are absent."""
