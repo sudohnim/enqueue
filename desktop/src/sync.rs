@@ -251,6 +251,28 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
 
     let share = get_share(conn, artifact_id)?;
 
+    let mut rels = Vec::new();
+    {
+        let mut rstmt = conn.prepare(
+            "SELECT artifact_id,related_id,owner,score,via,point,kind,distance FROM related WHERE owner = ?1",
+        ).map_err(|e| e.to_string())?;
+        let rrows = rstmt.query_map([artifact_id], |r| {
+            Ok(serde_json::json!({
+                "artifact_id": r.get::<_, String>(0)?,
+                "related_id": r.get::<_, String>(1)?,
+                "owner": r.get::<_, Option<String>>(2)?,
+                "score": r.get::<_, Option<f64>>(3)?,
+                "via": r.get::<_, Option<String>>(4)?,
+                "point": r.get::<_, Option<String>>(5)?,
+                "kind": r.get::<_, Option<String>>(6)?,
+                "distance": r.get::<_, Option<f64>>(7)?,
+            }))
+        }).map_err(|e| e.to_string())?;
+        for row in rrows {
+            rels.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
     Ok(Some(serde_json::json!({
         "artifact": artifact,
         "share": share,
@@ -261,6 +283,7 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         // Facets ride the snapshot so a facet edited on the phone reaches the desktop.
         // Full columns, so the desktop stores them faithfully.
         "facets": facets,
+        "related": rels,
     })))
 }
 
@@ -818,6 +841,9 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS related (artifact_id TEXT NOT NULL, related_id TEXT NOT NULL, owner TEXT, score REAL, via TEXT, point TEXT, kind TEXT, distance REAL, PRIMARY KEY (artifact_id, related_id, owner));",
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -997,6 +1023,29 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
                 )
                 .map_err(|e| format!("insert facet: {e}"))?;
             }
+        }
+    }
+
+    // Related rows ride the snapshot: delete those owned by this artifact, then insert.
+    if let Some(rels) = snapshot.get("related").and_then(|v| v.as_array()) {
+        conn.execute("DELETE FROM related WHERE owner = ?1", [id])
+            .map_err(|e| e.to_string())?;
+        for r in rels {
+            conn.execute(
+                "INSERT INTO related (artifact_id,related_id,owner,score,via,point,kind,distance) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                rusqlite::params![
+                    str_at(r.get("artifact_id")),
+                    str_at(r.get("related_id")),
+                    str_at(r.get("owner")),
+                    r.get("score").and_then(|v| v.as_f64()),
+                    r.get("via").and_then(|v| v.as_str()),
+                    r.get("point").and_then(|v| v.as_str()),
+                    r.get("kind").and_then(|v| v.as_str()),
+                    r.get("distance").and_then(|v| v.as_f64()),
+                ],
+            )
+            .map_err(|e| format!("insert related: {e}"))?;
         }
     }
 
@@ -2027,6 +2076,42 @@ pub fn search_fts(conn: &Connection, terms: &[String], all: bool) -> Result<Vec<
             "snippet": r.get::<_, Option<String>>(10)?,
         }))
     }).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+pub fn related_for(conn: &Connection, artifact_id: &str) -> Result<Vec<Value>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT a.id, a.title, a.kind, a.updated_at, r.link, r.point, r.via \
+             FROM related r JOIN artifacts a ON a.id = r.related_id \
+             WHERE r.artifact_id = ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    // Actually use r.kind as link
+    let mut stmt = conn
+        .prepare(
+            "SELECT a.id, a.title, a.kind, a.updated_at, r.kind, r.point, r.via \
+             FROM related r JOIN artifacts a ON a.id = r.related_id \
+             WHERE r.artifact_id = ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([artifact_id], |r| {
+            Ok(serde_json::json!({
+                "id": r.get::<_, String>(0)?,
+                "title": r.get::<_, Option<String>>(1)?,
+                "kind": r.get::<_, Option<String>>(2)?,
+                "updated_at": r.get::<_, Option<String>>(3)?,
+                "link": r.get::<_, Option<String>>(4)?,
+                "point": r.get::<_, Option<String>>(5)?,
+                "via": r.get::<_, Option<String>>(6)?,
+            }))
+        })
+        .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r.map_err(|e| e.to_string())?);

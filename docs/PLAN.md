@@ -1671,7 +1671,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `cargo test --lib` in `desktop/`
   - Partly done in review (2026-11-16): the `role` column, apply, `build_snapshot` and a test are in `sync.rs`, and the reader hides `ask` lines. Left: set a role when a snapshot facet has none.
 
-- [ ] **P6a. The phone stores related rows and reads them**
+- [x] **P6a. The phone stores related rows and reads them** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: H7
   - Files: `desktop/src/sync.rs` (`init_schema`, `apply_snapshot`, a new function, `mod tests`)
   - Do:
