@@ -173,7 +173,8 @@ The sections of the file are in the order they were written: the tracks from the
 
 ## Track DB: migrations
 
-- [ ] **DB1. Three migrations**
+- [x] **DB1. Three migrations** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/migrations/versions/0046_searches.py, 0047_facet_role.py, 0048_link_feedback.py, tests/test_migrations.py; 8 passed
   - Needs: none
   - Files: new `migrations/versions/0046_searches.py`, new `migrations/versions/0047_facet_role.py`, new `migrations/versions/0048_link_feedback.py`, `tests/test_migrations.py`
   - Why: three tracks need new tables. One task makes them all, so no two agents use the same number.
