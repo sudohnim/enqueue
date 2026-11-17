@@ -79,6 +79,9 @@ def _dated(hits: list[dict]) -> None:
         (json.dumps([h["artifact_id"] for h in hits]),),
     ).fetchall()
     by_id = {r["id"]: r for r in rows}
+    from ..ingest import facets as facets_mod
+
+    gists = facets_mod.gists(conn, [h["artifact_id"] for h in hits])
     for h in hits:
         r = by_id.get(h["artifact_id"])
         if r is None:
@@ -86,6 +89,8 @@ def _dated(hits: list[dict]) -> None:
         h["updated_at"] = r["updated_at"]
         host = urlsplit(r["source_url"] or "").hostname or ""
         h["site"] = r["site_name"] or host.removeprefix("www.") or None
+        if h["artifact_id"] in gists:
+            h["gist"] = gists[h["artifact_id"]]
 
 
 @router.get("/titles")

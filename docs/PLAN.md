@@ -1361,7 +1361,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: in `tests/test_search_results.py`, an artifact with an `ask` line "release in small steps" is found by the search "small steps release" with `why` equal to `search phrase`.
   - Check: `uv run pytest tests/test_search_results.py -q`; `bin/check-eval-cross`
 
-- [ ] **Q10. A search result shows the gist**
+- [x] **Q10. A search result shows the gist** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/api/search.py, src/enqueue/static/js/search.js; tests pass
   - Needs: M7
   - Files: `api/search.py` (`_dated`), `static/js/search.js`
   - Do:

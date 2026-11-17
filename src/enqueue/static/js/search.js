@@ -278,7 +278,11 @@
       marked(h.title || "Untitled", terms) +
       "</h3>" +
       whyHtml(h, terms) +
-      (excerpt ? '<p class="sr-excerpt">' + marked(excerpt, terms) + "</p>" : "") +
+      (excerpt
+        ? '<p class="sr-excerpt">' + marked(excerpt, terms) + "</p>"
+        : h.gist
+          ? '<p class="sr-excerpt">' + esc(h.gist) + "</p>"
+          : "") +
       "</li>"
     );
   }
