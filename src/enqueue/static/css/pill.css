@@ -74,7 +74,7 @@
 	border-radius: var(--r-full);
 	font-family: var(--sans);
 	/* Button: 14px / 500 / 1.20, zero tracking. */
-	font-size: 14px;
+	font-size: var(--t-md);
 	font-weight: var(--w-medium);
 	line-height: 17px;
 	letter-spacing: 0;
@@ -224,8 +224,8 @@
 	min-width: 0;
 	font-family: var(--sans);
 	/* Body: entry text at 16 / 400, zero tracking. */
-	font-size: 16px;
-	font-weight: 400;
+	font-size: var(--t-xl);
+	font-weight: var(--w-regular);
 	line-height: 24px;
 	letter-spacing: 0;
 	background: transparent;
@@ -241,8 +241,8 @@
 }
 .scope {
 	/* Caption: the scope prefix in the capture pill. */
-	font-size: 12px;
-	font-weight: 400;
+	font-size: var(--t-xs);
+	font-weight: var(--w-regular);
 	color: var(--text-mute);
 	white-space: nowrap;
 	padding-right: var(--sp-2);
@@ -277,8 +277,8 @@
 	padding: var(--sp-3);
 	font-family: var(--sans);
 	/* Body: menu items are list text, not buttons. */
-	font-size: 16px;
-	font-weight: 400;
+	font-size: var(--t-xl);
+	font-weight: var(--w-regular);
 	line-height: 24px;
 	letter-spacing: 0;
 	color: var(--text);
@@ -399,7 +399,7 @@ dialog.ask::backdrop {
 }
 dialog.ask h2 {
 	margin: 0;
-	font-size: 24px;
+	font-size: var(--t-4xl);
 	font-weight: var(--w-medium);
 	line-height: 29px;
 	letter-spacing: -0.48px;
@@ -407,7 +407,7 @@ dialog.ask h2 {
 }
 dialog.ask p {
 	margin: var(--sp-3) 0 0;
-	font-size: 16px;
+	font-size: var(--t-xl);
 	line-height: 22.4px;
 	color: var(--text-dim);
 }
@@ -429,7 +429,7 @@ dialog.ask.upgrade h2 + p {
 }
 dialog.ask.upgrade .upgrade-fine {
 	margin-top: var(--sp-4);
-	font-size: 13px;
+	font-size: var(--t-sm);
 	line-height: 18px;
 	color: var(--text-mute);
 }
@@ -456,7 +456,7 @@ dialog.ask.upgrade .upgrade-why {
 dialog.ask.name p {
 	margin: var(--sp-2) 0 0;
 	/* Body SM, muted: one sentence that explains what saving means. */
-	font-size: 14px;
+	font-size: var(--t-md);
 	line-height: 21px;
 	color: var(--text-mute);
 }
@@ -465,8 +465,8 @@ dialog.ask.name .namefield {
 	margin-top: var(--sp-4);
 	font-family: var(--sans);
 	/* Body: entry text at 16 / 400, zero tracking. */
-	font-size: 16px;
-	font-weight: 400;
+	font-size: var(--t-xl);
+	font-weight: var(--w-regular);
 	line-height: 24px;
 	letter-spacing: 0;
 	/* 8px vertical, 12px horizontal, per DESIGN.md section 4. */
@@ -507,7 +507,7 @@ dialog.ask.name .namefield:focus {
 	border-radius: var(--r-xl);
 	box-shadow: var(--shadow-lifted);
 	padding: var(--sp-3) var(--sp-4);
-	font-size: 16px;
+	font-size: var(--t-xl);
 	line-height: 22.4px;
 	animation: rise var(--dur) ease both;
 }
@@ -539,7 +539,7 @@ dialog.ask.name .namefield:focus {
 	font-weight: var(--w-medium);
 }
 .update-sub {
-	font-size: 14px;
+	font-size: var(--t-md);
 	line-height: 20px;
 	color: var(--text-mute);
 }
@@ -625,7 +625,7 @@ dialog.ask.name .namefield:focus {
 }
 .dropcard .title {
 	/* Headline: the drop card is a CTA, so its line is a headline. */
-	font-size: 24px;
+	font-size: var(--t-4xl);
 	font-weight: var(--w-strong);
 	line-height: 29px;
 	letter-spacing: -0.5px;
@@ -636,7 +636,7 @@ dialog.ask.name .namefield:focus {
 }
 .dropcard .hint {
 	margin-top: var(--sp-2);
-	font-size: 13px;
+	font-size: var(--t-sm);
 	color: var(--text-mute);
 }
 .dropover[data-state="accept"] .hint {

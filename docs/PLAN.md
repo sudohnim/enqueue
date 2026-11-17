@@ -490,7 +490,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/tokenize-css /dev/null` exits 0.
   - Done: bin/tokenize-css; bin/tokenize-css /dev/null exits 0
 
-- [ ] **U3. Sizes and weights become tokens: wall and base**
+- [x] **U3. Sizes and weights become tokens: wall and base** (claimed: agent, 2026-11-17)
   - Needs: U1, U2b
   - Files: `static/css/base.css`, `static/css/home.css`, `static/css/pill.css`
   - Do:
@@ -499,6 +499,8 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     3. Read `git diff` for the three files. Each changed line must be a `font-size` or `font-weight` line.
   - Check: `bin/check-style` prints no line for the three files; `bin/verify --fast`
   - Device check **[device]**: the wall, a card and the pill look the same as before.
+  - Done: static/css/base.css, static/css/home.css, static/css/pill.css; bin/verify: all checks passed
+  - Owed: device check - the wall, a card and the pill look the same as before
 
 - [ ] **U4. Sizes and weights become tokens: the pages**
   - Needs: U1, U2b

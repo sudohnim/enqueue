@@ -24,8 +24,8 @@
     /* The app's default body: 15px on a 24px line, weight 400, zero tracking
        (DESIGN.md section 3). The face is light, so the reading size carries a
        pixel more than a heavier one would need. */
-    font-size: 15px;
-    font-weight: 400;
+    font-size: var(--t-lg);
+    font-weight: var(--w-regular);
     line-height: 1.6;
     letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
@@ -35,7 +35,7 @@
      is 480, too close to 400 for bold to be seen as bold. */
   b,
   strong {
-    font-weight: 600;
+    font-weight: var(--w-heading);
   }
 
   /* Selection is part of the design too. Left alone it paints the OS blue, which is
@@ -77,13 +77,13 @@
     /* Display MD, the largest rung that fits a 1200px work surface: the marketing
        page's XL and LG are heroes the app does not have. The -1.0px tracking is the
        display signature - aggressive, scaling down with size, never zero. */
-    font-size: 34px;
+    font-size: var(--t-display-sm);
     line-height: 1.08;
     letter-spacing: -0.024em;
   }
   .h1 {
     /* Headline: panel titles and section openers. */
-    font-size: 26px;
+    font-size: var(--t-4xl);
     line-height: 1.15;
     letter-spacing: -0.018em;
     /* A long unbroken title (a token, a URL, a pasted string) must wrap instead of
@@ -92,15 +92,15 @@
   }
   .h2 {
     /* Title: the scale's 20px step. */
-    font-size: 20px;
+    font-size: var(--t-3xl);
     font-weight: var(--w-medium);
     line-height: 1.25;
     letter-spacing: -0.015em;
   }
   .h3 {
     /* Subhead: lead paragraphs, back at body weight. */
-    font-size: 18px;
-    font-weight: 400;
+    font-size: var(--t-2xl);
+    font-weight: var(--w-regular);
     line-height: 25px;
     letter-spacing: -0.12px;
   }
@@ -116,7 +116,7 @@
        canvas (--ink-faint, 4.62:1 on surface-1). The accent dot and the uppercase
        tracked eyebrow are gone - DESIGN.md section 8 keeps the accent for brand,
        CTA, focus and links, and the impeccable eyebrow ban applies here. */
-    font-size: 12px;
+    font-size: var(--t-xs);
     font-weight: var(--w-medium);
     line-height: 16px;
     letter-spacing: 0;
@@ -131,7 +131,7 @@
 
   .title {
     /* Title: the 20px / 500 card-title step. */
-    font-size: 20px;
+    font-size: var(--t-3xl);
     font-weight: var(--w-medium);
     line-height: 25px;
     letter-spacing: -0.18px;
@@ -139,7 +139,7 @@
   }
   .excerpt {
     /* Body SM: card body and secondary text. */
-    font-size: 14px;
+    font-size: var(--t-md);
     line-height: 21px;
     color: var(--text-dim);
     margin-top: var(--sp-2);
@@ -155,8 +155,8 @@
     flex-wrap: wrap;
     gap: var(--sp-1);
     /* Caption: timestamps, kinds, counts and byte sizes are the scale's meta. */
-    font-size: 12px;
-    font-weight: 400;
+    font-size: var(--t-xs);
+    font-weight: var(--w-regular);
     line-height: 17px;
     letter-spacing: 0;
     color: var(--text-mute);
@@ -207,7 +207,7 @@
     background: transparent;
     font-family: var(--sans);
     /* Button: 14px / 500 / 1.20 with zero tracking - the scale's button step. */
-    font-size: 14px;
+    font-size: var(--t-md);
     font-weight: var(--w-medium);
     line-height: 17px;
     letter-spacing: 0;
@@ -220,7 +220,7 @@
       color var(--dur-fast) var(--ease);
   }
   .btn.sm {
-    font-size: 12px;
+    font-size: var(--t-xs);
     line-height: 15px;
     letter-spacing: 0;
   }
@@ -339,7 +339,7 @@
     padding: var(--sp-4);
     margin-top: var(--sp-4);
     color: var(--text);
-    font-size: 16px;
+    font-size: var(--t-xl);
     line-height: 22.4px;
     max-width: 68ch;
   }
@@ -552,7 +552,7 @@
 }
 .event-field b {
 	display: block;
-	font-size: 11px;
+	font-size: var(--t-xs);
 	font-weight: var(--w-strong);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -577,7 +577,7 @@
 	width: 100%;
 	margin: var(--sp-3) 0;
 	padding: var(--sp-3);
-	font-size: 22px;
+	font-size: var(--t-4xl);
 	letter-spacing: 8px;
 	text-align: center;
 	border: 0;
