@@ -6,6 +6,7 @@ text extraction exists, since there is nothing to abstract from yet.
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 
@@ -511,6 +512,23 @@ def delete_facet(facet_id: str) -> dict:
     _reindex(artifact_id)
     sync_facets(artifact_id, bump=True)
     return {"id": facet_id, "artifact_id": artifact_id, "deleted": True}
+
+
+def gists(conn, artifact_ids: list[str]) -> dict[str, str]:
+    """One plain line per item: its gist, else its level 0 line. Items with neither
+    are absent."""
+    if not artifact_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT artifact_id, statement, role FROM facets"
+        " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+        " AND (role = 'gist' OR level = 0) ORDER BY role = 'gist' DESC",
+        (json.dumps(list(dict.fromkeys(artifact_ids))),),
+    ).fetchall()
+    out: dict[str, str] = {}
+    for r in rows:
+        out.setdefault(r["artifact_id"], r["statement"])
+    return out
 
 
 def _word_count(body: str | None) -> int:

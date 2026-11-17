@@ -731,7 +731,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Check: `bin/verify --fast`
   - Device check **[device]**: an item made after M5 shows the gist, then points. An older item shows the groups of M2.
 
-- [ ] **M7. One helper gives the gist of many items**
+- [x] **M7. One helper gives the gist of many items** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/facets.py; tests pass
   - Needs: M5
   - Files: `ingest/facets.py`, `tests/test_ingest.py`
   - Do: add to `ingest/facets.py`:
