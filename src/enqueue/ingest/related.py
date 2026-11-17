@@ -663,6 +663,36 @@ def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]
         (dict(r) for r in rows),
         key=lambda r: _rank(r["link"] or "", r["distance"] or 0.0, r["score"]),
     )
+
+    # "Named in": live notes whose body holds this artifact's title.
+    title = conn.execute("SELECT title FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+    title = (title["title"] if title else "") or ""
+    if len(title.split()) >= 2 or len(title) >= 6:
+        named_rows = conn.execute(
+            "SELECT a.id, a.title, a.kind, a.updated_at FROM artifacts a"
+            " WHERE a.kind = 'note' AND a.id != ? AND instr(lower(a.body), lower(?)) > 0"
+            " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+            " ORDER BY a.updated_at DESC LIMIT 3",
+            (artifact_id, title),
+        ).fetchall()
+        existing = {r["id"] for r in out}
+        for nr in named_rows:
+            if nr["id"] in existing:
+                continue
+            out.append(
+                {
+                    "id": nr["id"],
+                    "title": nr["title"],
+                    "kind": nr["kind"],
+                    "updated_at": nr["updated_at"],
+                    "score": 0.8,
+                    "via": None,
+                    "point": None,
+                    "link": "named",
+                    "distance": None,
+                }
+            )
+            existing.add(nr["id"])
     ids = [r["id"] for r in out]
     about = {
         row["artifact_id"]: row["statement"]

@@ -954,7 +954,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: an artifact with 7 stored links: `for_artifact` gives 5, `for_artifact(..., limit=None)` gives 7.
   - Check: `uv run pytest tests/test_related.py -q`; `bin/verify --fast`
 
-- [ ] **R6. "Named in" rows**
+- [x] **R6. "Named in" rows** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py, src/enqueue/static/js/artifact.js; tests pass
   - Needs: R1
   - Files: `ingest/related.py` (`for_artifact`), `static/js/artifact.js` (`relatedRowHtml`), `tests/test_related.py`
   - Why: a note that holds another note's title is linked to it with no doubt, and no model is necessary.

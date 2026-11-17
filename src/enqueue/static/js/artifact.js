@@ -702,6 +702,7 @@
       '<div class="related-head"><div class="shelf">Related</div>' +
       '<img class="related-raven" src="/static/raven-scroll.png" alt="" aria-hidden="true"></div>' +
       group("Same subject", of("subject").sort((a, b) => b.score - a.score), (r) => r.about || r.point || "") +
+      group("Named in", of("named"), () => "") +
       group("Same idea, another field", of("idea"), (r) => r.point || "") +
       group("Also mentions", of("mention"), (r) => (r.via ? "Both mention " + r.via + "." : "")) +
       "</section>"
