@@ -562,7 +562,8 @@ The sections of the file are in the order they were written: the tracks from the
 
 Finding: the Summary panel shows 11 lines for each item. 80% of them are written to not be about the item. Bridge lines, which are for search only, are mixed in.
 
-- [ ] **M1. The artifact answer says which lines are bridges**
+- [x] **M1. The artifact answer says which lines are bridges** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/notes.py, tests/test_facet_retry.py; tests pass
   - Needs: none
   - Files: `notes.py`, `tests/test_facet_retry.py`
   - Find: `grep -n 'FROM facets' src/enqueue/notes.py`
