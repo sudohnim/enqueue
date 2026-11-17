@@ -19,7 +19,7 @@ import sqlite_vec
 from .. import config, db
 from .. import sqlite as sqlite3
 from ..sqlite import OperationalError
-from .embed import embed, embed_passage, embed_query
+from .embed import embed, passage_bytes, query_bytes
 from .fusion import rrf_scored
 from .store import VectorStore
 
@@ -422,7 +422,7 @@ class SqliteVecStore(VectorStore):
                 conn.executemany(
                     sql["insert_vec"],
                     [
-                        (entry[0], json.dumps(vector))
+                        (entry[0], sqlite_vec.serialize_float32(vector))
                         for entry, vector in zip(batch, vectors, strict=True)
                     ],
                 )
@@ -471,7 +471,7 @@ class SqliteVecStore(VectorStore):
             conn.executemany(
                 "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)",
                 [
-                    (entry[0], json.dumps(vector))
+                    (entry[0], sqlite_vec.serialize_float32(vector))
                     for entry, vector in zip(entries, vectors, strict=True)
                 ],
             )
@@ -540,7 +540,10 @@ class SqliteVecStore(VectorStore):
             vectors = embed([row["text"] for row in rows])
             conn.executemany(
                 sql["insert_vec"],
-                [(row["id"], json.dumps(v)) for row, v in zip(rows, vectors, strict=True)],
+                [
+                    (row["id"], sqlite_vec.serialize_float32(v))
+                    for row, v in zip(rows, vectors, strict=True)
+                ],
             )
             conn.executemany(sql["insert_fts"], [(row["id"], row["text"]) for row in rows])
         return len(rows)
@@ -755,7 +758,7 @@ class SqliteVecStore(VectorStore):
                 for row in conn.execute(
                     f"SELECT chunk_id FROM vec_chunks WHERE chunk_id IN ({own})"
                     " ORDER BY vec_distance_L2(embedding, ?) LIMIT ?",
-                    (artifact_id, json.dumps(embed_query(text)), limit),
+                    (artifact_id, query_bytes(text), limit),
                 )
             ]
             keyword: list[str] = []
@@ -809,7 +812,7 @@ class SqliteVecStore(VectorStore):
     def _dense(
         self, conn: sqlite3.Connection, name: str, text: str, limit: int, as_query: bool = True
     ) -> list[dict]:
-        query = json.dumps(embed_query(text) if as_query else embed_passage(text))
+        query = query_bytes(text) if as_query else passage_bytes(text)
         try:
             rows = conn.execute(self._sql(name)["dense"], (query, limit)).fetchall()
             # Unit-norm vectors, L2 distance d: cosine = 1 - d^2/2 (Q.2b).

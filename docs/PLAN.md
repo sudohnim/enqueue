@@ -574,7 +574,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
 
 ## Track I: index speed
 
-- [ ] **I1. The query vector is sent as bytes**
+- [x] **I1. The query vector is sent as bytes** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: `index/embed.py`, `index/store_sqlite.py`
   - Why: each search turns the 768-number query vector into JSON text 16 times.
@@ -586,13 +586,13 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
        def query_bytes(text: str) -> bytes:
            """A search's vector in sqlite-vec's own form, memoized like `embed_one`."""
            import sqlite_vec
-
+    
            return sqlite_vec.serialize_float32(embed_query(text))
-
+    
        @lru_cache(maxsize=64)
        def passage_bytes(text: str) -> bytes:
            import sqlite_vec
-
+    
            return sqlite_vec.serialize_float32(embed_passage(text))
        ```
     2. In `store_sqlite.py` `_dense`, replace the `json.dumps(...)` line with `query = query_bytes(text) if as_query else passage_bytes(text)`. Import both names from `.embed`.
@@ -601,6 +601,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     5. Do not change a `json.dumps` that binds a list of ids.
   - Test: none new. The search tests cover it.
   - Check: `uv run pytest tests/test_search_results.py tests/test_related.py tests/test_chats.py tests/test_shiny.py -q`; `bin/check-eval-cross`
+  - Done: index/embed.py, index/store_sqlite.py; bin/check-eval-cross: OK
 
 - [ ] **I2. Each ingest step says how long it took**
   - Needs: none
