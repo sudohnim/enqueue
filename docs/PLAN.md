@@ -239,7 +239,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator`; the Details panel of a synced item shows the groups.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
 
-- [ ] **P5. The phone keeps the role**
+- [x] **P5. The phone keeps the role** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): a snapshot facet with no role is still stored with none. Do step 3 only.
   - Needs: M4, P4
   - Files: `desktop/src/sync.rs`
@@ -250,6 +250,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: a snapshot facet with `role: "gist"` is sent back with `role: "gist"`.
   - Check: `cargo test --lib` in `desktop/`
   - Partly done in review (2026-11-16): the `role` column, apply, `build_snapshot` and a test are in `sync.rs`, and the reader hides `ask` lines. Left: set a role when a snapshot facet has none.
+  - Done: desktop/src/sync.rs; test result: ok. 44 passed; 0 failed
 
 - [ ] **P6. The phone's reader shows related rows** **[device]**
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.

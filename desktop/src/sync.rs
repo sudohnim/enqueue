@@ -513,6 +513,28 @@ fn int_at(v: Option<&Value>) -> Option<i64> {
     v.and_then(Value::as_i64)
 }
 
+/// Role of a synced facet. One written before roles were stored falls back to its
+/// level and bridge, by DB1's rule, so the phone groups it as the desktop would.
+fn facet_role(f: &Value) -> Option<String> {
+    if let Some(role) = str_at(f.get("role")).filter(|r| !r.is_empty()) {
+        return Some(role);
+    }
+    let bridge = int_at(f.get("bridge")).unwrap_or(0) != 0;
+    let level = int_at(f.get("level")).unwrap_or(0);
+    Some(
+        if bridge {
+            "bridge"
+        } else if level == 0 {
+            "kind"
+        } else if level == 1 {
+            "subject"
+        } else {
+            "idea"
+        }
+        .to_string(),
+    )
+}
+
 /// The LWW key `(updated_at, _device_id)`, compared lexicographically (the sync design (AGENTS.md)).
 fn lww_key(snapshot: &Value) -> (String, String) {
     let a = &snapshot["artifact"];
@@ -1017,7 +1039,7 @@ fn apply_snapshot(conn: &Connection, snapshot: &Value) -> Result<(), String> {
                         f.get("trust").and_then(|v| v.as_f64()),
                         int_at(f.get("edited")).unwrap_or(0),
                         int_at(f.get("bridge")).unwrap_or(0),
-                        str_at(f.get("role")),
+                        facet_role(f),
                     ],
                 )
                 .map_err(|e| format!("insert facet: {e}"))?;
@@ -3083,6 +3105,40 @@ mod tests {
         assert_eq!(roles, vec!["gist".to_string(), "ask".to_string()]);
         let shown = get_artifact(&conn, "n1").unwrap();
         assert_eq!(shown["facets"].as_array().unwrap().len(), 1, "a search phrase is not shown");
+    }
+
+    #[test]
+    fn a_facet_without_a_role_gets_one_from_its_bridge_and_level() {
+        // An older desktop sends summary lines with no role. The phone assigns DB1's
+        // role so the reader groups them and a later push does not drop the role.
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let snap: Value = serde_json::from_str(
+            r#"{
+              "artifact": {"id":"n2","kind":"note","title":"t","body":"b",
+                "source_url":null,"content_hash":null,"mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+                "local_only":0,"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                "title_explicit":0,"_device_id":"d1"},
+              "annotations": [], "page_text": [], "versions": [],
+              "facets": [
+                {"id":"f1","level":0,"statement":"kind line","edited":0,"bridge":0},
+                {"id":"f2","level":1,"statement":"subject line","edited":0,"bridge":0},
+                {"id":"f3","level":3,"statement":"idea line","edited":0,"bridge":0},
+                {"id":"f4","level":4,"statement":"bridge line","edited":0,"bridge":1}
+              ]
+            }"#,
+        )
+        .unwrap();
+        apply_snapshot(&conn, &snap).unwrap();
+        let back = build_snapshot(&conn, "n2").unwrap().unwrap();
+        let roles: Vec<String> = back["facets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["role"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(roles, vec!["kind", "subject", "idea", "bridge"]);
     }
 
     /// A relay on a local port: `/sync/objects` lists two snapshots, and the second
