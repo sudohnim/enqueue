@@ -478,21 +478,24 @@
   display: flex;
   flex-direction: column;
   margin: 0 -8px;
-  /* What the window has left once the header, tags and views are drawn. */
-  max-height: max(220px, calc(100vh - 480px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
 }
-.dpanel .facet-list::after {
-  content: "";
-  flex: none;
-  position: sticky;
-  bottom: 0;
-  height: var(--sp-4);
-  background: linear-gradient(to bottom, transparent, var(--surface-2));
-  pointer-events: none;
+.dpanel .facet-group + .facet-group {
+  margin-top: var(--sp-3);
+}
+.dpanel .facet-group-label {
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+.dpanel .facet-more-btn {
+  margin: 2px 8px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--accent-text);
+  cursor: pointer;
 }
 /* On a phone the whole panel scrolls under the thumb; a second scroller inside it
    would only catch the gesture. */

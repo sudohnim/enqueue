@@ -1325,6 +1325,38 @@
     if (keep) toggleDrawer(true);
   }
 
+  function facetGroups(facets) {
+    const about = facets.filter((f) => f.level <= 1 && !f.bridge);
+    const ideas = facets
+      .filter((f) => f.level >= 2 && !f.bridge)
+      .sort((a, b) => (b.trust || 0) - (a.trust || 0));
+    const bridges = facets.filter((f) => f.bridge);
+    const group = (label, rows, open) =>
+      rows.length
+        ? '<div class="facet-group"><div class="facet-group-label">' +
+          label +
+          "</div>" +
+          rows.slice(0, open).map(facetRow).join("") +
+          (rows.length > open
+            ? '<div class="facet-more" hidden>' +
+              rows.slice(open).map(facetRow).join("") +
+              '</div><button class="facet-more-btn" type="button" onclick="showMoreFacets(this)">Show ' +
+              (rows.length - open) +
+              " more</button>"
+            : "") +
+          "</div>"
+        : "";
+    return (
+      group("About", about, about.length) +
+      group("Ideas", ideas, 3) +
+      group("Also found by", bridges, 0)
+    );
+  }
+  function showMoreFacets(btn) {
+    btn.previousElementSibling.hidden = false;
+    btn.remove();
+  }
+
   function summaryPanel(d, id) {
     const off = !!d.summary_off;
     // Off, nothing can be regenerated, so the button leaves with it.
@@ -1351,7 +1383,7 @@
           String(off) +
           ')"><span class="knob"></span></button>';
     let inner;
-    if (d.facets && d.facets.length) inner = d.facets.map(facetRow).join("");
+    if (d.facets && d.facets.length) inner = facetGroups(d.facets);
     else if (d.summary_waiting)
       inner =
         '<p class="facet-empty">Written once you have left this note alone for five minutes.</p>';

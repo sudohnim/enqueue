@@ -571,7 +571,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Test: in `tests/test_facet_retry.py`, find a test that reads `notes.get(...)["facets"]` (`grep -n '"facets"\]' tests/*.py`). Add one assertion that each facet has a `bridge` key.
   - Check: `uv run pytest tests/test_facet_retry.py -q`
 
-- [ ] **M2. Three groups in the Summary panel, and no inner scroll**
+- [x] **M2. Three groups in the Summary panel, and no inner scroll** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/static/js/artifact.js, src/enqueue/static/css/details.css; bin/verify --fast pass
   - Needs: M1
   - Files: `static/js/artifact.js` (`summaryPanel`), `static/css/details.css`
   - Find: `grep -n 'function summaryPanel\|function facetRow' src/enqueue/static/js/artifact.js`; `grep -n '\.dpanel \.facet-list' src/enqueue/static/css/details.css`
