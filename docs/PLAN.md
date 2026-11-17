@@ -265,7 +265,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
   - Owed: device check - open a synced note that has related notes on the Mac, and see the rows
 
-- [ ] **P7. The phone shows the day's card** **[device]**
+- [x] **P7. The phone shows the day's card** **[device]** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
   - Needs: P7b
   - Files: `static/mobile.html`
@@ -276,6 +276,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     4. `Not today` writes `localStorage.setItem("enq.shinyHidden", day)` inside `try`, and the card is not drawn while that value is today.
     5. A tap on a note opens it in the reader.
   - Check: `bin/verify --fast`. Device: the emulator, linked to a Mac that shows a card today, shows the same idea.
+  - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
+  - Owed: device check - link the emulator to a Mac that shows a card today, and see the same idea on the phone
 
 - [ ] **P8. The phone's idea rows have Keep and Not the same** **[device]**
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.

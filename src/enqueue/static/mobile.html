@@ -1622,6 +1622,58 @@
     color: var(--text-mute);
   }
 
+  /* The day's "Something shiny" card, above the library shelves. */
+  .shiny-card {
+    margin-bottom: var(--sp-4);
+    padding: var(--sp-3);
+    border-radius: var(--r);
+    background: var(--surface-2);
+  }
+  .shiny-idea {
+    font-family: var(--display);
+    font-size: 19px;
+    font-weight: var(--w-medium);
+    line-height: 1.2;
+    color: var(--text);
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+  .shiny-note {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px;
+    border: 0;
+    border-radius: var(--r);
+    background: var(--surface-hover);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+  }
+  .shiny-note-title {
+    display: block;
+    font-weight: var(--w-medium);
+  }
+  .shiny-note-part {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  .shiny-question {
+    margin: 12px 0 0;
+    color: var(--text-dim);
+  }
+  .shiny-hide {
+    margin-top: 10px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 13px;
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+
   /* In-app confirm dialog. The native window.confirm() BLOCKS the Android WebView
      (no JS-dialog handler is wired), so it hangs the page - this replaces it. */
   .mconfirm-backdrop {
@@ -5704,6 +5756,79 @@
       .catch(() => {});
   }
 
+  // The day's "Something shiny" card, drawn above the shelves from the Mac's sets.
+  // A set is shown only when every note in it is on this phone and the day's card was
+  // not hidden. Tapping a note opens it; "Not today" hides it for the day.
+  function mountShiny() {
+    const old = document.getElementById("shiny_card");
+    if (old) old.remove();
+    invoke("mobile_shiny")
+      .then((raw) => {
+        const data = parse(raw);
+        if (!data || data.day !== new Date().toISOString().slice(0, 10)) return;
+        let hidden = null;
+        try {
+          hidden = localStorage.getItem("enq.shinyHidden");
+        } catch (e) {
+          /* storage may be off */
+        }
+        if (hidden === data.day) return;
+        const set = data.sets && data.sets[0];
+        if (!set || !set.ids || !set.ids.length) return;
+        const arts = set.ids.map((id) => everyArt.find((a) => a.id === id));
+        if (arts.some((a) => !a)) return;
+        const food = set.food || {};
+        const card = document.createElement("section");
+        card.id = "shiny_card";
+        card.className = "shiny-card";
+        card.setAttribute("aria-label", "Something shiny");
+        const idea = document.createElement("div");
+        idea.className = "shiny-idea";
+        idea.textContent = food.idea || "";
+        card.appendChild(idea);
+        arts.forEach((a) => {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "shiny-note";
+          const title = document.createElement("span");
+          title.className = "shiny-note-title";
+          title.textContent = a.title || "(untitled)";
+          row.appendChild(title);
+          const part = (food.parts || {})[a.id];
+          if (part) {
+            const p = document.createElement("span");
+            p.className = "shiny-note-part";
+            p.textContent = part;
+            row.appendChild(p);
+          }
+          row.addEventListener("click", () => openArtifact(a.id));
+          card.appendChild(row);
+        });
+        if (food.question) {
+          const q = document.createElement("p");
+          q.className = "shiny-question";
+          q.textContent = food.question;
+          card.appendChild(q);
+        }
+        const hide = document.createElement("button");
+        hide.type = "button";
+        hide.className = "shiny-hide";
+        hide.textContent = "Not today";
+        hide.addEventListener("click", () => {
+          try {
+            localStorage.setItem("enq.shinyHidden", data.day);
+          } catch (e) {
+            /* storage may be off */
+          }
+          card.remove();
+        });
+        card.appendChild(hide);
+        const shelves = document.getElementById("shelves");
+        if (shelves) shelves.prepend(card);
+      })
+      .catch(() => {});
+  }
+
   // renderLibrary is called from many places (nav, sync-done, search-clear); a burst
   // of them would each do an IPC round-trip + a full card rebuild. Coalesce to one
   // render per frame so a flurry of triggers costs a single rebuild, not N. This is
@@ -5733,6 +5858,7 @@
           everyArt = all;
         }
         renderSections(all);
+        mountShiny();
       })
       .catch((e) => {
         const empty = document.getElementById("empty");
