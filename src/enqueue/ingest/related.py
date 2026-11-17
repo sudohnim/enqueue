@@ -68,6 +68,7 @@ log = logging.getLogger(__name__)
 
 RELATED_LIMIT = 5
 STORE_LIMIT = 12
+_NOT_INDEX_ONLY = " AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')"
 # Subject-to-subject cosine, set for precision: a missing link costs nothing, a made-up
 # one costs trust. Measured on a 141-summary library, pairs at 0.66+ are nearly all
 # real, 0.63-0.66 mostly real, and under 0.63 mostly chance (a food list beside a trip).
@@ -132,7 +133,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
     try:
         mine = conn.execute(
             "SELECT id, level, statement FROM facets WHERE artifact_id = ? AND level >= ?"
-            " AND (level = ? OR bridge = 0)",
+            + _NOT_INDEX_ONLY
+            + " AND (level = ? OR bridge = 0)",
             (artifact_id, SUBJECT_LEVEL, SUBJECT_LEVEL),
         ).fetchall()
         # other artifact -> (similarity, this artifact's line, the other's facet id)
@@ -157,6 +159,25 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 into = best if subject else ideas
                 if other not in into or hit["score"] > into[other][0]:
                     into[other] = (hit["score"], facet["statement"], hit["facet_id"])
+        # Drop candidates whose matched facet is an index-only line.
+        facet_ids = [v[2] for v in list(best.values()) + list(ideas.values())]
+        if facet_ids:
+            roles = {
+                r["id"]: r["role"]
+                for r in conn.execute(
+                    "SELECT id, role FROM facets WHERE id IN (SELECT value FROM json_each(?))",
+                    (json.dumps(facet_ids),),
+                )
+            }
+            best = {
+                k: v for k, v in best.items() if roles.get(v[2], "") not in ("gist", "point", "ask")
+            }
+            ideas = {
+                k: v
+                for k, v in ideas.items()
+                if roles.get(v[2], "") not in ("gist", "point", "ask")
+            }
+
         named = _mentions(conn, artifact_id, cache)
         # How near each candidate's subject is to this one's, read from the two items'
         # own subject lines: the nearest-neighbour lists above miss most of a big library.
@@ -269,7 +290,8 @@ def _pair_keys(conn, artifact_id: str, others: list[str]) -> dict[str, tuple[str
     about: dict[str, list[str]] = {i: [] for i in ids}
     for r in conn.execute(
         "SELECT artifact_id, statement FROM facets WHERE level <= ?"
-        " AND artifact_id IN (SELECT value FROM json_each(?)) ORDER BY level, statement",
+        + _NOT_INDEX_ONLY
+        + " AND artifact_id IN (SELECT value FROM json_each(?)) ORDER BY level, statement",
         (SUBJECT_LEVEL, json.dumps(ids)),
     ):
         about[r["artifact_id"]].append(r["statement"])
@@ -458,7 +480,8 @@ def _judge(
     about: dict[str, list[str]] = {i: [] for i in ids}
     for r in conn.execute(
         "SELECT artifact_id, statement FROM facets WHERE level = ?"
-        " AND artifact_id IN (SELECT value FROM json_each(?))",
+        + _NOT_INDEX_ONLY
+        + " AND artifact_id IN (SELECT value FROM json_each(?))",
         (SUBJECT_LEVEL, json.dumps(ids)),
     ):
         about[r["artifact_id"]].append(r["statement"])
@@ -734,7 +757,8 @@ def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]
         row["artifact_id"]: row["statement"]
         for row in conn.execute(
             "SELECT artifact_id, statement FROM facets WHERE level = 0"
-            " AND COALESCE(role, 'kind') = 'kind'"
+            + _NOT_INDEX_ONLY
+            + " AND COALESCE(role, 'kind') = 'kind'"
             " AND artifact_id IN (SELECT value FROM json_each(?))",
             (json.dumps(ids),),
         )

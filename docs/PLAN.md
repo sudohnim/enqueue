@@ -1040,7 +1040,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `uv run pytest tests/test_nearby.py -q`; `bin/verify --fast`
   - Device check **[device]**: write a paragraph on a subject the library has; a title shows in the margin after the save.
 
-- [ ] **R10. Related notes ignore the index-only lines**
+- [x] **R10. Related notes ignore the index-only lines** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py; tests pass
   - Needs: DB1
   - Files: `ingest/related.py`, `tests/test_related.py`
   - Why: M5 and M8 add lines with roles `gist`, `point` and `ask`. Related notes must not read them as subject or idea lines.
