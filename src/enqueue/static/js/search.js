@@ -68,6 +68,10 @@
     // A note with tabs opens on the tab the hit came from (Tabs.find).
     const hit = lastHits[rank - 1];
     if (hit && hit.artifact_id === id) NoteTabs.hint(id, lastQuery, hit.snippet);
+    if (hit && hit.kind !== "note" && hit.quote) {
+      openArtifactAt(id, { page: hit.page, quote: hit.quote }, "search");
+      return;
+    }
     showArtifact(id);
   }
 

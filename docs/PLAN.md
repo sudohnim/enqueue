@@ -663,13 +663,15 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `uv run pytest tests/test_search_results.py -q`
   - Done: retrieve/candidates.py, api/search.py, tests/test_search_results.py, docs/PLAN.md; 43 passed in 8.48s
 
-- [ ] **N2. A search result opens at the place**
+- [x] **N2. A search result opens at the place** (claimed: agent, 2026-11-17)
   - Needs: N1, A5
+  - Owed: device check - search a word deep in a PDF; the result opens at that page with the word marked
   - Files: `static/js/search.js` (`openHit`)
   - Find: `grep -n 'function openHit' -A 8 src/enqueue/static/js/search.js`
   - Do: in `openHit`, when the hit's kind is not `note` and it has a `quote`, call `openArtifactAt(id, { page: hit.page, quote: hit.quote }, "search")` in place of `showArtifact(id)`. Keep the lines before it (the open is still reported with its query and rank). A note keeps `NoteTabs.hint` and `showArtifact`.
   - Check: `bin/verify --fast`
   - Device check **[device]**: search a word that is deep in a PDF; the result opens at that page with the word marked.
+  - Done: static/js/search.js; bin/verify: all checks passed
 
 - [ ] **N3a. "More like this": the engine side**
   - Needs: none
