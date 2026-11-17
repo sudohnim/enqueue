@@ -474,7 +474,8 @@ The sections of the file are in the order they were written: the tracks from the
     7. With `SESSION_ENFORCE` false, `GET /artifacts` with no token answers 200.
   - Check: `uv run pytest tests/test_session.py tests/test_extension.py -q`
 
-- [ ] **S6. The CLI and the scripts send the token**
+- [x] **S6. The CLI and the scripts send the token** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/cli.py; scripts unchanged (Owed: manual device check)
   - Needs: S5
   - Files: `cli.py` (`_call`), `bin/screenshots`, `bin/launch`
   - Find: `grep -n 'def _call' src/enqueue/cli.py`; `grep -n '8787\|API_URL\|/health' bin/screenshots bin/launch`
