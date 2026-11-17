@@ -4901,6 +4901,21 @@
     else if (a.kind === "image") renderImageCard(card, a);
     else if (a.kind === "pdf") renderPdfCard(card, a);
     else renderGenericCard(card, a);
+    // A search hit carries a snippet with the matched words in context. When that
+    // is not just the opening of the body, show it as the row's second line, so a
+    // word that sits deep in a PDF or a long note is visible on the result itself.
+    if (a.snippet && !(a.body || "").startsWith(a.snippet)) {
+      const content = card.querySelector(".card-content");
+      let line = content && (content.querySelector(".card-excerpt") || content.querySelector(".card-snippet"));
+      if (content && !line) {
+        line = document.createElement("div");
+        line.className = "card-snippet";
+        const title = content.querySelector(".card-title");
+        if (title) title.after(line);
+        else content.prepend(line);
+      }
+      if (line) line.innerHTML = esc(a.snippet);
+    }
     return card;
   }
 

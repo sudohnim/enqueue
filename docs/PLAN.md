@@ -216,12 +216,13 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
 
 All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
-- [ ] **P3. A phone result shows the matched words**
+- [x] **P3. A phone result shows the matched words** (claimed: agent, 2026-11-17)
   - Needs: P2
   - Files: `static/mobile.html`
   - Find: `grep -n 'invoke("mobile_search"' src/enqueue/static/mobile.html`
   - Do: where a search result row is drawn, when the row has `snippet` and the snippet is not the start of the body, show the snippet as the row's second line. Escape it with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`; search a word that is only in a PDF; the row shows the words around it.
+  - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
 
 - [ ] **P4. The phone draws the summary in groups**
   - Reopened in review (2026-11-17): the Rust half is done (the reader returns `bridge` and `role`); `static/mobile.html` still draws the flat list. Do step 5 only.
