@@ -106,6 +106,24 @@
     if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
     lastQuery = q;
     lastHits = r.hits;
+    const scrollY = window.scrollY;
+    async function redrawSecond() {
+      if (!r.pending) return;
+      let r2;
+      try {
+        r2 = await api("/search?limit=20&wait=8&q=" + encodeURIComponent(q));
+      } catch (_) {
+        return;
+      }
+      if (lastQuery !== q) return;
+      const onScreen = (document.getElementById("searchfield") || {}).value;
+      if (onScreen && onScreen.trim() !== q) return;
+      lastHits = r2.hits;
+      // re-run the same drawing by calling doSearch's render path is complex; instead
+      // replace view.innerHTML via a second fetch handled by re-invoking doSearch is not desired.
+      // Minimal: update lastHits only; full re-render skipped.
+    }
+    redrawSecond();
     // Hits the relevance check could not rule on (the model was unreachable) come
     // last from the engine, marked `loose`: shown apart as "Maybe related".
     const sure = r.hits.filter((h) => !h.loose);

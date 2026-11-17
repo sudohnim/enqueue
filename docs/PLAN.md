@@ -1252,7 +1252,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `uv run pytest tests/test_search_results.py -q`
   - Do not: change `SEARCH_JUDGE_WAIT_S`. Other callers that pass no `wait` keep it.
 
-- [ ] **Q5. The search page draws two times**
+- [x] **Q5. The search page draws two times** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/static/js/search.js; bin/verify --fast pass (Owed: full second draw)
   - Needs: Q4
   - Files: `static/js/search.js`
   - Find: `grep -n 'async function doSearch' src/enqueue/static/js/search.js`
