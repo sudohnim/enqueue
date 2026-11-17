@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from . import blobstore, crypto, keyring_file
+from . import blobstore, crypto, db, events, keyring_file, settings
 from .sync import client as sync_client
 
 
@@ -52,3 +52,35 @@ def on_relay(content_hash: str) -> bool:
     except (KeyError, ValueError):
         return False
     return size == len(crypto.seal_payload(blobstore.read(content_hash), dek))
+
+
+def run(limit: int = 200) -> dict:
+    """Let go of originals the relay holds byte for byte. Off by default."""
+    if settings.get("offload_originals") != "on":
+        return {"freed": 0, "bytes": 0}
+    url = sync_client._relay_url()
+    if not url:
+        return {"freed": 0, "bytes": 0}
+    if keyring_file.dek() is None and keyring_file.load_dek_from_keychain() is None:
+        return {"freed": 0, "bytes": 0}
+    conn = db.get_conn()
+    try:
+        rows = candidates(conn, int(settings.get("offload_after_days")), url)[:limit]
+    finally:
+        conn.close()
+    total = 0
+    count = 0
+    for row in rows:
+        content_hash = row["content_hash"]
+        if on_relay(content_hash):
+            total += blobstore.size(content_hash)
+            blobstore.remove(content_hash)
+            count += 1
+    if count:
+        mb = total / (1024 * 1024)
+        events.emit(
+            "storage.offloaded",
+            f"{count} files, {mb:.1f} MB",
+            data={"count": count, "bytes": total},
+        )
+    return {"freed": count, "bytes": total}

@@ -945,7 +945,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Check: `uv run pytest tests/test_offload.py tests/test_sync.py -q`
   - Done: src/enqueue/offload.py, tests/test_offload.py; 15 passed in 24.81s
 
-- [ ] **C4. Free up space: let go of originals the relay holds (off by default)**
+- [x] **C4. Free up space: let go of originals the relay holds (off by default)** (claimed: agent, 2026-11-17)
   - Needs: C4b
   - Files: `offload.py`, `backup.py` (`start_scheduler`), `tests/test_offload.py`
   - Do:
@@ -956,6 +956,7 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
   - Test: with the setting off, nothing is removed. With it on, the file is removed and `capture.blob_path(id)` brings it back from the test relay with the same bytes.
   - Check: `uv run pytest tests/test_offload.py tests/test_sync.py -q`
   - Do not: turn the setting on in code. Do not call `blobstore.remove` anywhere else.
+  - Done: src/enqueue/offload.py, src/enqueue/backup.py, tests/test_offload.py; 16 passed in 25.86s
 
 - [ ] **C5. Settings shows what the originals use, and the switch**
   - Needs: C4

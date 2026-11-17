@@ -11,12 +11,44 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import uvicorn
 
-from enqueue import blobstore, crypto, db, keyring, keyring_file, offload, settings
+from enqueue import blobstore, capture, crypto, db, keyring, keyring_file, offload, settings
 from enqueue.relay.app import create_relay
 from enqueue.sync.client import push_artifact
 
 RELAY = "https://relay.example"
 OLD = "2020-01-01T00:00:00+00:00"
+
+
+def _serve(store):
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    server = uvicorn.Server(
+        uvicorn.Config(
+            create_relay(store / "relay", secret="test-secret"),
+            host="127.0.0.1",
+            port=port,
+            log_level="error",
+        )
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{port}"
+    for _ in range(100):
+        try:
+            if (
+                httpx.get(
+                    base + "/sync/objects",
+                    headers={"Authorization": "Bearer test-secret"},
+                    timeout=1,
+                ).status_code
+                == 200
+            ):
+                break
+        except Exception:  # noqa: BLE001 - not ready yet
+            time.sleep(0.05)
+    return base, server, thread
 
 
 def _seed(kind="pdf", name=None, pinned=0, local_only=0, relay=RELAY, thumb=False, opened=None):
@@ -67,36 +99,8 @@ def test_candidates_are_old_originals_on_this_relay(store):
 
 
 def test_on_relay_checks_the_exact_sealed_bytes(store, monkeypatch):
-    sock = socket.socket()
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    server = uvicorn.Server(
-        uvicorn.Config(
-            create_relay(store / "relay", secret="test-secret"),
-            host="127.0.0.1",
-            port=port,
-            log_level="error",
-        )
-    )
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    base = f"http://127.0.0.1:{port}"
+    base, server, thread = _serve(store)
     try:
-        for _ in range(100):
-            try:
-                if (
-                    httpx.get(
-                        base + "/sync/objects",
-                        headers={"Authorization": "Bearer test-secret"},
-                        timeout=1,
-                    ).status_code
-                    == 200
-                ):
-                    break
-            except Exception:  # noqa: BLE001 - not ready yet
-                time.sleep(0.05)
-
         settings.update({"sync_relay_url": base})
         monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
         keyring_file.initialize()
@@ -128,6 +132,43 @@ def test_on_relay_checks_the_exact_sealed_bytes(store, monkeypatch):
         real = len(crypto.seal_payload(blobstore.read(digest), dek))
         monkeypatch.setattr(httpx.Client, "head", lambda self, *a, **k: Resp(200, real + 1))
         assert offload.on_relay(digest) is False
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+def test_run_frees_only_when_on_and_fetches_back(store, monkeypatch):
+    base, server, thread = _serve(store)
+    try:
+        settings.update({"sync_relay_url": base})
+        monkeypatch.setattr(keyring, "sync_secret_get", lambda: "test-secret")
+        keyring_file.initialize()
+
+        payload = b"the original file bytes that leave this Mac"
+        digest = blobstore.write(payload, str(uuid.uuid4()))
+        aid = str(uuid.uuid4())
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO artifacts"
+                " (id, kind, title, content_hash, mime, status, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (aid, "file", "A file", digest, "application/octet-stream", "ok", OLD, OLD),
+            )
+        push_artifact(aid)
+
+        settings.update({"offload_originals": "off"})
+        assert offload.run() == {"freed": 0, "bytes": 0}
+        assert blobstore.exists(digest)
+
+        settings.update({"offload_originals": "on"})
+        result = offload.run()
+        assert result["freed"] == 1
+        assert result["bytes"] == len(payload)
+        assert not blobstore.exists(digest)
+
+        blob = capture.blob_path(aid)
+        assert blob is not None
+        assert blob[0].read_bytes() == payload
     finally:
         server.should_exit = True
         thread.join(timeout=5)
