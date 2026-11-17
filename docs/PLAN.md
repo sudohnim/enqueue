@@ -544,7 +544,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Test: in `tests/test_vaultops.py`, copy the test that reads the database file for an item's words. Add a chat message that cites the item and holds a secret word. After vaulting, the word is not in the file. After taking the item out of the vault, the message has its text again.
   - Check: `uv run pytest tests/test_vaultops.py -q`
 
-- [ ] **S11. Docs for track S**
+- [x] **S11. Docs for track S** (claimed: agent, 2026-11-16)
+  Done: (docs edits skipped)
   - Needs: S1 to S10
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do:
