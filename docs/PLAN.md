@@ -939,7 +939,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: two pending artifacts; the one with the later `updated_at` is first.
   - Check: `uv run pytest tests/test_related.py -q`
 
-- [ ] **R5. Keep 12 links, show 5, and say when the judge is not done**
+- [x] **R5. Keep 12 links, show 5, and say when the judge is not done** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/ingest/related.py, src/enqueue/api/artifacts.py, src/enqueue/static/js/artifact.js; tests pass
   - Needs: R1
   - Files: `ingest/related.py`, `api/artifacts.py` (`get_artifact`, the related part), `static/js/artifact.js` (`relatedRowHtml` and where it is called), `tests/test_related.py`
   - Why: 36 items are at the limit of 5 with no way to see more. 31 items show nothing with no word on why.

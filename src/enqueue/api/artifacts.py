@@ -438,7 +438,7 @@ def artifact_groups(by: str = "kind", per: int = GROUP_FIRST) -> dict:
 
 
 @router.get("/artifacts/{artifact_id}")
-def get_artifact(artifact_id: str) -> dict:
+def get_artifact(artifact_id: str, related: str = "") -> dict:
     try:
         detail = notes.get(artifact_id)
     except KeyError:
@@ -506,7 +506,11 @@ def get_artifact(artifact_id: str) -> dict:
 
     conn = db.get_conn()
     try:
-        detail["related"] = related.for_artifact(conn, artifact_id)
+        detail["related"] = related.for_artifact(
+            conn, artifact_id, limit=10**9 if related == "all" else None
+        )
+        detail["related_total"] = len(related.for_artifact(conn, artifact_id, limit=None))
+        detail["related_pending"] = related.is_pending(artifact_id)
     finally:
         conn.close()
     return detail

@@ -528,6 +528,7 @@ def test_a_mention_partner_outside_the_nearest_neighbours_still_links(sqlite_sto
 def test_recomputing_a_note_keeps_the_links_others_chose(sqlite_store, monkeypatch):
     """b chose a; a recomputing with closer notes of its own must not take that away."""
     monkeypatch.setattr(related, "RELATED_LIMIT", 1)
+    monkeypatch.setattr(related, "STORE_LIMIT", 1)
     _note("a", SHARED)
     _note("b", "Structures endure by yielding under stress instead of resisting it.")
     sqlite_store.upsert_facets()

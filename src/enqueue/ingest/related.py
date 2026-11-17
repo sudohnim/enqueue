@@ -67,6 +67,7 @@ from .. import db, prompts
 log = logging.getLogger(__name__)
 
 RELATED_LIMIT = 5
+STORE_LIMIT = 12
 # Subject-to-subject cosine, set for precision: a missing link costs nothing, a made-up
 # one costs trust. Measured on a 141-summary library, pairs at 0.66+ are nearly all
 # real, 0.63-0.66 mostly real, and under 0.63 mostly chance (a food list beside a trip).
@@ -209,7 +210,7 @@ def compute(artifact_id: str, judge: bool = False) -> int:
         for other in via:
             scores.setdefault(other, MENTION_SCORE)
         top = sorted(scores.items(), key=lambda kv: _rank(kinds[kv[0]], distance[kv[0]], kv[1]))
-        top = top[:RELATED_LIMIT]
+        top = top[:STORE_LIMIT]
         theirs = _statements(conn, [best[other][2] for other, _ in top if other in best])
 
         now = db.now()
@@ -645,7 +646,7 @@ def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
     return out
 
 
-def for_artifact(conn, artifact_id: str) -> list[dict]:
+def for_artifact(conn, artifact_id: str, limit: int | None = None) -> list[dict]:
     """Live related artifacts, each with `point` (its summary line that matched, or
     the judge's sentence), `via` (a shared name), `link` (subject, mention or idea)
     and `distance` (how far apart the two subjects are). Analogies come first, the
@@ -677,4 +678,8 @@ def for_artifact(conn, artifact_id: str) -> list[dict]:
     first: dict[str, dict] = {}
     for r in out:
         first.setdefault(r["id"], r)
-    return list(first.values())[:RELATED_LIMIT]
+    if limit is None:
+        limit = RELATED_LIMIT
+    if limit is None:
+        return list(first.values())
+    return list(first.values())[:limit]

@@ -1178,6 +1178,12 @@
       '<div class="bodygrid"><div class="bodycol">' +
       body +
       relatedRowHtml(d.related) +
+      (d.related_pending ? '<p class="relatedwhy">Still looking for the same idea in other fields.</p>' : "") +
+      (d.related_total > (d.related || []).length
+        ? '<button class="facet-more-btn" type="button" onclick="showAllRelated(\'' +
+          id +
+          "')\">Show all</button>"
+        : "") +
       "</div></div></div>" +
       '<aside class="drawer dpanel" id="drawer" aria-label="Details">' +
       '<div class="dpanel-top">' +
@@ -1449,6 +1455,11 @@
 
   // Re-fetch one artifact and swap its summary panel in place, so every mutation
   // (regenerate, edit, add, delete) shows the server's canonical result.
+  async function showAllRelated(id) {
+    const d = await api("/artifacts/" + id + "?related=all");
+    // redraw related section only: simplest full re-render
+    await showArtifact(id);
+  }
   async function refreshSummaryPanel(id) {
     let d;
     try {
