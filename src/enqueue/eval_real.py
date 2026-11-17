@@ -14,16 +14,107 @@ See AGENTS.md "Real-search eval".
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import config, db
 from .eval_cross import PASS_RANK, rank_of, score
 
 LIMIT = 10
+OPEN_WINDOW = timedelta(minutes=5)
+REFORM_WINDOW = timedelta(seconds=90)
+
+
+def _at(text: str | None) -> datetime | None:
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def baseline_path() -> Path:
     return config.DATA_DIR / "evals" / "real-baseline.json"
+
+
+def reformulated(conn) -> list[dict]:
+    """A search nobody opened, then a different search moments later that they did.
+    The first query found nothing useful and the second found something, so the first
+    should now find what the second found."""
+    searches = conn.execute(
+        "SELECT query, created_at FROM searches WHERE source = 'search' ORDER BY created_at, id"
+    ).fetchall()
+    opens = conn.execute(
+        "SELECT artifact_id, query, opened_at FROM opens"
+        " WHERE source = 'search' AND query IS NOT NULL"
+    ).fetchall()
+
+    opened_after: dict[str, list[tuple[datetime, str]]] = {}
+    for o in opens:
+        at = _at(o["opened_at"])
+        if at is not None:
+            opened_after.setdefault(o["query"], []).append((at, o["artifact_id"]))
+
+    out: list[dict] = []
+    for a in searches:
+        a_at = _at(a["created_at"])
+        if a_at is None:
+            continue
+        if any(a_at <= at <= a_at + OPEN_WINDOW for at, _ in opened_after.get(a["query"], [])):
+            continue
+        for b in searches:
+            b_at = _at(b["created_at"])
+            if b_at is None or b["query"] == a["query"]:
+                continue
+            if not (a_at < b_at <= a_at + REFORM_WINDOW):
+                continue
+            found = [
+                (at, artifact_id)
+                for at, artifact_id in opened_after.get(b["query"], [])
+                if b_at <= at <= b_at + OPEN_WINDOW
+            ]
+            if found:
+                _, artifact_id = min(found, key=lambda pair: pair[0])
+                out.append({"query": a["query"], "expect": [artifact_id]})
+            break
+    return out
+
+
+def abandoned(conn) -> list[str]:
+    """Queries that returned hits but led to no open. Not scored: reported so the
+    eval's blind spot (it only sees searches that worked) stays visible."""
+    searches = conn.execute(
+        "SELECT query, created_at, hits FROM searches WHERE source = 'search'"
+        " ORDER BY created_at DESC, id DESC"
+    ).fetchall()
+    opens = conn.execute(
+        "SELECT query, opened_at FROM opens WHERE source = 'search' AND query IS NOT NULL"
+    ).fetchall()
+
+    opened_after: dict[str, list[datetime]] = {}
+    for o in opens:
+        at = _at(o["opened_at"])
+        if at is not None:
+            opened_after.setdefault(o["query"], []).append(at)
+
+    out: list[str] = []
+    for s in searches:
+        try:
+            hits = json.loads(s["hits"])
+        except (TypeError, ValueError):
+            hits = []
+        if not hits:
+            continue
+        s_at = _at(s["created_at"])
+        if s_at is None:
+            continue
+        if any(s_at <= at <= s_at + OPEN_WINDOW for at in opened_after.get(s["query"], [])):
+            continue
+        out.append(s["query"])
+        if len(out) == 50:
+            break
+    return out
 
 
 def cases() -> list[dict]:
@@ -37,11 +128,17 @@ def cases() -> list[dict]:
             " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL"
             " GROUP BY q, o.artifact_id ORDER BY last DESC"
         ).fetchall()
+        reformed = reformulated(conn)
     finally:
         conn.close()
     by_query: dict[str, list[str]] = {}
     for r in rows:
         by_query.setdefault(r["q"], []).append(r["artifact_id"])
+    for case in reformed:
+        ids = by_query.setdefault(case["query"].strip().lower(), [])
+        for artifact_id in case["expect"]:
+            if artifact_id not in ids:
+                ids.append(artifact_id)
     return [{"query": q, "expect": ids} for q, ids in by_query.items()]
 
 
@@ -79,8 +176,14 @@ def check(update_baseline: bool = False) -> dict:
     now = run()
     path = baseline_path()
     base = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    conn = db.get_conn()
+    try:
+        abandoned_queries = abandoned(conn)
+    finally:
+        conn.close()
     report = {
         **now,
+        "abandoned": abandoned_queries,
         "baseline": (
             {k: base[k] for k in ("total", "pass", "MRR", "found_in_top_10")} if base else None
         ),

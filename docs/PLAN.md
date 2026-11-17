@@ -625,7 +625,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
 
 ## Track E: evals
 
-- [ ] **E1. The real-search eval sees searches that failed**
+- [x] **E1. The real-search eval sees searches that failed** (claimed: agent, 2026-11-17)
   - Needs: Q1
   - Files: `eval_real.py`, new `tests/test_eval_real.py`, `AGENTS.md`
   - Why: the eval only sees a search that ended in an open. A search that found nothing useful is the case that matters most.
@@ -638,6 +638,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     5. In `AGENTS.md` "Real-search eval", add two sentences on the two new kinds.
   - Test: in `tests/test_eval_real.py`, write rows into `searches` and `opens` with fixed times. One case where A, B and the open fit the windows gives one reformulated case. One where B is 5 minutes after A gives none. One search with hits and no open is in `abandoned`.
   - Check: `uv run pytest tests/test_eval_real.py -q`
+  - Done: eval_real.py, tests/test_eval_real.py, AGENTS.md; 8 passed in 2.30s
 
 ---
 

@@ -1173,6 +1173,9 @@ This suite is separate from the main 50-note eval on purpose: adding its notes t
 The two committed evals use made-up queries; this one uses the person's own.
 Every time a search result is opened, the interface records the query and the result's rank (`opens`, source `search`).
 Each distinct query (case- and space-insensitive) becomes a case expecting any live artifact opened from it, and passes when one of them ranks in the top 3 of the live `/search` rollup (`eval_real.py`, same `PASS_RANK`/`score` as the cross-domain eval).
+Two more sources cover searches that failed.
+A search with no open that is followed within 90 seconds by a different search that does lead to an open becomes a case for the first query, expecting the artifact opened from the second (`reformulated`).
+A search that returns hits but leads to no open within five minutes is reported under `abandoned` and is not scored.
 It runs inside the engine against the real library (`POST /eval/real`, `enq eval-real`), because the cases are private: they never leave the machine and are never committed.
 The baseline is stored at `~/Library/Application Support/Enqueue/evals/real-baseline.json`; `enq eval-real` exits non-zero when a query that passed there fails now, and `--update-baseline` replaces it.
 Run it on the laptop before and after any retrieval change (model swap, re-rank, ranking signals).
