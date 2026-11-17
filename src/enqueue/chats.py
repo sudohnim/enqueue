@@ -482,7 +482,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
             for hit in legs["keyword"][:window]:
                 facet_entity_lexical.add(hit["artifact_id"])
 
-        def _pull_opening(aid: str, why: str, score: float) -> None:
+        def _pull_opening(aid: str, why: str, score: float, matched: str | None = None) -> None:
             best = store.search_within(aid, question, 1)
             if best:
                 chosen = best[0]
@@ -493,7 +493,10 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
                 ).fetchone()
                 chosen = row["id"] if row else None
             if chosen and chosen not in found:
-                found[chosen] = {"score": score, "why": why}
+                entry = {"score": score, "why": why}
+                if matched:
+                    entry["matched"] = matched
+                found[chosen] = entry
 
         def _pull_section(aid: str, ordinal: int, why: str, score: float) -> None:
             n_sections = conn.execute(
@@ -528,15 +531,14 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
             )
             if verdict == "drop":
                 continue
+            stmt = conn.execute(
+                "SELECT statement FROM facets WHERE id = ?", (hit["facet_id"],)
+            ).fetchone()
+            statement = stmt["statement"] if stmt else ""
             if verdict == "gray":
-                stmt = conn.execute(
-                    "SELECT statement FROM facets WHERE id = ?", (hit["facet_id"],)
-                ).fetchone()
-                gray_facet_entity.setdefault(
-                    aid, (why, hit["score"], stmt["statement"] if stmt else "")
-                )
+                gray_facet_entity.setdefault(aid, (why, hit["score"], statement))
                 continue
-            _pull_opening(aid, why, hit["score"])
+            _pull_opening(aid, why, hit["score"], matched=statement)
 
         for hit in fe_legs[store.ENTITIES]["fused"]:
             if hit_is_stale(conn, hit, cache):
@@ -607,7 +609,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
                 if why.startswith("section "):
                     _pull_section(aid, int(why.split()[1]), why, score)
                 else:
-                    _pull_opening(aid, why, score)
+                    _pull_opening(aid, why, score, matched=_snippet if _snippet else None)
 
         # The notes the question names, by title or by a name in them, each with its
         # passage closest to the question; ahead of the rest, since a name is the
@@ -726,7 +728,8 @@ def _ask_model(
     _, words = _budget(provider)
     body = "\n\n".join(
         f"[{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n"
-        f"{_clip(p['text'], words)}"
+        + (f"matched: {p['matched']}\n" if p.get("matched") else "")
+        + f"{_clip(p['text'], words)}"
         for p in found
     )
     return provider.complete(

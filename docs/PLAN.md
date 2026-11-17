@@ -1213,7 +1213,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Check: `uv run pytest tests/test_chats.py tests/test_chats_worker.py -q`
   - Do not: change the floor logic or the order of the passes.
 
-- [ ] **Q3. The answer model sees why a passage is there**
+- [x] **Q3. The answer model sees why a passage is there** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/chats.py; tests pass
   - Needs: Q2
   - Files: `chats.py`, `tests/test_chats.py`
   - Find: `grep -n "(id: {p\['artifact_id'\]})" src/enqueue/chats.py`
