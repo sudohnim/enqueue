@@ -280,9 +280,12 @@ def _import_bookmarks(f: Path) -> None:
                 s.lower().replace(" ", "-") for s in stack if s and s.lower() not in BROWSER_FOLDERS
             ]
             if names:
+                from .sync.client import push_artifact
+
                 with db.transaction() as conn:
                     for name in names:
                         tags.attach(conn, out["id"], name, at or db.now())
+                push_artifact(out["id"])
             _count("links")
 
 

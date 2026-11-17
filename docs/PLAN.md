@@ -2905,7 +2905,7 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Check: `uv run pytest tests/test_migrations.py -q`
 
 - [x] **L1. A link can be saved with a date, behind the person's own work**
-  Done: src/enqueue/capture.py; tests pass
+  Done: src/enqueue/capture.py, tests/test_importer.py (test added in review); 15 passed
   - Needs: none
   - Files: `capture.py` (`link`), `tests/test_importer.py`
   - Find: `grep -n '^def link' src/enqueue/capture.py`

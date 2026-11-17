@@ -231,6 +231,11 @@ def _derive(aid: str) -> None:
             " 'bank.example', ?)",
             (aid, now),
         )
+        conn.execute(
+            "INSERT INTO chat_places (message_id, n, artifact_id, page, quote)"
+            " VALUES ('m-1', 1, ?, NULL, 'The offshore account number is 7741')",
+            (aid,),
+        )
 
 
 def _all_text(aid: str) -> str:
@@ -242,6 +247,7 @@ def _all_text(aid: str) -> str:
             ("entities", "entity || ' ' || fact"),
             ("sections", "summary"),
             ("link_previews", "coalesce(title,'') || ' ' || coalesce(description,'')"),
+            ("chat_places", "quote"),
         ):
             # nosemgrep - table and column names are literals from the tuple above
             for r in conn.execute(f"SELECT {cols} AS t FROM {table} WHERE artifact_id = ?", (aid,)):

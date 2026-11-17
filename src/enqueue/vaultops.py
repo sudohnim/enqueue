@@ -81,6 +81,8 @@ def _remove_model_rows(conn, artifact_id: str) -> int:
         ("DELETE FROM related WHERE artifact_id = ? OR related_id = ?", (artifact_id,) * 2),
         ("DELETE FROM related_pending WHERE artifact_id = ?", (artifact_id,)),
         ("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,)),
+        # An answer's place holds the item's own first words.
+        ("DELETE FROM chat_places WHERE artifact_id = ?", (artifact_id,)),
         # Cached model output is keyed by the artifact: section summaries and pivot
         # attributes under `subject`, search and related verdicts under either column.
         (

@@ -1258,7 +1258,7 @@ async function renderMoveSection(d) {
 				'<button class="btn tertiary" onclick="chooseImport(false)"' + (busy(imp) ? " disabled" : "") +
 				">Choose a .zip…</button></div>"
 			: typed("import_input", "Import", "startImport")) +
-		'<div class="aside" id="importState">' + esc(moveLine(imp, "import")) + "</div></div>" +
+		'<div class="aside" id="importState">' + esc(folderLine(imp)) + "</div></div>" +
 		'<div class="field"><span class="rowlabel">Export as Markdown</span>' +
 		'<div class="aside">Every item as a Markdown file any notes app opens, with pictures and ' +
 		"originals in a files folder. Export to the same place again to bring it up to date. " +
@@ -1275,7 +1275,7 @@ async function renderMoveSection(d) {
 				"Locked notes are left out.</div>" +
 				'<div class="actions"><button class="btn tertiary" onclick="startAppleNotes()"' +
 				(busy(imp) ? " disabled" : "") + ">Bring in</button></div>" +
-				'<div class="aside" id="appleState">' + esc(moveLine(imp, "import")) + "</div></div>"
+				'<div class="aside" id="appleState">' + esc(appleLine(imp)) + "</div></div>"
 			: "";
 	const dirs = String((d.settings.watch_dirs || {}).value || "")
 		.split(/\r?\n/)
@@ -1314,6 +1314,16 @@ async function renderMoveSection(d) {
 	return html;
 }
 
+// The Import row shows a folder's import, never one from Apple Notes.
+function folderLine(st) {
+	return st && st.path === "Apple Notes" ? "" : moveLine(st, "import");
+}
+
+// The Apple Notes row shows only an Apple Notes import, never a folder's.
+function appleLine(st) {
+	return st && st.path === "Apple Notes" ? moveLine(st, "import") : "";
+}
+
 function moveLine(st, what) {
 	const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
 	if (st.state === "failed") return (what === "import" ? "The import" : "The export") + " stopped: " + st.error;
@@ -1343,9 +1353,9 @@ async function watchMove() {
 	const a = document.getElementById("importState");
 	const b = document.getElementById("exportState");
 	const c = document.getElementById("appleState");
-	if (a) a.textContent = moveLine(imp, "import");
+	if (a) a.textContent = folderLine(imp);
 	if (b) b.textContent = moveLine(exp, "export");
-	if (c) c.textContent = moveLine(imp, "import");
+	if (c) c.textContent = appleLine(imp);
 	if (imp.state === "running" || exp.state === "running") setTimeout(watchMove, 1500);
 	else await renderSettingsTab("storage");
 }

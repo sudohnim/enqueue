@@ -224,6 +224,18 @@ def test_a_fabric_export_turns_notepads_into_notes(library, src):
     assert _captures() == [("image", "map.png", True), ("pdf", "report.pdf", False)]
 
 
+def test_a_link_can_be_saved_with_a_date(library):
+    from enqueue import capture
+
+    dated = capture.link("https://example.com/a", at="2020-01-02T03:04:05+00:00")
+    plain = capture.link("https://example.com/b")
+
+    links = _links()
+    assert dated["created"] and plain["created"]
+    assert links["https://example.com/a"]["created_at"] == "2020-01-02T03:04:05+00:00"
+    assert links["https://example.com/b"]["created_at"] > "2020"
+
+
 def test_a_browser_bookmarks_file_comes_in_as_links(library, src):
     bookmarks = src / "bookmarks.html"
     bookmarks.write_text("""<!DOCTYPE NETSCAPE-Bookmark-file-1>
