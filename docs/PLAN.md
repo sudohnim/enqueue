@@ -1456,7 +1456,8 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Device check **[device]**: refuse a card. The next set shows, and the refused pair is not in the Related section of either note.
   - Done: js/home.js; Keep and Not the same post to /related/feedback (fixed in review: the buttons were never drawn, and Keep was bound as Not today). Owed: device check
 
-- [ ] **H5. The hunt does not bring back a refused pair, and sees the person's verdicts**
+- [x] **H5. The hunt does not bring back a refused pair, and sees the person's verdicts** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/shiny.py; tests pass
   Done: (skipped)
   - Needs: R11
   - Files: `shiny.py` (`hunt`, `_pairs`), `tests/test_shiny.py`

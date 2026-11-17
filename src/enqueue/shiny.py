@@ -574,6 +574,10 @@ def hunt(today: date | None = None, rng: random.Random | None = None) -> dict:
         conn = db.get_conn()
         try:
             found = [c for c in _candidates(conn, seed) if _pair([seed, c["id"]]) not in shown]
+            from .ingest import related as related_mod
+
+            refused = related_mod.refused(conn, seed)
+            found = [c for c in found if c["id"] not in refused]
             faces = _faces(conn, [seed, *(c["id"] for c in found)])
         finally:
             conn.close()
@@ -586,13 +590,38 @@ def hunt(today: date | None = None, rng: random.Random | None = None) -> dict:
                 f"- {line}" for line in face["lines"][:6]
             )
 
+        _c = db.get_conn()
+        try:
+            kept_ideas = [
+                r["idea"]
+                for r in _c.execute(
+                    "SELECT idea FROM link_feedback WHERE verdict = 'keep' AND idea != '' ORDER BY created_at DESC LIMIT 3"
+                )
+            ]
+            refused_ideas = [
+                r["idea"]
+                for r in _c.execute(
+                    "SELECT idea FROM link_feedback WHERE verdict = 'no' AND idea != '' ORDER BY created_at DESC LIMIT 3"
+                )
+            ]
+        finally:
+            _c.close()
+        examples = ""
+        if kept_ideas or refused_ideas:
+            if kept_ideas:
+                examples += "\n\nThis person said these were the same point:\n" + "\n".join(
+                    "- " + i for i in kept_ideas
+                )
+            if refused_ideas:
+                examples += "\n\nAnd these were not:\n" + "\n".join("- " + i for i in refused_ideas)
         try:
             answer = get_provider(role="chat").complete(
                 system=prompts.SHINY_HUNT,
                 user="The note:\n"
                 + block(seed)
                 + "\n\nCandidates:\n\n"
-                + "\n\n".join(block(c["id"]) for c in found),
+                + "\n\n".join(block(c["id"]) for c in found)
+                + examples,
                 response_model=_Find,
             )
         except Exception as exc:  # noqa: BLE001 - the raven says it could not look
