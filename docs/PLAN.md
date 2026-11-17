@@ -1002,25 +1002,20 @@ Finding: the Mac fetches a missing original from the relay on demand now (`captu
 
 Finding: this library has few pictures now, so this track is small. It makes every step on this Mac, with no upload and no model.
 
-- [ ] **V1. Each picture knows its main colours**
+- [x] **V1. Each picture knows its main colours** (claimed: agent, 2026-11-17)
   - Needs: DB2
   - Files: new `colours.py`, `ingest/queue.py` (one call), `vaultops.py` (one call), new `tests/test_colours.py`
   - Do:
     1. Make `colours.py`:
        ```python
        """The main colours of a picture, worked out on this Mac."""
-
        from __future__ import annotations
-
        from . import blobstore, db
-
        _TYPES = {"image/png": "png", "image/jpeg": "jpeg", "image/gif": "gif", "image/webp": "webp"}
-
        def palette(data: bytes, mime: str, top: int = 5) -> list[tuple[int, int, int, float]]:
            """Up to `top` colours as (r, g, b, share of the picture), largest share first."""
            import fitz
            import numpy as np
-
            ext = _TYPES.get(mime)
            if ext is None:
                return []
@@ -1043,7 +1038,6 @@ Finding: this library has few pictures now, so this track is small. It makes eve
                share = round(float(counts[key]) / len(keys), 4)
                out.append((int(mean[0]), int(mean[1]), int(mean[2]), share))
            return out
-
        def make(artifact_id: str) -> int:
            """Work out and keep one live image's colours. Returns how many were kept."""
            conn = db.get_conn()
@@ -1070,7 +1064,6 @@ Finding: this library has few pictures now, so this track is small. It makes eve
                    [(artifact_id, r, g, b, share) for r, g, b, share in found],
                )
            return len(found)
-
        def drop(artifact_id: str) -> None:
            with db.transaction() as conn:
                conn.execute("DELETE FROM artifact_colours WHERE artifact_id = ?", (artifact_id,))
@@ -1079,6 +1072,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
     3. In `vaultops.py`, where an item goes into the vault, call `colours.drop(artifact_id)`.
   - Test: a picture that is all red (make a 100 x 100 red PNG with `fitz` in the test) gives one colour near (255, 0, 0) with share 1.0. A picture half red and half blue gives two colours with shares near 0.5. A PDF artifact gives 0.
   - Check: `uv run pytest tests/test_colours.py tests/test_vaultops.py -q`
+  - Done: new colours.py, ingest/queue.py, vaultops.py, new tests/test_colours.py; 16 passed in 8.90s
 
 - [ ] **V2. A colour in the search is a filter**
   - Needs: V1

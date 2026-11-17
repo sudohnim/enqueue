@@ -486,6 +486,12 @@ def _process(artifact_id: str) -> dict:
             thumbs.make(artifact_id)
         except Exception:  # noqa: BLE001 - a thumb is a convenience, not the capture
             log.warning("thumb failed for %s", artifact_id, exc_info=True)
+        try:
+            from .. import colours
+
+            colours.make(artifact_id)
+        except Exception:  # noqa: BLE001 - colours are a convenience, not the capture
+            log.warning("colours failed for %s", artifact_id, exc_info=True)
 
     # A run whose chunks would come out exactly as they are stored, and are indexed as
     # they would be now, keeps them: a retry that only owes a model step, a sync

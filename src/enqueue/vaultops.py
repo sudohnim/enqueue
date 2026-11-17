@@ -390,9 +390,10 @@ def vault_artifact(artifact_id: str) -> dict:
 
     # The small picture is a readable JPEG of the original, so it must not outlive
     # the vault lock. Drop it after the transaction (it owns its own).
-    from . import thumbs
+    from . import colours, thumbs
 
     thumbs.drop(artifact_id)
+    colours.drop(artifact_id)
 
     # VACUUM (outside the transaction) rewrites the DB file so the freed pages that
     # still hold the pre-encryption plaintext are purged from disk, not just
