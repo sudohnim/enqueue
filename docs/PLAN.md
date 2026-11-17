@@ -3320,7 +3320,9 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Do: steps 3 and 4 of L6 below.
   - Check: `bin/verify --fast`
 
-- [ ] **L6. Settings: "From this Mac"**
+- [x] **L6. Settings: "From this Mac"** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/static/js/guides.js, src/enqueue/static/js/settings_guide.js, tests/js/guides.js; 1 passed in 0.29s; bin/verify: all checks passed
+  - Owed: device check - bin/launch desktop; add a folder, put a PDF in it, wait 12 minutes or restart the engine and wait 3; the PDF is on the wall
   - Split: steps 1 to 6 are done in L6a and L6b. Do step 7 only (the guide).
   - Needs: L6b
   - Files: `static/js/settings.js` (one new block in the Library tab, after "Move notes in and out"), `static/js/guides.js`, `tests/js/guides.js`
