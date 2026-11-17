@@ -1427,6 +1427,26 @@ pub fn sync_library(
             }
             continue;
         }
+        if name == "lib/shiny.enc" {
+            if let Ok(r) = relay().get(&format!("{base}/sync/object/{name}"))
+                .set("Authorization", &auth)
+                .call()
+            {
+                let mut bytes = Vec::new();
+                if r.status() == 200 && r.into_reader().read_to_end(&mut bytes).is_ok() {
+                    if let Ok(plain) = open_payload(dek, &bytes) {
+                        if let Ok(s) = std::str::from_utf8(&plain) {
+                            let _ = conn.execute(
+                                "INSERT INTO sync_meta (key,value) VALUES ('shiny',?1)\
+                                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                                [s],
+                            );
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         // The PIN-wrapped vault key (VAULT.2b): decrypt the DEK layer and cache the
         // wrap in sync_meta so this device can unlock the same vault with the same
         // PIN. The inner value is still PIN-wrapped, so the DEK alone cannot read it.

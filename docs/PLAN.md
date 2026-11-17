@@ -1722,7 +1722,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     3. Escape every text with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`, open a synced note that has related notes on the Mac, and see the rows.
 
-- [ ] **P7a. The phone keeps the day's Something shiny card**
+- [x] **P7a. The phone keeps the day's Something shiny card** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: H7
   - Files: `desktop/src/sync.rs` (the pull loop, `mod tests` not needed)
   - Find: `grep -n 'name == "lib/pivots.enc"' desktop/src/sync.rs`
