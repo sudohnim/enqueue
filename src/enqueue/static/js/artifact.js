@@ -1326,11 +1326,13 @@
   }
 
   function facetGroups(facets) {
-    const about = facets.filter((f) => f.level <= 1 && !f.bridge);
+    const gist = facets.filter((f) => f.role === "gist");
+    const points = facets.filter((f) => f.role === "point");
+    const about = facets.filter((f) => !f.role && f.level <= 1 && !f.bridge);
     const ideas = facets
-      .filter((f) => f.level >= 2 && !f.bridge)
+      .filter((f) => !f.role && f.level >= 2 && !f.bridge)
       .sort((a, b) => (b.trust || 0) - (a.trust || 0));
-    const bridges = facets.filter((f) => f.bridge);
+    const bridges = facets.filter((f) => f.bridge && !f.role);
     const group = (label, rows, open) =>
       rows.length
         ? '<div class="facet-group"><div class="facet-group-label">' +
@@ -1346,11 +1348,13 @@
             : "") +
           "</div>"
         : "";
-    return (
-      group("About", about, about.length) +
-      group("Ideas", ideas, 3) +
-      group("Also found by", bridges, 0)
-    );
+    let out = "";
+    if (gist.length) out += gist.map((f) => facetRow(f)).join("").replace('class="facet"', 'class="facet facet-gist"');
+    if (points.length) out += group("Key points", points, points.length);
+    if (gist.length) out += group("Ideas", ideas, 0);
+    else out += group("About", about, about.length) + group("Ideas", ideas, 3);
+    out += group("Also found by", bridges, 0);
+    return out;
   }
   function showMoreFacets(btn) {
     btn.previousElementSibling.hidden = false;

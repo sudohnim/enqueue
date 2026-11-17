@@ -718,7 +718,8 @@ Finding: the Summary panel shows 11 lines for each item. 80% of them are written
   - Check: `uv run pytest tests/test_ingest.py tests/test_facet_retry.py tests/test_summary_switch.py tests/test_related.py tests/test_shiny.py -q`
   - Do not: change the five levels or the bridge rule in the prompt.
 
-- [ ] **M6. The panel shows the gist and the points first**
+- [x] **M6. The panel shows the gist and the points first** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/static/js/artifact.js, src/enqueue/static/css/details.css; bin/verify --fast pass
   - Needs: M2, M5
   - Files: `static/js/artifact.js` (`facetGroups`), `static/css/details.css`
   - Do:

@@ -497,6 +497,9 @@
   color: var(--accent-text);
   cursor: pointer;
 }
+.dpanel .facet-gist .facet-text {
+  font-weight: var(--w-strong);
+}
 /* On a phone the whole panel scrolls under the thumb; a second scroller inside it
    would only catch the gesture. */
 .dpanel[data-touch] .facet-list {
