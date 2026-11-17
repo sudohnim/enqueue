@@ -1879,7 +1879,7 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
     let mut facets = Vec::new();
     let mut fstmt = conn
         .prepare(
-            "SELECT id, level, statement, edited FROM facets WHERE artifact_id = ?1 \
+            "SELECT id, level, statement, edited, bridge, role FROM facets WHERE artifact_id = ?1 \
              AND COALESCE(role, '') != 'ask' ORDER BY level, statement, id",
         )
         .map_err(|e| e.to_string())?;
@@ -1890,6 +1890,8 @@ pub fn get_artifact(conn: &Connection, id: &str) -> Result<Value, String> {
                 "level": r.get::<_, Option<i64>>(1)?,
                 "statement": r.get::<_, Option<String>>(2)?,
                 "edited": r.get::<_, i64>(3)?,
+                "bridge": r.get::<_, i64>(4)?,
+                "role": r.get::<_, Option<String>>(5)?,
             }))
         })
         .map_err(|e| e.to_string())?;

@@ -1645,7 +1645,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: where a search result row is drawn, when the row has `snippet` and the snippet is not the start of the body, show the snippet as the row's second line. Escape it with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`; search a word that is only in a PDF; the row shows the words around it.
 
-- [ ] **P4. The phone draws the summary in groups**
+- [x] **P4. The phone draws the summary in groups** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass; Owed: device check
   - Needs: M2
   - Files: `desktop/src/sync.rs`, `static/mobile.html`
   - Find: `grep -n 'CREATE TABLE IF NOT EXISTS facets' desktop/src/sync.rs`; `grep -n 'SELECT id, level, statement, edited FROM facets' desktop/src/sync.rs`; `grep -n 'details_summary' src/enqueue/static/mobile.html`
@@ -1658,7 +1659,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: a Rust unit test: a snapshot facet with `bridge: 1` is read back with `bridge` 1.
   - Check: `cargo test --lib`; `bin/verify --fast`. Device: `bin/launch emulator`; the Details panel of a synced item shows the groups.
 
-- [ ] **P5. The phone keeps the role**
+- [x] **P5. The phone keeps the role** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: M4, P4
   - Files: `desktop/src/sync.rs`
   - Do:
