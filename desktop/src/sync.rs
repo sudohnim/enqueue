@@ -807,6 +807,17 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
         ))
         .map_err(|e| e.to_string())?;
     }
+    let built: Option<String> = conn
+        .query_row("SELECT value FROM sync_meta WHERE key = 'fts_items_built'", [], |r| r.get(0))
+        .ok();
+    if built.is_none() {
+        conn.execute_batch(
+            "UPDATE artifacts SET id = id;
+             INSERT INTO sync_meta (key, value) VALUES ('fts_items_built', '1')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

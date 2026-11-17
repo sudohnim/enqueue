@@ -1592,7 +1592,8 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Test: in `mod tests`, add a test that calls `init_schema` on an in-memory connection, applies a snapshot with a PDF whose only text is in `page_text` (copy the snapshot JSON of `pulled_link_preview_lands_and_survives_a_preview_less_snapshot`; add `"page_text": [{"page": 0, "text": "the kiln schedule"}]`), and asserts `SELECT artifact_id FROM fts_items WHERE fts_items MATCH 'kiln'` returns it. Then set `deleted_at` on the artifact and assert the row is gone.
   - Check: `cd desktop && cargo test --lib`
 
-- [ ] **P1. Fill the phone's index one time for a library that has no rows**
+- [x] **P1. Fill the phone's index one time for a library that has no rows** (claimed: agent, 2026-11-16)
+  Done: desktop/src/sync.rs; cargo test --lib pass
   - Needs: P1b
   - Files: `desktop/src/sync.rs` (`init_schema` and `mod tests`)
   - Do:
