@@ -450,6 +450,15 @@ def main():
         pass_flag = False
 
     print("")
+    print(f"=== {SRC}: style check ===")
+    r = subprocess.run(["bin/check-style"], capture_output=False, timeout=30)
+    if r.returncode == 0:
+        print(f"{SRC}: style OK")
+    else:
+        print(f"{SRC}: style check FAILED", file=sys.stderr)
+        pass_flag = False
+
+    print("")
     print(f"=== {SRC}: plan check ===")
     r = subprocess.run(["bin/check-plan"], capture_output=False, timeout=30)
     if r.returncode == 0:

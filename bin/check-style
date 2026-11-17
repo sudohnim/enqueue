@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Report font sizes and weights written as numbers instead of tokens (docs/DESIGN.md)."""
+
+import glob
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CSS = ROOT / "src/enqueue/static/css"
+HTML = ROOT / "src/enqueue/static"
+
+SIZE = re.compile(r"font-size:\s*[0-9.]+px")
+WEIGHT = re.compile(r"font-weight:\s*[0-9]+\s*[;}]")
+STYLE = re.compile(r"<style[^>]*>(.*?)</style>", re.S)
+
+
+def sources():
+    for path in sorted(glob.glob(str(CSS / "*.css"))):
+        if path.endswith("tokens.css"):
+            continue
+        yield path, Path(path).read_text(encoding="utf-8")
+    for name in ("mobile.html", "capture.html"):
+        path = str(HTML / name)
+        text = Path(path).read_text(encoding="utf-8")
+        yield path, "\n".join(STYLE.findall(text))
+
+
+def main():
+    total = 0
+    shown = []
+    for name, text in sources():
+        sizes = len(SIZE.findall(text))
+        weights = len(WEIGHT.findall(text))
+        total += sizes + weights
+        if sizes or weights:
+            rel = Path(name).relative_to(ROOT)
+            shown.append(f"{rel}: {sizes} sizes, {weights} weights")
+    for line in shown:
+        print(line)
+    print(f"total: {total}")
+    if "--strict" in sys.argv[1:] and total > 0:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

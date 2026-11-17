@@ -384,7 +384,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
 
 Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 numeric font weights against the rule in AGENTS.md.
 
-- [ ] **U1. A style check that reports**
+- [x] **U1. A style check that reports** (claimed: agent, 2026-11-17)
   - Needs: none
   - Files: new `bin/check-style`, `bin/verify`
   - Do:
@@ -395,6 +395,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     5. With the argument `--strict` it exits with code 1 when the total is above 0. Without it, it exits 0.
     6. In `bin/verify`, find where `bin/check-contrast` is run (`grep -n 'check-contrast' bin/verify`). Run `bin/check-style` after it the same way, without `--strict`.
   - Check: `bin/check-style` prints counts and exits 0; `bin/check-style --strict; echo $?` prints 1; `bin/verify --fast` passes.
+  - Done: bin/check-style, bin/verify; bin/verify: all checks passed
 
 - [ ] **U2. A type scale in the tokens**
   - Needs: none
