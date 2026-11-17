@@ -1484,7 +1484,8 @@ Finding: 57 idea pairs exist, and the daily card turns through the same 7 each w
   - Test: with 5 shown pairs and 2 refusals, the user text of `_write` holds `passage:`. With 5 shown and 0 refusals, it does not.
   - Check: `uv run pytest tests/test_shiny.py -q`
 
-- [~] **H7. The links and the day's card go to the relay** (claimed: agent, 2026-11-16)
+- [x] **H7. The links and the day's card go to the relay** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/sync/snapshot.py, src/enqueue/sync/client.py, src/enqueue/shiny.py; tests pass
   Done: (skipped)
   - Needs: R11
   - Files: `sync/snapshot.py` (`derived_layers`, `_apply_derived_layers`), `sync/client.py`, `shiny.py` (`prepare`), `tests/test_snapshot.py`, `tests/test_sync.py`
