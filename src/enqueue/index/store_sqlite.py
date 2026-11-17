@@ -941,7 +941,7 @@ class SqliteVecStore(VectorStore):
         else:
             rows = conn.execute(
                 "SELECT id, artifact_id, level, trust, model_version, body_version, edited,"
-                " bridge FROM facets"
+                " bridge, role FROM facets"
                 " WHERE id IN (SELECT value FROM json_each(?))",
                 (ids,),
             ).fetchall()
@@ -975,6 +975,7 @@ class SqliteVecStore(VectorStore):
                 hit["body_version"] = row["body_version"]
                 hit["edited"] = bool(row["edited"])
                 hit["bridge"] = bool(row["bridge"])
+                hit["role"] = row["role"]
             out.append(hit)
         return out
 

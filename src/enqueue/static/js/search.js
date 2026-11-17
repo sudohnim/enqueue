@@ -243,6 +243,9 @@
 
   // Why a result found by meaning is here: the summary line or the name it matched.
   function whyHtml(h, terms) {
+    if (h.why === "search phrase" && h.matched) {
+      return '<div class="sr-why"><b>Found by:</b> ' + marked(h.matched, terms) + "</div>";
+    }
     if (!h.matched || !/^(facet|section|entity)/.test(h.why || "")) return "";
     const label = (h.why || "").startsWith("entity") ? "Mentions" : "Same idea";
     return '<div class="sr-why"><b>' + label + "</b>" + marked(h.matched, terms) + "</div>";

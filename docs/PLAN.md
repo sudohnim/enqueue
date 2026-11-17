@@ -1349,7 +1349,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: an artifact with one `ask` line and one `subject` line: `_facets_for_judge` returns the subject line only.
   - Check: `uv run pytest tests/test_search_results.py tests/test_chats.py -q`
 
-- [ ] **Q9. A search phrase hit says why it matched**
+- [x] **Q9. A search phrase hit says why it matched** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/index/store_sqlite.py, src/enqueue/retrieve/candidates.py, src/enqueue/static/js/search.js; tests pass
   - Needs: M8
   - Files: `index/store_sqlite.py` (`_fetch_hits`: the facets branch), `retrieve/candidates.py` (`_hybrid_results`), `static/js/search.js`
   - Find: `grep -n '" bridge FROM facets"\|hit\["bridge"\]' src/enqueue/index/store_sqlite.py`; `grep -n 'facet L' src/enqueue/retrieve/candidates.py`

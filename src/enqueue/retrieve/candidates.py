@@ -888,7 +888,9 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
                 s,
                 {
                     "chunk_id": None,
-                    "why": f"facet L{h.get('level')}",
+                    "why": (
+                        "search phrase" if h.get("role") == "ask" else f"facet L{h.get('level')}"
+                    ),
                     "facet_id": h.get("facet_id"),
                 },
             )
