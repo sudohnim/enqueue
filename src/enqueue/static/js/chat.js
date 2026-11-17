@@ -479,6 +479,19 @@ function renderChat(d) {
 				esc(m.id) +
 				"')\">Try again</button>";
 		}
+		if (m.receipt && !pending && !failed)
+			html +=
+				'<div class="meta">' +
+				(m.receipt.local
+					? "Nothing left this Mac."
+					: "Read " +
+						m.receipt.notes +
+						" notes. Sent " +
+						Number(m.receipt.chars).toLocaleString() +
+						" characters to " +
+						esc(m.receipt.service) +
+						".") +
+				"</div>";
 		html += "</div>";
 
 		// The grouped view is not stored in the turn's text: it re-runs the stored

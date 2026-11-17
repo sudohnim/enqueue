@@ -326,7 +326,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`
   - Done: chats.py, chats_worker.py, tests/test_chats_worker.py; 56 passed in 11.46s
 
-- [ ] **F1. A privacy receipt under each answer**
+- [x] **F1. A privacy receipt under each answer** (claimed: agent, 2026-11-17)
   - Split: steps 1 to 3 and 5 are done in F1a. Do step 4 only (the line under the answer in `chat.js`).
   - Needs: F1a
   - Files: `chats_worker.py`, `chats.py` (`get`), `static/js/chat.js`, `tests/test_chats_worker.py`
@@ -340,6 +340,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     5. An answer with no passages gets no receipt.
   - Test: in `tests/test_chats_worker.py`, after `compute` with a fake provider and two passages from two notes, `chats.get` gives the assistant message a receipt with `notes` 2.
   - Check: `uv run pytest tests/test_chats_worker.py tests/test_chats.py -q`; `bin/verify --fast`
+  - Done: static/js/chat.js; bin/verify: all checks passed
 
 - [ ] **F2. What left this Mac, on one page**
   - Needs: none
