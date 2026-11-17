@@ -304,7 +304,7 @@ One line per file, describing its job.
 | `offload.py` | Let go of originals the relay holds (`candidates`/`on_relay`/`run`/`report`), off by default. `run` removes a local original only after `on_relay` confirms the relay holds the exact sealed bytes; a needed file is fetched back on open. See "An original can live on the relay only" under Gotchas. |
 | `netguard.py` | `is_public(host, port)`: whether a host resolves only to public addresses. What a link preview may reach, for the plain fetch and the WebKit reader alike. |
 | `webkit_page.py` | The preview browser: one page in an off-screen WKWebView in a process of its own, HTML back once its scripts ran. See "Browser fallback" under Link previews. |
-| `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. |
+| `outbound.py` | What went to remote models: `OpenAICompatibleProvider` counts every structured call and image description to a non-loopback endpoint (service, model, purpose by response model, characters, credentials blanked), never the text, and writes one `model.sent` Activity row per service every 10 minutes and at shutdown, so a reprocess does not bury the log. It also adds per-day, per-service, per-purpose totals to `derived_values` (scope `outbound_day`), shown at the top of the Activity tab through `GET /outbound`. Each grounded chat answer carries a receipt (notes read, characters sent and service, or "Nothing left this Mac" when local): `run_answer` stores it in `derived_values` (scope `answer_receipt`, by message id) and `chat.js` shows it under the answer. `POST /chats/{id}/messages/{mid}/note` saves a grounded answer, its question and its source titles as a new note. |
 | `settings.py` | Three-layer settings (env > settings.json > default). Writable fields, storage report. |
 | `db.py` | SQLite access + Alembic migration at startup. `get_conn()` and `transaction()` for writes, `reader()` (one cached read-only connection per thread, sqlite-vec loaded) for searches, `count()`. |
 | `greeting.py` | The wall's greeting: one model phrase per four-hour bucket, generated in the background. |
@@ -905,6 +905,7 @@ GET    /settings                    all settings + storage + backends
 GET    /secrets                     credential scan hits
 GET    /trash                       what is in the trash
 GET    /events?limit=N              the activity log, newest first, each with its full record
+GET    /outbound                    what left this Mac, per day, service and purpose, for the last 30 days
 GET    /setup                       what is connected, what is left to set up, settings that need a look
 GET    /reading                     how far the assistant is through reading the library (the wall's progress line)
 GET    /backup                      backup folder, detected Proton Drive folders, last backup, the kept backups
@@ -930,6 +931,7 @@ POST   /import/apple-notes           bring Apple Notes in on a background thread
 POST   /artifacts/{id}/preview       fetch what a saved link is (opt-in)
 POST   /chats                        start a conversation (optionally with text)
 POST   /chats/{id}/messages          one turn
+POST   /chats/{id}/messages/{mid}/note  save a grounded answer as a note, with its question and sources
 PATCH  /chats/{id}                   rename / pin
 DELETE /chats/{id}                   the one deletable object
 POST   /pivot/run                     re-run a saved view spec

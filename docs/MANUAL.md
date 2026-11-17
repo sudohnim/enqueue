@@ -250,6 +250,8 @@ Click the **eye** and ask a question in plain words.
 - An answer may show **p. N** beside a passage it used. Click it to open the document at that page.
 - From an open artifact, the eye asks about that one thing.
 - Conversations are kept, and sync to your phone.
+- A line under an answer says what it read. If the answer came from this Mac, it says nothing left this Mac. If an outside model answered, it says how many notes it read and how many characters it sent, and to which service.
+- Click **Save as a note** under an answer to keep the question, the answer and the titles it used as a new note.
 
 The eye is also a little alive.
 It follows the pointer, blinks, and approves when something is saved.
@@ -515,6 +517,12 @@ Entering a different key lifts the pause at once.
 
 What always stays on the Mac: the library, the search index, and the embeddings that power search by meaning.
 What can leave, only if you set it up: text sent to an outside model, encrypted sync through the relay, and the backup in your cloud drive.
+
+### What left this Mac
+
+**Settings > Activity** opens with a table of what was sent to an outside model in the last 30 days.
+It groups the totals by day, by service, and by what the model was doing.
+It counts characters only. Your words themselves are never shown or kept there.
 
 ## Settings reference
 

@@ -371,11 +371,12 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Check: `uv run pytest tests/test_chats.py -q`; `bin/verify --fast`
   - Done: chats.py, api/chats.py, static/js/chat.js, tests/test_chats.py; bin/verify: all checks passed
 
-- [ ] **F4. Docs for track F**
+- [x] **F4. Docs for track F** (claimed: agent, 2026-11-17)
   - Needs: F1 to F3
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: add the receipt and `GET /outbound` to the `outbound.py` row and the API list; add the save-as-note route; describe the three in `docs/MANUAL.md` in plain words.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/MANUAL.md; bin/verify: all checks passed
 
 ---
 
