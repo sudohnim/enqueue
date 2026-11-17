@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from datetime import datetime, timezone
 
 import pytest
 
@@ -57,6 +58,23 @@ def _captures() -> list[tuple[str, str, bool]]:
         )
     finally:
         conn.close()
+
+
+def _links() -> dict[str, dict]:
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT a.id, a.source_url, a.created_at,"
+            " (SELECT group_concat(t.name, ',') FROM artifact_tags x JOIN tags t"
+            "  ON t.id = x.tag_id WHERE x.artifact_id = a.id) AS tags"
+            " FROM artifacts a WHERE a.kind = 'link'"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        r["source_url"]: dict(r, tags=sorted((r["tags"] or "").split(",")) if r["tags"] else [])
+        for r in rows
+    }
 
 
 def _zip(path, files: dict[str, bytes | str]):
@@ -204,6 +222,36 @@ def test_a_fabric_export_turns_notepads_into_notes(library, src):
     assert "Go **north**." in body
     assert "- tent\n  - poles\n- map" in body
     assert _captures() == [("image", "map.png", True), ("pdf", "report.pdf", False)]
+
+
+def test_a_browser_bookmarks_file_comes_in_as_links(library, src):
+    bookmarks = src / "bookmarks.html"
+    bookmarks.write_text("""<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<H1>Bookmarks</H1>
+<DL><p>
+  <DT><A HREF="https://example.com/top" ADD_DATE="1600000000">Top</A>
+  <DT><H3>Bookmarks Bar</H3>
+  <DL><p>
+    <DT><H3>Cooking</H3>
+    <DL><p>
+      <DT><A HREF="https://example.com/recipe" ADD_DATE="1600000200">Recipe</A>
+    </DL><p>
+  </DL><p>
+  <DT><A HREF="javascript:alert(1)">JS</A>
+  <DT><A HREF="https://example.com/twice">Twice</A>
+  <DT><A HREF="https://example.com/twice">Twice again</A>
+</DL><p>
+""")
+
+    report = importer.run(bookmarks)
+
+    links = _links()
+    assert report["links"] == 3 and len(links) == 3
+    assert links["https://example.com/top"]["tags"] == []
+    recipe = links["https://example.com/recipe"]
+    assert recipe["tags"] == ["cooking"]
+    assert recipe["created_at"] == datetime.fromtimestamp(1600000200, timezone.utc).isoformat()
+    assert "javascript:alert(1)" not in links
 
 
 def test_importing_again_adds_nothing(library, src):

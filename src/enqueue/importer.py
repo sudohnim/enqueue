@@ -48,6 +48,21 @@ BEAR_TAG = re.compile(r"(?<![\w#/&])#([^\W\d_][^#\n]*?[^\s#])#")
 MD_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 WIKI_EMBED = re.compile(r"!\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
 FENCE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
+BOOKMARK_MARK = "NETSCAPE-Bookmark-file-1"
+BOOKMARK_TOKEN = re.compile(r"<H3[^>]*>(.*?)</H3>|<DL>|</DL>|<A\s+([^>]*)>(.*?)</A>", re.I | re.S)
+BROWSER_FOLDERS = {
+    "bookmarks bar",
+    "bookmarks menu",
+    "bookmarks toolbar",
+    "other bookmarks",
+    "favorites",
+    "favourites",
+    "favorites bar",
+    "mobile bookmarks",
+    "reading list",
+    "imported",
+    "bookmarks",
+}
 
 _lock = threading.Lock()
 _state: dict = {"state": "idle"}
@@ -68,7 +83,9 @@ def start(path: str) -> dict:
         if _state.get("state") == "running":
             raise RuntimeError("an import is already running")
         _state.clear()
-        _state.update(state="running", path=str(source), notes=0, files=0, skipped=0, errors=[])
+        _state.update(
+            state="running", path=str(source), notes=0, files=0, links=0, skipped=0, errors=[]
+        )
     threading.Thread(target=_run_safely, args=(source,), name="import", daemon=True).start()
     return state()
 
@@ -92,7 +109,9 @@ def _count(key: str, error: str | None = None) -> None:
 def run(source: Path) -> dict:
     """Import a folder or a zip. Returns how many notes and files came in."""
     with _lock:
-        _state.update(state="running", path=str(source), notes=0, files=0, skipped=0, errors=[])
+        _state.update(
+            state="running", path=str(source), notes=0, files=0, links=0, skipped=0, errors=[]
+        )
     work = Path(tempfile.mkdtemp(prefix="enqueue-import-"))
     try:
         if source.is_dir():
@@ -116,8 +135,8 @@ def run(source: Path) -> dict:
         report = dict(_state)
     events.emit(
         "import",
-        f"{report['notes']} notes, {report['files']} files from {source.name}",
-        data={k: report[k] for k in ("notes", "files", "skipped", "path")},
+        f"{report['notes']} notes, {report['links']} links, {report['files']} files from {source.name}",
+        data={k: report[k] for k in ("notes", "files", "links", "skipped", "path")},
     )
     return report
 
@@ -198,11 +217,71 @@ def _digest(body: str) -> str:
     return hashlib.sha256(" ".join(body.split()).encode()).hexdigest()
 
 
+def _is_bookmarks(f: Path) -> bool:
+    if f.is_dir() or f.suffix.lower() not in HTML_SUFFIXES:
+        return False
+    try:
+        with f.open("r", encoding="utf-8", errors="replace") as fh:
+            return BOOKMARK_MARK in fh.read(2000)
+    except OSError:
+        return False
+
+
+def _import_bookmarks(f: Path) -> None:
+    """Each bookmark becomes a link. The folders it sits in become its tags."""
+    from html import unescape
+
+    text = f.read_text("utf-8", "replace")
+    stack: list[str | None] = []
+    pending: str | None = None
+    for m in BOOKMARK_TOKEN.finditer(text):
+        token = m.group(0).upper()
+        if token.startswith("<H3"):
+            pending = unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip()
+        elif token == "<DL>":
+            stack.append(pending)
+            pending = None
+        elif token == "</DL>":
+            if stack:
+                stack.pop()
+        else:
+            href = re.search(r'HREF="([^"]*)"', m.group(2), re.I)
+            url = unescape(href.group(1)).strip() if href else ""
+            if not url.lower().startswith(("http://", "https://")):
+                continue
+            added = re.search(r'ADD_DATE="(\d+)"', m.group(2), re.I)
+            at = (
+                datetime.fromtimestamp(int(added.group(1)), timezone.utc).isoformat()
+                if added
+                else None
+            )
+            title = unescape(re.sub(r"<[^>]+>", "", m.group(3))).strip() or None
+            out = capture.link(url, title=title, at=at, background=True)
+            if not out.get("created"):
+                _count("skipped")
+                continue
+            names = [
+                s.lower().replace(" ", "-") for s in stack if s and s.lower() not in BROWSER_FOLDERS
+            ]
+            if names:
+                with db.transaction() as conn:
+                    for name in names:
+                        tags.attach(conn, out["id"], name, at or db.now())
+            _count("links")
+
+
 def _import_files(files: list[Path], seen: set[str]) -> None:
     by_name: dict[str, Path] = {}
     for f in files:
         by_name.setdefault(f.name.lower(), f)
     used: set[Path] = set()
+    for f in files:
+        if _is_bookmarks(f):
+            try:
+                _import_bookmarks(f)
+            except Exception as exc:  # noqa: BLE001 - one bad file never stops the rest
+                _count("skipped", f"{f.name}: {exc}")
+            used.add(f.resolve())
     note_files = [f for f in files if _is_note(f)]
     for f in note_files:
         try:
@@ -223,6 +302,8 @@ def _import_files(files: list[Path], seen: set[str]) -> None:
 
 
 def _is_note(f: Path) -> bool:
+    if _is_bookmarks(f):
+        return False
     if f.is_dir():
         return f.name.endswith(".textbundle")
     return f.suffix.lower() in NOTE_SUFFIXES | HTML_SUFFIXES

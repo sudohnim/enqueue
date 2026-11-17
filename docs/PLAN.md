@@ -2912,7 +2912,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: `capture.link("https://example.com/a", at="2020-01-02T03:04:05+00:00")` stores that `created_at`. A call with no `at` works as before.
   - Check: `uv run pytest tests/test_importer.py tests/test_preview.py -q`
 
-- [ ] **L2. A browser's bookmarks file comes in as links**
+- [x] **L2. A browser's bookmarks file comes in as links** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/importer.py, tests/test_importer.py; 11 passed
   - Needs: L1
   - Files: `importer.py`, `tests/test_importer.py`
   - Why: every browser can export its bookmarks as one HTML file. No permission is necessary to read it.
