@@ -2546,7 +2546,8 @@ The sources here are ones a person does not upload to a cloud workspace, so only
   - Test: the table exists after `db.migrate()`.
   - Check: `uv run pytest tests/test_migrations.py -q`
 
-- [ ] **L1. A link can be saved with a date, behind the person's own work**
+- [x] **L1. A link can be saved with a date, behind the person's own work** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/capture.py; tests pass
   - Needs: none
   - Files: `capture.py` (`link`), `tests/test_importer.py`
   - Find: `grep -n '^def link' src/enqueue/capture.py`
