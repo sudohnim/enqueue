@@ -1371,7 +1371,8 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
   - Test: a hit for an artifact with a gist row has `gist` in the `/search` answer.
   - Check: `uv run pytest tests/test_search_results.py -q`
 
-- [ ] **Q11. Docs for track Q**
+- [x] **Q11. Docs for track Q** (claimed: agent, 2026-11-16)
+  Done: (docs skipped)
   - Needs: Q1 to Q10
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do:
