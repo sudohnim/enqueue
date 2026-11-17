@@ -1138,7 +1138,7 @@ Finding: three kinds of link sit in one grid and only one kind has a label. The 
 
 ## Track Q: search
 
-- [ ] **Q1. Record each search**
+- [~] **Q1. Record each search** (claimed: agent, 2026-11-16)
   - Needs: DB1
   - Files: new `searches.py`, `api/search.py`, `chats.py`, `backup.py` (`start_scheduler`), new `tests/test_searches.py`
   - Why: a search that finds nothing useful leaves no trace today, so no one can learn from it.

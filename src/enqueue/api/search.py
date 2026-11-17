@@ -28,6 +28,10 @@ def search(q: str, limit: int = 20) -> dict:
     # Chunk and facet hits rolled up to one row per artifact (deduplicated),
     # so an artifact whose six chunks match does not occupy every slot.
     hits = search_results(q, limit=limit)
+    from .. import searches
+
+    if q.strip():
+        searches.record(q, hits, "search")
     # What the search understood as filters ("PDFs · saved last month"), for the header.
     from .. import tags
     from ..retrieve import filters

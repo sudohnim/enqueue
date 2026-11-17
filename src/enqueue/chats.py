@@ -347,7 +347,11 @@ def _everything_passages(question: str, limit: int = PASSAGES) -> list[dict]:
 
     sides = parts(question)
     if not sides:
-        return _library_passages(question, limit)
+        result = _library_passages(question, limit)
+        from . import searches
+
+        searches.record(question, [{"artifact_id": p["artifact_id"]} for p in result], "chat")
+        return result
     lists = [_library_passages(side, limit) for side in sides]
     lists.append(_library_passages(question, limit))
     out: list[dict] = []
@@ -361,7 +365,11 @@ def _everything_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         if p["id"] not in seen:
             out.append(p)
             seen.add(p["id"])
-    return out[:limit]
+    result = out[:limit]
+    from . import searches
+
+    searches.record(question, [{"artifact_id": p["artifact_id"]} for p in result], "chat")
+    return result
 
 
 def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:

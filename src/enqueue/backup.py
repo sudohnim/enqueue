@@ -514,6 +514,12 @@ def start_scheduler() -> None:
                     drafts.thin()
                 except Exception:  # noqa: BLE001 - never stop the scheduler
                     pass
+                try:
+                    from . import searches
+
+                    searches.prune()
+                except Exception:  # noqa: BLE001 - never stop the scheduler
+                    pass
             # Something shiny (shiny.py) chooses the day's sets and writes the first
             # one's words once a day, on this hourly beat; it keeps its own day stamp.
             try:
