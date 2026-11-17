@@ -420,7 +420,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Do not: change a rule that uses a size in this task.
   - Done: static/css/tokens.css, docs/DESIGN.md; bin/verify: all checks passed
 
-- [ ] **U2b. A script that puts the type tokens in a stylesheet**
+- [x] **U2b. A script that puts the type tokens in a stylesheet** (claimed: agent, 2026-11-17)
   - Needs: U2
   - Files: new `bin/tokenize-css`
   - Why: tasks U3 to U7 change about 300 values by one table. A script does it the same way in every file.
@@ -428,12 +428,12 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     ```python
     #!/usr/bin/env python3
     """Replace font sizes in px and numeric font weights with tokens (docs/DESIGN.md).
-
+    
     Usage: bin/tokenize-css FILE...  An unknown value is reported and left as it is."""
-
+    
     import re
     import sys
-
+    
     SIZES = {
         "11": "xs", "12": "xs", "12.5": "sm", "13": "sm", "13.5": "md", "14": "md",
         "14.5": "md", "15": "lg", "15.5": "xl", "16": "xl", "16.5": "xl", "17": "xl",
@@ -444,7 +444,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
     WEIGHTS = {"400": "regular", "440": "medium", "480": "strong", "500": "medium", "600": "heading"}
     SIZE = re.compile(r"font-size:\s*([0-9.]+)px")
     WEIGHT = re.compile(r"font-weight:\s*([0-9]+)(\s*[;}])")
-
+    
     def fix(text: str, name: str) -> str:
         def size(m):
             token = SIZES.get(m.group(1))
@@ -452,16 +452,16 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
                 print(f"{name}: unknown size {m.group(1)}px", file=sys.stderr)
                 return m.group(0)
             return f"font-size: var(--t-{token})"
-
+    
         def weight(m):
             token = WEIGHTS.get(m.group(1))
             if token is None:
                 print(f"{name}: unknown weight {m.group(1)}", file=sys.stderr)
                 return m.group(0)
             return f"font-weight: var(--w-{token}){m.group(2)}"
-
+    
         return WEIGHT.sub(weight, SIZE.sub(size, text))
-
+    
     def main() -> int:
         for name in sys.argv[1:]:
             if name.endswith("tokens.css"):
@@ -482,12 +482,13 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
                     f.write(new)
                 print(f"{name}: changed")
         return 0
-
+    
     if __name__ == "__main__":
         sys.exit(main())
     ```
   - Test: copy `src/enqueue/static/css/base.css` to the scratch folder, run the script on the copy, and check with `grep -c 'font-size: *[0-9.]*px'` that the copy has 0. Delete the copy.
   - Check: `bin/tokenize-css /dev/null` exits 0.
+  - Done: bin/tokenize-css; bin/tokenize-css /dev/null exits 0
 
 - [ ] **U3. Sizes and weights become tokens: wall and base**
   - Needs: U1, U2b

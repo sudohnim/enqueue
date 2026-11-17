@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Replace font sizes in px and numeric font weights with tokens (docs/DESIGN.md).
+
+Usage: bin/tokenize-css FILE...  An unknown value is reported and left as it is."""
+
+import re
+import sys
+
+SIZES = {
+    "11": "xs", "12": "xs", "12.5": "sm", "13": "sm", "13.5": "md", "14": "md",
+    "14.5": "md", "15": "lg", "15.5": "xl", "16": "xl", "16.5": "xl", "17": "xl",
+    "18": "2xl", "19": "3xl", "20": "3xl", "21": "3xl", "22": "4xl", "24": "4xl",
+    "25": "4xl", "26": "4xl", "28": "4xl", "29": "display-sm", "30": "display-sm",
+    "32": "display-sm", "34": "display-sm", "44": "display",
+}
+WEIGHTS = {"400": "regular", "440": "medium", "480": "strong", "500": "medium", "600": "heading"}
+SIZE = re.compile(r"font-size:\s*([0-9.]+)px")
+WEIGHT = re.compile(r"font-weight:\s*([0-9]+)(\s*[;}])")
+
+def fix(text: str, name: str) -> str:
+    def size(m):
+        token = SIZES.get(m.group(1))
+        if token is None:
+            print(f"{name}: unknown size {m.group(1)}px", file=sys.stderr)
+            return m.group(0)
+        return f"font-size: var(--t-{token})"
+
+    def weight(m):
+        token = WEIGHTS.get(m.group(1))
+        if token is None:
+            print(f"{name}: unknown weight {m.group(1)}", file=sys.stderr)
+            return m.group(0)
+        return f"font-weight: var(--w-{token}){m.group(2)}"
+
+    return WEIGHT.sub(weight, SIZE.sub(size, text))
+
+def main() -> int:
+    for name in sys.argv[1:]:
+        if name.endswith("tokens.css"):
+            continue
+        with open(name, encoding="utf-8") as f:
+            text = f.read()
+        if name.endswith(".html"):
+            new = re.sub(
+                r"(<style[^>]*>)(.*?)(</style>)",
+                lambda m: m.group(1) + fix(m.group(2), name) + m.group(3),
+                text,
+                flags=re.S,
+            )
+        else:
+            new = fix(text, name)
+        if new != text:
+            with open(name, "w", encoding="utf-8") as f:
+                f.write(new)
+            print(f"{name}: changed")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
