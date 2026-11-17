@@ -234,6 +234,33 @@ def pick(today: date | None = None, n: int = 0) -> dict | None:
     return {"ids": ids, "links": links, "more": n + 1 < len(sets)}
 
 
+def phone_sets(day: date | None = None, top: int = 5) -> dict | None:
+    """The day's first sets as the phone shows them: ids, links and the model's words,
+    leaving out any set with a local-only or vaulted note. None when there are none."""
+    day = day or datetime.now(timezone.utc).date()
+    conn = db.get_conn()
+    try:
+        sets = _kept(conn, day.isoformat())
+        if not sets:
+            return None
+        out = []
+        for ids, links in sets:
+            if len(out) >= top:
+                break
+            hidden = conn.execute(
+                "SELECT 1 FROM artifacts WHERE id IN (SELECT value FROM json_each(?))"
+                " AND (local_only = 1 OR vaulted_at IS NOT NULL OR deleted_at IS NOT NULL)",
+                (json.dumps(ids),),
+            ).fetchone()
+            if hidden:
+                continue
+            food = _cached(conn, _key(ids, _faces(conn, ids)))
+            out.append({"ids": ids, "links": links, "food": food})
+    finally:
+        conn.close()
+    return {"day": day.isoformat(), "sets": out, "updated_at": db.now()} if out else None
+
+
 def look_again(today: date | None = None) -> None:
     """Choose today's sets again from the links as they stand now (the card's "Look
     again"): new connections found since the morning get their turn."""

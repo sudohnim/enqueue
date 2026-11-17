@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Check docs/PLAN.md: a task marked done must say what was done, and nothing it needs
+may be open. Agents marked dozens of tasks done that they had skipped; this stops it."""
+
+import re
+import sys
+from pathlib import Path
+
+PLAN = Path(__file__).resolve().parent.parent / "docs" / "PLAN.md"
+TASK = re.compile(r"^- \[(.)\] \*\*([A-Z]+\d+[a-z]?)\.[^\n]*\n((?:  .*\n)*)", re.M)
+
+
+def needs(body: str) -> list[str]:
+    m = re.search(r"Needs:([^\n]*)", body)
+    if not m:
+        return []
+    text = m.group(1)
+    out = []
+    for p, a, _, b in re.findall(r"([A-Z]+)(\d+) to ([A-Z]+)(\d+)", text):
+        out += [f"{p}{i}" for i in range(int(a), int(b) + 1)]
+    return out + re.findall(r"\b([A-Z]+\d+[a-z]?)\b", re.sub(r"[A-Z]+\d+ to [A-Z]+\d+", "", text))
+
+
+def main() -> int:
+    if not PLAN.exists():
+        return 0
+    text = PLAN.read_text(encoding="utf-8").split("\n# For the owner")[0]
+    tasks = {tid: (mark, body) for mark, tid, body in TASK.findall(text)}
+    bad = []
+    for tid, (mark, body) in tasks.items():
+        if mark != "x":
+            continue
+        done = re.findall(r"^  (?:- )?Done:(.*)$", body, re.M)
+        if not done:
+            bad.append(f"{tid}: marked done with no 'Done:' line")
+        elif any(re.search(r"\bskipped\b|\bnot done\b", d, re.I) for d in done):
+            bad.append(f"{tid}: marked done but its note says it was skipped")
+        for need in needs(body):
+            if need in tasks and tasks[need][0] != "x":
+                bad.append(f"{tid}: marked done but it needs {need}, which is not done")
+    for line in bad:
+        print(f"check-plan: {line}")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -666,45 +666,6 @@ mod mobile {
     /// Whether a sync config (secret + DEK) has been persisted, so the UI can decide
     /// between the setup surface and the library (MOB.3b).
     #[tauri::command]
-    fn mobile_shiny() -> Result<String, String> {
-        let conn = open_lib()?;
-        let s: Option<String> = conn
-            .query_row("SELECT value FROM sync_meta WHERE key = 'shiny'", [], |r| r.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?
-            .flatten();
-        match s {
-            Some(v) => Ok(v),
-            None => Ok("null".to_string()),
-        }
-    }
-
-    fn mobile_link_feedback(a: String, b: String, verdict: String, idea: String) -> Result<String, String> {
-        let conn = open_lib()?;
-        // write row
-        let first = if a < b { a.clone() } else { b.clone() };
-        let second = if a < b { b.clone() } else { a.clone() };
-        let pair = format!("{}|{}", first, second);
-        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
-        conn.execute(
-            "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at) VALUES (?1,?2,?3,?4)",
-            rusqlite::params![pair, verdict.clone(), idea, now.clone()],
-        ).map_err(|e| e.to_string())?;
-        if verdict == "no" {
-            conn.execute(
-                "DELETE FROM related WHERE (artifact_id = ?1 AND related_id = ?2) OR (artifact_id = ?2 AND related_id = ?1)",
-                rusqlite::params![a, b],
-            ).map_err(|e| e.to_string())?;
-        }
-        // bump updated_at for both
-        conn.execute("UPDATE artifacts SET updated_at = ?1 WHERE id = ?2", rusqlite::params![now.clone(), a]).map_err(|e| e.to_string())?;
-        conn.execute("UPDATE artifacts SET updated_at = ?1 WHERE id = ?2", rusqlite::params![now, b]).map_err(|e| e.to_string())?;
-        // queue both for push
-        queue_mutation_push(&a);
-        queue_mutation_push(&b);
-        Ok("{}".to_string())
-    }
-
     fn mobile_status() -> Result<String, String> {
         let saved = load_config()?;
         let sample = saved.as_ref().is_some_and(is_sample);
@@ -860,6 +821,31 @@ mod mobile {
         let conn = open_lib()?;
         let rows = crate::sync::related_for(&conn, &id).map_err(|e| e.to_string())?;
         Ok(serde_json::to_string(&rows).unwrap_or_default())
+    }
+
+    /// The day's Something shiny sets the Mac sent (`lib/shiny.enc`), or null.
+    #[tauri::command]
+    fn mobile_shiny() -> Result<String, String> {
+        let conn = open_lib()?;
+        let value: Option<String> = conn
+            .query_row("SELECT value FROM sync_meta WHERE key = 'shiny'", [], |r| r.get(0))
+            .ok();
+        Ok(value.unwrap_or_else(|| "null".to_string()))
+    }
+
+    /// The person's ruling on a pair of related items: "keep" or "no".
+    #[tauri::command]
+    fn mobile_link_feedback(
+        a: String,
+        b: String,
+        verdict: String,
+        idea: String,
+    ) -> Result<String, String> {
+        let conn = open_lib()?;
+        crate::sync::link_feedback_local(&conn, &a, &b, &verdict, &idea)?;
+        queue_mutation_push(&conn, &a, "link_feedback")?;
+        queue_mutation_push(&conn, &b, "link_feedback")?;
+        Ok("{}".to_string())
     }
 
     /// Keyword search over the synced library (MOB.6).

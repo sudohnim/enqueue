@@ -68,3 +68,27 @@ def test_refusing_a_link_removes_it_and_keeping_puts_it_first(store):
         assert related.refused(conn, "a") == {"b"}
     finally:
         conn.close()
+
+
+def test_an_items_links_ride_its_snapshot_and_a_local_one_sends_none(store):
+    from enqueue.sync import snapshot
+
+    for aid in ("a", "b"):
+        _note(aid)
+    _link("a", "b")
+    conn = db.get_conn()
+    try:
+        layers = snapshot.derived_layers(conn, "a")
+        assert {(r["artifact_id"], r["related_id"]) for r in layers["related"]} == {
+            ("a", "b"),
+            ("b", "a"),
+        }
+        conn.execute("DELETE FROM related")
+        snapshot._apply_derived_layers(
+            conn, "a", {"artifact": {"id": "a", "updated_at": db.now()}, **layers}, False
+        )
+        assert conn.execute("SELECT COUNT(*) FROM related WHERE owner = 'a'").fetchone()[0] == 2
+        conn.execute("UPDATE artifacts SET local_only = 1 WHERE id = 'a'")
+        assert snapshot.derived_layers(conn, "a")["related"] == []
+    finally:
+        conn.close()

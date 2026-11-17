@@ -799,11 +799,8 @@ def pull_keyring() -> bool:
 
 
 def push_shiny() -> None:
-    """PUT the day's Something shiny sets to the relay as `lib/shiny.enc`."""
-    import json
-    from datetime import datetime, timezone
-
-    from .. import db
+    """PUT the day's Something shiny sets to the relay as `lib/shiny.enc` (shiny.phone_sets)."""
+    from .. import shiny
 
     url = _relay_url()
     if not url:
@@ -812,44 +809,9 @@ def push_shiny() -> None:
     dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
     if dek is None:
         return
-
-    day = datetime.now(timezone.utc).date().isoformat()
-    conn = db.get_conn()
-    try:
-        row = conn.execute(
-            "SELECT value FROM derived_values WHERE scope = 'shiny_day' AND subject = ?"
-            " AND attribute = 'sets' AND source = 'model'",
-            (day,),
-        ).fetchone()
-    finally:
-        conn.close()
-    if row is None:
+    body = shiny.phone_sets()
+    if body is None:
         return
-    try:
-        sets = json.loads(row["value"])
-    except (ValueError, TypeError):
-        return
-    # Leave out sets holding a local-only or vaulted artifact.
-    filtered = []
-    for s in sets or []:
-        ids = s.get("ids") if isinstance(s, dict) else None
-        if not ids:
-            continue
-        conn = db.get_conn()
-        try:
-            local = any(
-                conn.execute(
-                    "SELECT local_only FROM artifacts WHERE id = ? AND (local_only = 1 OR vaulted_at IS NOT NULL)",
-                    (i,),
-                ).fetchone()
-                for i in ids
-            )
-        finally:
-            conn.close()
-        if local:
-            continue
-        filtered.append(s)
-    body = {"day": day, "sets": filtered, "updated_at": db.now()}
     data = crypto.seal_payload(serialize(body), dek)
     headers = {
         "Authorization": f"Bearer {_secret()}",

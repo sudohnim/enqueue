@@ -251,28 +251,6 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
 
     let share = get_share(conn, artifact_id)?;
 
-    let mut rels = Vec::new();
-    {
-        let mut rstmt = conn.prepare(
-            "SELECT artifact_id,related_id,owner,score,via,point,kind,distance FROM related WHERE owner = ?1",
-        ).map_err(|e| e.to_string())?;
-        let rrows = rstmt.query_map([artifact_id], |r| {
-            Ok(serde_json::json!({
-                "artifact_id": r.get::<_, String>(0)?,
-                "related_id": r.get::<_, String>(1)?,
-                "owner": r.get::<_, Option<String>>(2)?,
-                "score": r.get::<_, Option<f64>>(3)?,
-                "via": r.get::<_, Option<String>>(4)?,
-                "point": r.get::<_, Option<String>>(5)?,
-                "kind": r.get::<_, Option<String>>(6)?,
-                "distance": r.get::<_, Option<f64>>(7)?,
-            }))
-        }).map_err(|e| e.to_string())?;
-        for row in rrows {
-            rels.push(row.map_err(|e| e.to_string())?);
-        }
-    }
-
     let mut lfs = Vec::new();
     {
         let mut lstmt = conn.prepare(
@@ -301,7 +279,6 @@ pub fn build_snapshot(conn: &Connection, artifact_id: &str) -> Result<Option<Val
         // Facets ride the snapshot so a facet edited on the phone reaches the desktop.
         // Full columns, so the desktop stores them faithfully.
         "facets": facets,
-        "related": rels,
         "link_feedback": lfs,
     })))
 }
@@ -2156,20 +2133,17 @@ pub fn search_fts(conn: &Connection, terms: &[String], all: bool) -> Result<Vec<
     Ok(out)
 }
 
+/// Live items related to one, in the desktop's order: same subject by score, then
+/// the same idea from the farthest field first, then shared names. At most five.
 pub fn related_for(conn: &Connection, artifact_id: &str) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT a.id, a.title, a.kind, a.updated_at, r.link, r.point, r.via \
+            "SELECT a.id, a.title, a.kind, a.updated_at, r.kind, r.point, r.via, \
+             coalesce(r.score, 0), coalesce(r.distance, 0) \
              FROM related r JOIN artifacts a ON a.id = r.related_id \
-             WHERE r.artifact_id = ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
-        )
-        .map_err(|e| e.to_string())?;
-    // Actually use r.kind as link
-    let mut stmt = conn
-        .prepare(
-            "SELECT a.id, a.title, a.kind, a.updated_at, r.kind, r.point, r.via \
-             FROM related r JOIN artifacts a ON a.id = r.related_id \
-             WHERE r.artifact_id = ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
+             WHERE r.artifact_id = ?1 AND a.deleted_at IS NULL AND a.vaulted_at IS NULL \
+             ORDER BY CASE r.kind WHEN 'subject' THEN 0 WHEN 'idea' THEN 1 ELSE 2 END, \
+             CASE r.kind WHEN 'idea' THEN -coalesce(r.distance, 0) ELSE -coalesce(r.score, 0) END",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
@@ -2185,11 +2159,46 @@ pub fn related_for(conn: &Connection, artifact_id: &str) -> Result<Vec<Value>, S
             }))
         })
         .map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r.map_err(|e| e.to_string())?);
+    let mut out: Vec<Value> = Vec::new();
+    for row in rows {
+        let row = row.map_err(|e| e.to_string())?;
+        if !out.iter().any(|x| x["id"] == row["id"]) {
+            out.push(row);
+        }
     }
+    out.truncate(5);
     Ok(out)
+}
+
+/// Record the person's ruling on a pair, as the desktop's `related.feedback` does:
+/// "no" removes the pair's links. Both items' dates move so the ruling syncs.
+pub fn link_feedback_local(
+    conn: &Connection,
+    a: &str,
+    b: &str,
+    verdict: &str,
+    idea: &str,
+) -> Result<(), String> {
+    if verdict != "keep" && verdict != "no" {
+        return Err("verdict must be keep or no".to_string());
+    }
+    let (first, second) = if a < b { (a, b) } else { (b, a) };
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string();
+    conn.execute(
+        "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at) \
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![format!("{first}|{second}"), verdict, idea, now],
+    )
+    .map_err(|e| e.to_string())?;
+    if verdict == "no" {
+        conn.execute(
+            "DELETE FROM related WHERE (artifact_id = ?1 AND related_id = ?2) \
+             OR (artifact_id = ?2 AND related_id = ?1)",
+            rusqlite::params![a, b],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn search_artifacts(conn: &Connection, query: &str) -> Result<Vec<Value>, String> {
@@ -2626,6 +2635,91 @@ pub fn approval_for(public_key_b64: &str, dek: &[u8]) -> Result<String, String> 
 
 #[cfg(test)]
 mod tests {
+    fn indexed_note(conn: &Connection, id: &str, title: &str, body: &str) {
+        let snap: Value = serde_json::from_str(&format!(
+            r#"{{
+              "artifact": {{"id":"{id}","kind":"pdf","title":"{title}","body":"{body}",
+                "source_url":null,"content_hash":null,"mime":null,"filename":null,
+                "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+                "local_only":0,"status":"ok","pinned":0,"deleted_at":null,"pages":null,
+                "title_explicit":0,"_device_id":"d1"}},
+              "annotations": [], "versions": [],
+              "page_text": [{{"page": 0, "text": "the kiln schedule for {id}"}}]
+            }}"#
+        ))
+        .unwrap();
+        apply_snapshot(conn, &snap).unwrap();
+    }
+
+    fn fts_ids(conn: &Connection, q: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT artifact_id FROM fts_items WHERE fts_items MATCH ?1 ORDER BY artifact_id")
+            .unwrap();
+        stmt.query_map([q], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn the_keyword_index_follows_writes_and_leaves_the_trash_out() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        indexed_note(&conn, "p1", "Pottery", "");
+        assert_eq!(fts_ids(&conn, "kiln"), vec!["p1".to_string()]);
+        conn.execute("UPDATE artifacts SET deleted_at = '2026-01-02' WHERE id = 'p1'", [])
+            .unwrap();
+        assert!(fts_ids(&conn, "kiln").is_empty());
+    }
+
+    #[test]
+    fn a_library_from_before_the_index_is_filled_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        indexed_note(&conn, "p1", "Pottery", "");
+        conn.execute("DELETE FROM fts_items", []).unwrap();
+        conn.execute("DELETE FROM sync_meta WHERE key = 'fts_items_built'", []).unwrap();
+        init_schema(&conn).unwrap();
+        assert_eq!(fts_ids(&conn, "kiln"), vec!["p1".to_string()]);
+    }
+
+    #[test]
+    fn phone_search_finds_pdf_text_and_puts_a_title_first() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        indexed_note(&conn, "p1", "Glazes", "a note on glazes");
+        indexed_note(&conn, "p2", "Kiln log", "");
+        let hits = search_artifacts(&conn, "kiln").unwrap();
+        let ids: Vec<&str> = hits.iter().map(|h| h["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p2", "p1"], "a title match ranks above page text");
+        assert!(hits[0]["snippet"].is_string());
+    }
+
+    #[test]
+    fn related_rows_show_live_items_and_a_refusal_removes_them() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        for id in ["a", "b", "c"] {
+            indexed_note(&conn, id, id, "");
+        }
+        conn.execute("UPDATE artifacts SET deleted_at = '2026-01-02' WHERE id = 'c'", [])
+            .unwrap();
+        for other in ["b", "c"] {
+            conn.execute(
+                "INSERT INTO related (artifact_id, related_id, owner, score, kind) \
+                 VALUES ('a', ?1, 'a', 0.8, 'idea')",
+                [other],
+            )
+            .unwrap();
+        }
+        let rows = related_for(&conn, "a").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], "b");
+        assert!(link_feedback_local(&conn, "a", "b", "maybe", "").is_err());
+        link_feedback_local(&conn, "a", "b", "no", "Both x.").unwrap();
+        assert!(related_for(&conn, "a").unwrap().is_empty());
+        let snap = build_snapshot(&conn, "a").unwrap().unwrap();
+        assert_eq!(snap["link_feedback"].as_array().unwrap().len(), 1);
+        assert!(snap.get("related").is_none(), "the phone never sends links back");
+    }
+
     #[test]
     fn the_database_build_has_fts5() {
         let conn = Connection::open_in_memory().unwrap();

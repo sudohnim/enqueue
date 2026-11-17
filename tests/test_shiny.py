@@ -473,3 +473,18 @@ def test_candidates_share_an_idea_from_a_far_subject(store, monkeypatch):
 
     assert "war" in found
     assert "twin" not in found  # the same subject is no surprise
+
+
+def test_the_phone_gets_the_days_sets_with_their_words_and_no_local_note(store, writer):
+    for aid in "abcd":
+        _note(aid, f"Subject {aid}.")
+    _note("e", "Subject e.", local_only=True)
+    _link("a", "b", "idea", 0.9, point="Both one.")
+    _link("c", "e", "idea", 0.8, point="Both two.")
+    shiny.today(TODAY, 0, background=False)
+
+    body = shiny.phone_sets(TODAY)
+
+    assert [s["ids"] for s in body["sets"]] == [["a", "b"]]
+    assert body["sets"][0]["food"]["idea"] == "Things last by bending instead of holding firm."
+    assert body["day"] == TODAY.isoformat()

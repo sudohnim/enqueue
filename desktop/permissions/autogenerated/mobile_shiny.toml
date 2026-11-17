@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-mobile-shiny"
+description = "Enables the mobile_shiny command without any pre-configured scope."
+commands.allow = ["mobile_shiny"]
+
+[[permission]]
+identifier = "deny-mobile-shiny"
+description = "Denies the mobile_shiny command without any pre-configured scope."
+commands.deny = ["mobile_shiny"]
