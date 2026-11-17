@@ -2321,7 +2321,9 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Test: a chat with one place round-trips through read and apply into a second store. Applying a snapshot with no `places` key keeps the rows.
   - Check: `uv run pytest tests/test_snapshot.py tests/test_sync.py -q`
 
-- [ ] **A5. The reader can open at a place**
+- [x] **A5. The reader can open at a place** (claimed: Big Pickle, 2026-11-17)
+  Done: src/enqueue/static/js/artifact.js; bin/verify: all checks passed
+  - Owed: device check - in the page console run `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})`; the PDF scrolls to page 3 and the words are marked.
   - Needs: none
   - Files: `static/js/artifact.js` (new functions, and one call at the end of `showArtifact`)
   - Find: `grep -n 'async function showArtifact\|async function openFind\|function showFindHit\|function openArtifact' src/enqueue/static/js/artifact.js`. Read `openFind` whole: it shows how the find field in the pill gets its text and how a search inside the item starts.

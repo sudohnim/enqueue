@@ -548,6 +548,8 @@
   }
 
   let ctx = null;
+  // A place to open when the next artifact draw lands.
+  let openAt = null;
   // The item whose next draw lists every related note ("Show all").
   let relatedAllFor = null;
   // A pending re-look at a link's preview. Held at module scope so leaving the screen
@@ -1277,6 +1279,16 @@
     else window.scrollTo(0, 0);
     const now = document.getElementById("body");
     if (now && noteScroll) now.scrollTop = noteScroll;
+    const place = openAt && openAt.id === id ? openAt : null;
+    if (place) {
+      openAt = null;
+      if (typeof place.page === "number") {
+        const leaf = document.querySelector('.leaf[data-page="' + place.page + '"]');
+        if (leaf) leaf.scrollIntoView({ block: "start" });
+      }
+      const words = String(place.quote || "").trim().split(/\s+/).filter(Boolean);
+      if (words.length >= 3) openFind(words.slice(0, 6).join(" "));
+    }
   }
 
   function drawerOpen() {
@@ -1926,7 +1938,14 @@
   // else is real text on the page and is searched where it stands.
   let findState = null;
 
-  async function openFind() {
+  // Open an item at a place: a PDF page (counted from 0) and the first words of
+  // a passage, which the find field then marks.
+  function openArtifactAt(id, place, source) {
+    openAt = { id, page: place && place.page, quote: (place && place.quote) || "" };
+    openArtifact(id, source || "chat");
+  }
+
+  async function openFind(term) {
     if (!ctx) return false;
 
     if (!findState || findState.id !== ctx.id) {
@@ -1946,7 +1965,7 @@
 
     const field = document.getElementById("findField");
     // What is selected is what is being looked for, as in any editor.
-    const picked = String(window.getSelection() || "").trim();
+    const picked = term || String(window.getSelection() || "").trim();
     if (picked && !picked.includes("\n") && picked.length <= 80) field.value = picked;
     field.focus();
     field.select();
