@@ -20,6 +20,7 @@ Two checks close that:
 
 from __future__ import annotations
 
+from starlette.datastructures import MutableHeaders
 from urllib.parse import urlsplit
 
 from starlette.responses import PlainTextResponse
@@ -28,6 +29,19 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .. import config, extension
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+BASE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+}
+PAGE_CSP = (
+    "default-src 'self'; img-src 'self' data: blob:;"
+    " connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:;"
+    " script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+    " object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
 
 
 def _hostname(value: str) -> str:
@@ -68,4 +82,15 @@ class LocalOnlyGuard:
             )
             return
 
-        await self.app(scope, receive, send)
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in BASE_HEADERS.items():
+                    if name not in headers:
+                        headers[name] = value
+                html = headers.get("content-type", "").startswith("text/html")
+                if html and "Content-Security-Policy" not in headers:
+                    headers["Content-Security-Policy"] = PAGE_CSP
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

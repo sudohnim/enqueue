@@ -250,7 +250,8 @@ The sections of the file are in the order they were written: the tracks from the
   - Check: `uv run pytest tests/test_md_roundtrip.py -q`
   - Do not: change the link rule on the next lines.
 
-- [ ] **S2. Security headers on each engine response**
+- [x] **S2. Security headers on each engine response** (claimed: agent, 2026-11-16)
+  Done: src/enqueue/api/guard.py, tests/test_headers.py; tests pass
   - Needs: none
   - Files: `api/guard.py`, new `tests/test_headers.py`
   - Why: no engine page sends a policy. Any website can put the app in a frame, and a script fault in the page could send data to any host.
