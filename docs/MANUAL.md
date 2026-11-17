@@ -246,6 +246,7 @@ Click the **eye** and ask a question in plain words.
 - The answer is written from your own library and names the artifacts it used. Click one to open it.
 - If nothing you saved answers the question, it says so rather than guessing.
 - A question is a conversation: ask a follow-up and it keeps the thread.
+- An answer may show **p. N** beside a passage it used. Click it to open the document at that page.
 - From an open artifact, the eye asks about that one thing.
 - Conversations are kept, and sync to your phone.
 

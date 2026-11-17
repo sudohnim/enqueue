@@ -640,11 +640,12 @@ Finding: an answer lists the items it used. It does not say which page or paragr
   - Check: `bin/verify --fast`
   - Done: src/enqueue/static/mobile.html; bin/verify --fast pass
 
-- [ ] **A8. Docs for track A**
+- [x] **A8. Docs for track A** (claimed: agent, 2026-11-17)
   - Needs: A1 to A7
   - Files: `AGENTS.md`, `docs/MANUAL.md`
   - Do: in `AGENTS.md` "Chat", describe the numbered passages, `Answer.used`, `chat_places`, and that places ride the chat snapshot. Add the table to the tables list. In `docs/MANUAL.md`, say that an answer's "p. N" opens the document at that page.
   - Check: `bin/verify --fast`
+  - Done: AGENTS.md, docs/MANUAL.md, docs/PLAN.md; bin/verify: all checks passed
 
 ---
 
