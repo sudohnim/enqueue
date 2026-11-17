@@ -563,11 +563,12 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Done: static/css/artifact.css; bin/verify: all checks passed
   - Owed: device check - open the Details panel on a note with related rows; one raven shows
 
-- [ ] **U11. Docs for track U**
+- [x] **U11. Docs for track U** (claimed: agent, 2026-11-17)
   - Needs: U1 to U10
   - Files: `docs/DESIGN.md`, `AGENTS.md`
   - Do: in `docs/DESIGN.md`, state the type scale rule and the check. In `AGENTS.md`, in the row for `static/css/`, add: never write a font size in px in a stylesheet; use a `--t-*` token.
   - Check: `bin/verify --fast`
+  - Done: docs/DESIGN.md, AGENTS.md; bin/verify: all checks passed
 
 ---
 

@@ -134,6 +134,9 @@ A stylesheet uses a `--t-*` token for a font size, never a number.
 
 The px values are the sizes already on screen, so replacing a number with its token does not change how anything looks.
 
+The check is `bin/check-style --strict`, which `bin/verify --fast` runs.
+It fails on any font size written in px or font weight written as a number outside `tokens.css`, in the stylesheets and in the `<style>` blocks of the phone and capture pages.
+
 ### Principles
 
 - Size and ink make the hierarchy. Reaching for weight to make something matter is the September habit; make it larger or darker instead.
