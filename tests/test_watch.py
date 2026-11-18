@@ -27,8 +27,28 @@ def test_files_present_before_watching_are_left(store, monkeypatch):
     now = time.time()
     os.utime(old, (now - 120, now - 120))
 
-    assert watch.scan(now=now) == {"taken": 0}
+    assert watch.scan(now=now + 200) == {"taken": 0}  # the folder was added after
     assert calls == []
+
+
+def test_a_file_put_in_before_the_first_look_is_taken(store, monkeypatch):
+    folder, calls = _ready(store, monkeypatch)
+    watch.begin(now=time.time() - 300)  # the folder is added in Settings
+    pdf = folder / "moved.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    now = time.time()
+    os.utime(pdf, (now - 86400 * 30, now - 86400 * 30))  # moved in: an old modified time
+
+    assert watch.scan(now=now) == {"taken": 1}
+
+
+def test_adding_a_folder_in_settings_begins_watching_it(store, monkeypatch):
+    from enqueue import settings
+
+    folder = store / "added"
+    folder.mkdir()
+    settings.update({"watch_dirs": str(folder)})
+    assert watch._row("watch-folder", str(folder)) is not None
 
 
 def test_a_settled_pdf_written_after_the_first_scan_is_taken(store, monkeypatch):

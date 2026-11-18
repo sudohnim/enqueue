@@ -19,6 +19,9 @@
      half-built page with no word of why: the scripts below fail to parse. It shows
      what to do instead. bin/android-matrix's Android 9 emulator is what found it. -->
 <script>
+  window.__enqSyntax = (function () { var a; return a?.b ?? 1; })() === 1;
+</script>
+<script>
   (function () {
     var ok = false;
     try {
@@ -26,7 +29,7 @@
         !!window.CSS &&
         CSS.supports("color", "color-mix(in srgb, red, blue)") &&
         CSS.supports("selector(:has(*))") &&
-        new Function("var a; return a?.b ?? 1")() === 1;
+        window.__enqSyntax === true;
     } catch (e) {
       ok = false;
     }
@@ -1614,11 +1617,13 @@
   #reader_body .related-title {
     display: block;
     font-weight: var(--w-medium);
+    line-height: 1.3;
   }
   #reader_body .related-why {
     display: block;
     margin-top: 2px;
     font-size: var(--t-sm);
+    line-height: 1.4;
     color: var(--text-mute);
   }
   #reader_body .related-feedback {
@@ -5792,13 +5797,16 @@
         const arts = set.ids.map((id) => everyArt.find((a) => a.id === id));
         if (arts.some((a) => !a)) return;
         const food = set.food || {};
-        const card = document.createElement("section");
+        // A div: every <section> in this page is a full-height screen.
+        const card = document.createElement("div");
         card.id = "shiny_card";
         card.className = "shiny-card";
+        card.setAttribute("role", "region");
         card.setAttribute("aria-label", "Something shiny");
         const idea = document.createElement("div");
         idea.className = "shiny-idea";
-        idea.textContent = food.idea || "";
+        // Until the Mac's model writes the words, the link's own sentence, as on the Mac.
+        idea.textContent = food.idea || (set.links || []).map((l) => l.point).find(Boolean) || "";
         card.appendChild(idea);
         arts.forEach((a) => {
           const row = document.createElement("button");
@@ -6135,8 +6143,11 @@
         const rows = parse(raw) || [];
         const body = document.getElementById("reader_body");
         if (!rows.length || !body) return;
-        const section = document.createElement("section");
+        // A div: every <section> in this page is a full-height screen with its padding.
+        const section = document.createElement("div");
         section.className = "related";
+        section.setAttribute("role", "region");
+        section.setAttribute("aria-label", "Related");
         section.setAttribute("aria-label", "Related");
         const group = (label, list, why, feedback) => {
           if (!list.length) return;

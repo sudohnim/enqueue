@@ -488,3 +488,17 @@ def test_the_phone_gets_the_days_sets_with_their_words_and_no_local_note(store, 
     assert [s["ids"] for s in body["sets"]] == [["a", "b"]]
     assert body["sets"][0]["food"]["idea"] == "Things last by bending instead of holding firm."
     assert body["day"] == TODAY.isoformat()
+
+
+def test_the_phone_gets_the_sets_whoever_chose_them(store, monkeypatch):
+    import threading
+
+    from enqueue.sync import client as sync_client
+
+    pushed = threading.Event()
+    monkeypatch.setattr(sync_client, "push_shiny", pushed.set)
+    for aid in "ab":
+        _note(aid)
+    _link("a", "b", "idea", 0.6, point="Both say bending outlasts resisting.")
+    shiny.pick(TODAY)  # the wall asked first, before prepare's beat
+    assert pushed.wait(5)

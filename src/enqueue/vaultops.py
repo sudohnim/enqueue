@@ -321,6 +321,23 @@ def _drop_from_index(artifact_id: str) -> None:
         store.drop_artifact(store.SECTIONS, artifact_id)
 
 
+def _fetch_original(artifact_id: str) -> None:
+    """An original on the relay only comes back first, so the vault can seal it."""
+    from . import blobstore
+    from .sync.client import fetch_blob_to_cache
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT content_hash, vaulted_at FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row and row["content_hash"] and not row["vaulted_at"]:
+        if not blobstore.exists(row["content_hash"]):
+            fetch_blob_to_cache(row["content_hash"])
+
+
 def vault_artifact(artifact_id: str) -> dict:
     """Encrypt the artifact's content at rest and take it out of every live view."""
     key = vault.key()  # raises VaultError if locked
@@ -328,6 +345,7 @@ def vault_artifact(artifact_id: str) -> dict:
 
     share.forget_later(artifact_id)
     now = db.now()
+    _fetch_original(artifact_id)
     # Index rows are found only through their chunk/facet ids, so they go before the rows do.
     _drop_from_index(artifact_id)
     with db.transaction() as conn:

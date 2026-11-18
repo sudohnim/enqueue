@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from enqueue import api, assistant, chats, db, notes
+from enqueue import api, assistant, chats, db, notes, trash
 from enqueue.schemas import Answer, AssistantRoute, ChatTitle, ChatTopics
 
 
@@ -1063,6 +1063,19 @@ class TestSaveAnswerAsNote:
         assert "[P1]" not in body
         assert "- Joints" in body
         assert "- Hulls" in body
+
+        trash.delete(b["artifact"]["id"])
+        assert "- Hulls" not in chats.answer_as_note(chat_id, answer_id)["artifact"]["body"]
+
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO derived_values (scope, subject, attribute, value, grounded,"
+                " source, model_version, created_at) VALUES ('vault_answer', ?, 'x', 'y',"
+                " 1, 'user', '', '2099-01-01')",
+                (answer_id,),
+            )
+        with pytest.raises(KeyError):
+            chats.answer_as_note(chat_id, answer_id)
 
     def test_unknown_answer_answers_404(self, store):
         client = TestClient(api.app)

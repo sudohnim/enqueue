@@ -311,7 +311,6 @@ The panel draws these in five named groups, in this order: **Same subject** (the
 **Named in** holds live notes whose text uses this note's title; **You asked about both** holds notes an answer cited alongside this one.
 Those two groups need no stored link and do not count toward the five.
 **Show all** opens every stored row when there are more than five.
-A final group, **Close passages**, sits at the foot and holds passages in other notes that say something near to a passage here.
 **More like this**, beside the Related heading, runs a live search from the artifact and shows the closest other items as a results list.
 
 On a same-idea row, **Keep** moves the pair to the top and marks it Kept.
@@ -324,7 +323,7 @@ Each pair is judged once and remembered.
 Judging runs quietly in the background, at most 40 notes a day, so it can never use up your model allowance; a whole library is worked through over several days.
 An artifact marked local-only is only ever judged by the model on your computer.
 Click a related artifact to open it.
-On the phone, the reader shows the same three kinds of link under your note; tap one to open it. On a same-idea row there, **Keep** and **Not the same** work too, and sync back to the Mac. The other groups and **Close passages** are on the desktop only.
+On the phone, the reader shows the same three kinds of link under your note; tap one to open it. On a same-idea row there, **Keep** and **Not the same** work too, and sync back to the Mac. The other groups are on the desktop only.
 
 ## Tags and views
 

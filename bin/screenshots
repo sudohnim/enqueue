@@ -37,7 +37,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 # Keychain. A small local model writes weak summaries slowly, so the search, ask and
 # summary shots are only worth keeping from a capable one: set ENQ_DEMO_BACKEND (and
 # ENQ_DEMO_MODEL, plus ENQ_LLM_API_KEY / ENQ_LLM_HEADERS for a hosted backend) to use it.
-os.environ["ENQ_LLM_BACKEND"] = os.environ.get("ENQ_DEMO_BACKEND", "ollama")
+os.environ["ENQ_LLM_BACKEND"] = os.environ.get("ENQ_DEMO_BACKEND", "local")
 os.environ["ENQ_LLM_MODEL"] = os.environ.get("ENQ_DEMO_MODEL", "qwen2.5-coder:7b")
 os.environ.setdefault("ENQ_LLM_API_KEY", "ollama")
 os.environ.pop("ENQ_SUMMARIZE_MODEL", None)

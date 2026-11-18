@@ -546,7 +546,42 @@ fn lww_key(snapshot: &Value) -> (String, String) {
 
 /// The artifacts read-copy schema, mirroring the desktop's final migrations (0001
 /// baseline + pinned/deleted_at/pages/title_explicit/_device_id).
+/// An older clear_library emptied the keyword index's own tables, and FTS5 cannot open
+/// a table without them: every write to an item failed. Drop the broken index before
+/// anything touches it; init_schema makes it again and fills it from the items.
+fn heal_keyword_index(conn: &Connection) -> Result<(), String> {
+    let shadow: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'fts_items_config'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if shadow == 0 {
+        return Ok(());
+    }
+    let whole: i64 = conn
+        .query_row(
+            "SELECT (SELECT count(*) FROM fts_items_config WHERE k = 'version') \
+                  * (SELECT count(*) FROM fts_items_data WHERE id = 10)",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if whole > 0 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "INSERT OR REPLACE INTO fts_items_config (k, v) VALUES ('version', 4);
+         INSERT OR REPLACE INTO fts_items_data (id, block) VALUES (10, X'000000000000');
+         DROP TABLE fts_items;
+         DELETE FROM sync_meta WHERE key = 'fts_items_built';",
+    )
+    .map_err(|e| e.to_string())
+}
+
 pub fn init_schema(conn: &Connection) -> Result<(), String> {
+    heal_keyword_index(conn)?;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS artifacts (
@@ -2700,6 +2735,45 @@ mod tests {
         conn.execute("DELETE FROM sync_meta WHERE key = 'fts_items_built'", []).unwrap();
         init_schema(&conn).unwrap();
         assert_eq!(fts_ids(&conn, "kiln"), vec!["p1".to_string()]);
+    }
+
+    #[test]
+    fn an_index_emptied_by_an_old_clear_heals_and_takes_new_items() {
+        heal_case("bare", false);
+    }
+
+    #[test]
+    fn an_index_half_mended_by_an_earlier_build_heals_too() {
+        heal_case("half", true);
+    }
+
+    fn heal_case(tag: &str, version_back: bool) {
+        // A file, closed and opened again: a live connection keeps the index open.
+        let path = std::env::temp_dir().join(format!("enq-fts-{tag}-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let conn = Connection::open(&path).unwrap();
+        init_schema(&conn).unwrap();
+        indexed_note(&conn, "p1", "Pottery", "");
+        // What clear_library did before: every table emptied, the index's own too.
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for t in tables {
+            let _ = conn.execute(&format!("DELETE FROM \"{t}\""), []);
+        }
+        if version_back {
+            conn.execute("INSERT INTO fts_items_config (k, v) VALUES ('version', 4)", [])
+                .unwrap();
+        }
+        drop(conn);
+        let conn = Connection::open(&path).unwrap();
+        init_schema(&conn).unwrap();
+        indexed_note(&conn, "p2", "Kiln log", "");
+        assert_eq!(fts_ids(&conn, "kiln"), vec!["p2".to_string()]);
     }
 
     #[test]

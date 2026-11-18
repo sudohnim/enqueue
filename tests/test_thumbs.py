@@ -65,3 +65,18 @@ def test_drop_removes_the_thumb(store):
     assert thumbs.make(artifact_id) is True
     thumbs.drop(artifact_id)
     assert thumbs.get(artifact_id) is None
+
+
+def test_purge_removes_the_thumb_file(store):
+    from enqueue import trash
+
+    artifact_id = _seed(store)
+    assert thumbs.make(artifact_id) is True
+    conn = db.get_conn()
+    digest = conn.execute(
+        "SELECT content_hash FROM thumbs WHERE artifact_id = ?", (artifact_id,)
+    ).fetchone()[0]
+    conn.close()
+    trash.delete(artifact_id)
+    trash.purge(artifact_id)
+    assert not blobstore.exists(digest)

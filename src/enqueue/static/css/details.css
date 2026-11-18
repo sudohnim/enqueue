@@ -675,33 +675,6 @@
   white-space: pre-wrap;
 }
 
-/* ---- passages that connect ----------------------------------------------------
-   A passage's opening words set as a quotation, then the notes it echoes as chips. */
-.dpanel .connection + .connection {
-  margin-top: var(--sp-4);
-}
-.dpanel .connection-excerpt {
-  margin-bottom: var(--sp-2);
-  padding-left: var(--sp-3);
-  box-shadow: inset 1px 0 0 var(--line-strong);
-  font-size: var(--t-sm);
-  line-height: 19px;
-  color: var(--text-dim);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.dpanel .relatedchip {
-  /* A note a passage echoes: the chip's shape with no x, and a button. */
-  padding: 0 12px;
-  cursor: pointer;
-  text-align: left;
-}
-.dpanel .relatedchip:hover {
-  color: var(--accent-text);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .dpanel-perch,
   .dpanel .dsec,

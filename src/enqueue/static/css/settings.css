@@ -920,7 +920,8 @@
     .settings-page .field > .keyrow,
     .settings-page .field > .recorder,
     .settings-page .field > .btn,
-    .settings-page .field > .actions {
+    .settings-page .field > .actions,
+    .settings-page .field > .watchdirs {
       grid-column: 1;
       grid-row: auto;
       justify-self: start;
@@ -962,6 +963,31 @@
     font-family: var(--mono);
     font-size: var(--t-sm);
     word-break: break-all;
+  }
+  /* The watched folders and the way to add one share the control column. */
+  .settings-page .field > .watchdirs {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    justify-self: end;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--sp-2);
+    min-width: 0;
+    max-width: 360px;
+  }
+  .settings-page .watchdirs .keyrow {
+    flex-wrap: nowrap;
+    max-width: 100%;
+  }
+  .settings-page .watchdirs .aside.path {
+    min-width: 0;
+    word-break: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* The folder's own name is at the end; keep that end in view. */
+    direction: rtl;
   }
   .settings-page .field > .kit-view {
     grid-column: 1;

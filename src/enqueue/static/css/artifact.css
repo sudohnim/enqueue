@@ -222,7 +222,8 @@
     transition: left 260ms var(--ease);
   }
   #view:has(> .drawer.open) > .pagecol {
-    left: calc(-1 * clamp(0px, 780px - 50vw, 50vw - 376px));
+    /* It stops 24px short of the window's edge: text never touches the glass. */
+    left: calc(-1 * clamp(0px, 780px - 50vw, 50vw - 400px));
   }
   @media (max-width: 768px) {
     /* The pill sits bottom centre and the panel now spans the window: stop above it. */
@@ -303,8 +304,15 @@
     justify-content: flex-start;
     gap: var(--sp-3);
   }
-  .related-head .shelf {
+  .related-head .shelf,
+  .related-head .related-all {
     margin: 0 0 var(--sp-2);
+  }
+  /* "More like this" sits at the row's far end, the raven stays by the heading. */
+  .related-head .related-all {
+    order: 1;
+    margin-left: auto;
+    line-height: 16px;
   }
   .related-raven {
     /* raven-scroll.png, 264 x 295. */

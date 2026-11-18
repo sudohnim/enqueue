@@ -357,7 +357,10 @@ function placeClick(e) {
 	const bubble = btn.closest(".turn[data-mid]");
 	const msg = chat && (chat.messages || []).find((m) => m.id === (bubble && bubble.dataset.mid));
 	const place = msg && (msg.places || []).find((p) => String(p.n) === btn.dataset.n);
-	if (place) openArtifactAt(place.artifact_id, place, "chat");
+	if (!place) return;
+	// The panel covers half the page; the passage it points at must be in view.
+	closeEye();
+	openArtifactAt(place.artifact_id, place, "chat");
 }
 
 function renderChat(d) {

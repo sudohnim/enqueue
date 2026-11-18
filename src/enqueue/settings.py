@@ -357,6 +357,10 @@ def update(changes: dict) -> dict:
         from . import backup
 
         backup.run_soon("folder chosen")
+    if "watch_dirs" in changes:
+        from . import watch
+
+        watch.begin()
     if set(changes) & _PROVIDER_FIELDS:
         from .providers import pause
 

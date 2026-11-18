@@ -158,3 +158,14 @@ def test_a_used_library_in_the_new_place_still_blocks_the_move(tmp_path):
 
     with pytest.raises(datadir.BothHoldLibraries):
         datadir.move_legacy(old, new)
+
+
+def test_a_named_data_folder_never_takes_the_real_library(tmp_path, monkeypatch):
+    old = tmp_path / "Application Support" / "Enqueue"
+    old.mkdir(parents=True)
+    (old / "enqueue.db").write_text("real")
+    monkeypatch.setattr(datadir, "FORMER", [old])
+    monkeypatch.setattr(datadir.config, "DATA_DIR", tmp_path / "scratch")
+    monkeypatch.setenv("ENQ_DATA_DIR", str(tmp_path / "scratch"))
+    assert datadir.move_legacy() == ""
+    assert (old / "enqueue.db").read_text() == "real"

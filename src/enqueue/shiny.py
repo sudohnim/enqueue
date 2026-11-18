@@ -193,6 +193,17 @@ def _keep(day: str, sets: list) -> None:
             " VALUES ('shiny_day', ?, 'sets', ?, 1, 'model', '', ?)",
             (day, json.dumps(sets), db.now()),
         )
+    # Whoever chose the sets (the wall, Look again, prepare), the phone gets them too.
+    threading.Thread(target=_push_quietly, name="shiny-push", daemon=True).start()
+
+
+def _push_quietly() -> None:
+    try:
+        from .sync import client as sync_client
+
+        sync_client.push_shiny()
+    except Exception:  # noqa: BLE001 - the phone tries again tomorrow
+        log.info("could not send the day's card to the relay", exc_info=True)
 
 
 def _live(conn, ids: list[str]) -> set[str]:

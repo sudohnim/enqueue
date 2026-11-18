@@ -1347,9 +1347,9 @@ async function renderMoveSection(d) {
 			(p) =>
 				'<div class="keyrow"><span class="aside path" title="' +
 				esc(p) +
-				'">' +
+				'"><bdi>' +
 				esc(p) +
-				'</span><button class="btn tertiary" onclick="removeWatchDir(' +
+				'</bdi></span><button class="btn tertiary" onclick="removeWatchDir(' +
 				esc(JSON.stringify(p)) +
 				')">Remove</button></div>',
 		)
@@ -1361,14 +1361,15 @@ async function renderMoveSection(d) {
 			'<button class="btn tertiary" onclick="addWatchDir(document.getElementById(\'watch_dir_input\').value)">' +
 			"Add a folder</button></div>";
 	html +=
-		'<div class="shelf">From this Mac</div><div class="group">' +
+		'<div class="shelf" id="fromThisMac">From this Mac</div><div class="group">' +
 		apple +
 		'<div class="field"><span class="rowlabel">New files in a folder</span>' +
 		'<div class="aside">Each new PDF, picture and text file in these folders is kept. ' +
 		"Files that are there now stay as they are.</div>" +
+		'<div class="watchdirs">' +
 		dirRows +
 		addDir +
-		"</div>" +
+		"</div></div>" +
 		'<div class="field"><span class="rowlabel">Bookmarks and Kindle</span>' +
 		'<div class="aside">Bookmarks: export them from your browser, then choose the file with Import. ' +
 		'Kindle: choose the file "My Clippings.txt" with Import.</div></div></div>';

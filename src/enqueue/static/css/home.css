@@ -203,6 +203,10 @@
 	padding-bottom: 22px;
 	isolation: isolate;
 }
+/* 50vw counts the scroll bar; the band must not scroll the page sideways. */
+#view {
+	overflow-x: clip;
+}
 .homehead::before {
 	content: "";
 	position: absolute;

@@ -149,8 +149,9 @@ def _prune_stale(root: Path, previous: dict | None, referenced: set[str]) -> lis
     return pruned
 
 
-def export(directory: str | Path) -> dict:
-    """Write the whole library as plain files. Idempotent; returns a summary."""
+def export(directory: str | Path, local_only: bool = True) -> dict:
+    """Write the whole library as plain files. Idempotent; returns a summary.
+    With `local_only` False, items kept only on this Mac are left out."""
     root = Path(directory)
     artifacts_dir = root / "artifacts"
     files_dir = root / "files"
@@ -160,7 +161,10 @@ def export(directory: str | Path) -> dict:
     conn = db.get_conn()
     try:
         artifacts = conn.execute(
-            "SELECT * FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL ORDER BY created_at, id"
+            "SELECT * FROM artifacts WHERE deleted_at IS NULL AND vaulted_at IS NULL"
+            " AND embedded_at IS NULL"
+            + ("" if local_only else " AND local_only = 0")
+            + " ORDER BY created_at, id"
         ).fetchall()
         annotations = conn.execute(
             "SELECT id, artifact_id, supersedes_id, text, created_at FROM annotations"
@@ -226,6 +230,10 @@ def export(directory: str | Path) -> dict:
                 # The export is the person's own readable copy: the plaintext.
                 if _copy_blob(row["content_hash"], root / copy_rel):
                     copied.append(copy_rel)
+                referenced.add(copy_rel)
+                manifest["artifacts"][aid]["copy"] = copy_rel
+            elif (root / copy_rel).exists():
+                # The original left this Mac for the relay; keep the copy written before.
                 referenced.add(copy_rel)
                 manifest["artifacts"][aid]["copy"] = copy_rel
             else:

@@ -54,15 +54,19 @@ def test_export_daily_leaves_vaulted_items_out(store, quiet_queue):
     assert "Hidden" not in text
 
 
-def test_export_daily_leaves_local_only_items_out(store, quiet_queue):
+def test_export_daily_leaves_local_only_items_out(store, quiet_queue, monkeypatch):
     parent = store / "drive"
     parent.mkdir()
     _set_dir(parent)
     notes.create("# Shared\n\nKept.")
     notes.create("# Private\n\nOnly here.", local_only=True)
+    written = []
+    real_put = export._put
+    monkeypatch.setattr(export, "_put", lambda t, s: written.append(s) or real_put(t, s))
 
     backup.export_daily()
 
+    assert not any("Only here." in s for s in written)
     root = parent / "Enqueue"
     text = "".join(p.read_text(encoding="utf-8") for p in (root / "artifacts").iterdir())
     assert "Shared" in text

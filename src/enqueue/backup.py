@@ -490,47 +490,6 @@ def run_soon(reason: str = "manual", force: bool = True) -> None:
     ).start()
 
 
-def _hide_local_only(root: Path) -> int:
-    """Drop local-only items from the plain copy and amend its manifest and README.
-
-    export.export() writes every live item, including ones marked "only on this Mac".
-    A plain copy anyone who can open the folder can read must not carry those. The
-    manual Export keeps them; only the scheduled copy leaves them out.
-    """
-    from . import export
-
-    conn = db.get_conn()
-    try:
-        hidden = {
-            row["id"] for row in conn.execute("SELECT id FROM artifacts WHERE local_only = 1")
-        }
-    finally:
-        conn.close()
-    if not hidden:
-        return 0
-    path = root / export.MANIFEST
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return 0
-    entries = manifest.get("artifacts", {})
-    removed = 0
-    for aid in hidden:
-        entry = entries.pop(aid, None)
-        if entry is None:
-            continue
-        for rel in (entry.get("file"), entry.get("copy")):
-            if rel:
-                (root / rel).unlink(missing_ok=True)
-        removed += 1
-    if not removed:
-        return 0
-    rows = [{"id": aid, **entry} for aid, entry in entries.items()]
-    (root / "README.md").write_text(export._render_readme(rows, manifest), encoding="utf-8")
-    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return removed
-
-
 def export_daily() -> None:
     """Write the daily plain copy into <export_dir>/Enqueue when the folder exists."""
     from . import settings
@@ -545,8 +504,8 @@ def export_daily() -> None:
     from . import export
 
     root = parent / "Enqueue"
-    export.export(root)
-    _hide_local_only(root)
+    # A plain copy anyone who can open the folder can read never holds a local-only item.
+    export.export(root, local_only=False)
 
 
 def start_scheduler() -> None:

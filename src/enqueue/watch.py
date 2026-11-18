@@ -54,6 +54,13 @@ def _since(folder: Path, now: float) -> float:
     return now
 
 
+def begin(now: float | None = None) -> None:
+    """Watching a folder begins when it is added, not at the next look."""
+    now = time.time() if now is None else now
+    for folder in folders():
+        _since(folder, now)
+
+
 def scan(now: float | None = None) -> dict:
     """Take up to PER_SCAN new files. Returns how many were taken."""
     now = time.time() if now is None else now
@@ -73,7 +80,8 @@ def scan(now: float | None = None) -> dict:
                 st = f.stat()
                 if st.st_size == 0 or st.st_size > MAX_BYTES:
                     continue
-                if st.st_mtime < since or now - st.st_mtime < SETTLE_S:
+                # A file moved in keeps its old modified time; its change time is new.
+                if max(st.st_mtime, st.st_ctime) < since or now - st.st_mtime < SETTLE_S:
                     continue
                 stamp = f"{int(st.st_mtime)}:{st.st_size}"
                 row = _row("watch", str(f))

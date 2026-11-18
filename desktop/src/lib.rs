@@ -739,7 +739,11 @@ mod mobile {
     fn clear_library() -> Result<(), String> {
         let conn = open_lib()?;
         let tables: Vec<String> = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+            // A virtual table's own tables ('shadow') are emptied through it, never directly.
+            .prepare(
+                "SELECT name FROM pragma_table_list WHERE schema = 'main' \
+                 AND type IN ('table', 'virtual') AND name NOT LIKE 'sqlite_%'",
+            )
             .map_err(|e| e.to_string())?
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(|e| e.to_string())?

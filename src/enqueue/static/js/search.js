@@ -261,7 +261,9 @@
 
   // The passage cut around the lines that hold the searched words, read as sentences.
   function excerptOf(h, terms) {
-    const raw = Tabs.plain(h.text || h.snippet || "");
+    let raw = Tabs.plain(h.text || h.snippet || "");
+    // A PDF wraps its lines inside a sentence: a line that goes on in lower case joins.
+    if (h.kind === "pdf") raw = raw.replace(/([^.!?:;\n])\n(?=\p{Ll})/gu, "$1 ");
     let lines = raw
       .split("\n")
       .map((l) => mdText(l).replace(/^[•·]\s*/, "").replace(/\*\*|__/g, "").trim())
@@ -273,7 +275,9 @@
       // A first line that is the title, or opens with it ("Mesopotamia - the..."), is dropped.
       const t = h.title.toLowerCase();
       const first = lines[0].toLowerCase();
-      if (first === t) lines = lines.slice(1);
+      // A capture with no text is indexed as its title and file name: nothing to read.
+      if (first === t || /^\S+\.\w{2,5}$/.test(first.slice(t.length + 1)) && first.startsWith(t + " "))
+        lines = lines.slice(1);
       else if (first.startsWith(t) && /^\s*[-–—:]\s*/.test(lines[0].slice(t.length)))
         lines[0] = lines[0].slice(t.length).replace(/^\s*[-–—:]\s*/, "");
     }

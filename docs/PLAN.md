@@ -264,7 +264,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     3. Escape every text with `esc`.
   - Check: `bin/verify --fast`. Device: `bin/launch emulator`, open a synced note that has related notes on the Mac, and see the rows.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
-  - Owed: device check - open a synced note that has related notes on the Mac, and see the rows
+  - Checked in review (2026-11-17): emulator linked to a scratch Mac over a local relay; the rows show. The block was a <section>, so it took screen padding; now a div.
 
 - [x] **P7. The phone shows the day's card** **[device]** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
@@ -278,7 +278,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
     5. A tap on a note opens it in the reader.
   - Check: `bin/verify --fast`. Device: the emulator, linked to a Mac that shows a card today, shows the same idea.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
-  - Owed: device check - link the emulator to a Mac that shows a card today, and see the same idea on the phone
+  - Checked in review (2026-11-17): the card was a full-height <section> with no headline until the model wrote words; now a div with the link's sentence. The Mac sent the day's sets only from prepare(), so a card the wall chose first never reached the phone; _keep now sends them.
 
 - [x] **P8. The phone's idea rows have Keep and Not the same** **[device]** (claimed: agent, 2026-11-17)
   - Reopened in review (2026-11-17): `static/mobile.html` was not changed, so the page never calls the command. Only the page step is left.
@@ -287,7 +287,7 @@ All Rust work is in `desktop/`. Run `cargo test --lib` there.
   - Do: in the related section of P6, add two buttons under each idea row, as the desktop does in `relatedRowHtml`. A tap calls `invoke("mobile_link_feedback", {a, b, verdict, idea})` with `idea` = the row's `point`, then draws the reader again.
   - Check: `bin/verify --fast`. Device: refuse a link on the emulator; after a sync it is gone on the Mac.
   - Done: src/enqueue/static/mobile.html; bin/verify: all checks passed
-  - Owed: device check - refuse an idea link on the emulator, sync, and see it gone on the Mac
+  - Checked in review (2026-11-17): the refusal reached the Mac as a link_feedback row.
 
 - [x] **P9. Docs for track P** (claimed: agent, 2026-11-17)
   - Needs: P1 to P8
@@ -501,7 +501,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/check-style` prints no line for the three files; `bin/verify --fast`
   - Device check **[device]**: the wall, a card and the pill look the same as before.
   - Done: static/css/base.css, static/css/home.css, static/css/pill.css; bin/verify: all checks passed
-  - Owed: device check - the wall, a card and the pill look the same as before
+  - Checked in review (2026-11-17) on screenshots.
 
 - [x] **U4. Sizes and weights become tokens: the pages** (claimed: agent, 2026-11-17)
   - Needs: U1, U2b
@@ -530,7 +530,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Do: as U3, with these two files. The script changes only text inside `<style>` blocks.
   - Check: `bin/check-style` prints a total of 0; `bin/verify --fast`. Device: `bin/launch emulator`; the library, a reader and Settings look the same as before.
   - Done: static/mobile.html, static/capture.html; bin/verify: all checks passed
-  - Owed: device check - the library, a reader and Settings look the same as before
+  - Checked in review (2026-11-17) on the emulator.
 
 - [x] **U8. The style check fails the gate** (claimed: agent, 2026-11-17)
   - Needs: U3, U4, U5, U6, U7
@@ -562,7 +562,7 @@ Finding: the stylesheets hold 38 distinct font sizes and no size token, and 24 n
   - Check: `bin/verify --fast`
   - Device check **[device]**: open the Details panel on a note with related rows; one raven shows.
   - Done: static/css/artifact.css; bin/verify: all checks passed
-  - Owed: device check - open the Details panel on a note with related rows; one raven shows
+  - Checked in review (2026-11-17): one raven shows.
 
 - [x] **U11. Docs for track U** (claimed: agent, 2026-11-17)
   - Needs: U1 to U10
@@ -699,7 +699,7 @@ Finding: an answer lists the items it used. It does not say which page or paragr
 
 - [x] **N2. A search result opens at the place** (claimed: agent, 2026-11-17)
   - Needs: N1, A5
-  - Owed: device check - search a word deep in a PDF; the result opens at that page with the word marked
+  - Checked in review (2026-11-17): opens at the page, marked. A PDF's wrapped lines read as broken sentences in the excerpt; now joined.
   - Files: `static/js/search.js` (`openHit`)
   - Find: `grep -n 'function openHit' -A 8 src/enqueue/static/js/search.js`
   - Do: in `openHit`, when the hit's kind is not `note` and it has a `quote`, call `openArtifactAt(id, { page: hit.page, quote: hit.quote }, "search")` in place of `showArtifact(id)`. Keep the lines before it (the open is still reported with its query and rank). A note keeps `NoteTabs.hint` and `showArtifact`.
@@ -1133,7 +1133,7 @@ Finding: this library has few pictures now, so this track is small. It makes eve
   - Check: `bin/verify --fast`
   - Device check **[device]**: search "photos"; press the blue dot; only pictures with blue stay.
   - Done: static/js/search.js, static/css/search.css; bin/verify: all checks passed
-  - Owed: device check - search "photos"; press the blue dot; only pictures with blue stay
+  - Checked in review (2026-11-17): only the blue picture stays.
 
 - [x] **V4. Docs for track V** (claimed: agent, 2026-11-17)
   - Needs: V1 to V3
@@ -1438,7 +1438,7 @@ Tasks: M1 to M10.
 
 Goal: related rows that say why two notes belong together, with fewer false links, and a way for the person to correct them.
 Built:
-- Rows in five named groups: Same subject, Named in, Same idea another field, Also mentions, You asked about both; then Close passages.
+- Rows in five named groups: Same subject, Named in, Same idea another field, Also mentions, You asked about both. A "Close passages" group was built and then removed (2026-11-17): its links read as noise.
 - A same-subject row shows the other note's gist.
 - A shared name links two notes only when it matters to both.
 - The judge takes the newest note first.
@@ -1496,9 +1496,9 @@ Built:
 - Each used passage keeps its PDF page and first words (`chat_places`), which ride the chat snapshot and are removed when the item is vaulted.
 - On the Mac, a `[P3]` mark is a "p. N" button that opens the PDF at that page with the words marked (`openArtifactAt`).
 
-Owed device checks:
-- A5: `openArtifactAt('<id of a PDF>', {page: 2, quote: '<six words from page 3>'})` scrolls to page 3 and marks the words.
-- A6: an answer from a long PDF has "p. N" buttons, and a press opens the PDF at that page.
+Device checks (done in review, 2026-11-17):
+- A5: `openArtifactAt` opens a PDF at the page with the words marked.
+- A6: the "p. N" buttons open the PDF at that page. The chat panel stayed over the page and hid the passage; a place button now closes it.
 
 Open: the phone shows the marks raw (A7), and the docs (A8).
 Tasks: A1 to A6.
@@ -1514,11 +1514,11 @@ Built:
 - New files in watched folders are kept (`watch.py`, `watch_dirs`).
 - Settings > Library > From this Mac, its guide, and a row in the welcome.
 
-Owed device checks:
-- L6: add a watched folder, put a PDF in it, and wait for the next look; the PDF is on the wall.
-- L7: open the welcome from the `?`; the row is there and its button opens the Library tab.
+Device checks (done in review, 2026-11-17):
+- L6: a PDF put in a new watched folder reaches the wall. Watching used to begin at the first look, so a file added before it was never taken; it now begins when the folder is added.
+- L7: the welcome row opens the Library tab, now scrolled to "From this Mac".
 
-Limit: a file moved into a watched folder keeps its old modified time and is not taken.
+A file moved into a watched folder is taken too: the watcher reads its change time.
 Tasks: L1 to L8.
 
 ## Process

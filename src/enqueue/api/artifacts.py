@@ -24,14 +24,6 @@ router = APIRouter()
 # --------------------------------------------------------------------------- read
 
 
-@router.get("/artifacts/{artifact_id}/connections")
-def connections(artifact_id: str) -> dict:
-    """Per passage, the other notes that say something close (retrieve/passage_links.py)."""
-    from ..retrieve import passage_links
-
-    return {"passages": passage_links.for_artifact(artifact_id)}
-
-
 @router.get("/artifacts/{artifact_id}/similar")
 def similar(artifact_id: str) -> dict:
     """Live items closest to an artifact (retrieve/passage_links.py)."""

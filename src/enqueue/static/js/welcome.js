@@ -74,10 +74,16 @@ function welcomeGo(index) {
 	renderWelcome();
 }
 
-function welcomeBringThingsIn() {
+async function welcomeBringThingsIn() {
 	welcomeLeaveStep();
 	currentSettingsTab = "storage";
-	showSettings();
+	await showSettings();
+	// The Library tab holds backups and drafts first; go to the part this row names.
+	for (let i = 0; i < 20; i++) {
+		const at = document.getElementById("fromThisMac");
+		if (at) return at.scrollIntoView({ block: "start" });
+		await new Promise((r) => setTimeout(r, 100));
+	}
 }
 
 // The sync walk and the phone code keep state outside the page; a step that is left

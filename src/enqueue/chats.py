@@ -192,6 +192,11 @@ def answer_as_note(chat_id: str, message_id: str) -> dict:
         ).fetchone()
         if msg is None or msg["role"] != "assistant" or not msg["grounded"]:
             raise KeyError(message_id)
+        if conn.execute(
+            "SELECT 1 FROM derived_values WHERE scope = 'vault_answer' AND subject = ?",
+            (message_id,),
+        ).fetchone():
+            raise KeyError(message_id)
         question = conn.execute(
             "SELECT text FROM chat_messages WHERE chat_id = ? AND ordinal < ?"
             " AND role = 'user' ORDER BY ordinal DESC LIMIT 1",
@@ -204,7 +209,8 @@ def answer_as_note(chat_id: str, message_id: str) -> dict:
             for row in conn.execute(
                 "SELECT a.title FROM chat_citations c"
                 " JOIN artifacts a ON a.id = c.artifact_id"
-                " WHERE c.message_id = ? ORDER BY c.rank",
+                " WHERE c.message_id = ? AND a.vaulted_at IS NULL AND a.deleted_at IS NULL"
+                " ORDER BY c.rank",
                 (message_id,),
             )
         ]
