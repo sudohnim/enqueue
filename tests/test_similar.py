@@ -1,4 +1,4 @@
-"""Passage connections: per passage, the other notes that say something close."""
+"""More like this: live items closest to an artifact, from its passages' neighbours."""
 
 from __future__ import annotations
 
@@ -39,28 +39,18 @@ def _note(aid: str, title: str, passages: list[str]) -> None:
             )
 
 
-def test_a_passage_links_to_the_note_that_says_the_same(sqlite_store):
-    _note("a", "Studio notes", ["# Studio notes\n\n" + SHARED, "Invoices are due on Fridays."])
-    _note("b", "Clay basics", [SHARED])
+def test_similar_returns_the_other_note_first_and_not_itself(sqlite_store):
+    _note("a", "Studio notes", ["# Studio notes\n\n" + SHARED])
+    _note("b", "Clay basics", ["Clay basics\n\n" + SHARED])
     _note("c", "Sailing", ["Reef the mainsail before the squall arrives."])
     sqlite_store.upsert_chunks()
 
-    found = passage_links.for_artifact("a")
+    hits = passage_links.similar_items("a")
 
-    assert [p["ordinal"] for p in found] == [0]
-    assert found[0]["excerpt"].startswith("Wedging clay")
-    assert [link["id"] for link in found[0]["links"]] == ["b"]
-
-
-def test_trashed_notes_are_not_connections(sqlite_store):
-    from enqueue import trash
-
-    _note("a", "Studio notes", [SHARED])
-    _note("b", "Clay basics", [SHARED])
-    sqlite_store.upsert_chunks()
-    trash.delete("b")
-
-    assert passage_links.for_artifact("a") == []
+    assert hits[0]["artifact_id"] == "b"
+    assert "a" not in [h["artifact_id"] for h in hits]
+    assert hits[0]["title"] == "Clay basics"
+    assert SHARED[:20] in hits[0]["snippet"]
 
 
 def test_the_endpoint_serves_them(sqlite_store):
@@ -70,6 +60,6 @@ def test_the_endpoint_serves_them(sqlite_store):
     _note("b", "Clay basics", [SHARED])
     sqlite_store.upsert_chunks()
 
-    body = TestClient(create_app()).get("/artifacts/a/connections").json()
+    body = TestClient(create_app()).get("/artifacts/a/similar").json()
 
-    assert body["passages"][0]["links"][0]["title"] == "Clay basics"
+    assert body["hits"][0]["title"] == "Clay basics"

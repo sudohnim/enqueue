@@ -52,6 +52,8 @@ def _one_line(text: str, cap: int = 80) -> str:
 
 def _emit_answered(events, job: Job, skill_name: str, msg: dict, route_ms, answer_ms, total_ms):
     """Log a completed answer with the whole exchange and where the time went."""
+    from .chats import without_places
+
     cited = list(msg.get("cited") or [])
     grounded = bool(msg.get("grounded"))
     # Resolve cited artifact ids to titles so the opened event reads without a lookup.
@@ -63,7 +65,7 @@ def _emit_answered(events, job: Job, skill_name: str, msg: dict, route_ms, answe
         detail,
         data={
             "question": job.text,
-            "answer": msg.get("text", ""),
+            "answer": without_places(msg.get("text", "")),
             "skill": skill_name,
             "model": _answer_model(),
             "grounded": grounded,
@@ -174,7 +176,7 @@ def compute(job: Job) -> None:
         # "answer failed" for a turn that actually completed.
         try:
             if _first_exchange(job.chat_id, job.message_id):
-                chats._name(job.chat_id, job.text, msg["text"])
+                chats._name(job.chat_id, job.text, chats.without_places(msg["text"]))
             chats._retopic(job.chat_id)
         except Exception:  # noqa: BLE001 - naming is best effort; the answer already landed
             log.exception("naming or topic derivation failed for chat %s", job.chat_id)
@@ -213,6 +215,8 @@ def compute(job: Job) -> None:
 
 def _finish_pending(conn, message_id: str, msg: dict) -> None:
     """Move a pending assistant turn to `done`, with its citations, in one write."""
+    from . import db as db_module
+
     try:
         grounded_int = int(msg["grounded"])
     except (TypeError, ValueError) as exc:
@@ -227,6 +231,20 @@ def _finish_pending(conn, message_id: str, msg: dict) -> None:
             "INSERT OR IGNORE INTO chat_citations (message_id, artifact_id, rank)"
             " VALUES (?,?,?)",
             (message_id, artifact_id, rank),
+        )
+    conn.execute("DELETE FROM chat_places WHERE message_id = ?", (message_id,))
+    for p in msg.get("places") or []:
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_places (message_id, n, artifact_id, page, quote)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (message_id, p["n"], p["artifact_id"], p["page"], p["quote"]),
+        )
+    if msg.get("receipt"):
+        conn.execute(
+            "INSERT OR REPLACE INTO derived_values (scope, subject, attribute, value, grounded,"
+            " source, model_version, created_at)"
+            " VALUES ('answer_receipt', ?, 'receipt', ?, 1, 'engine', '', ?)",
+            (message_id, json_dumps(msg["receipt"]), db_module.now()),
         )
 
 

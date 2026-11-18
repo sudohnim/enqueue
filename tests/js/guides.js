@@ -48,6 +48,9 @@ const ASKS = [
   ["reset sync", "reset-sync"],
   ["why did my question fail", "activity"],
   ["make search better", "search-options"],
+  ["bring in apple notes", "from-this-mac"],
+  ["new files in a folder", "from-this-mac"],
+  ["bookmarks and kindle highlights", "from-this-mac"],
 ];
 for (const [typed, want] of ASKS) {
   const got = Guides.match(typed, { platform: "desktop" });

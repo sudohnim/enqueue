@@ -452,6 +452,15 @@ class RelayStorage:
             # read the row again.
         raise BlobStoreError("the stored copy is missing")
 
+    def size(self, library: str, name: str) -> int | None:
+        """The stored object's size, or None when the name is absent."""
+        with self._open() as conn:
+            row = conn.execute(
+                "SELECT size FROM objects WHERE library = ? AND name = ?",
+                (library, name),
+            ).fetchone()
+        return None if row is None else row["size"]
+
     def list_changed(self, library: str, since: int) -> tuple[list[dict], int]:
         """Every object of the library with cursor > `since`, plus the new cursor."""
         with self._open() as conn:

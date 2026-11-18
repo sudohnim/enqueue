@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from datetime import datetime, timezone
 
 import pytest
 
@@ -57,6 +58,23 @@ def _captures() -> list[tuple[str, str, bool]]:
         )
     finally:
         conn.close()
+
+
+def _links() -> dict[str, dict]:
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT a.id, a.source_url, a.created_at,"
+            " (SELECT group_concat(t.name, ',') FROM artifact_tags x JOIN tags t"
+            "  ON t.id = x.tag_id WHERE x.artifact_id = a.id) AS tags"
+            " FROM artifacts a WHERE a.kind = 'link'"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        r["source_url"]: dict(r, tags=sorted((r["tags"] or "").split(",")) if r["tags"] else [])
+        for r in rows
+    }
 
 
 def _zip(path, files: dict[str, bytes | str]):
@@ -206,6 +224,48 @@ def test_a_fabric_export_turns_notepads_into_notes(library, src):
     assert _captures() == [("image", "map.png", True), ("pdf", "report.pdf", False)]
 
 
+def test_a_link_can_be_saved_with_a_date(library):
+    from enqueue import capture
+
+    dated = capture.link("https://example.com/a", at="2020-01-02T03:04:05+00:00")
+    plain = capture.link("https://example.com/b")
+
+    links = _links()
+    assert dated["created"] and plain["created"]
+    assert links["https://example.com/a"]["created_at"] == "2020-01-02T03:04:05+00:00"
+    assert links["https://example.com/b"]["created_at"] > "2020"
+
+
+def test_a_browser_bookmarks_file_comes_in_as_links(library, src):
+    bookmarks = src / "bookmarks.html"
+    bookmarks.write_text("""<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<H1>Bookmarks</H1>
+<DL><p>
+  <DT><A HREF="https://example.com/top" ADD_DATE="1600000000">Top</A>
+  <DT><H3>Bookmarks Bar</H3>
+  <DL><p>
+    <DT><H3>Cooking</H3>
+    <DL><p>
+      <DT><A HREF="https://example.com/recipe" ADD_DATE="1600000200">Recipe</A>
+    </DL><p>
+  </DL><p>
+  <DT><A HREF="javascript:alert(1)">JS</A>
+  <DT><A HREF="https://example.com/twice">Twice</A>
+  <DT><A HREF="https://example.com/twice">Twice again</A>
+</DL><p>
+""")
+
+    report = importer.run(bookmarks)
+
+    links = _links()
+    assert report["links"] == 3 and len(links) == 3
+    assert links["https://example.com/top"]["tags"] == []
+    recipe = links["https://example.com/recipe"]
+    assert recipe["tags"] == ["cooking"]
+    assert recipe["created_at"] == datetime.fromtimestamp(1600000200, timezone.utc).isoformat()
+    assert "javascript:alert(1)" not in links
+
+
 def test_importing_again_adds_nothing(library, src):
     (src / "A.md").write_text("# A\n\nSome text.\n")
     importer.run(src)
@@ -220,6 +280,106 @@ def test_a_zip_that_climbs_out_of_itself_is_refused(library, src):
 
     with pytest.raises(ValueError, match="outside itself"):
         importer.run(archive)
+
+
+def test_kindle_clippings_become_one_note_per_book_and_follow_changes(library, src):
+    clippings = src / "My Clippings.txt"
+    first = """The Willow (Jane Doe)
+- Your Highlight on page 12 | Added on Monday, January 1, 2024 10:00:00 AM
+
+Bends in the storm.
+"""
+    second = """The Willow (Jane Doe)
+- Your Highlight on page 20 | Added on Monday, January 2, 2024 10:00:00 AM
+
+Roots hold fast.
+"""
+    other = """Deep Work (Cal Newport)
+- Your Highlight on page 5 | Added on Monday, January 3, 2024 10:00:00 AM
+
+Focus matters.
+"""
+    bookmark = """The Willow (Jane Doe)
+- Your Bookmark on page 30 | Added on Monday, January 4, 2024 10:00:00 AM
+
+"""
+    added = """The Willow (Jane Doe)
+- Your Highlight on page 40 | Added on Monday, January 5, 2024 10:00:00 AM
+
+New thought.
+"""
+
+    def write(extra=""):
+        parts = [first, second, other, bookmark] + ([extra] if extra else [])
+        clippings.write_text("==========\n" + "==========\n".join(parts))
+
+    write()
+    importer.run(clippings)
+
+    notes = _notes()
+    assert set(notes) == {"The Willow", "Deep Work"}
+    assert notes["The Willow"]["body"].count("\n> ") == 2
+    assert all(n["tags"] == ["kindle"] for n in notes.values())
+
+    importer.run(clippings)
+
+    assert set(_notes()) == {"The Willow", "Deep Work"}
+
+    write(added)
+    importer.run(clippings)
+
+    notes = _notes()
+    assert set(notes) == {"The Willow", "Deep Work"}
+    assert notes["The Willow"]["body"].count("\n> ") == 3
+
+
+def test_apple_notes_come_in_and_follow_changes(library, monkeypatch):
+    raw = [
+        {
+            "id": "deleted",
+            "name": "Deleted",
+            "body": "<div>Secret</div>",
+            "created": "2024-01-01T00:00:00Z",
+            "modified": "2024-01-01T00:00:00Z",
+            "folder": "Recently Deleted",
+        },
+        {
+            "id": "empty",
+            "name": "Empty",
+            "body": "",
+            "created": "2024-01-01T00:00:00Z",
+            "modified": "2024-01-01T00:00:00Z",
+            "folder": "Notes",
+        },
+        {
+            "id": "trip",
+            "name": "Trip",
+            "body": "<div>Hello <b>world</b></div>",
+            "created": "2024-01-01T00:00:00Z",
+            "modified": "2024-01-01T00:00:00Z",
+            "folder": "Trips",
+        },
+    ]
+    monkeypatch.setattr(importer, "_apple_notes_raw", lambda: raw)
+
+    report = importer.run_apple_notes()
+
+    assert report["notes"] == 1
+    assert len(_notes()) == 1
+    note = _notes()["Trip"]
+    assert note["body"].strip() == "Hello **world**"
+    assert note["tags"] == ["trips"]
+
+    report = importer.run_apple_notes()
+
+    assert report["notes"] == 0 and len(_notes()) == 1
+
+    raw[2]["modified"] = "2024-02-01T00:00:00Z"
+    raw[2]["body"] = "<div>Hello <b>again</b></div>"
+
+    importer.run_apple_notes()
+
+    assert len(_notes()) == 1 and _notes()["Trip"]["body"].strip() == "Hello **again**"
 
 
 def test_html_becomes_the_markdown_the_editor_writes():

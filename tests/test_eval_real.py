@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -124,3 +125,51 @@ def test_purge_removes_an_artifacts_opens(library):
     trash.purge("kiln")
 
     assert _opens() == []
+
+
+BASE = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _search(conn, query, at, hits=None, source="search"):
+    conn.execute(
+        "INSERT INTO searches (query, hits, loose, source, created_at) VALUES (?, ?, 0, ?, ?)",
+        (query, json.dumps(hits or []), source, at.isoformat()),
+    )
+
+
+def _open(conn, query, at, artifact_id="art1", source="search"):
+    conn.execute(
+        "INSERT INTO opens (artifact_id, source, query, rank, opened_at) VALUES (?, ?, ?, 1, ?)",
+        (artifact_id, source, query, at.isoformat()),
+    )
+
+
+def test_reformulated_search_becomes_a_case(store):
+    conn = db.get_conn()
+    try:
+        _search(conn, "president", BASE, hits=["x"])
+        _search(conn, "taleb", BASE + timedelta(seconds=30), hits=["art1"])
+        _open(conn, "taleb", BASE + timedelta(seconds=40), "art1")
+        assert eval_real.reformulated(conn) == [{"query": "president", "expect": ["art1"]}]
+    finally:
+        conn.close()
+
+
+def test_late_reformulation_gives_no_case(store):
+    conn = db.get_conn()
+    try:
+        _search(conn, "president", BASE, hits=["x"])
+        _search(conn, "taleb", BASE + timedelta(minutes=5), hits=["art1"])
+        _open(conn, "taleb", BASE + timedelta(minutes=5, seconds=10), "art1")
+        assert eval_real.reformulated(conn) == []
+    finally:
+        conn.close()
+
+
+def test_search_with_hits_and_no_open_is_abandoned(store):
+    conn = db.get_conn()
+    try:
+        _search(conn, "lonely", BASE, hits=["x"])
+        assert eval_real.abandoned(conn) == ["lonely"]
+    finally:
+        conn.close()

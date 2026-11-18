@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import events, vault, vaultops
+from .artifacts import _blob_headers
 
 router = APIRouter()
 
@@ -141,7 +142,7 @@ def vault_blob(artifact_id: str):
     return Response(
         content=data,
         media_type=mime,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers=_blob_headers(mime, filename),
     )
 
 

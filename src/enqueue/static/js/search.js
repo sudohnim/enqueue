@@ -63,11 +63,68 @@
   let lastQuery = "";
   let lastHits = [];
 
+  // The colours a picture can be found by (retrieve/filters.py COLOURS). One row of
+  // dots narrows picture results without typing `color:`.
+  const COLOUR_DOTS = [
+    ["red", "220, 40, 40"],
+    ["orange", "240, 140, 30"],
+    ["yellow", "240, 220, 50"],
+    ["green", "50, 160, 70"],
+    ["teal", "30, 150, 150"],
+    ["blue", "40, 90, 220"],
+    ["purple", "130, 60, 180"],
+    ["pink", "240, 130, 180"],
+    ["brown", "130, 85, 50"],
+    ["black", "20, 20, 20"],
+    ["white", "245, 245, 245"],
+    ["grey", "128, 128, 128"],
+  ];
+
+  // `color:<name>` (or the British spelling) is replaced, not stacked.
+  function withColour(q, name) {
+    return (q.replace(/\bcolou?r:\S+/gi, "").trim() + " color:" + name).trim();
+  }
+
+  function chosenColour(q) {
+    const m = /(?:^|\s)colou?r:(\S+)/i.exec(q || "");
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  function colourDotsHtml(q) {
+    const chosen = chosenColour(q);
+    return (
+      '<div class="colourdots" role="group" aria-label="Filter by colour">' +
+      COLOUR_DOTS.map(
+        ([name, rgb]) =>
+          '<button type="button" class="colourdot' +
+          (chosen === name ? " on" : "") +
+          '" style="background:rgb(' +
+          rgb +
+          ')" aria-label="' +
+          name +
+          '" title="' +
+          name +
+          '" onclick="pickColour(\'' +
+          name +
+          '\')"></button>',
+      ).join("") +
+      "</div>"
+    );
+  }
+
+  function pickColour(name) {
+    doSearch(withColour(lastQuery, name));
+  }
+
   function openHit(id, rank) {
     reportOpen(id, "search", lastQuery, rank);
     // A note with tabs opens on the tab the hit came from (Tabs.find).
     const hit = lastHits[rank - 1];
     if (hit && hit.artifact_id === id) NoteTabs.hint(id, lastQuery, hit.snippet);
+    if (hit && hit.kind !== "note" && hit.quote) {
+      openArtifactAt(id, { page: hit.page, quote: hit.quote }, "search");
+      return;
+    }
     showArtifact(id);
   }
 
@@ -105,6 +162,26 @@
     }
     if (window.eyeMood) eyeMood.drop("search", r.hits.length ? "found" : null);
     lastQuery = q;
+    drawResults(q, r);
+    // The judge (and lifting or model ranking, when on) may still be at work: ask once
+    // more, waiting for it, and redraw in place when this search is still on screen.
+    if (!r.pending) return;
+    let again;
+    try {
+      again = await api("/search?limit=20&wait=8&q=" + encodeURIComponent(q));
+    } catch (_) {
+      return;
+    }
+    const field = document.getElementById("searchfield");
+    if (lastQuery !== q || !field || field.value.trim() !== q || !view.querySelector(".sr")) return;
+    const y = window.scrollY;
+    const typing = document.activeElement === field;
+    drawResults(q, again);
+    window.scrollTo(0, y);
+    if (typing) document.getElementById("searchfield")?.focus();
+  }
+
+  function drawResults(q, r) {
     lastHits = r.hits;
     // Hits the relevance check could not rule on (the model was unreachable) come
     // last from the engine, marked `loose`: shown apart as "Maybe related".
@@ -125,6 +202,7 @@
       (sure.length ? sure.length + (sure.length === 1 ? " result" : " results") : "No sure results") +
       (r.filters ? '<span class="sr-chip">' + esc(r.filters) + "</span>" : "") +
       "</div>" +
+      (r.hits.filter((h) => h.kind === "image").length >= 3 ? colourDotsHtml(q) : "") +
       (sure.length
         ? '<ol class="sr-list">' + sure.map((h) => resultHtml(h, rank(h), terms)).join("") + "</ol>"
         : loose.length
@@ -133,13 +211,31 @@
             "<p>If you are after an idea rather than a phrase, ask the eye instead: it reads by meaning.</p></div>") +
       (loose.length
         ? '<section class="sr-maybe" aria-label="Maybe related">' +
-          '<div class="sr-maybe-head">Maybe related<span>Search could not double-check these yet.</span></div>' +
+          '<div class="sr-maybe-head">Maybe related<span>' +
+          (r.pending ? "Still checking these." : "Search could not double-check these yet.") +
+          "</span></div>" +
           '<ol class="sr-list">' +
           loose.map((h) => maybeHtml(h, rank(h), terms)).join("") +
           "</ol></section>"
         : "") +
       "</div>";
     view.querySelector(".sr").addEventListener("keydown", resultKeys);
+  }
+
+  // "More like this" from an artifact page: the same results view, headed by the
+  // item it was asked about rather than a query the person typed.
+  async function doSimilar(id, title) {
+    teardown();
+    setRoute("like/" + encodeURIComponent(id));
+    view.innerHTML = spinner("lg", "looking for similar notes...");
+    let r;
+    try {
+      r = await api("/artifacts/" + encodeURIComponent(id) + "/similar");
+    } catch (err) {
+      view.innerHTML = '<div class="state">' + esc(String((err && err.message) || err)) + "</div>";
+      return;
+    }
+    drawResults('Like "' + (title || "") + '"', r);
   }
 
   function searchAgain() {
@@ -165,7 +261,9 @@
 
   // The passage cut around the lines that hold the searched words, read as sentences.
   function excerptOf(h, terms) {
-    const raw = Tabs.plain(h.text || h.snippet || "");
+    let raw = Tabs.plain(h.text || h.snippet || "");
+    // A PDF wraps its lines inside a sentence: a line that goes on in lower case joins.
+    if (h.kind === "pdf") raw = raw.replace(/([^.!?:;\n])\n(?=\p{Ll})/gu, "$1 ");
     let lines = raw
       .split("\n")
       .map((l) => mdText(l).replace(/^[•·]\s*/, "").replace(/\*\*|__/g, "").trim())
@@ -177,7 +275,9 @@
       // A first line that is the title, or opens with it ("Mesopotamia - the..."), is dropped.
       const t = h.title.toLowerCase();
       const first = lines[0].toLowerCase();
-      if (first === t) lines = lines.slice(1);
+      // A capture with no text is indexed as its title and file name: nothing to read.
+      if (first === t || /^\S+\.\w{2,5}$/.test(first.slice(t.length + 1)) && first.startsWith(t + " "))
+        lines = lines.slice(1);
       else if (first.startsWith(t) && /^\s*[-–—:]\s*/.test(lines[0].slice(t.length)))
         lines[0] = lines[0].slice(t.length).replace(/^\s*[-–—:]\s*/, "");
     }
@@ -225,6 +325,9 @@
 
   // Why a result found by meaning is here: the summary line or the name it matched.
   function whyHtml(h, terms) {
+    if (h.why === "search phrase" && h.matched) {
+      return '<div class="sr-why"><b>Found by:</b> ' + marked(h.matched, terms) + "</div>";
+    }
     if (!h.matched || !/^(facet|section|entity)/.test(h.why || "")) return "";
     const label = (h.why || "").startsWith("entity") ? "Mentions" : "Same idea";
     return '<div class="sr-why"><b>' + label + "</b>" + marked(h.matched, terms) + "</div>";
@@ -257,7 +360,11 @@
       marked(h.title || "Untitled", terms) +
       "</h3>" +
       whyHtml(h, terms) +
-      (excerpt ? '<p class="sr-excerpt">' + marked(excerpt, terms) + "</p>" : "") +
+      (excerpt
+        ? '<p class="sr-excerpt">' + marked(excerpt, terms) + "</p>"
+        : h.gist
+          ? '<p class="sr-excerpt">' + esc(h.gist) + "</p>"
+          : "") +
       "</li>"
     );
   }

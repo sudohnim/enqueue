@@ -165,6 +165,17 @@ if (t3 !== "Pack light") fail("a preview keeps a first line that is not the titl
 // A table's preview reads as its cells.
 const tp = mdText("| a | b |\n| --- | --- |\n| 1 | 2 |");
 if (tp !== "a · b\n\n1 · 2") fail("a table preview reads as cells", "", tp);
+for (const bad of [
+  "![a](//evil.example/x.png)",
+  "![a](/\\evil.example/x)",
+  "![a](/settings)",
+  "![a](https://evil.example/x.png)",
+]) {
+  if (md(bad).includes("<img")) fail("no picture from: " + bad, "no <img>", md(bad));
+}
+const okImg = "![a](/artifacts/00000000-0000-0000-0000-000000000000/blob)";
+if (!md(okImg).includes('<img src="/artifacts/00000000-0000-0000-0000-000000000000/blob"'))
+  fail("a blob picture is drawn", "<img>", md(okImg));
 const total = Object.keys(exact).length + Object.keys(normalised).length + 5;
 console.log(`${total - failed}/${total} markdown round trips hold`);
 process.exit(failed ? 1 : 0);

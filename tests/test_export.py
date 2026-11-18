@@ -170,3 +170,21 @@ def test_the_app_starts_an_export_and_reports_it(store, quiet_queue):
         time.sleep(0.1)
     assert state == {"state": "done", "path": str(store / "Enqueue"), "items": 1}
     assert client.post("/export", json={"path": str(store / "nope")}).status_code == 404
+
+
+def test_an_original_on_the_relay_only_keeps_its_exported_copy(store, quiet_queue):
+    from enqueue import blobstore
+
+    ids = _build_library()
+    out = store / "export"
+    export.export(out)
+    conn = db.get_conn()
+    digest = conn.execute(
+        "SELECT content_hash FROM artifacts WHERE id = ?", (ids["upload"],)
+    ).fetchone()[0]
+    conn.close()
+    blobstore.remove(digest)
+
+    export.export(out)
+    copies = list((out / "files").iterdir())
+    assert [p.read_bytes() for p in copies] == [b"%PDF-1.4 fake bytes"]

@@ -31,7 +31,7 @@
     min-height: 120px;
     display: grid;
     place-items: center;
-    font-size: 13px;
+    font-size: var(--t-sm);
     color: var(--text-mute);
   }
   /* The word cannot be highlighted, because the page is a picture of itself, so the
@@ -68,7 +68,7 @@
     right: var(--sp-5);
     bottom: var(--sp-5);
     z-index: var(--z-pill);
-    font-size: 13px;
+    font-size: var(--t-sm);
     font-weight: var(--w-medium);
     color: var(--text-mute);
     background: var(--surface-2);

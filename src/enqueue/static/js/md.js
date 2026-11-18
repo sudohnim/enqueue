@@ -86,12 +86,10 @@
     });
     t = t.replace(/\\$/gm, (m) => source(m, ""));
     // Images come before links: `![alt](src)` contains a `[...](...)`, so the link
-    // rule would eat it otherwise. Only same-origin blob paths (/artifacts/{id}/blob,
-    // what the paste handler writes) and data: images are allowed as a src - never an
-    // arbitrary URL - so a note can never be made to fetch from or point a src at the
-    // network. The alt text is already escaped by esc() above.
+    // rule would eat it otherwise. Only a blob path with an id, or a `data:image`
+    // address, is drawn as a picture. The alt text is already escaped by esc() above.
     t = t.replace(
-      /!\[([^\]]*)\]\((\/[^)\s]+|data:image\/[^)\s]+)\)/g,
+      /!\[([^\]]*)\]\((\/(?:artifacts|vault)\/[0-9a-f-]{36}\/blob|data:image\/[^)\s]+)\)/g,
       '<img src="$2" alt="$1" loading="lazy" />',
     );
     t = t.replace(

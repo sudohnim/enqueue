@@ -135,6 +135,25 @@ def test_head_has_the_wall_sort_index(store):
         conn.close()
 
 
+def test_head_has_new_tables_and_role(store):
+    """DB1: searches and link_feedback exist; facets has a role column."""
+    assert {
+        "searches",
+        "link_feedback",
+        "chat_places",
+        "blob_relay",
+        "artifact_colours",
+        "thumbs",
+        "source_items",
+    } <= tables(config.DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(facets)").fetchall()}
+    finally:
+        conn.close()
+    assert "role" in cols
+
+
 def test_head_has_the_search_index_tables(store):
     """The sqlite-vec engine's tables are part of the schema, not ad hoc."""
     assert tables(config.DB_PATH).issuperset(INDEX_TABLES)

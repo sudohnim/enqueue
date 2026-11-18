@@ -56,6 +56,9 @@ def _remove_empty(path: Path) -> None:
 def move_legacy(legacy: Path | None = None, target: Path | None = None) -> str:
     """Move the library from where it lived before (`FORMER`, or `legacy`) to
     `config.DATA_DIR`. Returns what happened ("" when there was nothing to do)."""
+    if legacy is None and target is None and os.getenv("ENQ_DATA_DIR"):
+        # A folder named on purpose (a scratch library) never takes the real one.
+        return ""
     new = target or config.DATA_DIR
     froms = [legacy] if legacy else [p for p in FORMER if p != new]
     said = []

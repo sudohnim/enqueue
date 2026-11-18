@@ -20,6 +20,11 @@ app = typer.Typer(add_completion=False, help="Enqueue: capture anything, organis
 
 
 def _call(method: str, path: str, **kwargs) -> dict:
+    from . import session
+
+    token = session.read()
+    if token:
+        kwargs.setdefault("headers", {})["Authorization"] = f"Bearer {token}"
     try:
         response = httpx.request(
             method,

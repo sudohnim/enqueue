@@ -226,6 +226,39 @@ def stored(conn, artifact_id: str) -> list[tuple[str, str]]:
     ]
 
 
+_PAGE_HEADING = re.compile(r"^## page (\d+)\s*$", re.M)
+
+
+def pages_for(conn, artifact_id: str) -> dict[str, int]:
+    """Chunk id -> the PDF page it starts on (0-based); empty for non-PDFs."""
+    row = conn.execute("SELECT kind FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+    if row is None or row["kind"] != "pdf":
+        return {}
+    out: dict[str, int] = {}
+    carried = 0
+    for c in conn.execute(
+        "SELECT id, text FROM chunks WHERE artifact_id = ? ORDER BY ordinal", (artifact_id,)
+    ):
+        found = [int(n) - 1 for n in _PAGE_HEADING.findall(c["text"])]
+        starts = c["text"].lstrip().startswith("## page ")
+        out[c["id"]] = found[0] if (found and starts) else carried
+        if found:
+            carried = found[-1]
+    return out
+
+
+def quote_of(text: str, words: int = 10) -> str:
+    """The first words of a passage's own text, for finding it in the reader."""
+    lines = [
+        ln
+        for ln in text.splitlines()
+        if ln.strip()
+        and not ln.lstrip().startswith("#")
+        and not ln.startswith("(note added by you)")
+    ]
+    return " ".join(" ".join(lines).split()[:words])
+
+
 def chunk_artifact(conn, artifact_id: str, made: list[tuple[str, str]] | None = None) -> int:
     """Rebuild chunks for one artifact. Derived data, so it is replaced wholesale.
 

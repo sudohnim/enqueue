@@ -29,7 +29,7 @@ from urllib.parse import unquote
 import yaml
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-from . import capture, db, events, notes, tags
+from . import capture, config, db, events, notes, tags
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,37 @@ BEAR_TAG = re.compile(r"(?<![\w#/&])#([^\W\d_][^#\n]*?[^\s#])#")
 MD_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 WIKI_EMBED = re.compile(r"!\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
 FENCE = re.compile(r"```.*?```|`[^`\n]*`", re.S)
+BOOKMARK_MARK = "NETSCAPE-Bookmark-file-1"
+BOOKMARK_TOKEN = re.compile(r"<H3[^>]*>(.*?)</H3>|<DL>|</DL>|<A\s+([^>]*)>(.*?)</A>", re.I | re.S)
+BROWSER_FOLDERS = {
+    "bookmarks bar",
+    "bookmarks menu",
+    "bookmarks toolbar",
+    "other bookmarks",
+    "favorites",
+    "favourites",
+    "favorites bar",
+    "mobile bookmarks",
+    "reading list",
+    "imported",
+    "bookmarks",
+}
+_NOTES_SCRIPT = """
+const app = Application("Notes");
+const out = [];
+for (const n of app.notes()) {
+  try {
+    if (n.passwordProtected()) continue;
+    out.push({
+      id: n.id(), name: n.name(), body: n.body(),
+      created: n.creationDate().toISOString(),
+      modified: n.modificationDate().toISOString(),
+      folder: n.container().name(),
+    });
+  } catch (e) {}
+}
+JSON.stringify(out);
+"""
 
 _lock = threading.Lock()
 _state: dict = {"state": "idle"}
@@ -68,7 +99,9 @@ def start(path: str) -> dict:
         if _state.get("state") == "running":
             raise RuntimeError("an import is already running")
         _state.clear()
-        _state.update(state="running", path=str(source), notes=0, files=0, skipped=0, errors=[])
+        _state.update(
+            state="running", path=str(source), notes=0, files=0, links=0, skipped=0, errors=[]
+        )
     threading.Thread(target=_run_safely, args=(source,), name="import", daemon=True).start()
     return state()
 
@@ -92,7 +125,9 @@ def _count(key: str, error: str | None = None) -> None:
 def run(source: Path) -> dict:
     """Import a folder or a zip. Returns how many notes and files came in."""
     with _lock:
-        _state.update(state="running", path=str(source), notes=0, files=0, skipped=0, errors=[])
+        _state.update(
+            state="running", path=str(source), notes=0, files=0, links=0, skipped=0, errors=[]
+        )
     work = Path(tempfile.mkdtemp(prefix="enqueue-import-"))
     try:
         if source.is_dir():
@@ -116,8 +151,8 @@ def run(source: Path) -> dict:
         report = dict(_state)
     events.emit(
         "import",
-        f"{report['notes']} notes, {report['files']} files from {source.name}",
-        data={k: report[k] for k in ("notes", "files", "skipped", "path")},
+        f"{report['notes']} notes, {report['links']} links, {report['files']} files from {source.name}",
+        data={k: report[k] for k in ("notes", "files", "links", "skipped", "path")},
     )
     return report
 
@@ -198,11 +233,122 @@ def _digest(body: str) -> str:
     return hashlib.sha256(" ".join(body.split()).encode()).hexdigest()
 
 
+def _is_bookmarks(f: Path) -> bool:
+    if f.is_dir() or f.suffix.lower() not in HTML_SUFFIXES:
+        return False
+    try:
+        with f.open("r", encoding="utf-8", errors="replace") as fh:
+            return BOOKMARK_MARK in fh.read(2000)
+    except OSError:
+        return False
+
+
+def _import_bookmarks(f: Path) -> None:
+    """Each bookmark becomes a link. The folders it sits in become its tags."""
+    from html import unescape
+
+    text = f.read_text("utf-8", "replace")
+    stack: list[str | None] = []
+    pending: str | None = None
+    for m in BOOKMARK_TOKEN.finditer(text):
+        token = m.group(0).upper()
+        if token.startswith("<H3"):
+            pending = unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip()
+        elif token == "<DL>":
+            stack.append(pending)
+            pending = None
+        elif token == "</DL>":
+            if stack:
+                stack.pop()
+        else:
+            href = re.search(r'HREF="([^"]*)"', m.group(2), re.I)
+            url = unescape(href.group(1)).strip() if href else ""
+            if not url.lower().startswith(("http://", "https://")):
+                continue
+            added = re.search(r'ADD_DATE="(\d+)"', m.group(2), re.I)
+            at = (
+                datetime.fromtimestamp(int(added.group(1)), timezone.utc).isoformat()
+                if added
+                else None
+            )
+            title = unescape(re.sub(r"<[^>]+>", "", m.group(3))).strip() or None
+            out = capture.link(url, title=title, at=at, background=True)
+            if not out.get("created"):
+                _count("skipped")
+                continue
+            names = [
+                s.lower().replace(" ", "-") for s in stack if s and s.lower() not in BROWSER_FOLDERS
+            ]
+            if names:
+                from .sync.client import push_artifact
+
+                with db.transaction() as conn:
+                    for name in names:
+                        tags.attach(conn, out["id"], name, at or db.now())
+                push_artifact(out["id"])
+            _count("links")
+
+
+def _is_clippings(f: Path) -> bool:
+    return f.name.lower() == "my clippings.txt"
+
+
+def _import_clippings(f: Path) -> None:
+    text = f.read_text("utf-8", "replace")
+    books: dict[str, list[tuple[str, int | None]]] = {}
+    for part in re.split(r"^==========$", text, flags=re.M):
+        lines = part.splitlines()
+        filled = [(i, line.strip()) for i, line in enumerate(lines) if line.strip()]
+        if len(filled) < 2:
+            continue
+        book = filled[0][1]
+        meta = filled[1][1]
+        if not meta.startswith("- Your ") or meta.startswith("- Your Bookmark"):
+            continue
+        tail = lines[filled[1][0] + 1 :]
+        blank = next((i for i, line in enumerate(tail) if not line.strip()), None)
+        if blank is None:
+            continue
+        passage = "\n".join(line for line in tail[blank + 1 :] if line.strip()).strip()
+        if not passage:
+            continue
+        page = re.search(r"page (\d+)", meta)
+        number = int(page.group(1)) if page else None
+        books.setdefault(book, []).append((passage, number))
+    now = db.now()
+    for book, highlights in books.items():
+        m = re.match(r"^(.*?)\s+\(([^()]*)\)$", book)
+        title, author = (m.group(1), m.group(2)) if m else (book, None)
+        lines = [f"# {title}", ""]
+        if author:
+            lines.append(f"by {author}")
+        for passage, page in highlights:
+            lines += ["", f"> {passage}"]
+            if page:
+                lines.append(f"page {page}")
+        body = "\n".join(lines) + "\n"
+        did = _upsert(
+            "kindle", book.lower(), str(len(highlights)), title, body, ["kindle"], now, now
+        )
+        if did == "updated":
+            _count("notes")
+
+
 def _import_files(files: list[Path], seen: set[str]) -> None:
     by_name: dict[str, Path] = {}
     for f in files:
         by_name.setdefault(f.name.lower(), f)
     used: set[Path] = set()
+    for f in files:
+        if _is_bookmarks(f) or _is_clippings(f):
+            try:
+                if _is_bookmarks(f):
+                    _import_bookmarks(f)
+                else:
+                    _import_clippings(f)
+            except Exception as exc:  # noqa: BLE001 - one bad file never stops the rest
+                _count("skipped", f"{f.name}: {exc}")
+            used.add(f.resolve())
     note_files = [f for f in files if _is_note(f)]
     for f in note_files:
         try:
@@ -223,6 +369,8 @@ def _import_files(files: list[Path], seen: set[str]) -> None:
 
 
 def _is_note(f: Path) -> bool:
+    if _is_bookmarks(f) or _is_clippings(f):
+        return False
     if f.is_dir():
         return f.name.endswith(".textbundle")
     return f.suffix.lower() in NOTE_SUFFIXES | HTML_SUFFIXES
@@ -366,7 +514,7 @@ def _embed_pictures(body: str, folder: Path, by_name: dict[str, Path], used: set
     return WIKI_EMBED.sub(wiki, MD_IMAGE.sub(markdown, body))
 
 
-def _save(title: str | None, body: str, names: list[str], created: str, updated: str) -> None:
+def _save(title: str | None, body: str, names: list[str], created: str, updated: str) -> str:
     from .sync.client import push_artifact
 
     note = notes.create(body, title=title, at=created, background=True)["artifact"]
@@ -377,6 +525,142 @@ def _save(title: str | None, body: str, names: list[str], created: str, updated:
     if names or updated != created:
         push_artifact(note["id"])
     _count("notes")
+    return note["id"]
+
+
+def _upsert(
+    source: str,
+    external_id: str,
+    stamp: str,
+    title: str | None,
+    body: str,
+    names: list[str],
+    created: str,
+    updated: str,
+) -> str:
+    """Create or update the note that mirrors one outside item.
+    Returns "created", "updated" or "same". A note the person put in the trash
+    is not made again."""
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT s.stamp, s.artifact_id, a.id AS live_id, a.deleted_at"
+            " FROM source_items s LEFT JOIN artifacts a ON a.id = s.artifact_id"
+            " WHERE s.source = ? AND s.external_id = ?",
+            (source, external_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is not None and row["stamp"] == stamp:
+        return "same"
+    if row is None:
+        artifact_id = _save(title, body, names, created, updated)
+        did = "created"
+    else:
+        artifact_id = row["artifact_id"]
+        if row["live_id"] and row["deleted_at"] is None:
+            notes.edit(artifact_id, body, title=title)
+            did = "updated"
+        else:
+            did = "same"
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO source_items (source, external_id, stamp, artifact_id)"
+            " VALUES (?, ?, ?, ?)",
+            (source, external_id, stamp, artifact_id),
+        )
+    return did
+
+
+def _apple_notes_raw() -> list[dict]:
+    """Every note the Notes app will give, as it gives them. Locked notes are left out."""
+    import subprocess
+
+    done = subprocess.run(
+        ["/usr/bin/osascript", "-l", "JavaScript", "-e", _NOTES_SCRIPT],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    if done.returncode != 0:
+        raise RuntimeError(
+            "Enqueue could not read Notes. Allow it in System Settings,"
+            " Privacy & Security, Automation, then try again."
+        )
+    return json.loads(done.stdout or "[]")
+
+
+def apple_notes_available() -> bool:
+    import sys
+
+    return sys.platform == "darwin" and config.CHANNEL != "mas"
+
+
+def run_apple_notes() -> dict:
+    with _lock:
+        _state.update(
+            state="running",
+            path="Apple Notes",
+            notes=0,
+            files=0,
+            links=0,
+            skipped=0,
+            errors=[],
+        )
+    for n in _apple_notes_raw():
+        try:
+            if (n.get("folder") or "") == "Recently Deleted":
+                continue
+            html = re.sub(r"<(img|object)[^>]*>", "", n.get("body") or "", flags=re.I)
+            body = html_to_md(html).strip()
+            if not body:
+                _count("skipped")
+                continue
+            folder = (n.get("folder") or "").strip()
+            names = [folder.lower().replace(" ", "-")] if folder and folder != "Notes" else []
+            did = _upsert(
+                "apple-notes",
+                n["id"],
+                n.get("modified") or "",
+                n.get("name") or None,
+                body,
+                names,
+                n.get("created") or db.now(),
+                n.get("modified") or db.now(),
+            )
+            if did == "updated":
+                _count("notes")
+            elif did == "same":
+                _count("skipped")
+        except Exception as exc:  # noqa: BLE001 - one bad note never stops the rest
+            _count("skipped", f"{n.get('name')}: {exc}")
+    with _lock:
+        _state["state"] = "done"
+        report = dict(_state)
+    events.emit("import", f"{report['notes']} notes from Apple Notes")
+    return report
+
+
+def start_apple_notes() -> dict:
+    """Bring Apple Notes in on a thread of its own; refuses while an import runs."""
+    if not apple_notes_available():
+        raise RuntimeError("Apple Notes cannot be read by this build of Enqueue.")
+    with _lock:
+        if _state.get("state") == "running":
+            raise RuntimeError("an import is already running")
+        _state.clear()
+        _state.update(state="running", path="Apple Notes")
+
+    def safely() -> None:
+        try:
+            run_apple_notes()
+        except Exception as exc:  # noqa: BLE001 - the page shows why
+            log.exception("Apple Notes import failed")
+            with _lock:
+                _state.update(state="failed", error=str(exc)[:300])
+
+    threading.Thread(target=safely, name="import-apple-notes", daemon=True).start()
+    return state()
 
 
 # ---- Standard Notes -----------------------------------------------------------------

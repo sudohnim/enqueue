@@ -120,7 +120,13 @@ def retitle_placeholders() -> int:
     return len(changed)
 
 
-def link(url: str, local_only: bool = False, title: str | None = None) -> dict:
+def link(
+    url: str,
+    local_only: bool = False,
+    title: str | None = None,
+    at: str | None = None,
+    background: bool = False,
+) -> dict:
     """Save a URL. Nothing is fetched: that would tell the publisher you read it.
 
     `title` is the page's name when the capture carried one (a share hands over
@@ -135,7 +141,7 @@ def link(url: str, local_only: bool = False, title: str | None = None) -> dict:
         url = "https://" + url
 
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    now = db.now()
+    now = at or db.now()
 
     with db.transaction() as conn:
         existing = conn.execute(
@@ -181,7 +187,10 @@ def link(url: str, local_only: bool = False, title: str | None = None) -> dict:
             restored = False
 
     # Returns before anything is fetched, per hard rule 7. The queue resolves it.
-    ingest_queue.submit(artifact_id)
+    if background:
+        ingest_queue.submit_background(artifact_id)
+    else:
+        ingest_queue.submit(artifact_id)
     push_artifact(artifact_id)
     out = {"id": artifact_id, "created": not restored}
     if restored:

@@ -81,6 +81,8 @@ def _remove_model_rows(conn, artifact_id: str) -> int:
         ("DELETE FROM related WHERE artifact_id = ? OR related_id = ?", (artifact_id,) * 2),
         ("DELETE FROM related_pending WHERE artifact_id = ?", (artifact_id,)),
         ("DELETE FROM facet_retry WHERE artifact_id = ?", (artifact_id,)),
+        # An answer's place holds the item's own first words.
+        ("DELETE FROM chat_places WHERE artifact_id = ?", (artifact_id,)),
         # Cached model output is keyed by the artifact: section summaries and pivot
         # attributes under `subject`, search and related verdicts under either column.
         (
@@ -140,6 +142,28 @@ def _seal_derived(conn, artifact_id: str, key: bytes) -> int:
             if hashlib.sha256(raw).hexdigest() == image_hash:
                 picture.write_bytes(crypto.encrypt(raw, key))
                 changed += 1
+    # Chat answers that quoted this item.
+    for m in conn.execute(
+        "SELECT cm.id, cm.text FROM chat_messages cm "
+        "WHERE cm.id IN (SELECT message_id FROM chat_citations WHERE artifact_id = ?)",
+        (artifact_id,),
+    ).fetchall():
+        sealed = _seal(key, m["text"])
+        if sealed != m["text"]:
+            conn.execute(
+                "INSERT OR REPLACE INTO derived_values "
+                "(scope, subject, attribute, value, grounded, source, model_version, created_at) "
+                "VALUES (?, ?, ?, ?, 1, ?, '', ?)",
+                ("vault_answer", m["id"], artifact_id, sealed, "user", db.now()),
+            )
+            conn.execute(
+                "UPDATE chat_messages SET text = ? WHERE id = ?",
+                ("This answer quoted an item that is now in the vault.", m["id"]),
+            )
+            _touch_chat(conn, m["id"])
+            changed += 1
+    # Activity rows that name the item.
+    conn.execute("DELETE FROM events WHERE data LIKE '%' || ? || '%'", (artifact_id,))
     return changed
 
 
@@ -186,7 +210,52 @@ def _open_derived(conn, artifact_id: str, key: bytes) -> bool:
                 if plain is not None and hashlib.sha256(plain).hexdigest() == image_hash:
                     picture.write_bytes(plain)
                     touched = True
+    # Chat answers that quoted this item.
+    for r in conn.execute(
+        "SELECT subject, value FROM derived_values WHERE scope = 'vault_answer' AND attribute = ?",
+        (artifact_id,),
+    ).fetchall():
+        opened = try_open(key, r["value"])
+        if opened is None:
+            continue  # kept sealed: deleting it would lose the answer for good
+        conn.execute("UPDATE chat_messages SET text = ? WHERE id = ?", (opened, r["subject"]))
+        conn.execute(
+            "DELETE FROM derived_values WHERE scope = 'vault_answer' AND subject = ?"
+            " AND attribute = ?",
+            (r["subject"], artifact_id),
+        )
+        _touch_chat(conn, r["subject"])
+        touched = True
     return touched
+
+
+def _touch_chat(conn, message_id: str) -> None:
+    """Move a conversation's date so its changed answer wins on the other devices."""
+    conn.execute(
+        "UPDATE chats SET updated_at = ? WHERE id = (SELECT chat_id FROM chat_messages"
+        " WHERE id = ?)",
+        (db.now(), message_id),
+    )
+
+
+def _push_chats_citing(artifact_id: str) -> None:
+    """Send each conversation that quoted this item, so no device keeps the old text."""
+    from .chats import _push
+
+    conn = db.get_conn()
+    try:
+        ids = [
+            r["chat_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT m.chat_id FROM chat_messages m JOIN chat_citations c"
+                " ON c.message_id = m.id WHERE c.artifact_id = ?",
+                (artifact_id,),
+            )
+        ]
+    finally:
+        conn.close()
+    for chat_id in ids:
+        _push(chat_id)
 
 
 def _vaulted_ids(conn) -> list[str]:
@@ -222,6 +291,7 @@ def scrub() -> int:
     for artifact_id in touched:
         with contextlib.suppress(Exception):  # noqa: BLE001 - sync is best-effort
             push_artifact(artifact_id)
+            _push_chats_citing(artifact_id)
     return sum(touched.values())
 
 
@@ -251,6 +321,23 @@ def _drop_from_index(artifact_id: str) -> None:
         store.drop_artifact(store.SECTIONS, artifact_id)
 
 
+def _fetch_original(artifact_id: str) -> None:
+    """An original on the relay only comes back first, so the vault can seal it."""
+    from . import blobstore
+    from .sync.client import fetch_blob_to_cache
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT content_hash, vaulted_at FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row and row["content_hash"] and not row["vaulted_at"]:
+        if not blobstore.exists(row["content_hash"]):
+            fetch_blob_to_cache(row["content_hash"])
+
+
 def vault_artifact(artifact_id: str) -> dict:
     """Encrypt the artifact's content at rest and take it out of every live view."""
     key = vault.key()  # raises VaultError if locked
@@ -258,6 +345,7 @@ def vault_artifact(artifact_id: str) -> dict:
 
     share.forget_later(artifact_id)
     now = db.now()
+    _fetch_original(artifact_id)
     # Index rows are found only through their chunk/facet ids, so they go before the rows do.
     _drop_from_index(artifact_id)
     with db.transaction() as conn:
@@ -318,11 +406,19 @@ def vault_artifact(artifact_id: str) -> dict:
             (artifact_id,),
         )
 
+    # The small picture is a readable JPEG of the original, so it must not outlive
+    # the vault lock. Drop it after the transaction (it owns its own).
+    from . import colours, thumbs
+
+    thumbs.drop(artifact_id)
+    colours.drop(artifact_id)
+
     # VACUUM (outside the transaction) rewrites the DB file so the freed pages that
     # still hold the pre-encryption plaintext are purged from disk, not just
     # unlinked - without this the old body lingers in the file's freelist.
     _vacuum()
     push_artifact(artifact_id)
+    _push_chats_citing(artifact_id)
     return {"id": artifact_id, "vaulted_at": now, "already": False}
 
 
@@ -448,6 +544,7 @@ def unvault_artifact(artifact_id: str) -> dict:
 
     ingest_queue.submit(artifact_id)  # rebuild chunks/facets/entities
     push_artifact(artifact_id)
+    _push_chats_citing(artifact_id)
     return {"id": artifact_id, "restored": True}
 
 

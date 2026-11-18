@@ -39,7 +39,7 @@
   grid-template-columns: 40px 1fr;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 12px;
+  font-size: var(--t-xs);
   color: var(--text-mute);
 }
 .linkpop-field input {
@@ -51,7 +51,7 @@
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--t-md);
 }
 .linkpop-field input:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--lavender-focus) 50%, transparent);
@@ -70,7 +70,7 @@
   background: transparent;
   color: var(--text-dim);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-sm);
   cursor: pointer;
 }
 .linkpop-text:hover {

@@ -241,7 +241,7 @@
   color: var(--text);
 }
 .dsec-count {
-  font-size: 12px;
+  font-size: var(--t-xs);
   line-height: 18px;
   color: var(--text-mute);
   font-variant-numeric: tabular-nums;
@@ -270,7 +270,7 @@
   box-shadow: var(--hairline);
   font: inherit;
   font-size: var(--d-chip-text);
-  font-weight: 400;
+  font-weight: var(--w-regular);
   line-height: 18px;
   color: var(--text);
 }
@@ -376,7 +376,7 @@
 .dpanel[data-touch] .tagadd {
   flex: 1 1 120px;
   /* 16px or the phone's browser zooms the page when the field takes focus. */
-  font-size: 16px;
+  font-size: var(--t-xl);
 }
 .dpanel .tagadd::placeholder {
   color: var(--text-mute);
@@ -478,21 +478,27 @@
   display: flex;
   flex-direction: column;
   margin: 0 -8px;
-  /* What the window has left once the header, tags and views are drawn. */
-  max-height: max(220px, calc(100vh - 480px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
 }
-.dpanel .facet-list::after {
-  content: "";
-  flex: none;
-  position: sticky;
-  bottom: 0;
-  height: var(--sp-4);
-  background: linear-gradient(to bottom, transparent, var(--surface-2));
-  pointer-events: none;
+.dpanel .facet-group + .facet-group {
+  margin-top: var(--sp-3);
+}
+.dpanel .facet-group-label {
+  padding: 0 8px;
+  font-size: var(--t-xs);
+  color: var(--text-mute);
+}
+.dpanel .facet-more-btn {
+  margin: 2px 8px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--t-xs);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.dpanel .facet-gist .facet-text {
+  font-weight: var(--w-strong);
 }
 /* On a phone the whole panel scrolls under the thumb; a second scroller inside it
    would only catch the gesture. */
@@ -625,7 +631,7 @@
   box-shadow: 0 0 0 3px var(--lavender-subtle);
 }
 .dpanel[data-touch] .facet-edit {
-  font-size: 16px;
+  font-size: var(--t-xl);
 }
 .dpanel .facet-add {
   display: inline-flex;
@@ -639,7 +645,7 @@
   background: transparent;
   color: var(--text-dim);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-sm);
   cursor: pointer;
   transition:
     color 140ms ease-out,
@@ -657,7 +663,7 @@
 /* A quiet line under a section (where the summary can be regenerated, say). */
 .dpanel .dfoot {
   margin-top: 10px;
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 18px;
   color: var(--text-mute);
 }
@@ -667,33 +673,6 @@
   line-height: var(--d-line);
   color: var(--text-dim);
   white-space: pre-wrap;
-}
-
-/* ---- passages that connect ----------------------------------------------------
-   A passage's opening words set as a quotation, then the notes it echoes as chips. */
-.dpanel .connection + .connection {
-  margin-top: var(--sp-4);
-}
-.dpanel .connection-excerpt {
-  margin-bottom: var(--sp-2);
-  padding-left: var(--sp-3);
-  box-shadow: inset 1px 0 0 var(--line-strong);
-  font-size: 13px;
-  line-height: 19px;
-  color: var(--text-dim);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.dpanel .relatedchip {
-  /* A note a passage echoes: the chip's shape with no x, and a button. */
-  padding: 0 12px;
-  cursor: pointer;
-  text-align: left;
-}
-.dpanel .relatedchip:hover {
-  color: var(--accent-text);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -711,7 +690,7 @@
   width: 100%;
   min-width: 0;
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--t-lg);
   line-height: 22px;
   padding: var(--sp-2) var(--sp-3);
   border: 0;
@@ -736,11 +715,11 @@ dialog.share-dialog .share-link {
 }
 dialog.share-dialog .share-link .share-input {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--t-md);
   color: var(--text-dim);
 }
 dialog.share-dialog p.share-changed {
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 20px;
   color: var(--text-mute);
 }
@@ -790,7 +769,7 @@ dialog.share-dialog .share-pass em {
 }
 dialog.share-dialog p.share-hint {
   margin-top: var(--sp-2);
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 18px;
   color: var(--text-mute);
 }

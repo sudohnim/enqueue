@@ -92,6 +92,17 @@ You can change the shortcut in Settings > Capture.
 
 Capturing never waits: the thing is saved at once, and the reading, summarising and indexing happen behind it.
 
+### From this Mac
+
+**Settings > Library > From this Mac** brings in what you already have.
+
+- **Apple Notes.** Press **Bring in**. Each note comes in as a note. Run it again later to bring in what changed. Locked notes and notes in Recently Deleted are left out. This is not offered in the Mac App Store build.
+- **Bookmarks.** Export your bookmarks from your browser as an HTML file, then choose that file with **Import**. Each bookmark becomes a link. Its folders become tags, except the browser's own folders.
+- **Kindle highlights.** Find `My Clippings.txt` in your Kindle's documents folder, then choose it with **Import**. Each book becomes one note with its highlights.
+- **New files in a folder.** Add a folder under **New files in a folder**. Each new PDF, picture and text file is kept. Files already there are left alone.
+
+Enqueue reads these files on this Mac. Nothing is sent to a service to do the reading. After they are in, the assistant you chose reads and summarises them like anything else.
+
 ## The library
 
 The home screen is the wall: everything you saved, the most recently touched first.
@@ -218,8 +229,18 @@ When your words clearly name one thing it is already picked, so typing part of a
 On the phone the same name matches lead the results as you type.
 Typing an artifact's name finds that artifact first, ahead of anything that only resembles it.
 Results never wait long on the model: when it is slow, the results it has not checked yet are shown last, under a line that says so, and the same search is exact the next time.
+Open a PDF result and it opens at the page where your words matched, with them marked, not at the first page.
 
 If you never saved anything about a subject, the answer is **nothing found**, not a wall of loosely related things.
+
+### Finding a picture by its colour
+
+Type a colour before the word picture, photo, image or screenshot: "blue photos" shows only pictures with blue in them.
+Or type `color:blue`, `colour:blue` or `color:#rrggbb` anywhere in the search.
+A colour with no picture word after it stays an ordinary word: "red wine" searches for red wine.
+When a search shows three pictures or more, a row of colour dots appears under the result count.
+Press a dot to filter to that colour; the dot of the colour in your search gets a ring.
+The colours are read from each picture on your Mac. Nothing is sent away to find them.
 
 ### Finding a word inside one artifact
 
@@ -235,8 +256,11 @@ Click the **eye** and ask a question in plain words.
 - The answer is written from your own library and names the artifacts it used. Click one to open it.
 - If nothing you saved answers the question, it says so rather than guessing.
 - A question is a conversation: ask a follow-up and it keeps the thread.
+- An answer may show **p. N** beside a passage it used. Click it to open the document at that page.
 - From an open artifact, the eye asks about that one thing.
 - Conversations are kept, and sync to your phone.
+- A line under an answer says what it read. If the answer came from this Mac, it says nothing left this Mac. If an outside model answered, it says how many notes it read and how many characters it sent, and to which service.
+- Click **Save as a note** under an answer to keep the question, the answer and the titles it used as a new note.
 
 The eye is also a little alive.
 It follows the pointer, blinks, and approves when something is saved.
@@ -245,8 +269,16 @@ It follows the pointer, blinks, and approves when something is saved.
 
 Open an artifact and click the **circled i** to open its Details panel: tags, views, the summary, and passages that connect to other artifacts.
 The page slides aside so the panel never covers what you are reading.
-The **Summary** is a handful of lines the model wrote about what the artifact says and what it is an example of.
-These lines are what let search find it by idea.
+
+The model writes a short plain line first: what the artifact is and its main point.
+Below it, **Key points** say what the artifact actually says, in its own words and in order.
+Below that, **Ideas** say what it could be an example of, so search can find it by meaning.
+Open **Show more** to read the rest of the ideas.
+**Also found by** holds lines that reach the same idea from another field; these start closed too.
+When there is no plain first line, the panel shows **About** instead.
+
+The model also writes short search phrases for each artifact.
+They are not shown in the panel, but they help search find it by what a person would type.
 
 - Click a line to rewrite it, or **Add a line** to write your own.
 - Remove a line you disagree with.
@@ -275,6 +307,15 @@ There are three kinds of link:
 Same-point links come first, marked **Same idea, another field**, and the farther apart the two fields, the higher it sits: a note on a willow in a storm beside one on shipping software says more than two notes on the same book.
 The rest follow, closest first.
 
+The panel draws these in five named groups, in this order: **Same subject** (the reason is the other note's own "what it is about" line), **Named in**, **Same idea, another field**, **Also mentions** (Both mention ...), and **You asked about both**.
+**Named in** holds live notes whose text uses this note's title; **You asked about both** holds notes an answer cited alongside this one.
+Those two groups need no stored link and do not count toward the five.
+**Show all** opens every stored row when there are more than five.
+**More like this**, beside the Related heading, runs a live search from the artifact and shows the closest other items as a results list.
+
+On a same-idea row, **Keep** moves the pair to the top and marks it Kept.
+**Not the same** removes the link and stops the pair being suggested again.
+
 Nothing is invented to fill the list.
 A same-point link only appears after the model has read the pair and agreed that they make the same point; a pair it has not judged yet, or said no to, is not shown.
 If the model is out of usage or unreachable, the other two kinds still work, and the waiting pairs are judged on their own once it is back.
@@ -282,7 +323,7 @@ Each pair is judged once and remembered.
 Judging runs quietly in the background, at most 40 notes a day, so it can never use up your model allowance; a whole library is worked through over several days.
 An artifact marked local-only is only ever judged by the model on your computer.
 Click a related artifact to open it.
-Related is shown on the desktop only.
+On the phone, the reader shows the same three kinds of link under your note; tap one to open it. On a same-idea row there, **Keep** and **Not the same** work too, and sync back to the Mac. The other groups are on the desktop only.
 
 ## Tags and views
 
@@ -334,9 +375,11 @@ There is no way to recover a forgotten vault PIN.
 
 The phone app (Android and iPhone) is your library in your pocket: read, capture, write, ask.
 
-- **Reading.** Rows open to the note, the image (pinch to zoom), the link's preview, or the PDF.
+- **Reading.** Rows open to the note, the image (pinch to zoom), the link's preview, or the PDF. Under a note, **Related** rows open the linked item, and a same-idea row has **Keep** and **Not the same**.
 - **Writing.** Tap a note to write in it. **+ > Note** starts a new one. Both save as you type.
 - **Tabs and drafts.** A note's tabs show one at a time; its drafts are in Details. See [Notes](#notes).
+- **Searching.** Search finds the words you saved in notes, your annotations, the summary on each item, and PDF page text, and marks the words it matched. It works offline.
+- **Something shiny.** The day's card sits above the library; **Not today** hides it until tomorrow.
 - **Asking.** The eye answers from the copy on the phone.
 - **Small edits.** Star, delete, restore, and rewrite a summary line. Tagging and views are for the desk.
 - **Offline.** Everything is on the phone and saves there first. What you did reaches your Mac when there is a connection again.
@@ -349,7 +392,8 @@ The phone app (Android and iPhone) is your library in your pocket: read, capture
 On the iPhone, iOS wakes Enqueue now and then to do the same; it decides when.
 - **Updates.** When Google Play or the App Store has a newer version, the app asks you to update. **Update** opens the store's update; **Not now** asks again in 3 days.
 
-The phone does not write summaries or build the search index itself; those come from the Mac through sync.
+The phone does not write summaries; the model on your Mac does, and the words reach the phone through sync.
+From those words it builds a local keyword index, so search covers the note text, the summary and PDF pages even offline.
 
 ## Sync
 
@@ -420,6 +464,31 @@ Start Enqueue again and it rebuilds the search index; browsing works meanwhile, 
 
 Your model API key is not in the backup (it lives in the Mac's Keychain); enter it again in Settings.
 
+## Space on this Mac
+
+**Settings > Library** shows how much space the original files you saved use on this Mac.
+If you use Enqueue sync, you can let go of copies the relay already holds.
+Under **Space on this Mac**, turn on **Keep files I have not opened in 30 days in Enqueue sync only**.
+The 30 days is the `offload_after_days` setting.
+Enqueue removes a local file only after it checks that the relay holds the same sealed bytes.
+Pinned items and items marked "only on this Mac" always stay.
+Vaulted items and items in the trash stay too.
+A file you open again is fetched from the relay and put back on the Mac.
+The switch is off by default, so nothing is removed until you turn it on.
+
+## A plain copy in a folder
+
+A backup is encrypted and cannot be opened as files.
+For a copy you can read without Enqueue, use **Settings > Library > Export to a folder**.
+Enqueue writes one Markdown file per item and the original files into `<folder>/Enqueue`.
+Turn on **Keep this copy up to date every day** to update that folder every day.
+The folder is the `export_dir` setting; Enqueue writes into `<folder>/Enqueue` and never creates the folder itself, so skip this if the folder is missing.
+A second run changes only what changed.
+Files in this folder are not encrypted by Enqueue.
+Anyone who can open the folder can read them.
+Use a folder in a drive that is end-to-end encrypted.
+Items in the vault and items marked local-only are left out of the daily copy.
+
 ## Privacy and encryption
 
 Nobody but you can read your library: not the relay, not your cloud drive, not us.
@@ -456,6 +525,12 @@ Entering a different key lifts the pause at once.
 
 What always stays on the Mac: the library, the search index, and the embeddings that power search by meaning.
 What can leave, only if you set it up: text sent to an outside model, encrypted sync through the relay, and the backup in your cloud drive.
+
+### What left this Mac
+
+**Settings > Activity** opens with a table of what was sent to an outside model in the last 30 days.
+It groups the totals by day, by service, and by what the model was doing.
+It counts characters only. Your words themselves are never shown or kept there.
 
 ## Settings reference
 

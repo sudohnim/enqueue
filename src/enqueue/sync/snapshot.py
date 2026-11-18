@@ -68,7 +68,7 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
             dict(r)
             for r in conn.execute(
                 "SELECT id, level, statement, model_version, body_version, trust, edited,"
-                " bridge FROM facets WHERE artifact_id = ? ORDER BY level, statement, id",
+                " bridge, role FROM facets WHERE artifact_id = ? ORDER BY level, statement, id",
                 (artifact_id,),
             )
         ],
@@ -114,6 +114,8 @@ def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) ->
             "section_cache": [],
             "chunk_contexts": [],
             "related_verdicts": [],
+            "link_feedback": [],
+            "related": [],
         }
     from ..ingest import source
 
@@ -182,6 +184,28 @@ def derived_layers(conn: Connection, artifact_id: str, vaulted: bool = False) ->
                 (f"{artifact_id}|%", f"%|{artifact_id}"),
             )
         ],
+        "link_feedback": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT pair, verdict, idea, created_at FROM link_feedback"
+                " WHERE instr(pair, ?) > 0",
+                (artifact_id,),
+            )
+        ],
+        "related": (
+            []
+            if conn.execute(
+                "SELECT local_only FROM artifacts WHERE id = ?", (artifact_id,)
+            ).fetchone()["local_only"]
+            else [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT artifact_id, related_id, owner, score, via, point, kind, distance"
+                    " FROM related WHERE owner = ?",
+                    (artifact_id,),
+                )
+            ]
+        ),
     }
 
 
@@ -308,6 +332,8 @@ def _apply_snapshot_children(
     # children re-apply (schema repair) would otherwise delete them. This is why a
     # device that generates its own summaries keeps them, while the phone (which cannot)
     # receives them whenever a snapshot brings them along.
+    from ..ingest.facets import role_for
+
     incoming_facets = snapshot.get("facets") or []
     # A vaulted artifact is the exception: its snapshot carries only sealed lines
     # (often none), and the readable summary a device made before it was vaulted must
@@ -319,7 +345,7 @@ def _apply_snapshot_children(
             conn.execute(
                 "INSERT INTO facets"
                 " (id, artifact_id, level, statement, model_version, body_version, trust, edited,"
-                " bridge) VALUES (?,?,?,?,?,?,?,?,?)",
+                " bridge, role) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     f["id"],
                     artifact_id,
@@ -330,6 +356,7 @@ def _apply_snapshot_children(
                     f.get("trust", 0.5),
                     f.get("edited", 0),
                     f.get("bridge", 0),
+                    f.get("role") or role_for(f.get("level") or 0, bool(f.get("bridge"))),
                 ),
             )
 
@@ -467,8 +494,8 @@ def read_chat_snapshot(conn: Connection, chat_id: str) -> dict | None:
     """Build one conversation's snapshot, or None when it does not exist.
 
     Children are ordered deterministically so the canonical JSON is byte-stable:
-    messages by `ordinal, id`, citations by `message_id, rank`, topics by
-    `created_at, id`.
+    messages by `ordinal, id`, citations by `message_id, rank`, places by
+    `message_id, n`, topics by `created_at, id`.
     """
     row = conn.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
     if row is None:
@@ -488,6 +515,15 @@ def read_chat_snapshot(conn: Connection, chat_id: str) -> dict | None:
                 "SELECT c.* FROM chat_citations c"
                 " JOIN chat_messages m ON m.id = c.message_id"
                 " WHERE m.chat_id = ? ORDER BY c.message_id, c.rank",
+                (chat_id,),
+            )
+        ],
+        "places": [
+            dict(r)
+            for r in conn.execute(
+                "SELECT p.message_id, p.n, p.artifact_id, p.page, p.quote FROM chat_places p"
+                " JOIN chat_messages m ON m.id = p.message_id"
+                " WHERE m.chat_id = ? ORDER BY p.message_id, p.n",
                 (chat_id,),
             )
         ],
@@ -544,6 +580,12 @@ def apply_chat_snapshot(conn: Connection, snapshot: dict) -> None:
         " (SELECT id FROM chat_messages WHERE chat_id = ?)",
         (chat_id,),
     )
+    if "places" in snapshot:
+        conn.execute(
+            "DELETE FROM chat_places WHERE message_id IN"
+            " (SELECT id FROM chat_messages WHERE chat_id = ?)",
+            (chat_id,),
+        )
     conn.execute("DELETE FROM chat_messages WHERE chat_id = ?", (chat_id,))
     conn.execute("DELETE FROM chat_topics WHERE chat_id = ?", (chat_id,))
     for m in snapshot.get("messages", []):
@@ -557,6 +599,13 @@ def apply_chat_snapshot(conn: Connection, snapshot: dict) -> None:
             "INSERT INTO chat_citations (message_id, artifact_id, rank) VALUES (?,?,?)",
             (c["message_id"], c["artifact_id"], c["rank"]),
         )
+    if "places" in snapshot:
+        for p in snapshot.get("places") or []:
+            conn.execute(
+                "INSERT OR REPLACE INTO chat_places (message_id, n, artifact_id, page, quote)"
+                " VALUES (?,?,?,?,?)",
+                (p["message_id"], p["n"], p["artifact_id"], p.get("page"), p.get("quote", "")),
+            )
     for t in snapshot.get("topics", []):
         tc = list(t.keys())
         conn.execute(
@@ -579,6 +628,7 @@ def _apply_derived_layers(
     if vaulted:
         conn.execute("DELETE FROM entities WHERE artifact_id = ?", (artifact_id,))
         conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
+        conn.execute("DELETE FROM related WHERE owner = ?", (artifact_id,))
         conn.execute(
             "DELETE FROM derived_values WHERE subject = ?"
             " AND scope IN ('section_summary', 'chunk_context')",
@@ -668,6 +718,45 @@ def _apply_derived_layers(
             " model_version, created_at) VALUES ('related_judge', ?, ?, ?, 1, 'model', ?, ?)",
             (v["subject"], v["attribute"], v["value"], v["model_version"], now),
         )
+
+    if "related" in snapshot:
+        conn.execute("DELETE FROM related WHERE owner = ?", (artifact_id,))
+        for r in snapshot.get("related") or []:
+            conn.execute(
+                "INSERT INTO related (artifact_id, related_id, owner, score, via, point, kind, distance,"
+                " model_version, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    r["artifact_id"],
+                    r["related_id"],
+                    r["owner"],
+                    r["score"],
+                    r.get("via"),
+                    r.get("point"),
+                    r.get("kind"),
+                    r.get("distance"),
+                    "",
+                    now,
+                ),
+            )
+
+    if "link_feedback" in snapshot:
+        for lf in snapshot.get("link_feedback") or []:
+            existing = conn.execute(
+                "SELECT created_at, verdict FROM link_feedback WHERE pair = ?", (lf["pair"],)
+            ).fetchone()
+            if existing is None or (lf.get("created_at") or "") > (existing["created_at"] or ""):
+                conn.execute(
+                    "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    (lf["pair"], lf["verdict"], lf.get("idea", ""), lf.get("created_at") or now),
+                )
+                if lf["verdict"] == "no":
+                    x, _, y = lf["pair"].partition("|")
+                    conn.execute(
+                        "DELETE FROM related WHERE (artifact_id = ? AND related_id = ?)"
+                        " OR (artifact_id = ? AND related_id = ?)",
+                        (x, y, y, x),
+                    )
 
 
 def read_view_snapshot(conn: Connection, pivot_id: str) -> dict | None:

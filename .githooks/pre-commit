@@ -20,6 +20,15 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # What is staged for this commit?
 staged="$(git diff --cached --name-only --diff-filter=ACM)"
 
+# A task marked done in the plan must say what was done (bin/check-plan). This runs on
+# every commit that touches the plan, docs-only ones too: that is where false marks land.
+if printf '%s\n' "$staged" | grep -qx 'docs/PLAN.md'; then
+  if ! "$REPO/bin/check-plan"; then
+    echo "pre-commit: docs/PLAN.md marks a task done that was not - commit blocked." >&2
+    exit 1
+  fi
+fi
+
 # Docs/asset-only commits do not need the code gate.
 if ! printf '%s\n' "$staged" | grep -qE '\.(py|js|html|rs|toml)$|^bin/|^desktop/(src|permissions|Cargo)'; then
   exit 0

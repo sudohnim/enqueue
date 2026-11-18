@@ -1089,6 +1089,44 @@ async function renderSettingsFeatures() {
 
 // ---- Storage sub-page ----------------------------------------------------
 // ---- Storage tab ----------------------------------------------------------
+async function renderSpaceSection(d) {
+	const space = await api("/storage/originals");
+	const setting =
+		d.settings.offload_originals || { value: "off", locked: false, env_var: "ENQ_OFFLOAD" };
+	const on = String(setting.value).toLowerCase() === "on";
+	const label = "Keep files I have not opened in 30 days in Enqueue sync only";
+	let html = '<div class="shelf">Space on this Mac</div><div class="group">';
+	html +=
+		'<div class="field"><div class="aside">Original files on this Mac: ' +
+		bytes(space.local_bytes) +
+		".</div></div>";
+	if (!space.ready) {
+		html +=
+			'<div class="field"><div class="aside">Turn on Enqueue sync to free space on this Mac.</div></div>';
+	} else {
+		html +=
+			'<div class="field"><div class="togglerow"><div>' +
+			'<span class="rowlabel">' +
+			label +
+			"</span>" +
+			(setting.locked
+				? '<div class="pinned">Set outside Enqueue (' + esc(setting.env_var) + ").</div>"
+				: '<div class="aside">They open again when you need them. Pinned items and items marked "only on this Mac" always stay. This can free ' +
+					bytes(space.could_free_bytes) +
+					" now.</div>") +
+			"</div>" +
+			'<button class="toggle" role="switch" aria-checked="' +
+			String(on) +
+			'" aria-label="' +
+			esc(label) +
+			'"' +
+			(setting.locked ? ' disabled aria-disabled="true"' : "") +
+			" onclick=\"stageSwitch(this, 'offload_originals')\"><span class=\"knob\"></span></button>" +
+			"</div></div>";
+	}
+	return html + "</div>";
+}
+
 async function renderSettingsStorage() {
 	const d = await api("/settings");
 	let html = '<div class="h2">Library</div>';
@@ -1098,7 +1136,7 @@ async function renderSettingsStorage() {
 	const s0 = d.storage;
 	html += await renderBackupSection();
 	html += await renderDraftsSection(d);
-	html += await renderMoveSection();
+	html += await renderMoveSection(d);
 	const items = (s0.counts && s0.counts.artifacts) || 0;
 	const chats = (s0.counts && s0.counts.chats) || 0;
 	html +=
@@ -1114,6 +1152,7 @@ async function renderSettingsStorage() {
 		"." +
 		(backupOn ? " A copy goes to your backup folder." : " Nothing you save leaves this Mac.") +
 		"</div></div></div>";
+	html += await renderSpaceSection(d);
 	html += moreOptions(
 		'<div class="group">' +
 			'<div class="field"><span class="rowlabel">Library folder</span>' +
@@ -1232,7 +1271,7 @@ async function showExtensionCode(button) {
 }
 
 // Bringing notes in from another app, and taking the whole library out (portable.py).
-async function renderMoveSection() {
+async function renderMoveSection(d) {
 	let imp, exp;
 	try {
 		[imp, exp] = await Promise.all([api("/import"), api("/export")]);
@@ -1247,7 +1286,27 @@ async function renderMoveSection() {
 		verb + "</button></div>";
 	const busy = (st) => st.state === "running";
 	if (busy(imp) || busy(exp)) setTimeout(watchMove, 1500);
-	return (
+	const exportField = d.settings.export_dir || {};
+	const dailyOn = !!String(exportField.value || "").trim();
+	const locked = !!exportField.locked;
+	const lastFolder = exp && exp.path ? String(exp.path).replace(/\/Enqueue\/?$/, "") : "";
+	const dailyRow =
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">Keep this copy up to date every day</span>' +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(dailyOn) +
+		'" aria-label="Keep this copy up to date every day" data-dir="' +
+		esc(lastFolder) +
+		'"' +
+		(locked ? ' disabled aria-disabled="true"' : "") +
+		' onclick="toggleDailyExport(this)"><span class="knob"></span></button>' +
+		"</div>" +
+		'<div class="aside">Files in this folder are not encrypted by Enqueue. ' +
+		"Anyone who can open the folder can read them. Use a folder in a drive that is " +
+		"end-to-end encrypted. Items in the vault and items marked local-only are left out " +
+		"of the daily copy.</div></div>";
+	let html =
 		'<div class="shelf">Move notes in and out</div><div class="group">' +
 		'<div class="field"><span class="rowlabel">Import notes</span>' +
 		'<div class="aside">From Obsidian, Notion, Bear, Standard Notes, Fabric, or any folder of ' +
@@ -1258,7 +1317,7 @@ async function renderMoveSection() {
 				'<button class="btn tertiary" onclick="chooseImport(false)"' + (busy(imp) ? " disabled" : "") +
 				">Choose a .zip…</button></div>"
 			: typed("import_input", "Import", "startImport")) +
-		'<div class="aside" id="importState">' + esc(moveLine(imp, "import")) + "</div></div>" +
+		'<div class="aside" id="importState">' + esc(folderLine(imp)) + "</div></div>" +
 		'<div class="field"><span class="rowlabel">Export as Markdown</span>' +
 		'<div class="aside">Every item as a Markdown file any notes app opens, with pictures and ' +
 		"originals in a files folder. Export to the same place again to bring it up to date. " +
@@ -1267,8 +1326,64 @@ async function renderMoveSection() {
 			? '<div class="actions"><button class="btn tertiary" onclick="chooseExport()"' + (busy(exp) ? " disabled" : "") +
 				">Export to a folder…</button></div>"
 			: typed("export_input", "Export", "startExport")) +
-		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div></div>"
-	);
+		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div>" +
+		dailyRow +
+		"</div>";
+	const apple =
+		d.features && d.features.apple_notes
+			? '<div class="field"><span class="rowlabel">Apple Notes</span>' +
+				'<div class="aside">Bring in your notes. Run it again later to bring in what changed. ' +
+				"Locked notes are left out.</div>" +
+				'<div class="actions"><button class="btn tertiary" onclick="startAppleNotes()"' +
+				(busy(imp) ? " disabled" : "") + ">Bring in</button></div>" +
+				'<div class="aside" id="appleState">' + esc(appleLine(imp)) + "</div></div>"
+			: "";
+	const dirs = String((d.settings.watch_dirs || {}).value || "")
+		.split(/\r?\n/)
+		.map((x) => x.trim())
+		.filter(Boolean);
+	const dirRows = dirs
+		.map(
+			(p) =>
+				'<div class="keyrow"><span class="aside path" title="' +
+				esc(p) +
+				'"><bdi>' +
+				esc(p) +
+				'</bdi></span><button class="btn tertiary" onclick="removeWatchDir(' +
+				esc(JSON.stringify(p)) +
+				')">Remove</button></div>',
+		)
+		.join("");
+	const addDir = picker
+		? '<div class="actions"><button class="btn tertiary" onclick="chooseWatchDir()">Add a folder</button></div>'
+		: '<div class="keyrow"><input id="watch_dir_input" placeholder="~/Downloads/..." ' +
+			"onkeydown=\"if(event.key==='Enter')addWatchDir(this.value)\">" +
+			'<button class="btn tertiary" onclick="addWatchDir(document.getElementById(\'watch_dir_input\').value)">' +
+			"Add a folder</button></div>";
+	html +=
+		'<div class="shelf" id="fromThisMac">From this Mac</div><div class="group">' +
+		apple +
+		'<div class="field"><span class="rowlabel">New files in a folder</span>' +
+		'<div class="aside">Each new PDF, picture and text file in these folders is kept. ' +
+		"Files that are there now stay as they are.</div>" +
+		'<div class="watchdirs">' +
+		dirRows +
+		addDir +
+		"</div></div>" +
+		'<div class="field"><span class="rowlabel">Bookmarks and Kindle</span>' +
+		'<div class="aside">Bookmarks: export them from your browser, then choose the file with Import. ' +
+		'Kindle: choose the file "My Clippings.txt" with Import.</div></div></div>';
+	return html;
+}
+
+// The Import row shows a folder's import, never one from Apple Notes.
+function folderLine(st) {
+	return st && st.path === "Apple Notes" ? "" : moveLine(st, "import");
+}
+
+// The Apple Notes row shows only an Apple Notes import, never a folder's.
+function appleLine(st) {
+	return st && st.path === "Apple Notes" ? moveLine(st, "import") : "";
 }
 
 function moveLine(st, what) {
@@ -1276,9 +1391,14 @@ function moveLine(st, what) {
 	if (st.state === "failed") return (what === "import" ? "The import" : "The export") + " stopped: " + st.error;
 	if (what === "import") {
 		if (!st.notes && !st.files && st.state !== "running") return "";
-		const line = plural(st.notes, "note") + " and " + plural(st.files, "file");
+		if (st.path === "Apple Notes") {
+			const count = plural(st.notes || 0, "note");
+			return (st.state === "running" ? "Bringing in… " + count + " so far" : "Brought in " + count) + ".";
+		}
+		const line = plural(st.notes || 0, "note") + " and " + plural(st.files || 0, "file");
+		const links = st.links ? " and " + plural(st.links, "link") : "";
 		const skipped = st.skipped ? ", " + st.skipped + " skipped (already here, or empty)" : "";
-		return (st.state === "running" ? "Importing… " + line + " so far" : "Imported " + line) + skipped + ".";
+		return (st.state === "running" ? "Importing… " + line + links + " so far" : "Imported " + line + links) + skipped + ".";
 	}
 	if (st.state === "running") return "Exporting… " + plural(st.items || 0, "item") + " so far.";
 	return st.state === "done" ? "Exported " + plural(st.items, "item") + " to " + st.path + "." : "";
@@ -1294,8 +1414,10 @@ async function watchMove() {
 	}
 	const a = document.getElementById("importState");
 	const b = document.getElementById("exportState");
-	if (a) a.textContent = moveLine(imp, "import");
+	const c = document.getElementById("appleState");
+	if (a) a.textContent = folderLine(imp);
 	if (b) b.textContent = moveLine(exp, "export");
+	if (c) c.textContent = appleLine(imp);
 	if (imp.state === "running" || exp.state === "running") setTimeout(watchMove, 1500);
 	else await renderSettingsTab("storage");
 }
@@ -1328,6 +1450,15 @@ async function chooseExport() {
 	if (path) startExport(path);
 }
 
+function toggleDailyExport(button) {
+	const on = button.getAttribute("aria-checked") !== "true";
+	if (on && !(button.dataset.dir || "").trim()) {
+		return toast("Export to a folder first, then turn this on.", true);
+	}
+	button.setAttribute("aria-checked", String(on));
+	stageSetting("export_dir", on ? button.dataset.dir : "");
+}
+
 async function startMove(route, path) {
 	if (!(path || "").trim()) return;
 	try {
@@ -1344,6 +1475,70 @@ async function startMove(route, path) {
 
 const startImport = (path) => startMove("/import", path);
 const startExport = (path) => startMove("/export", path);
+
+async function startAppleNotes() {
+	try {
+		await api("/import/apple-notes", { method: "POST" });
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await renderSettingsTab("storage");
+}
+
+async function watchDirsNow() {
+	const d = await api("/settings");
+	return String((d.settings.watch_dirs || {}).value || "")
+		.split(/\r?\n/)
+		.map((x) => x.trim())
+		.filter(Boolean);
+}
+
+async function saveWatchDirs(dirs) {
+	try {
+		await api("/settings", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ changes: { watch_dirs: dirs.join("\n") } }),
+		});
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await renderSettingsTab("storage");
+}
+
+async function chooseWatchDir() {
+	const picked = await choosePath({ directory: true, multiple: false, title: "Choose a folder to watch" });
+	if (!picked) return;
+	try {
+		await window.__TAURI__.core.invoke("remember_folder", { path: picked });
+	} catch (err) {
+		return toast("Enqueue could not keep access to that folder: " + String(err.message || err), true);
+	}
+	await addWatchDir(picked);
+}
+
+async function addWatchDir(path) {
+	const dir = String(path || "").trim();
+	if (!dir) return;
+	let dirs;
+	try {
+		dirs = await watchDirsNow();
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	if (!dirs.includes(dir)) dirs.push(dir);
+	await saveWatchDirs(dirs);
+}
+
+async function removeWatchDir(path) {
+	let dirs;
+	try {
+		dirs = await watchDirsNow();
+	} catch (err) {
+		return toast(String((err && err.message) || err), true);
+	}
+	await saveWatchDirs(dirs.filter((x) => x !== path));
+}
 
 function stageDraftPolicy(value) {
 	stageSetting("drafts_keep", value);
@@ -2944,12 +3139,50 @@ function telemetryCard(t) {
 	);
 }
 
+function outboundHtml(days) {
+	const rows = days && days.length
+		? "<table>" +
+			"<thead><tr><th>Day</th><th>Service</th><th>What for</th><th>Calls</th><th>Characters</th></tr></thead>" +
+			"<tbody>" +
+			days
+				.map(
+					(r) =>
+						"<tr><td>" +
+						esc(r.day) +
+						"</td><td>" +
+						esc(r.service) +
+						"</td><td>" +
+						esc(r.purpose) +
+						"</td><td>" +
+						r.calls +
+						"</td><td>" +
+						Number(r.chars).toLocaleString() +
+						"</td></tr>"
+				)
+				.join("") +
+			"</tbody></table>"
+		: '<p class="aside">Nothing has left this Mac in the last 30 days.</p>';
+	return (
+		'<div class="settings-card">' +
+		'<div class="settings-card-label">What left this Mac</div>' +
+		'<p class="aside" style="margin-bottom: var(--sp-3);">Counts of what was sent to online models. No text is kept.</p>' +
+		rows +
+		"</div>"
+	);
+}
+
 async function renderSettingsEvents() {
 	let events = [];
 	let usage = "";
+	let days = [];
 	try {
-		const [e, d] = await Promise.all([api("/events?limit=200"), api("/settings")]);
+		const [e, d, o] = await Promise.all([
+			api("/events?limit=200"),
+			api("/settings"),
+			api("/outbound"),
+		]);
 		events = e.events || [];
+		days = o.days || [];
 		if (d.settings.telemetry) usage = telemetryCard(d.settings.telemetry);
 	} catch (_) {
 		/* an empty log is fine */
@@ -2960,6 +3193,7 @@ async function renderSettingsEvents() {
 	ensureEventsPoller();
 	return (
 		usage +
+		outboundHtml(days) +
 		'<div class="settings-card">' +
 		'<div class="settings-card-label">Activity</div>' +
 		'<p class="aside" style="margin-bottom: var(--sp-3);">What Enqueue has been doing. Click a line for the details.</p>' +

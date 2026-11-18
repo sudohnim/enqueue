@@ -24,12 +24,12 @@ router = APIRouter()
 # --------------------------------------------------------------------------- read
 
 
-@router.get("/artifacts/{artifact_id}/connections")
-def connections(artifact_id: str) -> dict:
-    """Per passage, the other notes that say something close (retrieve/passage_links.py)."""
+@router.get("/artifacts/{artifact_id}/similar")
+def similar(artifact_id: str) -> dict:
+    """Live items closest to an artifact (retrieve/passage_links.py)."""
     from ..retrieve import passage_links
 
-    return {"passages": passage_links.for_artifact(artifact_id)}
+    return {"hits": passage_links.similar_items(artifact_id)}
 
 
 @router.post("/shiny/again")
@@ -438,7 +438,7 @@ def artifact_groups(by: str = "kind", per: int = GROUP_FIRST) -> dict:
 
 
 @router.get("/artifacts/{artifact_id}")
-def get_artifact(artifact_id: str) -> dict:
+def get_artifact(artifact_id: str, related: str = "") -> dict:
     try:
         detail = notes.get(artifact_id)
     except KeyError:
@@ -502,11 +502,17 @@ def get_artifact(artifact_id: str) -> dict:
     detail["views"] = sorted(views, key=lambda v: v["name"])
 
     from .. import db
-    from ..ingest import related
+    from ..ingest import related as related_mod
 
+    show_all = related == "all"
     conn = db.get_conn()
     try:
-        detail["related"] = related.for_artifact(conn, artifact_id)
+        detail["related"] = related_mod.for_artifact(
+            conn, artifact_id, limit=None if show_all else related_mod.RELATED_LIMIT
+        )
+        stored = related_mod.stored_count(conn, artifact_id)
+        detail["related_more"] = 0 if show_all else max(0, stored - related_mod.RELATED_LIMIT)
+        detail["related_pending"] = related_mod.is_pending(artifact_id)
     finally:
         conn.close()
     return detail
@@ -602,8 +608,26 @@ def get_blob(artifact_id: str):
     return Response(
         content=blob.read_bytes(),
         media_type=mime,
-        headers={"Content-Disposition": _inline(filename)},
+        headers=_blob_headers(mime, filename),
     )
+
+
+SHOWN_IN_PLACE = {"application/pdf", "text/plain"}
+
+
+def _shown_in_place(mime: str) -> bool:
+    return mime in SHOWN_IN_PLACE or (mime.startswith("image/") and mime != "image/svg+xml")
+
+
+def _blob_headers(mime: str, filename: str) -> dict:
+    disposition = _inline(filename)
+    if not _shown_in_place(mime):
+        disposition = disposition.replace("inline", "attachment", 1)
+    return {
+        "Content-Disposition": disposition,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+    }
 
 
 def _inline(filename: str) -> str:
@@ -622,6 +646,27 @@ def find_in_artifact(artifact_id: str, q: str) -> dict:
     are the rectangles it needs, in page fractions rather than points.
     """
     return {"query": q, "hits": capture.find_in_pdf(artifact_id, q)}
+
+
+class FeedbackBody(BaseModel):
+    a: str
+    b: str
+    verdict: str
+    idea: str = ""
+
+
+class NearbyBody(BaseModel):
+    text: str = ""
+
+
+@router.post("/artifacts/{artifact_id}/nearby")
+def nearby(artifact_id: str, body: NearbyBody) -> dict:
+    from ..retrieve import passage_links
+
+    text = (body.text or "").strip()
+    if len(text.split()) < 12:
+        return {"nearby": []}
+    return {"nearby": passage_links.near_text(artifact_id, text)}
 
 
 @router.get("/artifacts/{artifact_id}/preview-image")
@@ -870,3 +915,33 @@ def delete_facet(facet_id: str) -> dict:
         return facets_mod.delete_facet(facet_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such facet") from None
+
+
+@router.post("/related/feedback")
+def related_feedback(body: FeedbackBody) -> dict:
+    from ..ingest import related
+
+    if body.verdict not in ("keep", "no"):
+        raise HTTPException(status_code=400, detail="bad verdict")
+    related.feedback(body.a, body.b, body.verdict, body.idea)
+    from ..ingest.facets import sync_facets
+
+    sync_facets(body.a, bump=False)
+    sync_facets(body.b, bump=False)
+    return {"ok": True}
+
+
+@router.get("/artifacts/{artifact_id}/thumb")
+def get_thumb(artifact_id: str):
+    from .. import thumbs
+
+    data = thumbs.get(artifact_id)
+    if data is None and thumbs.make(artifact_id):
+        data = thumbs.get(artifact_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="no small picture")
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )

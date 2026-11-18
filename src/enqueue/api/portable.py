@@ -33,6 +33,15 @@ def import_start(body: _Path) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/import/apple-notes", status_code=202)
+def import_apple_notes() -> dict:
+    """Bring Apple Notes in on a background thread; GET /import shows it land."""
+    try:
+        return importer.start_apple_notes()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 _export: dict = {"state": "idle"}
 _export_lock = threading.Lock()
 

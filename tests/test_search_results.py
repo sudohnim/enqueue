@@ -207,6 +207,29 @@ class TestSearchEndpoint:
         ids = [h["artifact_id"] for h in body["hits"]]
         assert ids.count("a1") == 1
 
+    def test_pdf_hit_carries_its_page_and_quote(self, sqlite_store):
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, content_hash, status,"
+                " created_at, updated_at) VALUES ('pdf1', 'pdf', 'A PDF', 'pdf1_hash',"
+                " 'ok', datetime('now'), datetime('now'))"
+            )
+            _chunk(conn, "p0", "pdf1", 0, "## page 1\n\nalpha beta gamma")
+            _chunk(conn, "p1", "pdf1", 1, "## page 2\n\ntheta epsilon zeta")
+            conn.commit()
+        finally:
+            conn.close()
+        get_store().index_artifact("pdf1")
+        assert bootstrap.ensure_index()
+
+        with TestClient(app) as client:
+            resp = client.get("/search", params={"q": "epsilon"})
+        assert resp.status_code == 200
+        pdf = next(h for h in resp.json()["hits"] if h["artifact_id"] == "pdf1")
+        assert pdf["page"] == 1
+        assert pdf["quote"] == "theta epsilon zeta"
+
     def test_empty_query_returns_everything(self, sqlite_store):
         # An empty query means "everything", newest touch first. The embedding
         # store cannot answer an empty vector, and a request to group the whole

@@ -67,6 +67,8 @@ from .. import db, prompts
 log = logging.getLogger(__name__)
 
 RELATED_LIMIT = 5
+STORE_LIMIT = 12
+_NOT_INDEX_ONLY = " AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')"
 # Subject-to-subject cosine, set for precision: a missing link costs nothing, a made-up
 # one costs trust. Measured on a 141-summary library, pairs at 0.66+ are nearly all
 # real, 0.63-0.66 mostly real, and under 0.63 mostly chance (a food list beside a trip).
@@ -84,7 +86,7 @@ _PER_STATEMENT = 80
 IDEA_MIN = 0.72
 IDEA_CANDIDATES = 8
 # Bump when the way links are chosen changes: every artifact is recomputed once.
-VERSION = "9"
+VERSION = "10"
 # The most model calls the judge makes in a day (UTC). Each call judges one artifact's
 # candidates. 0 turns the judge off: cached verdicts still link, nothing new is asked.
 JUDGE_DAILY = int(os.getenv("ENQ_RELATED_JUDGE_DAILY", "40"))
@@ -129,9 +131,11 @@ def compute(artifact_id: str, judge: bool = False) -> int:
     store = get_store()
     conn = db.get_conn()
     try:
+        no = refused(conn, artifact_id)
         mine = conn.execute(
             "SELECT id, level, statement FROM facets WHERE artifact_id = ? AND level >= ?"
-            " AND (level = ? OR bridge = 0)",
+            + _NOT_INDEX_ONLY
+            + " AND (level = ? OR bridge = 0)",
             (artifact_id, SUBJECT_LEVEL, SUBJECT_LEVEL),
         ).fetchall()
         # other artifact -> (similarity, this artifact's line, the other's facet id)
@@ -144,6 +148,8 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 store.FACETS, facet["statement"], limit=_PER_STATEMENT, as_query=False
             ):
                 other = hit["artifact_id"]
+                if other in no:
+                    continue
                 # A subject line only meets subject lines, an idea line only idea lines.
                 if other == artifact_id or (hit["level"] == SUBJECT_LEVEL) != subject:
                     continue
@@ -156,7 +162,27 @@ def compute(artifact_id: str, judge: bool = False) -> int:
                 into = best if subject else ideas
                 if other not in into or hit["score"] > into[other][0]:
                     into[other] = (hit["score"], facet["statement"], hit["facet_id"])
+        # Drop candidates whose matched facet is an index-only line.
+        facet_ids = [v[2] for v in list(best.values()) + list(ideas.values())]
+        if facet_ids:
+            roles = {
+                r["id"]: r["role"]
+                for r in conn.execute(
+                    "SELECT id, role FROM facets WHERE id IN (SELECT value FROM json_each(?))",
+                    (json.dumps(facet_ids),),
+                )
+            }
+            best = {
+                k: v for k, v in best.items() if roles.get(v[2], "") not in ("gist", "point", "ask")
+            }
+            ideas = {
+                k: v
+                for k, v in ideas.items()
+                if roles.get(v[2], "") not in ("gist", "point", "ask")
+            }
+
         named = _mentions(conn, artifact_id, cache)
+        named = {k: v for k, v in named.items() if k not in no}
         # How near each candidate's subject is to this one's, read from the two items'
         # own subject lines: the nearest-neighbour lists above miss most of a big library.
         near = store.facet_similarity(artifact_id, [*best, *ideas, *named], SUBJECT_LEVEL)
@@ -209,7 +235,7 @@ def compute(artifact_id: str, judge: bool = False) -> int:
         for other in via:
             scores.setdefault(other, MENTION_SCORE)
         top = sorted(scores.items(), key=lambda kv: _rank(kinds[kv[0]], distance[kv[0]], kv[1]))
-        top = top[:RELATED_LIMIT]
+        top = top[:STORE_LIMIT]
         theirs = _statements(conn, [best[other][2] for other, _ in top if other in best])
 
         now = db.now()
@@ -268,7 +294,8 @@ def _pair_keys(conn, artifact_id: str, others: list[str]) -> dict[str, tuple[str
     about: dict[str, list[str]] = {i: [] for i in ids}
     for r in conn.execute(
         "SELECT artifact_id, statement FROM facets WHERE level <= ?"
-        " AND artifact_id IN (SELECT value FROM json_each(?)) ORDER BY level, statement",
+        + _NOT_INDEX_ONLY
+        + " AND artifact_id IN (SELECT value FROM json_each(?)) ORDER BY level, statement",
         (SUBJECT_LEVEL, json.dumps(ids)),
     ):
         about[r["artifact_id"]].append(r["statement"])
@@ -323,11 +350,53 @@ def pending_ids() -> list[str]:
             for r in conn.execute(
                 "SELECT p.artifact_id FROM related_pending p JOIN artifacts a"
                 " ON a.id = p.artifact_id WHERE a.deleted_at IS NULL"
-                " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY p.since"
+                " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL ORDER BY a.updated_at DESC, p.since"
             )
         ]
     finally:
         conn.close()
+
+
+def feedback(a: str, b: str, verdict: str, idea: str = "") -> None:
+    """The person's ruling on a pair: "keep" or "no"."""
+    if verdict not in ("keep", "no"):
+        raise ValueError("verdict must be keep or no")
+    first, second = sorted((a, b))
+    pair = f"{first}|{second}"
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO link_feedback (pair, verdict, idea, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (pair, verdict, idea, db.now()),
+        )
+        if verdict == "no":
+            conn.execute(
+                "DELETE FROM related WHERE (artifact_id = ? AND related_id = ?)"
+                " OR (artifact_id = ? AND related_id = ?)",
+                (a, b, b, a),
+            )
+
+
+def refused(conn, artifact_id: str) -> set[str]:
+    """The other ids of pairs the person refused."""
+    out = set()
+    for r in conn.execute(
+        "SELECT pair FROM link_feedback WHERE verdict = 'no' AND instr(pair, ?) > 0",
+        (artifact_id,),
+    ):
+        x, _, y = r["pair"].partition("|")
+        out.add(y if x == artifact_id else x)
+    return out
+
+
+def stored_count(conn, artifact_id: str) -> int:
+    """How many live items this artifact has a stored link to."""
+    return conn.execute(
+        "SELECT COUNT(DISTINCT r.related_id) FROM related r JOIN artifacts a ON a.id = r.related_id"
+        " WHERE r.artifact_id = ?"
+        " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
+        (artifact_id,),
+    ).fetchone()[0]
 
 
 def is_pending(artifact_id: str) -> bool:
@@ -457,7 +526,8 @@ def _judge(
     about: dict[str, list[str]] = {i: [] for i in ids}
     for r in conn.execute(
         "SELECT artifact_id, statement FROM facets WHERE level = ?"
-        " AND artifact_id IN (SELECT value FROM json_each(?))",
+        + _NOT_INDEX_ONLY
+        + " AND artifact_id IN (SELECT value FROM json_each(?))",
         (SUBJECT_LEVEL, json.dumps(ids)),
     ):
         about[r["artifact_id"]].append(r["statement"])
@@ -486,9 +556,38 @@ def _judge(
             f"line from the item: {c['mine']}\nline from this candidate: {c['theirs']}"
             for c in batch
         ]
+        kept_ideas = [
+            r["idea"]
+            for r in conn.execute(
+                "SELECT idea FROM link_feedback WHERE verdict = 'keep' AND idea != ''"
+                " ORDER BY created_at DESC LIMIT 3"
+            )
+        ]
+        refused_ideas = [
+            r["idea"]
+            for r in conn.execute(
+                "SELECT idea FROM link_feedback WHERE verdict = 'no' AND idea != ''"
+                " ORDER BY created_at DESC LIMIT 3"
+            )
+        ]
+        examples = ""
+        if kept_ideas or refused_ideas:
+            examples = "\n\n"
+            if kept_ideas:
+                examples += (
+                    "This person said these were the same point:\n"
+                    + "\n".join("- " + i for i in kept_ideas)
+                    + "\n"
+                )
+            if refused_ideas:
+                examples += (
+                    "And these were not:\n" + "\n".join("- " + i for i in refused_ideas) + "\n"
+                )
         result = provider.complete(
             system=prompts.RELATED_JUDGE,
-            user=f"The item:\n{face(artifact_id)}\n\nCandidates:\n\n" + "\n\n".join(blocks),
+            user=f"The item:\n{face(artifact_id)}\n\nCandidates:\n\n"
+            + "\n\n".join(blocks)
+            + examples,
             response_model=_Verdicts,
         )
         asked = {c["id"] for c in batch}
@@ -567,6 +666,33 @@ def _own_sites(conn, artifact_ids: list[str]) -> dict[str, set[str]]:
     return out
 
 
+def _salient(conn, artifact_id: str, name: str) -> bool:
+    """Whether a name matters to an item: it is in the title or a subject line,
+    or two or more times in its text."""
+    needle = name.strip().lower()
+    row = conn.execute(
+        "SELECT lower(coalesce(title, '')) AS title, lower(coalesce(body, '')) AS body"
+        " FROM artifacts WHERE id = ?",
+        (artifact_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    if needle in row["title"]:
+        return True
+    subject = conn.execute(
+        "SELECT 1 FROM facets WHERE artifact_id = ? AND level = 1"
+        " AND instr(lower(statement), ?) > 0 LIMIT 1",
+        (artifact_id, needle),
+    ).fetchone()
+    if subject:
+        return True
+    text = row["body"] or " ".join(
+        r["text"].lower()
+        for r in conn.execute("SELECT text FROM chunks WHERE artifact_id = ?", (artifact_id,))
+    )
+    return text.count(needle) >= 2
+
+
 def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
     """Other live artifacts whose current entities share a name with this one's, mapped
     to the shared name (the rarest one, when several are shared)."""
@@ -608,16 +734,18 @@ def _mentions(conn, artifact_id: str, cache: dict) -> dict[str, str]:
             continue
         for other in others:
             out[other] = names[name]  # rarest name last, so it wins
+    out = {o: n for o, n in out.items() if _salient(conn, artifact_id, n) and _salient(conn, o, n)}
     return out
 
 
-def for_artifact(conn, artifact_id: str) -> list[dict]:
+def for_artifact(conn, artifact_id: str, limit: int | None = -1) -> list[dict]:
     """Live related artifacts, each with `point` (its summary line that matched, or
     the judge's sentence), `via` (a shared name), `link` (subject, mention or idea)
     and `distance` (how far apart the two subjects are). Analogies come first, the
-    farthest first; then the rest, closest first."""
+    farthest first; then the rest, closest first. `limit` caps the stored links (-1 is
+    RELATED_LIMIT, None is all); "named" and "asked" rows come after them, uncounted."""
     rows = conn.execute(
-        "SELECT a.id, a.title, a.kind, r.score, r.via, r.point, r.kind AS link, r.distance"
+        "SELECT a.id, a.title, a.kind, a.updated_at, r.score, r.via, r.point, r.kind AS link, r.distance"
         " FROM related r JOIN artifacts a"
         " ON a.id = r.related_id WHERE r.artifact_id = ?"
         " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL",
@@ -628,7 +756,75 @@ def for_artifact(conn, artifact_id: str) -> list[dict]:
         (dict(r) for r in rows),
         key=lambda r: _rank(r["link"] or "", r["distance"] or 0.0, r["score"]),
     )
+
+    # Feedback: kept pairs sort first, then the cap applies to the stored links.
+    kept_ids = set()
+    for r in conn.execute(
+        "SELECT pair FROM link_feedback WHERE verdict = 'keep' AND instr(pair, ?) > 0",
+        (artifact_id,),
+    ):
+        x, _, y = r["pair"].partition("|")
+        kept_ids.add(y if x == artifact_id else x)
+    for r in out:
+        r["kept"] = r["id"] in kept_ids
+    out.sort(key=lambda r: not r["kept"])
     first: dict[str, dict] = {}
     for r in out:
         first.setdefault(r["id"], r)
-    return list(first.values())[:RELATED_LIMIT]
+    out = list(first.values())
+    if limit == -1:
+        limit = RELATED_LIMIT
+    if limit is not None:
+        out = out[:limit]
+    existing = {r["id"] for r in out}
+
+    def extra(row, link: str, score: float) -> None:
+        out.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "kind": row["kind"],
+                "updated_at": row["updated_at"],
+                "score": score,
+                "via": None,
+                "point": None,
+                "link": link,
+                "distance": None,
+                "kept": False,
+            }
+        )
+        existing.add(row["id"])
+
+    # "Named in": live notes whose body holds this artifact's title.
+    title = conn.execute("SELECT title FROM artifacts WHERE id = ?", (artifact_id,)).fetchone()
+    title = (title["title"] if title else "") or ""
+    if len(title.split()) >= 2 or len(title) >= 6:
+        for row in conn.execute(
+            "SELECT a.id, a.title, a.kind, a.updated_at FROM artifacts a"
+            " WHERE a.kind = 'note' AND a.id != ? AND instr(lower(a.body), lower(?)) > 0"
+            " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+            " ORDER BY a.updated_at DESC LIMIT 3",
+            (artifact_id, title),
+        ).fetchall():
+            if row["id"] not in existing:
+                extra(row, "named", 0.8)
+
+    # "You asked about both": artifacts cited by an answer that also cited this one.
+    for row in conn.execute(
+        "SELECT a.id, a.title, a.kind, a.updated_at, COUNT(*) AS c FROM chat_citations c1"
+        " JOIN chat_citations c2 ON c1.message_id = c2.message_id"
+        " JOIN artifacts a ON a.id = c2.artifact_id"
+        " WHERE c1.artifact_id = ? AND c2.artifact_id != ?"
+        " AND a.deleted_at IS NULL AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+        " GROUP BY a.id ORDER BY c DESC LIMIT 3",
+        (artifact_id, artifact_id),
+    ).fetchall():
+        if row["id"] not in existing:
+            extra(row, "asked", 0.6)
+
+    from . import facets as facets_mod
+
+    about = facets_mod.gists(conn, [r["id"] for r in out])
+    for r in out:
+        r["about"] = about.get(r["id"])
+    return out

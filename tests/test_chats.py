@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from enqueue import api, assistant, chats, db, notes
+from enqueue import api, assistant, chats, db, notes, trash
 from enqueue.schemas import Answer, AssistantRoute, ChatTitle, ChatTopics
 
 
@@ -939,6 +939,35 @@ class TestPassageShapeForTheAnswerModel:
             "model can cite it (CHATBUG.1); got:\n" + captured.last_user
         )
 
+
+class TestNumberedPassages:
+    def test_used_is_limited_to_offered_numbers_and_deduplicated(self):
+        answer = Answer.model_validate(
+            {
+                "answer": "It fell.",
+                "grounded": True,
+                "cited": ["a", "b", "c"],
+                "used": [2, 9, 2],
+            },
+            context={"offered_artifact_ids": ["a", "b", "c"], "offered_passages": 3},
+        )
+        assert answer.used == [2]
+
+    def test_prompt_numbers_the_passages(self, store, monkeypatch):
+        captured = TestPassageShapeForTheAnswerModel._RecordingProvider(
+            Answer=Answer(answer="Yes.", grounded=True, cited=["a"])
+        )
+        monkeypatch.setattr(chats, "get_provider", lambda *a, **k: captured)
+        chats._ask_model(
+            question="q?",
+            history="",
+            found=[{"artifact_id": "a", "title": "A", "text": "some words here"}],
+        )
+        assert "[P1] [artifact] (id: a) A" in captured.last_user
+
+    def test_without_places_removes_the_marks(self):
+        assert chats.without_places("A [P1]. B [P12]") == "A. B"
+
     def test_annotation_sourced_chunk_text_is_tagged_as_a_note(self, store):
         """Before L.1: chunk text merged annotation prose with artifact body
         silently, so a passage over an image whose only text was an annotation
@@ -990,3 +1019,65 @@ class TestPassageShapeForTheAnswerModel:
             "model can attribute the line to a user-supplied note on the "
             "artifact, not the artifact's own body (L.1); got:\n" + joined
         )
+
+
+class TestSaveAnswerAsNote:
+    def test_grounded_answer_becomes_a_note_with_question_and_sources(
+        self, store, quiet_queue, answered, async_turns
+    ):
+        a = notes.create(body="# Joints\n\nA joint that moves.")
+        b = notes.create(body="# Hulls\n\nA hull that yields.")
+        answered.passages = [
+            {
+                "artifact_id": a["artifact"]["id"],
+                "title": "Joints",
+                "text": "A joint that moves.",
+                "kind": "note",
+            },
+            {
+                "artifact_id": b["artifact"]["id"],
+                "title": "Hulls",
+                "text": "A hull that yields.",
+                "kind": "note",
+            },
+        ]
+        answered(
+            Answer=Answer(
+                answer="Movement outlasts rigidity. [P1]",
+                grounded=True,
+                cited=[a["artifact"]["id"], b["artifact"]["id"]],
+            ),
+            ChatTitle=ChatTitle(title="Movement over rigidity"),
+            ChatTopics=ChatTopics(topics=["tolerance", "failure under load"]),
+        )
+
+        made = chats.ask("what outlasts what?")
+        chat_id = made["chat"]["id"]
+        async_turns.resolve()
+        answer_id = chats.get(chat_id)["messages"][-1]["id"]
+
+        note = chats.answer_as_note(chat_id, answer_id)
+        body = note["artifact"]["body"]
+        assert "# what outlasts what?" in body
+        assert "Movement outlasts rigidity." in body
+        assert "[P1]" not in body
+        assert "- Joints" in body
+        assert "- Hulls" in body
+
+        trash.delete(b["artifact"]["id"])
+        assert "- Hulls" not in chats.answer_as_note(chat_id, answer_id)["artifact"]["body"]
+
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO derived_values (scope, subject, attribute, value, grounded,"
+                " source, model_version, created_at) VALUES ('vault_answer', ?, 'x', 'y',"
+                " 1, 'user', '', '2099-01-01')",
+                (answer_id,),
+            )
+        with pytest.raises(KeyError):
+            chats.answer_as_note(chat_id, answer_id)
+
+    def test_unknown_answer_answers_404(self, store):
+        client = TestClient(api.app)
+        resp = client.post("/chats/no-chat/messages/no-message/note")
+        assert resp.status_code == 404

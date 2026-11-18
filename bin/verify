@@ -449,6 +449,24 @@ def main():
         print(f"{SRC}: contrast check FAILED", file=sys.stderr)
         pass_flag = False
 
+    print("")
+    print(f"=== {SRC}: style check ===")
+    r = subprocess.run(["bin/check-style", "--strict"], capture_output=False, timeout=30)
+    if r.returncode == 0:
+        print(f"{SRC}: style OK")
+    else:
+        print(f"{SRC}: style check FAILED", file=sys.stderr)
+        pass_flag = False
+
+    print("")
+    print(f"=== {SRC}: plan check ===")
+    r = subprocess.run(["bin/check-plan"], capture_output=False, timeout=30)
+    if r.returncode == 0:
+        print(f"{SRC}: plan OK")
+    else:
+        print(f"{SRC}: plan check FAILED: a task is marked done that was not", file=sys.stderr)
+        pass_flag = False
+
     if not fast:
         print("")
         print(f"=== {SRC}: desktop tests ===")

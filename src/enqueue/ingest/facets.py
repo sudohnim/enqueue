@@ -6,6 +6,7 @@ text extraction exists, since there is nothing to abstract from yet.
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 
@@ -62,6 +63,15 @@ _STOPWORDS = {
 }
 
 
+INDEX_ONLY_ROLES = ("gist", "point", "ask")
+
+
+def role_for(level: int, bridge: bool) -> str:
+    if bridge:
+        return "bridge"
+    return {0: "kind", 1: "subject"}.get(level, "idea")
+
+
 def proper_nouns(text: str, title: str) -> set[str]:
     """Words a level-2-or-above facet must not use, lowercased.
 
@@ -91,6 +101,9 @@ class _RawFacet(BaseModel):
 
 class _RawFacetSet(BaseModel):
     facets: list[_RawFacet]
+    gist: str = ""
+    points: list[str] = []
+    asks: list[str] = []
 
 
 def _trust_from_confidence(confidence: float | None) -> float:
@@ -212,8 +225,8 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
     for facet, trust, bridge in kept:
         conn.execute(
             "INSERT INTO facets"
-            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge)"
-            " VALUES (?,?,?,?,?,?,?,?)",
+            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 str(uuid.uuid4()),
                 artifact_id,
@@ -223,8 +236,56 @@ def generate_for_artifact(conn, artifact_id: str) -> tuple[int, str | None]:
                 row["body_version"],
                 trust,
                 int(bridge and facet.level >= 2),
+                role_for(facet.level, bool(bridge and facet.level >= 2)),
             ),
         )
+
+    # Gist and points: plain lines a person reads. Kept only when no hand-edited
+    # line already holds that role.
+    edited_roles = {
+        r["role"]
+        for r in conn.execute(
+            "SELECT role FROM facets WHERE artifact_id = ? AND edited = 1", (artifact_id,)
+        )
+    }
+    gist = " ".join((raw.gist or "").split())
+    if gist and "gist" not in edited_roles and 3 <= len(gist.split()) <= 25:
+        conn.execute(
+            "INSERT INTO facets"
+            " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+            " VALUES (?,?,?,?,?,?,1.0,0,'gist')",
+            (str(uuid.uuid4()), artifact_id, 0, gist, provider.model, row["body_version"]),
+        )
+    said = {w.strip(".,;:'\"()").lower() for w in text.split() if len(w) >= 4}
+    points = []
+    for p in raw.points or []:
+        p = " ".join((p or "").split())
+        words = {w.strip(".,;:'\"()").lower() for w in p.split() if len(w) >= 4}
+        if 3 <= len(p.split()) <= 18 and words & said and p not in points:
+            points.append(p)
+    points = points[:5]
+    if "point" not in edited_roles:
+        for p in points:
+            conn.execute(
+                "INSERT INTO facets"
+                " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+                " VALUES (?,?,?,?,?,?,1.0,0,'point')",
+                (str(uuid.uuid4()), artifact_id, 1, p, provider.model, row["body_version"]),
+            )
+    asks = []
+    for a in raw.asks or []:
+        a = " ".join((a or "").split()).rstrip(".").lower()
+        if 2 <= len(a.split()) <= 7 and a not in asks:
+            asks.append(a)
+    asks = asks[:8]
+    if asks and "ask" not in edited_roles:
+        for a in asks:
+            conn.execute(
+                "INSERT INTO facets"
+                " (id, artifact_id, level, statement, model_version, body_version, trust, bridge, role)"
+                " VALUES (?,?,?,?,?,?,0.5,0,'ask')",
+                (str(uuid.uuid4()), artifact_id, 1, a, provider.model, row["body_version"]),
+            )
     return len(kept), None
 
 
@@ -431,9 +492,17 @@ def add_facet(artifact_id: str, statement: str, level: int = 2) -> dict:
         ).fetchone()[0]
         conn.execute(
             "INSERT INTO facets"
-            " (id, artifact_id, level, statement, model_version, body_version, trust, edited)"
-            " VALUES (?,?,?,?,?,?,1.0,1)",
-            (facet_id, artifact_id, level, statement[:400], "edited", body_version),
+            " (id, artifact_id, level, statement, model_version, body_version, trust, edited, role)"
+            " VALUES (?,?,?,?,?,?,1.0,1,?)",
+            (
+                facet_id,
+                artifact_id,
+                level,
+                statement[:400],
+                "edited",
+                body_version,
+                role_for(level, False),
+            ),
         )
     _reindex(artifact_id)
     sync_facets(artifact_id, bump=True)
@@ -458,6 +527,34 @@ def delete_facet(facet_id: str) -> dict:
     _reindex(artifact_id)
     sync_facets(artifact_id, bump=True)
     return {"id": facet_id, "artifact_id": artifact_id, "deleted": True}
+
+
+def missing_gist(conn) -> int:
+    """Count live artifacts that have facets but no gist line."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM artifacts a WHERE a.deleted_at IS NULL"
+        " AND a.vaulted_at IS NULL AND a.embedded_at IS NULL"
+        " AND EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id)"
+        " AND NOT EXISTS (SELECT 1 FROM facets f WHERE f.artifact_id = a.id AND f.role = 'gist')"
+    ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def gists(conn, artifact_ids: list[str]) -> dict[str, str]:
+    """One plain line per item: its gist, else its level 0 line. Items with neither
+    are absent."""
+    if not artifact_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT artifact_id, statement, role FROM facets"
+        " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+        " AND (role = 'gist' OR level = 0) ORDER BY role = 'gist' DESC",
+        (json.dumps(list(dict.fromkeys(artifact_ids))),),
+    ).fetchall()
+    out: dict[str, str] = {}
+    for r in rows:
+        out.setdefault(r["artifact_id"], r["statement"])
+    return out
 
 
 def _word_count(body: str | None) -> int:

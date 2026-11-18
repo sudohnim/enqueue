@@ -105,7 +105,7 @@ def test_the_endpoint_reports_what_it_understood(store, monkeypatch):
     from enqueue.index import bootstrap
 
     monkeypatch.setattr(bootstrap, "search_allowed", lambda: True)
-    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20: [])
+    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20, wait=None: [])
     client = TestClient(create_app())
     body = client.get("/search", params={"q": "pdfs from last week"}).json()
     assert body["filters"] == "PDFs · saved last week"
@@ -130,10 +130,49 @@ def test_each_hit_carries_its_date_and_a_links_site(store, monkeypatch):
         )
     monkeypatch.setattr(bootstrap, "search_allowed", lambda: True)
     hits = [{"artifact_id": "n1", "title": "A note"}, {"artifact_id": "l1", "title": "A link"}]
-    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20: hits)
+    monkeypatch.setattr(search_api, "search_results", lambda q, limit=20, wait=None: hits)
 
     body = TestClient(app).get("/search", params={"q": "anything"}).json()
 
     note, link = body["hits"]
     assert note["updated_at"] and note["site"] is None
     assert link["site"] == "example.org"
+
+
+def test_a_colour_before_a_picture_word_is_a_filter():
+    rest, f = _parse("blue photos")
+    assert rest == ""
+    assert f.kinds == {"image"}
+    assert f.colour == filters.COLOURS["blue"]
+    assert bool(f)
+
+
+def test_an_explicit_colour_token_is_a_filter():
+    rest, f = _parse("color:#ff0000 logo")
+    assert rest == "logo"
+    assert f.colour == (255, 0, 0)
+    assert f.label == "#ff0000"
+
+
+def test_a_colour_with_no_picture_word_stays_search_text():
+    rest, f = _parse("red wine")
+    assert rest == "red wine"
+    assert f.colour is None
+    assert not f
+
+
+def test_matching_ids_keeps_only_images_with_that_colour(store):
+    for aid, (r, g, b) in (("red-img", (220, 40, 40)), ("blue-img", (40, 90, 220))):
+        with db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO artifacts (id, kind, title, content_hash, status, created_at,"
+                " updated_at) VALUES (?, 'image', ?, ?, 'ok', ?, ?)",
+                (aid, aid, aid, db.now(), db.now()),
+            )
+            conn.execute(
+                "INSERT INTO artifact_colours (artifact_id, r, g, b, share)"
+                " VALUES (?, ?, ?, ?, 1.0)",
+                (aid, r, g, b),
+            )
+    f = filters.Filters(kinds={"image"}, colour=filters.COLOURS["blue"])
+    assert filters.matching_ids(f) == {"blue-img"}

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import uuid
 from contextvars import copy_context
@@ -124,6 +125,32 @@ def get(chat_id: str) -> dict:
                 {"artifact_id": row["artifact_id"], "title": row["title"], "kind": row["kind"]}
             )
 
+        places: dict[str, list[dict]] = {}
+        for row in conn.execute(
+            "SELECT message_id, n, artifact_id, page, quote FROM chat_places"
+            " WHERE message_id IN (SELECT id FROM chat_messages WHERE chat_id = ?)"
+            " ORDER BY message_id, n",
+            (chat_id,),
+        ):
+            places.setdefault(row["message_id"], []).append(
+                {
+                    "message_id": row["message_id"],
+                    "n": row["n"],
+                    "artifact_id": row["artifact_id"],
+                    "page": row["page"],
+                    "quote": row["quote"],
+                }
+            )
+
+        receipts: dict[str, dict] = {}
+        for row in conn.execute(
+            "SELECT subject, value FROM derived_values"
+            " WHERE scope = 'answer_receipt' AND attribute = 'receipt'"
+            " AND subject IN (SELECT id FROM chat_messages WHERE chat_id = ?)",
+            (chat_id,),
+        ):
+            receipts[row["subject"]] = json.loads(row["value"])
+
         topics = conn.execute(
             "SELECT id, topic FROM chat_topics WHERE chat_id = ? ORDER BY created_at",
             (chat_id,),
@@ -133,7 +160,10 @@ def get(chat_id: str) -> dict:
             out = dict(m)
             raw = out.pop("payload", None)
             out["payload"] = json.loads(raw) if raw else None
-            return out | {"cited": cited.get(m["id"], [])}
+            out |= {"cited": cited.get(m["id"], []), "places": places.get(m["id"], [])}
+            if m["id"] in receipts:
+                out["receipt"] = receipts[m["id"]]
+            return out
 
         scope_label = "everything"
         if chat["scope_kind"] == "artifact":
@@ -149,6 +179,49 @@ def get(chat_id: str) -> dict:
         }
     finally:
         conn.close()
+
+
+def answer_as_note(chat_id: str, message_id: str) -> dict:
+    """Save a grounded answer, its question and its sources as a new note."""
+    from . import notes
+
+    conn = db.get_conn()
+    try:
+        msg = conn.execute(
+            "SELECT * FROM chat_messages WHERE id = ? AND chat_id = ?", (message_id, chat_id)
+        ).fetchone()
+        if msg is None or msg["role"] != "assistant" or not msg["grounded"]:
+            raise KeyError(message_id)
+        if conn.execute(
+            "SELECT 1 FROM derived_values WHERE scope = 'vault_answer' AND subject = ?",
+            (message_id,),
+        ).fetchone():
+            raise KeyError(message_id)
+        question = conn.execute(
+            "SELECT text FROM chat_messages WHERE chat_id = ? AND ordinal < ?"
+            " AND role = 'user' ORDER BY ordinal DESC LIMIT 1",
+            (chat_id, msg["ordinal"]),
+        ).fetchone()
+        if question is None:
+            raise KeyError(message_id)
+        titles = [
+            row["title"]
+            for row in conn.execute(
+                "SELECT a.title FROM chat_citations c"
+                " JOIN artifacts a ON a.id = c.artifact_id"
+                " WHERE c.message_id = ? AND a.vaulted_at IS NULL AND a.deleted_at IS NULL"
+                " ORDER BY c.rank",
+                (message_id,),
+            )
+        ]
+    finally:
+        conn.close()
+
+    answer = re.sub(r"\s?\[P\d+\]", "", msg["text"])
+    body = "\n".join(
+        [f"# {question['text']}", "", answer, "", "Sources:"] + [f"- {t}" for t in titles]
+    )
+    return notes.create(body=body)
 
 
 def pin(chat_id: str, pinned: bool = True) -> dict:
@@ -218,6 +291,11 @@ def delete(chat_id: str) -> dict:
             raise KeyError(chat_id)
         conn.execute(
             "DELETE FROM chat_citations WHERE message_id IN"
+            " (SELECT id FROM chat_messages WHERE chat_id = ?)",
+            (chat_id,),
+        )
+        conn.execute(
+            "DELETE FROM chat_places WHERE message_id IN"
             " (SELECT id FROM chat_messages WHERE chat_id = ?)",
             (chat_id,),
         )
@@ -291,7 +369,7 @@ def _overview(conn, opening: dict) -> list[dict]:
         parts = current(
             conn.execute(
                 "SELECT statement AS line, model_version, body_version, edited FROM facets"
-                " WHERE artifact_id = ? ORDER BY level",
+                " WHERE artifact_id = ? AND COALESCE(role, '') != 'ask' ORDER BY level",
                 (aid,),
             ).fetchall()
         )
@@ -347,7 +425,11 @@ def _everything_passages(question: str, limit: int = PASSAGES) -> list[dict]:
 
     sides = parts(question)
     if not sides:
-        return _library_passages(question, limit)
+        result = _library_passages(question, limit)
+        from . import searches
+
+        searches.record(question, result, "chat")
+        return result
     lists = [_library_passages(side, limit) for side in sides]
     lists.append(_library_passages(question, limit))
     out: list[dict] = []
@@ -361,7 +443,11 @@ def _everything_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         if p["id"] not in seen:
             out.append(p)
             seen.add(p["id"])
-    return out[:limit]
+    result = out[:limit]
+    from . import searches
+
+    searches.record(question, result, "chat")
+    return result
 
 
 def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
@@ -450,7 +536,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         facet_entity_dense: dict[str, float] = {}
         facet_entity_lexical: set[str] = set()
         fe_legs = {
-            name: store.search_legs(name, question, limit=4)
+            name: store.search_legs(name, question, limit=12)
             for name in (store.FACETS, store.ENTITIES, store.SECTIONS)
         }
         fe_legs[store.FACETS] = without_literal(fe_legs[store.FACETS])
@@ -458,7 +544,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
         # search the facet index too. Their dense similarity counts; never lexical.
         claims = lifting(config.CHAT_PREP_WAIT_S) or []
         lift_legs = [
-            without_literal(store.search_legs(store.FACETS, claim, limit=4)) for claim in claims
+            without_literal(store.search_legs(store.FACETS, claim, limit=12)) for claim in claims
         ]
         facet_hits = fe_legs[store.FACETS]["fused"] + [h for ll in lift_legs for h in ll["fused"]]
         for ll in lift_legs:
@@ -474,13 +560,21 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
             for hit in legs["keyword"][:window]:
                 facet_entity_lexical.add(hit["artifact_id"])
 
-        def _pull_opening(aid: str, why: str, score: float) -> None:
-            row = conn.execute(
-                "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
-                (aid,),
-            ).fetchone()
-            if row and row["id"] not in found:
-                found[row["id"]] = {"score": score, "why": why}
+        def _pull_opening(aid: str, why: str, score: float, matched: str | None = None) -> None:
+            best = store.search_within(aid, question, 1)
+            if best:
+                chosen = best[0]
+            else:
+                row = conn.execute(
+                    "SELECT id FROM chunks WHERE artifact_id = ? ORDER BY ordinal LIMIT 1",
+                    (aid,),
+                ).fetchone()
+                chosen = row["id"] if row else None
+            if chosen and chosen not in found:
+                entry = {"score": score, "why": why}
+                if matched:
+                    entry["matched"] = matched
+                found[chosen] = entry
 
         def _pull_section(aid: str, ordinal: int, why: str, score: float) -> None:
             n_sections = conn.execute(
@@ -515,15 +609,14 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
             )
             if verdict == "drop":
                 continue
+            stmt = conn.execute(
+                "SELECT statement FROM facets WHERE id = ?", (hit["facet_id"],)
+            ).fetchone()
+            statement = stmt["statement"] if stmt else ""
             if verdict == "gray":
-                stmt = conn.execute(
-                    "SELECT statement FROM facets WHERE id = ?", (hit["facet_id"],)
-                ).fetchone()
-                gray_facet_entity.setdefault(
-                    aid, (why, hit["score"], stmt["statement"] if stmt else "")
-                )
+                gray_facet_entity.setdefault(aid, (why, hit["score"], statement))
                 continue
-            _pull_opening(aid, why, hit["score"])
+            _pull_opening(aid, why, hit["score"], matched=statement)
 
         for hit in fe_legs[store.ENTITIES]["fused"]:
             if hit_is_stale(conn, hit, cache):
@@ -594,7 +687,7 @@ def _library_passages(question: str, limit: int = PASSAGES) -> list[dict]:
                 if why.startswith("section "):
                     _pull_section(aid, int(why.split()[1]), why, score)
                 else:
-                    _pull_opening(aid, why, score)
+                    _pull_opening(aid, why, score, matched=_snippet if _snippet else None)
 
         # The notes the question names, by title or by a name in them, each with its
         # passage closest to the question; ahead of the rest, since a name is the
@@ -689,6 +782,11 @@ def empty_scope_reason(scope_kind: str, scope_id: str | None) -> str | None:
     return None
 
 
+def without_places(text: str) -> str:
+    """An answer's text with its [P3] place marks removed."""
+    return re.sub(r"\s?\[P\d+\]", "", text or "")
+
+
 def _ask_model(
     question: str,
     history: str,
@@ -712,15 +810,19 @@ def _ask_model(
     provider = provider or get_provider()
     _, words = _budget(provider)
     body = "\n\n".join(
-        f"[{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n"
-        f"{_clip(p['text'], words)}"
-        for p in found
+        f"[P{n}] [{p.get('kind', 'artifact')}] (id: {p['artifact_id']}) {p['title']}\n"
+        + (f"matched: {p['matched']}\n" if p.get("matched") else "")
+        + f"{_clip(p['text'], words)}"
+        for n, p in enumerate(found, 1)
     )
     return provider.complete(
         system=CHAT_ANSWER,
         user=f"{history}Question: {question}\n\nPassages:\n\n{body}",
         response_model=Answer,
-        context={"offered_artifact_ids": [p["artifact_id"] for p in found]},
+        context={
+            "offered_artifact_ids": [p["artifact_id"] for p in found],
+            "offered_passages": len(found),
+        },
     )
 
 
@@ -800,6 +902,41 @@ def run_answer(chat_id: str, text: str) -> dict:
     empty_reason = empty_scope_reason(chat["scope_kind"], chat["scope_id"]) if not found else None
     answer = _ask_model(text, history, found, empty_reason, provider=_chat_provider(chat_id))
 
+    from . import settings
+
+    provider = _chat_provider(chat_id)
+    backend = config.BACKENDS.get(str(settings.get("llm_backend")), {})
+    label = backend.get("label") or getattr(provider, "name", "")
+    receipt = (
+        {
+            "notes": len({p["artifact_id"] for p in found}),
+            "chars": sum(len(p.get("text", "")) for p in found),
+            "service": label,
+            "local": not privacy.is_remote(provider),
+        }
+        if found
+        else None
+    )
+
+    from .ingest import chunk
+
+    places = []
+    conn = db.get_conn()
+    try:
+        pages: dict[str, dict[str, int]] = {}
+        for n in answer.used:
+            p = found[n - 1]
+            aid = p["artifact_id"]
+            if str(p.get("id", "")).startswith("overview:"):
+                page, quote = None, ""
+            else:
+                if aid not in pages:
+                    pages[aid] = chunk.pages_for(conn, aid)
+                page, quote = pages[aid].get(p.get("id")), chunk.quote_of(p.get("text", ""))
+            places.append({"n": n, "artifact_id": aid, "page": page, "quote": quote})
+    finally:
+        conn.close()
+
     by_artifact = {p["artifact_id"] for p in found}
     return {
         "role": "assistant",
@@ -808,6 +945,8 @@ def run_answer(chat_id: str, text: str) -> dict:
         "kind": "answer",
         "payload": None,
         "cited": [aid for aid in dict.fromkeys(answer.cited) if aid in by_artifact],
+        "places": places,
+        "receipt": receipt,
     }
 
 
@@ -962,7 +1101,9 @@ def _retopic(chat_id: str) -> None:
     if not any(row["grounded"] for row in rows if row["role"] == "assistant"):
         return
 
-    transcript = "\n\n".join(f"{r['role']}: {' '.join(r['text'].split())[:700]}" for r in rows)
+    transcript = "\n\n".join(
+        f"{r['role']}: {' '.join(without_places(r['text']).split())[:700]}" for r in rows
+    )
     try:
         found = _chat_provider(chat_id).complete(
             system=CHAT_TOPICS,

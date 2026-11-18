@@ -15,7 +15,7 @@ import threading
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from .. import chats_worker, config, trash
+from .. import chats_worker, config, session, trash
 from . import (
     account,
     admin,
@@ -199,6 +199,10 @@ def serve() -> None:
         from .. import share_inbox
 
         share_inbox.start()
+        # New files in folders the person named are kept (watch.py).
+        from .. import watch
+
+        watch.start()
     except Exception as exc:  # noqa: BLE001 - never block startup on this
         print(f"[engine] could not start the summary sweeper/backfill: {exc}")
 
@@ -245,6 +249,12 @@ def serve() -> None:
     from .. import events
 
     events.emit("start", "engine ready")
+
+    # Session token for this run.
+    token = session.start()
+    import logging
+
+    logging.getLogger(__name__).info("Open http://127.0.0.1:8787/boot?t=%s in a browser.", token)
 
     # Daily backups into the chosen folder (backup.py), when something changed.
     from .. import backup as backups

@@ -237,6 +237,28 @@ const Guides = (() => {
         "index rebuild reindex search broken missing not finding embeddings vectors storage space size derived",
     },
     {
+      id: "from-this-mac",
+      tab: "storage",
+      title: "Bring things in from this Mac",
+      voice: "Your old shelves, carried over.",
+      what:
+        "Apple Notes, bookmarks, Kindle highlights and new files in folders you choose are brought into Enqueue from this Mac.",
+      need:
+        "Optional. Saving notes and links by hand works without it. Use these to bring in what you already have.",
+      steps: [
+        "Under From this Mac, bring in Apple Notes or add a folder to watch.",
+        "For bookmarks or Kindle highlights, export them from the other app, then use Import under Move notes in and out.",
+        "Files put in a watched folder after you add it are kept. Files already there are left alone.",
+      ],
+      know: [
+        "All reading happens on this Mac. Nothing is sent to a service just to bring things in.",
+        "Pictures and PDFs are then read by the assistant you chose, so search can find what is in them.",
+      ],
+      also: ["answers", "index"],
+      words:
+        "from this mac bring import apple notes bookmarks browser kindle clippings highlights folder watch new files pdf pictures from this mac",
+    },
+    {
       id: "trash",
       tab: "trash",
       title: "The trash",

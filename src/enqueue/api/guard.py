@@ -20,14 +20,31 @@ Two checks close that:
 
 from __future__ import annotations
 
+from starlette.datastructures import MutableHeaders
 from urllib.parse import urlsplit
 
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import config, extension
+from .. import config, extension, session
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+CROSS_SITE_OK = ("/account/google/callback", "/account/apple/done")
+OPEN_PATHS = ("/health", "/boot", "/account/google/callback", "/account/apple/done")
+
+BASE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+}
+PAGE_CSP = (
+    "default-src 'self'; img-src 'self' data: blob:;"
+    " connect-src 'self' ipc: http://ipc.localhost; worker-src 'self' blob:;"
+    " script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+    " object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
 
 
 def _hostname(value: str) -> str:
@@ -37,6 +54,20 @@ def _hostname(value: str) -> str:
         return (urlsplit(netloc).hostname or "").lower()
     except ValueError:
         return ""
+
+
+def _presented(headers: dict) -> str:
+    auth = headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    from http.cookies import SimpleCookie
+
+    jar = SimpleCookie()
+    try:
+        jar.load(headers.get("cookie", ""))
+    except Exception:  # noqa: BLE001 - a bad cookie header is no token
+        return ""
+    return jar["enq_session"].value if "enq_session" in jar else ""
 
 
 class LocalOnlyGuard:
@@ -56,6 +87,30 @@ class LocalOnlyGuard:
             await PlainTextResponse("Unknown host.", status_code=421)(scope, receive, send)
             return
 
+        if (
+            config.SESSION_ENFORCE
+            and not scope["path"].startswith(OPEN_PATHS)
+            and not session.ok(_presented(headers))
+            and not extension.allows(
+                headers.get("origin") or "", scope["path"], headers.get("x-enqueue-key")
+            )
+        ):
+            await PlainTextResponse("This engine needs its session token.", status_code=401)(
+                scope, receive, send
+            )
+            return
+
+        site = headers.get("sec-fetch-site", "")
+        if (
+            site in ("cross-site", "same-site")
+            and not scope["path"].startswith(CROSS_SITE_OK)
+            and not extension.key_ok(headers.get("x-enqueue-key"))
+        ):
+            await PlainTextResponse("Cross-site request refused.", status_code=403)(
+                scope, receive, send
+            )
+            return
+
         origin = headers.get("origin")
         if (
             scope["method"] not in SAFE_METHODS
@@ -68,4 +123,15 @@ class LocalOnlyGuard:
             )
             return
 
-        await self.app(scope, receive, send)
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in BASE_HEADERS.items():
+                    if name not in headers:
+                        headers[name] = value
+                html = headers.get("content-type", "").startswith("text/html")
+                if html and "Content-Security-Policy" not in headers:
+                    headers["Content-Security-Policy"] = PAGE_CSP
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

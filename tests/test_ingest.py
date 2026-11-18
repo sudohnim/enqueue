@@ -220,3 +220,53 @@ def test_an_older_background_copy_does_not_make_a_fresh_one_skip():
     queue._dequeue("lanes", older)
     assert queue._pending("lanes") == 0
     assert "lanes" not in queue._queued
+
+
+def test_role_for():
+    from enqueue.ingest.facets import role_for
+
+    assert role_for(0, False) == "kind"
+    assert role_for(1, False) == "subject"
+    assert role_for(3, False) == "idea"
+    assert role_for(2, True) == "bridge"
+
+
+def test_ingest_event_reports_step_times(store, monkeypatch):
+    import uuid
+
+    from enqueue import db, events
+    from enqueue.ingest import queue as q
+
+    aid = str(uuid.uuid4())
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO artifacts (id, kind, title, body, content_hash, status, created_at,"
+            " updated_at) VALUES (?, 'note', 'Timed', ?, ?, 'ok', ?, ?)",
+            (
+                aid,
+                "A note with enough words to be chunked into a passage for search.",
+                aid,
+                db.now(),
+                db.now(),
+            ),
+        )
+    for step in (
+        "_sections_artifact",
+        "_facet_artifact",
+        "_entities_artifact",
+        "_context_artifact",
+    ):
+        monkeypatch.setattr(q, step, lambda _aid: 0)
+
+    result = q.process(aid)
+    assert result["chunks"] >= 1
+
+    rows = [
+        e
+        for e in events.recent(20)
+        if e["kind"] == "ingest" and e["data"] and e["data"].get("artifact_id") == aid
+    ]
+    assert len(rows) == 1
+    took = rows[0]["data"]["took_ms"]
+    assert "chunk" in took
+    assert all(isinstance(value, int) for value in took.values())

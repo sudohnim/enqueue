@@ -184,6 +184,9 @@ def purge(artifact_id: str) -> dict:
             raise KeyError(artifact_id)
         if not row["deleted_at"]:
             raise ValueError("that artifact is not in the trash")
+        thumb = conn.execute(
+            "SELECT content_hash FROM thumbs WHERE artifact_id = ?", (artifact_id,)
+        ).fetchone()
 
         for table in (
             "chat_citations",
@@ -201,6 +204,9 @@ def purge(artifact_id: str) -> dict:
             "related_pending",
             "opens",
             "sections",
+            "chat_places",
+            "artifact_colours",
+            "thumbs",
         ):
             column = "artifact_id"
             # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
@@ -263,11 +269,14 @@ def purge(artifact_id: str) -> dict:
             (artifact_id, f"%/artifacts/{artifact_id}/blob%"),
         ).fetchone()
 
-    if row["content_hash"] and not still_used and not embedded:
-        from . import blobstore
+    from . import blobstore
 
+    if row["content_hash"] and not still_used and not embedded:
         with contextlib.suppress(OSError):
             blobstore.remove(row["content_hash"])
+    if thumb is not None:
+        with contextlib.suppress(OSError):
+            blobstore.remove(thumb["content_hash"])
 
     # Propagate the tombstone so other devices drop their copy too.
     try:

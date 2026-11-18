@@ -114,12 +114,20 @@ FIELDS: dict[str, tuple[str, Any, bool]] = {
     # The folder backups go into (backup.py) - a cloud drive's folder, Proton Drive by
     # design. Empty means backups are off. The live library never moves there.
     "backup_dir": ("ENQ_BACKUP_DIR", "", True),
+    # Parent folder for the daily plain copy (export.py, backup.py). Empty means the
+    # copy is off. The copy goes in <export_dir>/Enqueue and is not encrypted.
+    "export_dir": ("ENQ_EXPORT_DIR", "", True),
     # Free text, sent as extra headers on every model call. Some endpoints want a
     # referer or an app name before they will answer; this is the escape hatch that
     # stops each one becoming a code change. One `Name: value` per line.
     "llm_headers": ("ENQ_LLM_HEADERS", "", True),
     # How many drafts of a note are kept (drafts.py): thinned, 30d or off.
     "drafts_keep": ("ENQ_DRAFTS_KEEP", "thinned", True),
+    # Let originals the relay holds leave this Mac after a quiet spell (offload.py).
+    "offload_originals": ("ENQ_OFFLOAD", "off", True),
+    "offload_after_days": ("ENQ_OFFLOAD_DAYS", 30, True),
+    # Folders to watch for new files (watch.py), one path on each line.
+    "watch_dirs": ("ENQ_WATCH_DIRS", "", True),
     # Days a deleted artifact survives before it is destroyed for good.
     "trash_days": ("ENQ_TRASH_DAYS", 30, True),
     # Whether error reports go to PostHog (telemetry.py): where the code broke, never
@@ -349,6 +357,10 @@ def update(changes: dict) -> dict:
         from . import backup
 
         backup.run_soon("folder chosen")
+    if "watch_dirs" in changes:
+        from . import watch
+
+        watch.begin()
     if set(changes) & _PROVIDER_FIELDS:
         from .providers import pause
 

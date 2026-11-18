@@ -217,6 +217,7 @@ def test_edit_survives_regenerate_and_annotations_feed_generation(store, quiet_q
     # Regenerate: both edited facets survive, machine ones are replaced.
     fm.regenerate(aid)
     facets = {f["id"]: f for f in notes.get(aid)["facets"]}
+    assert all("bridge" in f for f in notes.get(aid)["facets"])
     assert mine in facets and facets[mine]["edited"] == 1
     assert (
         machine in facets and facets[machine]["statement"] == "I rewrote this machine facet myself."

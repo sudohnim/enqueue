@@ -13,7 +13,9 @@ service every WINDOW seconds, and whenever the engine shuts down cleanly.
 from __future__ import annotations
 
 import atexit
+import json
 import threading
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 WINDOW = 600.0
@@ -75,11 +77,16 @@ def flush() -> None:
     if not pending:
         return
 
-    from . import events
+    from . import db, events
 
+    day = db.now()[:10]
     by_host: dict[str, list[dict]] = {}
+    by_service: dict[str, dict[str, dict[str, int]]] = {}
     for (host, model, label), row in pending.items():
         by_host.setdefault(host, []).append({"model": model, "purpose": label, **row})
+        totals = by_service.setdefault(host, {}).setdefault(label, {"calls": 0, "chars": 0})
+        totals["calls"] += row["calls"]
+        totals["chars"] += row["chars"]
     for host, rows in by_host.items():
         rows.sort(key=lambda r: -r["chars"])
         calls = sum(r["calls"] for r in rows)
@@ -106,6 +113,63 @@ def flush() -> None:
                 "by": rows,
             },
         )
+    _add_days(day, by_service)
+
+
+def _add_days(day: str, by_service: dict[str, dict[str, dict[str, int]]]) -> None:
+    """Add per (service, purpose) totals to the day's rows in derived_values."""
+    from . import db
+
+    with db.transaction() as conn:
+        for host, purposes in by_service.items():
+            for purpose, totals in purposes.items():
+                subject = f"{day}|{host}|{purpose}"
+                row = conn.execute(
+                    "SELECT value FROM derived_values WHERE scope = 'outbound_day'"
+                    " AND subject = ? AND attribute = 'totals' AND source = 'engine'",
+                    (subject,),
+                ).fetchone()
+                calls, chars = totals["calls"], totals["chars"]
+                if row is not None:
+                    old = json.loads(row["value"])
+                    calls += old.get("calls", 0)
+                    chars += old.get("chars", 0)
+                conn.execute(
+                    "INSERT OR REPLACE INTO derived_values (scope, subject, attribute, value,"
+                    " grounded, source, model_version, created_at)"
+                    " VALUES ('outbound_day', ?, 'totals', ?, 1, 'engine', '', ?)",
+                    (subject, json.dumps({"calls": calls, "chars": chars}), db.now()),
+                )
+
+
+def by_day(days: int = 30) -> list[dict]:
+    """Per-day outbound totals for the last `days` days, newest first."""
+    from . import db
+
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days - 1)).isoformat()
+    rows = (
+        db.reader()
+        .execute(
+            "SELECT subject, value FROM derived_values WHERE scope = 'outbound_day'"
+            " AND attribute = 'totals' AND subject >= ? ORDER BY subject DESC",
+            (cutoff,),
+        )
+        .fetchall()
+    )
+    out = []
+    for row in rows:
+        day, service, purpose = row["subject"].split("|", 2)
+        totals = json.loads(row["value"])
+        out.append(
+            {
+                "day": day,
+                "service": service,
+                "purpose": purpose,
+                "calls": totals.get("calls", 0),
+                "chars": totals.get("chars", 0),
+            }
+        )
+    return out
 
 
 def _size(chars: int) -> str:

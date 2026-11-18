@@ -490,6 +490,24 @@ def run_soon(reason: str = "manual", force: bool = True) -> None:
     ).start()
 
 
+def export_daily() -> None:
+    """Write the daily plain copy into <export_dir>/Enqueue when the folder exists."""
+    from . import settings
+
+    raw = str(settings.get("export_dir") or "").strip()
+    if not raw:
+        return
+    parent = Path(raw).expanduser()
+    if not parent.is_dir():
+        log.info("plain copy skipped: %s is not a folder", parent)
+        return
+    from . import export
+
+    root = parent / "Enqueue"
+    # A plain copy anyone who can open the folder can read never holds a local-only item.
+    export.export(root, local_only=False)
+
+
 def start_scheduler() -> None:
     """Back up once a day, when something changed. First look a few minutes after start
     so a backup never competes with the startup index work."""
@@ -514,6 +532,22 @@ def start_scheduler() -> None:
                     drafts.thin()
                 except Exception:  # noqa: BLE001 - never stop the scheduler
                     pass
+                try:
+                    from . import searches
+
+                    searches.prune()
+                except Exception:  # noqa: BLE001 - never stop the scheduler
+                    pass
+                try:
+                    from . import offload
+
+                    offload.run()
+                except Exception:  # noqa: BLE001 - never stop the scheduler
+                    pass
+                try:
+                    export_daily()
+                except Exception:  # noqa: BLE001 - never stop the scheduler
+                    log.exception("plain copy failed")
             # Something shiny (shiny.py) chooses the day's sets and writes the first
             # one's words once a day, on this hourly beat; it keeps its own day stamp.
             try:

@@ -13,6 +13,8 @@ notes, not the PDF". Dates are when a thing was saved (`created_at`).
 from __future__ import annotations
 
 import calendar
+import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -38,6 +40,34 @@ MONTHS = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
 MONTHS.update({m.lower(): i for i, m in enumerate(calendar.month_abbr) if m})
 MONTHS.pop("may", None)  # "may" is far more often the verb; "in may" is handled below
 
+COLOURS = {
+    "red": (220, 40, 40),
+    "orange": (240, 140, 30),
+    "yellow": (240, 220, 50),
+    "green": (50, 160, 70),
+    "teal": (30, 150, 150),
+    "blue": (40, 90, 220),
+    "purple": (130, 60, 180),
+    "pink": (240, 130, 180),
+    "brown": (130, 85, 50),
+    "black": (20, 20, 20),
+    "white": (245, 245, 245),
+    "grey": (128, 128, 128),
+    "gray": (128, 128, 128),
+}
+COLOUR_NEAR = 90.0
+COLOUR_SHARE = 0.08
+_PICTURE_WORDS = {
+    "photo",
+    "photos",
+    "picture",
+    "pictures",
+    "image",
+    "images",
+    "screenshot",
+    "screenshots",
+}
+
 _UNIT_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 _LEAD = r"(?:(?:that\s+|which\s+)?(?:i\s+)?(?:saved\s+|added\s+|captured\s+)?(?:from|in|during|since|over)\s+)?"
 
@@ -47,10 +77,11 @@ class Filters:
     kinds: set[str]
     since: str | None = None  # ISO, inclusive
     until: str | None = None  # ISO, exclusive
+    colour: tuple[int, int, int] | None = None
     label: str = ""  # what was understood, for the results header
 
     def __bool__(self) -> bool:
-        return bool(self.kinds or self.since or self.until)
+        return bool(self.kinds or self.since or self.until or self.colour is not None)
 
 
 def _start_of_day(dt: datetime) -> datetime:
@@ -133,10 +164,46 @@ def _named_month(m, now: datetime):
     return start, end, f"{calendar.month_name[month]} {year}"
 
 
+def _colour_value(val: str) -> tuple[int, int, int] | None:
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", val):
+        return (int(val[1:3], 16), int(val[3:5], 16), int(val[5:7], 16))
+    return COLOURS.get(val.lower())
+
+
+def _colour(q: str) -> tuple[str, tuple[int, int, int] | None, str]:
+    """Take one colour from the text: `color:<name|#rrggbb>`, or a colour name
+    immediately before a picture word. Left-to-right, first one wins."""
+    tokens = q.split()
+    kept: list[str] = []
+    colour: tuple[int, int, int] | None = None
+    label = ""
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        m = re.match(r"^colou?r:(\S+)$", token, re.IGNORECASE)
+        if m and colour is None:
+            val = m.group(1)
+            parsed = _colour_value(val)
+            if parsed is not None:
+                colour, label = parsed, val.lower()
+                i += 1
+                continue
+        word = token.strip(".,;:!?\"'()").lower()
+        nxt = tokens[i + 1].strip(".,;:!?\"'()").lower() if i + 1 < len(tokens) else ""
+        if colour is None and word in COLOURS and nxt in _PICTURE_WORDS:
+            colour, label = COLOURS[word], word
+            i += 1
+            continue
+        kept.append(token)
+        i += 1
+    return " ".join(kept), colour, label
+
+
 def parse(q: str, now: datetime | None = None) -> tuple[str, Filters]:
     """(the text left to search, the filters it named)."""
     now = now or datetime.now(timezone.utc)
-    text, since, until, when = _time(q, now)
+    text, colour, colour_label = _colour(q)
+    text, since, until, when = _time(text, now)
     kinds: set[str] = set()
     kept = []
     for token in text.split():
@@ -158,19 +225,18 @@ def parse(q: str, now: datetime | None = None) -> tuple[str, Filters]:
         )
         rest = re.sub(r"\s+(?:i\s+)?(?:saved|added|captured)$", "", rest, flags=re.IGNORECASE)
     kind_label = ", ".join(sorted(f"{k.upper() if k == 'pdf' else k}s" for k in kinds))
-    label = " · ".join(x for x in (kind_label, f"saved {when}" if when else "") if x)
+    label = " · ".join(x for x in (kind_label, colour_label, f"saved {when}" if when else "") if x)
     return " ".join(rest.split()), Filters(
         kinds=kinds,
         since=since.isoformat() if since else None,
         until=until.isoformat() if until else None,
+        colour=colour,
         label=label,
     )
 
 
 def matching_ids(filters: Filters) -> set[str]:
     """Live artifact ids that satisfy every filter."""
-    import json
-
     from .. import db
 
     where = ["deleted_at IS NULL AND vaulted_at IS NULL AND embedded_at IS NULL"]
@@ -184,6 +250,8 @@ def matching_ids(filters: Filters) -> set[str]:
     if filters.until:
         where.append("created_at < ?")
         params.append(filters.until)
+    if filters.colour is not None:
+        where.append("kind = 'image'")
     conn = db.get_conn()
     try:
         # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
@@ -191,6 +259,21 @@ def matching_ids(filters: Filters) -> set[str]:
         rows = conn.execute(
             "SELECT id FROM artifacts WHERE " + " AND ".join(where), params
         ).fetchall()
+        ids = {r["id"] for r in rows}
+        if filters.colour is not None and ids:
+            cr, cg, cb = filters.colour
+            found = set()
+            for r in conn.execute(
+                "SELECT artifact_id, r, g, b, share FROM artifact_colours"
+                " WHERE artifact_id IN (SELECT value FROM json_each(?))",
+                (json.dumps(sorted(ids)),),
+            ):
+                if r["share"] < COLOUR_SHARE:
+                    continue
+                dist = math.sqrt((r["r"] - cr) ** 2 + (r["g"] - cg) ** 2 + (r["b"] - cb) ** 2)
+                if dist <= COLOUR_NEAR:
+                    found.add(r["artifact_id"])
+            return found
+        return ids
     finally:
         conn.close()
-    return {r["id"] for r in rows}

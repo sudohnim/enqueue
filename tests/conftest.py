@@ -16,6 +16,9 @@ import tempfile
 os.environ["ENQ_DATA_DIR"] = tempfile.mkdtemp(prefix="enqueue-tests-")
 # Never the real Share extension inbox (~/Library/Group Containers/...).
 os.environ["ENQ_SHARE_INBOX"] = os.path.join(os.environ["ENQ_DATA_DIR"], "share-inbox")
+# Never the hosted relay or the included assistant: a closed port answers at once. A
+# test that sends an ingest to the real relay waits on the network, and is slow and flaky.
+os.environ["ENQ_HOSTED_RELAY_URL"] = "http://127.0.0.1:9"
 
 import pytest  # noqa: E402
 
@@ -60,6 +63,11 @@ def _test_host(monkeypatch):
     """TestClient sends Host: testserver; the engine only answers loopback names
     (api/guard.py). tests/test_guard.py checks the production set on its own."""
     monkeypatch.setattr(config, "ALLOWED_HOSTS", config.ALLOWED_HOSTS | {"testserver"})
+
+
+@pytest.fixture(autouse=True)
+def _no_session_enforce(monkeypatch):
+    monkeypatch.setattr(config, "SESSION_ENFORCE", False)
 
 
 @pytest.fixture(autouse=True)

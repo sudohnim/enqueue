@@ -18,7 +18,7 @@ body {
 }
 .share-meta {
   margin: 0 0 var(--sp-2);
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--text-dim);
 }
 .share #body > :first-child {
@@ -29,7 +29,7 @@ body {
   margin: var(--sp-7) auto;
 }
 .share-lock-title {
-  font-size: 24px;
+  font-size: var(--t-4xl);
   line-height: 29px;
   font-weight: var(--w-medium);
   color: var(--text);
@@ -60,7 +60,7 @@ body {
   justify-content: center;
   gap: var(--sp-2);
   padding: var(--sp-5) var(--sp-4) var(--sp-6);
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--text-dim);
 }
 .share-foot p {

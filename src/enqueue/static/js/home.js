@@ -2,14 +2,19 @@
 // across the foot for the title; everything else is set as type inside the square.
 function facePicture(a) {
 	const drop = ' onerror="this.remove()"';
-	if (a.kind === "image")
+	if (a.kind === "image") {
+		const thumbDrop =
+			' onerror="if(!this.dataset.full){this.dataset.full=1;this.src=\'/artifacts/' +
+			a.id +
+			'/blob\'}else{this.remove()}"';
 		return (
 			'<img src="/artifacts/' +
 			a.id +
-			'/blob" alt="" loading="lazy"' +
-			drop +
+			'/thumb" alt="" loading="lazy"' +
+			thumbDrop +
 			">"
 		);
+	}
 	if (a.kind === "pdf")
 		return (
 			'<img src="/artifacts/' +
@@ -1015,6 +1020,10 @@ function mountSuggest(hs, list) {
 	hs.setAttribute("aria-controls", "suggestList");
 	hs.setAttribute("aria-expanded", "false");
 	hs.addEventListener("focus", async () => {
+		if (Date.now() - (window.__warmAt || 0) > 60000) {
+			window.__warmAt = Date.now();
+			api("/search/warm", { method: "POST" }).catch(() => {});
+		}
 		await loadSuggestTitles();
 		if (document.activeElement === hs) draw();
 	});
@@ -1607,13 +1616,20 @@ function drawShiny(slot, r, n) {
 		: r.more
 		? '<button class="shiny-another" type="button" data-to="next">Find another' + svg("chev") + "</button>"
 		: '<button class="shiny-another" type="button" data-to="again">Look for new ones</button>';
+	const pair = (r.notes || []).map((a) => a.id);
+	const feedbackBtns =
+		pair.length >= 2
+			? '<button class="shiny-dismiss" type="button" data-verdict="keep">Keep</button>' +
+				'<button class="shiny-dismiss" type="button" data-verdict="no">Not the same</button>'
+			: "";
 	slot.innerHTML =
 		'<section class="shiny-card" aria-label="Something shiny">' +
 		shinyRavenHtml() +
 		'<div class="shiny-body">' +
 		'<div class="shiny-head">' +
 		(food.idea ? '<p class="shiny-idea">' + esc(food.idea) + "</p>" : "<span></span>") +
-		'<button class="shiny-dismiss" type="button">Not today</button></div>' +
+		feedbackBtns +
+		'<button class="shiny-dismiss" type="button" data-dismiss="today">Not today</button></div>' +
 		'<ul class="shiny-notes">' +
 		r.notes
 			.map(
@@ -1636,7 +1652,32 @@ function drawShiny(slot, r, n) {
 	slot.querySelectorAll(".shiny-note").forEach((b) => {
 		b.addEventListener("click", () => openArtifact(b.dataset.id, "shiny"));
 	});
-	slot.querySelector(".shiny-dismiss").addEventListener("click", () => {
+	slot.querySelectorAll("[data-verdict]").forEach((b) => {
+		b.addEventListener("click", async () => {
+			b.disabled = true;
+			try {
+				await api("/related/feedback", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						a: pair[0],
+						b: pair[1],
+						verdict: b.dataset.verdict,
+						idea: food.idea || "",
+					}),
+				});
+			} catch (err) {
+				b.disabled = false;
+				return toast(String((err && err.message) || err), true);
+			}
+			if (b.dataset.verdict === "keep") {
+				slot.querySelectorAll("[data-verdict]").forEach((x) => x.remove());
+				return;
+			}
+			slot.querySelector(".shiny-another")?.click();
+		});
+	});
+	slot.querySelector('[data-dismiss="today"]').addEventListener("click", () => {
 		try {
 			localStorage.setItem(SHINY_DISMISSED, todayStamp());
 			dropHunt();

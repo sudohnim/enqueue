@@ -59,7 +59,7 @@
 .eye-title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--t-md);
   font-weight: var(--w-strong);
   letter-spacing: -0.006em;
   color: var(--text);
@@ -108,7 +108,7 @@
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--line-soft);
-  font-size: 12px;
+  font-size: var(--t-xs);
   color: var(--text-mute);
   flex: 0 0 auto;
 }
@@ -146,13 +146,13 @@
   color: var(--accent-ink);
   padding: var(--sp-2) var(--sp-3);
   border-radius: 14px 14px 4px 14px;
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 1.5;
 }
 .eye-body .turn.assistant .said {
   max-width: 100%;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 1.6;
 }
 .eye-body .turn.assistant .said > *:first-child {
@@ -167,7 +167,7 @@
    one looping keyframe. */
 .eye-loading {
   display: inline-block;
-  font-size: 14px;
+  font-size: var(--t-md);
   font-weight: var(--w-strong);
   letter-spacing: 0.01em;
   background: linear-gradient(
@@ -217,7 +217,7 @@
   color: var(--text-dim);
   border-radius: var(--r-pill);
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--t-xs);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -232,7 +232,7 @@
 }
 .eye-body .unsourced {
   margin-top: var(--sp-2);
-  font-size: 12px;
+  font-size: var(--t-xs);
   color: var(--text-mute);
   font-style: italic;
 }
@@ -268,7 +268,7 @@
   stroke-linejoin: round;
 }
 .eye-empty .line {
-  font-size: 14px;
+  font-size: var(--t-md);
   max-width: 30ch;
   line-height: 1.5;
 }
@@ -297,7 +297,7 @@
 }
 .eye-list .eye-list-head {
   padding: var(--sp-2) var(--sp-2) var(--sp-1);
-  font-size: 11px;
+  font-size: var(--t-xs);
   font-weight: var(--w-strong);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -325,7 +325,7 @@
 .eye-thread .t-title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--t-md);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -360,7 +360,7 @@
   margin: auto;
   padding: var(--sp-6);
   text-align: center;
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--text-mute);
 }
 
@@ -398,7 +398,7 @@
   background: transparent;
   resize: none;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 1.45;
   color: var(--text);
   padding: 8px 0;

@@ -116,6 +116,21 @@ def embed_passage(text: str) -> list[float]:
 
 
 @lru_cache(maxsize=512)
+def query_bytes(text: str) -> bytes:
+    """A search's vector in sqlite-vec's own form, memoized like `embed_one`."""
+    import sqlite_vec
+
+    return sqlite_vec.serialize_float32(embed_query(text))
+
+
+@lru_cache(maxsize=64)
+def passage_bytes(text: str) -> bytes:
+    import sqlite_vec
+
+    return sqlite_vec.serialize_float32(embed_passage(text))
+
+
+@lru_cache(maxsize=512)
 def embed_one(text: str) -> list[float]:
     """Embed a single string, memoized.
 

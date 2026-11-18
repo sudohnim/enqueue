@@ -78,6 +78,15 @@ def _blob_hashes(snapshot: dict) -> list[str]:
     return hashes
 
 
+def _note_blob_on_relay(content_hash: str, url: str) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO blob_relay (content_hash, relay, pushed_at)"
+            " VALUES (?, ?, ?)",
+            (content_hash, url.rstrip("/"), db.now()),
+        )
+
+
 def backfill_link_previews() -> int:
     """One-shot: re-push every saved link that has a preview, so the phone gets it.
 
@@ -251,6 +260,8 @@ def push_artifact(artifact_id: str) -> None:
                         f"[sync] blob push rejected for {artifact_id}: {bresp.status_code}",
                         flush=True,
                     )
+                else:
+                    _note_blob_on_relay(content_hash, url)
             except httpx.HTTPError as exc:
                 print(f"[sync] blob push failed for {artifact_id}: {exc}", flush=True)
 
@@ -373,6 +384,7 @@ def fetch_blob_to_cache(content_hash: str) -> bool:
     except Exception:  # noqa: BLE001 - an undecryptable blob is "not here", never fatal
         return False
     blobstore.write(plain, content_hash)
+    _note_blob_on_relay(content_hash, url)
     return True
 
 
@@ -798,6 +810,36 @@ def pull_keyring() -> bool:
     return True
 
 
+def push_shiny() -> None:
+    """PUT the day's Something shiny sets to the relay as `lib/shiny.enc` (shiny.phone_sets)."""
+    from .. import shiny
+
+    url = _relay_url()
+    if not url:
+        return
+    assert_local_relay(url)
+    dek = keyring_file.dek() or keyring_file.load_dek_from_keychain()
+    if dek is None:
+        return
+    body = shiny.phone_sets()
+    if body is None:
+        return
+    data = crypto.seal_payload(serialize(body), dek)
+    headers = {
+        "Authorization": f"Bearer {_secret()}",
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{url.rstrip('/')}/sync/object/lib/shiny.enc", content=data, headers=headers
+            )
+        if resp.status_code not in (201, 409):
+            print(f"[sync] shiny push rejected: {resp.status_code}", flush=True)
+    except httpx.HTTPError as exc:
+        print(f"[sync] shiny push failed: {exc}", flush=True)
+
+
 def push_pivots() -> None:
     """PUT the saved views (custom pivots) to the relay as `lib/pivots.enc`.
 
@@ -951,12 +993,17 @@ def push_all() -> int:
                 blob_data = crypto.seal_payload(blobstore.read(content_hash), dek)
                 # A blob push failure is non-fatal: the snapshot is already up, and
                 # the next push of this artifact retries the bytes.
-                with contextlib.suppress(httpx.HTTPError):
-                    client.put(
+                try:
+                    bresp = client.put(
                         f"{url.rstrip('/')}/sync/object/blobs/{blob_name}",
                         content=blob_data,
                         headers=headers,
                     )
+                except httpx.HTTPError:
+                    pass
+                else:
+                    if bresp.status_code in (201, 409):
+                        _note_blob_on_relay(content_hash, url)
 
     client.close()
     # Custom views ride alongside the artifacts so the phone's Custom mode has data.

@@ -46,7 +46,7 @@ from . import db, prompts
 log = logging.getLogger(__name__)
 
 # How many of the farthest pairs the days rotate through.
-ROTATE = 7
+
 # The most notes in one set.
 MAX_NOTES = 3
 # The summary levels the model is shown: subject, mechanism, principle.
@@ -102,7 +102,8 @@ def _pairs(conn) -> list[dict]:
     """Every pair worth showing, best first: idea links before mention links, the
     farthest first."""
     rows = conn.execute(
-        "SELECT r.artifact_id AS a, r.related_id AS b, r.kind, r.distance, r.point, r.via"
+        "SELECT r.artifact_id AS a, r.related_id AS b, r.kind, r.distance, r.point, r.via,"
+        " a.updated_at AS a_at, b.updated_at AS b_at"
         " FROM related r JOIN artifacts a ON a.id = r.artifact_id"
         " JOIN artifacts b ON b.id = r.related_id"
         f" WHERE r.artifact_id < r.related_id AND r.kind IN ('idea', 'mention') AND {_LIVE}"
@@ -110,7 +111,16 @@ def _pairs(conn) -> list[dict]:
     ).fetchall()
     # Both notes of a pair may have chosen it; each pair counts once.
     pairs = list({(r["a"], r["b"]): dict(r) for r in rows}.values())
-    pairs.sort(key=lambda p: (p["kind"] != "idea", -(p["distance"] or 0.0), p["a"], p["b"]))
+    week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    for p in pairs:
+        p["fresh"] = max(p.get("a_at") or "", p.get("b_at") or "") >= week
+    pairs.sort(
+        key=lambda p: (p["kind"] != "idea", not p["fresh"], -(p["distance"] or 0.0), p["a"], p["b"])
+    )
+    for p in pairs:
+        p.pop("a_at", None)
+        p.pop("b_at", None)
+        p.pop("fresh", None)
     return pairs
 
 
@@ -136,6 +146,7 @@ def _order(today: date) -> list[tuple[list[str], list[dict]]]:
     conn = db.get_conn()
     try:
         pairs = _pairs(conn)
+        shown = _recent(conn, "shiny_shown", REMEMBER_DAYS, today)
     finally:
         conn.close()
     # A shared name is thin fare beside a shared idea: only when there is no idea link.
@@ -143,14 +154,12 @@ def _order(today: date) -> list[tuple[list[str], list[dict]]]:
     if not pairs:
         return []
     pool = ideas or pairs
-    top, rest = pool[:ROTATE], pool[ROTATE:]
-    start = today.toordinal() % len(top)
-    # The day's order: the farthest pairs from today's turn on, then everything else.
-    # A set whose notes were all in an earlier one is skipped, or "Find another" would
-    # show the same three notes again by way of another of their pairs.
+    fresh = [p for p in pool if _pair([p["a"], p["b"]]) not in shown]
+    pool = fresh or pool
+    # The day's order: every pair in pool, farthest first.
     keep = ("a", "b", "kind", "point", "via")
     sets: list[tuple[list[str], list[dict]]] = []
-    for first in top[start:] + top[:start] + rest:
+    for first in pool:
         ids, links = _grow(first, pairs)
         if any(set(ids) <= set(shown) for shown, _ in sets):
             continue
@@ -184,6 +193,17 @@ def _keep(day: str, sets: list) -> None:
             " VALUES ('shiny_day', ?, 'sets', ?, 1, 'model', '', ?)",
             (day, json.dumps(sets), db.now()),
         )
+    # Whoever chose the sets (the wall, Look again, prepare), the phone gets them too.
+    threading.Thread(target=_push_quietly, name="shiny-push", daemon=True).start()
+
+
+def _push_quietly() -> None:
+    try:
+        from .sync import client as sync_client
+
+        sync_client.push_shiny()
+    except Exception:  # noqa: BLE001 - the phone tries again tomorrow
+        log.info("could not send the day's card to the relay", exc_info=True)
 
 
 def _live(conn, ids: list[str]) -> set[str]:
@@ -225,6 +245,33 @@ def pick(today: date | None = None, n: int = 0) -> dict | None:
     return {"ids": ids, "links": links, "more": n + 1 < len(sets)}
 
 
+def phone_sets(day: date | None = None, top: int = 5) -> dict | None:
+    """The day's first sets as the phone shows them: ids, links and the model's words,
+    leaving out any set with a local-only or vaulted note. None when there are none."""
+    day = day or datetime.now(timezone.utc).date()
+    conn = db.get_conn()
+    try:
+        sets = _kept(conn, day.isoformat())
+        if not sets:
+            return None
+        out = []
+        for ids, links in sets:
+            if len(out) >= top:
+                break
+            hidden = conn.execute(
+                "SELECT 1 FROM artifacts WHERE id IN (SELECT value FROM json_each(?))"
+                " AND (local_only = 1 OR vaulted_at IS NOT NULL OR deleted_at IS NOT NULL)",
+                (json.dumps(ids),),
+            ).fetchone()
+            if hidden:
+                continue
+            food = _cached(conn, _key(ids, _faces(conn, ids)))
+            out.append({"ids": ids, "links": links, "food": food})
+    finally:
+        conn.close()
+    return {"day": day.isoformat(), "sets": out, "updated_at": db.now()} if out else None
+
+
 def look_again(today: date | None = None) -> None:
     """Choose today's sets again from the links as they stand now (the card's "Look
     again"): new connections found since the morning get their turn."""
@@ -244,7 +291,15 @@ def prepare(day: date | None = None) -> bool:
         conn.close()
     if done:
         return False
-    return today(day, 0, background=False) is not None
+    result = today(day, 0, background=False) is not None
+    if result:
+        try:
+            from .sync import client as sync_client
+
+            sync_client.push_shiny()
+        except Exception:  # noqa: BLE001
+            pass
+    return result
 
 
 def _faces(conn, ids: list[str]) -> dict[str, dict]:
@@ -256,6 +311,7 @@ def _faces(conn, ids: list[str]) -> dict[str, dict]:
     for r in conn.execute(
         "SELECT artifact_id, level, statement FROM facets"
         " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+        " AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')"
         f" AND level IN ({','.join('?' * len(LEVELS))}) ORDER BY level, statement",
         (json.dumps(ids), *LEVELS),
     ):
@@ -292,6 +348,36 @@ _writing: set[str] = set()
 _failed: dict[str, str] = {}
 
 
+def _grounded(conn, today: date) -> bool:
+    shown = _recent(conn, "shiny_shown", 30, today)
+    # count shiny_shown rows of last 30 days
+    since = (today - timedelta(days=30)).isoformat()
+    n_shown = len(shown)
+    n_refused = conn.execute(
+        "SELECT COUNT(*) AS n FROM link_feedback WHERE verdict = 'no'" " AND created_at > ?",
+        (since,),
+    ).fetchone()["n"]
+    return n_shown >= 5 and n_refused > n_shown / 5
+
+
+def _passage(aid: str, line: str) -> str:
+    from ..index.store import get_store
+
+    store = get_store()
+    best = store.search_within(aid, line, 1)
+    if not best:
+        return ""
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT text FROM chunks WHERE id = ?", (best[0],)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return ""
+    words = (row["text"] or "").split()
+    return " ".join(words[:120])
+
+
 def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) -> None:
     """Ask the chat model for the set's words and cache them. Never raises."""
     from . import privacy
@@ -307,12 +393,29 @@ def _write(ids: list[str], links: list[dict], key: tuple[str, str], day: str) ->
         finally:
             conn.close()
         blocks = []
+        grounded = False
+        try:
+            conn = db.get_conn()
+            try:
+                grounded = _grounded(conn, datetime.now(timezone.utc).date())
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            grounded = False
+        from . import privacy
+
+        local_ids = privacy.local_only_ids(ids) if not _local_on() else set()
         for i in ids:
             face = faces.get(i) or {"kind": "item", "title": None, "lines": []}
-            blocks.append(
-                f"note id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n"
-                + "\n".join(f"- {line}" for line in face["lines"][:6])
+            block = f"note id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n" + "\n".join(
+                f"- {line}" for line in face["lines"][:6]
             )
+            if grounded and i not in local_ids:
+                line = (face["lines"] or [""])[0] if face["lines"] else ""
+                passage = _passage(i, line)
+                if passage:
+                    block += f"\npassage: {passage}"
+            blocks.append(block)
         said = [p["point"] or (f"Both mention {p['via']}." if p["via"] else "") for p in links]
         if privacy.local_only_ids(ids) and not local_model_on():
             raise LookupError("a local-only note is read by no model")
@@ -441,7 +544,8 @@ def _seeds(conn, rng: random.Random, today: date) -> list[str]:
     rows = conn.execute(
         "SELECT a.id, a.created_at, a.updated_at FROM artifacts a"
         f" WHERE {_LIVE} AND (a.local_only = 0 OR ?) AND EXISTS (SELECT 1 FROM facets f"
-        " WHERE f.artifact_id = a.id AND f.level IN (?, ?))",
+        " WHERE f.artifact_id = a.id AND f.level IN (?, ?)"
+        " AND COALESCE(f.role, '') NOT IN ('gist', 'point', 'ask'))",
         (_local_on(), *IDEA_LEVELS),
     ).fetchall()
     resting = _recent(conn, "shiny_seed", SEED_REST_DAYS, today)
@@ -473,7 +577,7 @@ def _candidates(conn, seed: str) -> list[dict]:
     store = get_store()
     lines = conn.execute(
         "SELECT level, statement FROM facets WHERE artifact_id = ? AND level IN (?, ?)"
-        " AND bridge = 0",
+        " AND bridge = 0 AND COALESCE(role, '') NOT IN ('gist', 'point', 'ask')",
         (seed, *IDEA_LEVELS),
     ).fetchall()
     best: dict[str, tuple[float, str, str]] = {}
@@ -489,6 +593,20 @@ def _candidates(conn, seed: str) -> list[dict]:
                 continue
             if other not in best or hit["score"] > best[other][0]:
                 best[other] = (hit["score"], line["statement"], hit["facet_id"])
+    if not best:
+        return []
+    facet_ids = [v[2] for v in best.values()]
+    if facet_ids:
+        roles = {
+            r["id"]: r["role"]
+            for r in conn.execute(
+                "SELECT id, role FROM facets WHERE id IN (SELECT value FROM json_each(?))",
+                (json.dumps(facet_ids),),
+            )
+        }
+        best = {
+            k: v for k, v in best.items() if roles.get(v[2], "") not in ("gist", "point", "ask")
+        }
     if not best:
         return []
     near = store.facet_similarity(seed, list(best), SUBJECT_LEVEL)
@@ -549,25 +667,75 @@ def hunt(today: date | None = None, rng: random.Random | None = None) -> dict:
         conn = db.get_conn()
         try:
             found = [c for c in _candidates(conn, seed) if _pair([seed, c["id"]]) not in shown]
+            from .ingest import related as related_mod
+
+            refused = related_mod.refused(conn, seed)
+            found = [c for c in found if c["id"] not in refused]
             faces = _faces(conn, [seed, *(c["id"] for c in found)])
         finally:
             conn.close()
         if not found:
             continue
 
+        grounded = False
+        try:
+            _c = db.get_conn()
+            try:
+                grounded = _grounded(_c, today)
+            finally:
+                _c.close()
+        except Exception:  # noqa: BLE001
+            grounded = False
+        from . import privacy
+
+        local_ids = (
+            privacy.local_only_ids([seed, *(c["id"] for c in found)]) if not _local_on() else set()
+        )
+
         def block(i: str) -> str:
             face = faces.get(i) or {"kind": "item", "title": None, "lines": []}
-            return f"id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n" + "\n".join(
+            out = f"id: {i}\n[{face['kind']}] {face['title'] or '(untitled)'}\n" + "\n".join(
                 f"- {line}" for line in face["lines"][:6]
             )
+            if grounded and i not in local_ids:
+                line = (face["lines"] or [""])[0] if face["lines"] else ""
+                passage = _passage(i, line)
+                if passage:
+                    out += f"\npassage: {passage}"
+            return out
 
+        _c = db.get_conn()
+        try:
+            kept_ideas = [
+                r["idea"]
+                for r in _c.execute(
+                    "SELECT idea FROM link_feedback WHERE verdict = 'keep' AND idea != '' ORDER BY created_at DESC LIMIT 3"
+                )
+            ]
+            refused_ideas = [
+                r["idea"]
+                for r in _c.execute(
+                    "SELECT idea FROM link_feedback WHERE verdict = 'no' AND idea != '' ORDER BY created_at DESC LIMIT 3"
+                )
+            ]
+        finally:
+            _c.close()
+        examples = ""
+        if kept_ideas or refused_ideas:
+            if kept_ideas:
+                examples += "\n\nThis person said these were the same point:\n" + "\n".join(
+                    "- " + i for i in kept_ideas
+                )
+            if refused_ideas:
+                examples += "\n\nAnd these were not:\n" + "\n".join("- " + i for i in refused_ideas)
         try:
             answer = get_provider(role="chat").complete(
                 system=prompts.SHINY_HUNT,
                 user="The note:\n"
                 + block(seed)
                 + "\n\nCandidates:\n\n"
-                + "\n\n".join(block(c["id"]) for c in found),
+                + "\n\n".join(block(c["id"]) for c in found)
+                + examples,
                 response_model=_Find,
             )
         except Exception as exc:  # noqa: BLE001 - the raven says it could not look

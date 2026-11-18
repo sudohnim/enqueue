@@ -15,8 +15,20 @@ router = APIRouter()
 # ------------------------------------------------------------------------- search
 
 
+@router.post("/search/warm")
+def warm() -> dict:
+    """Load the embedding model now, so the search that follows does not wait."""
+    import threading
+
+    from ..index import embed
+
+    threading.Thread(target=lambda: embed.embed_query("warm"), daemon=True).start()
+    return {"ok": True}
+
+
 @router.get("/search")
-def search(q: str, limit: int = 20) -> dict:
+def search(q: str, limit: int = 20, wait: float = 0.0) -> dict:
+    wait = max(0.0, min(10.0, float(wait)))
     if not bootstrap.search_allowed():
         # The index is missing, rebuilding, or built with a different embedding
         # version. Serving results now would silently differ from another
@@ -27,7 +39,11 @@ def search(q: str, limit: int = 20) -> dict:
         )
     # Chunk and facet hits rolled up to one row per artifact (deduplicated),
     # so an artifact whose six chunks match does not occupy every slot.
-    hits = search_results(q, limit=limit)
+    hits = search_results(q, limit=limit, wait=wait)
+    from .. import searches
+
+    if q.strip():
+        searches.record(q, hits, "search")
     # What the search understood as filters ("PDFs · saved last month"), for the header.
     from .. import tags
     from ..retrieve import filters
@@ -42,7 +58,9 @@ def search(q: str, limit: int = 20) -> dict:
     except Exception:  # noqa: BLE001
         pass
     _dated(hits)
-    return {"query": q, "hits": hits, "filters": understood}
+    from ..retrieve.candidates import judge_pending
+
+    return {"query": q, "hits": hits, "filters": understood, "pending": judge_pending()}
 
 
 def _dated(hits: list[dict]) -> None:
@@ -61,6 +79,15 @@ def _dated(hits: list[dict]) -> None:
         (json.dumps([h["artifact_id"] for h in hits]),),
     ).fetchall()
     by_id = {r["id"]: r for r in rows}
+    from ..ingest import chunk
+    from ..ingest import facets as facets_mod
+
+    gists = facets_mod.gists(conn, [h["artifact_id"] for h in hits])
+    # One pages_for call per PDF artifact; each chunk hit then reads its own page.
+    pdf_pages: dict[str, dict[str, int]] = {}
+    for h in hits:
+        if h.get("kind") == "pdf" and h.get("chunk_id") and h["artifact_id"] not in pdf_pages:
+            pdf_pages[h["artifact_id"]] = chunk.pages_for(conn, h["artifact_id"])
     for h in hits:
         r = by_id.get(h["artifact_id"])
         if r is None:
@@ -68,6 +95,12 @@ def _dated(hits: list[dict]) -> None:
         h["updated_at"] = r["updated_at"]
         host = urlsplit(r["source_url"] or "").hostname or ""
         h["site"] = r["site_name"] or host.removeprefix("www.") or None
+        if h["artifact_id"] in gists:
+            h["gist"] = gists[h["artifact_id"]]
+        if h.get("kind") == "pdf" and h.get("chunk_id"):
+            h["page"] = pdf_pages.get(h["artifact_id"], {}).get(h["chunk_id"])
+        if h.get("text"):
+            h["quote"] = chunk.quote_of(h["text"])
 
 
 @router.get("/titles")

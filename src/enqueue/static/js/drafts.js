@@ -136,7 +136,9 @@ function renderDraftsList() {
 		(s.keep ? "Kept by the library's setting, in Settings, Storage." : "Off: edits replace the text, no history.") +
 		'</small></span><button type="button" class="toggle summary-switch draft-keep" role="switch" aria-checked="' +
 		String(s.keep) +
-		'" aria-label="Keep drafts of this note"><span class="knob"></span></button></div>';
+		'" aria-label="Keep drafts of this note" title="' +
+		(s.keep ? "Drafts of this note are kept" : "Only the latest draft is kept") +
+		'"><span class="knob"></span></button></div>';
 	body.innerHTML = html;
 }
 

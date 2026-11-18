@@ -11,14 +11,16 @@ from __future__ import annotations
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from enqueue import db
+from enqueue import config, db
 from enqueue import tags as tags_module
 from enqueue.sync.snapshot import (
+    apply_chat_snapshot,
     apply_pulled_snapshot,
     apply_snapshot,
     deserialize,
     lww_key,
     read_artifact_snapshot,
+    read_chat_snapshot,
     serialize,
     winner,
 )
@@ -396,3 +398,75 @@ def test_link_preview_rides_the_snapshot(store):
         assert row["title"] == "Memory palaces"
     finally:
         conn.close()
+
+
+class TestChatPlacesSnapshot:
+    def test_places_ride_the_conversation_snapshot(self, store, monkeypatch):
+        conn = db.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO chats (id, title, created_at, updated_at)"
+                " VALUES ('c1', 'Chat', '2024-01-01T00:00:00', '2024-01-01T00:00:00')"
+            )
+            conn.execute(
+                "INSERT INTO chat_messages"
+                " (id, chat_id, ordinal, role, text, created_at)"
+                " VALUES ('m1', 'c1', 0, 'assistant', 'An answer.', '2024-01-01T00:00:00')"
+            )
+            conn.execute(
+                "INSERT INTO chat_places (message_id, n, artifact_id, page, quote)"
+                " VALUES ('m1', 1, 'p1', 2, 'the first words')"
+            )
+            conn.commit()
+            snap = read_chat_snapshot(conn, "c1")
+            assert snap["places"] == [
+                {
+                    "message_id": "m1",
+                    "n": 1,
+                    "artifact_id": "p1",
+                    "page": 2,
+                    "quote": "the first words",
+                }
+            ]
+            snap = deserialize(serialize(snap))
+        finally:
+            conn.close()
+
+        second = store / "second"
+        second.mkdir()
+        monkeypatch.setattr(config, "DATA_DIR", second)
+        monkeypatch.setattr(config, "DB_PATH", second / "enqueue.db")
+        monkeypatch.setattr(config, "BLOB_DIR", second / "blobs")
+        db.reset_migration_state()
+        db.migrate()
+        with db.transaction() as tx:
+            apply_chat_snapshot(tx, snap)
+
+        conn = db.get_conn()
+        try:
+            rows = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT message_id, n, artifact_id, page, quote FROM chat_places"
+                )
+            ]
+            assert rows == snap["places"]
+        finally:
+            conn.close()
+
+        newer = deserialize(serialize(snap))
+        newer["chat"]["updated_at"] = "2024-02-01T00:00:00"
+        del newer["places"]
+        with db.transaction() as tx:
+            apply_chat_snapshot(tx, newer)
+        conn = db.get_conn()
+        try:
+            rows = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT message_id, n, artifact_id, page, quote FROM chat_places"
+                )
+            ]
+            assert rows == snap["places"]
+        finally:
+            conn.close()

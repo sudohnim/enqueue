@@ -231,6 +231,11 @@ def _derive(aid: str) -> None:
             " 'bank.example', ?)",
             (aid, now),
         )
+        conn.execute(
+            "INSERT INTO chat_places (message_id, n, artifact_id, page, quote)"
+            " VALUES ('m-1', 1, ?, NULL, 'The offshore account number is 7741')",
+            (aid,),
+        )
 
 
 def _all_text(aid: str) -> str:
@@ -242,6 +247,7 @@ def _all_text(aid: str) -> str:
             ("entities", "entity || ' ' || fact"),
             ("sections", "summary"),
             ("link_previews", "coalesce(title,'') || ' ' || coalesce(description,'')"),
+            ("chat_places", "quote"),
         ):
             # nosemgrep - table and column names are literals from the tuple above
             for r in conn.execute(f"SELECT {cols} AS t FROM {table} WHERE artifact_id = ?", (aid,)):
@@ -356,3 +362,27 @@ def test_the_library_is_closed_to_other_accounts(store):
     assert mode(config.DB_PATH) == 0o600
     assert mode(config.DATA_DIR / "settings.json") == 0o600
     assert db.restrict_permissions() == 0
+
+
+def test_an_original_on_the_relay_only_is_fetched_and_sealed(monkeypatch):
+    raw = b"\xff\xd8\xff offloaded secret pixels"
+    content_hash = "beef" * 16
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO artifacts"
+            " (id,kind,title,content_hash,mime,filename,created_at,updated_at,status)"
+            " VALUES ('img2','image','photo',?,'image/jpeg','p.jpg',"
+            "  '2099-01-01T00:00:00+00:00','2099-01-01T00:00:00+00:00','ok')",
+            (content_hash,),
+        )
+    from enqueue.sync import client
+
+    def fetch(digest):
+        config.BLOB_DIR.mkdir(parents=True, exist_ok=True)
+        (config.BLOB_DIR / digest).write_bytes(raw)
+        return True
+
+    monkeypatch.setattr(client, "fetch_blob_to_cache", fetch)
+    vaultops.vault_artifact("img2")
+    assert raw not in (config.BLOB_DIR / content_hash).read_bytes()
+    assert vaultops.blob_bytes("img2")[0] == raw

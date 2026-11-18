@@ -55,6 +55,40 @@ def _floor_verdict(hit: dict) -> str:
 # note - but the caller is told, so they rank after what search is sure of and the
 # page can say so instead of presenting twenty guesses as twenty results.
 _UNJUDGED: ContextVar[frozenset[str]] = ContextVar("gray_unjudged", default=frozenset())
+# How long this search waits for the judge; None means the configured wait.
+_WAIT: ContextVar[float | None] = ContextVar("judge_wait", default=None)
+# Set when a judge was started and had not answered when the search returned.
+_PENDING: ContextVar[bool] = ContextVar("judge_pending", default=False)
+
+_FAILED: dict[tuple[str, str], float] = {}
+FAILED_FOR_S = 60.0
+
+
+def _in_time(kind: str, query: str, fn, fallback):
+    """Run a model step for a search, waited for the search's own wait at most."""
+    from ..providers import pause
+
+    key = (kind, query)
+    if pause.active() or time.monotonic() - _FAILED.get(key, -1e9) < FAILED_FOR_S:
+        return fallback
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            box["value"] = fn()
+        except Exception:  # noqa: BLE001 - the search goes on without it
+            if len(_FAILED) > 256:
+                _FAILED.clear()
+            _FAILED[key] = time.monotonic()
+
+    worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
+    worker.start()
+    wait = _WAIT.get()
+    worker.join(config.SEARCH_JUDGE_WAIT_S if wait is None else wait)
+    if "value" in box:
+        return box["value"]
+    _PENDING.set(True)
+    return fallback
 
 
 # At most this many gray hits the judge has not ruled on yet are shown: they are
@@ -144,9 +178,11 @@ def _judge_in_time(query: str, gray: list[dict]) -> tuple[set[str], frozenset[st
 
     worker = threading.Thread(target=copy_context().run, args=(run,), daemon=True)
     worker.start()
-    worker.join(_judge_wait(model))
+    wait = _WAIT.get()
+    worker.join(_judge_wait(model) if wait is None else wait)
     if "unjudged" in box:
         return box["kept"], box["unjudged"]
+    _PENDING.set(True)
     return _cached_verdicts(query, gray)
 
 
@@ -213,6 +249,7 @@ def _facets_for_judge(artifact_ids: list[str]) -> dict[str, list[str]]:
         rows = conn.execute(
             "SELECT artifact_id, statement FROM facets"
             " WHERE artifact_id IN (SELECT value FROM json_each(?))"
+            " AND COALESCE(role, '') != 'ask'"
             " ORDER BY level",
             (json.dumps(artifact_ids),),
         ).fetchall()
@@ -671,12 +708,14 @@ def _weighted_hits(conn, hits, cache):
         yield hit, hit["score"] * trust * 2.0
 
 
-def search_results(q: str, limit: int = 20) -> list[dict]:
+def search_results(q: str, limit: int = 20, wait: float | None = None) -> list[dict]:
     """One row per artifact for /search.
 
     `#tag` / `tag:x` tokens are an exact filter, never embedded. A query that is
     entirely one "quoted phrase" pins exact matches on top (R.10).
     """
+    _WAIT.set(wait)
+    _PENDING.set(False)
     from .. import tags
 
     from . import filters, lift, model_rank
@@ -708,7 +747,10 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
     if not free_text:
         return _results_for_ids(allowed, limit)
 
-    lifts = lift.lift(query_text) if phrase is None and lift.enabled_for_search() else []
+    if phrase is None and lift.enabled_for_search():
+        lifts = _in_time("lift", query_text, lambda: lift.lift(query_text), [])
+    else:
+        lifts = []
 
     if allowed is not None:
         # Filter a wider window so an allowed hit just past `limit` is not lost. No rerank here.
@@ -728,7 +770,7 @@ def search_results(q: str, limit: int = 20) -> list[dict]:
         if config.SEARCH_RERANK:
             fused = _rerank(query_text, fused)
         if model_rank.enabled():
-            fused = model_rank.order(query_text, fused)
+            fused = _in_time("rank", query_text, lambda: model_rank.order(query_text, fused), fused)
         ranked = fused[:limit]
 
     else:
@@ -848,7 +890,9 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
                 s,
                 {
                     "chunk_id": None,
-                    "why": f"facet L{h.get('level')}",
+                    "why": (
+                        "search phrase" if h.get("role") == "ask" else f"facet L{h.get('level')}"
+                    ),
                     "facet_id": h.get("facet_id"),
                 },
             )
@@ -941,6 +985,7 @@ def _hybrid_results(q: str, limit: int = 20, lifts: list[str] | None = None) -> 
                 {
                     "score": round(info["score"], 4),
                     "artifact_id": aid,
+                    "chunk_id": info["chunk_id"],
                     "title": title,
                     "kind": kind,
                     "why": info["why"],
@@ -1065,3 +1110,7 @@ def artifact_texts(conn, ids, max_words: int = 1200) -> dict[str, str]:
 def artifact_text(conn, artifact_id: str, max_words: int = 1200) -> str:
     """A note's body, or a capture's chunks."""
     return artifact_texts(conn, [artifact_id], max_words)[artifact_id]
+
+
+def judge_pending() -> bool:
+    return _PENDING.get()

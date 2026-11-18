@@ -23,7 +23,7 @@
 	border: 0;
 	background: none;
 	font: inherit;
-	font-size: 14px;
+	font-size: var(--t-md);
 	color: var(--text-mute);
 	cursor: pointer;
 }
@@ -55,7 +55,7 @@
 }
 .welcome-hub .welcome-lead {
 	margin: 0;
-	font-size: 26px;
+	font-size: var(--t-4xl);
 	line-height: 32px;
 	font-weight: var(--w-heading);
 	letter-spacing: -0.018em;
@@ -65,7 +65,7 @@
 .welcome-sub {
 	margin: var(--sp-2) 0 0;
 	max-width: 56ch;
-	font-size: 16px;
+	font-size: var(--t-xl);
 	line-height: 24px;
 	color: var(--text-dim);
 }
@@ -137,14 +137,14 @@
 	gap: 4px;
 }
 .welcome-tourcard-title {
-	font-size: 18px;
+	font-size: var(--t-2xl);
 	line-height: 24px;
 	font-weight: var(--w-strong);
 	color: var(--text);
 }
 .welcome-tourcard-copy {
 	max-width: 46ch;
-	font-size: 14px;
+	font-size: var(--t-md);
 	line-height: 20px;
 	color: var(--text-mute);
 }
@@ -229,20 +229,20 @@
 	min-width: 0;
 }
 .welcome-row-title {
-	font-size: 15px;
+	font-size: var(--t-lg);
 	line-height: 20px;
 	color: var(--text);
 }
 .welcome-row-detail {
 	overflow: hidden;
-	font-size: 13px;
+	font-size: var(--t-sm);
 	line-height: 18px;
 	color: var(--text-mute);
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .welcome-row-go {
-	font-size: 14px;
+	font-size: var(--t-md);
 	color: var(--accent);
 }
 .welcome-row[data-state="done"] .welcome-row-go {
@@ -267,7 +267,7 @@
 .welcome-note {
 	margin: var(--sp-4) 0 0;
 	max-width: 60ch;
-	font-size: 14px;
+	font-size: var(--t-md);
 	line-height: 20px;
 	color: var(--text-mute);
 }
@@ -279,7 +279,7 @@
 	padding: 6px 12px;
 	border-radius: var(--r-full);
 	background: var(--lavender-subtle);
-	font-size: 13px;
+	font-size: var(--t-sm);
 	color: var(--accent-text, var(--accent));
 }
 /* The service and key rows belong to the "online" row above them: no line between. */
