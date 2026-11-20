@@ -165,8 +165,6 @@ const WELCOME_RENDER = {
 		return (
 			'<div class="welcome-hub">' +
 			'<p class="welcome-lead">Save anything. Find it again.</p>' +
-			'<p class="welcome-sub">Notes, links, PDFs, pictures and files go in as they are, ' +
-			"with nothing to file. Find them by searching, or by asking in your own words.</p>" +
 			'<button type="button" class="welcome-tourcard" onclick="welcomePlayTour()">' +
 			'<span class="welcome-deck" aria-hidden="true">' +
 			"<span></span><span></span>" +
@@ -235,8 +233,7 @@ const WELCOME_RENDER = {
 				.join("") +
 			"</select></div>" +
 			'<div class="field welcome-online"><label for="w_key">Your key</label>' +
-			'<div class="aside">The service gives you one when you sign up. Kept safely in ' +
-			"this Mac's Keychain." +
+			'<div class="aside">The service gives you one when you sign up.' +
 			(d.storage.api_key_present ? " A key is saved already." : "") +
 			"</div>" +
 			'<div class="keyrow"><input id="w_key" type="password" autocomplete="off" ' +

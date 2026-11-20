@@ -693,6 +693,20 @@ def get_preview_image(artifact_id: str):
     )
 
 
+def _original_away(artifact_id: str) -> bool:
+    """The original is kept in sync only and could not be fetched just now."""
+    from .. import blobstore
+
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT content_hash FROM artifacts WHERE id = ?", (artifact_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return bool(row and row["content_hash"]) and not blobstore.exists(row["content_hash"])
+
+
 @router.get("/artifacts/{artifact_id}/page/{number}")
 def get_page(artifact_id: str, number: int, width: int = 900):
     # A client that asks for a zero-width page has measured its layout too early. That
@@ -701,6 +715,8 @@ def get_page(artifact_id: str, number: int, width: int = 900):
     width = max(120, min(width, 3000))
     png = capture.render_page(artifact_id, number, width=width)
     if png is None:
+        if _original_away(artifact_id):
+            raise HTTPException(status_code=503, detail="original not on this Mac") from None
         raise HTTPException(status_code=404, detail="no such page") from None
     return Response(
         content=png,

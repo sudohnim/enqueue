@@ -546,9 +546,7 @@ fn lww_key(snapshot: &Value) -> (String, String) {
 
 /// The artifacts read-copy schema, mirroring the desktop's final migrations (0001
 /// baseline + pinned/deleted_at/pages/title_explicit/_device_id).
-/// An older clear_library emptied the keyword index's own tables, and FTS5 cannot open
-/// a table without them: every write to an item failed. Drop the broken index before
-/// anything touches it; init_schema makes it again and fills it from the items.
+/// Drops a keyword index an older clear_library broke; init_schema remakes it.
 fn heal_keyword_index(conn: &Connection) -> Result<(), String> {
     let shadow: i64 = conn
         .query_row(

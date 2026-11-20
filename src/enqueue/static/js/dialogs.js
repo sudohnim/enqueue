@@ -134,7 +134,7 @@
     box.querySelector("h2").textContent = title;
     box.querySelector("p").textContent =
       explainer === undefined
-        ? "Saved views re-run live as your library grows."
+        ? "It stays as it is now. Rebuild it to take in new things."
         : explainer;
     const field = box.querySelector("#askField");
     field.placeholder = placeholder || "";

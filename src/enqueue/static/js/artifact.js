@@ -1884,8 +1884,7 @@
       if (!text) {
         box.className = "state";
         box.innerHTML =
-          "saved exactly as it arrived. Nothing in it reads as text, so there is " +
-          "nothing to show and nothing to search - it is here, and it is intact.";
+          "No text in this file. Search finds it by its name.";
       }
     } catch (err) {
       box.className = "aside caution";
@@ -2163,11 +2162,22 @@
       };
       // A page that will not render is still a page. Removing it would silently
       // renumber the document underneath the reader.
-      img.onerror = () => {
+      img.onerror = async () => {
         leaf.dataset.loaded = "";
         leaf.classList.add("blank");
-        leaf.textContent =
-          "page " + (Number(leaf.dataset.page) + 1) + " would not render";
+        // A 503 means the file is kept in sync only and the relay was out of reach.
+        const r = await fetch(img.src).catch(() => null);
+        leaf.innerHTML =
+          '<span>' +
+          (r && r.status === 503
+            ? "This file is kept in sync. Connect to the internet, then try again."
+            : "Page " + (Number(leaf.dataset.page) + 1) + " could not open.") +
+          '</span> <button class="linkish" type="button">Try again</button>';
+        leaf.querySelector("button").addEventListener("click", () => {
+          leaf.classList.remove("blank");
+          leaf.textContent = "";
+          load(leaf);
+        });
       };
       img.src =
         "/artifacts/" + id + "/page/" + leaf.dataset.page + "?width=" + width();
@@ -2768,7 +2778,7 @@
       "View name",
       "Save",
       current,
-      "Saved views re-run live as your library grows; renaming changes only the label.",
+      "Renaming changes only the label.",
     );
     if (!name || name === current) return;
     try {

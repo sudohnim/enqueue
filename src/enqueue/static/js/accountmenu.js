@@ -155,7 +155,7 @@ function toggleAccountMenu(chip) {
 	} else {
 		menu.innerHTML =
 			'<div class="acct-pitch"><div class="acct-name">Not signed in</div>' +
-			'<div class="acct-sub">Sign in to sync your library with your phone and your other Macs. Only your devices can read it.</div></div>' +
+			'<div class="acct-sub">Sign in to sync your library with your phone and your other Macs.</div></div>' +
 			'<button type="button" role="menuitem" class="acct-item strong" onclick="accountMenuGo(\'sync\')">' +
 			"<span>Sign in to Enqueue sync</span></button>" +
 			'<button type="button" role="menuitem" class="acct-item" onclick="accountMenuGo()">' +

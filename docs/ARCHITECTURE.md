@@ -58,6 +58,7 @@ flowchart LR
 - **The relay is a dumb, zero-knowledge mailbox.** It stores sealed bytes under hashed names, keeps a cursor per library so each device asks "what changed since N", and pushes a "something changed" stream. With R2 on, the bytes live in the bucket and `relay.db` holds only the index. It cannot open anything.
 - **Accounts only say who you are.** Google or Apple sign-in gives each device its own token; Postgres holds accounts, devices, plans and the included assistant's monthly use, never a key.
 - **The phone holds an encrypted copy.** It reads, captures and does light edits, asks questions over a keyword search of its copy, and never runs the model over the library. Android and iPhone share the page and the Rust; only a thin native shell differs (Kotlin on Android; Swift plugins on iOS for purchases, the Face ID lock and Quick capture).
+- **An original can live on the relay only.** With Free up space on, an old, unpinned original the relay holds byte for byte leaves the Mac; its thumb stays for the wall, and opening it fetches it back.
 - **Models are called from where the text is.** The Mac calls the included assistant through the relay, or a service with your own key; anything marked local-only goes to no model. Embeddings are always computed on the Mac.
 
 ## The life of an artifact

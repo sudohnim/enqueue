@@ -164,17 +164,11 @@
     color: var(--accent);
   }
   .welcome-lead {
-    margin: 14px 0 6px;
+    margin: 14px 0 22px;
     font-size: var(--t-2xl);
     line-height: 24px;
     font-weight: var(--w-strong);
     color: var(--text);
-  }
-  .welcome-text {
-    margin: 0 0 22px;
-    font-size: var(--t-lg);
-    line-height: 22px;
-    color: var(--text-dim);
   }
   .welcome-steps {
     margin: 0;
@@ -3029,10 +3023,6 @@
     <img class="welcome-raven" src="raven-mark.png" alt="" aria-hidden="true" />
     <h1 class="welcome-title">Welcome to Enqueue<span class="welcome-dot">.</span></h1>
     <p class="welcome-lead">Save anything. Find it again.</p>
-    <p class="welcome-text">
-      Notes, links, photos and files go in as they are, with nothing to sort. Find them
-      again by searching, or by asking in your own words.
-    </p>
     <ol class="welcome-steps">
       <li>
         <span class="welcome-num" aria-hidden="true">1</span>
@@ -3498,7 +3488,7 @@
     <!-- Events Section (VAULT.6): real session diagnostics + the vault door -->
     <div class="mset-group" data-guide-for="phone-activity">
       <h2 class="mset-title">Activity</h2>
-      <p class="mset-sub">Questions, captures, summary edits and syncs. Tap a row for the full record.</p>
+      <p class="mset-sub">Tap a row for the full record.</p>
       <div id="settings_events_list" class="mset-events"></div>
       <div class="mset-row2">
         <button id="settings_events_refresh" type="button" class="mset-secondary">Refresh</button>
@@ -4482,7 +4472,7 @@
     }
     const yes = await mobileSheet({
       title: "A new version of Enqueue is ready",
-      points: [...up.points, "Update to get the latest fixes and features."],
+      points: up.points,
       ok: "Update",
     });
     if (!yes) return snoozeUpdate(up.key);
@@ -6277,7 +6267,7 @@
     const { backdrop, card, close } = shareCard("Share this note");
     const intro = document.createElement("div");
     intro.className = "mconfirm-points";
-    intro.innerHTML = "<p>Anyone with the link can read the note. Your edits reach it as you make them.</p>";
+    intro.innerHTML = "<p>Your edits reach the link as you make them.</p>";
     const spans = document.createElement("fieldset");
     spans.innerHTML =
       "<legend>The link opens for</legend>" +
@@ -6333,7 +6323,7 @@
       "Shared " + shareDay(s.shared_at) +
       (s.expires_at ? ", open until " + shareDay(s.expires_at) : ", open until you stop it") +
       (s.passphrase ? ", with a passphrase" : "") +
-      ". Anyone with the link reads the note as it is now.";
+      ".";
     status.appendChild(line);
     card.appendChild(status);
     if (s.url) {

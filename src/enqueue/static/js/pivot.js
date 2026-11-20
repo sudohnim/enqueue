@@ -340,7 +340,7 @@
         count +
         " artifact" +
         (count === 1 ? "" : "s") +
-        " from this view. They stay in your library - they just no longer appear in this arrangement. You can undo this from the Removed shelf.",
+        " from this view. They stay in your library. Undo it from the Removed shelf.",
       "Delete group",
     );
     if (!yes) return;

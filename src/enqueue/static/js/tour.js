@@ -545,8 +545,7 @@
     );
     const facts = el("dl", "tour-facts");
     [
-      [phone ? "Lives on your Mac" : "Lives on this Mac", "One folder. No account."],
-      ["Sealed on the way", "Only your devices hold the key."],
+      [phone ? "Lives on your Mac" : "Lives on this Mac", "One folder. No account needed."],
       ["Fingerprint lock", phone ? "In Settings, on this phone." : "On the phone, in its Settings."],
       ["Your own backups", "Daily, into a drive folder you pick."],
     ].forEach(([term, detail]) => {
@@ -617,8 +616,8 @@
       {
         title: ["Yours, and", "private."],
         copy: phone
-          ? ["Your library lives on your Mac. It reaches this phone end-to-end encrypted, so the relay in between only ever holds a sealed copy."]
-          : ["Your library lives on this Mac. It reaches your phone end-to-end encrypted, so the relay in between only ever holds a sealed copy."],
+          ? ["Your library lives on your Mac. This phone keeps a copy, and backups go to a folder you pick."]
+          : ["Your library lives on this Mac. Your phone keeps a copy, and backups go to a folder you pick."],
         note: null,
         demo: demoYours,
       },

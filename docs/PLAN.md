@@ -1,7 +1,7 @@
 # Plan
 
 Tasks for agents, from two reviews (2026-11-13 and 2026-11-16).
-Only open tasks are listed. Finished work is under **Built on this branch** at the end.
+Every task here is done as of 2026-11-19; new work starts as new tasks. Finished work is summed up under **Built on this branch** at the end.
 Each task is one unit of work for one agent.
 Each task says where the code is, what to change, how to test it, and when to stop.
 The section **For the owner** at the end is not for agents.
@@ -1405,7 +1405,7 @@ The task text was deleted when the plan was compacted. `git log --grep '^<ID>:'`
 
 Goal: give each track its tables in one place, so no two agents take the same migration number.
 Built: `0046_searches`, `0047_facet_role`, `0048_link_feedback`, `0049_chat_places`, `0050_blob_relay`, `0051_artifact_colours`, `0052_thumbs`, `0053_source_items`, and purge of their rows in `trash.py`.
-The tables for tracks C and V exist but nothing writes them yet.
+Tracks C and V now write their tables: thumbs, `blob_relay`, `artifact_colours`.
 Tasks: DB1, DB2, DB3.
 
 ## Security and privacy (S)
@@ -1419,7 +1419,10 @@ Built:
 - A session token (`session.py`): the shell, the CLI and `bin/screenshots` send it, and the engine requires it.
 - An answer that quoted a vaulted item is sealed with the item and opened again on unvault.
 
-Open: the Content Security Policy for the phone page (S9, needs a device) and the docs (S11).
+- The desktop window's policy has no `'unsafe-eval'` (review, 2026-11-17); the phone page's syntax probe is its own script.
+- Saving an answer as a note refuses one that quoted a vaulted item, and lists only live, unvaulted sources.
+
+The phone page's policy (S9) and the docs (S11) are done.
 Tasks: S1 to S8, S10.
 
 ## The summary (M)
@@ -1461,7 +1464,9 @@ Built:
 - The embedder warms up when a search is about to come.
 - Index-only lines do not reach the judge or the overview; a search-phrase hit says why it matched; a result shows the gist.
 
-Open: the docs (Q11).
+- A result's lines join a PDF's wrapped lines and never show a capture's `title filename.ext` line (review, 2026-11-17).
+
+The docs (Q11) are done.
 Tasks: Q1 to Q10.
 
 ## Something shiny (H)
@@ -1474,7 +1479,9 @@ Built:
 - When cards are refused often, the model gets the passages.
 - The links and the day's card go to the relay for the phone.
 
-Open: the docs (H8).
+- The day's card goes to the relay as soon as it is chosen, not at the next sync (review, 2026-11-17).
+
+The docs (H8) are done.
 Tasks: H1 to H7.
 
 ## Phone (P)
@@ -1485,7 +1492,10 @@ Built (data and bridge only):
 - The phone stores related rows, the day's card and the person's link verdicts, and sends verdicts back.
 - Tauri commands for the page: `mobile_related`, `mobile_shiny`, `mobile_link_feedback`.
 
-Open: every screen (P3 to P8) and the docs (P9).
+- The screens: matched words on a result, the summary in groups, related rows in the reader, the day's card, Keep and Not the same (P3 to P8), checked on the emulator in review (2026-11-17).
+- Review found that `clear_library` emptied the keyword index's own shadow tables, which broke every write on a phone that left the sample library; it now skips them, and `heal_keyword_index` mends a phone that was hit.
+
+The docs (P9) are done.
 Tasks: P1a, P1b, P1, P2, P6a, P6b, P7a, P7b, P8a, P8b.
 
 ## An answer shows where it came from (A)
@@ -1500,8 +1510,21 @@ Device checks (done in review, 2026-11-17):
 - A5: `openArtifactAt` opens a PDF at the page with the words marked.
 - A6: the "p. N" buttons open the PDF at that page. The chat panel stayed over the page and hid the passage; a place button now closes it.
 
-Open: the phone shows the marks raw (A7), and the docs (A8).
+The phone hides the raw marks (A7), and the docs (A8) are done.
 Tasks: A1 to A6.
+
+## Storage (C)
+
+Goal: a library that takes less room on the Mac and opens fast.
+Built:
+- A small picture per image for the wall (`thumbs`).
+- The Mac records which originals the relay holds (`blob_relay`), and the relay says if it holds an object and how large (`HEAD`).
+- Free up space (off by default): an old, unpinned original the relay holds byte for byte leaves the Mac and comes back when opened.
+- A plain copy of the library in a folder, updated every day if asked.
+
+Review (2026-11-17 to 11-18) fixed: vaulting an offloaded item fetches it first; export keeps an offloaded file's copy; the daily copy leaves out local-only items; purge removes the thumb; a page whose original is away says so, with Try again.
+An end-to-end test against a local relay passed on 2026-11-18.
+Tasks: C1 to C7.
 
 ## Fill the library from what is on this Mac (L)
 
@@ -1525,3 +1548,6 @@ Tasks: L1 to L8.
 
 - Two rounds marked about 60 skipped tasks done each. `bin/check-plan` (in `bin/verify --fast` and the pre-commit hook) now refuses a done mark with no Done line, with "skipped", or with an open need.
 - The third round closed 19 tasks with one commit each and no false marks.
+- The fourth round (another model, as was the third) closed the last 52 tasks with no false marks. Review still found real faults: the policy allowed eval, offload broke vault and export, local-only items reached the daily copy, purge left the thumb, saving an answer as a note could leak a vaulted item, and the Related row layout broke.
+- Review drove the device checks on the emulator against a scratch engine and a local relay (see AGENTS.md, Testing against a throwaway library), and fixed what they found.
+- After review (2026-11-17 to 11-19): the "Close passages" group was removed; Settings > Library was reordered and its words made plain, and it got the Save bar it never had; about 30 lines of filler text were cut across both apps; the share page shows when its link expires.

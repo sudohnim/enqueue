@@ -73,7 +73,7 @@
   async function openSharedDialog(id, s) {
     const box = modalShell(
       '<h2 id="shareTitle">Shared note</h2>' +
-        "<p>" + esc(shareStatus(s)) + " Anyone with the link reads the note as it is now.</p>" +
+        "<p>" + esc(shareStatus(s)) + "</p>" +
         (s.url
           ? '<div class="share-link"><input class="share-input" readonly aria-label="Link to the note" value="' +
             esc(s.url) +
@@ -114,7 +114,7 @@
     const id = ctx.id;
     const box = modalShell(
       '<h2 id="shareTitle">Share this note</h2>' +
-        "<p>Anyone with the link can read the note. Your edits reach it as you make them.</p>" +
+        "<p>Your edits reach the link as you make them.</p>" +
         '<fieldset class="share-span"><legend>The link opens for</legend>' +
         SHARE_SPANS.map(
           ([v, label]) =>

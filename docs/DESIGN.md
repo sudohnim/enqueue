@@ -224,6 +224,8 @@ White (`--surface-2`), `--hairline`, 12px radius (16px for the big capture field
 - The phone's linking code opens under its row on a white panel beside a line that says to keep it private; one button shows and hides it.
 - Toggles: an OFF recessed violet track ringed in `--line-strong`, an ON violet track, a white bead.
 - On the phone, settings are managed by the desktop and read-only.
+- A change is staged until Save: the Save bar (`#settingsActions`) sticks 88px above the window's bottom, clear of the pill, and every tab that stages a setting ends with it.
+- The Library tab reads top to bottom as Backup, Bring things in, Space on this Mac, Drafts, Save a copy as files, then More options.
 
 ### The capture pill
 
@@ -290,6 +292,7 @@ The phone's Details panel is the same component with `data-touch` on its root: b
 - Keep headings sentence case, light, with mild tracking. Use the `--w-*` tokens; never write a numeric `font-weight`.
 - Make something matter by size or ink, not weight.
 - Let violet be the single accent, and keep it for instructions, focus, links, and the brand's own marks.
+- Make every line of text earn its place: what a choice does, what happens next, a date, a number, a warning before something that cannot be undone.
 
 ### Don't
 
@@ -301,6 +304,7 @@ The phone's Details panel is the same component with `data-touch` on its root: b
 - Don't uppercase headings or add eyebrows above them.
 - Don't introduce a second accent colour, and don't use the loud Kraken blue-purple `#7132f5`.
 - Don't use true black `#000000` for text.
+- Don't add a line that restates its heading, narrates what the screen plainly does, or repeats that the library is private, local or encrypted. The person knows. One privacy card in the tour is enough.
 
 ## 9. Responsive
 

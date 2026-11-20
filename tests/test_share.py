@@ -164,7 +164,9 @@ def test_an_expired_share_is_gone(tmp_path):
         headers={"Authorization": "Bearer test-secret"},
     )
     assert put.status_code == 201
-    assert relay.get(f"/share/{sid}").content == b"sealed"
+    got = relay.get(f"/share/{sid}")
+    assert got.content == b"sealed"
+    assert int(got.headers["X-Expires-At"]) == int(float(put.request.url.params["expires_at"]))
     time.sleep(0.3)
     assert relay.get(f"/share/{sid}").status_code == 404
 

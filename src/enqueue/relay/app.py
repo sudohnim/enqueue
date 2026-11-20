@@ -291,14 +291,14 @@ def create_relay(
 
     @app.get("/share/{sid}")
     def get_share(sid: str):
-        data = storage.get_share(_share_id(sid))
-        if data is None:
+        found = storage.get_share(_share_id(sid))
+        if found is None:
             raise HTTPException(status_code=404, detail="no such share")
-        return Response(
-            content=data,
-            media_type="application/octet-stream",
-            headers={"Cache-Control": "no-store", **_VIEWER_HEADERS},
-        )
+        data, expires_at = found
+        headers = {"Cache-Control": "no-store", **_VIEWER_HEADERS}
+        if expires_at is not None:
+            headers["X-Expires-At"] = str(int(expires_at))
+        return Response(content=data, media_type="application/octet-stream", headers=headers)
 
     @app.get("/s/static/{name}")
     def viewer_file(name: str):

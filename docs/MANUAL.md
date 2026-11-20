@@ -92,14 +92,15 @@ You can change the shortcut in Settings > Capture.
 
 Capturing never waits: the thing is saved at once, and the reading, summarising and indexing happen behind it.
 
-### From this Mac
+### Bring things in
 
-**Settings > Library > From this Mac** brings in what you already have.
+**Settings > Library > Bring things in** brings in what you already have.
 
+- **From another app.** Export your notes from Obsidian, Notion, Bear or another app, then choose what it saved with **Choose a folder** or **Choose a file**.
 - **Apple Notes.** Press **Bring in**. Each note comes in as a note. Run it again later to bring in what changed. Locked notes and notes in Recently Deleted are left out. This is not offered in the Mac App Store build.
-- **Bookmarks.** Export your bookmarks from your browser as an HTML file, then choose that file with **Import**. Each bookmark becomes a link. Its folders become tags, except the browser's own folders.
-- **Kindle highlights.** Find `My Clippings.txt` in your Kindle's documents folder, then choose it with **Import**. Each book becomes one note with its highlights.
-- **New files in a folder.** Add a folder under **New files in a folder**. Each new PDF, picture and text file is kept. Files already there are left alone.
+- **Bookmarks.** Export your bookmarks from your browser as an HTML file, then choose that file with **Choose a file**. Each bookmark becomes a link. Its folders become tags, except the browser's own folders.
+- **Kindle highlights.** Find `My Clippings.txt` in your Kindle's documents folder, then choose it with **Choose a file**. Each book becomes one note with its highlights.
+- **Watch a folder.** Choose a folder under **Watch a folder**. Each new PDF, picture and text file you put in it comes in. Files already there stay out.
 
 Enqueue reads these files on this Mac. Nothing is sent to a service to do the reading. After they are in, the assistant you chose reads and summarises them like anything else.
 
@@ -189,6 +190,7 @@ On the phone, Details shows the drafts and the switch; the list and the comparis
 A note can be shared as a read-only web link, with Enqueue Pro and sync turned on.
 - The share button in the note's title bar opens a dialog. It asks how long the link opens (1 day, 1 week, or until you stop it) and for an optional passphrase, then shows the link with **Copy**.
 - Anyone with the link reads the note in a browser, with no app and no account. Enqueue cannot read it: the key is in the link, after the `#`.
+- The page shows when the note was last updated and, for a link that expires, when it stops working.
 - With a passphrase, the link alone opens nothing. Send the passphrase apart from the link.
 - The link follows the note: a few seconds after you stop typing, your edits reach it, and the reader sees them when they reload. This works from the phone too.
 - On a shared note, the share button opens the link again, with **Copy** and **Stop sharing**.
@@ -466,28 +468,31 @@ Your model API key is not in the backup (it lives in the Mac's Keychain); enter 
 
 ## Space on this Mac
 
-**Settings > Library** shows how much space the original files you saved use on this Mac.
-If you use Enqueue sync, you can let go of copies the relay already holds.
-Under **Space on this Mac**, turn on **Keep files I have not opened in 30 days in Enqueue sync only**.
+**Settings > Library > Space on this Mac** shows how much space your library uses.
+If you use sync, you can let go of copies the relay already holds.
+Turn on **Free up space**, then press **Save**.
+PDFs, pictures and files you have not opened for 30 days then live on the relay only, and the wall still shows each picture.
 The 30 days is the `offload_after_days` setting.
 Enqueue removes a local file only after it checks that the relay holds the same sealed bytes.
 Pinned items and items marked "only on this Mac" always stay.
 Vaulted items and items in the trash stay too.
 A file you open again is fetched from the relay and put back on the Mac.
+With no internet, such a file says it is kept in sync; press **Try again** once you are online.
 The switch is off by default, so nothing is removed until you turn it on.
 
 ## A plain copy in a folder
 
 A backup is encrypted and cannot be opened as files.
-For a copy you can read without Enqueue, use **Settings > Library > Export to a folder**.
+For a copy you can read without Enqueue, use **Settings > Library > Save a copy as files**, then **Save a copy**.
 Enqueue writes one Markdown file per item and the original files into `<folder>/Enqueue`.
-Turn on **Keep this copy up to date every day** to update that folder every day.
+Turn on **Update it every day** to update that folder every day.
 The folder is the `export_dir` setting; Enqueue writes into `<folder>/Enqueue` and never creates the folder itself, so skip this if the folder is missing.
 A second run changes only what changed.
 Files in this folder are not encrypted by Enqueue.
 Anyone who can open the folder can read them.
 Use a folder in a drive that is end-to-end encrypted.
 Items in the vault and items marked local-only are left out of the daily copy.
+A file that lives on the relay only keeps the copy an earlier run wrote.
 
 ## Privacy and encryption
 
@@ -534,13 +539,15 @@ It counts characters only. Your words themselves are never shown or kept there.
 
 ## Settings reference
 
+A change on any tab takes effect when you press **Save** in the bar at the bottom.
+
 | Tab | What is there |
 | --- | --- |
 | **Assistant** | Where answers come from, your account key, summaries; under More options the model for each job and retries. |
 | **Capture** | The capture shortcut, link previews, search by idea and ranking. |
-| **Library** | Backups and the recovery kit, drafts, space used; under More options the library folder, restoring, rebuilding search. |
+| **Library** | Backups and the recovery kit, Bring things in, Space on this Mac, drafts, Save a copy as files; under More options the library folder, restoring, rebuilding search. |
 | **Trash** | How long deleted things wait, what is in the trash, emptying it. |
-| **Phone** | Setting up sync, the code to link a phone, adding another computer. |
+| **Sync** | Setting up sync, the code to link a phone, adding another computer. |
 | **Activity** | What Enqueue has been doing: saves, questions and answers, summaries, syncs, backups. Click a line for the details. |
 
 ## When something goes wrong

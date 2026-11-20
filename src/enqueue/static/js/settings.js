@@ -328,7 +328,7 @@ async function renderSettingsAI() {
 				(keyed ? "" : ' style="display: none"') +
 				">Remove</button>" +
 				"</div>" +
-				'<div class="aside">The service gives you one when you sign up. Kept safely on this Mac, never in a file.</div>'
+				'<div class="aside">The service gives you one when you sign up.</div>'
 			: '<div class="aside caution">' +
 				(d.storage.api_key_where === "environment"
 					? "Set outside Enqueue (ENQ_LLM_API_KEY)."
@@ -1091,84 +1091,77 @@ async function renderSettingsFeatures() {
 // ---- Storage tab ----------------------------------------------------------
 async function renderSpaceSection(d) {
 	const space = await api("/storage/originals");
+	const s0 = d.storage;
+	const items = (s0.counts && s0.counts.artifacts) || 0;
+	const chats = (s0.counts && s0.counts.chats) || 0;
 	const setting =
 		d.settings.offload_originals || { value: "off", locked: false, env_var: "ENQ_OFFLOAD" };
 	const on = String(setting.value).toLowerCase() === "on";
-	const label = "Keep files I have not opened in 30 days in Enqueue sync only";
-	let html = '<div class="shelf">Space on this Mac</div><div class="group">';
-	html +=
-		'<div class="field"><div class="aside">Original files on this Mac: ' +
-		bytes(space.local_bytes) +
+	const label = "Free up space";
+	let html =
+		'<div class="shelf">Space on this Mac</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">Your library</span><div class="aside">' +
+		items +
+		" item" +
+		(items === 1 ? "" : "s") +
+		(chats ? " and " + chats + " chat" + (chats === 1 ? "" : "s") : "") +
+		" use " +
+		bytes(s0.database.bytes + s0.blobs.bytes) +
 		".</div></div>";
-	if (!space.ready) {
-		html +=
-			'<div class="field"><div class="aside">Turn on Enqueue sync to free space on this Mac.</div></div>';
-	} else {
-		html +=
-			'<div class="field"><div class="togglerow"><div>' +
-			'<span class="rowlabel">' +
-			label +
-			"</span>" +
-			(setting.locked
-				? '<div class="pinned">Set outside Enqueue (' + esc(setting.env_var) + ").</div>"
-				: '<div class="aside">They open again when you need them. Pinned items and items marked "only on this Mac" always stay. This can free ' +
-					bytes(space.could_free_bytes) +
-					" now.</div>") +
-			"</div>" +
-			'<button class="toggle" role="switch" aria-checked="' +
-			String(on) +
-			'" aria-label="' +
-			esc(label) +
-			'"' +
-			(setting.locked ? ' disabled aria-disabled="true"' : "") +
-			" onclick=\"stageSwitch(this, 'offload_originals')\"><span class=\"knob\"></span></button>" +
-			"</div></div>";
-	}
+	html +=
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">' +
+		label +
+		"</span>" +
+		(setting.locked
+			? '<div class="pinned">Set outside Enqueue (' + esc(setting.env_var) + ").</div>"
+			: space.ready
+				? '<div class="aside">Files you have not opened for 30 days stay in sync and leave this Mac. ' +
+					"They come back when you open them. Pinned items always stay." +
+					(space.could_free_count ? " This frees about " + bytes(space.could_free_bytes) + " now." : "") +
+					"</div>"
+				: '<div class="aside">Turn on sync to use this. Files you have not opened for 30 days ' +
+					"then stay in sync and leave this Mac.</div>") +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(on) +
+		'" aria-label="' +
+		esc(label) +
+		'"' +
+		(setting.locked || !space.ready ? ' disabled aria-disabled="true"' : "") +
+		" onclick=\"stageSwitch(this, 'offload_originals')\"><span class=\"knob\"></span></button>" +
+		"</div></div>";
 	return html + "</div>";
 }
 
 async function renderSettingsStorage() {
 	const d = await api("/settings");
-	let html = '<div class="h2">Library</div>';
-	// The privacy line must stay true: with a backup folder chosen, a copy does leave.
-	const backupOn = !!String((d.settings.backup_dir || {}).value || "").trim();
-
 	const s0 = d.storage;
+	const move = await renderMoveSection(d);
+	let html = '<div class="h2">Library</div>';
 	html += await renderBackupSection();
-	html += await renderDraftsSection(d);
-	html += await renderMoveSection(d);
-	const items = (s0.counts && s0.counts.artifacts) || 0;
-	const chats = (s0.counts && s0.counts.chats) || 0;
-	html +=
-		'<div class="shelf">On this Mac</div><div class="group">' +
-		'<div class="field"><span class="rowlabel">Space used</span>' +
-		'<div class="aside">' +
-		items +
-		" item" +
-		(items === 1 ? "" : "s") +
-		(chats ? " and " + chats + " chat" + (chats === 1 ? "" : "s") : "") +
-		", " +
-		bytes(s0.database.bytes + s0.blobs.bytes) +
-		"." +
-		(backupOn ? " A copy goes to your backup folder." : " Nothing you save leaves this Mac.") +
-		"</div></div></div>";
+	html += move.bring;
 	html += await renderSpaceSection(d);
+	html += await renderDraftsSection(d);
+	html += move.out;
 	html += moreOptions(
 		'<div class="group">' +
-			'<div class="field"><span class="rowlabel">Library folder</span>' +
+			'<div class="field"><span class="rowlabel">Where your library is</span>' +
 			'<div class="aside path">' +
 			esc(s0.data_dir) +
 			"</div></div>" +
 			'<div class="field"><span class="rowlabel">Restore a backup</span>' +
-			'<div class="aside">Not in the app yet: it takes the Terminal app (quit Enqueue, then ' +
-			'run <span class="mono">enq restore</span> with your backup folder). On a new Mac it asks ' +
-			"for your recovery kit. Whatever is here now is set aside, never deleted.</div></div>" +
+			'<div class="aside">Not in the app yet. Quit Enqueue, open the Terminal app and type ' +
+			'<span class="mono">enq restore</span> with your backup folder. On a new Mac it asks for ' +
+			"your recovery kit. What is here now is put aside, never deleted.</div></div>" +
 			'<div class="field"><span class="rowlabel">Rebuild search</span>' +
-			'<div class="aside">Starts search over from scratch. Takes a while; try it if search keeps missing things you know are there.</div>' +
+			'<div class="aside">Builds search again from the start. Try it if search misses things you ' +
+			"know are there. It takes a while.</div>" +
 			'<button class="btn tertiary" onclick="rebuildIndex(this)">Rebuild</button></div>' +
 			"</div>",
 	);
-
+	// The switches and the drafts choice above are staged; without this they never save.
+	html += settingsActionsBar();
 	return html;
 }
 
@@ -1180,9 +1173,9 @@ async function renderSettingsStorage() {
 // Save like the other settings; "Apply now" thins at once instead of at the next
 // daily pass, after saying what it removes.
 const DRAFT_POLICIES = [
-	["thinned", "Thin them out over time", "Close together while recent, further apart as they age."],
-	["30d", "Keep 30 days", "Older drafts are removed, except how each note began."],
-	["off", "Don't keep drafts", "Edits replace the text. Each note keeps only its latest."],
+	["thinned", "Fewer as they get older", "Many from today, then fewer as weeks go by."],
+	["30d", "For 30 days", "After 30 days they go, except how each note began."],
+	["off", "Don't keep them", "Each note keeps only what it says now."],
 ];
 
 async function renderDraftsSection(d) {
@@ -1200,8 +1193,7 @@ async function renderDraftsSection(d) {
 	const help = (DRAFT_POLICIES.find((x) => x[0] === chosen) || DRAFT_POLICIES[0])[2];
 	return (
 		'<div class="shelf">Drafts</div><div class="group">' +
-		'<div class="aside">Earlier versions of your notes, so you can always go back.</div>' +
-		'<div class="field"><label for="s_drafts_keep">How long to keep them</label>' +
+		'<div class="field"><label for="s_drafts_keep">Earlier versions of your notes</label>' +
 		'<select id="s_drafts_keep"' +
 		(f.locked ? " disabled" : "") +
 		' onchange="stageDraftPolicy(this.value)">' +
@@ -1216,12 +1208,10 @@ async function renderDraftsSection(d) {
 		st.drafts +
 		" draft" +
 		(st.drafts === 1 ? "" : "s") +
-		" of " +
+		" kept across " +
 		st.notes +
 		" note" +
 		(st.notes === 1 ? "" : "s") +
-		", " +
-		esc(bytes(st.bytes)) +
 		'. <button class="linkish" onclick="applyDraftPolicy(this)">Tidy up now</button></div>' +
 		(f.locked ? '<div class="pinned">Set outside Enqueue (' + esc(f.env_var) + ").</div>" : "") +
 		"</div></div>"
@@ -1276,7 +1266,7 @@ async function renderMoveSection(d) {
 	try {
 		[imp, exp] = await Promise.all([api("/import"), api("/export")]);
 	} catch (err) {
-		return "";
+		return { bring: "", out: "" };
 	}
 	const picker = !!(window.__TAURI__ && window.__TAURI__.core);
 	const typed = (id, verb, fn) =>
@@ -1290,54 +1280,6 @@ async function renderMoveSection(d) {
 	const dailyOn = !!String(exportField.value || "").trim();
 	const locked = !!exportField.locked;
 	const lastFolder = exp && exp.path ? String(exp.path).replace(/\/Enqueue\/?$/, "") : "";
-	const dailyRow =
-		'<div class="field"><div class="togglerow"><div>' +
-		'<span class="rowlabel">Keep this copy up to date every day</span>' +
-		"</div>" +
-		'<button class="toggle" role="switch" aria-checked="' +
-		String(dailyOn) +
-		'" aria-label="Keep this copy up to date every day" data-dir="' +
-		esc(lastFolder) +
-		'"' +
-		(locked ? ' disabled aria-disabled="true"' : "") +
-		' onclick="toggleDailyExport(this)"><span class="knob"></span></button>' +
-		"</div>" +
-		'<div class="aside">Files in this folder are not encrypted by Enqueue. ' +
-		"Anyone who can open the folder can read them. Use a folder in a drive that is " +
-		"end-to-end encrypted. Items in the vault and items marked local-only are left out " +
-		"of the daily copy.</div></div>";
-	let html =
-		'<div class="shelf">Move notes in and out</div><div class="group">' +
-		'<div class="field"><span class="rowlabel">Import notes</span>' +
-		'<div class="aside">From Obsidian, Notion, Bear, Standard Notes, Fabric, or any folder of ' +
-		"Markdown. Export from the other app first, then choose its folder or .zip.</div>" +
-		(picker
-			? '<div class="actions"><button class="btn tertiary" onclick="chooseImport(true)"' + (busy(imp) ? " disabled" : "") +
-				">Choose a folder…</button>" +
-				'<button class="btn tertiary" onclick="chooseImport(false)"' + (busy(imp) ? " disabled" : "") +
-				">Choose a .zip…</button></div>"
-			: typed("import_input", "Import", "startImport")) +
-		'<div class="aside" id="importState">' + esc(folderLine(imp)) + "</div></div>" +
-		'<div class="field"><span class="rowlabel">Export as Markdown</span>' +
-		'<div class="aside">Every item as a Markdown file any notes app opens, with pictures and ' +
-		"originals in a files folder. Export to the same place again to bring it up to date. " +
-		"Locked items stay out.</div>" +
-		(picker
-			? '<div class="actions"><button class="btn tertiary" onclick="chooseExport()"' + (busy(exp) ? " disabled" : "") +
-				">Export to a folder…</button></div>"
-			: typed("export_input", "Export", "startExport")) +
-		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div>" +
-		dailyRow +
-		"</div>";
-	const apple =
-		d.features && d.features.apple_notes
-			? '<div class="field"><span class="rowlabel">Apple Notes</span>' +
-				'<div class="aside">Bring in your notes. Run it again later to bring in what changed. ' +
-				"Locked notes are left out.</div>" +
-				'<div class="actions"><button class="btn tertiary" onclick="startAppleNotes()"' +
-				(busy(imp) ? " disabled" : "") + ">Bring in</button></div>" +
-				'<div class="aside" id="appleState">' + esc(appleLine(imp)) + "</div></div>"
-			: "";
 	const dirs = String((d.settings.watch_dirs || {}).value || "")
 		.split(/\r?\n/)
 		.map((x) => x.trim())
@@ -1355,25 +1297,64 @@ async function renderMoveSection(d) {
 		)
 		.join("");
 	const addDir = picker
-		? '<div class="actions"><button class="btn tertiary" onclick="chooseWatchDir()">Add a folder</button></div>'
+		? '<div class="actions"><button class="btn tertiary" onclick="chooseWatchDir()">Choose a folder…</button></div>'
 		: '<div class="keyrow"><input id="watch_dir_input" placeholder="~/Downloads/..." ' +
 			"onkeydown=\"if(event.key==='Enter')addWatchDir(this.value)\">" +
 			'<button class="btn tertiary" onclick="addWatchDir(document.getElementById(\'watch_dir_input\').value)">' +
-			"Add a folder</button></div>";
-	html +=
-		'<div class="shelf" id="fromThisMac">From this Mac</div><div class="group">' +
+			"Add</button></div>";
+	const apple =
+		d.features && d.features.apple_notes
+			? '<div class="field"><span class="rowlabel">Apple Notes</span>' +
+				'<div class="aside">Copies your Apple Notes in. Do it again later to bring in what changed. ' +
+				"Locked notes stay out.</div>" +
+				'<div class="actions"><button class="btn tertiary" onclick="startAppleNotes()"' +
+				(busy(imp) ? " disabled" : "") + ">Bring in</button></div>" +
+				'<div class="aside" id="appleState">' + esc(appleLine(imp)) + "</div></div>"
+			: "";
+	const bring =
+		'<div class="shelf" id="fromThisMac">Bring things in</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">From another app</span>' +
+		'<div class="aside">Notes from Obsidian, Notion, Bear and others, your browser\'s bookmarks, ' +
+		"or Kindle highlights. Export them from that app first, then choose what it saved.</div>" +
+		(picker
+			? '<div class="actions"><button class="btn tertiary" onclick="chooseImport(true)"' + (busy(imp) ? " disabled" : "") +
+				">Choose a folder…</button>" +
+				'<button class="btn tertiary" onclick="chooseImport(false)"' + (busy(imp) ? " disabled" : "") +
+				">Choose a file…</button></div>"
+			: typed("import_input", "Bring in", "startImport")) +
+		'<div class="aside" id="importState">' + esc(folderLine(imp)) + "</div></div>" +
 		apple +
-		'<div class="field"><span class="rowlabel">New files in a folder</span>' +
-		'<div class="aside">Each new PDF, picture and text file in these folders is kept. ' +
-		"Files that are there now stay as they are.</div>" +
+		'<div class="field"><span class="rowlabel">Watch a folder</span>' +
+		'<div class="aside">New PDFs, pictures and text files you put in it come in by themselves. ' +
+		"What is in it now stays out.</div>" +
 		'<div class="watchdirs">' +
 		dirRows +
 		addDir +
-		"</div></div>" +
-		'<div class="field"><span class="rowlabel">Bookmarks and Kindle</span>' +
-		'<div class="aside">Bookmarks: export them from your browser, then choose the file with Import. ' +
-		'Kindle: choose the file "My Clippings.txt" with Import.</div></div></div>';
-	return html;
+		"</div></div></div>";
+	const out =
+		'<div class="shelf">Save a copy as files</div><div class="group">' +
+		'<div class="field"><span class="rowlabel">Save a copy</span>' +
+		'<div class="aside">Every item as a file that other notes apps can open, with its pictures. ' +
+		"Save to the same folder again to update it. Locked items stay out.</div>" +
+		(picker
+			? '<div class="actions"><button class="btn tertiary" onclick="chooseExport()"' + (busy(exp) ? " disabled" : "") +
+				">Save to a folder…</button></div>"
+			: typed("export_input", "Save", "startExport")) +
+		'<div class="aside" id="exportState">' + esc(moveLine(exp, "export")) + "</div></div>" +
+		'<div class="field"><div class="togglerow"><div>' +
+		'<span class="rowlabel">Update it every day</span>' +
+		'<div class="aside">These files are not locked: anyone who can open the folder can read ' +
+		"them, so choose a private one. Locked items and items kept only on this Mac stay out.</div>" +
+		"</div>" +
+		'<button class="toggle" role="switch" aria-checked="' +
+		String(dailyOn) +
+		'" aria-label="Update it every day" data-dir="' +
+		esc(lastFolder) +
+		'"' +
+		(locked ? ' disabled aria-disabled="true"' : "") +
+		' onclick="toggleDailyExport(this)"><span class="knob"></span></button>' +
+		"</div></div></div>";
+	return { bring, out };
 }
 
 // The Import row shows a folder's import, never one from Apple Notes.
@@ -1388,7 +1369,7 @@ function appleLine(st) {
 
 function moveLine(st, what) {
 	const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
-	if (st.state === "failed") return (what === "import" ? "The import" : "The export") + " stopped: " + st.error;
+	if (st.state === "failed") return (what === "import" ? "Bringing in" : "Saving the copy") + " stopped: " + st.error;
 	if (what === "import") {
 		if (!st.notes && !st.files && st.state !== "running") return "";
 		if (st.path === "Apple Notes") {
@@ -1398,10 +1379,10 @@ function moveLine(st, what) {
 		const line = plural(st.notes || 0, "note") + " and " + plural(st.files || 0, "file");
 		const links = st.links ? " and " + plural(st.links, "link") : "";
 		const skipped = st.skipped ? ", " + st.skipped + " skipped (already here, or empty)" : "";
-		return (st.state === "running" ? "Importing… " + line + links + " so far" : "Imported " + line + links) + skipped + ".";
+		return (st.state === "running" ? "Bringing in… " + line + links + " so far" : "Brought in " + line + links) + skipped + ".";
 	}
-	if (st.state === "running") return "Exporting… " + plural(st.items || 0, "item") + " so far.";
-	return st.state === "done" ? "Exported " + plural(st.items, "item") + " to " + st.path + "." : "";
+	if (st.state === "running") return "Saving… " + plural(st.items || 0, "item") + " so far.";
+	return st.state === "done" ? "Saved " + plural(st.items, "item") + " to " + st.path + "." : "";
 }
 
 async function watchMove() {
@@ -1438,22 +1419,24 @@ async function chooseImport(folder) {
 			? { directory: true, multiple: false, title: "Choose the exported folder" }
 			: {
 					multiple: false,
-					title: "Choose the exported .zip",
-					filters: [{ name: "Export", extensions: ["zip", "bear2bk"] }],
+					title: "Choose what the other app saved",
+					filters: [
+						{ name: "Notes, bookmarks or highlights", extensions: ["zip", "bear2bk", "html", "htm", "txt", "json"] },
+					],
 				},
 	);
 	if (path) startImport(path);
 }
 
 async function chooseExport() {
-	const path = await choosePath({ directory: true, multiple: false, title: "Choose where the export goes" });
+	const path = await choosePath({ directory: true, multiple: false, title: "Choose where the copy goes" });
 	if (path) startExport(path);
 }
 
 function toggleDailyExport(button) {
 	const on = button.getAttribute("aria-checked") !== "true";
 	if (on && !(button.dataset.dir || "").trim()) {
-		return toast("Export to a folder first, then turn this on.", true);
+		return toast("Save a copy to a folder first, then turn this on.", true);
 	}
 	button.setAttribute("aria-checked", String(on));
 	stageSetting("export_dir", on ? button.dataset.dir : "");
@@ -1654,7 +1637,7 @@ async function renderBackupSection() {
 		esc(b.folder) +
 		'">' +
 		esc(where) +
-		". Locked with your library's key, so nobody else can read them.</div>" +
+		".</div>" +
 		(picker ? '<button class="btn tertiary" onclick="chooseBackupDir()">Change</button>' : "") +
 		"</div>" +
 		'<div class="field"><span class="rowlabel">Copies kept</span>' +
@@ -1678,12 +1661,12 @@ function backupKitHtml(saved, encrypted) {
 		(saved ? "" : " caution") +
 		'">' +
 		(saved
-			? "Saved. It's the only way to open your backups on a new Mac. " +
+			? "Saved. It opens your backups on a new Mac. " +
 				(encrypted
 					? "The library on this Mac is locked with it too."
 					: "The library on this Mac gets locked with it the next time Enqueue starts.")
-			: "Only it opens your backups on a new Mac, and Enqueue keeps no other copy. " +
-				"Save it where you keep your passwords.") +
+			: "A code that opens your backups on a new Mac. Enqueue keeps no copy, so save it " +
+				"where you keep your passwords.") +
 		'</div><div class="kit-view" id="kitView" hidden></div>' +
 		'<button class="btn ' +
 		(saved ? "tertiary" : "primary") +
@@ -1838,7 +1821,7 @@ async function renderSettingsTrash() {
 			value: td.value,
 			locked: td.locked,
 			pinned: "Set outside Enqueue (" + esc(td.env_var) + ").",
-			aside: "Days. After that, deleted things are gone for good. Nothing else is ever removed.",
+			aside: "Days. After that, deleted things are gone for good.",
 		}) +
 		"</div>";
 	html += '<div class="shelf">In the trash</div><div class="group">';
@@ -1942,8 +1925,6 @@ function renderSyncSetup(_d, sync) {
 // key that never leaves your devices, which is the promise this row has to make plainly.
 function renderSyncHosted() {
 	return (
-		'<div class="aside">Keep your phone and this Mac in step. Everything is scrambled ' +
-		"before it leaves your devices, so not even we can read it.</div>" +
 		'<div class="field"><span class="rowlabel">Enqueue sync</span>' +
 		'<div class="aside">Sign in to turn it on. Signing in only tells us who you are.</div>' +
 		signInButtons("startAccountSignIn") +
@@ -2091,9 +2072,8 @@ async function pollSignIn() {
 function renderSyncStepRelay(sync) {
 	const relayValue = esc(sync.relay_url || "http://127.0.0.1:8788");
 	return (
-		'<div class="aside">Your phone and this Mac stay in step through a relay: a small ' +
-		"server that passes your library between them. It only ever holds scrambled copies, " +
-		"so it can't read anything.</div>" +
+		'<div class="aside">A relay is a server you run that passes your library between ' +
+		"your devices.</div>" +
 		'<div class="field">' +
 		'<label for="s_sync_relay_url">Relay address</label>' +
 		'<input id="s_sync_relay_url" type="url" value="' +
@@ -2339,14 +2319,13 @@ function renderSyncRecovery() {
 
 function renderSyncStepSecret(_sync) {
 	return (
-		'<div class="aside">Last step: the relay\'s password, so only your devices can use it. ' +
+		'<div class="aside">Last step: the relay\'s password. ' +
 		"Paste the one the relay runs with: your own relay's RELAY_SECRET, or the password " +
 		"whoever runs a shared relay gave you.</div>" +
 		'<div class="field">' +
 		'<label for="s_sync_secret">Relay password</label>' +
 		'<input id="s_sync_secret" type="password" autocomplete="off" ' +
 		'placeholder="Paste the relay password">' +
-		'<div class="aside">Kept in your Mac\'s Keychain.</div>' +
 		"</div>" +
 		'<div class="actions" style="margin-top: var(--sp-4);">' +
 		'<button class="btn primary" onclick="saveSyncSecretAndFinish()">Finish setup</button>' +
@@ -3041,10 +3020,10 @@ async function saveKey() {
 	const picked = await applySuggested(name);
 	if (isDirty()) {
 		await saveSettings();
-		return toast(picked ? "Key stored. Answers now come from " + picked + "." : "Key stored in the Keychain.");
+		return toast(picked ? "Key saved. Answers now come from " + picked + "." : "Key saved.");
 	}
 	renderSettingsTab(currentSettingsTab);
-	toast("Key stored in the Keychain.");
+	toast("Key saved.");
 }
 
 async function forgetKey() {

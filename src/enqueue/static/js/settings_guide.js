@@ -23,7 +23,7 @@ const SHELF_GUIDES = {
 		Summaries: "concepts",
 	},
 	features: { Capturing: "hotkey", Links: "link-previews", Search: "search-options" },
-	storage: { Backup: "backups", Drafts: "drafts", "From this Mac": "from-this-mac" },
+	storage: { Backup: "backups", Drafts: "drafts", "Bring things in": "from-this-mac" },
 	trash: { Trash: "trash" },
 	sync: {
 		"Join a library": "join-library",

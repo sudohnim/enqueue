@@ -62,13 +62,6 @@
 	color: var(--text);
 	text-wrap: balance;
 }
-.welcome-sub {
-	margin: var(--sp-2) 0 0;
-	max-width: 56ch;
-	font-size: var(--t-xl);
-	line-height: 24px;
-	color: var(--text-dim);
-}
 
 /* The tour, as one card to play: a small deck of plates with the eye on top. */
 .welcome-tourcard {

@@ -42,7 +42,7 @@
       d.retention_days +
       " day" +
       (d.retention_days === 1 ? "" : "s") +
-      ", then go for good. Nothing else here ever expires on its own.</div>";
+      ", then go for good.</div>";
 
     if (!d.items.length) {
       html += '<div class="state">Nothing in the trash.</div>';

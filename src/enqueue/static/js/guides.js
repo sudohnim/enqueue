@@ -76,7 +76,7 @@ const Guides = (() => {
         "Forget removes it from the Keychain.",
       ],
       know: [
-        "Once sync is set up, the key travels to your phone encrypted, so the phone can ask questions too.",
+        "Once sync is set up, your phone gets the key too, so it can ask questions.",
         "It is never shown again after you save it, only its last few characters.",
       ],
       also: ["answers", "relay"],
@@ -239,16 +239,16 @@ const Guides = (() => {
     {
       id: "from-this-mac",
       tab: "storage",
-      title: "Bring things in from this Mac",
+      title: "Bring things in",
       voice: "Your old shelves, carried over.",
       what:
         "Apple Notes, bookmarks, Kindle highlights and new files in folders you choose are brought into Enqueue from this Mac.",
       need:
         "Optional. Saving notes and links by hand works without it. Use these to bring in what you already have.",
       steps: [
-        "Under From this Mac, bring in Apple Notes or add a folder to watch.",
-        "For bookmarks or Kindle highlights, export them from the other app, then use Import under Move notes in and out.",
-        "Files put in a watched folder after you add it are kept. Files already there are left alone.",
+        "In Settings, Library, Bring things in: choose what another app saved, bring in Apple Notes, or watch a folder.",
+        "For bookmarks or Kindle highlights, export them from the browser or the Kindle first, then use Choose a file.",
+        "Files you put in a watched folder after you add it come in. Files already there stay out.",
       ],
       know: [
         "All reading happens on this Mac. Nothing is sent to a service just to bring things in.",
@@ -280,9 +280,9 @@ const Guides = (() => {
       id: "relay",
       tab: "sync",
       title: "The relay",
-      voice: "A mailbox that cannot read the mail.",
+      voice: "The go-between.",
       what:
-        "A small server that holds your library in encrypted form so your phone can fetch it. It stores bytes it has no key for. Your Mac and your phone hold the key; the relay never does.",
+        "A server that passes your library between this Mac, your phone and your other computers.",
       need: "Only for the phone app, or a second computer. With no relay, nothing about this Mac changes.",
       steps: [
         "Press Sign in with Google or Sign in with Apple, and finish signing in in your browser. That turns on Enqueue sync, a relay we run.",
@@ -290,9 +290,7 @@ const Guides = (() => {
         "To run your own relay instead, open Use a relay of your own, paste its address, press Continue, then enter its password. Put it somewhere your phone can reach from anywhere: a relay on this Mac only works at home.",
       ],
       know: [
-        "Signing in only says who you are. Your library stays locked with a key that lives on your devices, so we cannot read what Enqueue sync holds.",
         "Each phone and computer on Enqueue sync gets its own pass, listed under Devices; remove one and it stops syncing at once.",
-        "Your summaries, your account key and your notes all cross it encrypted. Saved views and conversations stay on the device they were made on.",
       ],
       also: ["recovery-phrase", "sync-secret", "link-phone"],
       words:
@@ -422,7 +420,7 @@ const Guides = (() => {
       title: "Activity",
       voice: "Everything I did, in order.",
       what:
-        "A log of what Enqueue did: what was saved, what the model read and wrote, questions asked and answered, backups and syncs. It stays on this Mac.",
+        "A log of what Enqueue did: what was saved, what the model read and wrote, questions asked and answered, backups and syncs.",
       need: "Only when you wonder why something happened, or whether it did.",
       steps: ["Click a row to see its full record.", "It updates by itself while it is open."],
       know: [
@@ -484,7 +482,7 @@ const Guides = (() => {
       title: "AI on this phone",
       voice: "Same bird, borrowed keys.",
       what:
-        "The phone answers questions with the same model service your Mac uses. The service, the model and the key are set on the Mac and arrive here encrypted.",
+        "The phone answers questions with the same model service your Mac uses. The service, the model and the key are set on the Mac.",
       need: "Nothing to set here. Change it on the Mac and it follows.",
       steps: [
         "On the Mac: Settings, AI.",

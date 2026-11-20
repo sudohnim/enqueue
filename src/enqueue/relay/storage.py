@@ -488,17 +488,18 @@ class RelayStorage:
                 (sid, library, time.time(), expires_at),
             )
 
-    def get_share(self, sid: str) -> bytes | None:
-        """A shared note's bytes, or None when there is none, it expired, or its library
-        was revoked."""
+    def get_share(self, sid: str) -> tuple[bytes, float | None] | None:
+        """A shared note's bytes and expiry, or None when there is none, it expired, or
+        its library was revoked."""
         self.drop_expired_shares()
         with self._open() as conn:
             row = conn.execute(
-                "SELECT s.library FROM shares s JOIN libraries l ON l.id = s.library"
-                " WHERE s.id = ? AND l.revoked_at IS NULL",
+                "SELECT s.library, s.expires_at FROM shares s JOIN libraries l"
+                " ON l.id = s.library WHERE s.id = ? AND l.revoked_at IS NULL",
                 (sid,),
             ).fetchone()
-        return self.get(row["library"], SHARE_PREFIX + sid) if row else None
+        data = self.get(row["library"], SHARE_PREFIX + sid) if row else None
+        return None if data is None else (data, row["expires_at"])
 
     def delete_share(self, library: str, sid: str) -> bool:
         with self._lock, self._open() as conn:

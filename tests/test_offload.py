@@ -172,3 +172,26 @@ def test_run_frees_only_when_on_and_fetches_back(store, monkeypatch):
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+
+
+def test_a_page_whose_original_is_away_says_so(store):
+    from fastapi.testclient import TestClient
+
+    from enqueue.api.app import create_app
+
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 96), "Tide tables")
+    made = capture.upload(doc.tobytes(), "tides.pdf", "application/pdf")
+    client = TestClient(create_app())
+    assert client.get(f"/artifacts/{made['id']}/page/0").status_code == 200
+
+    conn = db.get_conn()
+    digest = conn.execute(
+        "SELECT content_hash FROM artifacts WHERE id = ?", (made["id"],)
+    ).fetchone()[0]
+    conn.close()
+    blobstore.remove(digest)
+
+    assert client.get(f"/artifacts/{made['id']}/page/0").status_code == 503

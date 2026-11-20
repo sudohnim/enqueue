@@ -40,6 +40,14 @@
     return JSON.parse(new TextDecoder().decode(plain));
   }
 
+  function showExpiry(res) {
+    const at = new Date(Number(res.headers.get("X-Expires-At")) * 1000);
+    if (!res.headers.get("X-Expires-At") || isNaN(at)) return;
+    const when = at.toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" });
+    $("expiry").textContent = "This link stops working on " + when + ".";
+    $("expiry").hidden = false;
+  }
+
   function show(note) {
     const title = (note.title || "").trim();
     const body = note.body || "";
@@ -52,7 +60,7 @@
     const at = new Date(note.shared_at);
     $("meta").textContent = isNaN(at)
       ? ""
-      : "Shared " + at.toLocaleDateString(undefined, { dateStyle: "long" });
+      : "Updated " + at.toLocaleDateString(undefined, { dateStyle: "long" });
     $("state").hidden = true;
     $("lock").hidden = true;
     $("note").hidden = false;
@@ -82,6 +90,7 @@
       say("Could not open the note right now. Try again in a moment.");
       return;
     }
+    showExpiry(res);
     const data = new Uint8Array(await res.arrayBuffer());
     const head = String.fromCharCode(...data.slice(0, 4));
     if (head !== "ENQS" || data[4] !== 1) {
