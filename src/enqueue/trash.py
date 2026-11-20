@@ -314,6 +314,12 @@ def empty() -> dict:
 def purge_expired() -> dict:
     """Purge everything past its window. Called at startup and on demand."""
     cutoff = (_now() - timedelta(days=retention_days())).isoformat()
+    with db.transaction() as conn:
+        # A save once revived a tombstone's deleted_at: put such rows back to gone.
+        conn.execute(
+            "UPDATE artifacts SET deleted_at = purged_at, content_hash = 'purged:' || id"
+            " WHERE purged_at IS NOT NULL AND deleted_at IS NULL"
+        )
     conn = db.get_conn()
     try:
         ids = [

@@ -80,6 +80,8 @@ def read_artifact_snapshot(conn: Connection, artifact_id: str) -> dict | None:
         # A shared note's link and keys, so every device shows and follows it. The
         # snapshot is sealed under the sync key, so the link's key may ride it.
         "share": _share(conn, artifact_id),
+        # The person switched the AI summary off: every desktop keeps the model away.
+        "summary_off": _summary_off(conn, artifact_id),
         # Everything else a model wrote about the artifact rides along, so a library
         # is read by a model once, on one device, and every other desktop takes the
         # result instead of paying for it again (derived_layers). The phone ignores
@@ -246,6 +248,33 @@ def _share(conn: Connection, artifact_id: str) -> dict | None:
         f"SELECT {', '.join(_SHARE_COLUMNS)} FROM shares WHERE artifact_id = ?", (artifact_id,)
     ).fetchone()
     return dict(row) if row else None
+
+
+def _summary_off(conn: Connection, artifact_id: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM facet_skips WHERE artifact_id = ? AND reason = 'off'", (artifact_id,)
+        ).fetchone()
+    )
+
+
+def _apply_summary_off(conn: Connection, artifact_id: str, snapshot: dict) -> None:
+    """Take the person's AI summary switch; a snapshot without the key leaves it alone."""
+    if "summary_off" not in snapshot:
+        return
+    if not snapshot["summary_off"]:
+        conn.execute(
+            "DELETE FROM facet_skips WHERE artifact_id = ? AND reason = 'off'", (artifact_id,)
+        )
+        return
+    conn.execute(
+        "INSERT INTO facet_skips (artifact_id, reason) VALUES (?, 'off')"
+        " ON CONFLICT(artifact_id) DO UPDATE SET reason = excluded.reason",
+        (artifact_id,),
+    )
+    for table in ("facet_retry", "entities", "sections"):
+        conn.execute(f"DELETE FROM {table} WHERE artifact_id = ?", (artifact_id,))
+    conn.execute("DELETE FROM facets WHERE artifact_id = ? AND edited = 0", (artifact_id,))
 
 
 def _apply_share(conn: Connection, artifact_id: str, snapshot: dict) -> None:
@@ -446,6 +475,7 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
             # A share only from an equal key: a stale one must never revive a stopped link.
             if local_key == lww_key(snapshot):
                 _apply_share(conn, artifact_id, snapshot)
+                _apply_summary_off(conn, artifact_id, snapshot)
             return
 
     # Upsert the artifact row in place (no delete, so the derived tables'
@@ -462,6 +492,7 @@ def apply_snapshot(conn: Connection, snapshot: dict) -> None:
 
     _apply_snapshot_children(conn, artifact_id, snapshot, artifact)
     _apply_share(conn, artifact_id, snapshot)
+    _apply_summary_off(conn, artifact_id, snapshot)
 
 
 def apply_pulled_snapshot(conn: Connection, snapshot: dict) -> None:

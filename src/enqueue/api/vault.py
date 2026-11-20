@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -121,6 +121,14 @@ def _require_unlocked() -> None:
 def vault_listing() -> dict:
     _require_unlocked()
     return vaultops.listing()
+
+
+@router.post("/vault/add")
+async def vault_add(files: list[UploadFile] = File(...)) -> dict:
+    """Files saved straight into the vault, never read by a model on the way in."""
+    _require_unlocked()
+    batch = [(f.filename or "file", await f.read(), f.content_type) for f in files]
+    return vaultops.add_files(batch)
 
 
 @router.get("/vault/{artifact_id}")

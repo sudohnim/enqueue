@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
+import re
 
 from . import crypto, db, vault
 from .sync.client import push_artifact
@@ -422,6 +423,95 @@ def vault_artifact(artifact_id: str) -> dict:
     return {"id": artifact_id, "vaulted_at": now, "already": False}
 
 
+def add_files(files: list[tuple[str, bytes, str | None]]) -> dict:
+    """Save files straight into the vault, sealed as they are written.
+
+    Nothing reads them on the way in: no ingest, no index, no model, no activity row.
+    Each gets the AI summary switched off, so taking it out of the vault later still
+    keeps the model away. Text and HTML files become notes; the rest stay files."""
+    import uuid
+    from pathlib import Path
+
+    from . import blobstore, capture, importer, notes
+
+    key = vault.key()  # raises VaultError if locked
+    added: list[str] = []
+    skipped: list[dict] = []
+    for name, data, mime in files:
+        suffix = Path(name).suffix.lower()
+        if not data:
+            skipped.append({"name": name, "why": "empty"})
+            continue
+        aid = str(uuid.uuid4())
+        now = db.now()
+        with db.transaction() as conn:
+            if suffix in importer.NOTE_SUFFIXES | importer.HTML_SUFFIXES:
+                text = data.decode("utf-8", "replace")
+                if suffix in importer.HTML_SUFFIXES:
+                    text = importer.html_to_md(text)
+                front, body = importer._frontmatter(text)
+                if not body.strip():
+                    skipped.append({"name": name, "why": "empty"})
+                    continue
+                title = importer._title(front, body, Path(name))
+                explicit = bool(title)
+                title = title or notes.title_from_body(body).strip() or notes.UNTITLED
+                conn.execute(
+                    "INSERT INTO artifacts (id, kind, title, title_explicit, body, content_hash,"
+                    " created_at, updated_at, status, vaulted_at)"
+                    " VALUES (?,'note',?,?,?,?,?,?,'ok',?)",
+                    (
+                        aid,
+                        _seal(key, title),
+                        int(explicit),
+                        _seal(key, body),
+                        notes._hash(f"note:{aid}"),
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO artifact_versions (id, artifact_id, body, created_at)"
+                    " VALUES (?,?,?,?)",
+                    (str(uuid.uuid4()), aid, _seal(key, body), now),
+                )
+            else:
+                digest = hashlib.sha256(data).hexdigest()
+                capture.free_purged(conn, digest)
+                old = conn.execute(
+                    "SELECT vaulted_at FROM artifacts WHERE content_hash = ?", (digest,)
+                ).fetchone()
+                if old is not None:
+                    why = "already in the vault" if old["vaulted_at"] else "already in the library"
+                    skipped.append({"name": name, "why": why})
+                    continue
+                blobstore.write(crypto.encrypt(data, key), digest)
+                mime = mime or capture.MIMES.get(suffix, "application/octet-stream")
+                title = re.sub(r"[-_]+", " ", Path(name).stem).strip() or name
+                conn.execute(
+                    "INSERT INTO artifacts (id, kind, title, body, content_hash, mime, filename,"
+                    " created_at, updated_at, status, vaulted_at)"
+                    " VALUES (?,?,?,NULL,?,?,?,?,?,'text_only',?)",
+                    (
+                        aid,
+                        capture.kind_for(mime, name),
+                        _seal(key, title),
+                        digest,
+                        mime,
+                        name,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+            conn.execute("INSERT INTO facet_skips (artifact_id, reason) VALUES (?, 'off')", (aid,))
+        added.append(aid)
+    for aid in added:
+        push_artifact(aid)
+    return {"added": len(added), "skipped": skipped}
+
+
 def decrypt_in_place(conn, artifact_id: str, key: bytes) -> bool:
     """Decrypt every field of an artifact that is still vault-ciphertext and clear
     `vaulted_at`, WITHOUT re-indexing or pushing (the caller owns the transaction and
@@ -571,6 +661,7 @@ def listing() -> dict:
         # The wall's `excerpt` is the first slice of the body; match it.
         item["excerpt"] = " ".join(body.split())[:280]
         item.pop("body", None)
+        item["vaulted"] = True
         items.append(item)
     return {"items": items}
 

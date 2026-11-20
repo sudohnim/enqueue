@@ -35,6 +35,15 @@ MIMES = {
 IMAGE_MIMES = {m for m in MIMES.values() if m.startswith("image/")}
 
 
+def free_purged(conn, digest: str) -> None:
+    """A purged tombstone gives up its hash, so saving the same thing again is new."""
+    conn.execute(
+        "UPDATE artifacts SET content_hash = 'purged:' || id"
+        " WHERE content_hash = ? AND purged_at IS NOT NULL",
+        (digest,),
+    )
+
+
 def kind_for(mime: str | None, filename: str) -> str:
     if mime == "application/pdf":
         return "pdf"
@@ -144,6 +153,7 @@ def link(
     now = at or db.now()
 
     with db.transaction() as conn:
+        free_purged(conn, digest)
         existing = conn.execute(
             "SELECT id, deleted_at FROM artifacts WHERE content_hash = ?", (digest,)
         ).fetchone()
@@ -222,6 +232,7 @@ def upload(
     now = db.now()
 
     with db.transaction() as conn:
+        free_purged(conn, digest)
         existing = conn.execute(
             "SELECT id, deleted_at FROM artifacts WHERE content_hash = ?", (digest,)
         ).fetchone()

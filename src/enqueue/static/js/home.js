@@ -2,6 +2,8 @@
 // across the foot for the title; everything else is set as type inside the square.
 function facePicture(a) {
 	const drop = ' onerror="this.remove()"';
+	if (a.kind === "image" && a.vaulted)
+		return '<img src="/vault/' + a.id + '/blob" alt="" loading="lazy"' + drop + ">";
 	if (a.kind === "image") {
 		const thumbDrop =
 			' onerror="if(!this.dataset.full){this.dataset.full=1;this.src=\'/artifacts/' +
@@ -1774,6 +1776,13 @@ document.addEventListener("dragend", () => {
 
 function showDrop() {
 	if (dropBusy || !dropOver.hidden) return;
+	const vaulting = location.hash === "#vault";
+	dropOver.querySelector(".title").textContent = vaulting
+		? "Drop files to lock them in the vault"
+		: "Drop anything to capture it";
+	dropOver.querySelector(".sub").textContent = vaulting
+		? "Their AI summary stays off, even after you take them out."
+		: "PDFs, pictures, text files and links.";
 	dropOver.dataset.state = "ready";
 	dropOver.hidden = false;
 	requestAnimationFrame(() => dropOver.classList.add("on"));
@@ -1865,7 +1874,10 @@ document.addEventListener("drop", (e) => {
 			dropBusy = false;
 		}, 320);
 	}, 560);
-	ingestDrop(files, text);
+	if (location.hash === "#vault") {
+		if (text) files.push(new File([text], "Note.txt", { type: "text/plain" }));
+		vaultAddFiles(files);
+	} else ingestDrop(files, text);
 });
 
 // Loads the next page when the foot of the wall comes near, so the collection is

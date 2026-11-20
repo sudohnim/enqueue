@@ -679,7 +679,7 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     succeeded, and `enq index --images` re-runs this for every image later.
     """
     from .. import capture, db
-    from ..providers.base import get_vision_provider, local_model_on
+    from ..providers.base import get_vision_provider
 
     conn = db.get_conn()
     try:
@@ -699,8 +699,8 @@ def _describe_image_if_needed(artifact_id: str) -> str:
     if found is None:
         return ""
     path, mime, _ = found
-    if row["local_only"] and not local_model_on():
-        # No model sees a local-only picture; its own words still come from OCR.
+    if _summary_off(artifact_id):
+        # Switched off, or local-only with no model here: OCR gives its own words.
         body = _ocr_text(path.read_bytes())
         if body:
             with db.transaction() as conn:

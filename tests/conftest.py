@@ -158,6 +158,16 @@ def _no_judge_worker(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_sync_threads(monkeypatch):
+    """The sync loops are process-wide threads. Started by one test's app, they pulled
+    during a later test's own pull and took its objects (test_sync_health flaked)."""
+    from enqueue.sync import worker
+
+    monkeypatch.setattr(worker, "_spawn", lambda fn, name: None)
+    monkeypatch.setattr(worker, "_threads", [])
+
+
+@pytest.fixture(autouse=True)
 def _drain_ingest(monkeypatch):
     """Let this test's real ingest work finish inside this test.
 

@@ -367,6 +367,8 @@ For the few things you want hidden even from someone holding your unlocked Mac.
 
 - The **lock** on an artifact moves it into the vault. It disappears from the wall, from search, and from answers.
 - In the vault it is encrypted with a key made from a 6-digit PIN that only you know. It stays encrypted when it syncs: your other device holds it, and still cannot read it without the PIN.
+- **Add files** in the vault (or a drop onto the open vault) saves files straight into it. Each file is encrypted as it is saved, so no AI, search or sync reads it first. Text, Markdown and HTML files become notes; the rest stay files. A file already in your library is skipped: lock it from its page instead.
+- A file added this way has its AI summary off. Take it out of the vault and it becomes searchable by its words, but no model writes a summary for it. Chat can still use it as a source when a question finds it.
 - The door is deliberately unmarked: **Settings > Activity > Diagnostics**. The first time, you choose the PIN. A wrong PIN looks like a diagnostic that failed.
 - The vault locks itself again after a few idle minutes, and whenever you leave it.
 - On the phone, the **Open with fingerprint** switch (**Open with Face ID** on an iPhone) inside the vault lets a fingerprint or your face open it instead of the PIN. The vault offers it once, right after the PIN opens it or locks an item away. With it on, locking an item away asks for your fingerprint; with it off, the PIN. The PIN always still works. Adding a new fingerprint to the phone, or changing the PIN on another device, turns this off until you enter the PIN again.

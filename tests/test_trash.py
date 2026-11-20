@@ -261,3 +261,40 @@ class TestReaddingBringsItBack:
         assert again["id"] == made["id"]
         assert not again["created"]
         assert "restored" not in again
+
+
+class TestSavingAgainAfterAPurge:
+    def test_a_purged_link_saved_again_is_a_new_live_link(self, store, quiet_queue):
+        first = capture.link("https://example.com/gone")["id"]
+        trash.delete(first)
+        trash.purge(first)
+
+        again = capture.link("https://example.com/gone")
+
+        assert again["created"] and again["id"] != first
+        assert notes.get(again["id"])["artifact"]["deleted_at"] is None
+        with pytest.raises(KeyError):
+            notes.get(first)
+
+    def test_a_purged_file_uploaded_again_is_new(self, store, quiet_queue):
+        first = capture.upload(b"same bytes", "a.txt")["id"]
+        trash.delete(first)
+        trash.purge(first)
+
+        assert capture.upload(b"same bytes", "a.txt")["created"]
+
+    def test_a_revived_tombstone_is_put_back_to_gone(self, store, quiet_queue):
+        first = capture.link("https://example.com/zombie")["id"]
+        trash.delete(first)
+        trash.purge(first)
+        with db.transaction() as conn:
+            conn.execute("UPDATE artifacts SET deleted_at = NULL WHERE id = ?", (first,))
+
+        trash.purge_expired()
+
+        conn = db.get_conn()
+        row = conn.execute(
+            "SELECT deleted_at, content_hash FROM artifacts WHERE id = ?", (first,)
+        ).fetchone()
+        conn.close()
+        assert row["deleted_at"] is not None and row["content_hash"] == "purged:" + first

@@ -242,6 +242,7 @@ def test_a_browser_bookmarks_file_comes_in_as_links(library, src):
 <H1>Bookmarks</H1>
 <DL><p>
   <DT><A HREF="https://example.com/top" ADD_DATE="1600000000">Top</A>
+  <DT><A HREF="https://example.com/ms" ADD_DATE="1600000300000">In milliseconds</A>
   <DT><H3>Bookmarks Bar</H3>
   <DL><p>
     <DT><H3>Cooking</H3>
@@ -258,7 +259,9 @@ def test_a_browser_bookmarks_file_comes_in_as_links(library, src):
     report = importer.run(bookmarks)
 
     links = _links()
-    assert report["links"] == 3 and len(links) == 3
+    assert report["links"] == 4 and len(links) == 4
+    ms = datetime.fromtimestamp(1600000300, timezone.utc).isoformat()
+    assert links["https://example.com/ms"]["created_at"] == ms
     assert links["https://example.com/top"]["tags"] == []
     recipe = links["https://example.com/recipe"]
     assert recipe["tags"] == ["cooking"]

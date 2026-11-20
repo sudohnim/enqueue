@@ -266,11 +266,10 @@ def _import_bookmarks(f: Path) -> None:
             if not url.lower().startswith(("http://", "https://")):
                 continue
             added = re.search(r'ADD_DATE="(\d+)"', m.group(2), re.I)
-            at = (
-                datetime.fromtimestamp(int(added.group(1)), timezone.utc).isoformat()
-                if added
-                else None
-            )
+            stamp = int(added.group(1)) if added else 0
+            # Fabric writes milliseconds where browsers write seconds.
+            stamp = stamp / 1000 if stamp > 10**11 else stamp
+            at = datetime.fromtimestamp(stamp, timezone.utc).isoformat() if stamp else None
             title = unescape(re.sub(r"<[^>]+>", "", m.group(3))).strip() or None
             out = capture.link(url, title=title, at=at, background=True)
             if not out.get("created"):

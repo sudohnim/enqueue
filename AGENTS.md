@@ -1306,6 +1306,7 @@ Though currently `content_hash` is UNIQUE, so sharing cannot happen yet.
 The guard in `purge` stays because it encodes that dependency explicitly.
 
 `purge_expired()` runs at engine startup.
+A purged tombstone gives up its `content_hash` (`capture.free_purged`, set to `purged:<id>`), so saving the same link or file again makes a new live artifact. Until 2026-11-19 a save matched the tombstone and cleared its `deleted_at`: the row then showed in `/titles` but opened as 404. `purge_expired` puts any such row back to gone.
 The retention window is configurable via `trash_days` setting, clamped to a minimum of 1.
 
 ---
@@ -1731,7 +1732,7 @@ Switching off removes what the model wrote (machine summary lines, entities, sec
 Lines the person wrote (`edited`) stay and are never stale, so "off, plus one line of my own" is how to keep a log findable by what it is.
 It is the person's decision: `apply_eligibility_gate` keeps `off` rows, `regenerate` refuses, and only the switch turns it back on (which sends the artifact through ingest).
 An artifact held out for a credential (`text_only`) shows no switch.
-The switch is desktop-only and does not sync; the phone never generates summaries.
+The switch is desktop-only; it rides the snapshot as `summary_off` so every desktop honours it, and the phone never generates summaries.
 `tests/test_summary_switch.py` pins it.
 
 ### Adding a tag offers the tags already in use
@@ -1825,7 +1826,7 @@ A note keeps its title (frontmatter `title`, else its first heading, else the fi
 A picture a note shows (`![](relative/path)` or Obsidian's `![[name.png]]`, found by name anywhere in the export) becomes an embedded image; every other file is a capture, except a Notion database table, whose pages came in as notes. A note whose text is already in the library is skipped, so importing twice adds nothing.
 Imported items go through ingest on the background lane (`notes.create(background=True)`, `capture.upload(background=True)`), behind the person's own captures.
 
-A Netscape bookmarks export is read when it is chosen with Import. Each bookmark becomes a link. The folders it sits in become tags, except names browsers give their own folders. A `My Clippings.txt` file becomes one note per book. Each highlight is a blockquote with its page when the file has one. The note has the `kindle` tag.
+A Netscape bookmarks export is read when it is chosen with Import. An `ADD_DATE` in milliseconds (Fabric's export) is read as milliseconds; browsers write seconds. Each bookmark becomes a link. The folders it sits in become tags, except names browsers give their own folders. A `My Clippings.txt` file becomes one note per book. Each highlight is a blockquote with its page when the file has one. The note has the `kindle` tag.
 
 Apple Notes are read on the Mac through JXA (`/usr/bin/osascript -l JavaScript`, `importer.run_apple_notes`). HTML becomes the Markdown the editor writes. The folder becomes a tag, except the default Notes folder. Locked notes and notes in Recently Deleted are skipped, as are pictures and attachments. The button is hidden in the Mac App Store build (`config.CHANNEL == "mas"`). Nothing about a note is sent to a service for this read.
 
@@ -1897,6 +1898,19 @@ The sheet is the guide plate in a second mode (`openSettingsAsk`): a field at it
 The model call is `mobile_settings_ask` (`desktop/src/lib.rs`, async so the request stays off the main thread; registered in `build.rs`, `tauri.conf.json` and `generate_handler!`): the page sends the question plus a `context` of the closest guides and where the phone stands (`settingsFacts`: the sync line, the lock, the service and model, whether a key is present), and the command adds the instructions (`SETTINGS_ANSWER`, the same rules as the desktop's prompt).
 There is no schema on this path, so the model names its guide on a last line, `GUIDE: <id>`, which the page parses and strips.
 A failed call falls back to the closest guides. iOS uses the same page and the same command.
+
+### Files can go straight into the vault (2026-11-19)
+
+The vault page's **Add files** (`chooseVaultFiles`, `vaultAddFiles` in `js/settings.js`), and a drop while the vault is open (`home.js`, keyed on `#vault`), post to `POST /vault/add` (409 while locked), which calls `vaultops.add_files`.
+Each file is written already sealed in one transaction: title, body and its one draft under the vault key, the blob as `crypto.encrypt(data, key)` through `blobstore.write`, `vaulted_at` set, and a `facet_skips` row with reason `off`.
+It makes no ingest submit, no index row and no activity row (a row would show the vault exists); it pushes once, sealed.
+Text, Markdown and HTML become notes through the importer's parsers; a file whose bytes are already in the library or the vault is skipped with the reason.
+The `filename` column stays plain, as it does for an item locked from its page; the database and the relay copy are encrypted under the library and sync keys anyway.
+**The switch outlives the vault.** Locking and unlocking never touch `facet_skips`, so an item taken out is chunked and searchable but no model step runs. Images too: `_describe_image_if_needed` gives an image with the summary off OCR only, never the vision model (it used to describe it anyway).
+**The switch syncs** as `summary_off` in the artifact snapshot (`_apply_summary_off`, taken on a winning or equal key; a snapshot without the key, a phone's, leaves it alone; turning it on clears it, turning it off also removes model rows). `facets.set_summary` now moves `updated_at` and pushes either way, so the other desktop never summarizes an item this one switched off.
+Chat can still pass the item to the model as a source when a question's search finds it; Only on this Mac closes that path for online models.
+The vault's wall shows a picture from `/vault/{id}/blob` (`listing()` marks items `vaulted`); vaulted pictures used to be blank tiles.
+`tests/test_vault_add.py` pins the sealing, no model call after unvault, the duplicate rule, the route, the snapshot key and the image rule.
 
 ### What vaulting covers, who can read the library, and what is never backed up (2026-10-13)
 

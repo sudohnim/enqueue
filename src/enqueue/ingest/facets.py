@@ -380,6 +380,7 @@ def set_summary(artifact_id: str, on: bool) -> None:
             conn.execute("DELETE FROM sections WHERE artifact_id = ?", (artifact_id,))
     if on:
         if was_off:
+            sync_facets(artifact_id, bump=True)
             ingest_queue.submit(artifact_id)
         return
     _forced.discard(artifact_id)
@@ -395,7 +396,7 @@ def set_summary(artifact_id: str, on: bool) -> None:
         ingest_queue.run_exclusive(ingest_queue.prune_index, wait=False)
     except Exception:  # noqa: BLE001 - the tables are the truth; the next prune catches up
         pass
-    sync_facets(artifact_id, bump=False)
+    sync_facets(artifact_id, bump=True)
 
 
 def regenerate(artifact_id: str) -> dict:

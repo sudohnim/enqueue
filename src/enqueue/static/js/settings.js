@@ -3525,7 +3525,7 @@ async function openVault() {
 	// Reuse the wall's card() so vaulted artifacts look identical to the main page.
 	const grid = items.length
 		? '<div class="wall">' + items.map((a, i) => card(a, i)).join("") + "</div>"
-		: '<p class="state state-center">The vault is empty. Lock an artifact from its page to store it here.</p>';
+		: '<p class="state state-center">The vault is empty. Add files, or lock an item from its page.</p>';
 	// Full-bleed like the wall (NOT wrapped in the narrow .pagecol used by the
 	// reader/settings) so the header spans and the card grid gets the wall's full
 	// width + column count. No "Lock" button: leaving the vault auto-locks it.
@@ -3536,6 +3536,7 @@ async function openVault() {
 		'<h1 class="display greeting">Vault</h1>' +
 		"</div>" +
 		'<div class="vaultbar">' +
+		'<button class="btn ghost" onclick="chooseVaultFiles()">Add files</button>' +
 		'<button class="btn ghost" onclick="changeVaultPin()">Change code</button>' +
 		"</div></div>" +
 		'<div class="wallbody">' +
@@ -3548,6 +3549,36 @@ async function openVault() {
 	vaultBusy(false);
 }
 
+
+// Files go straight into the vault: sealed as saved, AI summary off for good.
+function chooseVaultFiles() {
+	const input = document.createElement("input");
+	input.type = "file";
+	input.multiple = true;
+	input.addEventListener("change", () => vaultAddFiles(Array.from(input.files || [])));
+	input.click();
+}
+
+async function vaultAddFiles(files) {
+	if (!files.length) return;
+	const fd = new FormData();
+	files.forEach((f) => fd.append("files", f));
+	vaultBusy(true);
+	let out;
+	try {
+		const r = await fetch("/vault/add", { method: "POST", body: fd });
+		out = await r.json().catch(() => ({}));
+		if (!r.ok) throw new Error(out.detail || r.statusText);
+	} catch (err) {
+		vaultBusy(false);
+		return toast("Could not add to the vault: " + String(err.message || err), true);
+	}
+	vaultBusy(false);
+	const skipped = (out.skipped || []).map((s) => s.name + " (" + s.why + ")");
+	const added = out.added === 1 ? "1 file added." : out.added + " files added.";
+	toast(skipped.length ? added + " Skipped: " + skipped.join(", ") : added, !!skipped.length);
+	openVault();
+}
 
 // Lock this artifact into the vault from its own page. Unlocks the vault first
 // (setup on first use) if needed, then vaults and returns home - the artifact
