@@ -1149,8 +1149,7 @@
       if (a.kind === "pdf") {
         body += reader(a, d.pages);
       } else if (a.kind === "file") {
-        body +=
-          fileFacts(d.file) + '<div class="md" id="plain">' + spinner("sm", "reading...") + "</div>";
+        body += fileView(a, d.file);
       } else if (a.kind === "image") {
         // A vaulted image's bytes are encrypted; serve them from the unlocked
         // vault route instead of the (404-guarded) normal blob endpoint.
@@ -1236,7 +1235,7 @@
     mountEditor(focus);
     mountTitleEdit(id);
     if (a.kind === "pdf") mountReader(a.id, d.pages);
-    if (a.kind === "file") mountPlain(a.id);
+    if (a.kind === "file" && document.getElementById("plain")) mountPlain(a, d.file);
     if (scrollY !== undefined) window.scrollTo(0, scrollY);
     else window.scrollTo(0, 0);
     const now = document.getElementById("body");
@@ -1855,41 +1854,115 @@
   // What is known about a file the reader may not be able to show. An upload that
   // renders as a featureless square is indistinguishable from one that never arrived,
   // which is exactly how a successful capture got reported as a failure.
-  function fileFacts(file) {
-    if (!file)
-      return '<div class="aside caution">The stored copy is missing.</div>';
+  // What a file is, in words a person uses: its extension decides, the type helps.
+  const FILE_KINDS = [
+    [/^(asc|gpg|pgp|pem|key|p12|pfx)$/, "Encryption key"],
+    [/^(html?|webarchive)$/, "Web page"],
+    [/^(md|markdown|txt|text|rtf)$/, "Text"],
+    [/^(csv|tsv|xlsx?|numbers|ods)$/, "Spreadsheet"],
+    [/^(docx?|pages|odt)$/, "Document"],
+    [/^(pptx?|keynote|odp)$/, "Presentation"],
+    [/^(zip|gz|tgz|tar|rar|7z|bz2|xz)$/, "Archive"],
+    [/^(mp3|m4a|wav|aac|flac|ogg|aiff?)$/, "Audio"],
+    [/^(mp4|mov|m4v|webm|mkv|avi)$/, "Video"],
+    [/^(json|xml|ya?ml|toml)$/, "Data"],
+    [/^(epub|mobi|azw3?)$/, "Book"],
+    [/^(ics|vcf)$/, "Calendar or contact"],
+  ];
+
+  function fileExt(file) {
+    const m = /\.([a-z0-9]{1,8})$/i.exec((file && file.name) || "");
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  function fileKind(file) {
+    const ext = fileExt(file);
+    const hit = FILE_KINDS.find(([re]) => re.test(ext));
+    if (hit) return hit[1];
+    const mime = (file && file.mime) || "";
+    if (mime.startsWith("audio/")) return "Audio";
+    if (mime.startsWith("video/")) return "Video";
+    if (mime.startsWith("text/")) return "Text";
+    return ext ? ext.toUpperCase() + " file" : "File";
+  }
+
+  function fileSrc(a) {
+    return (a.vaulted_at ? "/vault/" : "/artifacts/") + a.id + "/blob";
+  }
+
+  // A file nothing can show as words: a drawn page with its extension, what it is,
+  // and the one thing to do with it.
+  function filePlate(a, file) {
+    const ext = fileExt(file).slice(0, 5).toUpperCase();
     return (
-      '<div class="aside">' +
-      esc(file.name) +
-      " &middot; " +
-      esc(file.mime) +
-      " &middot; " +
+      '<div class="fileplate">' +
+      '<div class="fileplate-doc" aria-hidden="true">' +
+      '<svg viewBox="0 0 48 60"><path d="M8 1.5h22L46.5 18v36A4.5 4.5 0 0 1 42 58.5H8' +
+      'A4.5 4.5 0 0 1 3.5 54V6A4.5 4.5 0 0 1 8 1.5z"/><path d="M30 1.5V14a4 4 0 0 0 4 4h12.5"/></svg>' +
+      (ext ? "<span>" + esc(ext) + "</span>" : "") +
+      "</div>" +
+      '<div class="fileplate-words">' +
+      '<div class="fileplate-kind">' +
+      esc(fileKind(file)) +
+      "</div>" +
+      '<div class="fileplate-name">' +
+      esc(file.name || a.title || "") +
+      "</div>" +
+      '<div class="fileplate-facts">' +
       bytes(file.bytes) +
-      "</div>"
+      " &middot; added " +
+      esc(since(a.created_at)) +
+      "</div></div>" +
+      '<button class="btn secondary" onclick="downloadBlob(\'' +
+      a.id +
+      "'," +
+      (a.vaulted_at ? "true" : "false") +
+      ')">Download</button></div>'
     );
   }
 
-  // A captured text file had its contents nowhere: not on screen, not in the index,
-  // not answerable. It rendered as an empty glyph with a filename.
-  async function mountPlain(id) {
+  function fileView(a, file) {
+    if (!file) return '<div class="aside caution">The stored copy is missing.</div>';
+    const mime = file.mime || "";
+    if (mime.startsWith("audio/") || mime.startsWith("video/")) {
+      const tag = mime.startsWith("audio/") ? "audio" : "video";
+      return (
+        '<div class="fileplay"><' +
+        tag +
+        ' controls preload="metadata" playsinline src="' +
+        fileSrc(a) +
+        '"></' +
+        tag +
+        "></div>"
+      );
+    }
+    return '<div id="plain" class="filebody">' + spinner("sm", "reading...") + "</div>";
+  }
+
+  // A captured text file is shown the way it reads: a web page or markdown as a note,
+  // a table as a table, data as code. A file with no words gets its plate instead.
+  async function mountPlain(a, file) {
     const box = document.getElementById("plain");
     if (!box) return;
+    let d;
     try {
-      const d = await api("/artifacts/" + id + "/text");
-      const text = (d.pages || [])
-        .map((p) => p.text)
-        .join("\n")
-        .trim();
-      box.textContent = text || "";
-      if (!text) {
-        box.className = "state";
-        box.innerHTML =
-          "No text in this file. Search finds it by its name.";
-      }
+      d = await api("/artifacts/" + a.id + "/text");
     } catch (err) {
       box.className = "aside caution";
       box.textContent = String(err.message || err);
+      return;
     }
+    const text = (d.text || "").trim();
+    if (!text || d.format === "sealed") {
+      box.outerHTML = filePlate(a, file);
+      return;
+    }
+    let shown;
+    if (d.format === "markdown") shown = '<div class="md notetype">' + md(text) + "</div>";
+    else if (d.format === "code")
+      shown = '<pre class="filecode"><code>' + esc(text) + "</code></pre>";
+    else shown = '<div class="notetype filetext">' + esc(text) + "</div>";
+    box.innerHTML = shown;
   }
 
   // ---- finding a phrase inside one thing -----------------------------------

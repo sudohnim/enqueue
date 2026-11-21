@@ -9,7 +9,10 @@ Content-addressed by sha256, so the same file captured twice is one artifact.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
+import json
 import re
 import uuid
 from pathlib import Path
@@ -405,6 +408,47 @@ def _read_text_file(path, mime: str) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def readable(text: str, mime: str) -> dict:
+    """A text file in the form the reader shows it: markdown it renders, code, or lines."""
+    stripped = text.lstrip()
+    if stripped.startswith("-----BEGIN "):
+        return {"format": "sealed", "text": ""}  # a PGP key or signature: no words to read
+    if stripped[:1] == "<":
+        from .importer import html_to_md
+
+        return {"format": "markdown", "text": html_to_md(text)}
+    if mime in ("text/markdown", "text/html"):  # html read at ingest is markdown already
+        return {"format": "markdown", "text": text}
+    if mime == "application/json":
+        try:
+            return {"format": "code", "text": json.dumps(json.loads(text), indent=2)}
+        except ValueError:
+            return {"format": "code", "text": text}
+    if mime == "text/csv":
+        rows = list(csv.reader(io.StringIO(text)))[:500]
+        if rows:
+            width = max(len(r) for r in rows)
+            cells = [
+                [c.replace("|", "\\|").strip() for c in r] + [""] * (width - len(r)) for r in rows
+            ]
+            lines = ["| " + " | ".join(r) + " |" for r in cells]
+            lines.insert(1, "|" + " --- |" * width)
+            return {"format": "markdown", "text": "\n".join(lines)}
+    return {"format": "text", "text": text}
+
+
+def text_now(artifact_id: str) -> list[dict]:
+    """A text file's words read from its stored copy, for a page ingest has not read."""
+    found = blob_path(artifact_id)
+    if not found:
+        return []
+    try:
+        text = _read_text_file(found[0], found[1]).strip()
+    except OSError:
+        return []
+    return [{"page": 0, "text": text}] if text else []
+
+
 def extract_text(artifact_id: str) -> int:
     """Pull the text out of a PDF, one row per page.
 
@@ -429,6 +473,8 @@ def extract_text(artifact_id: str) -> int:
             text = _read_text_file(path, mime).strip()
         except OSError:
             return 0
+        if mime == "text/html":  # the words, not the tags, are what search should hold
+            text = readable(text, mime)["text"].strip()
         if text:
             rows.append((0, text))
     elif mime == "application/pdf":

@@ -252,7 +252,7 @@ def artifact_text(artifact_id: str) -> dict:
     conn = db.get_conn()
     try:
         row = conn.execute(
-            "SELECT kind, body FROM artifacts WHERE id = ?", (artifact_id,)
+            "SELECT kind, body, mime FROM artifacts WHERE id = ?", (artifact_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -262,7 +262,14 @@ def artifact_text(artifact_id: str) -> dict:
     # A capture has no body, so its text is whatever extraction found. A note is its
     # own text. Both come back in the same shape so the reader does not have to care.
     if row["kind"] in ("pdf", "file", "image"):
-        return {"kind": row["kind"], "pages": capture.page_text(artifact_id)}
+        pages = capture.page_text(artifact_id)
+        if not pages and row["kind"] == "file" and (row["mime"] or "") in capture.TEXT_MIMES:
+            pages = capture.text_now(artifact_id)  # ingest has not reached it yet
+        out = {"kind": row["kind"], "pages": pages}
+        if row["kind"] == "file" and pages:
+            text = "\n".join(p["text"] for p in pages)
+            out |= capture.readable(text, row["mime"] or "")
+        return out
     return {"kind": row["kind"], "pages": [{"page": 0, "text": row["body"] or ""}]}
 
 

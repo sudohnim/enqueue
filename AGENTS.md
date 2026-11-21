@@ -1726,6 +1726,13 @@ The iPhone asks Apple's public lookup (`https://itunes.apple.com/lookup?bundleId
 "Not now" holds that version off for 3 days (localStorage `enq.updateSnooze`). The prompt never shows over another sheet, the writing page or the vault's code.
 The store is the one source: nothing is set at release time, and the prompt never names a version the store does not offer yet.
 
+### A captured file shows the way it reads (2026-11-21)
+
+`GET /artifacts/{id}/text` gives a file's text with a `format` from `capture.readable`: HTML becomes markdown (`importer.html_to_md`), markdown stays, CSV becomes a table (500 rows at most), JSON is pretty-printed code, an armored key or signature (`-----BEGIN `) is `sealed` and shows no text. A text file ingest has not read yet is read from its stored copy (`capture.text_now`), and ingest keeps an HTML file's words, not its tags, in `page_text`.
+The page (`fileView`, `mountPlain` in `js/artifact.js`) renders markdown in note type, code in a well, plain text with its lines, audio and video in a player, and anything with no words as a plate (`filePlate`: a drawn page with the extension, the kind in words from `FILE_KINDS`, the file name, size and date, and Download).
+A title gives up its row to the buttons on a narrow window (`.titlerow` wraps) instead of breaking a word.
+`tests/test_file_text.py` pins the shapes.
+
 ### The AI summary can be switched off for one artifact
 
 The Summary section of the Details panel carries a switch (`setSummary` in `js/artifact.js`, `PUT /artifacts/{id}/summary`, `facets.set_summary`), for a scratch pad or a log that needs no reading.

@@ -54,16 +54,18 @@
 
   .titlerow {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--sp-3);
     margin-top: var(--sp-2);
   }
   .titlerow .h1,
   .titlerow .h2 {
-    flex: 1;
+    /* On a narrow window the buttons drop under the title instead of cutting a word. */
+    flex: 1 1 12rem;
     min-width: 0;
     /* A long title wraps under itself; the page is where the whole name is read. */
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     text-wrap: balance;
     margin-top: 0;
   }
@@ -1206,3 +1208,104 @@
       display: none;
     }
   }
+
+/* A captured file: its text as it reads, or a plate when it has none to show. */
+.filetext {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-width: 70ch;
+}
+.filecode {
+	margin: 0;
+	padding: var(--sp-4) var(--sp-5);
+	max-width: 100%;
+	overflow-x: auto;
+	border-radius: var(--r-lg);
+	background: var(--surface-3);
+	color: var(--code-ink);
+	font: var(--t-sm) / 1.55 var(--mono);
+	white-space: pre;
+}
+.filebody .md.notetype {
+	max-width: 70ch;
+}
+.fileplay video {
+	display: block;
+	width: 100%;
+	max-height: 70vh;
+	border-radius: var(--r-lg);
+	background: var(--surface-3);
+}
+.fileplay audio {
+	width: 100%;
+	max-width: 520px;
+}
+.fileplate {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--sp-5);
+	max-width: 620px;
+	padding: var(--sp-5) var(--sp-6) var(--sp-5) var(--sp-5);
+	border-radius: var(--r-xl);
+	background: var(--surface);
+	box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.fileplate-doc {
+	position: relative;
+	width: 48px;
+	height: 60px;
+}
+.fileplate-doc svg {
+	width: 100%;
+	height: 100%;
+	fill: var(--surface-doc);
+	stroke: color-mix(in srgb, var(--accent) 34%, transparent);
+	stroke-width: 1.5;
+	stroke-linejoin: round;
+}
+.fileplate-doc span {
+	position: absolute;
+	left: 50%;
+	bottom: 11px;
+	transform: translateX(-50%);
+	padding: 1px 5px;
+	border-radius: var(--r-sm);
+	background: var(--accent);
+	color: var(--on-purple-bold);
+	font-size: var(--t-xs);
+	font-weight: var(--w-strong);
+	letter-spacing: 0.04em;
+	line-height: 1.4;
+}
+.fileplate-words {
+	min-width: 0;
+}
+.fileplate-kind {
+	font-size: var(--t-xl);
+	font-weight: var(--w-medium);
+	color: var(--text);
+	line-height: 1.25;
+}
+.fileplate-name {
+	margin-top: 2px;
+	font-size: var(--t-md);
+	color: var(--text-dim);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.fileplate-facts {
+	margin-top: var(--sp-2);
+	font-size: var(--t-sm);
+	color: var(--text-mute);
+}
+@media (max-width: 560px) {
+	.fileplate {
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+	.fileplate .btn {
+		grid-column: 1 / -1;
+		justify-self: start;
+	}
+}
