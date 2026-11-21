@@ -200,6 +200,9 @@ except ValueError:
 # A hosted service that has not answered by then is stuck; a model on this Mac may be
 # loading. The SDKs' own default was 10 minutes, which held one question for 30.
 MODEL_TIMEOUT_S = float(os.getenv("ENQ_MODEL_TIMEOUT", "180"))
+# The longest reply a structured call may take. Without it OpenRouter reserves credit for
+# the model's whole maximum (131072) and refuses with a 402 once the balance is lower.
+MODEL_MAX_TOKENS = int(os.getenv("ENQ_MODEL_MAX_TOKENS", "16000"))
 LOCAL_MODEL_TIMEOUT_S = 600.0
 
 

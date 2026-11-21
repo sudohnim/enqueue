@@ -739,6 +739,7 @@ A database that predates Alembic (created by the old `schema.sql`) is stamped at
 | `ENQ_LLM_HEADERS` | (empty) | Extra provider headers, one `Name: value` per line. Required for `opencode-go` (`x-opencode-session: <uuid>`). Synced to the phone so mobile chat can call the same endpoint. |
 | `ENQ_VECTOR_STORE` | `sqlite-vec` | The search index backend. `sqlite-vec` is the only backend after the cutover. |
 | `ENQ_MODEL_TIMEOUT` | `180` | Seconds one hosted model request may take before it fails and is tried again (a model on this Mac gets 600). The SDKs' default was 10 minutes. |
+| `ENQ_MODEL_MAX_TOKENS` | `16000` | The longest reply a structured call may take (both adapters). Without a cap OpenRouter reserved credit for the model's whole maximum (131072) and refused every summary with a 402 once the balance was lower. The phone sends 4096. |
 | `ENQ_MODEL_RETRIES` | `3` | TOTAL attempts per structured call (instructor's `max_retries`); 1 = one shot, no reprompt |
 | `ENQ_PREVIEW_BROWSER` | `on` | Open a refused or script-only link once more in the Mac's own WebKit (`webkit_page.py`) |
 | `ENQ_BACKUP_DIR` | (empty) | The cloud-drive folder backups go into; empty = backups off |
@@ -1623,6 +1624,7 @@ The engine froze whole (`/health` too, 0% CPU) when one thread opened a connecti
 It showed after turning on "Try harder" for link previews, which only added load: a throwaway engine under capture and search load froze every time with the preview browser on or off, the same two stacks each time.
 `db.connect` opens under a process-wide lock (`_OPEN_CLOSE`) and returns a `_Connection` whose `close()` (and finalizer) takes the same lock; with it the same load ran 16,000 rounds clean.
 Every connection to the library must come from `db.connect` (it already must, for the key).
+The lock is reentrant (`RLock`, 2026-11-21): the garbage collector can run a dropped connection's `__del__` inside another `close` on the same thread, and with a plain `Lock` that close waited on itself, so every later request queued at `connect` and no artifact opened (`tests/test_db_close.py`).
 Search reads through `db.reader()`: one connection per thread, opened once through `db.connect` with sqlite-vec loaded and `query_only` set, whose `close()` keeps it open. A search used to open about seven connections, each loading the extension and setting WAL, nearly half its time. The cached connection follows `config.DB_PATH`, and `db.forget_readers()` (called after a restore or `encrypt_library` replaces the file) makes every thread open a new one.
 A frozen engine's stacks: `kill -USR1 <pid>` writes every thread's Python stack to the log; `sample <pid>` shows where they wait inside SQLite.
 

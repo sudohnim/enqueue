@@ -116,6 +116,7 @@ class OpenAICompatibleProvider:
             "max_retries": config.MODEL_RETRIES if max_retries is None else max_retries,
             "context": context or {},
             "messages": messages,
+            "max_tokens": config.MODEL_MAX_TOKENS,
         }
         try:
             result = cast(T, self._client.chat.completions.create(**kwargs))

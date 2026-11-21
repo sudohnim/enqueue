@@ -80,8 +80,9 @@ def disk_key() -> bytes | None:
 # inode mutex forever, one of them holding Python's global lock, so the whole engine
 # froze, `/health` included (2026-10-22; reproduced every time by a throwaway engine
 # under capture + search load). Both take microseconds, so a Python lock costs nothing,
-# and a thread waiting on it gives the GIL back.
-_OPEN_CLOSE = threading.Lock()
+# and a thread waiting on it gives the GIL back. Reentrant: the garbage collector can run
+# a dropped connection's __del__ inside another close on the same thread (2026-11-21).
+_OPEN_CLOSE = threading.RLock()
 
 
 class _Connection(sqlite3.Connection):

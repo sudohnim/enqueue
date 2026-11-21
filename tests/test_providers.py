@@ -356,3 +356,48 @@ class TestJsonModeRefusal:
         assert out.answer == "ok"
         # First in JSON mode (refused), then once without response_format.
         assert seen == [True, False]
+
+
+def test_a_structured_call_caps_its_reply():
+    """Without a cap OpenRouter reserved credit for the model's whole maximum and
+    refused every summary with a 402 once the balance ran under it."""
+    import json
+
+    seen: list[dict] = []
+    reply = {
+        "id": "c1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "m",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": '{"answer": "ok"}'},
+            }
+        ],
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - the name is BaseHTTPRequestHandler's
+            seen.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            body = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):  # noqa: ARG002 - silence the test server
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}/v1"
+        got = OpenAICompatibleProvider(model="m", base_url=base).complete("s", "u", Answer)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert got.answer == "ok"
+    assert seen[0]["max_tokens"] == config.MODEL_MAX_TOKENS

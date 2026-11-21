@@ -15,7 +15,7 @@ from .base import ProviderError, why
 
 T = TypeVar("T", bound=BaseModel)
 
-MAX_TOKENS = 16000
+MAX_TOKENS = config.MODEL_MAX_TOKENS
 
 
 class AnthropicProvider:
